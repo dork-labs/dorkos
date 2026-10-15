@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import {
   permissionSeedForOrigin,
   relayTurnOrigin,
+  httpTurnOrigin,
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../turn-origin.js';
@@ -59,6 +60,10 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // the operator's stop was set for, so power comes only from the tool's own
   // clamped mode.
   [{ kind: 'agent-launch' }, 'none'],
+  // Another chat sent this one a message (spec `spin-off-chats`): the sender's
+  // own level is the ceiling, applied at launch, and the operator's stop is a
+  // promise to a person, not to the sending chat.
+  [{ kind: 'chat-message' }, 'none'],
   // An extension started work in a brand-new chat in the person's project:
   // the new-session default a person's own chat gets, on the row it inserts.
   [{ kind: 'extension-start' }, 'configured-stop-on-insert'],
@@ -75,6 +80,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A limited session resumed by itself after its account's reset: already
   // bound, so its own row is its power.
   [{ kind: 'account-resume' }, 'none'],
+  // An agent's own heartbeat, in a chat minted for its day (spec `heartbeats`
+  // §7.2): the operator's stop on a chat nobody started, like a local room turn.
+  [{ kind: 'heartbeat' }, 'configured-stop-on-insert'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];
@@ -102,23 +110,40 @@ describe('permissionSeedForOrigin', () => {
   });
 });
 
+describe('httpTurnOrigin', () => {
+  it('calls a person at the app interactive, and an agent caller an agent launch', () => {
+    expect(httpTurnOrigin(false)).toEqual({ kind: 'interactive' });
+    expect(httpTurnOrigin(true)).toEqual({ kind: 'agent-launch' });
+  });
+});
+
 describe('relayTurnOrigin', () => {
   it('calls a message from one of our agents an agent DM', () => {
     expect(relayTurnOrigin('relay.agent.default.agent-01')).toEqual({ kind: 'agent-dm' });
   });
 
-  // The A2A gateway publishes to the same agent subjects an agent's
-  // `relay_send` does; the stamped sender is the only fact that tells them
+  // The A2A gateway publishes to the same agent subjects one of our agents'
+  // own publish does; the stamped sender is the only fact that tells them
   // apart, and it must not read as one of ours.
   it.each([
     'a2a-gateway',
     'relay.external.mcp',
     'relay.session.project-1a2b3c4d',
-    'relay.human.telegram.4242',
     'relay.system.tasks',
     'relay.agentx.default.agent-01',
+    'relay.humans.telegram.4242',
     '',
   ])('calls a message from %o an outside sender', (from) => {
     expect(relayTurnOrigin(from)).toEqual({ kind: 'outside-sender' });
   });
+
+  // A chat binding's adapter stamps these. If the binding's own first write
+  // failed, this is the session's first origin, and it must keep a person's
+  // chat from Telegram private (spec `audit-trail` §3.4).
+  it.each(['relay.human.telegram.4242.bot', 'relay.human.slack.T1.bot', 'relay.webhook.hook-1'])(
+    'calls a message from %o a chat binding',
+    (from) => {
+      expect(relayTurnOrigin(from)).toEqual({ kind: 'relay-binding' });
+    }
+  );
 });

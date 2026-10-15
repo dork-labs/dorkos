@@ -13,7 +13,6 @@ import {
   Switch,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { AutonomyAcknowledgementRow } from '@/layers/features/approvals';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
@@ -93,11 +92,6 @@ export function SecurityPanel() {
           )}
         </FieldCardContent>
       </FieldCard>
-
-      {/* The standing answer a person can give about being asked: what they
-          are no longer asked about. Draws nothing until there is something on
-          file. */}
-      <AutonomyAcknowledgementRow />
 
       {/* Keys outlive the login flag, so this card must too (DOR-1885). Turning
           "Require login" off deletes no key, ends no session and stops nothing

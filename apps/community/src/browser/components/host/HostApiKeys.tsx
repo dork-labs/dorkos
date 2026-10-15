@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';
 import { describeError, request } from '../../api.js';
 import { describeReauthenticationError } from '../../account-controls.js';
-import { FocusDialog } from '../CommunityAdministration.js';
+import { FocusDialog } from '../FocusDialog.js';
 
 type Scope = z.infer<typeof CommunityAdminHostApiKeyScopeSchema>;
 type HostApiKey = {

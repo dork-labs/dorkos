@@ -219,3 +219,67 @@ describe('pullOllamaModel', () => {
     expect(result.error).toMatch(/interrupted/i);
   });
 });
+
+describe('Ollama configuration at the request frontier', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../../env.js');
+    vi.resetModules();
+  });
+
+  it('imports without Ollama configuration and refuses requests without a loopback origin', async () => {
+    vi.resetModules();
+    vi.doMock('../../../../env.js', () => ({ env: {} }));
+    const provider = await import('../providers/ollama.js');
+    const fetchImpl = vi.fn();
+    expect(provider.detectOllama).toBeTypeOf('function');
+    await expect(provider.detectOllama({ fetchImpl })).resolves.toEqual({
+      running: false,
+      models: [],
+    });
+    await expect(
+      provider.pullOllamaModel('model', undefined, { fetchImpl })
+    ).resolves.toMatchObject({
+      ok: false,
+      model: 'model',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each(['not-a-url', 'http://example.com:11434'])(
+    'refuses an invalid origin %s before fetch',
+    async (origin) => {
+      vi.resetModules();
+      vi.doMock('../../../../env.js', () => ({ env: { DORKOS_OLLAMA_URL: origin } }));
+      const provider = await import('../providers/ollama.js');
+      const fetchImpl = vi.fn();
+      await expect(provider.detectOllama({ fetchImpl })).resolves.toEqual({
+        running: false,
+        models: [],
+      });
+      await expect(
+        provider.pullOllamaModel('model', undefined, { fetchImpl })
+      ).resolves.toMatchObject({
+        ok: false,
+        model: 'model',
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['http://127.0.0.1:11434/', 'http://localhost:11434/', 'http://[::1]:11434/'])(
+    'uses the configured loopback origin %s when the probe starts',
+    async (origin) => {
+      vi.resetModules();
+      vi.doMock('../../../../env.js', () => ({ env: { DORKOS_OLLAMA_URL: origin } }));
+      const provider = await import('../providers/ollama.js');
+      const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+        jsonResp(200, { models: [] })
+      );
+      await expect(provider.detectOllama({ fetchImpl })).resolves.toEqual({
+        running: true,
+        models: [],
+      });
+      expect(fetchImpl.mock.calls[0][0]).toBe(`${origin.slice(0, -1)}/api/tags`);
+    }
+  );
+});

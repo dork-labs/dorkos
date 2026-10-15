@@ -11,7 +11,7 @@ import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import {
-  COMMUNITY_RESERVED_SHORT_NAMES,
+  COMMUNITY_PATH_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
 } from '@dorkos/shared/community-admin-wire';
 import {
@@ -91,7 +91,8 @@ export interface ParsedCommunityLink {
   shortName: string | null;
 }
 
-const reservedShortNames = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
+// Only a path can never be a short address; the host's lookup decides every other name.
+const reservedShortNames = new Set(COMMUNITY_PATH_SHORT_NAMES);
 
 /**
  * Parse an origin root, the exact canonical `/c/:communityId` browser link, or an exact

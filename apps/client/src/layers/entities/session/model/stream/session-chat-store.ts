@@ -136,16 +136,6 @@ interface SessionChatStoreState {
    */
   modeBeforePlan: Record<string, string>;
   /**
-   * Session ids that have acknowledged what Full autonomy means, so the dial's
-   * confirmation is asked once rather than on every switch back.
-   *
-   * Ephemeral like the two above, and deliberately so for now: decision 5 of the
-   * `trust-dial` spec makes this a durable user-level acknowledgement the SERVER
-   * requires on every autonomy write. Until that lands, this is a client-side
-   * courtesy — it may soften the ritual, never the gate.
-   */
-  autonomyConfirmedSessions: Record<string, true>;
-  /**
    * Session ids where a person has waved away the offer to make the stop they
    * just picked the default for every new session (spec `trust-dial`, decision
    * 6C).
@@ -193,7 +183,6 @@ function forgetSession(state: SessionChatStoreState, sessionId: string): void {
   delete state.sessions[sessionId];
   delete state.autoConfirmedSessions[sessionId];
   delete state.modeBeforePlan[sessionId];
-  delete state.autonomyConfirmedSessions[sessionId];
   delete state.defaultStopOfferDismissed[sessionId];
   delete state.readOnlyHint[sessionId];
 }
@@ -247,8 +236,6 @@ interface SessionChatStoreActions {
   hasConfirmedAuto: (sessionId: string) => boolean;
   /** Remember the trust mode a session was in before Plan took over. */
   recordModeBeforePlan: (sessionId: string, mode: string) => void;
-  /** Record that a session has acknowledged what Full autonomy means. */
-  recordAutonomyConfirmed: (sessionId: string) => void;
   /** Stop offering to make a stop the default in this session. */
   dismissDefaultStopOffer: (sessionId: string) => void;
   /** Record that this session's read-only explanation reached the screen. */
@@ -271,7 +258,6 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       sessionAccessOrder: [],
       autoConfirmedSessions: {},
       modeBeforePlan: {},
-      autonomyConfirmedSessions: {},
       defaultStopOfferDismissed: {},
       readOnlyHint: {},
 
@@ -359,15 +345,6 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           'session-chat/recordModeBeforePlan'
         ),
 
-      recordAutonomyConfirmed: (sessionId) =>
-        set(
-          (state) => {
-            state.autonomyConfirmedSessions[sessionId] = true;
-          },
-          false,
-          'session-chat/recordAutonomyConfirmed'
-        ),
-
       dismissDefaultStopOffer: (sessionId) =>
         set(
           (state) => {
@@ -441,18 +418,6 @@ export function useSessionChatStatus(sessionId: string): ChatStatus {
  */
 export function useModeBeforePlan(sessionId: string): string | undefined {
   return useSessionChatStore(useCallback((s) => s.modeBeforePlan[sessionId], [sessionId]));
-}
-
-/**
- * Reactive selector: whether a session has already acknowledged what Full
- * autonomy means.
- *
- * @param sessionId - The session to ask about.
- */
-export function useHasConfirmedAutonomy(sessionId: string): boolean {
-  return useSessionChatStore(
-    useCallback((s) => s.autonomyConfirmedSessions[sessionId] === true, [sessionId])
-  );
 }
 
 /**

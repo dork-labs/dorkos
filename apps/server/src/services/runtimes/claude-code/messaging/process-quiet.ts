@@ -46,7 +46,7 @@ import {
   OWED_DELIVERY_TIMEOUT_MS,
   type Quietness,
   type QuietnessBlocker,
-} from '../sessions/session-pump-contract.js';
+} from '../sessions/warm-process/session-pump-contract.js';
 
 /** What the tracker needs from the pump that owns it. */
 export interface ProcessQuietOptions {

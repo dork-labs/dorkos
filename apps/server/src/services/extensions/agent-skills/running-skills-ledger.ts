@@ -470,3 +470,31 @@ export async function extensionSkillPluginRoots(
   }
   return roots;
 }
+
+/**
+ * Two undelivered changes as one: every project either named, and a global
+ * change if either had one.
+ *
+ * @param a - The change still waiting to be delivered, if any.
+ * @param b - The change that just arrived.
+ */
+export function mergeSkillChanges(
+  a: RunningSkillsChange | null,
+  b: RunningSkillsChange
+): RunningSkillsChange {
+  if (!a) return b;
+  const projects = new Map(a.projects.map((p) => [p.root, p]));
+  for (const p of b.projects) {
+    const prior = projects.get(p.root);
+    projects.set(p.root, {
+      root: p.root,
+      ids: [...new Set([...(prior?.ids ?? []), ...p.ids])].sort(),
+      remaining: p.remaining,
+    });
+  }
+  return {
+    ledgerChanged: a.ledgerChanged || b.ledgerChanged,
+    projects: [...projects.values()],
+    globalChanged: a.globalChanged || b.globalChanged,
+  };
+}

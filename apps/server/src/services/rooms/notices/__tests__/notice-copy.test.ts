@@ -68,7 +68,11 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     (['interrupted', 'unstarted', 'idle'] as const).map((outcome) =>
       copy.buildAgentHaltedNotice('Kai', 'Ana', 'author-ana', outcome)
     ),
-  buildTurnFailedNotice: () => [copy.buildTurnFailedNotice('Ana', 'author-ana')],
+  buildTurnFailedNotice: () => [
+    copy.buildTurnFailedNotice('Ana', 'author-ana'),
+    copy.buildTurnFailedNotice('Ana', 'author-ana', '2026-10-09T16:10:00.000Z'),
+    copy.buildTurnFailedNotice('Ana', 'author-ana', null),
+  ],
   buildAgentGoneNotice: () => [copy.buildAgentGoneNotice('Ana', 'author-ana')],
   buildRuntimeGoneNotice: () => [
     copy.buildRuntimeGoneNotice('Ana', 'author-ana', 'codex'),
@@ -76,6 +80,7 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
   ],
   buildAgentUnavailableNotice: () => [copy.buildAgentUnavailableNotice('Ana', 'author-ana')],
   buildAgentLeftNotice: () => [copy.buildAgentLeftNotice('Ana', 'author-ana')],
+  buildAgentPausedNotice: () => [copy.buildAgentPausedNotice('Ana', 'author-ana')],
   buildAgentDeclinedNotice: () => [copy.buildAgentDeclinedNotice('Ana', 'author-ana')],
   buildBridgeSecondAgentRefusedNotice: () => [copy.buildBridgeSecondAgentRefusedNotice('Ana')],
   buildBridgeRateLimitedNotice: () => [copy.buildBridgeRateLimitedNotice()],

@@ -17,17 +17,15 @@
  *
  * @module lib/caller-principal
  */
-import type { Request, Response } from 'express';
-
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import type { RequestUser } from '../services/core/auth/session-gate.js';
+import type { RequestFacts } from '../http/request-facts.js';
 
 /**
  * Who is on the other end of a request or a stream connection.
  *
- * A `res.locals`-shaped read, exactly like `readCallerAuthority`, so both
- * transports answer it identically: the Express chain fills `res.locals`, and a
- * WebSocket upgrade fills the same shape itself (`StreamUpgradeLocals`).
+ * Read off a request's facts, exactly like `readCallerAuthority`, so both
+ * transports answer it identically: the chain fills them for a request, and a
+ * WebSocket upgrade from what it resolved for itself (`StreamUpgradeLocals`).
  */
 export type CallerPrincipal =
   /** A person in the cockpit — or, with login off, anything that presents nothing. */
@@ -44,7 +42,7 @@ export type CallerPrincipal =
     };
 
 /**
- * Read the principal off a request and the locals the gate filled.
+ * Read the principal off a request's facts.
  *
  * Order is load-bearing and fails closed: the agent question is asked FIRST, so
  * a caller holding a valid credential AND presenting an agent header reads as an
@@ -56,19 +54,17 @@ export type CallerPrincipal =
  * server. That member is constructed by the relay path (spec `ask-entitlement`
  * §5) and belongs to the union so that one function answers for both worlds.
  *
- * @param req - The incoming request or upgrade, for the raw headers.
- * @param res - Anything holding the request-scoped locals — an Express
- *   `Response`, or the locals a WebSocket upgrade resolved for itself.
+ * @param caller - The request's facts (`http/request-facts.ts`): the raw
+ *   headers and what the session gate and the agent-identity step resolved. A
+ *   WebSocket upgrade passes `upgradeCaller(headers, locals)`.
  * @returns What is calling.
  */
 export function readCallerPrincipal(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>
+  caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): CallerPrincipal {
-  if (presentsAgentIdentity(req, res)) return { kind: 'agent' };
+  if (presentsAgentIdentity(caller)) return { kind: 'agent' };
 
-  const user = res.locals.user as RequestUser | undefined;
-  if (user?.credential === 'api-key') return { kind: 'program', userId: user.userId };
+  if (caller.user?.credential === 'api-key') return { kind: 'program', userId: caller.user.userId };
 
   return { kind: 'operator' };
 }

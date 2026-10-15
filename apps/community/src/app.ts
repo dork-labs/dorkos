@@ -10,7 +10,6 @@ import {
   CommunityWireBootstrapPreflightRequestSchema,
   CommunityWireBootstrapPreflightResponseSchema,
   CommunityWireCommunitySchema,
-  CommunityWireAuthOptionsSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
@@ -21,8 +20,13 @@ import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
 import { registerEventRoutes } from './routes/community/events.js';
-import { registerInviteRoutes } from './routes/community/invites.js';
+import type { LiveHub } from './live/hub.js';
+import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
+import { registerMonitoringRoutes } from './live/monitoring.js';
+import { registerInviteRoutes } from './routes/community/admission/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
+import { registerModerationRoutes } from './routes/community/moderation/register.js';
+import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';
 import { registerPairingRoutes } from './routes/community/pairings.js';
 import { registerRedactionRoutes } from './routes/community/redactions.js';
 import { registerRemovalRoutes } from './routes/community/removals.js';
@@ -49,13 +53,13 @@ import type { NoticeComposers } from './mail/worker.js';
 import type { NoticeKind } from './mail/outbox.js';
 import { registerTakedownNoticeRoutes } from './routes/community/takedown-notices.js';
 import { registerHostLinkRoutes } from './routes/host/host-links.js';
+import { registerAuthOptionsRoute } from './sign-in/auth-options.js';
 import {
-  forgetAgeConfirmation,
-  registerMinimumAgeRoutes,
-  requireAgeConfirmation,
-} from './sign-up/minimum-age.js';
-import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/host/imports.js';
-import { IMPORT_PART_UPLOAD_PATH } from './imports/part-routes.js';
+  forgetSignUpConfirmations,
+  registerSignUpConfirmationRoutes,
+  requireSignUpConfirmations,
+} from './sign-up/confirmations.js';
+import { registerImportRoutes } from './routes/host/imports.js';
 import { UploadSlots } from './imports/upload.js';
 import { registerHistoryOriginRoute } from './routes/community/history-origin.js';
 import { createHostAuthority } from './host/authority.js';
@@ -79,6 +83,7 @@ import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
 import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
 import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
 import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
+import { createApiRequestGuard } from './limits/api-request-guard.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -87,9 +92,16 @@ export function createCommunityApp({
   hooks,
   blobStore = createBlobStore(config),
   noticeComposers = {},
+  live,
 }: {
   config: CommunityConfig;
   pool: Pool;
+  /**
+   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) and stops it
+   * on shutdown. Without one the app makes its own, which listens only while a stream is open
+   * and stops when `pool` ends (see {@link stopLiveWithPool}).
+   */
+  live?: LiveHub;
   /**
    * The mail composers the running mail worker has, by notice kind. A feature that must reach a
    * person by mail refuses to start while its notice cannot be composed, so a queued notice is
@@ -126,6 +138,10 @@ export function createCommunityApp({
   };
   blobStore?: BlobStore;
 }) {
+  if (!live) {
+    live = createLiveHub(config);
+    stopLiveWithPool(live, pool);
+  }
   const app = new Hono();
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>
@@ -142,7 +158,10 @@ export function createCommunityApp({
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  const { limitAttempts, refundAttempt } = createAttemptLimiter();
+  const { limitAttempts } = createAttemptLimiter();
+  // Password guesses keep their own map, keyed by account: a flood of made-up callers on the
+  // shared one above evicts its oldest keys, and must never evict a spent guess budget.
+  const passwordGuesses = createAttemptLimiter();
   // Mailed links keep their own limits, apart from the shared map above (email-links/limiter.ts).
   const emailLinkLimiter = new EmailLinkLimiter();
   // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
@@ -152,78 +171,12 @@ export function createCommunityApp({
   const confirmPassword = createPasswordConfirmation({
     auth,
     ceiling: config.limits.reauthAttemptsPerMinute,
-    spend: limitAttempts,
-    refund: refundAttempt,
+    spend: passwordGuesses.limitAttempts,
+    refund: passwordGuesses.refundAttempt,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
-  app.use('/api/*', async (c, next) => {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
-      const origin = c.req.header('origin');
-      if (origin && origin !== config.publicUrl) {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      if (!origin && c.req.header('sec-fetch-site') === 'cross-site') {
-        throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
-      }
-      // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
-      if (
-        (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
-          c.req.method === 'POST') ||
-        ((IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) ||
-          IMPORT_PART_UPLOAD_PATH.test(c.req.path)) &&
-          c.req.method === 'PUT')
-      ) {
-        await next();
-        return;
-      }
-      const maxBodyBytes = Math.max(config.limits.textBytes + 32 * 1024, 96 * 1024);
-      const declared = Number(c.req.header('content-length'));
-      if (declared > maxBodyBytes)
-        throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'Request body is too large.');
-      if (c.req.raw.body) {
-        const reader = c.req.raw.body.getReader();
-        const chunks: Uint8Array[] = [];
-        let size = 0;
-        // The server lets a request take hours to arrive, for export uploads. A small JSON
-        // body gets its own short deadline, so a slow drip cannot hold a connection open.
-        const deadline = Date.now() + jsonBodyMs;
-        while (true) {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const { done, value } = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(
-                () =>
-                  reject(new ApiError(408, 'UNAVAILABLE', 'The request took too long to arrive.')),
-                Math.max(0, deadline - Date.now())
-              );
-            }),
-          ])
-            .catch(async (error: unknown) => {
-              await reader.cancel().catch(() => undefined);
-              throw error;
-            })
-            .finally(() => clearTimeout(timer));
-          if (done) break;
-          size += value.byteLength;
-          if (size > maxBodyBytes) {
-            await reader.cancel();
-            throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'Request body is too large.');
-          }
-          chunks.push(value);
-        }
-        const body = new Uint8Array(new ArrayBuffer(size));
-        let offset = 0;
-        for (const chunk of chunks) {
-          body.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        c.req.raw = new Request(c.req.raw, { body: new Blob([body]) });
-      }
-    }
-    await next();
-  });
+  app.use('/api/*', createApiRequestGuard(config, jsonBodyMs));
   app.use('/api/auth/sign-up/*', async (c, next) => {
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
     await next();
@@ -310,8 +263,8 @@ export function createCommunityApp({
     if (!equalSecret(body.secret, config.bootstrapSecret)) {
       throw new ApiError(403, 'FORBIDDEN', 'The owner secret is incorrect.');
     }
-    // The first owner creates an account here too, so a minimum age asks them the same question.
-    requireAgeConfirmation(c.req.header('cookie') ?? null, config, now());
+    // The first owner creates an account here too, so the sign-up rules ask them the same thing.
+    requireSignUpConfirmations(c.req.raw.headers, config, now());
     const passwordHash = await hashPassword(body.password);
     const email = body.email.toLowerCase();
     const result = await transaction(pool, async (client) => {
@@ -395,7 +348,7 @@ export function createCommunityApp({
       };
     });
     c.header('Cache-Control', 'no-store');
-    forgetAgeConfirmation(c, config);
+    forgetSignUpConfirmations(c, config);
     return json(c, CommunityWireBootstrapCompleteResponseSchema, result, 201);
   });
 
@@ -406,8 +359,9 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
+  registerMonitoringRoutes(app, { pool, hub: live, authority, databaseUrl: config.databaseUrl });
   registerHostLinkRoutes(app, { config });
-  registerMinimumAgeRoutes(app, { config, now });
+  registerSignUpConfirmationRoutes(app, { config, now });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
@@ -505,8 +459,8 @@ export function createCommunityApp({
     checkPassword: createAccountPasswordCheck({
       auth,
       ceiling: config.limits.reauthAttemptsPerMinute,
-      spend: limitAttempts,
-      refund: refundAttempt,
+      spend: passwordGuesses.limitAttempts,
+      refund: passwordGuesses.refundAttempt,
     }),
     canSendNotice,
     hooks: {
@@ -550,20 +504,12 @@ export function createCommunityApp({
       createdAt: row.created_at.toISOString(),
     });
   });
-  communityApi.get('/auth-options', (c) =>
-    json(c, CommunityWireAuthOptionsSchema, {
-      google: Boolean(config.oauth.google),
-      github: Boolean(config.oauth.github),
-      oidc: config.oidc ? { label: config.oidc.label, mark: config.oidc.mark } : null,
-      minimumAge: config.minimumAge,
-      emailLinks: linksOn,
-    })
-  );
+  registerAuthOptionsRoute(communityApi, { config, linksOn });
 
   registerChannelRoutes(communityApi, { pool, auth });
   registerEntryRoutes(communityApi, { pool, auth, config, receiptGate });
-  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
-  registerEventRoutes(communityApi, { pool, auth, config, hooks });
+  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate, pool);
+  registerEventRoutes(communityApi, { pool, auth, config, hub: live, hooks });
   registerInviteRoutes(communityApi, {
     pool,
     auth,
@@ -574,14 +520,28 @@ export function createCommunityApp({
         config.limits.invitePreviewAttemptsPerMinute
       );
     },
-    limitPreviewIdentity: (token) => {
+    limitPreviewIdentity: (token) =>
       limitAttempts(
         `invite-preview-identity:${hashSecret(token)}`,
         config.limits.invitePreviewAttemptsPerMinute
-      );
-    },
+      ),
   });
   registerMemberRoutes(communityApi, { pool, auth, confirmPassword, now });
+  registerModerationRoutes(communityApi, { pool, auth, config });
+  registerOpenAdmissionRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    // A preflight needs no account, so it spends only its caller's budget: anyone could
+    // otherwise drain the host's. A join is signed in and spends both, so neither one address
+    // nor many can flood the host with joins.
+    limitPreflight: (c) =>
+      limitAttempts(`open-preflight:${peer(c)}`, config.limits.openJoinsPerMinute),
+    limitJoin: (c) => {
+      limitAttempts(`open-join:${peer(c)}`, config.limits.openJoinsPerMinute);
+      limitAttempts('open-join-host', config.limits.openJoinsPerHostPerMinute);
+    },
+  });
   registerPairingRoutes(communityApi, {
     pool,
     auth,
@@ -600,7 +560,13 @@ export function createCommunityApp({
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerRedactionRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
-  registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerAdministrationRoutes(communityApi, {
+    pool,
+    auth,
+    blobStore,
+    confirmPassword,
+    singleSignOn: config.oidc !== null,
+  });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   registerHistoryOriginRoute(communityApi, { pool, auth });
   registerTakedownNoticeRoutes(communityApi, { pool, auth });

@@ -270,7 +270,10 @@ describe('RoomService', () => {
         published.push(event);
       });
       service.post(roomId, { authorId: human, text: 'hi' });
-      expect(published).toHaveLength(1);
+      // The other publish is the room's 👀 receipt for Ana (DOR-2823).
+      expect(published.filter((event) => (event as { type: string }).type !== 'reaction')).toEqual([
+        expect.objectContaining({ type: 'entry' }),
+      ]);
       publish.mockRestore();
     });
   });
@@ -1956,6 +1959,9 @@ describe('RoomService — a thread reply is an addressing act', () => {
       agentPath: '/agents/ana',
       responseMode: 'mention-only',
     }).authorId;
+    // No lead: this case is about a thread reply as an addressing act, and a
+    // lead would answer the unaddressed post (DOR-2823).
+    harness.service.updateRoom(room.id, harness.human, { leadAuthorId: null });
 
     // A root nobody is named in: the thread is the only thing that can trigger her.
     const root = harness.service.post(room.id, {

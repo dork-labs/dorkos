@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * synchronous `fs` module — the same technique
  * `apps/server/src/lib/__tests__/logger.test.ts` uses — so the REAL
  * `initLogger()`/`logger` singleton and the REAL file reporter run, and
- * `fs.appendFileSync` captures the exact NDJSON line that would have been
+ * `fs.writeSync` captures the exact NDJSON line that would have been
  * written to disk.
  */
 
@@ -31,7 +31,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // pointing at the real implementation.
 vi.mock('fs', async () => {
   const actual = (await vi.importActual('fs')) as Record<string, unknown>;
-  const overrides = { appendFileSync: vi.fn(), statSync: vi.fn(), mkdirSync: vi.fn() };
+  const overrides = {
+    statSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    // The file reporter writes through a handle it keeps open (DOR-2902).
+    openSync: vi.fn(() => 42),
+    fstatSync: vi.fn(() => ({ size: 0, ino: 1 })),
+    writeSync: vi.fn(),
+    closeSync: vi.fn(),
+  };
   return {
     ...actual,
     ...overrides,
@@ -231,7 +239,7 @@ describe('AdapterManager start-failure logging never leaks a token into the real
     // ends up in ~/.dork/logs/dorkos.log (and, from there, the desktop
     // main.log mirror and a diagnostic-report zip).
     const writtenLines = vi
-      .mocked(fs.appendFileSync)
+      .mocked(fs.writeSync)
       .mock.calls.map(([, content]) => String(content))
       .join('');
 

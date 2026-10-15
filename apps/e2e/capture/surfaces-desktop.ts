@@ -7,13 +7,11 @@ import {
   isShotSkipped,
   newCaptureContext,
   openLiveTurn,
-  patch,
   recordLoop,
   seedThemeOnContext,
   shoot,
   sleep,
   url,
-  waitForAppShell,
   WAIT_MS,
   type LoopMark,
   type LoopSpec,
@@ -21,44 +19,22 @@ import {
 import { driveMultiSession, shootMultiSession } from './surfaces-desktop-fleet.js';
 import { shootControlCenter, shootSettingsRooms } from './surfaces-desktop-power.js';
 import { shootRoomFiles } from './surfaces-desktop-rooms.js';
+import { shootTeamRoom } from './surfaces-desktop-team.js';
 import { shootTaskRuntimePicker } from './surfaces-desktop-tasks.js';
 
 /**
  * Desktop surface drives: every 1280×800 still and loop, including the
- * onboarding agent-discovery flow. Each `shootX` waits for its money state
+ * agent-discovery import dialog. Each `shootX` waits for its money state
  * before the screenshot; each `driveX` is shared between still and loop.
  *
- * Two groups live in sibling modules, both driven from the capture entry points
- * below: the power surfaces (Control Center, Settings → Room limits, the full-power
- * door) in `surfaces-desktop-power`, and the four-agent fleet drive behind
- * `multi-session` in `surfaces-desktop-fleet`.
+ * Several drives live in sibling modules, all driven from the capture entry
+ * points below: the #team conversation behind `team-room` in
+ * `surfaces-desktop-team`, the power surfaces (Control Center, Settings → Room
+ * limits, the trust notice) in `surfaces-desktop-power`, and the four-agent
+ * fleet drive behind `multi-session` in `surfaces-desktop-fleet`.
  *
  * @module capture/surfaces-desktop
  */
-
-/**
- * Capture the cockpit home — the #team room.
- *
- * **This shot currently ships an EMPTY room** ("Nothing said here yet"), and
- * that is a known gap, not the intended frame. Nothing in `seed.ts` puts
- * entries in #team, and nothing can directly: `POST /api/rooms/:id/entries`
- * forces `authorId` to the calling person, so an agent-authored entry only
- * exists as the output of a real turn `RoomTriggerDispatcher` ran.
- * Inhabiting this room therefore means DRIVING it — post as the person and let
- * the default agent's fallback seat answer (`team-room-home` 2.2) — the same
- * shape as `openLiveTurn`, and it needs the test-mode runtime's room-turn
- * behavior confirmed first. Until then the shot is honest but unflattering, and
- * it violates the README's "inhabited app" art direction.
- */
-async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await page.goto(url('/'));
-  await waitForAppShell(page);
-  // The composer, not a seeded agent's name: Home is a room now
-  // (`team-room-home` D3.2), so the money state is "the room has drawn" rather
-  // than "the activity feed has an agent in it".
-  await page.waitForSelector('[data-testid="home-composer"]', { timeout: WAIT_MS });
-  await shoot(page, 'cockpit', theme, rec);
-}
 
 /** Capture the fleet/agents list. */
 async function shootAgents(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
@@ -539,116 +515,64 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
 }
 
 /**
- * Drive the onboarding conversation to the agent-discovery beat and let the real
- * unified scanner sweep the seeded projects tree until the mixed-harness
- * candidates are on screen. Requires onboarding to be un-dismissed first.
+ * Open the global "bring in existing projects" dialog from the command
+ * palette and let the real unified scanner sweep the seeded projects tree
+ * until the mixed-harness candidates are on screen.
  *
- * Three things shape this drive, all from the conversational redesign
- * (ADR 260722-111314/111315) that left it broken between DOR-460 and DOR-472:
- *
- * - **It routes past the personality beat by skipping it, never by confirming
- *   it.** DOR-472 gave that beat a real "Skip this step" control
- *   (`skip-personality`), which advances one beat and — unlike
- *   `confirm-personality` — writes no traits. So this drive never touches
- *   DorkBot's on-disk manifest, the write whose confinement to the sandboxed
- *   `DORK_HOME` was never confirmed and which is why the previous pass refused
- *   to drive through here.
- * - **It routes past the profile beat the same way.** DOR-705 inserted
- *   `'profile'` into `BEAT_ORDER` between `'personality'` and `'discovery'`,
- *   so a drive that stops skipping at `skip-personality` now stalls waiting
- *   for a discovery consent chip the conversation never reaches; `skip-profile`
- *   advances past it without writing a role.
- * - **Discovery is consent-first**, so the scan starts on "Sure, look around",
- *   not on arrival at the beat.
- *
- * Verified in a real browser through the consent chips (DOR-472). The candidate
- * wait after consent is the pre-redesign recipe, carried forward unchanged: it
- * depends on the seeded `DISCOVERY_PROJECTS` tree, not on the flow.
- *
- * A timeout here costs one run and only one run. `WAIT_MS` (20s) outlives the
- * beat's own `DISCOVERY_TIMEOUT_MS` (8s), so a scan slower than 8s makes the app
- * hand the conversation off to the handoff beat — which writes `completedAt` —
- * while this wait spends its remaining budget on cards that will never arrive.
- * `attempt` records that failure and the shot keeps its last asset. The next run
- * starts clean because `reopenOnboarding` clears `completedAt` too, so the
- * overlay genuinely reopens rather than inheriting a finished onboarding.
+ * This used to drive the onboarding conversation's discovery beat, but the
+ * one-minute onboarding redesign (spec `one-minute-onboarding`, DOR-2783)
+ * deleted that conversation outright — discovery is no longer part of first
+ * run at all. `ImportProjectsDialog` (`useImportProjectsStore`) is the single
+ * surviving surface for "bring in existing projects," reachable from the
+ * command palette regardless of onboarding state, so the drive moved there
+ * instead of being retired: it is the same real scanner, the same
+ * `CandidateCard`, and no global onboarding state to flip and restore.
  */
-async function driveOnboardingDiscovery(page: Page): Promise<void> {
-  // With onboarding un-dismissed the wizard replaces the app shell entirely,
-  // so the boot signal is the welcome screen itself.
-  await page.goto(url('/'));
-  await page.getByText('Get started', { exact: true }).first().click({ timeout: WAIT_MS });
-  // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
-  await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
-  // The power stage (DOR-1431) sits between the readiness check and the DorkBot
-  // conversation. "Decide later" advances without writing a power choice, the
-  // same no-write routing as the two skips below.
-  await page.getByTestId('onboarding-power-decide-later').click({ timeout: WAIT_MS });
-  await page.getByTestId('skip-personality').click({ timeout: WAIT_MS });
-  await page.getByTestId('skip-profile').click({ timeout: WAIT_MS });
-  await page.getByText('Sure, look around', { exact: true }).click({ timeout: WAIT_MS });
+async function driveImportProjects(page: Page): Promise<void> {
+  await page.goto(url('/team'));
+  await page.keyboard.press('ControlOrMeta+k');
+  const search = page.getByTestId('command-palette-input');
+  await search.waitFor({ state: 'visible', timeout: WAIT_MS });
+  await search.fill('Bring in existing projects');
+  await page.getByRole('option', { name: /bring in existing projects/i }).click();
+  await page.getByRole('button', { name: /search for projects/i }).click({ timeout: WAIT_MS });
   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
   await sleep(800); // let the remaining candidate cards animate in
 }
 
 /**
- * Capture the onboarding agent-discovery surface: the light still plus the dark
- * loop (whose poster is extracted from the loop's own first frame). One of the
- * run's two closing drives (the full-power door is the other) — it flips the
- * global onboarding state, drives the wizard, then restores the dismissed state
- * for reproducibility, so it goes after every shot that reads that state.
+ * Capture the agent-discovery surface: the light still plus the dark loop
+ * (whose poster is extracted from the loop's own first frame).
  */
 export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder): Promise<void> {
   // Skip when this shot is not ours to capture — a human override supplies it,
-  // or it belongs to another shard. Either way, don't flip global onboarding.
+  // or it belongs to another shard.
   if (isShotSkipped('agent-discovery')) {
     process.stdout.write('  ⤿ agent-discovery skipped (captured elsewhere)\n');
     return;
   }
-  // Mirrors the "Replay setup" reset in `PreferencesTab`: `completedAt` is the
-  // authoritative "onboarding is done" gate, so clearing `dismissedAt` alone
-  // leaves the overlay shut for good once any run reaches the handoff beat.
-  const reopenOnboarding = () =>
-    patch('/api/config', {
-      onboarding: {
-        completedSteps: [],
-        skippedSteps: [],
-        startedAt: null,
-        dismissedAt: null,
-        completedAt: null,
-      },
+  await attempt('agent-discovery-light', async () => {
+    const ctx = await newCaptureContext(browser, {
+      viewport: DESKTOP_VIEWPORT,
+      deviceScaleFactor: DEVICE_SCALE_FACTOR,
+      reducedMotion: 'reduce',
     });
-  const dismissOnboarding = () =>
-    patch('/api/config', { onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' } });
-
-  try {
-    await attempt('agent-discovery-light', async () => {
-      await reopenOnboarding();
-      const ctx = await newCaptureContext(browser, {
-        viewport: DESKTOP_VIEWPORT,
-        deviceScaleFactor: DEVICE_SCALE_FACTOR,
-        reducedMotion: 'reduce',
-      });
-      await seedThemeOnContext(ctx, 'light');
-      try {
-        const page = await ctx.newPage();
-        await driveOnboardingDiscovery(page);
-        await shoot(page, 'agent-discovery', 'light', rec);
-      } finally {
-        await ctx.close();
-      }
-    });
-    await attempt('agent-discovery-loop', async () => {
-      await reopenOnboarding();
-      await recordLoop(
-        browser,
-        { surface: 'agent-discovery', durationMs: 3500, drive: driveOnboardingDiscovery },
-        rec
-      );
-    });
-  } finally {
-    await dismissOnboarding();
-  }
+    await seedThemeOnContext(ctx, 'light');
+    try {
+      const page = await ctx.newPage();
+      await driveImportProjects(page);
+      await shoot(page, 'agent-discovery', 'light', rec);
+    } finally {
+      await ctx.close();
+    }
+  });
+  await attempt('agent-discovery-loop', async () => {
+    await recordLoop(
+      browser,
+      { surface: 'agent-discovery', durationMs: 3500, drive: driveImportProjects },
+      rec
+    );
+  });
 }
 
 /**
@@ -666,7 +590,7 @@ export async function captureLightStills(browser: Browser, rec: RunRecorder): Pr
   });
   await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
-  await attemptShot('cockpit', 'cockpit-light', () => shootCockpit(page, theme, rec));
+  await attemptShot('team-room', 'team-room-light', () => shootTeamRoom(page, theme, rec));
   await attemptShot('control-center', 'control-center-light', () =>
     shootControlCenter(page, theme, rec)
   );

@@ -1,3 +1,23 @@
+import { createIsolatedRoomServiceFilePolicyCustody } from './service/room-file-policy-custody.js';
+const originalRoomFilePolicies = createIsolatedRoomServiceFilePolicyCustody();
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceOriginalBusyAgents =
+  originalRoomFilePolicies.readRoomServiceOriginalBusyAgents;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceFileWriteOwner =
+  originalRoomFilePolicies.requireRoomServiceFileWriteOwner;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceFileWriteCurrent =
+  originalRoomFilePolicies.requireRoomServiceFileWriteCurrent;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceRepoWriteCurrent =
+  originalRoomFilePolicies.requireRoomServiceRepoWriteCurrent;
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceOriginalFileRequest =
+  originalRoomFilePolicies.readRoomServiceOriginalFileRequest;
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceRepoAgentRoster =
+  originalRoomFilePolicies.readRoomServiceRepoAgentRoster;
 /**
  * Room orchestration: create, join, post, read cursor, thread replies.
  *
@@ -21,20 +41,8 @@
  *
  * @module server/services/rooms/room-service
  */
-import type { Db, DbTransaction } from '@dorkos/db';
+import type { DbTransaction } from '@dorkos/db';
 import type { RoomStore } from './room-store.js';
-import {
-  readRoomCoreRepoAgentRoster,
-  requireRoomCoreFileWriteStore,
-  readRoomCoreOriginalBusyAgents,
-  readRoomCoreOriginalFileRequest,
-  type RoomCore,
-} from './service/room-core.js';
-import {
-  requireRoomVisibilityRepoWriteCurrent,
-  requireRoomVisibilityFileWriteCurrent,
-  type RoomVisibility,
-} from './service/room-visibility.js';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
@@ -123,92 +131,6 @@ export {
   type RoomMemberSummary,
 } from './manage/room-member-directory.js';
 
-const filePolicyServices = new WeakMap<
-  RoomService,
-  { core: RoomCore; visibility: RoomVisibility }
->();
-/** Original constructor-bound busy DATA protects live turns; it grants no cleanup permission. */
-export function readRoomServiceOriginalBusyAgents(
-  service: RoomService,
-  db: Db,
-  store: RoomStore
-): readonly string[] {
-  const binding = filePolicyServices.get(service);
-  if (!binding) throw new Error('Unknown original room busy service.');
-  const result = readRoomCoreOriginalBusyAgents(binding.core, db, store);
-  if (filePolicyServices.get(service) !== binding) throw new Error('Room busy service changed.');
-  return result;
-}
-/** Actual service/core/store/native construction; actual HTTP composition additionally pins its exact service. */
-export function requireRoomServiceFileWriteOwner(
-  service: RoomService,
-  exactDb: Db,
-  exactStore: RoomStore
-): undefined {
-  const binding = filePolicyServices.get(service);
-  if (!binding) throw new Error('Unknown original room file service.');
-  requireRoomCoreFileWriteStore(binding.core, exactDb, exactStore);
-  return undefined;
-}
-/** Require current file-write visibility through the original Room service. */
-export function requireRoomServiceFileWriteCurrent(
-  service: RoomService,
-  exactDb: Db,
-  roomId: string,
-  authorId: string
-): undefined {
-  const binding = filePolicyServices.get(service);
-  if (!binding) throw new Error('Unknown original room file service.');
-  requireRoomVisibilityFileWriteCurrent(binding.visibility, exactDb, roomId, authorId);
-  if (filePolicyServices.get(service) !== binding)
-    throw new Error('Original room file service changed.');
-  requireRoomCoreFileWriteStore(binding.core, exactDb);
-  return undefined;
-}
-
-/** No public actor, visibility callback or DTO can select this native policy. */
-export function requireRoomServiceRepoWriteCurrent(
-  service: RoomService,
-  exactDb: Db,
-  roomId: string,
-  authorId: string,
-  operation: 'enable' | 'repair' | 'merge'
-): undefined {
-  const binding = filePolicyServices.get(service);
-  if (!binding) throw new Error('Unknown original room repo service.');
-  requireRoomVisibilityRepoWriteCurrent(binding.visibility, exactDb, roomId, authorId, operation);
-  if (filePolicyServices.get(service) !== binding)
-    throw new Error('Original room repo service changed.');
-  requireRoomCoreFileWriteStore(binding.core, exactDb);
-  return undefined;
-}
-
-/** Constructor-owned ordinary Room request policy; Doc cascade eligibility remains separate. */
-export function readRoomServiceOriginalFileRequest(
-  service: RoomService,
-  db: Db,
-  store: RoomStore,
-  request: import('./room-turn-port.js').RoomTurnRequest,
-  runner: import('./room-turn-port.js').RoomTurnRunner
-) {
-  const binding = filePolicyServices.get(service);
-  if (!binding) return undefined;
-  const facts = readRoomCoreOriginalFileRequest(binding.core, db, store, request, runner);
-  if (!facts || filePolicyServices.get(service) !== binding) return undefined;
-  requireRoomCoreFileWriteStore(binding.core, db, store);
-  return facts;
-}
-/** Fixed captured roster reader; a data row does not replace original member/owner/native caller checks. */
-export function readRoomServiceRepoAgentRoster(service: RoomService, exactDb: Db, roomId: string) {
-  const binding = filePolicyServices.get(service);
-  if (!binding) throw new Error('Unknown original room repo service.');
-  const rows = readRoomCoreRepoAgentRoster(binding.core, exactDb, roomId);
-  if (filePolicyServices.get(service) !== binding)
-    throw new Error('Original room repo service changed.');
-  requireRoomCoreFileWriteStore(binding.core, exactDb);
-  return rows;
-}
-
 /** Orchestration over the store, the roster, the author registry and the streams. */
 export class RoomService {
   private readonly parts: RoomCollaborators;
@@ -236,7 +158,7 @@ export class RoomService {
         this.publishSignal(roomId, 'progress', authorId, presence),
     });
     this.triggers = this.parts.core.triggers;
-    filePolicyServices.set(
+    originalRoomFilePolicies.register(
       this,
       Object.freeze({ core: this.parts.core, visibility: this.parts.visibility })
     );
@@ -359,9 +281,9 @@ export class RoomService {
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): OpenedRoom {
     return this.parts.lifecycle.createRoom(request, creatorAuthorId);
   }
-  /** Record a room's fallback seat. See {@link RoomLifecycle.setFallbackSeat}. */
-  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
-    return this.parts.lifecycle.setFallbackSeat(roomId, operatorAuthorId, authorId);
+  /** Record #team's lead, its default agent. See {@link RoomLifecycle.setLead}. */
+  setLead(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+    return this.parts.lifecycle.setLead(roomId, operatorAuthorId, authorId);
   }
   /** Get — or open, once — a well-known channel. See {@link RoomLifecycle.ensureSystemChannel}. */
   ensureSystemChannel(
@@ -426,7 +348,7 @@ export class RoomService {
   updateRoomFromTool(
     roomId: string,
     callerAuthorId: string,
-    patch: { title?: string; topic?: string | null }
+    patch: { title?: string; topic?: string | null; leadAuthorId?: string | null }
   ): RoomWithRoster {
     return this.parts.updates.updateRoomFromTool(roomId, callerAuthorId, patch);
   }
@@ -655,6 +577,21 @@ export class RoomService {
     input: { text: string; moment: RoomMoment; authorId?: string; subjectAuthorId?: string }
   ): RoomEntry {
     return this.parts.systemPosts.postMoment(roomId, input);
+  }
+  /** Post an agent's scripted greeting, waking nobody. See {@link RoomSystemPosts.postAgentGreeting}. */
+  postAgentGreeting(
+    roomId: string,
+    input: { authorId: string; text: string; greeting: 'first-run' }
+  ): RoomEntry {
+    return this.parts.systemPosts.postAgentGreeting(roomId, input);
+  }
+  /** Whether one entry is in one room's log. */
+  hasEntry(roomId: string, entryId: string): boolean {
+    return this.parts.core.store.getEntryById(roomId, entryId) !== null;
+  }
+  /** The room holding a well-known key (`'team'`), archived or not, or `null`. */
+  findWellKnownRoom(key: string): Room | null {
+    return this.parts.core.store.findByWellKnown(key);
   }
   /** Announce merged work. See {@link RoomSystemPosts.postMergeEvent}. */
   postMergeEvent(

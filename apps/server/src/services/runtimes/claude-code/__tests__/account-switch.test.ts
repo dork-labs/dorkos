@@ -11,6 +11,7 @@ import { applyClaudeAccountChange, claudeAccountsChanged } from '../account-swit
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { sessionListBroadcaster } from '../../../session/catalog/session-list-broadcaster.js';
+import { connectedFramePayload } from '../../../session/catalog/session-list-reset.js';
 
 const { _invalidateAll, _registeredRuntimes } = vi.hoisted(() => {
   const invalidateAll = vi.fn();
@@ -30,7 +31,11 @@ vi.mock('../../../session/catalog/session-list-broadcaster.js', () => ({
   sessionListBroadcaster: { stop: vi.fn().mockResolvedValue(undefined), start: vi.fn() },
 }));
 vi.mock('../../../core/runtime-registry.js', () => ({
-  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: vi.fn() },
+  runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
+    getNativeSessionCwd: vi.fn(() => null),
+    listRuntimes: vi.fn(),
+  },
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -135,6 +140,13 @@ describe('applyClaudeAccountChange', () => {
     expect(eventFanOut.broadcast).toHaveBeenCalledWith('session_list_invalidated', {
       changedAt: expect.any(String),
     });
+    // The same moment is kept for windows that reconnect after missing it.
+    const [, payload] = vi
+      .mocked(eventFanOut.broadcast)
+      .mock.calls.find(([event]) => event === 'session_list_invalidated')!;
+    expect(connectedFramePayload().sessionListsResetAt).toBe(
+      (payload as { changedAt: string }).changedAt
+    );
   });
 
   it('stops the watchers BEFORE starting them again', async () => {

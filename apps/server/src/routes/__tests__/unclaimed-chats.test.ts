@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -10,7 +9,21 @@ import { join } from 'node:path';
 import { BindingStore } from '../../services/relay/binding-store.js';
 import { UnclaimedChatStore } from '../../services/relay/unclaimed-chat-store.js';
 import type { BridgeLifecycle } from '../../services/relay/chat-bridge/index.js';
-import { createUnclaimedChatsRouter } from '../unclaimed-chats.js';
+import { createUnclaimedChatsRoutes, type UnclaimedChatsRouterDeps } from '../unclaimed-chats.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
+/** The claim feed behind the real `/api` chain, where `http/hono-api.ts` mounts it. */
+function claimFeed(deps: UnclaimedChatsRouterDeps) {
+  return honoGroupListener({
+    path: '/api/relay/unclaimed-chats',
+    routes: createUnclaimedChatsRoutes(deps),
+  });
+}
 
 /**
  * A lifecycle stand-in that mutates the real `BindingStore` exactly as the
@@ -47,17 +60,13 @@ describe('unclaimed-chats router', () => {
     await bindingStore.init();
     store = new UnclaimedChatStore(db);
 
-    const built = express();
-    built.use(express.json());
-    built.use(
-      '/api/relay/unclaimed-chats',
-      createUnclaimedChatsRouter({
+    app = target.mount(
+      claimFeed({
         store,
         bindingStore,
         meshCore: { getProjectPath: (id: string) => (id === 'agent-a' ? '/proj/a' : undefined) },
       })
     );
-    app = target.mount(built);
   });
 
   afterEach(async () => {
@@ -216,11 +225,8 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
   });
 
   function createApp(lifecycle?: BridgeLifecycle, withMesh = true) {
-    const app = express();
-    app.use(express.json());
-    app.use(
-      '/api/relay/unclaimed-chats',
-      createUnclaimedChatsRouter({
+    return target.mount(
+      claimFeed({
         store,
         bindingStore,
         ...(withMesh && {
@@ -229,7 +235,6 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
         ...(lifecycle && { lifecycle }),
       })
     );
-    return target.mount(app);
   }
 
   it('claims, binds, and bridges atomically in one call — the response binding carries the room', async () => {
@@ -409,17 +414,7 @@ describe('unclaimed-chats router — Leave (DOR-883)', () => {
   });
 
   function createApp(leaveChat?: (adapterId: string, chatId: string) => Promise<void>) {
-    const app = express();
-    app.use(express.json());
-    app.use(
-      '/api/relay/unclaimed-chats',
-      createUnclaimedChatsRouter({
-        store,
-        bindingStore,
-        ...(leaveChat && { leaveChat }),
-      })
-    );
-    return target.mount(app);
+    return target.mount(claimFeed({ store, bindingStore, ...(leaveChat && { leaveChat }) }));
   }
 
   it('calls the adapter leave, then dismisses the card, writing no binding', async () => {

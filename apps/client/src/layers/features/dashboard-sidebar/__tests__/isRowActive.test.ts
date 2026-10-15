@@ -103,3 +103,47 @@ describe('isRowActive on an agent row', () => {
     }
   );
 });
+
+describe('isRowActive on a mini app’s page', () => {
+  const home: SidebarTarget = { kind: 'add-on', extensionId: 'flow', path: '' };
+  const settings: SidebarTarget = { kind: 'add-on', extensionId: 'flow', path: 'settings' };
+
+  it('lights the page that is open, and no other page of the same extension', () => {
+    // The open target already names the one listed page that holds the address
+    // (`listedPageAt`), so a key comparison is the whole rule — and a home row
+    // that also lit for its subpages would make `aria-current` ambiguous.
+    expect(isRowActive(settings, settings)).toBe(true);
+    expect(isRowActive(home, settings)).toBe(false);
+    expect(isRowActive(home, home)).toBe(true);
+  });
+
+  it('stays dark in a conversation, and lights nothing else while open', () => {
+    const session: SidebarTarget = { kind: 'session', sessionId: 's1', agentPath: '/a', cwd: '/a' };
+    expect(isRowActive(home, session)).toBe(false);
+    expect(isRowActive(session, home)).toBe(false);
+    expect(isRowActive(teamRow, home)).toBe(false);
+  });
+});
+
+describe('isRowActive while an agent click is being looked up (DOR-2891)', () => {
+  const alpha: SidebarTarget = { kind: 'agent', path: '/projects/alpha' };
+  const beta: SidebarTarget = { kind: 'agent', path: '/projects/beta' };
+  const openInAlpha: SidebarTarget = {
+    kind: 'session',
+    sessionId: 's1',
+    agentPath: '/projects/alpha',
+    cwd: '/projects/alpha',
+  };
+
+  it('lights only the agent being switched to', () => {
+    expect(isRowActive(beta, openInAlpha, null, '/projects/beta')).toBe(true);
+    expect(isRowActive(alpha, openInAlpha, null, '/projects/beta')).toBe(false);
+    expect(isRowActive(openInAlpha, openInAlpha, null, '/projects/beta')).toBe(false);
+    expect(isRowActive(teamRow, null, TEAM, '/projects/beta')).toBe(false);
+  });
+
+  it('falls back to what is open once nothing is pending', () => {
+    expect(isRowActive(alpha, openInAlpha, null, null)).toBe(true);
+    expect(isRowActive(beta, openInAlpha, null, null)).toBe(false);
+  });
+});

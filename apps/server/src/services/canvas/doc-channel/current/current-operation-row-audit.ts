@@ -9,16 +9,13 @@ import {
   sessionMetadata,
   canvasDocuments,
   canvasDocChannels,
-  canvasDocIdentityIntents,
   inArray,
   type Db,
   canvasDocBatches,
   canvasDocEvents,
   gte,
-  asc,
-  gt,
-  lte,
   canvasDocGrants,
+  canvasDocIdentityIntents,
   approvals,
 } from '@dorkos/db';
 import { type DocChannelStore, auditCurrentDocAppendIntentions } from '../store.js';
@@ -170,7 +167,7 @@ import { parseScope } from '../../scopes.js';
 
 import { readChecked, DocChannelCorruptionError } from '../storage/store-json.js';
 
-import { DocIngestRefusal } from '../ingest-types.js';
+import { DocIngestRefusal } from '../ingest-data/ingest-types.js';
 import { type CurrentOperationScope } from './current-operation-engine.js';
 /** Fixed SQL policy data only; callbacks and genuine scope issuance remain owner-held. */
 export function readCurrentDocAccessRows(
@@ -456,77 +453,12 @@ export function auditCurrentAppendSlice(
   return own.rows;
 }
 
-/** Literal readonly store query; original class chooses its owning executor. */
-export function readCurrentStorePageEvents(
-  executor: Db,
-  documentId: string,
-  since: number,
-  limit: number,
-  highWatermark?: number
-) {
-  if (
-    !Number.isSafeInteger(since) ||
-    since < 0 ||
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > 200
-  )
-    throw new RangeError('Invalid document replay page.');
-  return readChecked('canvas_doc_events', documentId, () =>
-    executor
-      .select()
-      .from(canvasDocEvents)
-      .where(
-        and(
-          eq(canvasDocEvents.documentId, documentId),
-          gt(canvasDocEvents.docSeq, since),
-          highWatermark === undefined ? undefined : lte(canvasDocEvents.docSeq, highWatermark)
-        )
-      )
-      .orderBy(asc(canvasDocEvents.docSeq))
-      .limit(limit)
-      .all()
-  );
-}
-
-/** Literal readonly store query; original class chooses its owning executor. */
-export function readCurrentStoreGetBatch(executor: Db | DbTransaction, batchId: string) {
-  return readChecked('canvas_doc_batches', batchId, () =>
-    executor.select().from(canvasDocBatches).where(eq(canvasDocBatches.batchId, batchId)).get()
-  );
-}
-
-/** Literal readonly store query; original class chooses its owning executor. */
-export function readCurrentStoreListDeliveries(
-  executor: Db | DbTransaction,
-  documentId: string,
-  eventId: string
-) {
-  return readChecked('canvas_doc_deliveries', `${documentId}/${eventId}`, () =>
-    executor
-      .select()
-      .from(canvasDocDeliveries)
-      .where(
-        and(
-          eq(canvasDocDeliveries.documentId, documentId),
-          eq(canvasDocDeliveries.eventId, eventId)
-        )
-      )
-      .orderBy(asc(canvasDocDeliveries.routeId))
-      .all()
-  );
-}
-
-/** Literal readonly store query; original class chooses its owning executor. */
-export function readCurrentStoreGetIdentityIntent(executor: Db | DbTransaction, id: string) {
-  return readChecked('canvas_doc_identity_intents', id, () =>
-    executor
-      .select()
-      .from(canvasDocIdentityIntents)
-      .where(eq(canvasDocIdentityIntents.intentId, id))
-      .get()
-  );
-}
+export {
+  readCurrentStorePageEvents,
+  readCurrentStoreGetBatch,
+  readCurrentStoreListDeliveries,
+  readCurrentStoreGetIdentityIntent,
+} from './current-operation-store-reads.js';
 
 import { DocRouteGrantError } from '../grant-policy.js';
 /** Original full grant/approval/channel SQL evidence, never copied fallback approval. */

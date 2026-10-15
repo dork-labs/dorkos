@@ -49,14 +49,13 @@ describe('a write names the leaves it changed', () => {
   });
 
   it('names a leaf set to null — clearing a setting is a write', () => {
-    // The Reset demotion writes exactly this shape. A summary that skipped
-    // nulls would go quiet on the one write nobody asked for.
+    // A summary that skipped nulls would go quiet on a cleared setting.
     expect(
       describeConfigWrite(
-        at('ui.autonomyAcknowledgedAt', '2026-08-01T09:30:00.000Z'),
-        at('ui.autonomyAcknowledgedAt', null)
+        at('runtimes.defaultTrustStop', 'autonomy'),
+        at('runtimes.defaultTrustStop', null)
       )
-    ).toBe('ui.autonomyAcknowledgedAt');
+    ).toBe('runtimes.defaultTrustStop');
   });
 
   it('names a leaf that appeared, and one that went away', () => {

@@ -210,12 +210,20 @@ function isSessionCursorMoved(payload: unknown): payload is SessionCursorMoved {
  * a session with unread messages, scroll nowhere, and the cursor must still hold
  * the position it held when the view opened.
  *
+ * **A long conversation opens on its newest messages** (DOR-2889), so the
+ * transcript can start partway in. `messagesBefore` says how far, and every
+ * position here is counted from the start of the whole conversation, never
+ * from the start of what is loaded.
+ *
  * @param sessionId - Session whose cursor to track.
  * @param messages - The rendered transcript, oldest first.
+ * @param messagesBefore - How many messages of the conversation sit before
+ *   `messages[0]`, or 0 when the transcript is whole.
  */
 export function useUnreadCursor(
   sessionId: string,
-  messages: readonly CountableMessage[]
+  messages: readonly CountableMessage[],
+  messagesBefore = 0
 ): UnreadCursor {
   const transport = useTransport();
 
@@ -266,7 +274,7 @@ export function useUnreadCursor(
    */
   const selfUserIdRef = useRef<string | null>(null);
 
-  const seenCount = canonicalCount(messages);
+  const seenCount = messagesBefore + canonicalCount(messages);
 
   useEffect(() => {
     purgeLegacyWatermarks();
@@ -391,16 +399,18 @@ export function useUnreadCursor(
   // CLAMPED to the end of the transcript first, which is the one thing a session
   // answers differently from a room. A room whose cursor sits above everything
   // loaded has paged past it, so everything on screen is unread; a session's
-  // history is loaded whole, so a cursor above it means the transcript has been
-  // trimmed BELOW the cursor — and what was trimmed away had been read. Clamping
-  // says so, and it is also what keeps the placement from anchoring on a message
-  // that is not there.
+  // loaded history always runs to its newest message, so a cursor above it
+  // means the transcript has been trimmed BELOW the cursor — and what was
+  // trimmed away had been read. Clamping says so, and it is also what keeps the
+  // placement from anchoring on a message that is not there. A cursor BELOW
+  // what is loaded (a long chat's window, DOR-2889) is the room's case: the
+  // rule goes above the first loaded message.
   const positions = useMemo(
     () =>
       messages
         .filter((message) => message._streaming !== true)
-        .map((message, index) => ({ id: message.id, seq: index + 1 })),
-    [messages]
+        .map((message, index) => ({ id: message.id, seq: messagesBefore + index + 1 })),
+    [messages, messagesBefore]
   );
   const storedSeq = cursor.lastReadSeq;
   const placement = unreadPlacement(

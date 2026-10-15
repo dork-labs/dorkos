@@ -20,6 +20,7 @@ vi.mock('../credits-models.js', () => ({
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 vi.mock('../../runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
     has: (type: string) => runtimes.has(type),

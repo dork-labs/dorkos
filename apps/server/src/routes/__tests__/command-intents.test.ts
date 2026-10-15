@@ -13,7 +13,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime, collectDurableEventsAt } from '@dorkos/test-utils';
 
-// Mock the directory boundary so the /events handler's assertBoundary against
+// Mock the directory boundary so the /events handler's boundaryRefusal against
 // the default cwd doesn't require initBoundary() at startup (mirrors
 // sessions-events.test.ts).
 vi.mock('../../lib/boundary.js', () => ({
@@ -38,6 +38,7 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
@@ -79,16 +80,15 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 /** Base URL for raw SSE collection through the file-scoped listener. */
 function testServerBaseUrl(): string {

@@ -12,7 +12,7 @@ import { CommunityChannelGroups } from './CommunityChannelGroups';
 import { useCallback, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { communityRefFromRouteDestination, useCommunityRouteEpoch } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
+import { useSpaceVisible } from '@/layers/entities/community';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -31,6 +31,7 @@ import {
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
 import { useGettingStartedReturn } from '../model/holds/use-getting-started-return';
+import { SidebarSection } from './SidebarSection';
 import { SidebarZone } from './SidebarZone';
 import { TodayZone } from './TodayZone';
 
@@ -124,9 +125,11 @@ export function SidebarZones({
 }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
   const route = useCommunityRouteEpoch();
-  // A space's channels replace the panel only while spaces are on (DOR-2740).
-  const spaces = useSpacesEnabled();
-  const selectedCommunity = spaces ? communityRefFromRouteDestination(route.destination) : null;
+  // A space's channels replace the panel only while that space is reachable:
+  // any with spaces on, the official one alone with them off (DOR-2740).
+  const routeCommunity = communityRefFromRouteDestination(route.destination);
+  const space = useSpaceVisible(routeCommunity ?? undefined);
+  const selectedCommunity = space.visible ? routeCommunity : null;
   const boot = useBootState();
   const reducedMotion = useReducedMotion();
   // Getting started leaves the shared slot the frame a real signal wants it and
@@ -172,6 +175,20 @@ export function SidebarZones({
     });
   }, [foldable, update]);
 
+  // Inside a space, Add-ons is the one Library section still drawn, so it is
+  // also the only one Alt-click may fold: folding sections nobody can see from
+  // there would be a write the person never sees the effect of.
+  const spaceAddOns = draws('library')
+    ? model.zones
+        .find((zone) => zone.id === 'library')
+        ?.sections.find((section) => section.id === 'addons')
+    : undefined;
+  const spaceAddOnsCollapsed = spaceAddOns?.collapsed ?? false;
+  const onToggleSpaceAddOns = useCallback(
+    () => update((prev) => setSectionCollapsed(prev, 'addons', !spaceAddOnsCollapsed)),
+    [spaceAddOnsCollapsed, update]
+  );
+
   // BC-50. Drawn before the map so the beat sits in Heads up's own slot at the top,
   // and suppressed the moment anything real wants that slot back — a zone the
   // model is emitting always wins over an animation about one it is not.
@@ -207,6 +224,12 @@ export function SidebarZones({
     return (
       <div className="flex min-h-0 flex-col" data-community-context={selectedCommunity}>
         <CommunityChannelGroups />
+        {/* A space's channels replace this machine's Library, but a mini app's
+            pages are not this machine's conversations: they stay one press
+            away inside a space too, where Library is drawn at all. */}
+        {spaceAddOns !== undefined && (
+          <SidebarSection section={spaceAddOns} onToggleAll={onToggleSpaceAddOns} />
+        )}
       </div>
     );
 

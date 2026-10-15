@@ -28,7 +28,7 @@ export interface StateWhyInput {
   state: PermissionState;
   /** The layer that decided it. */
   source: PermissionSource;
-  /** Set when the destructive rule turned an area's Allowed into Ask. */
+  /** Set when the third-party-code rule turned an area's Allowed into Ask. */
   destructiveAsk?: true;
   /** The chosen preset, or `null` while none is chosen. */
   preset: PermissionPreset | null;
@@ -38,9 +38,9 @@ export interface StateWhyInput {
   fromExtension?: boolean;
 }
 
-/** "the default (Full power)", or "the default" while no preset is chosen. */
+/** "the default (Careful)"; an install that never chose reads as Trusted. */
 function theDefault(preset: PermissionPreset | null): string {
-  return preset ? `the default (${PRESET_LABEL[preset]})` : 'the default';
+  return `the default (${PRESET_LABEL[preset ?? 'trusted']})`;
 }
 
 /**
@@ -57,8 +57,6 @@ export function stateWhy(input: StateWhyInput): string {
       return 'Blocked, because this agent’s access was turned off.';
     case 'floor':
       return `${state}. This area is locked, so it’s never Allowed.`;
-    case 'unchanged':
-      return `${state}. No preset chosen yet, so it works as before.`;
     case 'always-asks':
       return input.fromExtension
         ? `${state}. Extension tools that can delete things always ask.`
@@ -67,7 +65,7 @@ export function stateWhy(input: StateWhyInput): string {
       break;
   }
   if (input.destructiveAsk) {
-    return 'Ask. Actions that can’t be undone ask unless you set them one by one.';
+    return 'Ask. Actions that run someone else’s code ask unless set one by one.';
   }
   switch (input.source) {
     case 'agent-area':
@@ -150,6 +148,8 @@ export function lastChangeWhy(change: PermissionLastChange | undefined): string 
       return `Changed ${on}${where}. With login off, who is unknown.`;
     case 'agent-request-approved':
       return `Changed ${on}: ${change.actorLabel}.`;
+    case 'agent':
+      return `Changed by ${change.actorLabel} ${on}.`;
     case 'upgrade':
       return `Set by an upgrade ${on}.`;
     case 'outside':

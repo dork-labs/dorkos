@@ -15,7 +15,7 @@
  * @module services/extensions/extension-manager
  */
 import path from 'path';
-import type { Router } from 'express';
+import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
@@ -28,6 +28,7 @@ import {
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
+import { approveNewScaffold } from './extension-scaffold-approval.js';
 import { configManager } from '../core/config-manager.js';
 import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
@@ -56,6 +57,7 @@ import { collectSnapshots, ensureSnapshot } from './extension-snapshots.js';
 import { installRootOf } from './extension-trusted-origin.js';
 import {
   reconcileRunningSkills,
+  mergeSkillChanges,
   type RunningSkillsChange,
 } from './agent-skills/running-skills-ledger.js';
 import { declaredSet, isCovered, isSamePermissionSet } from './isolation/permission-coverage.js';
@@ -172,31 +174,6 @@ export interface ExtensionSkillDelivery {
   projectChanged(project: { root: string; ids: string[]; remaining: boolean }): unknown;
   /** The global extension skills changed: refresh the plugins sessions load. */
   globalChanged(): unknown;
-}
-
-/**
- * Two undelivered changes as one: every project either named, and a global
- * change if either had one.
- */
-function mergeSkillChanges(
-  a: RunningSkillsChange | null,
-  b: RunningSkillsChange
-): RunningSkillsChange {
-  if (!a) return b;
-  const projects = new Map(a.projects.map((p) => [p.root, p]));
-  for (const p of b.projects) {
-    const prior = projects.get(p.root);
-    projects.set(p.root, {
-      root: p.root,
-      ids: [...new Set([...(prior?.ids ?? []), ...p.ids])].sort(),
-      remaining: p.remaining,
-    });
-  }
-  return {
-    ledgerChanged: a.ledgerChanged || b.ledgerChanged,
-    projects: [...projects.values()],
-    globalChanged: a.globalChanged || b.globalChanged,
-  };
 }
 
 /**
@@ -784,24 +761,46 @@ export class ExtensionManager {
     return testServerCompilation(record, this.compiler);
   }
 
-  /** Scaffold a new extension directory with manifest and starter code. */
+  /**
+   * Scaffold a new extension directory with manifest and starter code, then
+   * compile and enable it.
+   *
+   * The door is `create_extension`, which our own agents call. On a Trusted
+   * install (ADR 261006-225605, item 5) the new copy is approved to run as it is
+   * created: see {@link approveNewScaffold}. Callers must not reach this for
+   * code that came from anywhere else.
+   *
+   * @param options - What to create, and where.
+   * @param options.approveIfTrusted - Whether the caller is one of our agents,
+   *   whose new extension a Trusted install approves at once. A caller that
+   *   cannot be told from an outsider leaves it off, and the copy waits.
+   */
   async createExtension(options: {
     name: string;
     description?: string;
     template: ExtensionTemplate;
     scope: 'global' | 'local';
+    approveIfTrusted?: boolean;
   }): Promise<CreateExtensionResult> {
+    const { approveIfTrusted, ...scaffoldOptions } = options;
+    // Throws when the name is spoken for in either root (the squat refusal),
+    // so nothing below ever approves a folder this call did not just create.
     const scaffoldResult = await scaffoldExtension({
-      ...options,
+      ...scaffoldOptions,
       dorkHome: this.dorkHome,
       currentCwd: this.currentCwd,
     });
+    const autoApproved =
+      approveIfTrusted === true ? approveNewScaffold(options.name, scaffoldResult) : null;
 
     await this.reload();
     await this.enable(options.name);
 
     const record = this.extensions.get(options.name);
-    return buildCreateResult(scaffoldResult, options, record);
+    return {
+      ...buildCreateResult(scaffoldResult, options, record),
+      ...(autoApproved && { autoApproved }),
+    };
   }
 
   /** Get all extensions as public records (for API responses). */
@@ -1380,9 +1379,9 @@ export class ExtensionManager {
     return this.serverLifecycle.shutdown(id);
   }
 
-  /** Get the Express router for a server-side extension. */
-  getServerRouter(id: string): Router | null {
-    return this.serverLifecycle.getRouter(id);
+  /** Get the HTTP handler for a server-side extension's `/api/ext/<id>/*`. */
+  getServerHandler(id: string): ExtensionHttpHandler | null {
+    return this.serverLifecycle.getHandler(id);
   }
 
   /**

@@ -13,10 +13,7 @@
  * - `agent permissions <agent> …`      → `GET|PATCH /api/agents/:id/permissions`
  *
  * Nothing here writes config or an agent's manifest itself: every write carries
- * `surface: 'cli'`, and a refusal prints the server's own sentence. The one line
- * the CLI adds is the terminal's next step when the server asks for the Full
- * autonomy acknowledgement, because the app's next step is a dialog a terminal
- * does not have.
+ * `surface: 'cli'`, and a refusal prints the server's own sentence.
  *
  * Handlers return an exit code rather than calling `process.exit`, so `cli.ts`
  * stays the single source of truth for termination.
@@ -25,8 +22,8 @@
  */
 import { parseArgs } from 'node:util';
 import {
+  CHOOSABLE_PERMISSION_PRESETS,
   PERMISSION_AREA_IDS,
-  PERMISSION_PRESETS,
   PERMISSION_STATES,
   PermissionStopSchema,
   countAgentsFollowing,
@@ -45,7 +42,6 @@ import {
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
-import { ACKNOWLEDGE_AUTONOMY_COMMAND, AUTONOMY_ACK_REQUIRED_CODE } from '../config-write.js';
 
 /** Help text for `dorkos permissions`. */
 const PERMISSIONS_HELP = `Usage: dorkos permissions <subcommand> [options]
@@ -54,14 +50,14 @@ See and change what your agents may do without asking you first.
 
 Subcommands:
   list                              Show the preset, every area and who differs
-  set --preset <preset>             Choose a preset: careful, balanced or full
+  set --preset <preset>             Choose a preset: trusted or careful
   set <area|action> <state>         Change one area or action for every agent
   reset <area|action>               Put an area or action back to the preset
   history [--agent <agent>]         Show recent permission changes, with their ids
   undo <id> [--force]               Undo one change from the history
 
-States: blocked, ask, allowed. Safety limits, Permissions and Reach & secrets
-are never allowed: they can only be blocked or ask.
+States: blocked, ask, allowed. Safety limits and Reach & secrets are never
+allowed: they can only be blocked or ask.
 
 Options:
       --limit <n>   How many history rows to show (default 50, max 100)
@@ -70,7 +66,7 @@ Options:
 
 Examples:
   dorkos permissions
-  dorkos permissions set --preset balanced
+  dorkos permissions set --preset careful
   dorkos permissions set rooms ask
   dorkos permissions set tasks_delete blocked
   dorkos permissions reset rooms
@@ -104,6 +100,7 @@ const PRESET_LABEL: Record<PermissionPreset, string> = {
   careful: 'Careful',
   balanced: 'Balanced',
   full: 'Full power',
+  trusted: 'Trusted',
 };
 
 /** A Files & commands stop as a person reads it (the app's words). */
@@ -130,9 +127,8 @@ function sourceText(source: PermissionSource, preset: PermissionPreset | null): 
     case 'default-action':
       return 'Changed from your preset';
     case 'preset':
-      return preset ? `From ${PRESET_LABEL[preset]}` : 'From your preset';
-    case 'unchanged':
-      return 'Not chosen yet, so it works as it did before';
+      // An install that never chose resolves as Trusted.
+      return `From ${PRESET_LABEL[preset ?? 'trusted']}`;
     case 'floor':
       return 'Never Allowed';
     case 'inactive':
@@ -221,21 +217,6 @@ async function checkActionExists(target: Target): Promise<void> {
   );
 }
 
-/**
- * Print a refusal, adding the terminal's next step when the server wants the
- * Full autonomy acknowledgement first.
- *
- * @param err - What the call threw.
- */
-function explain(err: unknown): void {
-  printError(err);
-  if (err instanceof ApiError && err.body.code === AUTONOMY_ACK_REQUIRED_CODE) {
-    console.error(
-      `Run \`${ACKNOWLEDGE_AUTONOMY_COMMAND}\` to read what it means and confirm, then try again.`
-    );
-  }
-}
-
 /** Parse `--json` plus positionals for a subcommand, strictly. */
 function parseSimple(args: string[]): { json: boolean; positionals: string[] } {
   const { values, positionals } = parseArgs({
@@ -289,10 +270,9 @@ function agentsDiffering(overview: PermissionsResponse): number {
   ]).size;
 }
 
-/** "Full power, 2 changes" / "Not chosen yet". */
+/** "Careful, 2 changes"; an install that never chose reads as Trusted. */
 function presetLine(overview: PermissionsResponse): string {
-  if (!overview.preset) return 'Not chosen yet, so everything works as it did before';
-  const label = PRESET_LABEL[overview.preset];
+  const label = PRESET_LABEL[overview.preset ?? 'trusted'];
   if (overview.changeCount === 0) return label;
   return `${label}, ${overview.changeCount} change${overview.changeCount === 1 ? '' : 's'}`;
 }
@@ -335,7 +315,7 @@ async function runPermissionsList(json: boolean): Promise<number> {
     }
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -369,7 +349,7 @@ function reportDefaultWrite(
 async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<number> {
   const usage = reset
     ? 'Usage: dorkos permissions reset <area|action>'
-    : 'Usage: dorkos permissions set <area|action> <state> | set --preset <careful|balanced|full>';
+    : 'Usage: dorkos permissions set <area|action> <state> | set --preset <trusted|careful>';
   const { values, positionals } = parseArgs({
     args: rawArgs,
     options: {
@@ -383,8 +363,10 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
 
   if (!reset && typeof values.preset === 'string') {
     const preset = values.preset;
-    if (!(PERMISSION_PRESETS as readonly string[]).includes(preset)) {
-      throw new Error(`'${preset}' is not a preset. Use one of: ${PERMISSION_PRESETS.join(', ')}.`);
+    if (!(CHOOSABLE_PERMISSION_PRESETS as readonly string[]).includes(preset)) {
+      throw new Error(
+        `'${preset}' is not a preset. Use one of: ${CHOOSABLE_PERMISSION_PRESETS.join(', ')}.`
+      );
     }
     try {
       const result = await apiCall<{ changes: unknown[]; permissions: PermissionsResponse }>(
@@ -401,7 +383,7 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
         );
       return 0;
     } catch (err) {
-      explain(err);
+      printError(err);
       return 1;
     }
   }
@@ -432,7 +414,7 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
       );
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -490,7 +472,7 @@ async function runPermissionsHistory(rawArgs: string[]): Promise<number> {
     console.log('Undo a change with `dorkos permissions undo <id>`.');
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }
@@ -583,7 +565,7 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     }
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
       const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
       if (conflicts.length > 0) {
@@ -700,7 +682,7 @@ export async function runAgentPermissions(rawArgs: string[]): Promise<number> {
     else console.log(done);
     return 0;
   } catch (err) {
-    explain(err);
+    printError(err);
     return 1;
   }
 }

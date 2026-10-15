@@ -79,3 +79,50 @@ describe('InlineTextField', () => {
     expect(onCommit).toHaveBeenCalledExactlyOnceWith('');
   });
 });
+
+describe('InlineTextField — a wrapping line edits in a box that grows (DOR-2358)', () => {
+  const LONG = 'A topic long enough to wrap across many lines. '.repeat(10).trim();
+
+  function renderTopic(wrap: boolean) {
+    const onCommit = vi.fn<(next: string) => void>();
+    render(
+      <InlineTextField
+        value={LONG}
+        onCommit={onCommit}
+        maxLength={500}
+        label="Topic"
+        placeholder="Add a topic"
+        commitEmpty
+        wrap={wrap}
+      />
+    );
+    fireEvent.click(screen.getByRole('button'));
+    return { onCommit, editor: () => screen.getByRole('textbox', { name: 'Topic' }) };
+  }
+
+  it('edits a wrapping line in a textarea, and Enter saves', () => {
+    const { onCommit, editor } = renderTopic(true);
+    expect(editor().tagName).toBe('TEXTAREA');
+    expect(editor()).toHaveValue(LONG);
+
+    fireEvent.change(editor(), { target: { value: 'A shorter topic' } });
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true });
+
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith('A shorter topic');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('cancels on Escape without saving', () => {
+    const { onCommit, editor } = renderTopic(true);
+    fireEvent.change(editor(), { target: { value: 'Not this' } });
+    fireEvent.keyDown(editor(), { key: 'Escape' });
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  it('keeps a one-line input for a line that does not wrap, like the room name', () => {
+    const { editor } = renderTopic(false);
+    expect(editor().tagName).toBe('INPUT');
+  });
+});

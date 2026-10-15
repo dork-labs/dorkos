@@ -27,7 +27,6 @@ import { permissionActions } from '../../../core/permissions/index.js';
 import { composeCapabilityRegistryForDocs } from '../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../core/external-mcp/capability-mcp-tools.js';
 import { createDorkOsToolServer } from '../../claude-code/mcp-tools/index.js';
-import { NotifyBudget } from '../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../claude-code/mcp-tools/types.js';
 
 /** The seven tools in the Rooms area. */
@@ -86,19 +85,21 @@ describe('resolveToolVisibility', () => {
     expect(visibility.hiddenToolNames.size).toBe(0);
   });
 
-  it('names only a Blocked area that actually hides something, on an undecided install', () => {
+  it('names only a Blocked area that actually hides something', () => {
+    // Careful blocks Reach & secrets, which has no tool of its own, so it is not
+    // named: a line saying an area is blocked while nothing in it is hidden
+    // would be false.
+    preset = 'careful';
+    expect(resolveToolVisibility(undefined).blockedAreas).toEqual([]);
+    const visibility = resolveToolVisibility({ areas: { rooms: 'blocked' } });
+    expect(visibility.blockedAreas).toEqual(['rooms']);
+  });
+
+  it('hides nothing on an install that never chose, which resolves as Trusted', () => {
     preset = null;
     const visibility = resolveToolVisibility(undefined);
-    // Unchanged blocks Rooms and the three floors. Rooms and Permissions hide
-    // tools, so each earns its line. Safety limits hides nothing (the
-    // boundaries tool keeps asking, as it always did), and Reach & secrets has
-    // no tool of its own, so neither is named: a line saying an area is blocked
-    // while nothing in it is hidden would be false.
-    expect(visibility.blockedAreas).toEqual(['rooms', 'permissions']);
-    expect(visibility.hiddenToolNames.has('update_agent_boundaries')).toBe(false);
-    expect(visibility.hiddenToolNames.has('change_permission')).toBe(true);
-    // merge ran on every install before permissions, and still does.
-    expect(visibility.hiddenToolNames.has('merge_to_room_main')).toBe(false);
+    expect(visibility.blockedAreas).toEqual([]);
+    expect(visibility.hiddenToolNames.size).toBe(0);
   });
 
   it("reads an agent's overrides fresh by path", async () => {
@@ -153,7 +154,6 @@ describe('the builders', () => {
       extensionManager: stub,
       runtimeRegistry: stub,
       activityService: stub,
-      notifyBudget: new NotifyBudget(),
     };
     const hidden = resolveToolVisibility({ areas: { rooms: 'blocked' } }).hiddenToolNames;
     const blocked = createDorkOsToolServer(deps, undefined, undefined, undefined, registry, hidden);

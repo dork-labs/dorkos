@@ -28,6 +28,7 @@ import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { useProfileAgent } from '../model/use-profile-agent';
 import { configKeys } from '@/layers/entities/config';
+import { useAgentPause, useResumeAgent } from '@/layers/entities/mesh';
 import {
   ProfileAgentActions,
   useIsAgentBlocked,
@@ -77,6 +78,11 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
   // carries a display name, and the two are not the same string. A cache hit:
   // the profile root has already read this manifest for the About row.
   const { agent } = useProfileAgent(member);
+  // Any agent can be paused everywhere, DorkBot included (spec `audit-trail`
+  // PR5), so this reads for both agent relationships.
+  const agentId = isAgent ? (member.agent?.manifestId ?? null) : null;
+  const pause = useAgentPause(agentId);
+  const resumeAgent = useResumeAgent();
 
   const setDefault = useMutation({
     mutationFn: (slug: string) => transport.setDefaultAgent(slug),
@@ -128,6 +134,20 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
             </ResponsiveDropdownMenuItem>
           )}
 
+          {agentId !== null && projectPath !== null && (
+            <ResponsiveDropdownMenuItem
+              onSelect={() =>
+                pause
+                  ? resumeAgent.mutate(agentId, {
+                      onSuccess: () => toast(`${member.displayName} resumed`),
+                    })
+                  : setStep('pause')
+              }
+            >
+              {pause ? 'Resume' : 'Pause everywhere'}
+            </ResponsiveDropdownMenuItem>
+          )}
+
           {relationship === 'managed' && projectPath !== null && (
             <>
               <ResponsiveDropdownMenuSeparator />
@@ -157,7 +177,7 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
         </ResponsiveDropdownMenuContent>
       </ResponsiveDropdownMenu>
 
-      {relationship === 'managed' && projectPath !== null && (
+      {isAgent && projectPath !== null && (
         <ProfileAgentActions
           member={member}
           projectPath={projectPath}

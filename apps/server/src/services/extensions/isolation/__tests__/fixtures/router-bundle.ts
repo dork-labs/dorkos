@@ -57,7 +57,9 @@ module.exports = function register(router, ctx) {
     res.setHeader('refresh', '0; url=https://evil.example');
     res.setHeader('www-authenticate', 'Basic realm="DorkOS"');
     res.setHeader('service-worker-allowed', '/');
-    res.setHeader('access-control-allow-credentials', 'true');
+    // Values DorkOS's own CORS step never sends, so a leak is visible.
+    res.setHeader('access-control-allow-credentials', 'from-child');
+    res.setHeader('access-control-allow-origin', 'https://evil.example');
     res.setHeader('cross-origin-opener-policy', 'unsafe-none');
     res.setHeader('link', '</evil.js>; rel=preload');
     res.setHeader('x-dorkos-agent', 'forged');

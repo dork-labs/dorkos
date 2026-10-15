@@ -58,7 +58,7 @@ import {
   LEDGER_RUNTIMES,
   type LedgerRuntime,
 } from '@dorkos/shared/account-usage';
-import { sessionPath } from '@dorkos/shared/session-link';
+import { chatMarkdownLink, sessionPath } from '@dorkos/shared/session-link';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
@@ -69,6 +69,8 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
+import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import { resolveAccountRef, type RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
@@ -81,7 +83,10 @@ import {
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
+import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
+  chatlessCallerStop,
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
   type CallingChat,
@@ -120,16 +125,36 @@ export const OTHER_AGENTS_HOME_MESSAGE =
  *   asked next.
  * - `runtime` is the runtime that chat runs on, whose declared modes give the
  *   ceiling its meaning.
+ * - `neverAsks` is whether that chat is SET to "Never ask", which a stricter
+ *   ceiling can hide from its live mode.
  *
  * The external server can produce none of them: it has no chat, so its caller
- * is held to `acceptEdits` (`NO_CHAT_CEILING_MODE`).
+ * is held to the agent's own Files & commands stop, or to `acceptEdits`
+ * (`NO_CHAT_CEILING_MODE`) when it has none.
  */
 export type SessionStartCallerResolver = () =>
-  { agentPath?: string; sessionId?: string; permissionMode?: string; runtime?: string } | undefined;
+  | {
+      agentPath?: string;
+      sessionId?: string;
+      permissionMode?: string;
+      runtime?: string;
+      neverAsks?: boolean;
+    }
+  | undefined;
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
   prompt: z.string().min(1).describe('The first message of the new session.'),
+  title: z
+    .string()
+    .trim()
+    .max(START_WORK_LIMITS.title)
+    .optional()
+    .describe(
+      'A short, plain title people see in the sidebar and tabs, like "Rooms: always answer ' +
+        'people" (at most 80 characters). Write one: without it the title comes from `reason`, ' +
+        'or is "Started by <you>".'
+    ),
   cwd: z
     .string()
     .min(1)
@@ -180,11 +205,20 @@ export const SessionStartInputShape = {
       'Why you are starting it, in plain words (at most 200 characters). The new session ' +
         'shows it as its first line: "Started from <this chat>: <reason>".'
     ),
+  reportBack: z
+    .enum(['auto', 'off'])
+    .optional()
+    .describe(
+      '`auto` (default): whenever the new chat ends a turn finished, failed, needing the ' +
+        'person or paused at an account limit, its last message comes back to this chat as a ' +
+        'message. `off`: it never reports back on its own.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
 export interface SessionStartArgs {
   prompt: string;
+  title?: string;
   cwd: string;
   account?: string;
   runtime?: string;
@@ -194,12 +228,17 @@ export interface SessionStartArgs {
   seedContext?: string;
   agentPath?: string;
   reason?: string;
+  reportBack?: 'auto' | 'off';
 }
 
 /** The result of a started session. */
 export interface SessionStartResult {
   /** The session's canonical id. */
   sessionId: string;
+  /** The chat's title, as the sidebar shows it once the rename lands. */
+  title: string;
+  /** A markdown link that opens the chat, to use instead of its id. */
+  link: string;
   /** The runtime it runs on. */
   runtime: string;
   /** The account it was started on, or `null` when the usual choice decides. */
@@ -258,9 +297,21 @@ function callerOf(
           sessionId: resolved.sessionId ?? null,
           permissionMode: resolved.permissionMode ?? null,
           runtime: resolved.runtime ?? NO_CHAT_CEILING_RUNTIME,
+          ...(resolved.neverAsks ? { neverAsks: true } : {}),
         }
       : null,
   };
+}
+
+/**
+ * The ceiling a started session's first turn carries when its starter's turn
+ * read an outsider's words, as the spread a launch takes; empty otherwise.
+ *
+ * @param caller - Who is starting it: the calling chat, or only the agent.
+ */
+function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
+  const bound = outsiderBoundOf(caller.chat?.sessionId, caller.agentPath);
+  return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 
 /**
@@ -274,7 +325,8 @@ function reserveChatStart(
   sessionId: string,
   parentSessionId: string | null,
   reason: string | undefined,
-  permission: SessionStartPermission
+  permission: SessionStartPermission,
+  reportBack: boolean
 ): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const service = getStartWorkService();
   if (!parentSessionId || !service) return { ok: true, reservation: null };
@@ -285,6 +337,7 @@ function reserveChatStart(
     permissionMode: permission.mode,
     starterPermissionMode: permission.callerMode,
     permissionSameAsStarter: permission.sameAsCaller,
+    reportBack,
   });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }
@@ -441,7 +494,13 @@ export function createSessionStartHandler(
     // The level it runs at: the calling chat's own or lower, never higher (spec
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
-    const level = await resolveStartPermission(args.permissionMode, caller.chat, runtimeType);
+    // With no chat (the external `/mcp` server) it is the agent's own stop.
+    const level = await resolveStartPermission(
+      args.permissionMode,
+      caller.chat,
+      runtimeType,
+      await chatlessCallerStop(caller.chat, runtime, agentPath)
+    );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
 
@@ -461,12 +520,14 @@ export function createSessionStartHandler(
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.
-    const claimed = reserveChatStart(
-      sessionId,
-      caller.chat?.sessionId ?? null,
-      args.reason,
-      permission
-    );
+    // Reports go back only to a chat that can take chat messages: a room's
+    // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
+    // never promised one (spec `spin-off-chats` §5).
+    const parentChatId = caller.chat?.sessionId ?? null;
+    const parentTakesMessages =
+      parentChatId !== null && ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
+    const reportBack = args.reportBack !== 'off' && parentTakesMessages;
+    const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     // What the pre-launch picker saves, saved the same way: an unbound settings
@@ -504,6 +565,11 @@ export function createSessionStartHandler(
       if (stamped) chatMessages?.settleStart(stamped.id, canonical);
     };
 
+    // The chat's title: the agent's own, else one from its reason, never from
+    // the brief (DOR-2824). Set once the launch is accepted; see below.
+    const title = startedChatTitle(args.title, args.reason, caller.label);
+    let lastTitleTry: (() => void) | null = null;
+
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
     try {
       result = await dispatchSessionMessage({
@@ -516,14 +582,40 @@ export function createSessionStartHandler(
           runtime: runtimeType,
           ...(account ? { account: account.id } : {}),
           agentPath,
-          ...(args.seedContext !== undefined ? { seedContext: args.seedContext } : {}),
+          ...(() => {
+            // A spin-off is told who started it and how it reports back (spec
+            // `spin-off-chats` §5), ahead of whatever background the starter gave.
+            const briefing = caller.chat?.sessionId
+              ? spinOffBriefing({
+                  parentChatId: caller.chat.sessionId,
+                  parentTitle: rememberedChatTitle(caller.chat.sessionId),
+                  parentAgentName: caller.label,
+                  reportBack,
+                  parentTakesMessages,
+                })
+              : null;
+            // The starter's own background is never cut: the briefing gives
+            // way first when the two would pass the cap together.
+            const own = args.seedContext ?? '';
+            const room = SEED_CONTEXT_MAX_LENGTH - own.length - (own ? 2 : 0);
+            const lead = briefing && room > 0 ? briefing.slice(0, room) : null;
+            const seed = [lead, own].filter((p): p is string => Boolean(p));
+            return seed.length > 0 ? { seedContext: seed.join('\n\n') } : {};
+          })(),
         },
         clientId: SESSION_START_CLIENT_ID,
+        // A starter whose turn read an outsider's words passes that on: the new
+        // session's turn is recorded as one that read them too (spec
+        // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
+        ...outsiderStartCeiling(caller),
         meshCore: deps.meshCore,
         // A session minted here is in no room.
         roomSessionPlace: undefined,
         countsTowardLaunchCap: true,
-        onSettled: () => reservation?.settle(),
+        onSettled: () => {
+          reservation?.settle();
+          lastTitleTry?.();
+        },
       });
     } catch (err) {
       reservation?.cancel();
@@ -553,6 +645,11 @@ export function createSessionStartHandler(
     const canonicalId = result.canonicalId ?? sessionId;
     settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
+    lastTitleTry = nameStartedChat({
+      sessionId: canonicalId,
+      rename: () =>
+        runtime.renameSession(runtime.getInternalSessionId(canonicalId) ?? canonicalId, title, cwd),
+    });
     const accountName = account ? (account.label ?? account.id) : null;
     void deps.activityService?.emit({
       actorType: 'agent',
@@ -562,9 +659,10 @@ export function createSessionStartHandler(
       eventType: 'agent.session_started',
       resourceType: 'session',
       resourceId: canonicalId,
+      resourceLabel: title,
       summary: accountName
-        ? `Started a session in ${cwd} on the account ${accountName}`
-        : `Started a session in ${cwd}`,
+        ? `Started "${title}" in ${cwd} on the account ${accountName}`
+        : `Started "${title}" in ${cwd}`,
       linkPath: sessionPath({ session: canonicalId }),
       metadata: {
         cwd,
@@ -576,6 +674,8 @@ export function createSessionStartHandler(
 
     const body: SessionStartResult = {
       sessionId: canonicalId,
+      title,
+      link: chatMarkdownLink(canonicalId, title),
       runtime: runtimeType,
       account: account ? { id: account.id, label: account.label } : null,
       permission,
@@ -601,7 +701,9 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
         'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
-        'At most 8 sessions started this way run at once.',
+        'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
+        'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
+        'that link, never the id.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),

@@ -14,7 +14,7 @@
  *
  *   A lookup records the root (as `reported`), so the name it answers stays
  *   that root's name; that is why it runs the person bar
- *   (`refuseIfNotAPerson`) even though it is a GET. The app asks it for the
+ *   (`assessPerson`) even though it is a GET. The app asks it for the
  *   folder a person picked; an agent has no reason to, and an agent that could
  *   would hold names forever. The bar's `Origin` check alone does not cover a
  *   GET: a cross-site page can fire one with no `Origin` at all (an `<img>`
@@ -27,14 +27,18 @@
  *
  * @module routes/projects
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { ProjectResolveQuerySchema } from '@dorkos/shared/project-schemas';
 
 import { BoundaryError, validateBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
-import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
+import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** What `GET /api/projects/resolve` says when the caller is not a person. */
 const PROJECT_LOOKUP_BAR: PersonBarCopy = {
@@ -47,47 +51,56 @@ const PROJECT_LOOKUP_BAR: PersonBarCopy = {
   agent: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
 };
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
-router.get('/', async (_req, res) => {
+router.get('/', async (c) => {
   try {
-    res.json({ projects: await projectRegistry.list() });
+    return c.json({ projects: await projectRegistry.list() });
   } catch (err) {
     logger.error('[projects] GET / failed', { err });
-    res.status(500).json({ error: 'Could not list projects' });
+    return c.json({ error: 'Could not list projects' }, 500);
   }
 });
 
-router.get('/resolve', async (req, res) => {
-  if (req.headers['sec-fetch-site'] === 'cross-site') {
-    const from = req.headers.origin ?? req.headers.referer ?? 'another site';
-    return res.status(403).json({
-      error: PROJECT_LOOKUP_BAR.error,
-      code: PROJECT_LOOKUP_BAR.code,
-      message: PROJECT_LOOKUP_BAR.crossSite(from),
-    });
+router.get('/resolve', async (c) => {
+  const facts = honoRequestFacts(c);
+  if (facts.headers['sec-fetch-site'] === 'cross-site') {
+    const from = facts.headers.origin ?? facts.headers.referer ?? 'another site';
+    return c.json(
+      {
+        error: PROJECT_LOOKUP_BAR.error,
+        code: PROJECT_LOOKUP_BAR.code,
+        message: PROJECT_LOOKUP_BAR.crossSite(from),
+      },
+      403
+    );
   }
-  if (refuseIfNotAPerson(req, res, PROJECT_LOOKUP_BAR)) return undefined;
-  const parsed = ProjectResolveQuerySchema.safeParse(req.query);
+  const refusal = assessPerson(facts, PROJECT_LOOKUP_BAR);
+  if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+  const parsed = ProjectResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
   }
   try {
     const cwd = await validateBoundary(parsed.data.cwd);
     const project = await projectRegistry.resolveWithin(cwd);
     if (project === 'outside') {
-      return res.status(403).json({
-        error: 'Access denied: that folder belongs to a repository outside the directory boundary',
-        code: 'OUTSIDE_BOUNDARY',
-      });
+      return c.json(
+        {
+          error:
+            'Access denied: that folder belongs to a repository outside the directory boundary',
+          code: 'OUTSIDE_BOUNDARY',
+        },
+        403
+      );
     }
-    return res.json({ project });
+    return c.json({ project });
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[projects] GET /resolve failed', { err });
-    return res.status(500).json({ error: 'Could not resolve the project' });
+    return c.json({ error: 'Could not resolve the project' }, 500);
   }
 });
 

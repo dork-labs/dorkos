@@ -142,9 +142,14 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       statusBar: { pins: ['cwd'] },
       composer: { richText: true },
-      autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z',
-      fullPowerDecidedAt: '2026-08-22T11:15:00.000Z',
-      fullPowerChoice: 'full',
+      panelTabs: [
+        {
+          tab: 'social-queue:queue',
+          show: { agents: ['01AGENT'], rooms: ['01JROOM'], pages: ['activity'] },
+          hide: { agents: ['01OTHER'], rooms: ['01JHIDDEN'], pages: ['tasks'] },
+        },
+      ],
+      trustNoticeSeenAt: '2026-10-07T11:15:00.000Z',
       communityNavigation: {
         version: 1,
         owners: [
@@ -173,6 +178,9 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-08-05T12:00:00.000Z',
       identityPromptDismissedAt: '2026-08-05T12:00:00.000Z',
+      timezone: 'Europe/Berlin',
+      workingHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' },
+      away: { until: '2026-08-20T00:00:00.000Z', note: 'On holiday' },
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {
@@ -190,6 +198,18 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       instanceToken: 'LEAK-4-cloud-instance-token',
       instanceName: 'my-box',
       linkedAccountLabel: 'LEAK-5-person@example.com',
+      remote: {
+        mode: 'managed',
+        enrolmentId: 'LEAK-remote-enrolment',
+        consentVersion: 'LEAK-remote-consent',
+        instanceId: 'LEAK-remote-instance',
+        credentialRef: 'file:LEAK-remote-tunnel-ref',
+        credentialId: 'LEAK-remote-credential-id',
+        fingerprint: 'LEAK-remote-fingerprint',
+        hosts: ['LEAK-remote-host.example.com'],
+        edgeProofRef: 'file:LEAK-remote-edge-ref',
+        edgeProofHeader: 'leak-remote-edge-header',
+      },
     },
     runtimes: {
       environment: {
@@ -221,6 +241,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       doe: {
         enabled: true,
+        defaultModel: 'md-preferred',
         defaultTrustStop: null,
         inference: {
           source: 'api-key',
@@ -308,6 +329,16 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',
+      // Managed remote access (DOR-2086): consent, credential and address.
+      'cloud.remote.consentVersion',
+      'cloud.remote.credentialId',
+      'cloud.remote.credentialRef',
+      'cloud.remote.edgeProofHeader',
+      'cloud.remote.edgeProofRef',
+      'cloud.remote.enrolmentId',
+      'cloud.remote.fingerprint',
+      'cloud.remote.hosts',
+      'cloud.remote.instanceId',
       'connectors.rawMcpServers[].url',
       // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
       'extensions.approvedPermissions',

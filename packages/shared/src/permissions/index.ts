@@ -10,3 +10,4 @@ export * from './permission-presets.js';
 export * from './resolve-permission.js';
 export * from './permission-api-schemas.js';
 export * from './affected-agents.js';
+export * from './trust-posture.js';

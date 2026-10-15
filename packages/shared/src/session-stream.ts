@@ -19,7 +19,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
-import { ChatMessageStampSchema } from './chat-messages.js';
+import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.js';
 
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
@@ -794,6 +794,12 @@ export const SessionEventSchema = z
        * never written by a runtime.
        */
       chatMessages: z.array(ChatMessageStampSchema).optional(),
+      /**
+       * The room post that opened this turn, when a room did (DOR-2113). The
+       * dispatcher records the room and entry; the server fills in the author
+       * at the wire boundary, as for `chatMessages`.
+       */
+      roomMessage: RoomMessageStampSchema.optional(),
     }),
     // The end of an assistant turn.
     z.object({
@@ -1130,8 +1136,16 @@ export function questionOutcomeOf(
  */
 export const SessionSnapshotSchema = z
   .object({
-    /** Completed message history for the session. */
+    /**
+     * Completed message history: the newest `HISTORY_WINDOW_LIMIT`
+     * messages, or all of them in a shorter session (DOR-2889).
+     */
     messages: z.array(HistoryMessageSchema),
+    /**
+     * How many older messages the snapshot left out. Absent or 0 when
+     * `messages` is the whole history; read them with `GET /:id/messages?before=`.
+     */
+    earlierMessages: z.number().int().nonnegative().optional(),
     /** Events of the turn still in progress, or `null` when the session is idle. */
     inProgressTurn: z.array(SessionEventSchema).nullable(),
     /** Server-held status projection. */

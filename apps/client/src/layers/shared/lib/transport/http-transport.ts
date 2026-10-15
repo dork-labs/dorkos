@@ -11,12 +11,14 @@ import { createBrowserMethods } from './browser-methods';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveStableClientId } from './client-id';
+import { createComputerMethods } from './computer-methods';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
 import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
+import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
 import { createShapeMethods } from './shape-methods';
@@ -33,14 +35,18 @@ import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
+import { createCommitmentMethods } from './commitment-methods';
+import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
 import { createConnectorMethods } from './connector-methods';
 import { createMcpMethods } from './mcp-methods';
 import { createTeamMethods } from './team-methods';
 import { createProfileMethods } from './profile-methods';
+import { createOnboardingMethods } from './onboarding-methods';
 import { createSearchMethods } from './search-methods';
 import { createAccountMethods } from './account-methods';
+import { createAuditMethods } from './audit-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -55,12 +61,14 @@ import { createAccountMethods } from './account-methods';
 export interface HttpTransport
   extends
     ReturnType<typeof createBrowserMethods>,
+    ReturnType<typeof createComputerMethods>,
     ReturnType<typeof createTasksMethods>,
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
     ReturnType<typeof createSessionMethods>,
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
+    ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
     ReturnType<typeof createShapeMethods>,
@@ -77,14 +85,18 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
+    ReturnType<typeof createCommitmentMethods>,
+    ReturnType<typeof createHeartbeatMethods>,
     ReturnType<typeof createNotificationMethods>,
     ReturnType<typeof createPushMethods>,
     ReturnType<typeof createConnectorMethods>,
     ReturnType<typeof createMcpMethods>,
     ReturnType<typeof createTeamMethods>,
     ReturnType<typeof createProfileMethods>,
+    ReturnType<typeof createOnboardingMethods>,
     ReturnType<typeof createSearchMethods>,
-    ReturnType<typeof createAccountMethods> {}
+    ReturnType<typeof createAccountMethods>,
+    ReturnType<typeof createAuditMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -101,6 +113,7 @@ export class HttpTransport implements Transport {
     this.clientId = resolveStableClientId();
     Object.assign(
       this,
+      createComputerMethods(baseUrl, () => this.clientId),
       createTasksMethods(baseUrl),
       createBrowserMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
@@ -108,6 +121,7 @@ export class HttpTransport implements Transport {
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
+      createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
       createShapeMethods(baseUrl),
@@ -124,14 +138,18 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
+      createCommitmentMethods(baseUrl),
+      createHeartbeatMethods(baseUrl),
       createNotificationMethods(baseUrl),
       createPushMethods(baseUrl),
       createConnectorMethods(baseUrl),
       createMcpMethods(baseUrl),
       createTeamMethods(baseUrl),
       createProfileMethods(baseUrl),
+      createOnboardingMethods(baseUrl),
       createSearchMethods(baseUrl),
-      createAccountMethods(baseUrl)
+      createAccountMethods(baseUrl),
+      createAuditMethods(baseUrl)
     );
   }
 }

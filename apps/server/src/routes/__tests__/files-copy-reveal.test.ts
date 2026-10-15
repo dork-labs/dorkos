@@ -59,12 +59,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
 
 /** Make the second validateBoundary call (target-vs-cwd) reject like an escape. */
 function mockBoundaryEscape() {

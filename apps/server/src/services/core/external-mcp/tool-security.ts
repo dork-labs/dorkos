@@ -40,6 +40,7 @@
  */
 import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
+import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
@@ -128,7 +129,7 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  *
  * The rooms reads (room-participation spec §10.3, agent-memory spec D6) are the
  * only members: they return **other members' messages**, which is the same
- * content the HTTP room routes serve behind `sessionGate`. A `curl` demo that
+ * content the HTTP room routes serve behind the session gate. A `curl` demo that
  * works with no config is worth a health check and a listing; it is not worth
  * somebody's conversations. Membership still gates them on every surface — this
  * decides only whether an unauthenticated local caller may ask at all.
@@ -191,6 +192,10 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // it is the operator's billing state and the folders their accounts live in,
   // which a tokenless health check has no need of.
   'accounts_usage',
+  // What an agent did on its own: its beats, what it holds and its measures
+  // (spec `heartbeats` §13). Counts and summaries only, but it is the shape of
+  // somebody's work, which a tokenless health check has no need of.
+  'heartbeat_status',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
@@ -217,5 +222,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     // Listed for the same reason: `audit_verify` withholds `readOnlyCarveOut`,
     // because a tokenless health check has no need to walk the audit log.
     ...auditDomain.capabilities,
+    // Listed for the same reason: `list_paused_agents` withholds
+    // `readOnlyCarveOut`; a tokenless caller has no need of who paused whom.
+    ...agentPauseDomain.capabilities,
   ]),
 ]);

@@ -1,6 +1,5 @@
 /** Real ordinary router/socket/FILE writer acceptance; full-app Host/session gates remain app-owned. */
 import { expect, it } from 'vitest';
-import express from 'express';
 import { createServer } from 'node:http';
 import type { Socket } from 'node:net';
 import fs from 'node:fs/promises';
@@ -9,7 +8,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sql } from '@dorkos/db';
 import { setRoomService, clearRoomService } from '../../../rooms/index.js';
-import routes, { canvasDocJsonParser } from '../../../../routes/canvas-doc-events.js';
+import { originalDocHttpListener } from './original-doc-http-listener.js';
 import { nativeRoomAuthorityFixture } from '../writes/__tests__/authority-fixtures.js';
 it('ordinary native checkbox HTTP writes once across response retry and refuses path mismatch and revoked permission', async () => {
   const dir = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'native-checkbox-http-')));
@@ -23,8 +22,9 @@ it('ordinary native checkbox HTTP writes once across response retry and refuses 
       first = cause;
     }
   };
-  const app = express(),
-    server = createServer(app),
+  const server = createServer(
+      originalDocHttpListener(() => h?.http, { docMount: '/api/canvas/docs' })
+    ),
     sockets = new Set<Socket>();
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -35,8 +35,6 @@ it('ordinary native checkbox HTTP writes once across response retry and refuses 
       checkboxFile: true,
     });
     setRoomService(h.rooms.service);
-    app.locals.docChannelHttp = h.http;
-    app.use('/api/canvas/docs', canvasDocJsonParser, routes);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', () => {

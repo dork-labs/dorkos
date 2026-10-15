@@ -159,7 +159,6 @@ describe('PermissionService.undo', () => {
       preset: 'balanced',
       defaults: { areas: { rooms: 'blocked' }, actions: { 'rooms.merge': 'ask' } },
       trustStop: 'act',
-      autonomyAcknowledged: true,
     });
     await world.service.setPreset({ preset: 'full', surface: 'settings' }, LOCAL);
     expect(world.stops.global).toBe('autonomy');
@@ -184,7 +183,7 @@ describe('PermissionService.undo', () => {
   });
 
   it('refuses a preset switch whose preset moved on, whole', async () => {
-    const world = createPermissionWorld({ preset: 'balanced', autonomyAcknowledged: true });
+    const world = createPermissionWorld({ preset: 'balanced' });
     await world.service.setPreset({ preset: 'full', surface: 'settings' }, LOCAL);
     const switched = world.events[0]!.id;
     await world.service.setPreset({ preset: 'careful', surface: 'settings' }, LOCAL);
@@ -195,24 +194,14 @@ describe('PermissionService.undo', () => {
     expect(world.config.preset).toBe('careful');
   });
 
-  it('asks for the Full autonomy acknowledgement (428) before writing anything', async () => {
-    // The stop was Full autonomy with no acknowledgement on file (set outside
-    // the app), and a switch to Balanced moved it to Act.
+  it('puts Full autonomy back with nothing to acknowledge first (DOR-2739)', async () => {
     const world = createPermissionWorld({ preset: 'full', trustStop: 'autonomy' });
     await world.service.setPreset({ preset: 'balanced', surface: 'settings' }, LOCAL);
     const switched = world.events[0]!.id;
 
-    await expect(world.service.undo(switched, {}, LOCAL)).rejects.toMatchObject({
-      code: 'AUTONOMY_ACK_REQUIRED',
-      status: 428,
-    });
-    expect(world.config.preset).toBe('balanced');
-    expect(world.stops.global).toBe('act');
-
-    await world.service.undo(switched, { acknowledgeAutonomy: true }, LOCAL);
+    await world.service.undo(switched, {}, LOCAL);
     expect(world.config.preset).toBe('full');
     expect(world.stops.global).toBe('autonomy');
-    expect(world.autonomy.acknowledgedAt).not.toBeNull();
   });
 
   it('never writes Allowed in a locked area, force or not, and says so', async () => {
@@ -385,7 +374,7 @@ describe('PermissionService.undo', () => {
   });
 
   it('words a Files & commands change as the stop in its history line', async () => {
-    const world = createPermissionWorld({ agents: TWO_AGENTS, autonomyAcknowledged: true });
+    const world = createPermissionWorld({ agents: TWO_AGENTS });
     await world.service.setAgent(
       'agent-test',
       { filesAndCommands: 'ask', surface: 'agent-page' },
@@ -570,7 +559,6 @@ describe('the last change behind each state (the "why?" lines)', () => {
     const world = createPermissionWorld({
       preset: 'balanced',
       agents: TWO_AGENTS,
-      autonomyAcknowledged: true,
     });
     await world.service.setAgent(
       'agent-test',
@@ -589,7 +577,6 @@ describe('the last change behind each state (the "why?" lines)', () => {
     const world = createPermissionWorld({
       preset: 'balanced',
       agents: TWO_AGENTS,
-      autonomyAcknowledged: true,
     });
     await world.service.setAgent(
       'agent-test',

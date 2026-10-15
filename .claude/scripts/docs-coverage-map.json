@@ -56,7 +56,9 @@
         "services/audit/",
         "schema/audit/",
         "audit-schemas",
-        "routes/audit.ts"
+        "routes/audit.ts",
+        "services/mesh/pause/",
+        "routes/agent-pause.ts"
       ]
     },
     {
@@ -447,6 +449,25 @@
       ]
     },
     {
+      "guide": "official-community-operations.md",
+      "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
+      "patterns": [
+        "apps/community/src/live/monitoring.ts",
+        "apps/community/load/",
+        "official-community-operations"
+      ]
+    },
+    {
+      "guide": "official-community-host.md",
+      "description": "Official Community Space host agent runbook: the staff install's Member seat, enrolling the host agent, its exact tool allowlist, read-only docs, `answerIn` and its wake budget, and what to watch",
+      "patterns": [
+        "communities/remote/wake/answer-in",
+        "routes/community-answer-in",
+        "templates/community-host/",
+        "official-community-host"
+      ]
+    },
+    {
       "guide": "adding-a-memory-provider.md",
       "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
       "patterns": [
@@ -493,6 +514,14 @@
         "apps/site/src/db/auth-schema",
         "apps/site/drizzle",
         "apps/server/src/services/rooms/author-registry"
+      ]
+    },
+    {
+      "guide": "keep-awake.md",
+      "description": "Keep-awake on a real Mac: the opt-in caffeinate smoke (`pnpm --filter @dorkos/keep-awake smoke`), why it is not in CI, and the manual battery, background-helper, lid and denied-recovery scenarios with their `pmset` commands",
+      "patterns": [
+        "packages/keep-awake/",
+        "services/core/keep-awake/"
       ]
     },
     {
@@ -657,6 +686,16 @@
         "apps/client/src/layers/features/conversation/ui/LiveLane.tsx",
         "apps/server/src/services/session/pending-interactions",
         "specs/unified-conversation"
+      ]
+    },
+    {
+      "doc": "docs/concepts/heartbeats.mdx",
+      "description": "Heartbeats: how agents wake on their own, how they tell people, reports, cheap checks on credits, and the measures",
+      "patterns": [
+        "apps/server/src/services/heartbeats/",
+        "apps/server/src/services/decisions/",
+        "apps/client/src/layers/features/profile/ui/heartbeat/",
+        "packages/operating-skills/src/heartbeat-templates"
       ]
     },
     {
@@ -883,7 +922,8 @@
       "patterns": [
         "services/audit/",
         "schema/audit/",
-        "services/activity/"
+        "services/activity/",
+        "services/mesh/pause/"
       ]
     },
     {
@@ -959,6 +999,14 @@
       ]
     },
     {
+      "doc": "docs/guides/spin-off-chats.mdx",
+      "description": "Spin-off chats: starting one, who sent a message, report-back, stopping one, helpers vs spin-offs",
+      "patterns": [
+        "services/session/chat-messages/",
+        "packages/operating-skills/"
+      ]
+    },
+    {
       "doc": "docs/guides/workspaces.mdx",
       "description": "Workspaces user guide",
       "patterns": [
@@ -990,6 +1038,14 @@
         "services/relay/chat-bridge/",
         "createBridgedRoom",
         "room_bridges"
+      ]
+    },
+    {
+      "doc": "docs/guides/dorkos-community.mdx",
+      "description": "The DorkOS Community Space guide (gated: not open yet), join/leave, display name, report, rules, moderation",
+      "patterns": [
+        "apps/community/",
+        "specs/official-community-space/"
       ]
     },
     {
@@ -1132,6 +1188,17 @@
         "services/runtimes/",
         "packages/shared/src/agent-runtime.ts",
         "runtime-registry"
+      ]
+    },
+    {
+      "doc": "docs/guides/background-work.mdx",
+      "description": "Work that runs after a reply, per runtime: turn end, a DorkOS restart, a settings change",
+      "patterns": [
+        "services/runtimes/claude-code/sessions/",
+        "background-work-ledger",
+        "codex/app-server/background-work",
+        "opencode/events/",
+        "opencode/server-manager"
       ]
     },
     {

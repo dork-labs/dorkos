@@ -7,45 +7,31 @@ import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { ImportFailure, importedChannel } from './manifest.js';
 import type { V2Collection } from './v2-archive.js';
 import type { V2Row } from './v2-rows.js';
+import {
+  allRestored,
+  insertRows,
+  invalid,
+  wroteAll,
+  type BatchWriter,
+  type RestoreScope,
+} from './v2-write-helpers.js';
+import { writeBans, writeReports } from './v2-writers-moderation.js';
+
+export type { BatchWriter, RestoreScope };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-function invalid(condition: boolean): void {
-  if (condition) throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
-}
-
-/** Insert one batch of a step's rows in the caller's transaction. */
-export type BatchWriter<K extends V2Collection> = (
-  client: PoolClient,
-  rows: V2Row[K][],
-  scope: RestoreScope
-) => Promise<void>;
-
-/** What every batch writer needs: the community, the ID derivation, and the export. */
-export interface RestoreScope {
-  communityId: string;
-  importId: string;
-  derive: (sourceId: string) => string;
-  ownerSourceId: string;
-}
-
-/** Refuse unless an `ON CONFLICT DO NOTHING` insert wrote every row: a duplicate in the export. */
-function wroteAll(result: { rowCount: number | null }, expected: number): void {
-  invalid((result.rowCount ?? 0) !== expected);
-}
-
-const insertRows = (client: PoolClient, sql: string, rows: unknown[], communityId: string) =>
-  client.query(sql, [JSON.stringify(rows), communityId]);
 
 const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
   wroteAll(
     await insertRows(
       client,
       // A channel's last_seq grows as its messages are restored, batch by batch.
-      `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,created_at)
-       SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,0,1,r.created_at
+      `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,
+         created_at,auto_join,slow_mode_seconds)
+       SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,0,1,r.created_at,r.auto_join,
+         r.slow_mode_seconds
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,name text,description text,visibility text,
-         archived boolean,created_at timestamptz)
+         archived boolean,created_at timestamptz,auto_join boolean,slow_mode_seconds integer)
        ON CONFLICT DO NOTHING`,
       rows.map(importedChannel).map((channel) => ({
         id: scope.derive(channel.id),
@@ -54,6 +40,9 @@ const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
         visibility: channel.visibility,
         archived: channel.archived,
         created_at: channel.created_at,
+        // Only a public channel is joined on arrival, whatever the export says.
+        auto_join: channel.auto_join === true && channel.visibility === 'public',
+        slow_mode_seconds: channel.slow_mode_seconds ?? 0,
       })),
       scope.communityId
     ),
@@ -85,10 +74,13 @@ const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
   wroteAll(
     await insertRows(
       client,
-      `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,removed_at,origin)
-       SELECT r.id,$2,NULL,r.display_name,r.handle,r.role,false,r.created_at,r.removed_at,'imported'
+      `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,removed_at,
+         origin,muted_until,rules_accepted_version)
+       SELECT r.id,$2,NULL,r.display_name,r.handle,r.role,false,r.created_at,r.removed_at,'imported',
+         r.muted_until,r.rules_accepted_version
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,display_name text,handle text,role text,
-         created_at timestamptz,removed_at timestamptz)
+         created_at timestamptz,removed_at timestamptz,muted_until timestamptz,
+         rules_accepted_version integer)
        ON CONFLICT DO NOTHING`,
       rows.map((member) => ({
         id: scope.derive(member.id),
@@ -97,6 +89,10 @@ const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
         role: member.role,
         created_at: member.created_at,
         removed_at: member.removed_at,
+        // A mute still running when the export was made keeps running; an older archive has none.
+        // Nobody can lift a mute on the owner, so the adopted owner never arrives muted.
+        muted_until: member.id === scope.ownerSourceId ? null : (member.muted_until ?? null),
+        rules_accepted_version: member.rules_accepted_version ?? 0,
       })),
       scope.communityId
     ),
@@ -148,25 +144,6 @@ const writeAgents: BatchWriter<'agents'> = async (client, rows, scope) => {
     scope.communityId
   );
 };
-
-/**
- * Refuse unless every id in `ids` (derived) is a row of `table` in this import's community: a
- * membership that names a channel, member, or agent the export does not hold is tampering.
- */
-async function allRestored(
-  client: PoolClient,
-  table: 'channels' | 'members' | 'agents',
-  ids: readonly string[],
-  communityId: string
-): Promise<void> {
-  const distinct = [...new Set(ids)];
-  if (!distinct.length) return;
-  const found = await client.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM ${table} WHERE community_id=$1 AND id=ANY($2::uuid[])`,
-    [communityId, distinct]
-  );
-  invalid(found.rows[0].n !== distinct.length);
-}
 
 /**
  * Only the adopted owner's own memberships are restored: everyone else's member row is
@@ -303,6 +280,9 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
       erased_at: entry.removal === 'erased' ? entry.created_at : null,
     };
   });
+  // No live notice: an import writes only into a community still waiting for its owner
+  // (imports/job.ts refuses any other), and nobody can open a stream there until the claim
+  // makes it active. Every stream opened after that reads the imported history from the start.
   wroteAll(
     await insertRows(
       client,
@@ -434,13 +414,13 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
     await insertRows(
       client,
       `INSERT INTO audit_events(id,community_id,actor_member_id,actor_kind,action,subject_id,
-         prior_state,next_state,changed_fields,created_at,origin)
+         prior_state,next_state,changed_fields,created_at,origin,decision)
        SELECT r.id,$2,r.actor_member_id,r.actor_kind,r.action,r.subject_id,r.prior_state,
          r.next_state,ARRAY(SELECT jsonb_array_elements_text(r.changed_fields)),r.created_at,
-         'imported'
+         'imported',r.decision
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,actor_member_id uuid,actor_kind text,
          action text,subject_id text,prior_state text,next_state text,changed_fields jsonb,
-         created_at timestamptz)
+         created_at timestamptz,decision jsonb)
        ON CONFLICT DO NOTHING`,
       rows.map((event) => ({
         id: scope.derive(event.id),
@@ -455,6 +435,7 @@ const writeAuditEvents: BatchWriter<'auditEvents'> = async (client, rows, scope)
         next_state: event.next_state,
         changed_fields: event.changed_fields,
         created_at: event.created_at,
+        decision: event.decision ?? null,
       })),
       scope.communityId
     ),
@@ -475,6 +456,9 @@ export const STEPS: { key: V2Collection; write: BatchWriter<never> }[] = [
   { key: 'entries', write: writeEntries as BatchWriter<never> },
   { key: 'attachments', write: writeAttachments as BatchWriter<never> },
   { key: 'auditEvents', write: writeAuditEvents as BatchWriter<never> },
+  // Last, so a restore that was already under way when bans arrived keeps its step numbers.
+  { key: 'bans', write: writeBans as BatchWriter<never> },
+  { key: 'reports', write: writeReports as BatchWriter<never> },
 ];
 
 /** A row's weight in a batch: a message counts its mentions too. */

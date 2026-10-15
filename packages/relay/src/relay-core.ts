@@ -1,3 +1,16 @@
+import type * as CoreTypes from './relay-core-types.js';
+import {
+  createOriginalServerDocumentOrigin,
+  type OriginalDocumentOriginContext,
+} from './relay-core-document-origin.js';
+import {
+  loadOriginalRelayReliability,
+  startOriginalRelayConfigWatcher,
+  runOriginalRelayTtlSweep,
+  drainOriginalRelayBacklog,
+  runOriginalRelayGcSweep,
+  type OriginalRelayMaintenanceContext,
+} from './relay-core-maintenance.js';
 /**
  * Main entry point for the Relay message bus.
  *
@@ -9,19 +22,17 @@
 import * as path from 'node:path';
 import * as os from 'node:os';
 import fs from 'node:fs';
-import chokidar, { type FSWatcher } from 'chokidar';
 import { RelayDatabase } from './lib/relay-database.js';
 import { EndpointRegistry } from './endpoint-registry.js';
 import { SubscriptionRegistry } from './subscription-registry.js';
 import { MaildirStore } from './maildir-store.js';
-import type { RelayReceiptReadContext } from './delivery-receipt-store.js';
 import { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
 import { SqliteIndex } from './sqlite-index.js';
 import { DeadLetterQueue } from './dead-letter-queue.js';
 import { AccessControl } from './access-control.js';
 import { SignalEmitter } from './signal-emitter.js';
 import { DEFAULT_RATE_LIMIT_CONFIG } from './rate-limiter.js';
-import { CircuitBreakerManager, DEFAULT_CB_CONFIG } from './circuit-breaker.js';
+import { CircuitBreakerManager } from './circuit-breaker.js';
 import { DEFAULT_BP_CONFIG } from './backpressure.js';
 import { DeliveryPipeline } from './delivery-pipeline.js';
 import { AdapterDelivery } from './adapter-delivery.js';
@@ -34,16 +45,10 @@ import {
   DEFAULT_IN_FLIGHT_RECOVERY_MS,
   DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
 } from './relay-gc.js';
-import type { RelayGcSweepOptions } from './relay-gc.js';
 import { createReplyFailureNotifier } from './reply-failure-notifier.js';
 import { createChatNoticeSender } from './chat-notice.js';
-import type { ChatNoticeTargetResolver } from './chat-notice.js';
-import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
-import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline, createOriginalDocumentPublishPipeline } from './relay-publish.js';
-import { RelayTurnCeiling, dispatchTurnAccounting } from './turn-ceiling.js';
-import type { ServerDocumentRelayOrigin, ServerDocumentRelayAccess } from './document-delivery.js';
-import { InboundTurnBudgets } from './inbound-turn-budgets.js';
+import { RelayTurnCeiling } from './turn-ceiling.js';
 import { executeSubscribe, executeSignal, executeOnSignal } from './relay-subscriptions.js';
 import {
   executeRegisterEndpoint,
@@ -62,34 +67,7 @@ import {
   executeGetMetrics,
 } from './relay-endpoint-management.js';
 import { isDocumentSubject, type Signal, type RelayAccessRule } from '@dorkos/shared/relay-schemas';
-import type {
-  BackpressureConfig,
-  RelayOptions,
-  PublishOptions,
-  PrivateNotificationOptions,
-  PrivateNotificationResult,
-  MessageHandler,
-  SignalHandler,
-  Unsubscribe,
-  EndpointInfo,
-  RelayMetrics,
-  AdapterRegistryLike,
-  AdapterContext,
-  InitiateConsentGate,
-  RelayLogger,
-} from './types.js';
 import { noopLogger } from './types.js';
-import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
-import type { IndexedMessage } from './sqlite-index.js';
-import type { PublishResult } from './relay-publish.js';
-import type { SubscriptionDeps } from './relay-subscriptions.js';
-import type {
-  EndpointManagementDeps,
-  InboxMessage,
-  MessageDetail,
-  ReadInboxOptions,
-  RegisterEndpointOptions,
-} from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
@@ -100,6 +78,18 @@ export type {
   RegisterEndpointOptions,
 } from './relay-endpoint-management.js';
 
+type OriginalRelayCoreContext = OriginalDocumentOriginContext & OriginalRelayMaintenanceContext;
+const relayCoreOwners = new WeakMap<object, OriginalRelayCoreContext>();
+const relayCoreOwnerGet = WeakMap.prototype.get,
+  relayCoreOwnerSet = WeakMap.prototype.set,
+  relayCoreOwnerApply = Reflect.apply;
+/** Exact constructor-owned key lookup, with no exported issuer or registry. */
+export function requireOriginalRelayCoreOwner(key: object): OriginalRelayCoreContext {
+  const context = relayCoreOwnerApply(relayCoreOwnerGet, relayCoreOwners, [key]) as
+    OriginalRelayCoreContext | undefined;
+  if (!context) throw new Error('Original RelayCore owner required');
+  return context;
+}
 // === Constants ===
 
 /**
@@ -116,14 +106,14 @@ const DEFAULT_CALL_BUDGET = 10;
 
 // Only the actual fresh-bus constructor below can register an origin. No mint/checker
 // callback or existing-bus attachment seam is exported, even from an internal module.
-const documentOrigins = new WeakMap<object, ServerDocumentRelayAccess>();
+const documentOrigins = new WeakMap<object, CoreTypes.ServerDocumentRelayAccess>();
 const originalAccessCheck = AccessControl.prototype.checkAccess;
 const originalDocumentSubscribe = SubscriptionRegistry.prototype.subscribe;
 
 /** Consume the actual new bus binding once; no second source may replace its owner. */
 export function consumeServerDocumentRelayOrigin(
-  origin: ServerDocumentRelayOrigin
-): ServerDocumentRelayAccess {
+  origin: CoreTypes.ServerDocumentRelayOrigin
+): CoreTypes.ServerDocumentRelayAccess {
   const access = documentOrigins.get(origin);
   if (!access) throw new Error('DOCUMENT_RELAY_ORIGIN_REQUIRED');
   // Retire even when closed: failure cannot enable a second assembly.
@@ -162,165 +152,16 @@ export function consumeServerDocumentRelayOrigin(
  */
 export class RelayCore {
   /** Construct a fresh server bus and its single source-assembly origin together. */
-  static createServerDocumentRelay(options: RelayOptions): {
-    relay: RelayCore;
-    origin: ServerDocumentRelayOrigin;
-  } {
+  static createServerDocumentRelay(options: CoreTypes.RelayOptions): CoreTypes.ServerDocumentRelay {
     const relay = new RelayCore(options);
-    const origin = Object.freeze(Object.create(null)) as ServerDocumentRelayOrigin;
-    const accessControl = relay.#accessControl;
-    const originalRegistry = relay.subscriptionRegistry;
-    const requireOpen = () => {
-      if (relay.#closed) throw new Error('RelayCore has been closed');
-    };
-    documentOrigins.set(
-      origin,
-      Object.freeze({
-        requireOpen,
-        publishAcceptedDocumentWake: (
-          wake: import('./document-delivery.js').OriginalDocumentRelayWake
-        ) => {
-          requireOpen();
-          // Capture primitive own fields before ACL/configuration work can reenter.
-          const keys = [
-            'documentId',
-            'batchId',
-            'generation',
-            'openerAgentId',
-            'targetAgentId',
-          ] as const;
-          if (
-            !wake ||
-            Object.getPrototypeOf(wake) !== Object.prototype ||
-            Object.keys(wake).length !== keys.length
-          )
-            throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
-          const data: Record<string, string> = {};
-          for (const key of keys) {
-            const field = Object.getOwnPropertyDescriptor(wake, key);
-            if (
-              !field ||
-              !('value' in field) ||
-              typeof field.value !== 'string' ||
-              !field.value ||
-              Buffer.byteLength(field.value) > 4096
-            )
-              throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
-            data[key] = field.value;
-          }
-          const identifier = /^[A-Za-z0-9_-]{1,200}$/u;
-          if (!identifier.test(data.openerAgentId!) || !identifier.test(data.targetAgentId!))
-            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
-          const result = originalAccessCheck.call(
-            accessControl,
-            `relay.agent.${data.openerAgentId}`,
-            `relay.agent.${data.targetAgentId}`
-          );
-          if (!result.allowed || result.matchedRule?.action !== 'allow')
-            throw new Error('DOCUMENT_RELAY_EXPLICIT_OPENER_ACL_REQUIRED');
-          requireOpen();
-          return relay.#publishDocumentWake(
-            Object.freeze(
-              data
-            ) as unknown as import('./document-delivery.js').OriginalDocumentRelayWake
-          );
-        },
-        subscribeDocumentWakes: (
-          listener: (wake: import('./document-delivery.js').OriginalDocumentRelayWake) => void
-        ) => {
-          requireOpen();
-          if (typeof listener !== 'function')
-            throw new Error('DOCUMENT_RELAY_DATA_LISTENER_REQUIRED');
-          return originalDocumentSubscribe.call(originalRegistry, 'relay.doc.batch', (envelope) => {
-            requireOpen();
-            if (envelope.subject !== 'relay.doc.batch' || envelope.from !== 'relay.doc.publisher')
-              return;
-            const wake = envelope.payload,
-              keys = [
-                'documentId',
-                'batchId',
-                'generation',
-                'openerAgentId',
-                'targetAgentId',
-              ] as const;
-            if (
-              !wake ||
-              typeof wake !== 'object' ||
-              Object.getPrototypeOf(wake) !== Object.prototype ||
-              Object.keys(wake).length !== keys.length
-            )
-              throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
-            const data: Record<string, string> = {};
-            for (const key of keys) {
-              const slot = Object.getOwnPropertyDescriptor(wake, key);
-              if (
-                !slot ||
-                !('value' in slot) ||
-                typeof slot.value !== 'string' ||
-                !slot.value ||
-                Buffer.byteLength(slot.value) > 4096
-              )
-                throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
-              data[key] = slot.value;
-            }
-            requireOpen();
-            listener(
-              Object.freeze(
-                data
-              ) as unknown as import('./document-delivery.js').OriginalDocumentRelayWake
-            );
-          });
-        },
-        reserveDocumentTurn: (targetAgentId: string) => {
-          requireOpen();
-          if (typeof targetAgentId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(targetAgentId))
-            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
-          // The exact instance also counts ordinary adapter dispatch. Do not create
-          // another counter or call overridable public tryReserve/release methods.
-          const accounting = dispatchTurnAccounting(relay.#documentTurnCeiling);
-          const decision = accounting.reserve(`relay.agent.${targetAgentId}`);
-          let refunded = false;
-          return Object.freeze({
-            allowed: decision.allowed,
-            counted: decision.counted,
-            scope: decision.scope,
-            refundKnownNoStart() {
-              if (refunded) return;
-              refunded = true;
-              decision.refund?.();
-            },
-          });
-        },
-        requireExplicitOpenerAccess: (openerAgentId: string, targetAgentId: string) => {
-          requireOpen();
-          // Neither caller-controlled subject strings nor the ordinary default allow are authority.
-          const identifier = /^[A-Za-z0-9_-]{1,200}$/u;
-          if (
-            typeof openerAgentId !== 'string' ||
-            typeof targetAgentId !== 'string' ||
-            !identifier.test(openerAgentId) ||
-            !identifier.test(targetAgentId)
-          )
-            throw new Error('DOCUMENT_RELAY_AGENT_ID_INVALID');
-          const result = originalAccessCheck.call(
-            accessControl,
-            `relay.agent.${openerAgentId}`,
-            `relay.agent.${targetAgentId}`
-          );
-          if (!result.allowed || result.matchedRule?.action !== 'allow')
-            throw new Error('DOCUMENT_RELAY_EXPLICIT_OPENER_ACL_REQUIRED');
-        },
-      })
-    );
-    return Object.freeze({ relay, origin });
+    return createOriginalServerDocumentOrigin(relay.#ownerKey);
   }
+  readonly #ownerKey = {};
 
-  readonly #publishDocumentWake: (
-    wake: import('./document-delivery.js').OriginalDocumentRelayWake
-  ) => Promise<PublishResult>;
+  readonly #publishDocumentWake: CoreTypes.PublishDocumentWake;
   private readonly publishPipeline: RelayPublishPipeline;
-  private readonly subscriptionDeps: SubscriptionDeps;
-  private readonly endpointDeps: EndpointManagementDeps;
+  private readonly subscriptionDeps: CoreTypes.SubscriptionDeps;
+  private readonly endpointDeps: CoreTypes.EndpointManagementDeps;
   private readonly subscriptionRegistry: SubscriptionRegistry;
   private readonly deliveryPipeline: DeliveryPipeline;
   private readonly signalEmitter: SignalEmitter;
@@ -329,10 +170,10 @@ export class RelayCore {
   readonly #accessControl: AccessControl;
   readonly #documentTurnCeiling: RelayTurnCeiling;
   private readonly configPath: string;
-  private configWatcher: FSWatcher | null = null;
-  private readonly logger: RelayLogger;
+  private configWatcher: CoreTypes.FSWatcher | null = null;
+  private readonly logger: CoreTypes.RelayLogger;
   private circuitBreaker: CircuitBreakerManager;
-  private backpressureConfig: BackpressureConfig;
+  private backpressureConfig: CoreTypes.BackpressureConfig;
   private readonly dispatchInboxTtlMs: number;
   private readonly ttlSweepIntervalMs: number;
   private ttlSweepInterval?: ReturnType<typeof setInterval>;
@@ -343,24 +184,13 @@ export class RelayCore {
    * Unset means "this relay cannot tell whose chat that is", which is a denial —
    * see {@link setChatNoticeTargetResolver}.
    */
-  private chatNoticeTargetResolver?: ChatNoticeTargetResolver;
+  private chatNoticeTargetResolver?: CoreTypes.ChatNoticeTargetResolver;
   private readonly gcIntervalMs: number;
   private gcInterval?: ReturnType<typeof setInterval>;
   #closed = false;
-  private readonly adapterRegistry?: AdapterRegistryLike;
-  /**
-   * Which inbound envelope each running agent turn is answering (DOR-791).
-   *
-   * Public because the two sides that need it live in different packages: the
-   * adapter that dispatches a turn binds here, and the host's `relay_send*`
-   * tools read it back so an outbound send continues the inbound envelope's
-   * budget instead of minting a fresh one. Hanging it off the relay rather than
-   * threading a separate dependency is what keeps those two reading the SAME
-   * map — a second instance would silently thread nothing.
-   */
-  readonly inboundBudgets = new InboundTurnBudgets();
+  private readonly adapterRegistry?: CoreTypes.AdapterRegistryLike;
 
-  constructor(options?: RelayOptions) {
+  constructor(options?: CoreTypes.RelayOptions) {
     this.logger = options?.logger ?? noopLogger;
     const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
     fs.mkdirSync(dataDir, { recursive: true });
@@ -522,8 +352,56 @@ export class RelayCore {
     );
 
     this.configPath = path.join(dataDir, 'config.json');
-    this.loadReliabilityConfig();
-    this.startConfigWatcher();
+    const createOriginalOwnerContext = (owner: RelayCore): OriginalRelayCoreContext =>
+      ({
+        relay: this,
+        accessControl: this.#accessControl,
+        originalRegistry: this.subscriptionRegistry,
+        requireOpen: () => {
+          if (this.#closed) throw new Error('RelayCore has been closed');
+        },
+        originalAccessCheck,
+        originalDocumentSubscribe,
+        issueOrigin: (origin, access) => {
+          documentOrigins.set(origin, access);
+        },
+        publishDocumentWake: (wake: import('./document-delivery.js').OriginalDocumentRelayWake) =>
+          this.#publishDocumentWake(wake),
+        documentTurnCeiling: this.#documentTurnCeiling,
+        configPath: this.configPath,
+        publishPipeline: this.publishPipeline,
+        circuitBreaker: this.circuitBreaker,
+        get backpressureConfig() {
+          return owner.backpressureConfig;
+        },
+        set backpressureConfig(value: CoreTypes.BackpressureConfig) {
+          owner.backpressureConfig = value;
+        },
+        deliveryPipeline: this.deliveryPipeline,
+        gc: this.gc,
+        get configWatcher() {
+          return owner.configWatcher;
+        },
+        set configWatcher(value: CoreTypes.FSWatcher | null) {
+          owner.configWatcher = value;
+        },
+        loadReliabilityConfig: () => loadOriginalRelayReliability(this.#ownerKey),
+        logger: this.logger,
+        endpointDeps: this.endpointDeps,
+        get dispatchInboxTtlMs() {
+          return owner.dispatchInboxTtlMs;
+        },
+        get closed() {
+          return owner.#closed;
+        },
+        unregisterEndpoint: (subject: string) => this.unregisterEndpoint(subject),
+      }) satisfies OriginalRelayCoreContext;
+    relayCoreOwnerApply(relayCoreOwnerSet, relayCoreOwners, [
+      this.#ownerKey,
+      createOriginalOwnerContext(this),
+    ]);
+    loadOriginalRelayReliability(this.#ownerKey);
+    startOriginalRelayConfigWatcher(this.#ownerKey);
 
     this.dispatchInboxTtlMs = options?.dispatchInboxTtlMs ?? 30 * 60 * 1000;
     this.ttlSweepIntervalMs = options?.ttlSweepIntervalMs ?? 5 * 60 * 1000;
@@ -543,7 +421,7 @@ export class RelayCore {
    *
    * @param builder - Callback that enriches AdapterContext for a given subject
    */
-  setAdapterContextBuilder(builder: (subject: string) => AdapterContext | undefined): void {
+  setAdapterContextBuilder(builder: CoreTypes.AdapterContextBuilder): void {
     this.publishPipeline.setAdapterContextBuilder(builder);
   }
 
@@ -555,7 +433,7 @@ export class RelayCore {
    *
    * @param gate - The consent gate predicate.
    */
-  setInitiateConsentGate(gate: InitiateConsentGate): void {
+  setInitiateConsentGate(gate: CoreTypes.InitiateConsentGate): void {
     this.publishPipeline.setInitiateConsentGate(gate);
   }
 
@@ -571,7 +449,7 @@ export class RelayCore {
    *
    * @param resolver - Chat subject → the enabled binding that owns it, or null.
    */
-  setChatNoticeTargetResolver(resolver: ChatNoticeTargetResolver): void {
+  setChatNoticeTargetResolver(resolver: CoreTypes.ChatNoticeTargetResolver): void {
     this.chatNoticeTargetResolver = resolver;
   }
 
@@ -581,8 +459,8 @@ export class RelayCore {
   async publish(
     subject: string,
     payload: unknown,
-    options: PublishOptions
-  ): Promise<PublishResult> {
+    options: CoreTypes.PublishOptions
+  ): Promise<CoreTypes.PublishResult> {
     if (options.receiptContext && isDetachedAgentSubject(subject)) {
       this.database.receipts.assertOutsideTransaction();
     }
@@ -591,7 +469,7 @@ export class RelayCore {
   }
 
   /** Read minimized authoritative metadata with a server-resolved ownership policy. */
-  getDeliveryReceipt(messageId: string, context: RelayReceiptReadContext) {
+  getDeliveryReceipt(messageId: string, context: CoreTypes.RelayReceiptReadContext) {
     return this.database.receipts.get(messageId, context);
   }
 
@@ -599,8 +477,8 @@ export class RelayCore {
   async deliverPrivateNotification(
     subject: string,
     text: string,
-    options: PrivateNotificationOptions
-  ): Promise<PrivateNotificationResult> {
+    options: CoreTypes.PrivateNotificationOptions
+  ): Promise<CoreTypes.PrivateNotificationResult> {
     this.assertOpen();
     return this.publishPipeline.deliverPrivateNotification(subject, text, options);
   }
@@ -616,7 +494,7 @@ export class RelayCore {
    * between endpoint registration and subscription (or during a window with
    * zero subscribers) would strand in `new/` forever.
    */
-  subscribe(pattern: string, handler: MessageHandler): Unsubscribe {
+  subscribe(pattern: string, handler: CoreTypes.MessageHandler): CoreTypes.Unsubscribe {
     this.assertOpen();
     const unsubscribe = executeSubscribe(pattern, handler, this.subscriptionDeps);
 
@@ -635,7 +513,7 @@ export class RelayCore {
   }
 
   /** Subscribe to ephemeral signals matching a pattern. */
-  onSignal(pattern: string, handler: SignalHandler): Unsubscribe {
+  onSignal(pattern: string, handler: CoreTypes.SignalHandler): CoreTypes.Unsubscribe {
     this.assertOpen();
     return executeOnSignal(pattern, handler, this.subscriptionDeps);
   }
@@ -651,8 +529,8 @@ export class RelayCore {
    */
   async registerEndpoint(
     subject: string,
-    options?: RegisterEndpointOptions
-  ): Promise<EndpointInfo> {
+    options?: CoreTypes.RegisterEndpointOptions
+  ): Promise<CoreTypes.EndpointInfo> {
     this.assertOpen();
     if (isDocumentSubject(subject)) throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     return executeRegisterEndpoint(subject, options, this.endpointDeps);
@@ -665,7 +543,7 @@ export class RelayCore {
   }
 
   /** List all registered endpoints. */
-  listEndpoints(): EndpointInfo[] {
+  listEndpoints(): CoreTypes.EndpointInfo[] {
     this.assertOpen();
     return executeListEndpoints(this.endpointDeps);
   }
@@ -678,7 +556,7 @@ export class RelayCore {
    * @param subject - The endpoint subject to look up
    * @returns The endpoint, or `undefined` when no endpoint is registered
    */
-  getEndpoint(subject: string): EndpointInfo | undefined {
+  getEndpoint(subject: string): CoreTypes.EndpointInfo | undefined {
     this.assertOpen();
     return executeGetEndpoint(subject, this.endpointDeps);
   }
@@ -689,7 +567,7 @@ export class RelayCore {
   }
 
   /** Get a single representative message row from the index by ID. */
-  getMessage(id: string): IndexedMessage | null {
+  getMessage(id: string): CoreTypes.IndexedMessage | null {
     this.assertOpen();
     return executeGetMessage(id, this.endpointDeps);
   }
@@ -698,7 +576,7 @@ export class RelayCore {
    * Get the honest, joined detail for a message id: a representative row plus
    * the full per-endpoint delivery breakdown (all joined on the envelope id).
    */
-  getMessageDetail(id: string): MessageDetail | null {
+  getMessageDetail(id: string): CoreTypes.MessageDetail | null {
     this.assertOpen();
     return executeGetMessageDetail(id, this.endpointDeps);
   }
@@ -710,7 +588,7 @@ export class RelayCore {
     from?: string;
     cursor?: string;
     limit?: number;
-  }): { messages: IndexedMessage[]; nextCursor?: string } {
+  }): { messages: CoreTypes.IndexedMessage[]; nextCursor?: string } {
     this.assertOpen();
     return executeListMessages(filters, this.endpointDeps);
   }
@@ -723,14 +601,14 @@ export class RelayCore {
    */
   async readInbox(
     subject: string,
-    options?: ReadInboxOptions
-  ): Promise<{ messages: InboxMessage[]; nextCursor?: string }> {
+    options?: CoreTypes.ReadInboxOptions
+  ): Promise<{ messages: CoreTypes.InboxMessage[]; nextCursor?: string }> {
     this.assertOpen();
     return executeReadInbox(subject, options, this.endpointDeps);
   }
 
   /** Get dead letters, optionally filtered by endpoint hash. */
-  async getDeadLetters(options?: ListDeadOptions): Promise<DeadLetterEntry[]> {
+  async getDeadLetters(options?: CoreTypes.ListDeadOptions): Promise<CoreTypes.DeadLetterEntry[]> {
     this.assertOpen();
     return executeGetDeadLetters(options, this.endpointDeps);
   }
@@ -784,7 +662,7 @@ export class RelayCore {
   }
 
   /** Get aggregate metrics from the SQLite index. */
-  getMetrics(): RelayMetrics {
+  getMetrics(): CoreTypes.RelayMetrics {
     this.assertOpen();
     return executeGetMetrics(this.endpointDeps);
   }
@@ -829,17 +707,9 @@ export class RelayCore {
    * current subscribers. Claims are atomic renames, so a concurrent watcher
    * dispatch for the same message safely no-ops.
    */
-  private async drainEndpointBacklog(endpoint: EndpointInfo): Promise<void> {
-    try {
-      const messageIds = await this.endpointDeps.maildirStore.listNew(endpoint.hash);
-      for (const messageId of messageIds) {
-        await this.deliveryPipeline.dispatchToSubscribers(endpoint, messageId);
-      }
-    } catch {
-      // Best-effort — stranded messages remain pollable via readInbox
-    }
+  private async drainEndpointBacklog(endpoint: CoreTypes.EndpointInfo): Promise<void> {
+    return drainOriginalRelayBacklog(this.#ownerKey, endpoint);
   }
-
   /**
    * Start the periodic TTL sweeper for dispatch inboxes.
    *
@@ -864,21 +734,7 @@ export class RelayCore {
    * @returns The subjects unregistered by this sweep.
    */
   async runTtlSweep(): Promise<string[]> {
-    if (this.#closed) return [];
-    const now = Date.now();
-    const registry = this.endpointDeps.endpointRegistry;
-    const swept: string[] = [];
-    for (const endpoint of registry.listEndpoints()) {
-      if (inferEndpointType(endpoint.subject) === 'dispatch') {
-        const lastActivity =
-          registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
-        if (now - lastActivity > this.dispatchInboxTtlMs) {
-          await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
-          swept.push(endpoint.subject);
-        }
-      }
-    }
-    return swept;
+    return runOriginalRelayTtlSweep(this.#ownerKey);
   }
 
   /**
@@ -904,69 +760,9 @@ export class RelayCore {
    * @returns Per-phase removal counts, or `undefined` if the relay is closed.
    */
   async runGcSweep(
-    options?: RelayGcSweepOptions
+    options?: CoreTypes.RelayGcSweepOptions
   ): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
-    if (this.#closed) return undefined;
-    return this.gc.sweep(Date.now(), options);
-  }
-
-  /** Load reliability configuration from disk (hot-reload safe). */
-  private loadReliabilityConfig(): void {
-    try {
-      const raw = fs.readFileSync(this.configPath, 'utf-8');
-      const json: unknown = JSON.parse(raw);
-      const obj = json as Record<string, unknown>;
-      const parsed = ReliabilityConfigSchema.safeParse(obj.reliability);
-      if (parsed.success) {
-        this.publishPipeline.setRateLimitConfig({
-          ...DEFAULT_RATE_LIMIT_CONFIG,
-          ...parsed.data.rateLimit,
-        });
-        this.circuitBreaker.updateConfig({ ...DEFAULT_CB_CONFIG, ...parsed.data.circuitBreaker });
-        this.backpressureConfig = { ...DEFAULT_BP_CONFIG, ...parsed.data.backpressure };
-        this.deliveryPipeline.setBackpressureConfig(this.backpressureConfig);
-      }
-    } catch {
-      // File doesn't exist or is invalid -- keep current config
-    }
-  }
-
-  /** Start a chokidar watcher on the config file for hot-reload. */
-  private startConfigWatcher(): void {
-    this.configWatcher = chokidar.watch(this.configPath, {
-      persistent: true,
-      ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-    });
-    this.configWatcher.on('change', () => this.loadReliabilityConfig());
-    this.configWatcher.on('add', () => this.loadReliabilityConfig());
-
-    // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
-    // but the process-wide unhandled-error path. The relay keeps running on its
-    // last-loaded reliability config; only hot-reload of external edits stops
-    // working until the process restarts. Latched per distinct error code
-    // rather than a single boolean: a benign EACCES must never suppress the
-    // EMFILE storm that follows it. The Set lives in this per-instance closure,
-    // so one relay's latch cannot silence another's.
-    const seenCodes = new Set<string>();
-    this.configWatcher.on('error', (err) => {
-      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
-      if (seenCodes.has(code)) return;
-      seenCodes.add(code);
-      // Logged as an explicit object, never the bare Error: the server's NDJSON
-      // reporter spreads what it is given, and `message`/`stack` are
-      // non-enumerable on an Error, so they would vanish (DOR-832).
-      this.logger.warn(
-        `[watcher-error] RelayCore: ${this.configPath} — further ${code} errors from this watcher are suppressed`,
-        {
-          configPath: this.configPath,
-          code,
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined,
-          suppressingFurtherErrors: true,
-        }
-      );
-    });
+    return runOriginalRelayGcSweep(this.#ownerKey, options);
   }
 
   /** Assert that the relay has not been closed. */

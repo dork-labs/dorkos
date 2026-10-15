@@ -10,16 +10,17 @@
  * @module routes/marketplace/dev-links
  */
 import { z } from 'zod';
-import type { Request, Response, Router } from 'express';
 import { DevLinkPackageNameSchema } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
 import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
-import type { DevLinkService } from '../../services/marketplace/dev-links/index.js';
-import type { MarketplaceRouteDeps } from '../marketplace.js';
-import type { MarketplaceRouteContext } from './context.js';
+import { readJsonBody } from '../../http/request-body.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
+import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
+import { validationFailed } from './shared.js';
 import { DEV_LINK_PATH_MAX } from '../../services/marketplace-mcp/tool-link.js';
 
 /** The folder field: required, and capped like the capability's own input. */
@@ -84,58 +85,58 @@ export const DevLinkUnlinkBodySchema = z.object(ScopeFields).strict().refine(sco
 /**
  * Register the `/dev-links` routes on the marketplace router.
  *
- * @param router - The marketplace router.
+ * @param app - The marketplace routes.
  * @param deps - The router's injected dependencies.
  * @param ctx - The helpers every route group shares.
  */
 export function mountDevLinkRoutes(
-  router: Router,
+  app: MarketplaceRoutes,
   deps: MarketplaceRouteDeps,
   ctx: MarketplaceRouteContext
 ): void {
-  /** The service, or the 503 that says it is not running here. */
-  const service = (res: Response): DevLinkService | undefined => {
-    if (deps.devLinks) return deps.devLinks;
-    res.status(503).json({ error: "Dev links aren't available on this server right now." });
-    return undefined;
-  };
+  /** The 503 that says the dev link service is not running here. */
+  const unavailable = (c: MarketplaceContext): Response =>
+    c.json({ error: "Dev links aren't available on this server right now." }, 503);
 
-  /** Answer a refusal or rethrow anything else. */
-  const fail = (res: Response, err: unknown, what: string): Response => {
-    if (err instanceof DevLinkError) return res.status(err.status).json(err.toBody());
+  /** Answer a refusal, or log anything else and answer 500. */
+  const fail = (c: MarketplaceContext, err: unknown, what: string): Response => {
+    if (err instanceof DevLinkError) return c.json(err.toBody(), err.status);
     logger.error(`[Marketplace] Failed to ${what}`, err);
-    return res.status(500).json({ error: `Failed to ${what}` });
+    return c.json({ error: `Failed to ${what}` }, 500);
   };
 
-  /** Parse a body, answering 400 when it does not fit. */
-  const parse = <T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined => {
-    const parsed = schema.safeParse(req.body ?? {});
-    if (parsed.success) return parsed.data;
-    res.status(400).json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    return undefined;
+  /** Parse a body, or the 400 that says it does not fit. */
+  const parse = <T>(
+    schema: z.ZodType<T>,
+    c: MarketplaceContext
+  ): { data: T; refused?: undefined } | { refused: Response } => {
+    const parsed = schema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (parsed.success) return { data: parsed.data };
+    return { refused: validationFailed(c, parsed.error) };
   };
 
   // GET /dev-links -- every dev link and whether it is in force.
-  router.get('/dev-links', async (_req, res) => {
-    const devLinks = service(res);
-    if (!devLinks) return;
+  app.get('/dev-links', async (c) => {
+    const devLinks = deps.devLinks;
+    if (!devLinks) return unavailable(c);
     try {
-      return res.json(await devLinks.list());
+      return c.json(await devLinks.list());
     } catch (err) {
-      return fail(res, err, 'list dev links');
+      return fail(c, err, 'list dev links');
     }
   });
 
   // POST /dev-links/preview -- what linking a folder would do. Changes nothing.
-  router.post('/dev-links/preview', async (req, res) => {
-    const devLinks = service(res);
-    if (!devLinks) return;
-    const body = parse(DevLinkPreviewBodySchema, req, res);
-    if (!body) return;
-    const confined = await ctx.confineProjectPath(res, body.projectPath);
+  app.post('/dev-links/preview', async (c) => {
+    const devLinks = deps.devLinks;
+    if (!devLinks) return unavailable(c);
+    const parsed = parse(DevLinkPreviewBodySchema, c);
+    if (parsed.refused) return parsed.refused;
+    const body = parsed.data;
+    const confined = await ctx.confineProjectPath(c, body.projectPath);
     if (confined.refused) return confined.refused;
     try {
-      return res.json(
+      return c.json(
         await devLinks.preview({
           path: body.path,
           scope: body.scope,
@@ -144,20 +145,21 @@ export function mountDevLinkRoutes(
         })
       );
     } catch (err) {
-      return fail(res, err, 'preview the dev link');
+      return fail(c, err, 'preview the dev link');
     }
   });
 
   // POST /dev-links -- make the link. The tier gate decides first: the person
   // runs it, an agent gets a card naming the folder (202) or a refusal (403).
-  router.post('/dev-links', async (req, res) => {
-    const devLinks = service(res);
-    if (!devLinks) return;
-    const body = parse(DevLinkCreateBodySchema, req, res);
-    if (!body) return;
+  app.post('/dev-links', async (c) => {
+    const devLinks = deps.devLinks;
+    if (!devLinks) return unavailable(c);
+    const parsed = parse(DevLinkCreateBodySchema, c);
+    if (parsed.refused) return parsed.refused;
+    const body = parsed.data;
     // The project is confined first, so a path outside the boundary is refused
     // before anyone is shown a card for it.
-    const confined = await ctx.confineProjectPath(res, body.projectPath);
+    const confined = await ctx.confineProjectPath(c, body.projectPath);
     if (confined.refused) return confined.refused;
     const target = {
       path: body.path,
@@ -173,8 +175,7 @@ export function mountDevLinkRoutes(
       // shape, plus that description, so `dorkos call marketplace.link` and this
       // route mint and honour the same token.
       const decision = await ctx.authorize(
-        req,
-        res,
+        c,
         'marketplace.link',
         {
           path: body.path,
@@ -183,8 +184,8 @@ export function mountDevLinkRoutes(
         },
         change
       );
-      if (decision.outcome !== 'allowed') return ctx.gateResponse(res, decision);
-      const person = !!trustedCaller(readCallerAuthority(req, res));
+      if (decision.outcome !== 'allowed') return ctx.gateResponse(c, decision);
+      const person = !!trustedCaller(readCallerAuthority(honoRequestFacts(c)));
       const status = await devLinks.link({
         ...target,
         via: person ? (body.via ?? 'app') : 'agent-card',
@@ -194,38 +195,42 @@ export function mountDevLinkRoutes(
         // here never replaces it.
         expectedChange: person && body.expectedChange !== undefined ? body.expectedChange : change,
       });
-      return res.status(201).json(status);
+      return c.json(status, 201);
     } catch (err) {
-      return fail(res, err, 'link the folder');
+      return fail(c, err, 'link the folder');
     }
   });
 
   // POST /dev-links/:name/unlink -- the person only, on the bar for deciding
   // an approval card: unlinking changes which code runs.
-  router.post('/dev-links/:name/unlink', async (req, res) => {
-    const authority = readCallerAuthority(req, res);
+  app.post('/dev-links/:name/unlink', async (c) => {
+    const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
-        return res.status(403).json({
-          error: 'Only you can unlink a dev link, not an agent.',
-          code: 'operator_only',
-        });
+        return c.json(
+          { error: 'Only you can unlink a dev link, not an agent.', code: 'operator_only' },
+          403
+        );
       }
-      return res.status(403).json({
-        error: 'DorkOS requires sign-in, so only a person signed in to the app can unlink this.',
-        code: OPERATOR_COOKIE_REQUIRED_CODE,
-      });
+      return c.json(
+        {
+          error: 'DorkOS requires sign-in, so only a person signed in to the app can unlink this.',
+          code: OPERATOR_COOKIE_REQUIRED_CODE,
+        },
+        403
+      );
     }
-    const devLinks = service(res);
-    if (!devLinks) return;
-    const name = DevLinkPackageNameSchema.safeParse(req.params.name);
-    if (!name.success) return res.status(400).json({ error: 'That is not a package name.' });
-    const body = parse(DevLinkUnlinkBodySchema, req, res);
-    if (!body) return;
-    const confined = await ctx.confineProjectPath(res, body.projectPath);
+    const devLinks = deps.devLinks;
+    if (!devLinks) return unavailable(c);
+    const name = DevLinkPackageNameSchema.safeParse(c.req.param('name'));
+    if (!name.success) return c.json({ error: 'That is not a package name.' }, 400);
+    const parsed = parse(DevLinkUnlinkBodySchema, c);
+    if (parsed.refused) return parsed.refused;
+    const body = parsed.data;
+    const confined = await ctx.confineProjectPath(c, body.projectPath);
     if (confined.refused) return confined.refused;
     try {
-      return res.json(
+      return c.json(
         await devLinks.unlink({
           name: name.data,
           scope: body.scope,
@@ -233,7 +238,7 @@ export function mountDevLinkRoutes(
         })
       );
     } catch (err) {
-      return fail(res, err, 'unlink the dev link');
+      return fail(c, err, 'unlink the dev link');
     }
   });
 }

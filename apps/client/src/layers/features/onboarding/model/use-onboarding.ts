@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePendingRead, useTransport } from '@/layers/shared/model';
@@ -14,11 +13,6 @@ import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 export function useOnboarding() {
   const transport = useTransport();
   const queryClient = useQueryClient();
-
-  // Track steps dispatched but not yet confirmed by the server cache,
-  // so rapid calls within the same render frame build correct superset arrays.
-  const pendingCompleted = useRef(new Set<OnboardingStep>());
-  const pendingSkipped = useRef(new Set<OnboardingStep>());
 
   const { data: config, isLoading: isFetchingConfig } = useQuery({
     queryKey: configKeys.current(),
@@ -44,6 +38,9 @@ export function useOnboarding() {
     dismissedAt: null,
     completedAt: null,
     runtimeDefaultSetAt: null,
+    firstRunPath: null,
+    welcomeEntryId: null,
+    priorRuntime: null,
   };
 
   const state: OnboardingState = config?.onboarding
@@ -62,6 +59,11 @@ export function useOnboarding() {
         // No such guard needed here: absent and null both read as "not decided",
         // which is the honest answer for a server that cannot tell us.
         runtimeDefaultSetAt: config.onboarding.runtimeDefaultSetAt,
+        // The first-run record (spec `one-minute-onboarding` §7). Absent from an
+        // older server, which reads as nothing picked yet.
+        firstRunPath: config.onboarding.firstRunPath ?? null,
+        welcomeEntryId: config.onboarding.welcomeEntryId ?? null,
+        priorRuntime: config.onboarding.priorRuntime ?? null,
       }
     : DEFAULT_STATE;
 
@@ -89,14 +91,9 @@ export function useOnboarding() {
   const patchOnboarding = useMutation({
     mutationFn: (patch: Partial<OnboardingState>) => transport.updateConfig({ onboarding: patch }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: configKeys.all }).then(() => {
-        pendingCompleted.current.clear();
-        pendingSkipped.current.clear();
-      });
+      void queryClient.invalidateQueries({ queryKey: configKeys.all });
     },
     onError: (err, patch) => {
-      pendingCompleted.current.clear();
-      pendingSkipped.current.clear();
       // The field names go to the console and the breadcrumb trail, never to
       // the toast (DOR-1755). This fires in the first minutes of the product,
       // where a person has the least context: "Failed to save onboarding
@@ -115,26 +112,6 @@ export function useOnboarding() {
     // rather than showing two.
     meta: { suppressErrorToast: true },
   });
-
-  /** Mark a step as completed. */
-  function completeStep(step: OnboardingStep) {
-    const allCompleted = new Set([...state.completedSteps, ...pendingCompleted.current]);
-    if (allCompleted.has(step)) return;
-    pendingCompleted.current.add(step);
-    patchOnboarding.mutate({
-      completedSteps: [...allCompleted, step],
-    });
-  }
-
-  /** Skip a step without completing it. */
-  function skipStep(step: OnboardingStep) {
-    const allSkipped = new Set([...state.skippedSteps, ...pendingSkipped.current]);
-    if (allSkipped.has(step)) return;
-    pendingSkipped.current.add(step);
-    patchOnboarding.mutate({
-      skippedSteps: [...allSkipped, step],
-    });
-  }
 
   /** Dismiss onboarding entirely (skip-all, or dismiss the getting-started card). */
   function dismiss() {
@@ -171,8 +148,6 @@ export function useOnboarding() {
     isOnboardingDismissed,
     shouldShowOnboarding,
     shouldShowGettingStarted,
-    completeStep,
-    skipStep,
     dismiss,
     completeOnboarding,
     startOnboarding,

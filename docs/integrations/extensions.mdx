@@ -20,7 +20,36 @@ export function activate(api: ExtensionAPI): () => void {
 }
 ```
 
-`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, and a dot on your own right-panel tab with `setTabMarker`), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
+
+## Your extension's own API
+
+An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. You can write that API in two ways.
+
+- **With the router.** `register(router, ctx)` gets an Express router. Add routes to it: `router.get('/status', …)` answers `GET /api/ext/my-extension/status`.
+- **With a fetch handler.** Return `{ fetch }` from `register`. `fetch` takes a standard web `Request` and returns a `Response`. Any handler of that shape, such as a Hono app, works as it is: `return { fetch: app.fetch }`. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
+
+```typescript title="server.ts"
+export default function register(router, ctx) {
+  return {
+    async fetch(request) {
+      const { pathname } = new URL(request.url);
+      if (pathname === '/status') return Response.json(await ctx.storage.loadData());
+      return Response.json({ error: 'Not found' }, { status: 404 });
+    },
+  };
+}
+```
+
+What to know about a fetch handler:
+
+- **It sees the path after your mount.** A request to `/api/ext/my-extension/status?x=1` reaches it as `/status?x=1`.
+- **It answers every request it gets.** Return your own 404 for a path you don't serve. If you also add router routes, the router answers first and the fetch handler gets the rest.
+- **A JSON body is ready to read** with `request.json()`. Any other body arrives as it was sent.
+- **If it throws,** the caller gets an error and DorkOS keeps running.
+- **To keep a route to people only,** put it on the router behind `ctx.requirePerson`.
+
+Nothing in your API runs until you approve the extension, and turning it off stops the API at once.
 
 ## Messaging an agent from the server half
 
@@ -36,7 +65,7 @@ export function activate(api: ExtensionAPI): () => void {
 
 An extension with a server half can give your agents tools while it runs. A mail extension, for example, can offer a "Send an email" tool, and your agents can call it the way they call any DorkOS tool.
 
-- **You approve the extension first.** Its tools exist only while the extension is turned on and approved to run. Turn it off, stop it or remove it, and its tools are gone from the next tool list.
+- **The extension is approved first.** One your agent builds is approved as it is made, unless you chose Careful; any other waits for you. Its tools exist only while the extension is turned on and approved to run. Turn it off, stop it or remove it, and its tools are gone from the next tool list.
 - **You see what it gives before you say yes.** The Activity inbox row that asks you to turn an extension on says what it would give your agents, such as "Would give agents 3 tools and 1 skill". Open it with ⓘ to see each tool and what it can do: **Reads**, **Acts**, or **Asks you first**. Its card in **Settings → Extensions** shows the same list. It says "Gives agents" while the extension runs and "Would give agents" while it is off or waiting for you.
 - **A tool or skill DorkOS turns down says why.** If a tool or skill is set up wrong, it is listed as left out, with the reason under it, and it never reaches your agents. The extension's other tools and skills still work.
 - **Each tool says how much it can do.** A tool that only reads runs when an agent calls it. A tool that changes something sits in the **Extension tools** area of **Settings → Permissions**, where you can set every extension's tools, or one tool, to Allowed, Ask or Blocked. A tool that deletes or removes something asks you every time, even if you set it to Allowed.
@@ -56,6 +85,15 @@ An extension can also bring skills: short guides that teach your agents when and
 - **A chat that is busy finishes first.** When an extension stops, a Claude Code chat drops its skills before your next message, unless a helper in that chat is still working. Then it waits for that work to end.
 
 For the manifest fields, the `ctx.tools.handle` API and how skills are checked, see `contributing/extension-authoring.md`.
+
+## Where a tab shows
+
+An extension's right-panel tab can show everywhere, or only beside the agents, channels and pages it belongs to. You decide where:
+
+- **In the panel.** Open the panel's **⋯** menu. **Hide here** hides the tab in this channel, in chats with this agent, or on this page (Home counts as #team). **Show here** brings back a tab that is hidden here. **Open full page** goes to the extension's own page, when it has one. Hide here and Show here are not offered in a chat with no agent, or in a channel from a connected space, because there is nothing narrower to name there than every chat or every channel.
+- **In Settings.** Open **Settings → Extensions**. Under each extension with a tab, **Panel tab shows** has two choices: **Everywhere**, or **Only in…** a list of agents, channels and pages you pick. Where a tab shows everywhere but was hidden in some places, those places are listed under **Hidden in**, and you can remove them there.
+
+An extension can say where its tab belongs by default, with `showIn` on `registerComponent`. Your choice replaces that default, and **Use its default** puts it back. Your choice applies to everyone who uses this DorkOS, and an agent can change it too. The saved list is `ui.panelTabs` in your settings file. For the details, see `contributing/extension-authoring.md`.
 
 ## Testing locally
 

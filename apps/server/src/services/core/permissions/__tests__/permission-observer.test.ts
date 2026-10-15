@@ -96,8 +96,6 @@ describe('PermissionObserver', () => {
         trustStops: () => ({ global: null, perRuntime: {} }),
         setGlobalTrustStop: () => {},
         setRuntimeTrustStop: () => false,
-        hasAutonomyAck: () => false,
-        recordAutonomyAck: () => {},
       },
       agents: {
         list: () => [{ id: 'agent-ana', name: 'Ana', projectPath: agentPath }],

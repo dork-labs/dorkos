@@ -12,7 +12,7 @@ import {
   borderKindFromLifecycle,
   type SessionBorderKind,
   type SessionBorderState,
-} from './use-session-border-state';
+} from './use-session-status-signals';
 
 /**
  * Priority ranking for border states (higher = hotter). No source here ever
@@ -38,7 +38,7 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  * Derive the "hottest" border state across all sessions for an agent.
  *
  * Merges three sources and returns the highest-priority status (same merge as
- * {@link useSessionBorderState}, scanned across many sessions):
+ * {@link useSessionStatusSignals}, scanned across many sessions):
  *
  * 1. **Legacy chat store** — send-path/recovery state for `sessionIds`.
  * 2. **Per-session stream store** — hydrated sessions among `sessionIds`.

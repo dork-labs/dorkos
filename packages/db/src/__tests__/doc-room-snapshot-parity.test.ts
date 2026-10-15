@@ -1,4 +1,4 @@
-/** Actual migration structure must equal the untouched official generated snapshot. */
+/** Canonical160 migration structure preserves the archived published152 Doc/Room schema. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
@@ -25,10 +25,38 @@ type Table = {
 };
 const snapshot = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../drizzle/meta/20261009202012_snapshot.json', import.meta.url)),
+    fileURLToPath(new URL('../../drizzle/meta/20261011184508_snapshot.json', import.meta.url)),
     'utf8'
   )
 ) as { id: string; prevId: string; tables: Record<string, Table> };
+const publishedSnapshot = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL('../../drizzle/legacy-doc/20261010133401_snapshot.json', import.meta.url)
+    ),
+    'utf8'
+  )
+) as { id: string; prevId: string; tables: Record<string, Table> };
+const main158Snapshot = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../drizzle/meta/20261011063041_snapshot.json', import.meta.url)),
+    'utf8'
+  )
+) as { tables: Record<string, Table> };
+const main159Snapshot = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../drizzle/meta/20261011080030_snapshot.json', import.meta.url)),
+    'utf8'
+  )
+) as { id: string; prevId: string; tables: Record<string, Table> };
+const incomingTables = [
+  'heartbeat_report_items',
+  'heartbeat_beats',
+  'heartbeat_outbox',
+  'heartbeat_state',
+  'remote_command_journal',
+  'remote_event_outbox',
+];
 const tables = [
   'room_doc_admission_inputs',
   'room_doc_admissions',
@@ -42,6 +70,10 @@ const tables = [
   'chat_agent_dms',
   'chat_messages',
   'chat_read_cursors',
+  'agents',
+  'commitments',
+  'agent_pauses',
+  ...incomingTables,
 ];
 const sorted = <T>(rows: T[]) =>
   rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
@@ -92,8 +124,13 @@ function storedChecks(sql: string): string[] {
   return result.sort();
 }
 
-it('migrates all nine Doc/Room structures and three shipped Chat structures to the official snapshot', () => {
-  expect(snapshot.prevId).toBe('d1c8ca14-370d-4423-8600-0cb11a6aca51');
+it('migrates canonical160 including Main159 while preserving the published152 Doc/Room and Chat snapshot structures', () => {
+  expect(publishedSnapshot.prevId).toBe('ae4719be-7fef-48ec-b6d0-7dc6ab4f3c07');
+  expect(publishedSnapshot.id).not.toBe(publishedSnapshot.prevId);
+  expect(main159Snapshot.prevId).toBe('7bf85660-9990-453b-87cf-29bf2f5a2f3d');
+  expect(main159Snapshot.id).toBe('13d97925-fb17-495b-86f9-ecc7a6995c44');
+  expect(snapshot.prevId).toBe(main159Snapshot.id);
+  expect(snapshot.id).toBe('71a4819c-e113-4834-bad9-c9bbac8c7f96');
   expect(snapshot.id).not.toBe(snapshot.prevId);
   const db = createDb(':memory:');
   try {
@@ -102,6 +139,17 @@ it('migrates all nine Doc/Room structures and three shipped Chat structures to t
     for (const name of tables) {
       const expected = snapshot.tables[name]!;
       expect(expected, name).toBeDefined();
+      if (incomingTables.includes(name))
+        expect(expected, `preserved Main159 ${name}`).toEqual(main159Snapshot.tables[name]);
+      else if (name !== 'commitments' && name !== 'agent_pauses')
+        expect(expected, `preserved published152 ${name}`).toEqual(publishedSnapshot.tables[name]);
+      if (incomingTables.includes(name)) {
+        const preserved158 = structuredClone(expected);
+        if (name === 'heartbeat_outbox') delete preserved158.columns.delivered_at;
+        expect(preserved158, `preserved original Main158 ${name}`).toEqual(
+          main158Snapshot.tables[name]
+        );
+      }
       const primary =
         Object.values(expected.compositePrimaryKeys)[0]?.columns ??
         Object.values(expected.columns)

@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { notifyAccountAccess } from '../live/notices.js';
 
 /** What {@link clearAccountAccess} keeps. Everything else that reaches the account ends. */
 export interface AccountAccessKeep {
@@ -90,6 +91,8 @@ export async function clearAccountAccess(
     userId,
     keep.sessionId ?? null,
   ]);
+  // Sessions, connections and agent credentials all end here: recheck every live stream.
+  await notifyAccountAccess(client, userId);
   await client.query(
     `UPDATE connection_grants SET revoked_at=COALESCE(revoked_at,now())
      WHERE member_id=ANY($1::uuid[])`,

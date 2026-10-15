@@ -23,6 +23,17 @@ import {
   type CredentialStore,
 } from '../../core/credential-provider.js';
 import { logger } from '../../../lib/logger.js';
+import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
+import {
+  change,
+  noEffectiveAccess,
+  placeOf,
+  projectedAccess,
+  type ConnectionPlace,
+  type OfficialConnectionPredicate,
+  type RemoteConnectionChange,
+  type RemoteConnectionChangeListener,
+} from './connection-changes.js';
 
 const RecordSchema = z.strictObject({
   ref: CommunityRefSchema,
@@ -46,9 +57,10 @@ type ConnectionRecord = z.infer<typeof RecordSchema>;
 
 /**
  * The small records kept beside connections.json, each keyed by owner and ref:
- * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`, and
+ * `not-found-since.json` holds the ISO time of the first `404 NOT_FOUND`,
  * `undelivered-when-gone.json` how many agent posts never arrived when the community was found
- * deleted or taken down.
+ * deleted or taken down, and `wake-agents-from.json` who in a space may wake this owner's
+ * agents (spec `official-community-space` D9).
  */
 const SIDE_RECORDS = {
   'not-found': {
@@ -59,9 +71,12 @@ const SIDE_RECORDS = {
     file: 'undelivered-when-gone.json',
     schema: z.record(z.string(), z.number().int().positive()),
   },
+  wake: { file: 'wake-agents-from.json', schema: z.record(z.string(), z.enum(['me', 'members'])) },
 } as const;
 type SideRecordName = keyof typeof SIDE_RECORDS;
 type SideEntries<Name extends SideRecordName> = z.infer<(typeof SIDE_RECORDS)[Name]['schema']>;
+/** `wake/wake-setting.ts`'s `WakeAgentsFrom`, as the side record parses it. */
+type WakeAgentsFrom = SideEntries<'wake'>[string];
 
 /** Non-secret status handed to the browser through the local route. */
 export type RemoteConnectionDescriptor = CommunityConnectionDescriptor;
@@ -80,51 +95,6 @@ export class RemoteConnectionAuthorizationError extends Error {
     super('Community connection must be reconnected');
     this.name = 'RemoteConnectionAuthorizationError';
   }
-}
-
-/**
- * One committed change to an owner's connection list, told in-process only.
- *
- * `status` is where the row ended up; `removed` means the row is gone. Only
- * the list's shape counts — a row appearing, changing status or disappearing.
- * An access re-verification ({@link RemoteConnectionStore.updateAccess}) is
- * deliberately not a change: listing verifies every row, so announcing it
- * would make every list read ask every window to list again.
- */
-export interface RemoteConnectionChange {
-  /** The local owner whose list changed. */
-  ownerKey: string;
-  /** The connection that changed. */
-  ref: CommunityRef;
-  /** Where the connection is now. */
-  status: ConnectionRecord['status'] | 'removed';
-}
-
-/**
- * Subscriber to {@link RemoteConnectionStore.onChange}: called once per
- * committed write, with every change that write made (never empty).
- */
-export type RemoteConnectionChangeListener = (changes: readonly RemoteConnectionChange[]) => void;
-
-const noEffectiveAccess = { read: false, post: false, enrollAgent: false, stream: false } as const;
-
-function projectedAccess(record: ConnectionRecord): CommunityConnectionAccess | null {
-  if (record.status === 'pending') return null;
-  if (record.status === 'reconnect-required') {
-    return CommunityConnectionAccessSchema.parse({
-      state: 'reconnect-required',
-      effective: noEffectiveAccess,
-      lastKnown: record.access?.lastKnown ?? null,
-    });
-  }
-  return (
-    record.access ??
-    CommunityConnectionAccessSchema.parse({
-      state: 'unverified',
-      effective: noEffectiveAccess,
-      lastKnown: null,
-    })
-  );
 }
 
 /** Atomic, owner-scoped metadata plus the existing AES-GCM credential store. */
@@ -190,10 +160,13 @@ export class RemoteConnectionStore {
    *
    * @param dorkHome - The resolved local DorkOS data directory.
    * @param credentials - Protected store, injected in tests or built from dorkHome.
+   * @param isOfficial - Whether a connection is the official space's, asked on every read
+   *   (spec `official-community-space` D4). None is, unless one is given.
    */
   constructor(
     dorkHome: string,
-    credentials: CredentialStore = new EncryptedFileCredentialStore(dorkHome)
+    credentials: CredentialStore = new EncryptedFileCredentialStore(dorkHome),
+    private readonly isOfficial: OfficialConnectionPredicate = () => false
   ) {
     this.directory = path.join(dorkHome, 'communities', 'remote');
     this.file = path.join(this.directory, 'connections.json');
@@ -220,9 +193,24 @@ export class RemoteConnectionStore {
     }
   }
 
+  /**
+   * Every owner's connection with the place it points at, for the in-memory official-space
+   * answer the live stream reads.
+   */
+  async places(): Promise<ConnectionPlace[]> {
+    return (await this.read()).map(placeOf);
+  }
+
+  /** The wake default for one connection: narrower for the official space. */
+  private defaultWake(record: ConnectionRecord): WakeAgentsFrom {
+    return this.isOfficial(record) ? OFFICIAL_WAKE_AGENTS_FROM : DEFAULT_WAKE_AGENTS_FROM;
+  }
+
   /** List only this locally authenticated owner's connections. */
   async list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
-    return (await this.read()).filter((record) => record.ownerKey === ownerKey).map(this.project);
+    return (await this.read())
+      .filter((record) => record.ownerKey === ownerKey)
+      .map((record) => this.project(record));
   }
 
   /**
@@ -276,8 +264,11 @@ export class RemoteConnectionStore {
       return SIDE_RECORDS[name].schema.parse(
         JSON.parse(await readFile(this.sideFile(name), 'utf8'))
       ) as SideEntries<Name>;
-    } catch {
-      // Missing or unreadable: nothing recorded, so nothing is shown.
+    } catch (error) {
+      // Missing or unreadable: nothing recorded, so nothing is shown. Except who may wake
+      // agents, where "nothing recorded" means `members`: only a missing file reads as that,
+      // so a failed read keeps the gate's last answer and a write never lands on a blank.
+      if (name === 'wake' && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return {} as SideEntries<Name>;
     }
   }
@@ -301,6 +292,39 @@ export class RemoteConnectionStore {
       if (!(key in entries)) return;
       delete entries[key];
       await this.writeSide(name, entries);
+    });
+  }
+
+  /**
+   * Record who in this space may wake the owner's agents. Owner-only by construction: the one
+   * route that calls it refuses every caller but this install's owner, and no DorkOS tool or
+   * config key reaches this file.
+   */
+  async setWakeAgentsFrom(ref: CommunityRef, ownerKey: string, to: WakeAgentsFrom): Promise<void> {
+    await this.exclusive(async () => {
+      await this.get(ref, ownerKey);
+      const entries = await this.readSide('wake');
+      await this.writeSide('wake', { ...entries, [`${ownerKey}\0${ref}`]: to });
+    });
+  }
+
+  /**
+   * Every owner's connection with its wake setting (`wake/wake-setting.ts`'s `ConnectionWakeSetting`),
+   * for the in-memory gate a live stream reads.
+   */
+  async wakeSettings() {
+    const [records, wake] = await Promise.all([this.read(), this.readSide('wake')]);
+    return records.map((record) => {
+      const chosen = wake[`${record.ownerKey}\0${record.ref}`] ?? null;
+      return {
+        ref: record.ref,
+        ownerKey: record.ownerKey,
+        connectedHumanMemberId: record.connectedHumanMemberId,
+        pinnedOrigin: record.pinnedOrigin,
+        remoteCommunityId: record.remoteCommunityId,
+        wakeAgentsFrom: chosen ?? this.defaultWake(record),
+        chosen,
+      };
     });
   }
 
@@ -371,9 +395,7 @@ export class RemoteConnectionStore {
         await this.credentials.delete(`community:${record.ref}:pairing`);
       const refs = new Set(expired.map((record) => record.ref));
       await this.write(records.filter((record) => !refs.has(record.ref)));
-      this.announce(
-        expired.map((record) => ({ ownerKey, ref: record.ref, status: 'removed' as const }))
-      );
+      this.announce(expired.map((record) => change(record, 'removed')));
     });
   }
 
@@ -386,7 +408,10 @@ export class RemoteConnectionStore {
     return record;
   }
 
-  /** Public projection, never containing an owner key, verifier, code or token. */
+  /**
+   * Public projection, never containing an owner key, verifier, code or token. `official` is
+   * worked out here, against the link configured now, and never read from the record.
+   */
   project(record: ConnectionRecord): RemoteConnectionDescriptor {
     const {
       ref,
@@ -411,6 +436,7 @@ export class RemoteConnectionStore {
       ...(status === 'connected' && record.access?.state === 'verified' && record.hostOperator
         ? { hostOperator: true }
         : {}),
+      ...(this.isOfficial(record) ? { official: true } : {}),
       attention:
         status === 'pending'
           ? null
@@ -441,7 +467,7 @@ export class RemoteConnectionStore {
         await this.credentials.delete(name);
         throw error;
       }
-      this.announce([{ ownerKey: record.ownerKey, ref: record.ref, status: 'pending' }]);
+      this.announce([change(record, 'pending')]);
       return this.project(record);
     });
   }
@@ -490,7 +516,7 @@ export class RemoteConnectionStore {
         throw error;
       }
       await this.credentials.delete(`community:${ref}:pairing`);
-      this.announce([{ ownerKey, ref, status: 'connected' }]);
+      this.announce([change(updated, 'connected')]);
       return this.project(updated);
     });
   }
@@ -570,7 +596,7 @@ export class RemoteConnectionStore {
         // Announced once, on the transition. The credentials below are still
         // being deleted, but every read already fails closed on the status
         // just written, so a window that re-lists now sees the truth.
-        this.announce([{ ownerKey, ref, status: 'reconnect-required' }]);
+        this.announce([change(record, 'reconnect-required')]);
       }
       await this.credentials.delete(`community:${ref}:personal`);
       for (const agentId of record.agentIds)
@@ -638,7 +664,7 @@ export class RemoteConnectionStore {
 
   /** Delete local metadata, encrypted credentials and this ref's derived cache. */
   async disconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
-    return this.exclusive(async () => {
+    await this.exclusive(async () => {
       const record = await this.get(ref, ownerKey);
       for (const agentId of record.agentIds)
         await this.credentials.delete(`community:${ref}:agent:${agentId}`);
@@ -646,8 +672,10 @@ export class RemoteConnectionStore {
       await this.credentials.delete(`community:${ref}:personal`);
       const records = (await this.read()).filter((item) => item.ref !== ref);
       await this.write(records);
-      this.announce([{ ownerKey, ref, status: 'removed' }]);
+      this.announce([change(record, 'removed')]);
       await rm(path.join(this.directory, 'cache', ref), { recursive: true, force: true });
     });
+    // Its own lock, after the record is gone: nothing reads a setting without its connection.
+    await this.clearSide('wake', ref, ownerKey);
   }
 }

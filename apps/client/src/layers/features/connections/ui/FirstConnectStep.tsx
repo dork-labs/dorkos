@@ -26,15 +26,16 @@ interface FirstConnectStepProps {
 /**
  * The one-time step before a first app sign-in: pick how DorkOS reaches your
  * apps (connections-one-list design §6). It shows only while no way that is
- * set up reaches the app, so once a key works the dialog moves straight on to
- * sign-in — the saved key refreshes the catalog and this step unmounts.
+ * set up reaches the app, so once a way works the dialog moves straight on to
+ * sign-in — a saved key refreshes the catalog and this step unmounts.
  *
- * The big button is the person's own Composio key: DorkOS account app
- * connections are not available yet (DOR-1798), and when a linked DorkOS
- * account can serve apps it is used without asking, so this step never shows
- * for it. When a DorkOS account that apps were connected through isn't linked
- * anymore, linking it again is offered beside the key as an equal choice.
- * Nango is folded under "Other ways".
+ * Two choices, always both on screen (FB-57: a person with no DorkOS account
+ * saw only the key, and was stuck). The DorkOS account comes first when
+ * nothing is set up, as on the first-run screen: sign in or create one, and
+ * DorkOS connects the apps. When an account is linked but not working, or no
+ * longer linked, linking it again sits beside the key as an equal choice. When
+ * a saved key is the problem, the key comes first. Nango is folded under
+ * "Other ways".
  */
 export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
   const providers = useConnectorProviders();
@@ -57,10 +58,40 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
   }
   const composio = findStatus(providers.data, 'composio');
   const nango = findStatus(providers.data, 'nango');
-  // An account that isn't linked anymore can be linked again; that and a key
-  // are equal choices, so neither is pressed on the person.
   const newApps = appConnections.data?.newApps;
-  const relink = newApps?.status === 'setup_needed' && newApps.reason === 'dorkos_account_unlinked';
+  const setupReason = newApps?.status === 'setup_needed' ? newApps.reason : null;
+  // An account that is linked but not working, or no longer linked, can be
+  // linked again; that and a key are equal choices, so neither is pressed.
+  const relink =
+    setupReason === 'dorkos_account_unlinked' || setupReason === 'dorkos_account_unavailable';
+  // With no account at all, the account is the way most people want.
+  const accountFirst = setupReason === 'nothing_set_up';
+  // A saved key that failed comes first: fixing it is the shortest way back.
+  const keyFirst = setupReason === 'own_key_unavailable';
+  const offerAccount = relink || accountFirst || keyFirst;
+  const openAccount = () => {
+    onLeave?.();
+    settings.open('account');
+  };
+  const accountChoice = relink ? (
+    <Button size="lg" variant="outline" className="w-full" onClick={openAccount}>
+      Link my DorkOS account again
+    </Button>
+  ) : (
+    <div className="space-y-1.5">
+      <Button
+        size="lg"
+        variant={accountFirst ? 'default' : 'outline'}
+        className="w-full"
+        onClick={openAccount}
+      >
+        Use a DorkOS account
+      </Button>
+      <p className="text-muted-foreground text-center text-xs">
+        Sign in or create one. DorkOS connects your apps for you.
+      </p>
+    </div>
+  );
 
   return (
     <div data-testid="first-connect-step" className="space-y-4">
@@ -70,19 +101,7 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
         </p>
       )}
 
-      {relink && (
-        <Button
-          size="lg"
-          variant="outline"
-          className="w-full"
-          onClick={() => {
-            onLeave?.();
-            settings.open('account');
-          }}
-        >
-          Link my DorkOS account again
-        </Button>
-      )}
+      {offerAccount && !keyFirst && accountChoice}
 
       {composio &&
         (showComposio ? (
@@ -91,7 +110,7 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
           <div className="space-y-1.5">
             <Button
               size="lg"
-              variant={relink ? 'outline' : 'default'}
+              variant={relink || accountFirst ? 'outline' : 'default'}
               className="w-full"
               onClick={() => setShowComposio(true)}
             >
@@ -103,6 +122,8 @@ export function FirstConnectStep({ reason, onLeave }: FirstConnectStepProps) {
             </p>
           </div>
         ))}
+
+      {offerAccount && keyFirst && accountChoice}
 
       {nango && (
         <Collapsible>

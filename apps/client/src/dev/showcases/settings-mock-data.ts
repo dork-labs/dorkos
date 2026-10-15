@@ -33,6 +33,7 @@ import type { ExecutionException } from '@/layers/entities/agent';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { buildRuntimeCardSummary, type RuntimeCardViewProps } from '@/layers/features/settings';
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
+import { CHOSEN_BY_DORKOS } from '@dorkos/shared/runtime-connect';
 import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
 
 export { MOCK_ACCOUNT_USAGE } from './account-mock-data';
@@ -61,8 +62,8 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   // The shipped defaults again, so the Rooms tab renders its out-of-the-box
   // state rather than the skeleton it shows before the numbers have been read.
   rooms: {
-    engagedWindowMinutes: 10,
-    engagedWindowPosts: 5,
+    engagedWindowMinutes: 60,
+    engagedWindowPosts: 15,
     ...ROOM_TURN_LIMIT_DEFAULTS,
   },
   port: 4242,
@@ -139,6 +140,9 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     dismissedAt: null,
     completedAt: null,
     runtimeDefaultSetAt: null,
+    firstRunPath: null,
+    welcomeEntryId: null,
+    priorRuntime: null,
   },
   agents: {
     defaultDirectory: '/Users/dev/dorkos/agents',
@@ -367,6 +371,8 @@ export interface RuntimeCardShowcaseOptions {
   models?: ModelOption[] | undefined;
   /** The configured model id, or `null` for the runtime's own choice. */
   model?: string | null;
+  /** DorkOS's own engine on credits: the no-default option reads "Chosen by DorkOS". */
+  chosenByDorkos?: boolean;
   /** The configured effort, or `null` for the runtime's own choice. */
   effort?: EffortLevel | null;
   /** This runtime's own stop, or `null` when it follows the shared row. */
@@ -433,7 +439,12 @@ export function createRuntimeCardProps(
     onMakeDefault = noop,
     reconnect,
     setupDetails,
+    chosenByDorkos = false,
   } = options;
+  // The DorkOS card's own words for "nobody chose", as `RuntimeCard` passes them.
+  const dorkosPicks = chosenByDorkos
+    ? { inheritLabel: CHOSEN_BY_DORKOS, description: 'Which model new chats start on.' }
+    : {};
 
   const settings = playgroundRuntimeSettings(type);
   // The container's own rule, not a second one: a declaration that has not
@@ -461,6 +472,7 @@ export function createRuntimeCardProps(
       settings,
       model,
       models,
+      ...(chosenByDorkos ? { inheritModelLabel: 'a model chosen by DorkOS' } : {}),
       effort,
       // The same second answer the Effort row gets, so the showcase's collapsed
       // line cannot promise an effort its own opened card calls stranded.
@@ -469,7 +481,7 @@ export function createRuntimeCardProps(
       trustInherited: trustStop === null,
       ...(sectionValues ? { sectionValues } : {}),
     }),
-    model: { models, value: model, onChange: noop },
+    model: { models, value: model, onChange: noop, ...dorkosPicks },
     effort: {
       supportsEffort: settings?.supportsEffort ?? false,
       selectedModel,

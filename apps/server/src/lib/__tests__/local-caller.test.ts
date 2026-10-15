@@ -6,11 +6,15 @@
  * `DORKOS_ALLOW_INSECURE_BIND` per test. That mock would reach every other
  * assertion in the file next door, which is about who a caller is and reads real
  * config.
+ *
+ * Every case runs through a real Hono app, reading the request's facts as a
+ * route does.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
+import type { RequestFactsEnv } from '../../http/request-facts.js';
+import { honoListener, listeningServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable stand-in so the container flag can be moved one test at a time — the
 // reader consults it per request, which is the behaviour under test. Same shape
@@ -19,6 +23,8 @@ const mockEnv = vi.hoisted(() => ({ DORKOS_ALLOW_INSECURE_BIND: false }));
 vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 const { isLocalCaller } = await import('../caller-authority.js');
+const { honoRequestFacts } = await import('../../http/request-facts.js');
+const { markManagedIngress } = await import('../../services/core/remote/ingress-mark.js');
 
 /**
  * The TCP peer the app reports for the current test. `null` spells "the socket
@@ -28,34 +34,39 @@ const { isLocalCaller } = await import('../caller-authority.js');
  */
 let currentPeer: string | null = '127.0.0.1';
 
+/** Whether the current test's request arrived through the managed ingress. */
+let viaManagedIngress = false;
+
 // One app, one listener: the peer is rewritten per request so a LAN caller can
 // be simulated without a second network interface, exactly as the runtime
 // connect route's own peer tests do.
-const app = express();
-app.use((req, _res, next) => {
-  Object.defineProperty(req.socket, 'remoteAddress', {
+const honoApp = new Hono<RequestFactsEnv>();
+honoApp.get('/probe', (c) => {
+  Object.defineProperty(c.env.incoming.socket, 'remoteAddress', {
     value: currentPeer ?? undefined,
     configurable: true,
   });
-  next();
+  if (viaManagedIngress) markManagedIngress(c.env.incoming);
+  return c.json({ local: isLocalCaller(honoRequestFacts(c)) });
 });
-app.get('/probe', (req, res) => res.json({ local: isLocalCaller(req) }));
-const server = listeningServer(app);
 
-/** Ask the probe with a given `Host` header and TCP peer. */
-async function probe(host: string, peer: string | null = '127.0.0.1'): Promise<boolean> {
-  currentPeer = peer;
-  const res = await request(server).get('/probe').set('Host', host);
-  expect(res.status).toBe(200);
-  return res.body.local as boolean;
-}
+const server = listeningServer(honoListener(honoApp));
 
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
   currentPeer = '127.0.0.1';
+  viaManagedIngress = false;
 });
 
 describe('isLocalCaller', () => {
+  /** Ask the probe with a given `Host` header and TCP peer. */
+  async function probe(host: string, peer: string | null = '127.0.0.1'): Promise<boolean> {
+    currentPeer = peer;
+    const res = await request(server).get('/probe').set('Host', host);
+    expect(res.status).toBe(200);
+    return res.body.local as boolean;
+  }
+
   it('admits a loopback peer asking for a loopback host', async () => {
     expect(await probe('localhost:4242')).toBe(true);
     expect(await probe('127.0.0.1:4242')).toBe(true);
@@ -86,5 +97,14 @@ describe('isLocalCaller', () => {
     // operator that sign-in needs a computer they cannot walk to.
     mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
     expect(await probe('dorkos.example.com', '172.17.0.1')).toBe(true);
+  });
+
+  it('refuses a request the managed ingress admitted, under any Host and any flag', async () => {
+    // The forwarding agent is on loopback, so peer and Host could both read
+    // local; the ingress mark is what says a person is on another device.
+    viaManagedIngress = true;
+    expect(await probe('localhost:4242')).toBe(false);
+    mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+    expect(await probe('localhost:4242')).toBe(false);
   });
 });

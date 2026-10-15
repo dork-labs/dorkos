@@ -43,7 +43,7 @@ import {
   type LiveSettings,
   type ReuseDecision,
 } from './launch-fingerprint.js';
-import type { PumpControlQuery } from './session-pump-contract.js';
+import type { PumpControlQuery } from './warm-process/session-pump-contract.js';
 
 /**
  * May the next dispatch ride the live process, and what has to change first?
@@ -220,6 +220,13 @@ function fingerprintAfter(
   if (unapplied.length === 0) return decision.to;
   const live: MutableLiveSettings = { ...decision.to.live };
   for (const { pin } of unapplied) keepOldValue(live, pin, decision.from.live);
+  // A mode change nobody answered may still land later, so the process's mode is
+  // UNKNOWN rather than the old one: recorded as none, it never matches what the
+  // next dispatch wants, which sets it again (or, under a ceiling, replaces the
+  // process) instead of riding a mode it cannot name.
+  if (unapplied.some(({ pin, ack }) => pin === 'permissionMode' && ack === 'unacked')) {
+    live.permissionMode = undefined;
+  }
   return { ...decision.to, live };
 }
 

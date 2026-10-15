@@ -15,6 +15,7 @@ export type {
   TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
+  TurnStartNote,
   TurnExecutionSettings,
   LateFollowEnd,
   LateTurn,

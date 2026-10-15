@@ -50,7 +50,11 @@ import {
   readInstallationRoomMutationContext,
   type InstallationRoomWrites,
 } from '../../../canvas/doc-channel/writes/installation-room-writes.js';
-import { codeSpan, escapeMarkdown, fileChangeSentence } from '../room-file-change-text.js';
+import {
+  codeSpan,
+  escapeMarkdown,
+  fileChangeSentence,
+} from '../file-editor/room-file-change-text.js';
 import {
   createOriginalOwnedRoomFixture,
   type OriginalOwnedRoomFixture,

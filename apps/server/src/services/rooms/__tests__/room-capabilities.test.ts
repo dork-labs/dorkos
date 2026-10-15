@@ -673,11 +673,16 @@ describe('the rooms capability domain', () => {
     it('tells the model to react instead of a filler word for an ack-only message (DOR-1234)', () => {
       const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
       expect(react?.description).toContain('"no reply needed", "just ack this"');
-      expect(react?.description).toContain('✅ seen, 👍 agreed, 👀 looking');
+      expect(react?.description).toContain('(✅ seen, 👍 agreed)');
+      // The 👀 receipt is the room's own, never the agent's (DOR-2823).
+      expect(react?.description).toContain('you cannot use 👀 yourself');
+      expect(react?.description).not.toContain('👀 looking');
     });
 
     it('puts an emoji on a message and takes it back', async () => {
       const entry = service.post(channel.id, { authorId: human, text: 'shipping' });
+      // Let the picked agent's turn end, so the room's 👀 receipt is off (DOR-2823).
+      await service.triggersIdle();
 
       await expect(
         call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' })
@@ -688,19 +693,6 @@ describe('the rooms capability domain', () => {
         call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' })
       ).resolves.toEqual({ reacted: false });
       expect(service.reactionsFor(channel.id, entry.id)).toEqual([]);
-    });
-
-    it('surfaces the rate bound as a typed refusal once the hour is spent', async () => {
-      const entries = Array.from({ length: 21 }, (_, n) =>
-        service.post(channel.id, { authorId: human, text: `line ${n}` })
-      );
-      for (const entry of entries.slice(0, 20)) {
-        await call('rooms.react', { roomId: channel.id, entryId: entry.id, emoji: '👍' });
-      }
-
-      await expect(
-        call('rooms.react', { roomId: channel.id, entryId: entries[20]!.id, emoji: '👍' })
-      ).rejects.toMatchObject({ payload: { code: 'REACTION_RATE_LIMITED' } });
     });
   });
 
@@ -1243,10 +1235,10 @@ describe('the rooms MANAGEMENT verbs', () => {
     grantHeld = true;
     resetPermissionGate();
     // The real gate, over sources this file can move — the same seam boot wires
-    // to the config and the agent's manifest. No preset chosen (Unchanged), so
-    // Rooms is Blocked unless the agent's own setting allows it.
+    // to the config and the agent's manifest. A person set Rooms to Blocked, so
+    // it is Blocked unless the agent's own setting allows it.
     initPermissionGate({
-      readConfig: () => ({ preset: null, defaults: { areas: {}, actions: {} } }),
+      readConfig: () => ({ preset: null, defaults: { areas: { rooms: 'blocked' }, actions: {} } }),
       readAgentPermissions: async () => (grantHeld ? { areas: { rooms: 'allowed' } } : undefined),
     });
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
@@ -1616,7 +1608,7 @@ describe('the rooms MANAGEMENT verbs', () => {
         (update?.input as unknown as { shape: Record<string, unknown> }).shape
       );
 
-      expect(shape.sort()).toEqual(['roomId', 'title', 'topic']);
+      expect(shape.sort()).toEqual(['lead', 'roomId', 'title', 'topic']);
     });
 
     it('refuses a rename onto a taken name without naming the room that holds it', async () => {

@@ -98,8 +98,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createAgentsRouter } from '../agents.js';
+import { createAgentsRoutes } from '../agents.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { runWithAuditActor } from '../../services/audit/audit-context.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -116,10 +117,9 @@ beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
 // Build a minimal Express app with just the agents router
-const app = express();
-app.use(express.json());
-app.use('/api/agents', createAgentsRouter());
-const testServer = listeningServer(app);
+const testServer = listeningServer(
+  honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() })
+);
 
 const mockManifest: AgentManifest = {
   id: 'test-agent-id',
@@ -554,6 +554,19 @@ describe('Agents Routes', () => {
       expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
+    it('refuses an agent reporting to itself with REPORTS_TO_CYCLE (DOR-2788)', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ reportsTo: 'test-agent-id' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'REPORTS_TO_CYCLE' });
+      expect(mockWriteManifest).not.toHaveBeenCalled();
+    });
+
     it("records the agent's own model and effort", async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
@@ -868,6 +881,43 @@ describe('Agents Routes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// createdBy: the account that made the agent (spec `heartbeats` §4.1)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/agents records who created it (DOR-2788)', () => {
+  // Stands in for the audit-actor step: the person at the app.
+  const attributed = honoGroupListener(
+    { path: '/api/agents', routes: createAgentsRoutes() },
+    {
+      before: (_c, next) =>
+        runWithAuditActor(
+          { actor: { accountId: 'acct-owner', kind: 'person', name: 'Dorian' }, surface: 'app' },
+          next
+        ),
+    }
+  );
+  const attributedServer = listeningServer(attributed);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadManifest.mockResolvedValue(null);
+    mockWriteManifest.mockResolvedValue(undefined);
+  });
+
+  it('writes createdBy from the caller, never from the body', async () => {
+    const res = await request(attributedServer)
+      .post('/api/agents')
+      .send({ path: '/home/user/new-project', createdBy: 'forged' });
+
+    expect(res.status).toBe(201);
+    expect(mockWriteManifest).toHaveBeenCalledWith(
+      '/home/user/new-project',
+      expect.objectContaining({ createdBy: 'acct-owner' })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ADR-0043: MeshCore sync integration
 // ---------------------------------------------------------------------------
 
@@ -875,10 +925,12 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   const mockSyncFromDisk = vi.fn().mockResolvedValue(true);
   const mockMeshCore = { syncFromDisk: mockSyncFromDisk };
 
-  const appWithMesh = express();
-  appWithMesh.use(express.json());
-  appWithMesh.use('/api/agents', createAgentsRouter(mockMeshCore));
-  const meshTestServer = listeningServer(appWithMesh);
+  const meshTestServer = listeningServer(
+    honoGroupListener({
+      path: '/api/agents',
+      routes: createAgentsRoutes({ meshCore: mockMeshCore }),
+    })
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();

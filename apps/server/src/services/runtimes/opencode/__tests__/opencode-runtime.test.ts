@@ -31,7 +31,10 @@ import {
   getOrCreateProjector,
   disposeProjector,
 } from '../../../session/session-state-projector.js';
-import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import {
+  RuntimeRegistry,
+  observeOriginalRegisteredRuntimeStream,
+} from '../../../core/runtime-registry.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { deriveDorkosSessionId } from '../sessions/session-mapper.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
@@ -41,7 +44,9 @@ import {
 } from '../providers/check-dependencies.js';
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
+import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
   DIRECTORY,
@@ -1404,7 +1409,15 @@ describe('OpenCodeRuntime', () => {
       const firstEvents = await first.finished;
       const errorEvent = firstEvents.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.data).toMatchObject({ code: 'stream_error' });
+      // A plain notice, not the stream's own words (DOR-2717): a crashed
+      // sidecar takes the reply with it, and nothing wakes the chat later.
+      expect(errorEvent!.data).toMatchObject({
+        code: 'stream_error',
+        category: 'execution_error',
+        message: OPENCODE_STREAM_LOST_MESSAGE,
+        details: 'sidecar died',
+      });
+      expect(OPENCODE_STREAM_LOST_MESSAGE.split(/\s+/).length).toBeLessThanOrEqual(15);
       expect(firstEvents[firstEvents.length - 1]!.type).toBe('done');
 
       // Turn 2: catch → getClient() again → resubscribe → healthy stream.
@@ -2448,6 +2461,33 @@ describe('OpenCodeRuntime', () => {
       expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
     });
 
+    it('runs the turn without connected apps when the chat has no recorded agent (DOR-2752)', async () => {
+      const harness = makeRuntime();
+      const principals = connectorPort();
+      vi.mocked(principals.openTurn).mockRejectedValueOnce(
+        new ConnectorRuntimeAuthorityError('agent_unrecorded', 'no recorded agent')
+      );
+      enableConnectorTools(harness, principals);
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      const prompt = JSON.stringify(harness.client.session.promptAsync.mock.calls.at(-1));
+      expect(prompt).not.toContain('Accounts this agent session can use right now');
+      expect(
+        harness.client.mcp.add.mock.calls.some(
+          (call) => call[0]?.body?.name === 'dorkos_connections'
+        )
+      ).toBe(false);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(principals.revoke).not.toHaveBeenCalled();
+    });
+
     it('finishes revocation before granting the same-directory lease to the next turn', async () => {
       const harness = makeRuntime();
       const createLeaseSupervisor = vi.fn(() => ({
@@ -2891,7 +2931,7 @@ import {
 } from '../../../canvas/doc-channel/service.js';
 import { wakeAuthorizedRoomDue } from '../../../canvas/doc-channel/authorization.js';
 import { docDocumentGeneration } from '../../../canvas/doc-channel/identity/incarnation.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 import type { PreparedRoomResponder } from '../../../canvas/doc-channel/current/current-operation-types.js';
 
 describe('genuine original OpenCode Room source', () => {
@@ -2915,6 +2955,8 @@ describe('genuine original OpenCode Room source', () => {
     'early settings Error',
     'early settings undefined',
     'early credits refusal',
+    'paused before provider preparation',
+    'paused original observed stream',
     'early mesh Error with secondary revoke',
     'early mesh undefined with secondary revoke',
     'final prompt callback revocation',
@@ -2937,6 +2979,8 @@ describe('genuine original OpenCode Room source', () => {
     let revokeFault: ReturnType<typeof vi.spyOn> | undefined;
     let pendingChild: ChildProcessWithoutNullStreams | undefined;
     let pendingChildClosed: Promise<unknown> | undefined;
+    let resetPause: (() => void) | undefined;
+    let resetPauseHome: (() => void) | undefined;
     let failed = false,
       first: unknown;
     try {
@@ -3061,6 +3105,39 @@ describe('genuine original OpenCode Room source', () => {
         ).resolves.toBeUndefined();
         expect(peer.client.session.promptAsync).not.toHaveBeenCalled();
       }
+      if (scenario === 'paused before provider preparation') {
+        const { AgentPauseService, initAgentPause, resetAgentPause } =
+          await import('../../../mesh/pause/agent-pause.js');
+        const { setAgentHomeRegistry } = await import('../../../core/agent-identity/agent-home.js');
+        setAgentHomeRegistry({
+          isRegisteredHome: (cwd) => cwd === agentDir,
+          listRegisteredHomes: () => [agentDir],
+          managedWorkspaceOwner: () => null,
+          roomsDir: null,
+        });
+        resetPauseHome = () => setAgentHomeRegistry(undefined);
+        const pauses = new AgentPauseService({ db: h.db });
+        initAgentPause(pauses);
+        resetPause = resetAgentPause;
+        await pauses.pause(agentId, {
+          accountId: 'original-pause-owner',
+          kind: 'person',
+          name: 'Owner',
+        });
+        const clientsBefore = harness.provider.getClient.mock.calls.length;
+        await expect(
+          prepareServiceOriginalRoomResponder(h.http.service, harness.runtime, holder, sessionId)
+        ).resolves.toBeUndefined();
+        expect(harness.provider.getClient).toHaveBeenCalledTimes(clientsBefore);
+        expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+        expect(h.db.select().from(connectorRuntimeBindings).all()).toHaveLength(nativeBefore);
+        expect(harness.provider.turnSettled).toHaveBeenCalledTimes(settlementsBefore);
+        await pauses.resume(agentId, {
+          accountId: 'original-pause-owner',
+          kind: 'person',
+          name: 'Owner',
+        });
+      }
       prepared = await prepareServiceOriginalRoomResponder(
         h.http.service,
         harness.runtime,
@@ -3085,7 +3162,47 @@ describe('genuine original OpenCode Room source', () => {
       const raw = startOpenCodeCommittedRoomResponder(harness.runtime, prepared, committed);
       expect(raw[Symbol.asyncIterator]()).toBe(raw);
       expect(typeof raw.next).toBe('function');
-      if (scenario === 'entered pending next direct return') {
+      if (scenario === 'paused original observed stream') {
+        const { AgentPauseService, initAgentPause, resetAgentPause } =
+          await import('../../../mesh/pause/agent-pause.js');
+        const { setAgentHomeRegistry } = await import('../../../core/agent-identity/agent-home.js');
+        setAgentHomeRegistry({
+          isRegisteredHome: (cwd) => cwd === agentDir,
+          listRegisteredHomes: () => [agentDir],
+          managedWorkspaceOwner: () => null,
+          roomsDir: null,
+        });
+        resetPauseHome = () => setAgentHomeRegistry(undefined);
+        const pauses = new AgentPauseService({ db: h.db });
+        initAgentPause(pauses);
+        resetPause = resetAgentPause;
+        await pauses.pause(agentId, {
+          accountId: 'original-pause-owner',
+          kind: 'person',
+          name: 'Owner',
+        });
+        const registry = new RuntimeRegistry();
+        registry.setDb(h.db);
+        registry.register(harness.runtime);
+        const publicSend = vi.spyOn(harness.runtime, 'sendMessage');
+        const returned = vi.spyOn(raw, 'return');
+        try {
+          const observed = observeOriginalRegisteredRuntimeStream(
+            registry.get('opencode'),
+            sessionId,
+            raw
+          );
+          await expect(observed.next()).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
+          expect(returned).toHaveBeenCalledTimes(1);
+          expect(publicSend).not.toHaveBeenCalled();
+          expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(promptsBefore);
+          expect(readOpenCodeNativeOperation(original.nativeOperation)).toBeUndefined();
+          expect(readOpenCodePreparedRoomResponder(harness.runtime, prepared)).toBeUndefined();
+        } finally {
+          returned.mockRestore();
+          publicSend.mockRestore();
+        }
+      } else if (scenario === 'entered pending next direct return') {
         const nativeSignal = readOpenCodeNativeOperation(original.nativeOperation)?.signal;
         if (!nativeSignal) throw new Error('Original native cancellation signal missing');
         harness.client.session.promptAsync.mockImplementationOnce(async () => {
@@ -3466,6 +3583,8 @@ describe('genuine original OpenCode Room source', () => {
       first = cause;
     } finally {
       revokeFault?.mockRestore();
+      resetPause?.();
+      resetPauseHome?.();
       const attempt = async (work: () => Promise<unknown> | void) => {
         try {
           await work();

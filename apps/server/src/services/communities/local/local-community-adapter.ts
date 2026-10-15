@@ -129,41 +129,10 @@ import {
   toCommunitySignal,
   toRoomPresence,
 } from './local-projection.js';
+import { LOCAL_CAPABILITIES, requireHumanReader } from './local-capabilities.js';
 
 /** Page size when a caller does not ask for one. Matches the port's own default shape. */
 const DEFAULT_PAGE_SIZE = 50;
-
-/** Refuse a selected agent before local reads can fall back to the human view. */
-function requireHumanReader(
-  community: CommunityRef,
-  context: CommunityReadContext | undefined,
-  method: string
-): void {
-  if (context?.actingMemberId !== undefined) {
-    throw new CommunityUnsupportedError(community, 'agentActing', method);
-  }
-}
-
-/** What this backend declares. Every value is argued in this module's doc. */
-const LOCAL_CAPABILITIES: CommunityCapabilities = {
-  type: 'local',
-  roomList: 'push',
-  roomAddressing: 'slug',
-  canPost: true,
-  roomAdmin: true,
-  agentActing: false,
-  attachments: false,
-  roles: { supported: false, values: [] },
-  admission: 'open',
-  invite: 'none',
-  agentAdmission: 'none',
-  readCursor: 'server',
-  responseMode: true,
-  threadDepth: 1,
-  signals: 'both',
-  credential: 'none',
-  features: {},
-};
 
 /** Everything {@link LocalCommunityAdapter} is constructed from. */
 export interface LocalCommunityAdapterDeps {
@@ -723,6 +692,27 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    */
   createInvite(): Promise<CommunityInvite> {
     return Promise.reject(new CommunityUnsupportedError(this.community, 'invite', 'createInvite'));
+  }
+
+  // --- Conduct -------------------------------------------------------------
+  //
+  // Refused: `conduct` and `reports` are off. Nobody on your own machine is
+  // muted, agrees to rules, picks a name for one space or reports a message:
+  // those belong to a community other people share.
+
+  getStanding(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'conduct', 'getStanding'));
+  }
+  acceptRules(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'conduct', 'acceptRules'));
+  }
+  setDisplayName(): Promise<never> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'conduct', 'setDisplayName')
+    );
+  }
+  reportEntry(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'reports', 'reportEntry'));
   }
 
   // --- Ephemeral -----------------------------------------------------------

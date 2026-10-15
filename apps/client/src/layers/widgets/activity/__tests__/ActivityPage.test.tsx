@@ -21,7 +21,9 @@ vi.mock('@/layers/features/activity-feed-page', () => ({
   }),
   useActivityFilters: () => ({ queryFilters: {}, isFiltered: false }),
   useLastVisitedActivity: () => null,
+  useActivityView: () => ({ view: 'activity', setView: vi.fn() }),
   ActivitySinceLastVisit: () => null,
+  ActivityViewToggle: () => null,
   // The chips are the filter feature's and have their own suite; what this file
   // asserts is WHERE they are rendered, which is a fact about this page.
   ActivityFilterBar: () => <div data-testid="activity-filter-bar">filters</div>,

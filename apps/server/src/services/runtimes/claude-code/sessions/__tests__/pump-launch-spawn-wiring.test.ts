@@ -8,7 +8,7 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { createPumpLauncher, type PumpLaunchPlan } from '../pump-launch.js';
+import { createPumpLauncher, type PumpLaunchPlan } from '../warm-process/pump-launch.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 

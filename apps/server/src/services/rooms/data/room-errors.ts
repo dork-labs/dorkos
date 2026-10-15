@@ -107,8 +107,7 @@ export type RoomErrorCode =
    * room ({@link RoomVisibility.requirePersonAuthor}).
    *
    * It used to guard reactions too. It does not any more: an agent may put an
-   * emoji on a message, bounded by {@link ReactionBudget} rather than by kind
-   * (ADR 260814-195522, which reverses etiquette E16b).
+   * emoji on a message (ADR 260814-195522, which reverses etiquette E16b).
    */
   | 'PEOPLE_ONLY'
   /**
@@ -161,38 +160,6 @@ export type RoomErrorCode =
    * narrower branch (`.claude/rules/room-conduct.md`).
    */
   | 'TOOL_RENAME_NOT_IN_DM'
-  /**
-   * One turn tried to post more messages into one room than
-   * `rooms.maxPostsPerTurn` allows (spec `tool-only-room-replies` §D9).
-   *
-   * **A mechanism, because a bound has to be one.** Nothing counted an agent's
-   * posts before this: multiple posts inside a turn cost ONE turn against the
-   * cascade budget (DOR-1434, deliberately — being legible is not a thing the
-   * room charges for), and etiquette E8's "one message, not three" is a prompt.
-   * `.claude/rules/room-conduct.md` is unambiguous that a prompt is not a bound,
-   * and posting is not an extra an agent rarely reaches for: it is the only
-   * voice it has.
-   *
-   * Counted per `(room, agent, turn)` on the live claim, so an agent that posts
-   * into a different room mid-turn spends nothing here, and a post made with no
-   * turn behind it is not bounded at all — it already costs a turn of its own.
-   *
-   * The message names the remedy rather than the rule: consolidate.
-   */
-  | 'TOO_MANY_POSTS_THIS_TURN'
-  /**
-   * An agent tried to change a room's shared canvas more times in one turn than
-   * `rooms.maxCanvasOpsPerTurn` allows (spec `room-canvas` §3.4).
-   *
-   * The twin of {@link RoomErrorCode.TOO_MANY_POSTS_THIS_TURN}, on the other
-   * thing an agent can do a lot of in one turn, and bounded for the same reason:
-   * a shared table buried under a dozen tabs nobody asked for is the
-   * over-participation the room bounds exist to damp. Counted inside
-   * `RoomCanvasService.apply` against the room turn's dispatch id, synchronously,
-   * so the refusal reaches the model that asked instead of dropping an operation
-   * the tool has already called successful.
-   */
-  | 'TOO_MANY_CANVAS_OPS_THIS_TURN'
   /**
    * A canvas document was named that this room's table does not hold.
    *
@@ -284,9 +251,17 @@ export type RoomErrorCode =
    */
   | 'TURN_WAS_STOPPED'
   /**
+   * A turn a stranger started has already posted as many messages as
+   * such a turn may (`OUTSIDER_TURN_LIMIT`, DOR-2739). Our own agents are not
+   * counted (ADR 261006-225605); this is the one count left, kept as an
+   * outsider protection so one message from someone outside the team cannot
+   * make a turn post without end into a room that goes straight back out.
+   */
+  | 'TOO_MANY_POSTS_THIS_TURN'
+  /**
    * A rooms capability was called on a login-on install by a caller the surface
    * could name neither as an agent nor as a person
-   * (`room-capabilities.ts`'s `callerAuthor`).
+   * (`service/room-caller-author.ts`'s `callerAuthor`).
    *
    * **A refusal rather than a fallback, and that is the whole fix.** These verbs
    * act on ONE member's rooms, so "who is asking" is not decoration; resolving an
@@ -294,8 +269,12 @@ export type RoomErrorCode =
    * came to read the owner's direct messages. There is no honest default on an
    * install that requires a login, so there is no default.
    *
-   * Unreachable with login off, where the operator IS the unattributable caller
-   * (the documented DOR-505 residual).
+   * With login off it is reached only by a CHAT with no agent identity (the
+   * in-session tool server is the one surface that names its chat, as
+   * `sessionId`; a surface that starts naming one opts into this refusal): a chat
+   * speaks for its agent, never for the person, so it never takes the operator
+   * fallback that other unattributable callers get there (the documented
+   * DOR-505 residual, DOR-2863).
    */
   | 'UNIDENTIFIED_CALLER'
   /**
@@ -317,16 +296,6 @@ export type RoomErrorCode =
    * a working token is exactly what would change the answer.
    */
   | 'AGENT_IDENTITY_UNVERIFIED'
-  /**
-   * One agent has used up its hourly reaction allowance in one room
-   * ({@link ReactionBudget}).
-   *
-   * A bound rather than a ban, and it is the whole price of letting agents react
-   * at all: a reaction is free, so nothing else in the system would stop a loop
-   * that sprays one on every message. People are never counted — a person
-   * clicking pills is the behaviour the feature is for.
-   */
-  | 'REACTION_RATE_LIMITED'
   /**
    * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
    * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast
@@ -428,6 +397,15 @@ export type RoomErrorCode =
   /** An agent named a file bigger than `uploads.maxFileSize`. */
   | 'ATTACHMENT_TOO_LARGE'
   | 'NOT_A_BRIDGED_ROOM'
+  /**
+   * A channel's lead was set to somebody who cannot lead it, or on a room that
+   * has none to set (DOR-2823): the id is not an agent member of the room, or
+   * the room is a direct message, where everything a person says is already
+   * addressed to whoever is in it.
+   */
+  | 'INVALID_LEAD'
+  /** An agent tried to put the room's own 👀 receipt on a message (DOR-2823). */
+  | 'RECEIPT_EMOJI_RESERVED'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that
    * has no surviving bridge row (chats-as-channels spec §3.5). Re-bridging is

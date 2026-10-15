@@ -55,12 +55,16 @@
  *   `caller`) -> the MCP fabricated rows red, alone.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
+  env: {
+    DORKOS_PORT: 4242,
+    MCP_API_KEY: undefined,
+    DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434',
+  },
 }));
 
 vi.mock('../../lib/version.js', () => ({
@@ -115,16 +119,15 @@ import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import { capabilityMcpTools } from '../../services/runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../services/relay/notify-budget.js';
-import { resolveAgentIdentity } from '../../middleware/agent-identity.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
   TOKEN_ABSOLUTE_TTL_MS,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { agentIdentityTokens } from '@dorkos/db';
-import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
-import { createMcpRouter } from '../mcp.js';
+import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createMcpEndpoint } from '../mcp.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -155,7 +158,6 @@ const agents = agentLookupFor({
 /** Minimal deps for the external MCP server — the shape `mcp-integration` uses. */
 function minimalMcpDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
@@ -287,13 +289,12 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
   }
 
   describe('POST /api/capabilities/:id/invoke', () => {
-    /** The invoke route behind the identity middleware, as `index.ts` mounts it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      return server;
+    /** The invoke route behind the `/api` chain, which resolves the agent identity. */
+    function app() {
+      return honoGroupListener({
+        path: '/api/capabilities',
+        routes: createCapabilitiesInvokeRoutes(registry),
+      });
     }
 
     it.each(DEAD_TOKEN_STATES)('refuses rooms.post for a %s token', async (state) => {
@@ -362,14 +363,14 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
   });
 
   describe('the external /mcp server', () => {
-    /** The real MCP router over the real external server, as `index.ts` wires it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use(
-        '/mcp',
-        createMcpRouter((caller) =>
+    /**
+     * The real MCP endpoint over the real external server, behind the chain
+     * that resolves the agent header, as `index.ts` wires it.
+     */
+    function app(): RequestListener {
+      return honoGroupListener({
+        path: '/mcp',
+        routes: createMcpEndpoint((caller) =>
           createExternalMcpServer(
             minimalMcpDeps(),
             undefined,
@@ -378,9 +379,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
             caller.userId,
             caller.agentIdentityPresented
           )
-        )
-      );
-      return server;
+        ),
+      });
     }
 
     /**
@@ -461,8 +461,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
  * domain onto the same server, through the same adapters: the boundary is a
  * property of `registry.invoke` and its adapters, not of the rooms domain.
  *
- * The install's config is "no preset chosen" (Unchanged), where Rooms is
- * Blocked, and the agent's own setting comes from a reader this file moves.
+ * The install's config has Rooms set to Blocked by a person (Full power lifts
+ * it), and the agent's own setting comes from a reader this file moves.
  */
 describe('a capability in the Rooms permission area, on the real surfaces', () => {
   let harness: RoomHarness;
@@ -519,7 +519,13 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
       roomDeps: { rooms: harness.service },
     });
     initPermissionGate({
-      readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
+      readConfig: () => ({
+        preset,
+        defaults: {
+          areas: preset === 'full' ? {} : ({ rooms: 'blocked' } as Record<string, 'blocked'>),
+          actions: {},
+        },
+      }),
       readAgentPermissions: async () => {
         if (agentRooms instanceof Error) throw agentRooms;
         return agentRooms ? { areas: { rooms: agentRooms } } : undefined;
@@ -565,14 +571,14 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
   }
 
   describe('the external /mcp server', () => {
-    /** The real MCP router over the real external server, as `index.ts` wires it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use(
-        '/mcp',
-        createMcpRouter((caller) =>
+    /**
+     * The real MCP endpoint over the real external server, behind the chain
+     * that resolves the agent header, as `index.ts` wires it.
+     */
+    function app(): RequestListener {
+      return honoGroupListener({
+        path: '/mcp',
+        routes: createMcpEndpoint((caller) =>
           createExternalMcpServer(
             minimalMcpDeps(),
             undefined,
@@ -581,9 +587,8 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
             caller.userId,
             caller.agentIdentityPresented
           )
-        )
-      );
-      return server;
+        ),
+      });
     }
 
     /** Post one JSON-RPC message, headers before body (see the note above). */
@@ -756,13 +761,12 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
   });
 
   describe('POST /api/capabilities/:id/invoke', () => {
-    /** The invoke route behind the identity middleware, as `index.ts` mounts it. */
-    function app(): express.Express {
-      const server = express();
-      server.use(express.json());
-      server.use(resolveAgentIdentity);
-      server.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      return server;
+    /** The invoke route behind the `/api` chain, which resolves the agent identity. */
+    function app() {
+      return honoGroupListener({
+        path: '/api/capabilities',
+        routes: createCapabilitiesInvokeRoutes(registry),
+      });
     }
 
     it('answers 403 — refused, with no card minted', async () => {

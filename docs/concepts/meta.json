@@ -1,4 +1,13 @@
 {
   "title": "Concepts",
-  "pages": ["architecture", "sidebar", "sessions", "rooms", "answering-agents", "relay", "mesh"]
+  "pages": [
+    "architecture",
+    "sidebar",
+    "sessions",
+    "rooms",
+    "answering-agents",
+    "heartbeats",
+    "relay",
+    "mesh"
+  ]
 }

@@ -155,11 +155,10 @@ describe('"Always Allow" and the session mode (DOR-1316)', () => {
   });
 
   // The clamp. A card that says "Always Allow" over one Write is not a person
-  // agreeing to a chat that never asks again — and making that durable would
-  // carry it into every later launch, past the `428 AUTONOMY_ACK_REQUIRED` door
-  // on `PATCH /api/sessions/:id` that exists precisely so no client can.
+  // choosing a chat that never asks again — that is a choice made on the dial,
+  // and making it durable here would carry it into every later launch.
 
-  it('refuses to make a never-asks mode durable — that needs the consent door', async () => {
+  it('refuses to make a never-asks mode durable — that is chosen on the dial', async () => {
     const bypass: PermissionUpdate = {
       type: 'setMode',
       mode: 'bypassPermissions',
@@ -176,10 +175,9 @@ describe('"Always Allow" and the session mode (DOR-1316)', () => {
     expect(resolved).toEqual([[bypass]]);
   });
 
-  it('refuses a mode this runtime does not declare, whatever the SDK calls it', async () => {
-    // `dontAsk` exists in the SDK and is deliberately not surfaced by
-    // claude-code. Storing it would make the session row display a posture the
-    // runtime never adopted.
+  it('never adopts Never ask off a card: a person picks it on the dial (DOR-2838)', async () => {
+    // "Always Allow" over one call is not a person choosing a chat that refuses
+    // everything it would ask about; that choice is made on the trust dial.
     const undeclared: PermissionUpdate = {
       type: 'setMode',
       mode: 'dontAsk',

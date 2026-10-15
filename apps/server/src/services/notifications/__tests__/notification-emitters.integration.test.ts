@@ -10,7 +10,10 @@ import { NotificationService, setNotificationService } from '../notification-ser
 import { notifyRunCompleted } from '../emitters/run-completed.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
+import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
+import { EventWakes } from '../../heartbeats/event-wakes.js';
+import { systemClock } from '../../heartbeats/beat-scheduler.js';
+import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 import {
   clearTestHomes,
@@ -23,6 +26,11 @@ beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
+// Which chats' running turn another chat's message started (spec spin-off-chats §6).
+const chatStarted = vi.hoisted(() => new Set<string>());
+vi.mock('../../session/chat-messages/chat-started-turns.js', () => ({
+  isChatStartedTurn: (sessionId: string) => chatStarted.has(sessionId),
+}));
 
 /** One captured SSE broadcast. */
 type Broadcast = [string, unknown];
@@ -159,12 +167,10 @@ describe('a finished run', () => {
   });
 });
 
-describe('an agent that will not stop talking', () => {
+describe('an agent that talks a lot', () => {
   /** The tool, wired so nothing external resolves — the stock-install shape. */
-  function notifyUserHandler(limit: number) {
-    const budget = new NotifyBudget({ limit: () => limit, now: () => 0 });
+  function notifyUserHandler() {
     const deps = {
-      notifyBudget: budget,
       relayCore: { publish: vi.fn() },
       bindingStore: { getAll: () => [] },
       bindingRouter: { getSessionsByBinding: () => [] },
@@ -178,29 +184,23 @@ describe('an agent that will not stop talking', () => {
     });
   }
 
-  it('cannot write more inbox rows than its hourly allowance, however varied the notes', async () => {
-    // The hole this closes: every one of these fails to reach any transport, so
-    // before DOR-1383 each was refunded and none was ever rate-limited. Varying
-    // the text defeats dedupe, which leaves the allowance as the only thing
-    // standing between a looping agent and an unbounded inbox.
-    const limit = 10;
-    const handler = notifyUserHandler(limit);
+  it('keeps every note as an inbox row: nothing caps how often an agent speaks (DOR-2739)', async () => {
+    // Every one of these reaches no transport. Each is still recorded, which is
+    // what the review that replaced the hourly count reads from.
+    const handler = notifyUserHandler();
 
     const codes: string[] = [];
-    for (let i = 0; i < 200; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       const result = await handler({ message: `note number ${i}` });
       codes.push(JSON.parse(result.content[0].text).code as string);
     }
 
-    expect(codes.filter((c) => c === 'NO_BINDING')).toHaveLength(limit);
-    expect(codes.filter((c) => c === 'NOTIFY_RATE_LIMITED')).toHaveLength(200 - limit);
-    expect(service.list({ limit: 100, unread: false }).notifications).toHaveLength(limit);
+    expect(codes.filter((c) => c === 'NO_BINDING')).toHaveLength(15);
+    expect(service.list({ limit: 100, unread: false }).notifications).toHaveLength(15);
   });
 
   it('writes no row at all when the operator switched initiating off', async () => {
-    const budget = new NotifyBudget({ limit: () => 10, now: () => 0 });
     const deps = {
-      notifyBudget: budget,
       relayCore: { publish: vi.fn() },
       bindingStore: {
         getAll: () => [
@@ -234,9 +234,6 @@ describe('an agent that will not stop talking', () => {
     expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
     expect(announced()).toHaveLength(0);
-    // A switch the operator set costs the agent nothing — it is a decision, not
-    // a missing integration.
-    expect(budget.tryReserve('agent-1')).toBe(true);
   });
 });
 
@@ -344,6 +341,52 @@ describe('a turn that finishes', () => {
     expect(row).toMatchObject({ kind: 'turn.completed', agentId: ACME_AGENT_ID });
   });
 
+  it('stays quiet for a turn another chat started: agents talking to each other never notify you', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    chatStarted.add('sess-chat');
+    try {
+      const projector = new SessionStateProjector('sess-chat');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'turn_start' } as never);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
+    } finally {
+      chatStarted.delete('sess-chat');
+    }
+  });
+
+  it('stays quiet for a heartbeat turn: a beat finishing is not news (spec heartbeats §7.4)', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    registerBeatTurn('sess-beat', { agentId: ACME_AGENT_ID, beatId: 'b1', messageId: 'm1' });
+    try {
+      const projector = new SessionStateProjector('sess-beat');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'turn_start' } as never);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
+    } finally {
+      resetBeatTurns();
+    }
+  });
+
+  it('arms no session.error for a heartbeat turn that fails', async () => {
+    unsubscribes.push(watchSessionLifecycle());
+    registerBeatTurn('sess-beat-err', { agentId: ACME_AGENT_ID, beatId: 'b2', messageId: 'm2' });
+    try {
+      const projector = new SessionStateProjector('sess-beat-err');
+      projector.cwd = '/Users/dev/acme';
+      projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+      projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
+      await flush();
+      const rows = service.list({ limit: 25, unread: false }).notifications;
+      expect(rows.filter((r) => r.kind === 'session.error')).toHaveLength(0);
+    } finally {
+      resetBeatTurns();
+    }
+  });
+
   it('escalates session.error, not turn.completed, when a fatal frame closes under an SDK-named reason', async () => {
     // DOR-1676: this shape used to settle idle, so the turn announced itself as
     // COMPLETED. It now settles error, arming the standing session.error
@@ -435,5 +478,40 @@ describe('a session that errors, and clears', () => {
     const [row] = service.list({ limit: 25, unread: false }).notifications;
     expect(row).toMatchObject({ kind: 'session.error', outcome: 'cleared' });
     expect(row.agentId).toBeUndefined();
+  });
+});
+
+describe('a turn of its own that fails outside a beat', () => {
+  it("wakes the agent's beat, but never for a turn a stranger started", async () => {
+    vi.useFakeTimers();
+    const woken: string[] = [];
+    const hub = new EventWakes({
+      clock: systemClock,
+      localDay: () => '2026-10-12',
+      beat: (agentId) => woken.push(agentId),
+      agentIdAt: () => undefined,
+      agentsForConnection: () => [],
+      noteNewManager: () => undefined,
+      refresh: () => undefined,
+    });
+    hub.install();
+    try {
+      unsubscribes.push(watchSessionLifecycle());
+      noteTurnOrigin('sess-bridged', { kind: 'relay-binding' });
+      const fail = (id: string) => {
+        const projector = new SessionStateProjector(id);
+        projector.cwd = '/Users/dev/acme';
+        projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
+        vi.advanceTimersByTime(60_000);
+      };
+      fail('sess-bridged');
+      expect(woken).toEqual([]);
+      fail('sess-own');
+      expect(woken).toEqual([ACME_AGENT_ID]);
+    } finally {
+      hub.uninstall();
+      resetOutsiderTurns();
+      vi.useRealTimers();
+    }
   });
 });

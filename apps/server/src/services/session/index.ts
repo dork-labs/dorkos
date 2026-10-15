@@ -51,6 +51,7 @@ export type {
 // same truncation, as the session pane two panes away (DOR-1351).
 export { deriveSessionActivity } from './activity/derive-activity.js';
 export { persistenceModeFor } from './projector-persistence.js';
+export { wireSessionEventStore, sweepIdleProjectors } from './replay/projector-idle-sweep.js';
 export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './replay/event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
@@ -217,7 +218,7 @@ export { withStallGuard } from './stall-guard.js';
 export type { StallGuardOpts } from './stall-guard.js';
 export { TurnWindowSignal } from './turn-window-signal.js';
 export type { TurnWindowWatcher } from './turn-window-signal.js';
-export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
+export { toRawSessionEvent, feedProjector } from './projection/session-event-normalizer.js';
 export {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
@@ -261,7 +262,7 @@ export { dropUserLastMessageAtWithoutOperator } from './origin/user-last-message
 // --- What kind of thing STARTED a session, and the one mapping from that to
 // how much power its first row is born with (DOR-2105). Different question
 // from the overlays above, which label a session that already exists. ---
-export { permissionSeedForOrigin } from './origin/turn-origin.js';
+export { permissionSeedForOrigin, sessionVisibilityForOrigin } from './origin/turn-origin.js';
 export type { OriginPermissionSeed, TurnOrigin } from './origin/turn-origin.js';
 
 // --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---

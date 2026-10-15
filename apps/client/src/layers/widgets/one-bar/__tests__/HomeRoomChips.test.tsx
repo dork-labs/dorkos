@@ -39,7 +39,13 @@ const { room, roster, status, roomAsked, working } = vi.hoisted(() => ({
 }));
 const halt = vi.hoisted(() => vi.fn());
 
-vi.mock('@/layers/entities/room', () => ({
+vi.mock('@/layers/entities/room', async () => ({
+  // The real resolver, so the lead chip (DOR-2823) reads the roster these tests hand it.
+  roomLead: (
+    await vi.importActual<typeof import('@/layers/entities/room/lib/lead')>(
+      '@/layers/entities/room/lib/lead'
+    )
+  ).roomLead,
   useTeamRoom: () => ({
     status: room.current ? status.current : 'missing',
     room: room.current,

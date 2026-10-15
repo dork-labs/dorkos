@@ -77,7 +77,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
@@ -89,9 +90,12 @@ import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { isTurnInFlight } from '../../services/session/message-dispatcher.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const testServer = listeningServer(
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 /** Base URL for raw SSE collection through the file-scoped listener. */
 function testServerBaseUrl(): string {
@@ -157,7 +161,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   });
 
   afterEach(() => {
-    delete app.locals.meshCore;
+    delete sessionLocals.meshCore;
     // The projector registry is a process singleton; a triggered turn leaves
     // per-session projector state. Drop it so accumulated turns don't leak across
     // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
@@ -384,7 +388,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('records agentPath on first message for provenance', async () => {
-      app.locals.meshCore = {
+      sessionLocals.meshCore = {
         listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
       };
       await postMessage(TEST_MODE_SESSION, {
@@ -466,7 +470,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       const refused = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
-        .send({ permissionMode: 'dontAsk' });
+        .send({ permissionMode: 'retired-mode' });
       expect(refused.status).toBe(400);
       expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
 

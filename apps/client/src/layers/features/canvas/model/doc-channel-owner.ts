@@ -6,9 +6,12 @@ import {
   createOwnedCustody,
   startOwnedCustody,
   disposeOwnedCustody,
-} from './doc-channel-owner-custody';
-import { createOwnedReplayLifetime, createOwnedReplayRun } from './doc-channel-owner-replay';
-import { createOwnedFrameFacade } from './doc-channel-owner-frame';
+} from './doc-owner/doc-channel-owner-custody';
+import {
+  createOwnedReplayLifetime,
+  createOwnedReplayRun,
+} from './doc-owner/doc-channel-owner-replay';
+import { createOwnedFrameFacade } from './doc-owner/doc-channel-owner-frame';
 
 /** Compose the private record, replay and frame operations for the captured document Transport. */
 export function createDocChannelOwner(

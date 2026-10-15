@@ -256,6 +256,28 @@ export class ChatMessageStore {
   }
 
   /**
+   * The newest message one chat sent another with `delivery: 'interrupt'` —
+   * the sender's own stop of that chat's turn.
+   *
+   * @param fromSessionId - The chat that sent it.
+   * @param toSessionId - The chat it went to.
+   */
+  latestInterruptFrom(fromSessionId: string, toSessionId: string): ChatMessageRow | undefined {
+    return this.db
+      .select()
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.fromSessionId, fromSessionId),
+          eq(chatMessages.toSessionId, toSessionId),
+          eq(chatMessages.delivery, 'interrupt')
+        )
+      )
+      .orderBy(desc(chatMessages.createdAt))
+      .get();
+  }
+
+  /**
    * The DM chat one agent keeps with another, or undefined.
    *
    * @param fromAgentPath - The sending agent's home.

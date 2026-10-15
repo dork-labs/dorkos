@@ -4,10 +4,12 @@
  * `profile-unification` §1.5, spec `agent-memory` §User Experience).
  *
  * One component, three pages, because they differ only in which file they are
- * about. All take the whole height and all save on a button rather than on a
- * timer: these are the files a person writes prose into, and prose is edited in
- * passes — a debounce that fires mid-thought writes half a sentence to disk and
- * gives no moment where you can see that your work is safe.
+ * about. HEARTBEAT.md borrows it too, as one section of the Heartbeat page
+ * ({@link HeartbeatFileEditor}). The three pages take the whole height, and all
+ * four save on a button rather than on a timer: these are the files a person
+ * writes prose into, and prose is edited in passes — a debounce that fires
+ * mid-thought writes half a sentence to disk and gives no moment where you can
+ * see that your work is safe.
  *
  * Memory is the one the AGENT also writes. That changes nothing here — the same
  * editor, the same Save, the same refusal when the file is over budget — which
@@ -20,6 +22,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import type { Conventions } from '@dorkos/shared/mesh-schemas';
 import {
+  HEARTBEAT_MAX_CHARS,
   MEMORY_MAX_CHARS,
   NOPE_MAX_CHARS,
   SOUL_MAX_CHARS,
@@ -66,8 +69,11 @@ interface ConventionFile {
   title: string;
   /** What a failed save is called, before the server's own sentence. */
   errorLabel: string;
-  /** Which injection toggle it owns. */
-  key: 'soul' | 'nope' | 'memory';
+  /**
+   * Which injection toggle it owns. Absent for a file nothing injects
+   * (HEARTBEAT.md, read by beats only): no switch, and no prompt preview.
+   */
+  key?: 'soul' | 'nope' | 'memory';
   /** The character budget the server enforces. */
   maxChars: number;
   /** The advisory under the heading, when the file needs one. */
@@ -82,7 +88,12 @@ interface ConventionFile {
   write: (
     agent: ProfileAgentManifest,
     draft: string
-  ) => { soulContent?: string; nopeContent?: string; memoryContent?: string };
+  ) => {
+    soulContent?: string;
+    nopeContent?: string;
+    memoryContent?: string;
+    heartbeatContent?: string;
+  };
   /** What the character counter should say, which is not always the draft's length. */
   count: (agent: ProfileAgentManifest, draft: string) => number;
 }
@@ -99,7 +110,7 @@ function soulProse(agent: ProfileAgentManifest, draft: string): string {
   return soulFile(agent.traits, draft);
 }
 
-const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = {
+const FILES: Record<'instructions' | 'boundaries' | 'memory' | 'heartbeat', ConventionFile> = {
   instructions: {
     title: 'Custom instructions (SOUL.md)',
     errorLabel: 'Couldn’t save your instructions',
@@ -133,6 +144,17 @@ const FILES: Record<'instructions' | 'boundaries' | 'memory', ConventionFile> = 
     write: (_agent, draft) => ({ memoryContent: draft }),
     count: (_agent, draft) => draft.length,
   },
+  // What the agent watches between conversations (spec `heartbeats` §2). Read
+  // by beats only, so it has no switch and no place in the prompt preview.
+  heartbeat: {
+    title: 'What it watches (HEARTBEAT.md)',
+    errorLabel: 'Couldn’t save the heartbeat file',
+    maxChars: HEARTBEAT_MAX_CHARS,
+    note: 'Changes apply at the next check.',
+    read: (agent) => agent.heartbeatContent ?? '',
+    write: (_agent, draft) => ({ heartbeatContent: draft }),
+    count: (_agent, draft) => draft.length,
+  },
 };
 
 /** How long ago the last save happened, in the fewest words that stay true. */
@@ -158,8 +180,19 @@ function status(over: number, overhead: number, dirty: boolean, savedAt: number 
   return savedAt !== null ? savedWords(savedAt) : '';
 }
 
+/** How one convention file is drawn, beyond which file it is. */
+interface ConventionPageProps extends ProfilePageContentProps {
+  file: ConventionFile;
+  /** Take the page's whole height. False where the file is one section of several. */
+  fill?: boolean;
+  /** Runs once a save is stored, after the page's own bookkeeping. */
+  onSaved?: () => void;
+  /** Draws a Cancel beside Save that runs this. For a file not written yet. */
+  onCancel?: () => void;
+}
+
 /** One convention file, full height, with a Save you have to mean. */
-function ConventionPage({ member, file }: ProfilePageContentProps & { file: ConventionFile }) {
+function ConventionPage({ member, file, fill = true, onSaved, onCancel }: ConventionPageProps) {
   const { agent, isPending, isSaving, update } = useProfileAgent(member, {
     errorLabel: file.errorLabel,
   });
@@ -215,6 +248,7 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
   // anyway (DOR-1253). Save is inert while the file is over, with the reason
   // beside it, rather than offering a click that cannot work.
   const count = file.count(agent, draft);
+  const key = file.key;
   const over = count - file.maxChars;
   const overhead = count - draft.length;
 
@@ -230,21 +264,30 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
       setSavedText(attempted);
       setSavedAt(Date.now());
       toast.success('Saved');
+      onSaved?.();
     });
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2" data-slot="profile-convention">
+    <div
+      className={fill ? 'flex min-h-0 flex-1 flex-col gap-2' : 'flex flex-col gap-2'}
+      data-slot="profile-convention"
+    >
       <ConventionFileEditor
-        fill
+        fill={fill}
         title={file.title}
         content={draft}
-        enabled={conventions[file.key]}
+        enabled={key ? conventions[key] : true}
         maxChars={file.maxChars}
         charCount={count}
         disclaimer={file.disclaimer}
         onChange={setDraft}
-        onToggle={(enabled) => update({ conventions: { ...conventions, [file.key]: enabled } })}
+        {...(key
+          ? {
+              onToggle: (enabled: boolean) =>
+                update({ conventions: { ...conventions, [key]: enabled } }),
+            }
+          : {})}
       />
       {file.note && <p className="text-muted-foreground shrink-0 text-xs">{file.note}</p>}
       {file.details && (
@@ -261,9 +304,14 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
         >
           {status(over, overhead, isDirty, savedAt)}
         </span>
+        {onCancel && (
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button
           size="sm"
-          className="ml-auto"
+          className={onCancel ? undefined : 'ml-auto'}
           disabled={!isDirty || over > 0 || isSaving}
           onClick={save}
         >
@@ -274,21 +322,23 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
           reads them together and no one editor can show you the rest. Fed the
           draft rather than what is on disk: `file.write` is the same function
           Save sends, so the preview is what saving right now would produce. */}
-      <div className="shrink-0">
-        <InjectionPreview
-          name={agent.name}
-          displayName={agent.displayName || agent.name}
-          id={agent.id}
-          description={agent.description}
-          capabilities={agent.capabilities}
-          traits={agent.traits}
-          conventions={conventions}
-          soulContent={agent.soulContent ?? ''}
-          nopeContent={agent.nopeContent ?? ''}
-          memoryContent={agent.memoryContent ?? ''}
-          {...file.write(agent, draft)}
-        />
-      </div>
+      {key && (
+        <div className="shrink-0">
+          <InjectionPreview
+            name={agent.name}
+            displayName={agent.displayName || agent.name}
+            id={agent.id}
+            description={agent.description}
+            capabilities={agent.capabilities}
+            traits={agent.traits}
+            conventions={conventions}
+            soulContent={agent.soulContent ?? ''}
+            nopeContent={agent.nopeContent ?? ''}
+            memoryContent={agent.memoryContent ?? ''}
+            {...file.write(agent, draft)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -312,4 +362,17 @@ export function BoundariesPage(props: ProfilePageContentProps) {
  */
 export function MemoryPage(props: ProfilePageContentProps) {
   return <ConventionPage {...props} file={FILES.memory} />;
+}
+
+/**
+ * HEARTBEAT.md — what this agent watches between conversations, as one section
+ * of the Heartbeat page rather than a page of its own.
+ *
+ * @param props - The page's props, plus what to do once a save is stored and,
+ *   for a file not written yet, what Cancel does.
+ */
+export function HeartbeatFileEditor(
+  props: ProfilePageContentProps & { onSaved?: () => void; onCancel?: () => void }
+) {
+  return <ConventionPage {...props} file={FILES.heartbeat} fill={false} />;
 }

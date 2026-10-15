@@ -46,8 +46,8 @@ const SERVER_PAGE = [entry(1), entry(2)];
 
 function makeQueryClient(): QueryClient {
   // `staleTime: 0` is the app's own 30s default with the clock wound forward:
-  // the app refetches a room's history on the first focus more than half a
-  // minute after it loaded, which is nearly every alt-tab back into one. Left at
+  // TanStack refetches on the first focus more than half a minute after a load
+  // unless the query opts out, which this hook must keep doing. Left at
   // 30s this file would assert nothing at all — the query would still be fresh
   // when the focus fires, so no refetch would happen with or without the fix.
   //

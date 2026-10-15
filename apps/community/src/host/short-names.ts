@@ -2,6 +2,7 @@ import { createHmac, hkdfSync } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { z } from 'zod';
 import {
+  COMMUNITY_PATH_SHORT_NAMES,
   COMMUNITY_SHORT_NAME_PATTERN,
   type CommunityAdminShortNameAvailabilitySchema,
 } from '@dorkos/shared/community-admin-wire';
@@ -33,6 +34,37 @@ function holdHash(key: Buffer, name: string): string {
 export function normalizeShortName(input: string): string | null {
   const name = input.trim().toLowerCase();
   return COMMUNITY_SHORT_NAME_PATTERN.test(name) ? name : null;
+}
+
+const PATH_SHORT_NAMES: ReadonlySet<string> = new Set(COMMUNITY_PATH_SHORT_NAMES);
+
+/**
+ * Whether `name` is reserved yet may still be given to a space by a host operator: reserved,
+ * and not a path the server or its browser owns. Those are the built-in names reserved only so
+ * no community can pose as the host, and every name the host added to its own list.
+ */
+export function isGrantableReservedName(name: string, reservedNames: ReadonlySet<string>) {
+  return reservedNames.has(name) && !PATH_SHORT_NAMES.has(name);
+}
+
+/**
+ * The SQL test that a short-name row `n` was given out by a host operator: a grant names the
+ * same name and the same space. Only such a row opens its space under a reserved name.
+ */
+export const grantedShortNameSql = `EXISTS(SELECT 1 FROM reserved_name_grants g
+  WHERE g.short_name=n.short_name AND g.community_id=n.community_id)`;
+
+/** Whether a host operator gave `name` to this community, and it still holds it. */
+export async function hasReservedNameGrant(
+  db: Queryable,
+  name: string,
+  communityId: string
+): Promise<boolean> {
+  const grant = await db.query(
+    'SELECT 1 FROM reserved_name_grants WHERE short_name=$1 AND community_id=$2',
+    [name, communityId]
+  );
+  return Boolean(grant.rowCount);
 }
 
 const taken = () =>
@@ -89,6 +121,11 @@ export async function assignShortName(
     reservedNames: ReadonlySet<string>;
     holds: ShortNameHolds;
     at: Date;
+    /**
+     * Set only by a host operator's reserved-name creation: a reserved name is accepted when
+     * {@link isGrantableReservedName}. A path is refused whatever this says.
+     */
+    allowReserved?: boolean;
   }
 ): Promise<boolean> {
   const current = await client.query<{ short_name: string }>(
@@ -98,7 +135,16 @@ export async function assignShortName(
   const existing = current.rows[0]?.short_name ?? null;
   if (existing === input.shortName) return false;
   if (input.shortName !== null) {
-    if (input.reservedNames.has(input.shortName)) throw reserved();
+    if (
+      input.reservedNames.has(input.shortName) &&
+      !(
+        isGrantableReservedName(input.shortName, input.reservedNames) &&
+        (input.allowReserved ||
+          // The space a host operator gave this name to may take it back after a rename.
+          (await hasReservedNameGrant(client, input.shortName, input.communityId)))
+      )
+    )
+      throw reserved();
     const bound = await client.query<{ community_id: string }>(
       'SELECT community_id FROM community_short_names WHERE short_name=$1 FOR UPDATE',
       [input.shortName]
@@ -184,16 +230,22 @@ export async function releaseCommunityShortNames(
 /**
  * Names a community holds that are now reserved, for example after an upgrade reserved a new
  * path or the host added one to `COMMUNITY_RESERVED_SHORT_NAMES`. Such an address no longer
- * opens its community, so the host should give it another.
+ * opens its community, so the host should give it another. A reserved name a host operator
+ * gave the community itself (see {@link isGrantableReservedName}) still opens it and is left out.
  */
 export async function reservedBoundShortNames(
   db: Queryable,
   reservedNames: ReadonlySet<string>
 ): Promise<{ shortName: string; communityId: string }[]> {
   const bound = await db.query<{ short_name: string; community_id: string }>(
-    `SELECT short_name,community_id FROM community_short_names
-     WHERE short_name=ANY($1::text[]) ORDER BY short_name`,
-    [[...reservedNames]]
+    `SELECT n.short_name,n.community_id FROM community_short_names n
+     WHERE n.short_name=ANY($1::text[])
+       AND NOT (n.short_name=ANY($2::text[]) AND ${grantedShortNameSql})
+     ORDER BY n.short_name`,
+    [
+      [...reservedNames],
+      [...reservedNames].filter((name) => isGrantableReservedName(name, reservedNames)),
+    ]
   );
   return bound.rows.map((row) => ({ shortName: row.short_name, communityId: row.community_id }));
 }

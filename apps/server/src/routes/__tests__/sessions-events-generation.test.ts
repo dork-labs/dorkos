@@ -44,6 +44,7 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
@@ -79,7 +80,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import {
   disposeProjector,
@@ -91,8 +92,9 @@ import {
   type SessionStateProjector,
 } from '../../services/session/session-state-projector.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the session routes answer from Hono.
+const listener = composedListener(admission);
 
 /** The canonical id both projectors end up fighting over. */
 const CANONICAL = '00000000-0000-4000-8000-0000000017a4';
@@ -185,7 +187,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     const a = getOrCreateProjector(CANONICAL, CWD);
     feed(a, 'a', 5);
 
-    const first = await collectDurableEvents(app, CANONICAL, {
+    const first = await collectDurableEvents(listener, CANONICAL, {
       after: 0,
       until: (frames) => deltaTexts(frames).length >= 5,
     });
@@ -197,7 +199,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     rekeyProjector(REQUEST_ID, CANONICAL);
     feed(b, 'b', 4); // b3..b6 — B's counter is now 6, at or above the stale 5
 
-    const second = await collectDurableEvents(app, CANONICAL, {
+    const second = await collectDurableEvents(listener, CANONICAL, {
       lastEventId: staleCursor,
       until: (frames) => frames.length >= 1,
     });
@@ -219,7 +221,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     const projector = getOrCreateProjector(PLAIN, CWD);
     feed(projector, 'p', 3);
 
-    const { frames } = await collectDurableEvents(app, PLAIN, {
+    const { frames } = await collectDurableEvents(listener, PLAIN, {
       lastEventId: `${PLAIN}-${STREAM_EPOCH}-2`,
       until: (f) => f.length >= 1,
     });
@@ -234,7 +236,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     const projector = getOrCreateProjector(PLAIN, CWD);
     feed(projector, 'p', 3);
 
-    const first = await collectDurableEvents(app, PLAIN, {
+    const first = await collectDurableEvents(listener, PLAIN, {
       after: 0,
       until: (frames) => deltaTexts(frames).length >= 3,
     });
@@ -242,7 +244,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
 
     feed(projector, 'q', 2); // seq 4 and 5
 
-    const second = await collectDurableEvents(app, PLAIN, {
+    const second = await collectDurableEvents(listener, PLAIN, {
       lastEventId: cursor,
       until: (frames) => deltaTexts(frames).length >= 2,
     });
@@ -261,7 +263,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     const projector = getOrCreateProjector(REQUEST_ID, CWD);
     feed(projector, 'r', 3);
 
-    const first = await collectDurableEvents(app, REQUEST_ID, {
+    const first = await collectDurableEvents(listener, REQUEST_ID, {
       after: 0,
       until: (frames) => deltaTexts(frames).length >= 3,
     });
@@ -270,7 +272,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     rekeyProjector(REQUEST_ID, CANONICAL);
     feed(projector, 's', 2); // seq 4 and 5
 
-    const second = await collectDurableEvents(app, CANONICAL, {
+    const second = await collectDurableEvents(listener, CANONICAL, {
       lastEventId: cursor,
       until: (frames) => deltaTexts(frames).length >= 2,
     });
@@ -301,7 +303,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
       streamGenerationOf(resolveThroughAlias(sessionId))
     ) as unknown as typeof fakeRuntime.streamGeneration;
 
-    const { frames } = await collectDurableEvents(app, PLAIN, {
+    const { frames } = await collectDurableEvents(listener, PLAIN, {
       after: 0,
       until: (f) => deltaTexts(f).length >= 2,
     });
@@ -319,7 +321,7 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
     const projector = getOrCreateProjector(PLAIN, CWD);
     feed(projector, 'p', 2);
 
-    const { frames } = await collectDurableEvents(app, PLAIN, {
+    const { frames } = await collectDurableEvents(listener, PLAIN, {
       after: 0,
       until: (f) => deltaTexts(f).length >= 2,
     });

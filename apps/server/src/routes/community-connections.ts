@@ -5,8 +5,9 @@
  *
  * @module routes/community-connections
  */
-import { Router, type Request, type Response } from 'express';
-import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   CommunityConnectionStartRequestSchema,
   CommunityConnectionStartResponseSchema,
@@ -16,6 +17,7 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
+  CommunityWakeAgentsFromSchema,
   type CommunityConnectionDescriptor,
   describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
@@ -26,6 +28,9 @@ import {
   CommunityNavigationRememberInstallationRequestSchema,
   CommunityNavigationStateSchema,
 } from '@dorkos/shared/community-navigation';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { getRoomService } from '../services/rooms/index.js';
@@ -50,97 +55,128 @@ import {
 import {
   getRemoteCommunityAdapter,
   getRemotePairingService,
+  getRemoteWakePolicy,
 } from '../services/communities/remote/state.js';
+import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
 import { CommunityNavigationPreferenceService } from '../services/communities/community-navigation-preferences.js';
 import { CommunityAttentionCache } from '../services/communities/remote/community-attention-cache.js';
 import { CommunityOwnerNoticeCache } from '../services/communities/remote/community-owner-notice-cache.js';
-import { CommunityOwnerNoticeAnnouncer } from '../services/notifications/emitters/community-owner-replacement.js';
+import {
+  CommunityOwnerNoticeAnnouncer,
+  getOwnerNoticeAnnouncer,
+} from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
+import { officialOnlyOrigin, spaceReachable } from '../middleware/spaces-enabled.js';
+import { addAnswerInRoutes } from './community-answer-in.js';
 
-/** Resolve the only local human allowed to use a stored community connection. */
-export function resolveCommunityOwner(req: Request, res: Response): string | null {
-  const cookieRefusal = requireOperatorCookieUnderLogin(res, 'community connections');
+/**
+ * Resolve the only local human allowed to use a stored community connection.
+ *
+ * @param c - The request's context.
+ * @returns The owner's author id, or the refusal to answer with.
+ */
+export function resolveCommunityOwner(c: Context<ApiEnv>): string | Response {
+  const facts = honoRequestFacts(c);
+  const cookieRefusal = requireOperatorCookieUnderLogin(facts, 'community connections');
   if (cookieRefusal) {
-    res.status(cookieRefusal.status).json({ error: cookieRefusal.error, code: cookieRefusal.code });
-    return null;
+    return c.json(
+      { error: cookieRefusal.error, code: cookieRefusal.code },
+      cookieRefusal.status as ContentfulStatusCode
+    );
   }
-  if (!res.locals.user && !isLocalCaller(req)) {
-    res.status(403).json({ error: 'Manage space connections from this machine.' });
-    return null;
+  if (!facts.user && !isLocalCaller(facts)) {
+    return c.json({ error: 'Manage space connections from this machine.' }, 403);
   }
   let caller;
   try {
-    caller = resolveCaller(req, res);
+    caller = resolveCaller(facts);
   } catch {
-    res.status(403).json({ error: 'An agent cannot manage space connections.' });
-    return null;
+    return c.json({ error: 'An agent cannot manage space connections.' }, 403);
   }
   if (!getRoomService().authorRegistry.isOwner(caller.id, readOwnerAccount()?.id ?? null)) {
-    res.status(403).json({ error: 'Only this install’s owner can manage space connections.' });
-    return null;
+    return c.json({ error: 'Only this install’s owner can manage space connections.' }, 403);
   }
-  const expectedOwner = req.get('x-dorkos-community-owner');
+  const expectedOwner = c.req.header('x-dorkos-community-owner');
   if (expectedOwner && expectedOwner !== caller.id) {
-    res.status(409).json({
-      error: 'The local owner changed. Reload to see spaces for the current account.',
-      code: 'COMMUNITY_OWNER_CHANGED',
-    });
-    return null;
+    return c.json(
+      {
+        error: 'The local owner changed. Reload to see spaces for the current account.',
+        code: 'COMMUNITY_OWNER_CHANGED',
+      },
+      409
+    );
   }
   return caller.id;
 }
 
-function failure(res: Response, error: unknown): void {
+/** A connection route's answer when its ref is not path-safe or names no connection. */
+function notFound(c: Context): Response {
+  return c.json({ error: 'Space connection not found.' }, 404);
+}
+
+function failure(c: Context, error: unknown): Response {
   if (error instanceof RemotePairingBusyError) {
     // Coded so a client can tell "another check of this connection is in
     // flight" (keep waiting) from a real refusal: every open window polls.
-    res.status(409).json({
-      code: 'PAIRING_BUSY',
-      error: 'This pairing is still finishing. Try again in a moment.',
-    });
-  } else if (error instanceof RemoteCommunitySelectionRequiredError) {
-    res.status(409).json({
-      code: 'COMMUNITY_SELECTION_REQUIRED',
-      error: 'That address has more than one space on it. Use the link for the one you want.',
-    });
-  } else if (error instanceof RemoteCommunityNameNotFoundError) {
-    res.status(404).json({
-      code: 'COMMUNITY_NAME_NOT_FOUND',
-      error: 'No space uses that short address there. Check the spelling.',
-    });
-  } else if (error instanceof RemoteCommunityRateLimitedError) {
+    return c.json(
+      { code: 'PAIRING_BUSY', error: 'This pairing is still finishing. Try again in a moment.' },
+      409
+    );
+  }
+  if (error instanceof RemoteCommunitySelectionRequiredError) {
+    return c.json(
+      {
+        code: 'COMMUNITY_SELECTION_REQUIRED',
+        error: 'That address has more than one space on it. Use the link for the one you want.',
+      },
+      409
+    );
+  }
+  if (error instanceof RemoteCommunityNameNotFoundError) {
+    return c.json(
+      {
+        code: 'COMMUNITY_NAME_NOT_FOUND',
+        error: 'No space uses that short address there. Check the spelling.',
+      },
+      404
+    );
+  }
+  if (error instanceof RemoteCommunityRateLimitedError) {
     // The host's own wait, passed on so the person is told how long, not left to guess.
     const { retryAfterSeconds } = error;
-    if (retryAfterSeconds !== undefined) res.set('Retry-After', String(retryAfterSeconds));
-    res.status(429).json({
-      code: 'COMMUNITY_RATE_LIMITED',
-      error: `This DorkOS has tried that space too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
-      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
-    });
-  } else if (error instanceof RemoteCommunityUpgradeRequiredError) {
-    res.status(426).json({
-      code: 'COMMUNITY_UPGRADE_REQUIRED',
-      error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
-    });
-  } else if (error instanceof RemoteConnectionAuthorizationError) {
-    res.status(409).json({
-      error: 'Reconnect this space to continue.',
-      code: 'COMMUNITY_RECONNECT_REQUIRED',
-    });
-  } else if (error instanceof RemoteConnectionNotFoundError) {
-    res.status(404).json({ error: 'Space connection not found.' });
-  } else if (error instanceof PinnedOriginError) {
-    res
-      .status(error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS' ? 400 : 502)
-      .json({
-        error:
-          error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS'
-            ? 'Enter an accessible HTTPS space address.'
-            : 'The space could not complete this connection request.',
-      });
-  } else {
-    res.status(502).json({ error: 'The space connection is unavailable.' });
+    if (retryAfterSeconds !== undefined) c.header('Retry-After', String(retryAfterSeconds));
+    return c.json(
+      {
+        code: 'COMMUNITY_RATE_LIMITED',
+        error: `This DorkOS has tried that space too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
+        ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      },
+      429
+    );
   }
+  if (error instanceof RemoteCommunityUpgradeRequiredError) {
+    return c.json(
+      {
+        code: 'COMMUNITY_UPGRADE_REQUIRED',
+        error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
+      },
+      426
+    );
+  }
+  if (error instanceof RemoteConnectionAuthorizationError) {
+    return c.json(
+      { error: 'Reconnect this space to continue.', code: 'COMMUNITY_RECONNECT_REQUIRED' },
+      409
+    );
+  }
+  if (error instanceof RemoteConnectionNotFoundError) return notFound(c);
+  if (error instanceof PinnedOriginError) {
+    const address = error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS';
+    return address
+      ? c.json({ error: 'Enter an accessible HTTPS space address.' }, 400)
+      : c.json({ error: 'The space could not complete this connection request.' }, 502);
+  }
+  return c.json({ error: 'The space connection is unavailable.' }, 502);
 }
 
 /**
@@ -222,8 +258,8 @@ async function withAttention(
   return result;
 }
 
-/** Build the production route or inject an isolated service in HTTP tests. */
-export function createCommunityConnectionsRouter(
+/** Build the production routes, or inject an isolated service in HTTP tests. */
+export function createCommunityConnectionsRoutes(
   connectionService: RemoteCommunityPairingService = getRemotePairingService(),
   navigationService: CommunityNavigationPreferenceService = new CommunityNavigationPreferenceService(
     configManager,
@@ -241,25 +277,33 @@ export function createCommunityConnectionsRouter(
   ),
   attentionCache: CommunityAttentionCache = new CommunityAttentionCache(),
   ownerNoticeCache: CommunityOwnerNoticeCache = new CommunityOwnerNoticeCache(),
-  announcer: CommunityOwnerNoticeAnnouncer = new CommunityOwnerNoticeAnnouncer(resolveDorkHome())
-): Router {
-  const router = Router();
+  announcer: CommunityOwnerNoticeAnnouncer = getOwnerNoticeAnnouncer(resolveDorkHome()),
+  // Looked up per request when not injected, so building the routes reads nothing from disk.
+  wakePolicy?: Pick<RemoteWakePolicy, 'get' | 'set' | 'getAnswerIn' | 'setAnswerIn'>
+): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   const caches: ActivityCaches = {
     attention: attentionCache,
     ownerNotice: ownerNoticeCache,
     announcer,
   };
-  router.get('/', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
+  router.get('/', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
     try {
-      const connections = await connectionService.list(owner);
+      // With spaces off the gate let this list through for the official space alone, so the
+      // official row is the only one it carries (spec `official-community-space` D5).
+      const listed = await connectionService.list(owner);
+      const connections =
+        officialOnlyOrigin(c) !== null
+          ? listed.filter((connection) => connection.official === true)
+          : listed;
       const readable = connections
         .filter((connection) => attentionAccess(connection) !== 'none')
         .map((connection) => connection.ref);
       attentionCache.retainOnly(owner, readable);
       ownerNoticeCache.retainOnly(owner, readable);
-      res.json(
+      return c.json(
         CommunityConnectionListResponseSchema.parse({
           connections: await Promise.all(
             connections.map((item) => withAttention(item, owner, caches))
@@ -267,204 +311,236 @@ export function createCommunityConnectionsRouter(
         })
       );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.post('/', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const parsed = CommunityConnectionStartRequestSchema.safeParse(req.body);
+  router.post('/', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const parsed = CommunityConnectionStartRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      res.status(400).json({ error: 'Enter a valid space address and install name.' });
-      return;
+      return c.json({ error: 'Enter a valid space address and install name.' }, 400);
     }
     try {
-      res
-        .status(201)
-        .json(
-          CommunityConnectionStartResponseSchema.parse(
-            await connectionService.start(owner, parsed.data.url, parsed.data.installName)
-          )
-        );
+      return c.json(
+        CommunityConnectionStartResponseSchema.parse(
+          await connectionService.start(owner, parsed.data.url, parsed.data.installName)
+        ),
+        201
+      );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.get('/navigation', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
+  router.get('/navigation', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
     try {
-      res.json(CommunityNavigationStateSchema.parse(await navigationService.get(owner)));
+      const state = await navigationService.get(owner);
+      // With spaces off this answers for the official space alone, so the saved order and
+      // destinations name no other space (spec `official-community-space` D5).
+      const reachable = (ref: string) => spaceReachable(ref as CommunityRef);
+      return c.json(
+        CommunityNavigationStateSchema.parse(
+          officialOnlyOrigin(c) !== null
+            ? {
+                ...state,
+                order: state.order.filter(reachable),
+                destinations: state.destinations.filter((item) => reachable(item.ref)),
+              }
+            : state
+        )
+      );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.post('/navigation/move', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const parsed = CommunityNavigationMoveRequestSchema.safeParse(req.body);
+  router.post('/navigation/move', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const parsed = CommunityNavigationMoveRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a connected space and move direction.' });
-      return;
+      return c.json({ error: 'Choose a connected space and move direction.' }, 400);
     }
     try {
-      res.json(
+      return c.json(
         CommunityNavigationStateSchema.parse(
           await navigationService.move(owner, parsed.data.ref, parsed.data.direction)
         )
       );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-
-  router.put('/navigation/installation', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const parsed = CommunityNavigationRememberInstallationRequestSchema.safeParse(req.body);
+  router.put('/navigation/installation', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const parsed = CommunityNavigationRememberInstallationRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a valid local installation destination.' });
-      return;
+      return c.json({ error: 'Choose a valid local installation destination.' }, 400);
     }
     try {
-      res.json(
+      return c.json(
         CommunityNavigationStateSchema.parse(
           await navigationService.rememberInstallation(owner, parsed.data.destination)
         )
       );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.put('/navigation/destination', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const parsed = CommunityNavigationRememberRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'Choose a valid space to open.' });
-      return;
-    }
+  router.put('/navigation/destination', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const parsed = CommunityNavigationRememberRequestSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json({ error: 'Choose a valid space to open.' }, 400);
     try {
-      res.json(
+      return c.json(
         CommunityNavigationStateSchema.parse(await navigationService.remember(owner, parsed.data))
       );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.get('/navigation/:ref/destination', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
+  router.get('/navigation/:ref/destination', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
+    if (!ref.success) return notFound(c);
     try {
-      res.json(
+      return c.json(
         CommunityNavigationResolveResponseSchema.parse({
           destination: await navigationService.resolve(owner, ref.data),
         })
       );
     } catch (error) {
-      failure(res, error);
+      return failure(c, error);
     }
   });
-  router.get('/:ref', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
-    attentionCache.retainOwner(owner);
-    ownerNoticeCache.retainOwner(owner);
-    try {
-      res.json(
-        CommunityConnectionStatusResponseSchema.parse({
-          connection: await withAttention(
-            await connectionService.status(ref.data, owner),
-            owner,
-            caches
-          ),
-        })
-      );
-    } catch (error) {
-      failure(res, error);
-    }
-  });
-  router.post('/:ref/poll', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
-    try {
-      res.json(
-        CommunityConnectionPollResponseSchema.parse(await connectionService.poll(ref.data, owner))
-      );
-    } catch (error) {
-      failure(res, error);
-    }
-  });
-  router.post('/:ref/cancel', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
-    try {
-      await connectionService.cancel(ref.data, owner);
-      res.status(204).end();
-    } catch (error) {
-      failure(res, error);
-    }
-  });
+  /**
+   * The routes about one connection, `/:ref…`: the owner first, then a ref that is not path-safe
+   * answers as one that names no connection, then the route.
+   */
+  const forConnection =
+    (run: (c: Context<ApiEnv>, owner: string, ref: CommunityRef) => Promise<Response>) =>
+    async (c: Context<ApiEnv>): Promise<Response> => {
+      const owner = resolveCommunityOwner(c);
+      if (typeof owner !== 'string') return owner;
+      const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
+      if (!ref.success) return notFound(c);
+      return run(c, owner, ref.data);
+    };
+  router.get(
+    '/:ref',
+    forConnection(async (c, owner, ref) => {
+      attentionCache.retainOwner(owner);
+      ownerNoticeCache.retainOwner(owner);
+      try {
+        return c.json(
+          CommunityConnectionStatusResponseSchema.parse({
+            connection: await withAttention(
+              await connectionService.status(ref, owner),
+              owner,
+              caches
+            ),
+          })
+        );
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
+  router.post(
+    '/:ref/poll',
+    forConnection(async (c, owner, ref) => {
+      try {
+        return c.json(
+          CommunityConnectionPollResponseSchema.parse(await connectionService.poll(ref, owner))
+        );
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
+  router.post(
+    '/:ref/cancel',
+    forConnection(async (c, owner, ref) => {
+      try {
+        await connectionService.cancel(ref, owner);
+        return c.body(null, 204);
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
   // What Disconnect would remove, read from this install's own records so the confirmation can
   // name the agents even while the Community cannot be reached.
-  router.get('/:ref/disconnect-impact', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
-    try {
-      res.json(
-        CommunityDisconnectImpactSchema.parse(
-          await connectionService.disconnectImpact(ref.data, owner)
-        )
-      );
-    } catch (error) {
-      failure(res, error);
-    }
-  });
-  router.delete('/:ref', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!ref.success) {
-      res.status(404).json({ error: 'Space connection not found.' });
-      return;
-    }
-    try {
-      res.json(
-        CommunityDisconnectResponseSchema.parse(await connectionService.disconnect(ref.data, owner))
-      );
-    } catch (error) {
-      failure(res, error);
-    } finally {
-      // Even a failed disconnect may have removed the local copy; counts and notices
-      // for a Community the owner asked to leave must not outlive the request.
-      attentionCache.forget(owner, ref.data);
-      ownerNoticeCache.forget(owner, ref.data);
-    }
-  });
+  router.get(
+    '/:ref/disconnect-impact',
+    forConnection(async (c, owner, ref) => {
+      try {
+        return c.json(
+          CommunityDisconnectImpactSchema.parse(
+            await connectionService.disconnectImpact(ref, owner)
+          )
+        );
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
+  // Who in this space may wake the owner's agents (spec `official-community-space` D9).
+  // Owner-only, like every route here: `resolveCommunityOwner` refuses an agent's identity, a
+  // remote caller and anyone but this install's owner, and no DorkOS tool or config key
+  // reaches it. (With login off, an agent's own shell on this machine is the local-trust
+  // residual, and a stranger's turn asks before it runs one.)
+  router.get(
+    '/:ref/wake-agents-from',
+    forConnection(async (c, owner, ref) => {
+      try {
+        return c.json(
+          CommunityWakeAgentsFromSchema.parse({
+            wakeAgentsFrom: await (wakePolicy ?? getRemoteWakePolicy()).get(ref, owner),
+          })
+        );
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
+  router.put(
+    '/:ref/wake-agents-from',
+    forConnection(async (c, owner, ref) => {
+      const body = CommunityWakeAgentsFromSchema.safeParse(readJsonBody(c));
+      if (!body.success) {
+        return c.json({ error: 'Choose who can wake your agents: me or members.' }, 400);
+      }
+      try {
+        await (wakePolicy ?? getRemoteWakePolicy()).set(ref, owner, body.data.wakeAgentsFrom);
+        return c.json(body.data);
+      } catch (error) {
+        return failure(c, error);
+      }
+    })
+  );
+  // Where any person's post wakes the owner's agents without a mention (D11), owner-only too.
+  addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
+  router.delete(
+    '/:ref',
+    forConnection(async (c, owner, ref) => {
+      try {
+        return c.json(
+          CommunityDisconnectResponseSchema.parse(await connectionService.disconnect(ref, owner))
+        );
+      } catch (error) {
+        return failure(c, error);
+      } finally {
+        // Even a failed disconnect may have removed the local copy; counts and notices
+        // for a Community the owner asked to leave must not outlive the request.
+        attentionCache.forget(owner, ref);
+        ownerNoticeCache.forget(owner, ref);
+      }
+    })
+  );
   return router;
 }

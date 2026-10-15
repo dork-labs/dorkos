@@ -38,7 +38,6 @@ import { createDorkOsToolServer, dorkosToolSurfaceOf } from '../index.js';
 import { toolSurfaceDigest } from '../tool-surface.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { McpToolDeps } from '../types.js';
@@ -76,7 +75,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 
@@ -160,7 +158,7 @@ describe('the dorkos tool-surface digest', () => {
     // tool leaves a warm process's list too (the "next turn" promise of
     // `permission-tool-filter.ts`).
     const registry = composeCapabilityRegistryForDocs();
-    expect(surfaceOf(registry, new Set(['relay_send']))).not.toBe(surfaceOf(registry));
+    expect(surfaceOf(registry, new Set(['relay_list_endpoints']))).not.toBe(surfaceOf(registry));
     // Hiding a name the list does not carry changes nothing.
     expect(surfaceOf(registry, new Set(['not_a_tool']))).toBe(surfaceOf(registry));
   });

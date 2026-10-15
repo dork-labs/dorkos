@@ -1,5 +1,4 @@
 /** Actual owning Room-main FILE focus; source readers do not issue launch authority. */
-import express from 'express';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -7,8 +6,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { canvasDocEvents, canvasDocBatches, eq } from '@dorkos/db';
 import { requireServerNativeDatabaseQueryCustody } from '@dorkos/db/internal-server';
-import router from '../../../../../routes/canvas-doc-events.js';
-import { sessionGate } from '../../../../core/auth/index.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { createOriginalOwnedRoomFixture } from '../../../../rooms/repo/__tests__/room-original-owned-fixture.js';
 import {
   readOwnedRoomRepoSource,
@@ -84,12 +82,7 @@ it('keeps genuine Room-main FILE focus current across private repo reads and act
     expect(h.db.$client.inTransaction).toBe(false);
     expect(() => reader.observeCurrentTransaction(doc.id)).toThrow();
     expect(reader.observe(doc.id)).toEqual(before);
-    const app = express();
-    app.use(express.json());
-    app.use(sessionGate);
-    app.locals.docChannelHttp = h.http;
-    app.use('/docs', router);
-    const server = target.mount(app),
+    const server = target.mount(originalDocHttpListener(() => h.http, { docMount: '/docs' })),
       path = `/docs/${doc.id}/presence`;
     const mounted = await request(server)
       .post(path)

@@ -7,7 +7,7 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 DorkOS reuses a few words that sound interchangeable but name different things. Keep them straight:
 
 - **Extension** (what this guide is about) — a runtime module: a flat directory with an `extension.json` manifest and an `index.ts` exporting `activate()`, compiled on demand by esbuild and discovered by scanning. Identified by its manifest **`id`**, never an npm package name. It is **not** a workspace package and never lives in `packages/`.
-- **Mini app**: the product-story name for an extension, above all one an agent builds for a person (the first of the three differentiators in `AGENTS.md`). The code, the API and this guide keep the word **extension** (`create_extension`, `/x/<id>` pages); docs say "mini apps (the app calls them extensions)". Built today: an agent builds one and a person approves it before it runs. A **Shape** is a different thing: a setup bundle that can carry extensions (see `contributing/shapes.md`).
+- **Mini app**: the product-story name for an extension, above all one an agent builds for a person (the first of the three differentiators in `AGENTS.md`). The code, the API and this guide keep the word **extension** (`create_extension`, `/x/<id>` pages); docs say "mini apps (the app calls them extensions)". Built today: an agent builds one and, on a Trusted install, it runs at once (on Careful a person approves it first). A **Shape** is a different thing: a setup bundle that can carry extensions (see `contributing/shapes.md`).
 - **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/relay`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
 - **Core extension** — a first-party extension that ships in the repo at `apps/server/src/core-extensions/<id>/` and is staged to `~/.dork/extensions/<id>/` at startup (ADR-0271). Same manifest, compiler, and lifecycle as a user extension — only the origin differs. Today: `hello-world`, `linear-issues`, `marketplace`.
 - **Marketplace package** — a _distributable_ unit with a `.dork/manifest.json` whose `type` is one of five: `agent`, `plugin`, `skill-pack`, `adapter`, `shape` (ADR-0230). **"Extension" is not one of the five.** A `plugin`-type package can _bundle_ extensions, declared via the `.claude-plugin/dorkos.json` sidecar (ADR-0236) — so an extension is a _layer inside_ a plugin, not a package type.
@@ -149,6 +149,7 @@ api.registerStatusBarItem(id, Item, { label, priority?, when?, urgent? }): () =>
 - **`priority?`** — orders the contribution within its slot; lower sorts earlier (leftward in a tab strip). Defaults to a mid value.
 - **`label?`** — the human name shown where the slot has a label or tab (the `right-panel` tab strip, `settings.tabs`, `sidebar.footer`). Defaults to the namespaced id, so set it for any tabbed or labelled slot.
 - **`icon?`** — the tab-strip glyph for slots that render one (today, `right-panel`). It is any component the host renders with a `className` (a `{ className?: string }` component). Omit it and the strip falls back to a default puzzle-piece. Note: extensions can only import `react`, `react-dom`, and `@dorkos/extension-api` at runtime, so you cannot import a `lucide-react` icon here — supply your own inline-SVG component instead.
+- **`showIn?`** — `right-panel` only: where the tab shows by default, as `{ agents?, rooms?, pages? }`. See [Where a tab shows](#where-a-tab-shows). Omit it and the tab shows everywhere.
 - **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog. The built-in sections are `'You'`, `'Agents'` and `'This computer'`, and naming one adds your tab to the end of it. `'Advanced'` puts your tab behind the folded Advanced disclosure at the bottom, with Server, Tools, Room limits, Experiments and Danger zone; use it for something most people set once or never. Any other name makes a section of its own, below the built-in ones and above Advanced. Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
@@ -168,7 +169,12 @@ api.navigate(path: string): void
 
 // Put a dot on one of your right-panel tabs, or clear it
 api.setTabMarker(tabId: string, marker: 'attention' | null): void
+
+// Put a status, count or sentence on your page's tab, or clear it
+api.setPageBadge(path: string, badge: ExtensionPageBadge | null): void
 ```
+
+**`setPageBadge`** is described under [Your page's tab badge](#your-pages-tab-badge).
 
 **`navigate`** takes a core route (`/team`, `/session?dir=…`) or one of **your own** pages (`/x/<your-id>/p/dorkos?view=list`). Anything else is refused with a console warning: another extension's page, another origin (`https://…`, `//host`), or a scheme like `javascript:`.
 
@@ -404,18 +410,60 @@ export function activate(api: ExtensionAPI): void {
 }
 ```
 
-**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+#### Where a tab shows
+
+A tab shows where its placement says, and a person can change that without touching your code. Three layers decide it, and the last one wins:
+
+1. **Everywhere.** What a tab gets when nothing else says otherwise.
+2. **Your default**, `showIn` on `registerComponent`.
+3. **The saved choice** in config `ui.panelTabs`, keyed by `<your-id>:<tabId>`. A person sets it in Settings → Extensions (**Panel tab shows**), or with **Hide here** and **Show here** in the panel's ⋯ menu. An agent can set it with `config_patch`. It replaces your default whole; **Use its default** removes it.
+
+```ts
+api.registerComponent('right-panel', 'queue', QueuePanel, {
+  label: 'Queue',
+  showIn: { pages: ['session', 'activity'] }, // every chat, and Activity
+});
+```
+
+A placement names agents, rooms and pages, and the tab shows wherever any of them matches:
+
+- **`agents`**: agent ids. The tab shows in a chat with that agent.
+- **`rooms`**: room ids, for channels and direct messages on this computer. Home counts as #team.
+- **`pages`**: the first part of the address: `home`, `activity`, `tasks`, `workspaces`, `team`, `connections`, `marketplace`, `x/<extension-id>`, plus `session` for every chat and `channels` for every channel. `'*'` means everywhere.
+
+Agent and room ids belong to one computer. A mini app built for one person (an agent built it, on their machine) can name them. One you share should stick to pages and leave the specific agents and rooms to the person. To put a tab beside specific agents and rooms for this person, an agent writes `ui.panelTabs`:
+
+```jsonc
+// config_patch
+{
+  "ui": {
+    "panelTabs": [
+      {
+        "tab": "social-queue:queue",
+        "show": { "agents": ["01KJ…"], "rooms": ["01M2…"], "pages": [] },
+        "hide": { "agents": [], "rooms": [], "pages": [] },
+      },
+    ],
+  },
+}
+```
+
+`ui.panelTabs` is one list for everybody using this DorkOS, and a patch replaces it whole, so read it first (`config_get`) and send it back with your one entry changed.
+
+The panel's ⋯ menu also has **Open full page**, which goes to your home page (`registerPage('', …)`), or else your first page listed in the menu; pages with `:params`, or registered with `menu: false`, are never offered. A `showIn` that names nothing, or a page key no page has, logs a console warning, because either one puts the tab nowhere.
+
+**When the tab appears.** Your tab registers as a _contextual_ tab (never the global fallback). The panel auto-selects the first contextual tab when the active one isn't showing, so on a page where no built-in contextual tab shows (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Always render a useful empty state when there is nothing relevant to show.
 
 ### Pages (`/x/…`)
 
 `api.registerPage(path, Page, options)` mounts a full page at **`/x/<your-id>/<path>`**. The `x/` prefix means no core route can ever take your address, now or later.
 
 - **`path`** is `''` for your home (`/x/flow`), or `/`-separated segments that are lowercase words or `:param` placeholders (`'settings'`, `'p/:name'`). Anything else throws. Registering the same path twice replaces the first, with a console warning. When two paths could answer an address, the one with more fixed words before its first `:param` wins (`p/new` beats `p/:name`).
-- **`options.title`** (required, non-empty text; a page without one is refused with a console warning) names the page in its bar, its tab, the command palette and the phone menu. **`options.icon`** is a component the host sizes with `className` (an inline SVG; you cannot import `lucide-react`). **`options.menu: false`** keeps a page out of the palette and the phone menu. Pages with a `:param` are never listed there: a menu cannot fill in the value.
+- **`options.title`** (required, non-empty text; a page without one is refused with a console warning) names the page in its bar, its tab, the command palette and the sidebar's Add-ons section. **`options.icon`** is a component the host sizes with `className` (an inline SVG; you cannot import `lucide-react`). **`options.menu: false`** keeps a page out of the palette and the Add-ons section. Pages with a `:param` are never listed there: a menu cannot fill in the value.
 - **Your page gets** `params` (the `:param` values, decoded), `search` (the URL's query, every value exactly the text the address holds: `?v=1.10` is `'1.10'`) and `setSearch(next)`, which writes keys into the URL (`null` removes one). `setSearch` replaces the history entry rather than adding one, so writing a filter box on every keystroke leaves one Back press, not one per letter; two calls in a row both land. Keep state a person would bookmark there: `/x/flow?project=dorkos` opens the same view for whoever it is sent to.
 - **Core gives the page the whole content area and scrolls it.** Layout and padding are yours. If the page throws while drawing, core shows a "ran into a problem" message in its place, not a broken app.
 - **A reload on your page's address works.** It arrives before your extension has loaded, so core shows a skeleton until you register the page. If your extension is not installed, not allowed to run, turned off, or has no page at that address, core says which, in plain words, with a way to fix it where there is one.
-- **Where people find it:** the command palette lists your pages under "Add-ons" (type part of the title), and on a phone they are listed under "Add-ons" in the You tab. There is no sidebar entry: extensions add no app chrome of their own.
+- **Where people find it:** the sidebar's **Add-ons** section, at the bottom of the Library, lists every listed page by its title and icon (a puzzle piece when it has none), sorted by title and marked when the person is on it or on any address under it. When two listed pages share a title, each row also shows its extension's id (`flow › Settings`). It is the same section on a phone's Library tab ("All"), and it stays below a space's channels when a space is open. The command palette lists the same pages under "Add-ons" (type part of the title). The section appears only once some extension lists a page; nothing else about the app's chrome is yours (spec `mini-app-placement` Part 2, which replaced the earlier "no sidebar entry" rule).
 
 ```typescript
 function FlowHome({ search, setSearch }: ExtensionPageProps) {
@@ -436,6 +484,31 @@ export function activate(api: ExtensionAPI): void {
   api.registerPage('', FlowHome, { title: 'Flow' });
   api.registerPage('p/:name', ProjectLens, { title: 'Project' });
   // Elsewhere: api.navigate('/x/flow/p/dorkos');
+}
+```
+
+#### Your page's tab badge
+
+`api.setPageBadge(path, badge)` puts a status, a count or a sentence on every tab showing one of your pages; `null` clears it. `path` is the path you passed to `registerPage`, so a badge on `'p/:name'` shows on every project tab.
+
+- **`status`** is one of `'needs-you'`, `'failed'`, `'paused'`, `'working'`, `'new'` (`PAGE_BADGE_STATUSES`). Core draws it as the same dot its own pages wear; you cannot style it.
+- **`count`** is a whole number, 0 or more. A tab shows one mark at most: the count when there is one, else the dot. A count on `needs-you` or `failed` reads as urgent.
+- **`sentence`** is one plain line for the tab's hover card and its accessible name, at most 80 characters: "2 ideas wait for you".
+
+A badge that fails the check, or names a page you have not registered, is ignored with a console warning; the badge you had stays. A page's badge clears when you unregister the page, and all your badges clear when your extension deactivates. Use it for "something here wants the person", and clear it once they have looked.
+
+Older DorkOS versions do not have `setPageBadge`. Check for it before calling, as with any newer method (see [Feature detection](#feature-detection)):
+
+```typescript
+api.registerPage('', FlowHome, { title: 'Flow' });
+const waiting = decisionsWaiting();
+if (typeof api.setPageBadge === 'function') {
+  api.setPageBadge(
+    '',
+    waiting > 0
+      ? { status: 'needs-you', count: waiting, sentence: `${waiting} ideas wait for you` }
+      : null
+  );
 }
 ```
 
@@ -668,6 +741,8 @@ The `register` function receives two arguments:
 
 - **`router`** — A scoped Express `Router` mounted at `/api/ext/{id}/`. A route registered as `router.get('/data', ...)` is reachable at `GET /api/ext/my-extension/data`.
 - **`ctx`** — A `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below).
+
+`register` returns nothing, a cleanup function, or `{ fetch, cleanup }` to serve the API with a fetch handler instead of (or beside) the router; see [Route Conventions](#route-conventions).
 
 Server-side code is compiled to CommonJS (Node.js target) by the host using esbuild. TypeScript is supported out of the box.
 
@@ -1087,6 +1162,33 @@ router.get('/status', handler); // GET  /api/ext/my-ext/status
 router.post('/action', handler); // POST /api/ext/my-ext/action
 router.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 ```
+
+#### Serving with a fetch handler
+
+`register` can return `{ fetch, cleanup? }` instead of adding routes (DOR-2687). `fetch` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there:
+
+```typescript
+import { Hono } from 'hono';
+import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+
+const register: ServerExtensionRegister = (_router, ctx) => {
+  const app = new Hono();
+  app.get('/status', async (c) => c.json({ data: await ctx.storage.loadData() }));
+  return { fetch: app.fetch };
+};
+
+export default register;
+```
+
+A server entry that needs nothing from `ctx` can export the handler's owner itself: `export default app`, or `export default { fetch(request) { … } }`.
+
+- **The path is below your mount.** `GET /api/ext/my-ext/status?x=1` reaches `fetch` as `http://<host>/status?x=1`. The mount is always `/api/ext/<id>`.
+- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
+- **Order.** In-process, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. For an extension that runs in its own process, the `dataProxy` is asked first, in DorkOS, and what it passes on goes to the process: its router, then `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
+- **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
+- **People only.** `ctx.requirePerson` is Express middleware, so a route that must refuse agents and other sites belongs on the router.
+
+How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request`).
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 
@@ -1586,11 +1688,13 @@ An extension runs in two places, and the approval covers both:
 - **In the server process.** `test_extension` and the server half of `reload_extensions --id` execute the extension's code with the server's own privileges, outside the tier gate.
 - **In the app page.** `GET /api/extensions/:id/bundle` serves the client bundle the browser `import()`s and `activate()`s. That is same-origin JavaScript carrying the person's session, so it is not a lesser place to run — it can call the API as the operator, including the route that approves the server half.
 
-So a person allows each extension once, before any of its code runs anywhere, and after that the loop above is unprompted.
+So each extension is allowed once, before any of its code runs anywhere, and after that the loop above is unprompted.
+
+**An extension your agent creates is allowed as it is created (ADR 261006-225605, item 5).** On a Trusted install, `create_extension` in a session approves the folder it has just scaffolded, through the same fields a person's yes writes (`approvedToRun`, `approvedSources`, `approvedPermissions`), before the first scan sees it, so it never shows up as waiting. The reply carries `autoApproved` (the permission set it covers), and Activity records `extension.auto_approved` with the agent, the folder and that set. Nothing else is skipped: the approval names this folder and today's declared permissions, so a marketplace or hand-copied copy of the same id, or a later manifest that asks for more, waits for a person. It is not given on Careful, for an id the person said "Not now" to, when the scaffolder refuses a name already in use, or over the external `/mcp` server, whose caller DorkOS cannot tell from an outsider. Everything below describes an extension that waits.
 
 What this looks like in practice:
 
-- The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
+- The **first** `test_extension` or server-entry load for an extension that waits is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
 - Its client bundle is not served either, so the extension contributes nothing to the app until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
 - The person turns it on, once: **Turn it on** on the extension's card in Settings > Extensions, or 👍 on its row in the Activity inbox (below). Both halves start immediately; no restart, no page reload.
 - **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — and is never spent by use. It is not tied to file contents, so edits never re-ask; another plugin or path carrying the same id does.
@@ -1606,7 +1710,7 @@ Both answers name the exact copy the row showed (path, plugin and version; the S
 
 Everything that is not execution still works while you wait, which is what makes the wait cheap: you can create and edit files, and compiling reports real errors. Only running is held back.
 
-There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory (or a plugin installed into the project) reusing the id of an extension the person approved for another copy. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
+There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere: an agent that could write it could approve any code, from anywhere. The one approval DorkOS writes on an agent's behalf is the one above, for the folder `create_extension` just made. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory (or a plugin installed into the project) reusing the id of an extension the person approved for another copy. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
 
 `reload_extensions --id` also refuses an extension the user has turned **off**, rather than quietly turning it back on. Turn it on in Settings first.
 

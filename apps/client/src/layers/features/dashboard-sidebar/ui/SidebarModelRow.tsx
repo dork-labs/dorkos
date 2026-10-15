@@ -7,8 +7,9 @@
  * thing looks.
  *
  * An agent and a room keep their existing components, which carry their menus,
- * their inline rename editors and their dialogs. Everything else is a
- * {@link SidebarRow} built straight from the model's own fields.
+ * their inline rename editors and their dialogs. A mini app's page draws the
+ * icon its extension registered. Everything else is a {@link SidebarRow} built
+ * straight from the model's own fields.
  *
  * @module features/dashboard-sidebar/ui/SidebarModelRow
  */
@@ -30,7 +31,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { useExtensionRegistry } from '@/layers/shared/model';
+import { ContributedIcon, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
@@ -64,12 +66,17 @@ import { useSidebarChrome } from './SidebarChrome';
  * @param active - What the router says is open, or `null`.
  * @param homeRoomId - The room `/` is showing, when `/` is showing — `null`
  *   everywhere else. Only Home's own row consults it.
+ * @param pendingAgentPath - The agent a click is heading to while its chat is
+ *   being looked up, or `null`. While set, that agent's row is the only one
+ *   lit, so the click shows at once (DOR-2891). Tint only, like `homeRoomId`.
  */
 export function isRowActive(
   target: SidebarTarget,
   active: SidebarTarget | null,
-  homeRoomId: string | null = null
+  homeRoomId: string | null = null,
+  pendingAgentPath: string | null = null
 ): boolean {
+  if (pendingAgentPath !== null) return target.kind === 'agent' && target.path === pendingAgentPath;
   // **Home's room, lit without being "active".** `/` draws #team, so its row has
   // to look open there — but `/` has no active target and deliberately does not
   // get one (`useActiveTarget` explains what widening it broke). A thread row
@@ -99,6 +106,9 @@ export function isRowActive(
     // finds the anchor by (BC-36).
     return sameTarget(target, active);
   }
+  // The open page already names the one listed page that holds the address
+  // (`listedPageAt`), so a key comparison lights exactly one Add-ons row.
+  if (target.kind === 'add-on') return sameTarget(target, active);
   return false;
 }
 
@@ -210,7 +220,12 @@ function SidebarModelRowBody({
 }) {
   const chrome = useSidebarChrome();
   const target = row.target;
-  const isActive = isRowActive(target, chrome.activeTarget, chrome.homeRoomId);
+  const isActive = isRowActive(
+    target,
+    chrome.activeTarget,
+    chrome.homeRoomId,
+    chrome.pendingAgentPath
+  );
 
   if (target.kind === 'agent') {
     return (
@@ -241,7 +256,54 @@ function SidebarModelRowBody({
     );
   }
 
+  if (target.kind === 'add-on') {
+    return <AddOnRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} />;
+  }
+
   return <GenericRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} drag={drag} />;
+}
+
+/**
+ * A page a mini app added: its own title and icon, and pressing it opens it.
+ *
+ * The icon is read back out of the registry by the page's id, because the model
+ * holds no components. `ContributedIcon` draws a puzzle piece when the page
+ * gave none or gave something that cannot draw, so a bad icon costs the glyph
+ * and never the row.
+ */
+function AddOnRowFromModel({
+  row,
+  isActive,
+  rowMotion,
+}: {
+  row: SidebarRowModel;
+  isActive: boolean;
+  rowMotion: SidebarRowMotion;
+}) {
+  const chrome = useSidebarChrome();
+  const pageId = row.glyph.kind === 'page-icon' ? row.glyph.pageId : null;
+  const icon = useExtensionRegistry(
+    (state) => state.slots.pages.find((page) => page.id === pageId)?.icon
+  );
+  return (
+    <SidebarRow
+      glyph={
+        // Hidden from the accessibility tree: an extension's SVG can carry a
+        // `<title>`, which would otherwise be read into the row's name.
+        <span aria-hidden className="contents">
+          <ContributedIcon icon={icon} className="text-sidebar-foreground/60 size-3.5" />
+        </span>
+      }
+      // Two pages sharing a title read `extension › title` (`add-on-rows`).
+      {...(row.secondary === undefined ? {} : { who: row.primary })}
+      title={row.secondary ?? row.primary}
+      isActive={isActive}
+      emphasized={false}
+      muted={false}
+      onSelect={() => chrome.openTarget(row.target)}
+      rowMotion={rowMotion}
+    />
+  );
 }
 
 /**
@@ -321,6 +383,7 @@ function AgentRowFromModel({
       visual={visual}
       isActive={isActive}
       isMuted={row.muted}
+      isPaused={manifest !== null && chrome.pausedAgentIds.has(manifest.id)}
       {...(row.liveCount === undefined ? {} : { liveCount: row.liveCount })}
       onSelect={() => chrome.openTarget(row.target)}
       onViewProfile={chrome.viewProfileFor(path)}

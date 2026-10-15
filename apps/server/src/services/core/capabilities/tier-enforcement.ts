@@ -46,7 +46,7 @@
  * that agent a bypass needing strictly less capability than the honest path —
  * `env -u DORKOS_AGENT_TOKEN dorkos call marketplace.uninstall …`, or a bare
  * `curl`, since the CLI only attaches `X-DorkOS-Agent` when the token is in its
- * env and `sessionGate` is a pass-through in the default local posture. The
+ * env and the session gate is a pass-through in the default local posture. The
  * destructive operation would run, unapproved and unattributed.
  *
  * Spec §3.1's "absent identity = today's behavior" resolution is about
@@ -103,19 +103,16 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
-import type { CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
+import type { ActionConsent, CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
   ApprovalServiceAction,
   ApprovalSubject,
 } from '@dorkos/shared/approval-schemas';
-import {
-  getPermissionArea,
-  type PermissionAreaId,
-  type PermissionSource,
-} from '@dorkos/shared/permissions';
+import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissions';
 
 import { isTrustedCaller } from './trusted-caller.js';
+import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
   resolveCallPermission,
@@ -194,6 +191,11 @@ export interface GatedAction {
    * `CapabilityDefinition.areasForInput`; `permission-enforcement.ts` applies it.
    */
   areasForInput?: (input: unknown) => readonly PermissionAreaId[];
+  /**
+   * What the action's consent is about. See `CapabilityDefinition.consent`;
+   * `permission-enforcement.ts` hands it to the resolver.
+   */
+  consent?: ActionConsent;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
   /**
@@ -419,7 +421,7 @@ export type TierEnforcementDecision =
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
 /**
- * A destructive call an action-level Allowed permission allowed without asking
+ * A destructive call an Allowed permission allowed without asking
  * anyone.
  *
  * The one `allowed` decision that reaches the audit hook. Every other allowed call
@@ -847,43 +849,6 @@ function approvalMessage(
   }
 }
 
-/** The name an area goes by in a sentence, e.g. "Rooms". */
-function areaLabel(area: PermissionAreaId): string {
-  return getPermissionArea(area)?.label ?? area;
-}
-
-/**
- * What an agent that asked past Blocked is told when the rate limit stops it
- * (spec `agent-permissions` D8). Each refusal is final for now, so none of them
- * invites another try.
- */
-function blockedLimitMessage(limit: BlockedRequestLimit, area: PermissionAreaId): string {
-  switch (limit.limit) {
-    case 'pending':
-      // Not the first request's `awaiting_decision` payload, which spec D8
-      // describes: tokens are stored hashed, so the first token cannot be sent
-      // again. The approval id names the request instead, and the message says
-      // how the answer arrives (see the spec's D8 note of 2026-09-24).
-      return (
-        `You already asked the person about ${areaLabel(area)} (request ${limit.approvalId}) ` +
-        'and they have not answered yet. Do not ask again: wait for their answer. In a DorkOS ' +
-        'session, DorkOS tells you here when they decide. If they say yes, call ' +
-        '`request_permission` again with the same action and arguments, plus the approvalToken ' +
-        'your first request returned, and the action runs.'
-      );
-    case 'recently_denied':
-      return (
-        'The person said no to this in the last day. Do not ask again; tell them what you ' +
-        'could not do and why.'
-      );
-    case 'hourly_limit':
-      return (
-        'You have asked past blocked permissions too many times in the last hour. Stop asking; ' +
-        'tell the person what you need instead.'
-      );
-  }
-}
-
 /** The refusal reason each rate limit maps to. */
 const BLOCKED_LIMIT_REASON: Record<BlockedRequestLimit['limit'], TierDeniedReason> = {
   pending: 'request_pending',
@@ -1008,11 +973,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   }
 
   // Allowed runs. An `act` call is audited by the attribution observer on
-  // invoke, like any other allowed call. A `destructive` call can only resolve
-  // Allowed from an ACTION-level setting (the resolver turns an area-level
-  // Allowed on a destructive action into Ask), and it gets one Activity line
-  // saying no card was shown: a stretch in which DorkOS goes quiet must not also
-  // be one in which it goes blind.
+  // invoke, like any other allowed call. A `destructive` call resolves Allowed
+  // from an action-level setting, or from an area-level one when the action
+  // runs no third-party code (the resolver keeps an area-level Allowed at Ask
+  // for those, ADR `261006-225605`), and it gets one Activity line saying no
+  // card was shown: a stretch in which DorkOS goes quiet must not also be one
+  // in which it goes blind.
   if (permission?.state === 'allowed') {
     const approval: GrantedApproval = { via: 'permission', source: permission.source };
     if (tier === 'destructive') {

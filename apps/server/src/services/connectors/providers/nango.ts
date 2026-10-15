@@ -230,6 +230,12 @@ export class NangoConnectorProvider implements ConnectorProvider {
    * service mismatch; the next rename moves it to the app's id.
    */
   private readonly _ownKeyFlows = new Map<string, string>();
+  /**
+   * One upstream listing per catalog read, as Composio keeps (`composio.ts`): the kept app
+   * list (`resources/catalog-cache.ts`) pages one refresh under one signal, so each page is
+   * a slice of one listing instead of a fresh one (DOR-2237).
+   */
+  private readonly _toolkitsByRead = new WeakMap<AbortSignal, Promise<ConnectorToolkit[]>>();
   readonly #executionConfigDigest: string | undefined;
 
   /**
@@ -278,7 +284,7 @@ export class NangoConnectorProvider implements ConnectorProvider {
 
   async listToolkitPage(request: { cursor?: string; limit: number; signal: AbortSignal }) {
     request.signal.throwIfAborted();
-    const all = await this.listToolkits();
+    const all = await this._toolkitsForRead(request.signal);
     const offset = request.cursor ? Number(request.cursor) : 0;
     const toolkits = all.slice(offset, offset + request.limit);
     const next = offset + toolkits.length;
@@ -422,6 +428,18 @@ export class NangoConnectorProvider implements ConnectorProvider {
     // Idempotent: the client swallows a 404, so revoking an unknown/already-
     // revoked id resolves without throwing (conformance requires this).
     await this._client.deleteConnection(toNangoConnectionId(accountId));
+  }
+
+  /** {@link listToolkits}, once per read signal; a failed listing is not remembered. */
+  private _toolkitsForRead(signal: AbortSignal): Promise<ConnectorToolkit[]> {
+    const existing = this._toolkitsByRead.get(signal);
+    if (existing) return existing;
+    const read = this.listToolkits();
+    this._toolkitsByRead.set(signal, read);
+    read.catch(() => {
+      if (this._toolkitsByRead.get(signal) === read) this._toolkitsByRead.delete(signal);
+    });
+    return read;
   }
 
   /**

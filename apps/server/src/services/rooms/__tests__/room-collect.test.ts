@@ -164,6 +164,9 @@ describe('a room gathers a burst into one turn', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths },
       human
     );
+    // No lead: this case is about gathering a burst, and a lead would answer the
+    // unaddressed post (DOR-2823).
+    service.updateRoom(room.id, human, { leadAuthorId: null });
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     // Named explicitly throughout, so who runs is a property of the message
     // rather than of an engagement window.

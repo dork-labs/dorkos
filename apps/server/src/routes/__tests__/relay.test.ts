@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createRelayRouter, buildConversations } from '../relay.js';
+import { buildConversations } from '../relay.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
+import type { TraceStore } from '../../services/relay/trace-store.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
 import {
@@ -49,20 +51,22 @@ function createMockRelayCore(): RelayCore {
 const target = swappableServer();
 const server = target.server;
 
+/** The Relay routes behind the real `/api` chain, as `http/hono-api.ts` mounts them. */
+function relayApp(
+  relayCore: RelayCore,
+  adapterManager?: AdapterManager,
+  traceStore?: TraceStore,
+  activity?: ActivityService
+) {
+  return relayRoutesListener({ relayCore, adapterManager, traceStore, activity });
+}
+
 describe('Relay routes', () => {
   let relayCore: ReturnType<typeof createMockRelayCore>;
 
   beforeEach(() => {
     relayCore = createMockRelayCore();
-    const app = express();
-    app.use(express.json());
-    app.use('/api/relay', createRelayRouter(relayCore as unknown as RelayCore));
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
-    );
-    target.mount(app);
+    target.mount(relayApp(relayCore as unknown as RelayCore));
   });
 
   describe('POST /api/relay/messages', () => {
@@ -203,11 +207,10 @@ describe('Relay routes', () => {
         resolveAdapterName: vi.fn().mockReturnValue('Claude Code'),
       } as unknown as AdapterManager;
       const activityService = { emit: vi.fn().mockResolvedValue(undefined) };
-      const activityApp = express();
-      activityApp.use(express.json());
-      activityApp.locals.activityService = activityService;
-      activityApp.use('/api/relay', createRelayRouter(core, adapterManager));
-      return { activityServer: target.mount(activityApp), activityService };
+      const activityServer = target.mount(
+        relayApp(core, adapterManager, undefined, activityService as unknown as ActivityService)
+      );
+      return { activityServer, activityService };
     }
 
     it('emits no activity event for maildir-only publishes (no adapterResult)', async () => {
@@ -810,23 +813,10 @@ describe('Adapter routes', () => {
   beforeEach(() => {
     relayCore = createMockRelayCore();
     adapterManager = createMockAdapterManager();
-    const app = express();
-    // Match createApp: signed receivers capture bytes before ordinary JSON.
-    app.post('/api/relay/webhooks/:adapterId', express.raw({ type: '*/*', limit: '1mb' }));
-    app.use(express.json());
-    app.use(
-      '/api/relay',
-      createRelayRouter(
-        relayCore as unknown as RelayCore,
-        adapterManager as unknown as AdapterManager
-      )
+    // As the server mounts them: a signed receiver's bytes kept raw, not parsed as JSON.
+    target.mount(
+      relayApp(relayCore as unknown as RelayCore, adapterManager as unknown as AdapterManager)
     );
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
-    );
-    target.mount(app);
   });
 
   describe('GET /api/relay/adapters/catalog', () => {
@@ -1221,11 +1211,9 @@ describe('Adapter routes', () => {
 
   describe('routes without adapterManager', () => {
     it('adapter routes are not mounted when adapterManager is undefined', async () => {
-      const appNoAdapters = express();
-      appNoAdapters.use(express.json());
-      appNoAdapters.use('/api/relay', createRelayRouter(relayCore as unknown as RelayCore));
-
-      const res = await request(target.mount(appNoAdapters)).get('/api/relay/adapters');
+      const res = await request(target.mount(relayApp(relayCore as unknown as RelayCore))).get(
+        '/api/relay/adapters'
+      );
 
       expect(res.status).toBe(404);
     });
@@ -1411,18 +1399,12 @@ describe('Adapter routes', () => {
 });
 
 describe('Observed chats route', () => {
-  let app: express.Application;
   let relayCore: ReturnType<typeof createMockRelayCore>;
   let adapterManager: ReturnType<typeof createMockAdapterManager>;
 
   beforeEach(() => {
     relayCore = createMockRelayCore();
     adapterManager = createMockAdapterManager();
-    app = express();
-    app.use(express.json());
-    // Mounted here even though each test finishes wiring `app` afterwards:
-    // `mount` stores the reference, so a later `app.use(...)` still applies.
-    target.mount(app);
   });
 
   it('returns aggregated chats from trace data', () => {
@@ -1448,9 +1430,8 @@ describe('Observed chats route', () => {
       getMetrics: vi.fn(),
       getAdapterEvents: vi.fn(),
     };
-    app.use(
-      '/api/relay',
-      createRelayRouter(
+    target.mount(
+      relayApp(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
         mockTraceStore as never
@@ -1477,9 +1458,8 @@ describe('Observed chats route', () => {
       getMetrics: vi.fn(),
       getAdapterEvents: vi.fn(),
     };
-    app.use(
-      '/api/relay',
-      createRelayRouter(
+    target.mount(
+      relayApp(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
         mockTraceStore as never
@@ -1502,9 +1482,8 @@ describe('Observed chats route', () => {
       getMetrics: vi.fn(),
       getAdapterEvents: vi.fn(),
     };
-    app.use(
-      '/api/relay',
-      createRelayRouter(
+    target.mount(
+      relayApp(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
         mockTraceStore as never
@@ -1527,9 +1506,8 @@ describe('Observed chats route', () => {
       getMetrics: vi.fn(),
       getAdapterEvents: vi.fn(),
     };
-    app.use(
-      '/api/relay',
-      createRelayRouter(
+    target.mount(
+      relayApp(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
         mockTraceStore as never
@@ -1546,12 +1524,8 @@ describe('Observed chats route', () => {
 
   it('returns 404 when trace store is unavailable', () => {
     // No traceStore passed — should 404
-    app.use(
-      '/api/relay',
-      createRelayRouter(
-        relayCore as unknown as RelayCore,
-        adapterManager as unknown as AdapterManager
-      )
+    target.mount(
+      relayApp(relayCore as unknown as RelayCore, adapterManager as unknown as AdapterManager)
     );
 
     return request(server)

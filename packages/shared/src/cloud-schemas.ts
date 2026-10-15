@@ -70,6 +70,11 @@ export interface StartLinkResult {
   userCode: string;
   /** URL of the activation page (e.g. `https://dorkos.ai/activate`). */
   verificationUri: string;
+  /**
+   * The activation page with the code already filled in, so opening it needs
+   * no typing. Absent when the service sent none; open `verificationUri` then.
+   */
+  verificationUriComplete?: string;
   /** ISO timestamp at which `userCode` expires. */
   expiresAt: string;
 }
@@ -268,7 +273,25 @@ export interface CloudCreditsStatus {
   defaults?: Partial<Record<string, CloudCreditsChoice>>;
   /** Notices the app owes the person, each shown until they act on it. */
   notices?: CloudCreditsNotice[];
+  /**
+   * Whether the DorkOS runtime can run on credits yet, for a first run that
+   * waits on it (spec `one-minute-onboarding` §5.2). See
+   * {@link CloudCreditsReadiness}.
+   */
+  readiness?: CloudCreditsReadiness;
 }
+
+/**
+ * How far a link has got towards running the DorkOS runtime on credits:
+ *
+ * - `unlinked`: this computer is not linked to a DorkOS account.
+ * - `linked`: linked, and not ready yet (still minting, list not read yet).
+ * - `needs-card`: linked, and the account has no saved payment method.
+ * - `ready`: a credits token serves a format the DorkOS runtime speaks, and the
+ *   service names a model to start with in it.
+ * - `refused`: the service said this account cannot use credits.
+ */
+export type CloudCreditsReadiness = 'unlinked' | 'linked' | 'needs-card' | 'ready' | 'refused';
 
 /**
  * Who made a credits choice: `default` when DorkOS filled a gap on a new link

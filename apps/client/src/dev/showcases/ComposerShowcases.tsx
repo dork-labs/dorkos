@@ -20,7 +20,7 @@ import type {
   ConversationTarget,
 } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
-import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
+import { NoAgentHint, ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { QueuePanel } from '@/layers/features/chat';
 import { ApprovalPrompt, QuestionPrompt } from '@/layers/features/ask';
 import { SlashCommandList } from '@/layers/features/slash-commands';
@@ -40,6 +40,7 @@ import {
   TOOL_CALL_APPROVAL,
 } from '../mock-chat-data';
 import { createPlaygroundTransport } from '../playground-transport';
+import { EMPTY_ROOM } from './rooms-showcase-data';
 import type { PendingFile } from '@/layers/features/composer';
 import type { QuestionItem } from '@dorkos/shared/types';
 
@@ -415,6 +416,19 @@ export function ComposerShowcases() {
         target={roomTyping}
         initialValue="Looks like the migration step timed out waiting on a lock."
       />
+
+      <ShowcaseLabel>Room — a channel with no agent in it (DOR-2823)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="flex flex-col">
+          <NoAgentHint room={EMPTY_ROOM} hasEntries onAddAgents={() => {}} />
+          <ComposerDemo
+            label="The hint sits over the room's composer until an agent joins"
+            surface="room"
+            capabilities={ROOM_CAPABILITIES}
+            target={buildRoomTarget()}
+          />
+        </div>
+      </ShowcaseDemo>
 
       <AttachmentsDemo surface="session" capabilities={SESSION_CAPABILITIES} target={sessionIdle} />
       <AttachmentsDemo surface="room" capabilities={ROOM_CAPABILITIES} target={roomIdle} />

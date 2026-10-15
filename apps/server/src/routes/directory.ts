@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
@@ -13,19 +13,22 @@ import {
 } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
 
 const CreateDirectoryBodySchema = z.object({
   parentPath: z.string().min(1),
   folderName: z.string().min(1),
 });
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 // GET /api/directory - Browse directories (restricted to configured boundary)
-router.get('/', async (req, res) => {
-  const parsed = BrowseDirectoryQuerySchema.safeParse(req.query);
+router.get('/', async (c) => {
+  const parsed = BrowseDirectoryQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
   }
   const { path: userPath, showHidden } = parsed.data;
 
@@ -41,15 +44,14 @@ router.get('/', async (req, res) => {
     resolved = await validateBoundaryOrDorkHome(targetPath);
   } catch (err: unknown) {
     if (err instanceof BoundaryError) {
-      if (err.code === 'NULL_BYTE')
-        return res.status(400).json({ error: err.message, code: err.code });
-      return res.status(403).json({ error: err.message, code: err.code });
+      if (err.code === 'NULL_BYTE') return c.json({ error: err.message, code: err.code }, 400);
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return res.status(404).json({ error: 'Directory not found' });
-    if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
+    if (code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404);
+    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
     logger.error('[directory] GET / validateBoundary failed', { err, targetPath });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   // Read directory entries (directories only)
@@ -58,11 +60,11 @@ router.get('/', async (req, res) => {
     dirents = (await fs.readdir(resolved, { withFileTypes: true })) as import('fs').Dirent[];
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return res.status(404).json({ error: 'Directory not found' });
-    if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
-    if (code === 'ENOTDIR') return res.status(400).json({ error: 'Not a directory' });
+    if (code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404);
+    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
+    if (code === 'ENOTDIR') return c.json({ error: 'Not a directory' }, 400);
     logger.error('[directory] GET / readdir failed', { err, resolved });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   const entries = dirents
@@ -91,7 +93,7 @@ router.get('/', async (req, res) => {
       parent === agentsRoot ||
       parent.startsWith(agentsRoot + path.sep));
 
-  res.json({
+  return c.json({
     path: resolved,
     entries,
     parent: hasParent ? parent : null,
@@ -99,7 +101,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/directory/default - Get the server's default working directory
-router.get('/default', (_req, res) => {
+router.get('/default', (c) => {
   // Use the CLI-resolved, boundary-validated default cwd (lib/resolve-root.js),
   // not the raw process.cwd() — the two diverge whenever the process starts
   // outside the configured boundary (e.g. a container with no WORKDIR): the
@@ -107,26 +109,27 @@ router.get('/default', (_req, res) => {
   // never changes without an explicit chdir. Returning the unclamped value
   // handed clients a directory that boundary-enforced routes (POST
   // /api/terminal, session creation) would then reject with 403.
-  res.json({ path: DEFAULT_CWD });
+  return c.json({ path: DEFAULT_CWD });
 });
 
 // POST /api/directory - Create a new directory within the boundary
-router.post('/', async (req, res) => {
-  const parsed = CreateDirectoryBodySchema.safeParse(req.body);
+router.post('/', async (c) => {
+  const parsed = CreateDirectoryBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
   }
 
   const { parentPath, folderName } = parsed.data;
 
   // Validate folder name is kebab-case
   if (!AGENT_NAME_REGEX.test(folderName)) {
-    return res.status(400).json({
-      error:
-        'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
-    });
+    return c.json(
+      {
+        error:
+          'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
+      },
+      400
+    );
   }
 
   // Validate parentPath is within boundary
@@ -135,15 +138,14 @@ router.post('/', async (req, res) => {
     resolvedParent = await validateBoundary(parentPath);
   } catch (err: unknown) {
     if (err instanceof BoundaryError) {
-      if (err.code === 'NULL_BYTE')
-        return res.status(400).json({ error: err.message, code: err.code });
-      return res.status(403).json({ error: err.message, code: err.code });
+      if (err.code === 'NULL_BYTE') return c.json({ error: err.message, code: err.code }, 400);
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return res.status(404).json({ error: 'Parent directory not found' });
-    if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
+    if (code === 'ENOENT') return c.json({ error: 'Parent directory not found' }, 404);
+    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
     logger.error('[directory] POST / validateBoundary failed', { err, parentPath });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 
   const newDirPath = path.join(resolvedParent, folderName);
@@ -151,7 +153,7 @@ router.post('/', async (req, res) => {
   // Check if directory already exists
   try {
     await fs.access(newDirPath);
-    return res.status(409).json({ error: 'Directory already exists' });
+    return c.json({ error: 'Directory already exists' }, 409);
   } catch {
     // Expected — directory does not exist yet
   }
@@ -160,9 +162,9 @@ router.post('/', async (req, res) => {
     await fs.mkdir(newDirPath, { recursive: true });
   } catch (err) {
     logger.error('[directory] POST / mkdir failed', { err, newDirPath });
-    return res.status(500).json({ error: 'Failed to create directory' });
+    return c.json({ error: 'Failed to create directory' }, 500);
   }
-  res.status(201).json({ path: newDirPath });
+  return c.json({ path: newDirPath }, 201);
 });
 
 export default router;

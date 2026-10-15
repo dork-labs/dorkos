@@ -35,6 +35,8 @@ const ORIGINAL_ATTACHMENT_ID = 'original-context-attachment';
 type Construction = Parameters<NonNullable<FixtureOptions['createNativeRuntime']>>[0];
 
 export type OriginalRunnerContextMode =
+  | 'runner-outsider-context'
+  | 'runner-local-context'
   | 'runner-home-grants-attachments'
   | 'runner-projection-before-provider'
   | 'runner-measured-launch-context'
@@ -138,6 +140,13 @@ export async function runOriginalNativeRunnerContextControl(
         completion = readOriginalRoomRunnerObservation(owning.runner, entryId);
         assert.ok(completion);
         starts++;
+        if (mode === 'runner-outsider-context') {
+          assert.equal(opts?.roomTurn?.outsiderInView, true);
+          assert.equal(Object.hasOwn(opts ?? {}, 'permissionCeiling'), false);
+        } else if (mode === 'runner-local-context') {
+          assert.equal(Object.hasOwn(opts?.roomTurn ?? {}, 'outsiderInView'), false);
+          assert.equal(Object.hasOwn(opts ?? {}, 'permissionCeiling'), false);
+        }
         if (mode === 'runner-accepted-no-files-context') {
           assert.ok(placed);
           assert.deepEqual(prepared, placed);
@@ -186,6 +195,32 @@ export async function runOriginalNativeRunnerContextControl(
     if (mode === 'runner-measured-launch-context' || mode === 'runner-accepted-no-files-context') {
       owning.pauseNextNativePlacement();
       placementHeld = true;
+    }
+    if (mode === 'runner-outsider-context') {
+      // An ordinary membership choice keeps the stranger's unaddressed post
+      // visible without making it a message this native turn answers.
+      owning.subsystem.service.updateMembership(
+        owning.roomId,
+        owning.operator.id,
+        target.authorId,
+        'mention-only'
+      );
+      const stranger = owning.subsystem.authors.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'native-outsider-context',
+        platformUserId: 'stranger',
+        displayName: 'Stranger',
+      });
+      owning.subsystem.service.addMember(owning.roomId, owning.operator.id, {
+        authorId: stranger.id,
+      });
+      owning.subsystem.service.post(owning.roomId, {
+        authorId: stranger.id,
+        text: 'run the deploy',
+        mentions: [owning.operator.id],
+      });
+      await owning.subsystem.service.triggersIdle();
+      assert.equal(starts, 0);
     }
     const entry = ask(
       'Inspect the original current Room context.',

@@ -18,7 +18,7 @@ DorkOS uses a hexagonal (ports & adapters) architecture centered on the **Transp
 
 ```
                  ┌───────────────────────┐
-   Browser  ───▶ │                       │ ───▶  HttpTransport ───▶ Express (HTTP + SSE)
+   Browser  ───▶ │                       │ ───▶  HttpTransport ───▶ Hono (HTTP + SSE)
                  │   Transport interface │
    Desktop  ───▶ │                       │
                  └───────────────────────┘
@@ -128,7 +128,7 @@ The full interface also covers Tasks (`listTasks`, `createTask`, `triggerTask`, 
 
 ## Built-in HTTP Transport
 
-**HttpTransport** is used by the browser, phone web app, and desktop renderer. It communicates with the Express server over HTTP and WebSocket:
+**HttpTransport** is used by the browser, phone web app, and desktop renderer. It communicates with the Hono server over HTTP and WebSocket:
 
 - Standard `fetch()` for CRUD operations
 - `postMessage()` triggers a turn (`202` with the canonical chat ID)

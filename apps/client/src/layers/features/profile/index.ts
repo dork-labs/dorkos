@@ -65,3 +65,8 @@ export {
   OperatorIdentityForm,
   type OperatorIdentityFormProps,
 } from './ui/fields/OperatorIdentityForm';
+/**
+ * What an identity is to the person reading: the one rule for "your agent" or
+ * "someone else's", shared by the profile and the Team page's commitments.
+ */
+export { deriveRelationship, type ProfileRelationship } from './lib/profile-relationship';

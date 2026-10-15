@@ -1,17 +1,13 @@
+import type { UploadStreamFile, UploadedFile } from '../../../http/uploads.js';
+import type { RoomUploadStorageEngine } from './upload/room-upload-storage-contracts.js';
 /** Original Editor-selected upload storage. Namespace exclusion is not filesystem ownership. */
-import { constants } from 'node:fs';
 import { promises as fs } from 'node:fs';
-import type { FileHandle } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
-import path from 'node:path';
-import type { Request } from 'express';
+import type { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import type { InstallationRoomMutationContext } from '../../canvas/doc-channel/writes/installation-room-writes.js';
-import multer from 'multer';
 import {
   requireRoomFileEditorUploadStorageOwner,
-  readRoomFileEditorUploadLimit,
   checkRoomFileEditorUploadCurrent,
   requireRoomFileEditorUploadCurrent,
   checkRoomFileEditorUploadCleanup,
@@ -19,87 +15,55 @@ import {
   requireRoomFileEditorUploadSourceContext,
   type RoomFileEditor,
 } from './room-file-editor.js';
-interface Identity {
-  dev: bigint;
-  ino: bigint;
+import {
+  createIsolatedRoomUploadSourceCustody,
+  type AcquiredFile,
+} from './upload/room-upload-source-custody.js';
+
+import { closeUpload, writeOriginalRoomUploadFile } from './upload/room-upload-write-current.js';
+import { checkOriginalRoomUploadIdentity } from './upload/room-upload-identity-read.js';
+import type { OriginalRoomUploadWriteView } from './upload/room-upload-write-context.js';
+import {
+  createAcquiredRoomUpload,
+  requireMatchingAcquiredRoomUpload,
+} from './upload/room-upload-acquired-data.js';
+
+const originalUploadWriteViews = new WeakMap<object, OriginalRoomUploadWriteView>();
+const originalUploadWriteGet = WeakMap.prototype.get;
+const originalUploadWriteSet = WeakMap.prototype.set;
+const originalUploadWriteApply = Reflect.apply;
+/** Reject every caller except the actual storage constructor-private key before native write effects. */
+export function readOriginalRoomUploadWriteView(owner: object): OriginalRoomUploadWriteView {
+  const view = originalUploadWriteApply(originalUploadWriteGet, originalUploadWriteViews, [
+    owner,
+  ]) as OriginalRoomUploadWriteView | undefined;
+  if (!view) throw new Error('Unknown original Room upload write owner.');
+  return view;
 }
-interface AcquiredFile {
-  path: string;
-  filename: string;
-  file: Express.Multer.File;
-  request: Request;
-  identity?: Identity;
-  handle?: FileHandle;
-  size: number;
-  cancelled: boolean;
-  removed: boolean;
-  done: Promise<void>;
-  removing?: Promise<void>;
-  reads: Set<Promise<void>>;
-  readers: Set<Readable>;
-}
-interface StorageCommands {
-  complete(error: unknown): Promise<void>;
-  retire(): Promise<void>;
-  issueSources(
-    request: Request,
-    files: readonly Express.Multer.File[]
-  ): Promise<readonly Readonly<{ upload: object; size: number }>[]>;
-  restoreCause(cause: unknown): unknown;
-}
-const engines = new WeakMap<object, StorageCommands>();
-const sources = new WeakMap<
-  object,
-  { size: number; open(context: InstallationRoomMutationContext): Promise<Readable> }
->();
-function actual(storage: multer.StorageEngine): StorageCommands {
-  const engine = engines.get(storage);
-  if (!engine) throw new Error('Unknown original Room upload storage.');
-  return engine;
-}
+
+const originalRoomUploadCustody = createIsolatedRoomUploadSourceCustody();
+/** Original owned upload custody API; aliases retain only actual module-private lookup. */
+export const completeRoomFileUploadStorage =
+  originalRoomUploadCustody.completeRoomFileUploadStorage;
+/** Original owned upload custody API; aliases retain only actual module-private lookup. */
+export const retireRoomFileUploadStorage = originalRoomUploadCustody.retireRoomFileUploadStorage;
+/** Original owned upload custody API; aliases retain only actual module-private lookup. */
+export const issueRoomFileUploadSources = originalRoomUploadCustody.issueRoomFileUploadSources;
+/** Original owned upload custody API; aliases retain only actual module-private lookup. */
+export const restoreRoomFileUploadCause = originalRoomUploadCustody.restoreRoomFileUploadCause;
+/** Original owned upload custody API; aliases retain only actual module-private lookup. */
+export const openRoomFileUploadSource = originalRoomUploadCustody.openRoomFileUploadSource;
+
 /** Only the constructor-private Editor minting turn can create its selected storage. */
 export function createRoomFileUploadStorage(
   editor: RoomFileEditor,
   operation: object,
   directory: string
-): multer.StorageEngine {
+): RoomUploadStorageEngine {
   return new RoomFileUploadStorage(editor, operation, directory);
 }
-/** Multer's truthy protocol sentinel is resolved to the separately captured original cause. */
-export function completeRoomFileUploadStorage(
-  storage: multer.StorageEngine,
-  error: unknown
-): Promise<void> {
-  return actual(storage).complete(error);
-}
-/** Retire the original Room file upload storage custody. */
-export function retireRoomFileUploadStorage(storage: multer.StorageEngine): Promise<void> {
-  return actual(storage).retire();
-}
-/** Issue upload source handles from the original owned upload operation. */
-export function issueRoomFileUploadSources(
-  storage: multer.StorageEngine,
-  request: Request,
-  files: readonly Express.Multer.File[]
-): Promise<readonly Readonly<{ upload: object; size: number }>[]> {
-  return actual(storage).issueSources(request, files);
-}
-/** Restore the original cause retained by a Room file upload. */
-export function restoreRoomFileUploadCause(storage: multer.StorageEngine, cause: unknown): unknown {
-  return actual(storage).restoreCause(cause);
-}
-/** Open the original owned Room file upload source. */
-export function openRoomFileUploadSource(
-  source: object,
-  context: InstallationRoomMutationContext,
-  size: number
-): Promise<Readable> {
-  const acquired = sources.get(source);
-  if (!acquired || !Number.isSafeInteger(size) || size !== acquired.size)
-    return Promise.reject(new Error('Unknown or mismatched acquired upload source.'));
-  return acquired.open(context);
-}
-class RoomFileUploadStorage implements multer.StorageEngine {
+class RoomFileUploadStorage implements RoomUploadStorageEngine {
+  readonly #writeKey = Object.freeze({});
   readonly #editor: RoomFileEditor;
   readonly #operation: object;
   readonly #directory: string;
@@ -117,12 +81,25 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     this.#editor = editor;
     this.#operation = operation;
     this.#directory = directory;
-    engines.set(
+    originalUploadWriteApply(originalUploadWriteSet, originalUploadWriteViews, [
+      this.#writeKey,
+      Object.freeze({
+        editor,
+        operation,
+        directory,
+        storage: this,
+        files: this.#files,
+        admission: (record: AcquiredFile) => this.#admission(record),
+        checkFile: (record: AcquiredFile, open: boolean) => this.#checkFile(record, open),
+        close: (record: AcquiredFile) => this.#close(record),
+      }),
+    ]);
+    originalRoomUploadCustody.registerEngine(
       this,
       Object.freeze({
         complete: (error: unknown) => this.#complete(error),
         retire: () => this.#retire(),
-        issueSources: (request: Request, files: readonly Express.Multer.File[]) =>
+        issueSources: (request: IncomingMessage, files: readonly UploadedFile[]) =>
           this.#issueSources(request, files),
         restoreCause: (cause: unknown) =>
           this.#protocolErrors.has(cause as Error) && this.#failed ? this.#cause : cause,
@@ -132,27 +109,30 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     Object.defineProperties(this, {
       _handleFile: {
         value: (
-          req: Request,
-          file: Express.Multer.File,
-          callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+          req: IncomingMessage,
+          file: UploadStreamFile,
+          callback: (error?: unknown, info?: Partial<UploadedFile>) => void
         ) => this.#handle(req, file, callback),
       },
       _removeFile: {
-        value: (req: Request, file: Express.Multer.File, callback: (error: Error | null) => void) =>
-          this.#remove(req, file, callback),
+        value: (
+          req: IncomingMessage,
+          file: UploadedFile,
+          callback: (error: Error | null) => void
+        ) => this.#remove(req, file, callback),
       },
     });
   }
   _handleFile(
-    _req: Request,
-    _file: Express.Multer.File,
-    _callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+    _req: IncomingMessage,
+    _file: UploadStreamFile,
+    _callback: (error?: unknown, info?: Partial<UploadedFile>) => void
   ): void {
     throw new Error('Uncaptured storage call.');
   }
   _removeFile(
-    _req: Request,
-    _file: Express.Multer.File,
+    _req: IncomingMessage,
+    _file: UploadedFile,
     _callback: (error: Error | null) => void
   ): void {
     throw new Error('Uncaptured storage call.');
@@ -198,9 +178,9 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     }
   }
   #handle(
-    req: Request,
-    file: Express.Multer.File,
-    callback: (error?: any, info?: Partial<Express.Multer.File>) => void
+    req: IncomingMessage,
+    file: UploadStreamFile,
+    callback: (error?: unknown, info?: Partial<UploadedFile>) => void
   ): void {
     try {
       requireRoomFileEditorUploadCurrent(this.#editor, this.#operation, this.#directory, this, req);
@@ -214,18 +194,7 @@ class RoomFileUploadStorage implements multer.StorageEngine {
       callback(this.#sentinel());
       return;
     }
-    const record: AcquiredFile = {
-      path: '',
-      filename: '',
-      file,
-      request: req,
-      size: 0,
-      cancelled: false,
-      removed: false,
-      done: Promise.resolve(),
-      reads: new Set(),
-      readers: new Set(),
-    };
+    const record = createAcquiredRoomUpload(req, file);
     this.#records.add(record);
     record.done = this.#write(record).then(
       () =>
@@ -253,25 +222,7 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     if (this.#closed || record.cancelled) throw new Error('Upload file admission closed.');
   }
   async #identity(record: AcquiredFile, open: boolean): Promise<void> {
-    if (!record.identity) throw new Error('No acquired upload identity.');
-    if (open) {
-      if (!record.handle) throw new Error('No acquired upload descriptor.');
-      const descriptor = await record.handle.stat({ bigint: true });
-      if (
-        !descriptor.isFile() ||
-        descriptor.dev !== record.identity.dev ||
-        descriptor.ino !== record.identity.ino
-      )
-        throw new Error('Upload descriptor identity changed.');
-    }
-    const entry = await fs.lstat(record.path, { bigint: true });
-    if (
-      !entry.isFile() ||
-      entry.isSymbolicLink() ||
-      entry.dev !== record.identity.dev ||
-      entry.ino !== record.identity.ino
-    )
-      throw new Error('Upload file identity changed.');
+    return checkOriginalRoomUploadIdentity(this.#writeKey, record, open);
   }
   async #checkFile(record: AcquiredFile, open: boolean): Promise<void> {
     await checkRoomFileEditorUploadCurrent(
@@ -293,71 +244,10 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     this.#admission(record); // Exact synchronous native policy after observable work.
   }
   async #write(record: AcquiredFile): Promise<void> {
-    let failed = false,
-      cause: unknown;
-    try {
-      record.filename = await new Promise<string>((resolve, reject) =>
-        randomBytes(16, (error, raw) => (error ? reject(error) : resolve(raw.toString('hex'))))
-      );
-      record.path = path.join(this.#directory, record.filename);
-      await checkRoomFileEditorUploadCurrent(
-        this.#editor,
-        this.#operation,
-        this.#directory,
-        this,
-        record.request
-      );
-      this.#admission(record);
-      record.handle = await fs.open(
-        record.path,
-        constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
-        0o600
-      );
-      const identity = await record.handle.stat({ bigint: true });
-      if (!identity.isFile()) throw new Error('Upload descriptor is not an ordinary file.');
-      record.identity = { dev: identity.dev, ino: identity.ino };
-      this.#files.set(record.path, record);
-      record.file.path = record.path; // Multer's pending raw file and later spread clone refer to this acquired record.
-      await this.#checkFile(record, true);
-      for await (const part of record.file.stream) {
-        const bytes = Buffer.isBuffer(part) ? part : Buffer.from(part);
-        const limit = readRoomFileEditorUploadLimit(
-          this.#editor,
-          this.#operation,
-          this.#directory,
-          this
-        );
-        if (record.size + bytes.length > limit)
-          throw new multer.MulterError('LIMIT_FILE_SIZE', record.file.fieldname);
-        let offset = 0;
-        while (offset < bytes.length) {
-          await this.#checkFile(record, true);
-          const written = await record.handle.write(bytes, offset, bytes.length - offset, null);
-          if (written.bytesWritten <= 0)
-            throw new Error('Upload descriptor made no write progress.');
-          offset += written.bytesWritten;
-          record.size += written.bytesWritten;
-        }
-      }
-      await this.#checkFile(record, true);
-    } catch (error) {
-      failed = true;
-      cause = error;
-    } finally {
-      // Successful source FD is retained for the later original commit, never pathname-reopened.
-      // On failure the genuine returned FD closes regardless of current credential/root state.
-      if (failed) {
-        try {
-          await this.#close(record);
-        } catch {
-          /* Preserve original body cause including undefined. */
-        }
-      }
-    }
-    if (failed) throw cause;
+    return writeOriginalRoomUploadFile(this.#writeKey, record);
   }
-  #remove(req: Request, file: Express.Multer.File, callback: (error: Error | null) => void): void {
-    const record = this.#files.get(file.path);
+  #remove(req: IncomingMessage, file: UploadedFile, callback: (error: Error | null) => void): void {
+    const record = typeof file.path === 'string' ? this.#files.get(file.path) : undefined;
     if (!record || record.request !== req) {
       callback(new Error('Unknown acquired upload file.'));
       return;
@@ -449,34 +339,24 @@ class RoomFileUploadStorage implements multer.StorageEngine {
     if (this.#failed) throw this.#cause;
     if (protocolFailed) throw error;
   }
-  async #close(record: AcquiredFile): Promise<void> {
-    if (record.handle) {
-      await record.handle.close();
-      record.handle = undefined;
-    }
+  #close(record: AcquiredFile): Promise<void> {
+    return closeUpload(record);
   }
   async #issueSources(
-    req: Request,
-    files: readonly Express.Multer.File[]
+    req: IncomingMessage,
+    files: readonly UploadedFile[]
   ): Promise<readonly Readonly<{ upload: object; size: number }>[]> {
     await this.#join();
     if (this.#failed) throw this.#cause;
     const seen = new Set<AcquiredFile>(),
       result: Readonly<{ upload: object; size: number }>[] = [];
     for (const file of files) {
-      const record = this.#files.get(file.path);
-      if (
-        !record ||
-        record.request !== req ||
-        record.removed ||
-        seen.has(record) ||
-        file.size !== record.size
-      )
-        throw new Error('Upload result does not match acquired original files.');
+      const record = typeof file.path === 'string' ? this.#files.get(file.path) : undefined;
+      requireMatchingAcquiredRoomUpload(record, req, file, seen);
       seen.add(record);
       await this.#checkFile(record, true);
       const upload = Object.freeze({});
-      sources.set(upload, {
+      originalRoomUploadCustody.registerSource(upload, {
         size: record.size,
         open: (context) => this.#launchSource(record, context),
       });

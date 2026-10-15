@@ -41,7 +41,8 @@ export interface DeviceCodeResponse {
   device_code: string;
   user_code: string;
   verification_uri: string;
-  verification_uri_complete: string;
+  /** The page with the code filled in; absent when the service sends none. */
+  verification_uri_complete?: string;
   expires_in: number;
   interval: number;
 }
@@ -152,7 +153,7 @@ export async function runCloudLogin(deps: CloudCommandDeps): Promise<number> {
 
   // Open the pre-filled URL for convenience, but only with a TTY. The URL is
   // always printed above, so headless environments are never blocked.
-  if (isTty) openUrl(codes.verification_uri_complete);
+  if (isTty) openUrl(codes.verification_uri_complete ?? codes.verification_uri);
 
   io.log('  Waiting for approval...');
   const result = await client.pollForToken({

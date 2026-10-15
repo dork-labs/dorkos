@@ -143,6 +143,8 @@ describe('ClaudeConnectorTurnContext', () => {
     });
 
     const resolving = context.resolvePrincipal();
+    await Promise.resolve();
+    expect(finishOpen).toBeDefined();
     const cancellation = context.cancel();
     finishOpen?.({
       bindingId: 'binding-1',
@@ -321,6 +323,36 @@ describe('native context retirement', () => {
 });
 
 describe('fixed original Claude context opening', () => {
+  it('retires before deferred opening without consulting or opening a principal', async () => {
+    const principals = port();
+    const canonicalSessionId = vi.fn(() => 'canonical-session');
+    const retireNative = vi.fn();
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId,
+      agentPath: '/repo',
+      cwd: '/repo',
+      retireNative,
+    });
+
+    const resolving = context.resolvePrincipal();
+    const rejected = expect(resolving).rejects.toThrow(
+      'Original Claude connector context is retired.'
+    );
+    const retirement = context.revoke('turn_terminal');
+    expect(context.revoke('turn_terminal')).toBe(retirement);
+    expect(context.cancel()).toBe(retirement);
+    await rejected;
+    await retirement;
+
+    expect(canonicalSessionId).not.toHaveBeenCalled();
+    expect(principals.openTurn).not.toHaveBeenCalled();
+    expect(principals.resolve).not.toHaveBeenCalled();
+    expect(principals.revoke).not.toHaveBeenCalled();
+    expect(retireNative).toHaveBeenCalledTimes(1);
+    expect(readClaudeConnectorContext(context)).toBeUndefined();
+  });
+
   it('refuses a structural context instead of calling its resolver', () => {
     const resolvePrincipal = vi.fn();
     expect(() => resolveOriginalClaudeConnectorPrincipal({ resolvePrincipal })).toThrow(

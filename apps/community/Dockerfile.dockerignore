@@ -1,4 +1,6 @@
 **
+!patches
+!patches/**
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
@@ -10,6 +12,8 @@
 !packages
 !packages/shared
 !packages/shared/**
+!packages/decisions
+!packages/decisions/**
 !packages/ui
 !packages/ui/**
 !packages/icons

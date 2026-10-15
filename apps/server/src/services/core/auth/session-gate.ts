@@ -30,15 +30,16 @@
  *
  * @module services/core/auth/session-gate
  */
-import type { Request, Response, NextFunction } from 'express';
 import { fromNodeHeaders } from 'better-auth/node';
 import { configManager } from '../config-manager.js';
 import { logger } from '../../../lib/logger.js';
 // `getAuth` is a hoisted accessor called at request time, so this back-import to
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth, captureOriginalRequestAuthReader, type Auth } from './index.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
+import { isSessionGatedPath } from './gated-paths.js';
 
-/** The identity resolved from a request's credentials, attached to `res.locals.user`. */
+/** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
   /** The Better Auth user id that owns the session cookie or API key. */
   userId: string;
@@ -60,10 +61,10 @@ export interface RequestUser {
 }
 
 interface OriginalRequestAdmission {
-  req: Pick<Request, 'headers'>;
+  req: Pick<RequestFacts, 'headers'>;
   auth: Auth;
   reader: NonNullable<ReturnType<typeof captureOriginalRequestAuthReader>>;
-  headers: Readonly<Request['headers']>;
+  headers: Readonly<RequestFacts['headers']>;
   userId: string;
   credential: RequestUser['credential'];
   credentialId?: string;
@@ -79,8 +80,8 @@ const originalAdmissionCreate = Object.create;
 const originalAdmissionDefine = Object.defineProperty;
 const originalAdmissionKeys = Object.keys;
 const originalAdmissionArray = Array.isArray;
-function admittedHeaders(req: Pick<Request, 'headers'>): Readonly<Request['headers']> {
-  const result: Request['headers'] = originalAdmissionCreate(null);
+function admittedHeaders(req: Pick<RequestFacts, 'headers'>): Readonly<RequestFacts['headers']> {
+  const result: RequestFacts['headers'] = originalAdmissionCreate(null);
   const keys = originalAdmissionKeys(req.headers);
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index],
@@ -97,8 +98,8 @@ function admittedHeaders(req: Pick<Request, 'headers'>): Readonly<Request['heade
   return originalAdmissionFreeze(result);
 }
 function sameAdmittedHeaders(
-  req: Pick<Request, 'headers'>,
-  headers: Readonly<Request['headers']>
+  req: Pick<RequestFacts, 'headers'>,
+  headers: Readonly<RequestFacts['headers']>
 ): boolean {
   const keys = originalAdmissionKeys(headers);
   if (originalAdmissionKeys(req.headers).length !== keys.length) return false;
@@ -120,7 +121,7 @@ function sameAdmittedHeaders(
  * @returns Whether the same credential and initialized authority remain current.
  */
 export async function recheckAdmittedRequestAuth(
-  req: Pick<Request, 'headers'>,
+  req: Pick<RequestFacts, 'headers'>,
   principal: RequestUser | undefined
 ): Promise<boolean> {
   try {
@@ -160,11 +161,6 @@ export async function recheckAdmittedRequestAuth(
   }
 }
 
-/** Paths the gate protects: the API surface and the external MCP endpoint. */
-function isGatedPath(path: string): boolean {
-  return path.startsWith('/api/') || path === '/mcp' || path.startsWith('/mcp/');
-}
-
 /**
  * The one path under `/api/health` that the gate still protects.
  *
@@ -180,8 +176,9 @@ const GATED_HEALTH_PATHS = ['/api/health/deep'];
 /**
  * Whether a path reaches a gated health route, however it is spelled.
  *
- * Express matches non-strictly and collapses nothing, so `/api/health/deep/`
- * and `/api/health/deep//` reach the same handler as `/api/health/deep`. An
+ * The router matches non-strictly, so `/api/health/deep/` reaches the same
+ * handler as `/api/health/deep`, and a path with doubled slashes must not be
+ * trusted to miss it either. An
  * exact-string carve-out out of a prefix exemption therefore leaks: the
  * trailing-slash spelling misses the carve-out, matches the `/api/health/`
  * exemption, and returns the whole report with no credential. Match the way
@@ -261,13 +258,14 @@ export interface VerifyRequestAuthOptions {
  * invalid/revoked key resolves to `null` (fail closed) so callers can respond
  * with a uniform 401.
  *
- * Shared by {@link sessionGate}, the MCP auth middleware, and the WebSocket
- * upgrade gate so there is exactly one credential-verification path.
+ * Shared by the session gate ({@link decideSessionGate}), the MCP auth
+ * middleware, and the WebSocket upgrade gate so there is exactly one
+ * credential-verification path.
  *
- * It takes only the HEADERS rather than an Express `Request`, because the third
+ * It takes only the HEADERS rather than a framework's request, because the third
  * caller has no request: a WebSocket upgrade arrives on the HTTP server's
  * `upgrade` event as a bare `IncomingMessage`, having bypassed every piece of
- * middleware including {@link sessionGate}. Headers are all this ever read, so
+ * middleware including the session gate. Headers are all this ever read, so
  * narrowing the parameter is what lets the upgrade path reuse this instead of
  * growing a second, drifting copy of the credential check.
  *
@@ -275,15 +273,16 @@ export interface VerifyRequestAuthOptions {
  * a per-user API key is not the same principal as a person in a browser session
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
- * @param req - Anything carrying the request's headers — an Express `Request`,
- *   or the raw `IncomingMessage` of a WebSocket upgrade.
+ * @param req - Anything carrying the request's headers — a request's facts
+ *   (`honoRequestFacts`), or the raw `IncomingMessage`
+ *   of a WebSocket upgrade.
  * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
  *   already knows what the request's bearer is.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
 export async function verifyRequestAuth(
-  req: Pick<Request, 'headers'>,
+  req: Pick<RequestFacts, 'headers'>,
   options: VerifyRequestAuthOptions = {}
 ): Promise<RequestUser | null> {
   const auth = getAuth();
@@ -291,7 +290,7 @@ export async function verifyRequestAuth(
   // nothing can be verified, so treat every request as unauthenticated.
   if (!auth) return null;
   const reader = captureOriginalRequestAuthReader(auth);
-  let originalHeaders: Readonly<Request['headers']>;
+  let originalHeaders: Readonly<RequestFacts['headers']>;
   try {
     originalHeaders = admittedHeaders(req);
   } catch {
@@ -366,58 +365,56 @@ export async function verifyRequestAuth(
   return null;
 }
 
+/** The body of the session gate's `401`. */
+export const AUTH_REQUIRED_BODY = { error: 'Unauthorized', code: 'AUTH_REQUIRED' } as const;
+
+/** What the session gate decided about one request. */
+export type SessionGateDecision =
+  /** Let it through. `user` is set when the gate proved who is calling. */
+  | { allowed: true; user?: RequestUser }
+  /** Answer `401` with {@link AUTH_REQUIRED_BODY}. */
+  | { allowed: false };
+
 /**
- * Express middleware that gates `/api/*` and `/mcp` behind a Better Auth session
- * cookie or a per-user API key when `config.auth.enabled` is `true`.
- * Writes bypass the signed cookie cache and check the current server session
- * without renewing it; GET/HEAD/OPTIONS retain cached session reads.
+ * Decide whether a request may pass the session gate, and who it is.
  *
- * Registered app-wide (before the API routes) so it also covers the `/mcp` mount
- * added later on the same app. When login is disabled it is a pass-through with
- * no credential work. On success the resolved identity is attached to
- * `res.locals.user`; on failure it responds `401` with the repo's error shape.
+ * The chain (`http/api-chain.ts`) asks it for every request, `/mcp` among
+ * them. When login is disabled it decides nothing and costs nothing. Writes bypass the signed
+ * cookie cache and check the current server session without renewing it;
+ * GET/HEAD/OPTIONS keep cached session reads.
  *
- * @param req - The incoming request.
- * @param res - The response (identity is attached to `res.locals.user` on success).
- * @param next - Passes control to the next handler when the request is allowed.
+ * @param method - The request method.
+ * @param path - The path the chain's router matches, without the query string.
+ * @param request - The request's facts, for its headers.
+ * @returns The decision.
  */
-export async function sessionGate(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function decideSessionGate(
+  method: string,
+  path: string,
+  request: Pick<RequestFacts, 'headers'>
+): Promise<SessionGateDecision> {
   // Zero-overhead pass-through when login is disabled. Read per request so the
   // flag can flip at runtime (enable-login flow) without a server restart.
-  if (!configManager.get('auth')?.enabled) {
-    next();
-    return;
-  }
+  if (!configManager.get('auth')?.enabled) return { allowed: true };
 
-  // Express matches routes case-insensitively by default ('case sensitive
-  // routing' is off), so `/API/sessions` resolves to the same handler as
-  // `/api/sessions`. Normalize case before the gate checks — otherwise an
-  // uppercased prefix would slip past `isGatedPath` yet still reach the gated
-  // route, bypassing auth entirely.
-  const path = req.path.toLowerCase();
+  // Normalize case before the gate checks. The router matches case-sensitively
+  // today, but the server ran on Express for years, where `/API/sessions`
+  // reached the same handler as `/api/sessions`; a gate that trusts the router's
+  // case rule is one router change away from letting an uppercased prefix slip
+  // past `isSessionGatedPath` to a gated route.
+  const lowered = path.toLowerCase();
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
-  // login screen can load.
-  if (!isGatedPath(path)) {
-    next();
-    return;
-  }
-
-  // The Better Auth endpoints and the health probe are always reachable.
-  if (isExemptPath(path)) {
-    next();
-    return;
-  }
+  // login screen can load. The Better Auth endpoints and the health probe are
+  // always reachable.
+  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
 
   // A signed cache may outlive a revoked session. Writes must observe the current
   // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.
-  const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase());
-  const user = await verifyRequestAuth(req, readOnly ? {} : { sessionFreshness: 'server-store' });
-  if (user) {
-    res.locals.user = user;
-    next();
-    return;
-  }
-
-  res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+  const readOnly = ['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
+  const user = await verifyRequestAuth(
+    request,
+    readOnly ? {} : { sessionFreshness: 'server-store' }
+  );
+  return user ? { allowed: true, user } : { allowed: false };
 }

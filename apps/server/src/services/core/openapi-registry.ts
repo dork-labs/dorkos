@@ -29,13 +29,7 @@ import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
-import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
-import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
-import { registerSessionLocationsOpenApi } from '../session/resolution/session-locations-openapi.js';
-import { registerProjectsOpenApi } from '../projects/projects-openapi.js';
-import { registerDocChannelOpenApi } from '../canvas/doc-channel/openapi.js';
-import { registerAccountEligibilityOpenApi } from './usage/account-eligibility-openapi.js';
-import { registerKeepAwakeOpenApi } from './keep-awake/keep-awake-openapi.js';
+import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import {
   PermissionModeSchema,
@@ -66,7 +60,7 @@ import {
   CommandRegistrySchema,
   HealthResponseSchema,
   ErrorResponseSchema,
-  HistoryMessageSchema,
+  HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
   TaskRunSchema,
@@ -643,13 +637,6 @@ const LocalUninstallResultSchema = z.object({
 });
 
 const registry = new OpenAPIRegistry();
-registerConnectorEventOpenApi(registry);
-registerSessionContinueOpenApi(registry);
-registerSessionLocationsOpenApi(registry);
-registerProjectsOpenApi(registry);
-registerDocChannelOpenApi(registry);
-registerAccountEligibilityOpenApi(registry);
-registerKeepAwakeOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
@@ -660,6 +647,8 @@ registry.register('RelayFlowDirection', RelayFlowDirectionSchema);
 registry.register('RelayFlowEvent', RelayFlowEventSchema);
 
 // --- Health ---
+
+registerDomainOpenApi(registry);
 
 registry.registerPath({
   method: 'get',
@@ -829,6 +818,31 @@ registry.registerPath({
             "The session's project directory (boundary-checked). Optional for a " +
             'session the server can already place; required for a cold session it cannot.',
         }),
+      since: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. When the history holds it, only that message and the ones after ' +
+            'it come back, with `tail: true`; otherwise the whole history (DOR-2890).',
+        }),
+      before: z
+        .string()
+        .optional()
+        .openapi({
+          description:
+            'A message id. Answers the page of up to 100 messages directly older than it, ' +
+            'with `earlierMessages` counting what remains before the page. An id no message ' +
+            'has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).',
+        }),
+      newest: z
+        .enum(['1'])
+        .optional()
+        .openapi({
+          description:
+            'Answers only the newest 150 messages, as the stream snapshot carries them, ' +
+            'with `earlierMessages` counting the rest (DOR-2889).',
+        }),
     }),
   },
   responses: {
@@ -836,14 +850,15 @@ registry.registerPath({
       description: 'Message history',
       content: {
         'application/json': {
-          schema: z.object({ messages: z.array(HistoryMessageSchema) }),
+          schema: HistoryReadSchema,
         },
       },
     },
     404: {
       description:
-        "Could not determine this session's working directory (SESSION_CWD_REQUIRED). " +
-        'Retry with an explicit `cwd`.',
+        "Could not determine this session's working directory (SESSION_CWD_REQUIRED); " +
+        'retry with an explicit `cwd`. Or `before` names a message the history does ' +
+        'not hold (HISTORY_CURSOR_UNKNOWN).',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -991,15 +1006,6 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Update session settings',
   description:
-    'Moving an interactive session to a permission mode that never stops to ask ' +
-    'requires an acknowledgement. That means any mode the runtime declares at the ' +
-    '`autonomy` stop, and any mode it declares with `asks: "never"` and a `reach` ' +
-    'other than `"read"` — Codex files such a mode at the middle stop. Satisfy it ' +
-    'with `acknowledgedAutonomy: true` on this request, or with the standing ' +
-    'record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
-    'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
-    'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
-    'ritual for a person, not a boundary against a caller.\n\n' +
     'The chosen mode is always saved. When it could not also be delivered to a ' +
     'reply already in flight AND it was a tightening (the agent must now ask ' +
     'more, or may reach less far), the answer is `202` with ' +
@@ -1037,12 +1043,6 @@ registry.registerPath({
     },
     404: {
       description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    428: {
-      description:
-        'A mode that never stops to ask was requested without an acknowledgement ' +
-        '(`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -1112,7 +1112,8 @@ registry.registerPath({
         'Refused before anything started, for where the turn would run ' +
         '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
-        '`accountId`); the body says what to do instead',
+        '`accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also ' +
+        'names `agentId`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3993,6 +3994,9 @@ const StartLinkResultSchema = z.object({
     .string()
     .openapi({ description: 'The 8-character code the human enters at the cloud.' }),
   verificationUri: z.string().openapi({ description: 'Where the human goes to approve the link.' }),
+  verificationUriComplete: z.string().optional().openapi({
+    description: 'The approval page with the code already filled in, when the service sent one.',
+  }),
   expiresAt: z.string().openapi({ description: 'ISO timestamp after which the code is dead.' }),
 });
 
@@ -5955,8 +5959,7 @@ registry.registerPath({
     'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
     'conflict) and writes nothing, while a change that reached several targets sets back the ' +
     'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
-    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
-    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a ' +
     '"Not now" on the Always allow suggestion lets the suggestion come back ' +
     '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
   request: {
@@ -5978,10 +5981,6 @@ registry.registerPath({
         'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
         'change, such as an answer on a request card (`NOT_UNDOABLE`)',
       content: { 'application/json': { schema: UndoConflictResponseSchema } },
-    },
-    428: {
-      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -6390,7 +6389,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'React to an entry, or take a reaction back',
   description:
-    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, so what bounds a machine here is an hourly ceiling per room (`REACTION_RATE_LIMITED`, 429) rather than what kind of author it is, and the pill it leaves carries the AGENT\'s id. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent has no allowance to spend.',
+    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, and ADR 261006-225605 removes the hourly count it once had, so the pill it leaves carries the AGENT\'s id and nothing caps how many. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent cannot react.',
   request: {
     params: RoomEntryParams,
     body: { content: { 'application/json': { schema: ToggleReactionRequestSchema } } },
@@ -6411,12 +6410,6 @@ registry.registerPath({
     },
     409: {
       description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    429: {
-      description:
-        'This agent has spent its hourly reaction allowance in this room ' +
-        '(`REACTION_RATE_LIMITED`). People are never counted',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

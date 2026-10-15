@@ -3,11 +3,11 @@
  */
 /**
  * The preset picker (spec `agent-permissions` D5, tasks 3.7 and 3.8): what it
- * reads, the Full autonomy consent step, the "agents set differently" question,
+ * reads, Trusted and Careful as the two choices, Trusted written straight through, the "agents set differently" question,
  * and the one sentence that travels with Full power (DOR-2102).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -37,12 +37,10 @@ const OVERVIEW: PermissionsResponse = {
   agentCount: 4,
 };
 
-function renderPicker(overview: PermissionsResponse, acknowledgedAt: string | null = null) {
+function renderPicker(overview: PermissionsResponse) {
   const transport = createMockTransport({
     getPermissions: vi.fn().mockResolvedValue(overview),
-    getConfig: vi.fn().mockResolvedValue({
-      ui: { autonomyAcknowledgedAt: acknowledgedAt },
-    } as unknown as ServerConfig),
+    getConfig: vi.fn().mockResolvedValue({ ui: {} } as unknown as ServerConfig),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -60,9 +58,30 @@ function renderPicker(overview: PermissionsResponse, acknowledgedAt: string | nu
 const scopeNote = () => document.querySelector('[data-slot="permission-mode-scope-note"]');
 
 describe('PresetPicker', () => {
-  it('reads "Not chosen yet" before anyone has chosen', async () => {
+  it('offers Trusted and Careful only', async () => {
+    renderPicker({ ...OVERVIEW, preset: 'careful' });
+    await screen.findByTestId('permissions-preset');
+    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Trusted',
+      'Careful',
+    ]);
+  });
+
+  it('reads as Trusted before anyone has chosen, which is what it resolves as', async () => {
     renderPicker({ ...OVERVIEW, preset: null });
-    expect(await screen.findByText('Not chosen yet. Agents work as before.')).toBeInTheDocument();
+    expect(await screen.findByTestId('permissions-preset')).toHaveTextContent(/^Trusted · /);
+    expect(screen.getByRole('radio', { name: 'Trusted' })).toBeChecked();
+  });
+
+  it('still shows a stored Balanced, selected, beside the two choices', async () => {
+    renderPicker(OVERVIEW);
+    expect(await screen.findByTestId('permissions-preset')).toHaveTextContent(/^Balanced · /);
+    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Trusted',
+      'Careful',
+      'Balanced',
+    ]);
+    expect(screen.getByRole('radio', { name: 'Balanced' })).toBeChecked();
   });
 
   it('counts the changes on top of the preset, and resets them', async () => {
@@ -88,34 +107,20 @@ describe('PresetPicker', () => {
     );
   });
 
-  it('asks before Full power, and sends the yes with the preset', async () => {
+  it('chooses Trusted straight away, with no dialog and no acknowledgement', async () => {
+    // ADR 261006-225605 retired the Full autonomy consent ritual: Trusted is a
+    // normal choice. The exact body pins that nothing rides along with it.
     const transport = renderPicker(OVERVIEW);
-    await userEvent.click(await screen.findByRole('radio', { name: 'Full power' }));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(transport.setPermissionPreset).not.toHaveBeenCalled();
-
-    await userEvent.click(within(dialog).getByRole('button', { name: /Turn on|Full autonomy/ }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Trusted' }));
     await waitFor(() =>
       expect(transport.setPermissionPreset).toHaveBeenCalledWith({
-        preset: 'full',
-        surface: 'control-center',
-        acknowledgeAutonomy: true,
-      })
-    );
-  });
-
-  it('does not ask again once the acknowledgement is on file', async () => {
-    const transport = renderPicker(OVERVIEW, '2026-08-01T00:00:00.000Z');
-    // The acknowledgement is read from config; wait for it to land.
-    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
-    await userEvent.click(await screen.findByRole('radio', { name: 'Full power' }));
-    await waitFor(() =>
-      expect(transport.setPermissionPreset).toHaveBeenCalledWith({
-        preset: 'full',
+        preset: 'trusted',
         surface: 'control-center',
       })
     );
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(transport.setPermissionPreset).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('asks which agents set differently should follow, with nothing checked', async () => {
@@ -156,7 +161,9 @@ describe('PresetPicker', () => {
       },
     });
     await waitFor(() => expect(scopeNote()).toBeInTheDocument());
-    expect(scopeNote()).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
+    expect(scopeNote()).toHaveTextContent(
+      /like deleting a schedule, follow your Permissions settings/
+    );
   });
 
   it('says nothing more at a stop that still asks', async () => {
@@ -165,7 +172,7 @@ describe('PresetPicker', () => {
     expect(scopeNote()).not.toBeInTheDocument();
   });
 
-  it('draws the three choices while loading, and chooses nothing until the answer arrives', async () => {
+  it('draws the choices while loading, and chooses nothing until the answer arrives', async () => {
     const transport = createMockTransport({
       getPermissions: vi.fn().mockReturnValue(new Promise(() => {})),
     });

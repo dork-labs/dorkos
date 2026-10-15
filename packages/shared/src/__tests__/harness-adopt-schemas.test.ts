@@ -10,6 +10,9 @@
  * @module __tests__/harness-adopt-schemas
  */
 import { describe, expect, it } from 'vitest';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { HarnessAdoptRefusalSchema } from '../harness-schemas.js';
 
 describe('HarnessAdoptRefusalSchema', () => {
@@ -55,4 +58,28 @@ describe('HarnessAdoptRefusalSchema', () => {
       }).success
     ).toBe(false);
   });
+});
+const execFileAsync = promisify(execFile);
+
+it('registers harness schemas when this leaf is the first schema loaded in a cold process', async () => {
+  const program = [
+    "import assert from 'node:assert/strict';",
+    "import { z } from 'zod';",
+    "assert.equal(typeof z.ZodType.prototype.openapi, 'undefined');",
+    `const { HarnessStatusResponseSchema } = await import(${JSON.stringify(
+      new URL('../harness-schemas.ts', import.meta.url).href
+    )});`,
+    "const { OpenAPIRegistry, zodToOpenAPIRegistry } = await import('@asteasolutions/zod-to-openapi');",
+    "assert.equal(typeof HarnessStatusResponseSchema.openapi, 'function');",
+    'const registry = new OpenAPIRegistry();',
+    "const registered = registry.register('ColdHarnessStatus', HarnessStatusResponseSchema);",
+    "assert.equal(zodToOpenAPIRegistry.get(registered)._internal.refId, 'ColdHarnessStatus');",
+    'console.log(JSON.stringify({ openapi: true, registered: true }));',
+  ].join('\n');
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ['--import', 'tsx', '--input-type=module', '--eval', program],
+    { cwd: fileURLToPath(new URL('../../', import.meta.url)), timeout: 4000, maxBuffer: 4096 }
+  );
+  expect(JSON.parse(stdout)).toEqual({ openapi: true, registered: true });
 });

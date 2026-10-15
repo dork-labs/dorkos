@@ -6,7 +6,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { QuestionItem } from '@dorkos/shared/types';
 import { QuestionItemSchema, UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
-import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
+import type { PermissionModeId } from '@dorkos/shared/schemas';
 import {
   createInSessionContextResolver,
   resolveAgentHome,
@@ -40,14 +40,21 @@ import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,
   describeWaited,
+  NEVER_ASK_DENIAL,
   NO_APPROVAL_SURFACE_DENIAL,
   questionTimeoutDenial,
   toolDenial,
   WITHDRAWN_DENIALS,
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { turnPermissionMode } from '../turn-permission.js';
+import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
+import {
+  ceilingOn,
+  gatePermissionMode,
+  neverAsks,
+  resolveModeDecision,
+  type CeilingedMode,
+} from '../turn-permission.js';
 
 // ---------------------------------------------------------------------------
 // Auto-approved tool sets (module-level to avoid per-call reconstruction)
@@ -71,16 +78,16 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
 /**
  * DorkOS agent communication tools, auto-approved because they carry their own
  * authorization, NOT because they are read-only. Some of these mutate:
- * `relay_inbox` with `ack: true` permanently deletes the messages it returns
- * (see the `act` tier note in `mcp-tool-tiers.ts`) and `relay_register_endpoint`
- * creates a mailbox.
+ * `chat_send` starts a turn in another chat and `chat_stop` ends one.
  *
- * The exemption is deliberate. An agent polls its inbox continuously, so a card
- * per poll would train the user to dismiss cards without reading them, which
- * weakens every other approval card. What bounds the damage instead is that the
- * server injects the caller's identity and the endpoint tools refuse any inbox
- * the caller does not own, so an `ack` can only ever destroy the caller's own
- * mail. Cross-agent messaging authorization lives in relay/access-rules.json.
+ * The exemption is deliberate. Agents message each other's chats as a matter of
+ * course, so a card per message would train the user to dismiss cards without
+ * reading them, which weakens every other approval card. What bounds the damage
+ * instead is that the server stamps the calling chat as the sender, so a message
+ * or a stop can never claim to come from anyone else, and every one lands in a
+ * chat a person can open (with each stop also in the audit trail). The Messages
+ * permission area is resolved on every call, so a person who wants these asked
+ * about or Blocked says so there (spec `spin-off-chats`, ADR 261009-171114).
  *
  * ## Why this is a hand-written list and not derived (DOR-499)
  *
@@ -97,7 +104,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
  * general". This list
  * answers the narrower question above: does this tool carry its own authorization,
  * so that a card would add friction without adding safety? That is a hand-picked
- * judgment, not a property of the tier. `relay_register_endpoint` and
+ * judgment, not a property of the tier. `chat_send` and
  * `mesh_register` are `act` and are here; plenty of other `act` tools are
  * deliberately not. Deriving the list from `act` + `observe` would auto-admit every
  * future `act` tool to a no-prompt path as a side effect of picking a tier, and
@@ -174,10 +181,14 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // an agent the tool refuses itself.
     'request_permission',
     'relay_notify_user',
-    'relay_send',
-    'relay_inbox',
     'relay_list_endpoints',
-    'relay_register_endpoint',
+    // Chats messaging chats (spec `spin-off-chats`). The sender is the verified
+    // calling chat, never an argument, and each tool refuses without one. In a
+    // turn held to a ceiling, `chat_stop` and a steering or interrupting
+    // `chat_send` still ask — see isAutoAllowedCall.
+    'chat_send',
+    'chat_read',
+    'chat_stop',
     'mesh_list',
     'mesh_inspect',
     'mesh_discover',
@@ -231,9 +242,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *
  * **That bound only exists for an AGENT caller**, which is the whole reason this
  * set is separate. Who the caller IS comes from `callerAuthor`
- * (`services/rooms/room-capabilities.ts`): with no identity in the invocation
- * context and no login on this install, it falls back to the person who OWNS the
- * install. The owner is exempt from the membership check by design —
+ * (`services/rooms/service/room-caller-author.ts`). From inside a chat with no
+ * identity it now refuses (DOR-2863), but it used to fall back to the person who
+ * OWNS the install, and every other surface with no identity and no login still
+ * does. The owner is exempt from the membership check by design —
  * `seesEveryRoom` short-circuits `canSee`, so every room on the machine is
  * readable, the owner's own DMs with agents included — and an owner-attributed
  * post lands as a human message at cascade depth zero, which triggers every
@@ -304,7 +316,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *   can start conversations" switch has to be on (`canInitiate`, per binding,
  *   default FALSE). What the scope then COVERS is the operator's choice too, and
  *   it is often wider than one chat: a binding may name a group, a chat with
- *   somebody else, or — with the chat filter left empty, which is the cockpit's
+ *   somebody else, or — with the chat filter left empty, which is the app's
  *   default for a new binding ("Any chat (wildcard)") — **every chat that has
  *   messaged that adapter, including ones nobody claimed**. That is stated
  *   exactly this way in `relay/initiate-consent.ts`: sender scoping does not
@@ -323,10 +335,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * asked in a channel to send a proactive note, the agent's room turn parked on
  * `awaiting_approval` and no message was ever sent, twice on two days.
  *
- * What bounds the frequency instead is a mechanism, per
- * `.claude/rules/room-conduct.md`: `NotifyBudget` (`relay/notify-budget.ts`),
- * ten notes per agent per hour, with a refusal that tells the agent to say it in
- * the conversation it is already in.
+ * Nothing bounds the frequency by count any more (ADR 261006-225605): a note
+ * goes only where the operator configured, and every note lands in the inbox
+ * where it can be read back.
  *
  * Without an identity the tool refuses itself — the handler answers
  * `NOT_AN_AGENT` — so the qualifier costs a call nothing today. It is still
@@ -389,7 +400,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * with files — its worktree, which anchors back to that agent (DOR-2091). An
  * agent a room dispatched to is in the mesh by construction, so the two agree
  * wherever this was meant to work: the verbs are
- * frictionless there. An ordinary cockpit session in a plain project directory
+ * frictionless there. An ordinary app session in a plain project directory
  * resolves neither, and keeps today's card.
  *
  * ## Why they are auto-allowed at all, once identity holds
@@ -404,9 +415,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * It is also what the rooms domain already asks for: "A card on every message
  * an agent posts into its own room would be the over-tiering that teaches
  * people to click through", with the writes bounded by mechanisms instead — the
- * cascade guard and the two-ceiling turn budget for a post, the hourly
- * `ReactionBudget` for a reaction, the hourly `NotifyBudget` for a note. This
- * list was the one place not told.
+ * cascade guard and the two-ceiling turn budget for a post. This list was the
+ * one place not told.
  */
 export const IDENTITY_SCOPED_TOOLS = new Set(
   [
@@ -434,6 +444,10 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
 const CONTROL_UI_TOOL = inSessionToolName('control_ui');
 
+/** The qualified chat-send and chat-stop names, for {@link isAutoAllowedCall}. */
+const CHAT_SEND_QUALIFIED = inSessionToolName(CHAT_SEND_TOOL);
+const CHAT_STOP_QUALIFIED = inSessionToolName(CHAT_STOP_TOOL);
+
 /** The SDK's own ask-the-person tool, which is routed rather than approved. */
 const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
@@ -453,121 +467,37 @@ const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
  * to {@link resolveModeDecision}, which raises a card in every mode but
  * `bypassPermissions`.
  *
+ * **A turn held to a ceiling cannot cut into another chat unasked.** A turn
+ * another agent's message or an outside sender started carries a permission
+ * ceiling, and trust never extends to strangers. So in such a turn `chat_stop`,
+ * and `chat_send` with `delivery` `steer` or `interrupt` (or any value that is
+ * not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
+ * the card: they only add a message to a chat a person can read.
+ *
+ * **A stranger's turn cannot read past its folder unasked** (spec `official-community-space`
+ * D10). The CLI asks about a read only when it reaches outside the agent's folder, or the web;
+ * under a stranger's ceiling those go to the mode table too, which asks, as the mode that asks
+ * would. Otherwise any stranger's question could read the computer and post what it found.
+ *
  * @param toolName - The tool the model called.
  * @param input - The raw arguments it called with.
+ * @param ceiling - What bounds the gate now: nothing, a ceiling, or a stranger's (`ceilingOn`).
  * @returns `true` to skip the card, `false` to hand the call to the mode table.
  */
-function isAutoAllowedCall(toolName: string, input: Record<string, unknown>): boolean {
+function isAutoAllowedCall(
+  toolName: string,
+  input: Record<string, unknown>,
+  ceiling: ReturnType<typeof ceilingOn>
+): boolean {
+  if (ceiling !== 'none') {
+    if (toolName === CHAT_STOP_QUALIFIED) return false;
+    if (toolName === CHAT_SEND_QUALIFIED) return (input.delivery ?? 'queue') === 'queue';
+  }
+  if (ceiling === 'stranger' && READ_ONLY_TOOLS.has(toolName)) return false;
   if (toolName !== CONTROL_UI_TOOL) return true;
   const parsed = UiCommandSchema.safeParse(input);
   if (!parsed.success) return false;
   return UI_COMMAND_REACH[parsed.data.action] === 'client-only';
-}
-
-// ---------------------------------------------------------------------------
-// Permission-mode decision table
-// ---------------------------------------------------------------------------
-
-/** What a permission mode says to do with a tool call the safe-lists did not cover. */
-export type ModeDecision = 'allow' | 'ask';
-
-/**
- * Decide what a session's permission mode does with one tool call.
- *
- * This is the gate's closed end: an **exhaustive** switch over
- * {@link PermissionMode} where every arm names its mode. Adding a member to the
- * union without deciding here is a `tsc` error, not a silent auto-allow — the
- * `never` assignment in the `default` arm enforces that, and it is the whole
- * point of the function.
- *
- * The parameter is nevertheless a {@link PermissionModeId}: a mode id is
- * whatever its runtime declared, and a session can be sitting in one this
- * runtime has since retired (DOR-885). Such an id is not a member of the union
- * and gets no arm — it asks, for the same reason every unnamed mode does.
- *
- * ## Why everything but `bypassPermissions` asks
- *
- * `canUseTool` is not the first gate — it is the last one. The Claude Code CLI
- * runs its own permission engine first and only round-trips to this callback for
- * calls it has **already decided need asking** (`--permission-prompt-tool stdio`;
- * its `createCanUseTool` returns straight away on `allow`/`deny` and sends a
- * `can_use_tool` control request only on `ask`). Verified against the shipped
- * binary at SDK 0.3.177 / CLI 2.1.177:
- *
- * - Under `acceptEdits` the CLI auto-allows a write **inside** the allowed
- *   working directories on its own. An edit that reaches DorkOS is one the CLI
- *   escalated on purpose — `decisionReason: {type:'workingDir', reason:'Path is
- *   outside allowed working directories'}`. Auto-accepting it here would
- *   rubber-stamp exactly that escalation, which is how `~/.ssh/authorized_keys`
- *   or `~/.zshrc` gets written by an agent that was told to stay in a project.
- * - Under `acceptEdits` the CLI also auto-allows a 7-command filesystem
- *   allowlist (`mkdir touch rm rmdir mv cp sed`) and any read-only command.
- *   Every other shell command — `curl … | sh`, `npm install`, `python x.py` —
- *   falls through to `ask` and lands here. Returning `allow` for those is what
- *   let a Slack message run a shell command on the operator's machine (DOR-604).
- *
- * So the honest rule is: if a call got this far, someone should look at it. The
- * shipped description "Auto-accept file edits; still prompt for other tools"
- * stays true end-to-end — the auto-accepting happens one layer up, where it can
- * still tell an in-workspace edit from an escape.
- *
- * The two bullets above are **still dated to SDK 0.3.177 / CLI 2.1.177 and were
- * NOT re-verified** on the 0.3.224 bump — nobody re-read the CLI's permission
- * engine for the `acceptEdits` working-directory escalation or the 7-command
- * allowlist. Note that this function's own conclusion does not rest on them: it
- * asks for everything but `bypassPermissions`, so a CLI that escalated MORE than
- * these bullets describe is still handled correctly. They would only become wrong
- * in the direction that matters if the CLI started escalating LESS.
- *
- * `bypassPermissions` is the sole exception, because it means "skip all tool
- * approval prompts". Note this is a policy choice, not an unreachable branch:
- * the CLI resolves most calls itself under that mode, but it still escalates a
- * few — a dangerous `rm`/`rmdir`, for one — and those do arrive here, where this
- * function allows them. That is the same "the CLI escalated on purpose and we
- * rubber-stamped it" shape fixed above for `acceptEdits`, and it is deliberate
- * only because the mode is named for it. Tracked separately.
- *
- * @param mode - The session's permission mode.
- * @returns `'allow'` to run without asking, `'ask'` to raise an approval card.
- */
-export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
-  const named = PermissionModeSchema.safeParse(mode);
-  // An id this runtime does not name has no rule here, and absence of a rule is
-  // never consent — the same answer the exhaustive arms below give every mode
-  // but `bypassPermissions`.
-  if (!named.success) return 'ask';
-  const namedMode = named.data;
-  switch (namedMode) {
-    // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
-    // most calls under it upstream, but not quite all (see the TSDoc above).
-    case 'bypassPermissions':
-      return 'allow';
-
-    // Every remaining mode asks, each for its own reason:
-    //   `default`     — "Prompt on tool use", exactly as shipped.
-    //   `acceptEdits` — the CLI already auto-accepted in-workspace writes; what
-    //                   reaches here left the working directory.
-    //   `auto`        — research-preview classifier; DorkOS still raises a card.
-    //   `plan`        — read-only planning; the CLI answers writes with "Cannot
-    //                   write to X while in plan mode". Nothing executes here.
-    //   `dontAsk`     — not surfaced by DorkOS and denied upstream by the CLI,
-    //                   so this is unreachable; `ask` is the safe answer anyway.
-    case 'default':
-    case 'acceptEdits':
-    case 'auto':
-    case 'plan':
-    case 'dontAsk':
-      return 'ask';
-
-    default: {
-      // Unreachable while the switch is exhaustive; if a new mode is added to
-      // `PermissionMode` this line stops compiling. At runtime an unknown mode
-      // asks — absence of a rule is never consent.
-      const exhaustive: never = namedMode;
-      void exhaustive;
-      return 'ask';
-    }
-  }
 }
 
 /**
@@ -1038,10 +968,7 @@ async function hasAgentIdentity(
  *   disk.
  */
 export function createCanUseTool(
-  session: InteractiveSession & {
-    permissionMode: PermissionModeId;
-    turnPermissionCeiling?: TurnPermissionCeiling;
-  },
+  session: InteractiveSession & CeilingedMode<PermissionModeId>,
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
@@ -1054,6 +981,22 @@ export function createCanUseTool(
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
+    // The turn's mode, not the session's: a turn held to a ceiling must not be
+    // auto-allowed on the strength of the level a person chose for others, and
+    // nor may background work an earlier ceilinged turn left running.
+    const decision = resolveModeDecision(gatePermissionMode(session));
+    // "Never ask" refuses ahead of everything below, the question and the safe
+    // lists included: whatever reaches this callback is a call the CLI would
+    // have asked about, and in this mode nobody is asked and nothing extra runs.
+    // `neverAsks` also covers a chat set to it whose turn a stricter ceiling
+    // holds to Plan, which would otherwise ask.
+    if (decision === 'refuse' || neverAsks(session)) {
+      log.info('[canUseTool] refused: the chat is set to never ask', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      return { behavior: 'deny', message: NEVER_ASK_DENIAL };
+    }
     if (toolName === ASK_USER_QUESTION_TOOL) {
       log.debug('[canUseTool] routing to question handler', {
         toolName,
@@ -1073,7 +1016,7 @@ export function createCanUseTool(
       // itself `dorkos` presents the same `mcp__dorkos__…` names, and its call
       // falls through to the mode table like any other foreign tool.
       isHostServedOrUnattributed(context.mcpServer) &&
-      isAutoAllowedCall(toolName, input) &&
+      isAutoAllowedCall(toolName, input, ceilingOn(session)) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER — who sees
       // every room on the install and posts as a person — and a proactive note
@@ -1086,9 +1029,9 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
-    // The turn's mode, not the session's: a turn held to a ceiling must not be
-    // auto-allowed on the strength of the level a person chose for others.
-    if (resolveModeDecision(turnPermissionMode(session)) === 'ask') {
+    // Anything but an explicit `allow` asks, so a decision added later can
+    // never fall through to the auto-allow below.
+    if (decision !== 'allow') {
       // The measurement (spec `auto-mode-classifier-context`). Reaching here in
       // AUTO mode with a DorkOS tool means the runtime's classifier decided this
       // call deserved a person, and DorkOS's own auto-allow list did not cover

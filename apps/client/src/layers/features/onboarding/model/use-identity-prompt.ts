@@ -67,15 +67,30 @@ export interface IdentityPromptApi {
   skip: () => void;
 }
 
+/** What the surface hosting the prompt knows that onboarding cannot. */
+export interface PromptHostOptions {
+  /**
+   * Whether the getting-started card is actually on screen. Defaults to
+   * `shouldShowGettingStarted`. The sidebar passes the VISIBLE value: it holds
+   * the card back while its own Getting started list has suggestions
+   * (DOR-2845), and a prompt waiting on the unheld value would then be asked
+   * nowhere.
+   */
+  gettingStartedCardShown?: boolean;
+}
+
 /**
  * Decide whether the one-time sidebar card should be offered, and drive it.
  *
  * For installs that finished onboarding before the conversation asked this.
  * Call it ONCE per surface; two calls would be two phase machines over one
  * card (the same rule `useProfilePrompt` states).
+ *
+ * @param options - What the host surface knows; see {@link PromptHostOptions}.
  */
-export function useIdentityPrompt(): IdentityPromptApi {
+export function useIdentityPrompt(options: PromptHostOptions = {}): IdentityPromptApi {
   const { state, isLoading, shouldShowGettingStarted } = useOnboarding();
+  const cardShown = options.gettingStartedCardShown ?? shouldShowGettingStarted;
   const question = useIdentityQuestion();
   const { dismissIdentityPrompt } = useProfile();
   const [phase, setPhase] = useState<IdentityPromptPhase>('ask');
@@ -95,7 +110,7 @@ export function useIdentityPrompt(): IdentityPromptApi {
     question === 'ask' &&
     // Never two cards: while the getting-started card shows, its "Tell DorkBot
     // your name" row is the single place this is asked.
-    !shouldShowGettingStarted;
+    !cardShown;
 
   const recordClosed = () => {
     void dismissIdentityPrompt().catch(() => {

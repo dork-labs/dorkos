@@ -1,3 +1,18 @@
+import { normalizeAgentRuntimes, canLeaveChat } from './adapters/adapter-runtime-selection.js';
+export { normalizeAgentRuntimes } from './adapters/adapter-runtime-selection.js';
+import type {
+  AdapterManagerDeps,
+  RemoveAdapterOptions,
+  AdapterMeshCoreLike,
+} from './adapters/adapter-manager-deps.js';
+export type {
+  AdapterMeshCoreLike,
+  AdapterEventRecorder,
+  ConnectionTraceEraser,
+  RemoveAdapterOptions,
+  ActivityEmitter,
+  AdapterManagerDeps,
+} from './adapters/adapter-manager-deps.js';
 import {
   readOriginalInstalledDocumentAdapterOrigin,
   type InstalledDocumentAdapterOrigin,
@@ -46,12 +61,7 @@ import {
   TRACE_PRUNE_BATCH,
   adapterPrefixesConflict,
 } from '@dorkos/relay';
-import type {
-  AgentRuntimeLike,
-  TraceStoreLike,
-  TasksStoreLike,
-  RefusedAskReporter,
-} from '@dorkos/relay';
+import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -64,6 +74,7 @@ import {
   unparsedEntryId,
   ensureDefaultAdapterConfig,
   watchAdapterConfig,
+  AdapterConfigWrites,
   maskSensitiveFields,
   mergeWithPasswordPreservation,
   parseAdapterConfigForPersist,
@@ -80,7 +91,6 @@ import { assessTaskDispatch, type RelayDispatchVerdict } from './task-dispatch/r
 import { BindingSubsystem, type BindingSubsystemDeps } from './binding-subsystem.js';
 import { reportsVisibility, type BridgeVisibility } from './chat-bridge/index.js';
 import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
-import type { RelayCoreLike } from './binding-router.js';
 import {
   materializeAdapterSecrets,
   persistAdapterConfigs,
@@ -92,213 +102,10 @@ import {
   credentialProvider as defaultCredentialProvider,
   credentialStore as defaultCredentialStore,
   type CredentialProvider,
-  type CredentialStore,
 } from '../core/credential-provider.js';
 
 // Re-export for consumers that import AdapterError from this module
 export { AdapterError } from './adapter-error.js';
-
-/**
- * The runtime-type → runtime map an {@link AdapterManager} actually holds,
- * from whichever of the two shapes its caller passed.
- *
- * 1. An explicit `agentRuntimes` map is taken as given — the shape every
- *    composition root passes since DOR-1614, carrying every registered runtime.
- * 2. Otherwise a legacy single `agentManager` is wrapped under its OWN `type`,
- *    never a hardcoded `'claude-code'`. That hardcode was a silent killer: a
- *    TestModeRuntime landed under `'claude-code'` while every lookup asked for
- *    `'test-mode'`, so binding routing failed to initialize and the relay went
- *    quiet with one warn line (DOR-768). A bare test double declaring no `type`
- *    keeps the old key, which is what such a double means.
- * 3. Otherwise the map is empty, and the adapter factory refuses to build the
- *    built-in adapter rather than guessing which runtime it drives.
- *
- * A free function rather than a private constructor step so the rule can be
- * asserted directly, without a diagnostic accessor on the class whose only
- * reader would be its own tests.
- *
- * @param deps - The dependencies as the caller passed them.
- */
-export function normalizeAgentRuntimes(
-  deps: Pick<AdapterManagerDeps, 'agentRuntimes' | 'agentManager'>
-): Map<string, AgentRuntimeLike> {
-  if (deps.agentRuntimes) return new Map(deps.agentRuntimes);
-  const runtimes = new Map<string, AgentRuntimeLike>();
-  if (deps.agentManager) {
-    runtimes.set(deps.agentManager.type ?? 'claude-code', deps.agentManager);
-  }
-  return runtimes;
-}
-
-/** Minimal MeshCore interface needed by AdapterManager for CWD resolution. */
-export interface AdapterMeshCoreLike {
-  getProjectPath(agentId: string): string | undefined;
-}
-
-/** Interface for recording adapter lifecycle events. */
-export interface AdapterEventRecorder {
-  insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
-}
-
-/** Deletes the delivery history a removed chat connection left behind (DOR-2604). */
-export interface ConnectionTraceEraser {
-  /**
-   * Delete up to `limit` of the delivery records and lifecycle events that
-   * name the connection.
-   *
-   * @param adapterId - The removed connection's id.
-   * @param limit - The most records to delete in this call.
-   * @returns How many records were deleted; fewer than `limit` means none are left.
-   */
-  deleteConnectionTraces(adapterId: string, limit: number): number;
-}
-
-/** Options for {@link AdapterManager.removeAdapter}. */
-export interface RemoveAdapterOptions {
-  /**
-   * Also delete the connection's delivery records, chat names and events
-   * (DOR-2604), and every chat it recorded for the claim feed, blocked and
-   * ignored ones included (DOR-2608). Only a person removing the connection
-   * passes this: a package update or an install rollback removes an entry it
-   * may put straight back, and must never erase a history nobody asked to
-   * lose. Defaults to `false`.
-   */
-  forgetHistory?: boolean;
-}
-
-/** Minimal ActivityService interface for fire-and-forget event emission. */
-export interface ActivityEmitter {
-  emit(event: {
-    actorType: 'user' | 'agent' | 'system' | 'tasks';
-    actorLabel: string;
-    category: 'relay';
-    eventType: string;
-    resourceType?: string | null;
-    resourceId?: string | null;
-    resourceLabel?: string | null;
-    summary: string;
-    linkPath?: string | null;
-    metadata?: Record<string, unknown> | null;
-  }): Promise<void>;
-}
-
-/** Dependencies for constructing runtime adapters. */
-export interface AdapterManagerDeps {
-  /**
-   * Map from runtime type (e.g., `'claude-code'`, `'test-mode'`) to a runtime
-   * instance satisfying the minimal `AgentRuntimeLike` contract.
-   *
-   * Passed straight through to the built-in adapter, which picks one PER
-   * MESSAGE from what the message names and refuses a runtime it does not hold
-   * rather than falling back to another (DOR-1614). Pass every runtime this
-   * server registered.
-   *
-   * For backward compatibility, callers may pass a single `agentManager`
-   * instead — {@link normalizeAgentRuntimes} turns it into a single-entry map
-   * keyed by that runtime's own `type`.
-   */
-  agentRuntimes?: Map<string, AgentRuntimeLike>;
-  /**
-   * @deprecated Provide `agentRuntimes` (a map) instead. When supplied, this
-   * single runtime is registered under its own `type` (falling back to
-   * `'claude-code'` for doubles that declare none) so existing callers
-   * continue to work while they migrate.
-   */
-  agentManager?: AgentRuntimeLike;
-  traceStore: TraceStoreLike;
-  taskStore?: TasksStoreLike;
-  /**
-   * Where a relay-dispatched scheduled run reports a tool it was refused
-   * because nobody was there to approve it, so the activity feed says so on
-   * this path too (DOR-1580). Built by the composition root, which is where the
-   * full `TaskStore` and the activity feed both are — this manager holds only
-   * the narrow `updateRun` seam.
-   */
-  onRefusedAsk?: RefusedAskReporter;
-  /** Optional RelayCore for binding subsystem initialization */
-  relayCore?: RelayCoreLike;
-  /** Optional MeshCore for enriching AdapterContext with agent CWD resolution */
-  meshCore?: AdapterMeshCoreLike;
-  /** Optional recorder for adapter lifecycle events */
-  eventRecorder?: AdapterEventRecorder;
-  /**
-   * Deletes a removed connection's delivery records, chat names and lifecycle
-   * events. Optional so a manager built without a trace store still removes
-   * connections; there is then nothing to delete.
-   */
-  traceEraser?: ConnectionTraceEraser;
-  /** Optional activity service for feed instrumentation */
-  activityService?: ActivityEmitter;
-  /**
-   * Encrypted store that backs `file:` credential references for adapter
-   * secrets (DOR-280). Defaults to the process-wide {@link credentialStore}
-   * singleton; injectable for tests.
-   */
-  credentialStore?: CredentialStore;
-  /**
-   * Read port that resolves a credential reference to its secret at adapter
-   * construction (DOR-280). Defaults to the process-wide
-   * {@link credentialProvider} singleton; injectable for tests.
-   */
-  credentialProvider?: CredentialProvider;
-  /**
-   * The durable claim feed for unbound inbound chats (connection-scoping
-   * spec `specs/connection-scoping/` §Part 3). Optional so callers that don't
-   * exercise the unbound-inbound path (most tests) can omit it.
-   */
-  unclaimedChats?: UnclaimedChatStore;
-  /**
-   * The rooms service, its bridge store, and the operator-author resolver —
-   * threaded straight to {@link BindingSubsystem} for the inbound chat bridge
-   * (chats-as-channels §5). Optional so a manager built without a rooms
-   * subsystem still runs; a bridged binding then simply cannot be routed.
-   */
-  roomService?: BindingSubsystemDeps['roomService'];
-  /** The bridge identity store the rooms service writes through (chats-as-channels §3.1). */
-  roomBridges?: BindingSubsystemDeps['roomBridges'];
-  /** The per-runtime transcript probe for session adoption at bridge time (§7.3). */
-  transcriptProbe?: BindingSubsystemDeps['transcriptProbe'];
-  /** The install owner's author id, read per call (chats-as-channels §3.5, §10.9). */
-  operatorAuthorId?: BindingSubsystemDeps['operatorAuthorId'];
-  /** The real operator-name prefix for a bridged group post, read per call (§6.7, DOR-899). */
-  operatorDisplayName?: BindingSubsystemDeps['operatorDisplayName'];
-  /** The room store, for outbound delivery's entry reads (chats-as-channels §6). */
-  roomStore?: BindingSubsystemDeps['roomStore'];
-  /** The author registry, for the delivering-author check and name prefix (§6.6, §6.7). */
-  roomAuthors?: BindingSubsystemDeps['roomAuthors'];
-  /** Which room a session answers for, for the bridged Ask card (`ask-entitlement` §5.2). */
-  roomSessionBindings?: BindingSubsystemDeps['roomSessionBindings'];
-  /** A room's membership rows, for that card's audience check (`ask-entitlement` §5.1). */
-  roomMembers?: BindingSubsystemDeps['roomMembers'];
-  /** Build a chat's outbound subject from its bridge row (§6.4). */
-  resolveBridgeSubject?: BindingSubsystemDeps['resolveBridgeSubject'];
-  /** Register the outbound bridge's inline-delivery hook on the room service (§6.1). */
-  registerEntryCommitListener?: BindingSubsystemDeps['registerEntryCommitListener'];
-  /** Emit an ephemeral relay signal, for the bridge's presence forwarder (§6.8). */
-  relaySignal?: BindingSubsystemDeps['relaySignal'];
-  /** Register the bridge's presence forwarder on the room service (§6.8). */
-  registerSignalListener?: BindingSubsystemDeps['registerSignalListener'];
-}
-
-/**
- * An adapter that can remove the bot from a chat via the platform's own leave
- * call (DOR-883) — Telegram only today.
- */
-interface LeaveCapableAdapter {
-  leaveChat(chatId: string): Promise<void>;
-}
-
-/**
- * Whether a live adapter instance exposes `leaveChat` at all. A structural
- * check rather than an `instanceof TelegramAdapter`, the same reasoning
- * {@link reportsVisibility} gives for `getMe` — so a future platform that
- * gains the same accessor works here without an import of its class.
- *
- * @param adapter - The live adapter instance from `AdapterRegistry.get`.
- */
-function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCapableAdapter {
-  return typeof (adapter as { leaveChat?: unknown }).leaveChat === 'function';
-}
 
 /** Server-side adapter lifecycle manager. */
 export class AdapterManager {
@@ -318,6 +125,8 @@ export class AdapterManager {
   private bindingSubsystem?: BindingSubsystem;
   /** Serialized adapter-start passes — see {@link queueStartEnabledAdapters}. */
   private startChain: Promise<void> = Promise.resolve();
+  /** Saves of `adapters.json` in flight, so a reload never reads one stale. */
+  private readonly configWrites = new AdapterConfigWrites();
   /** Set by {@link shutdown}; stops any in-flight start pass from registering more adapters. */
   private stopped = false;
   /** Normalized runtime-type → agent-runtime map (always populated post-construction). */
@@ -391,14 +200,14 @@ export class AdapterManager {
    * Persist `this.configs`, materializing secrets into credential references
    * first — the single funnel to disk, so a cleartext bot token is never
    * written to `adapters.json` (DOR-280). Rewrites `this.configs` in place.
+   * Call it in the same tick as the edit it saves ({@link AdapterConfigWrites.track}).
    */
   private persistConfigs(): Promise<void> {
-    return persistAdapterConfigs(
-      this.configPath,
-      this.configs,
-      this.secretsCtx,
-      this.unparsedConfigEntries
-    );
+    // Read at write time, not now: a save writes the configs as they are when it runs.
+    return this.configWrites.track(() => {
+      const { configPath, configs, secretsCtx, unparsedConfigEntries } = this;
+      return persistAdapterConfigs(configPath, configs, secretsCtx, unparsedConfigEntries);
+    });
   }
 
   /** Load config, start enabled adapters, begin watching for changes. */
@@ -515,16 +324,14 @@ export class AdapterManager {
     const oldConfigIds = new Set(this.configs.map((c) => c.id));
     // Capture names before reloading config (entries may be removed)
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
-    ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = await loadAdapterConfig(
-      this.configPath
-    ));
+    await this.configWrites.reloadInto(this.configPath, (loaded) => {
+      ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = loaded);
+    });
 
     // Migrate any cleartext token a user hand-added to adapters.json into the
     // encrypted store, so every load path — not just initialize() and the API
     // persist funnel — leaves references at rest (DOR-280).
-    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
-      await saveAdapterConfig(this.configPath, this.configs, this.unparsedConfigEntries);
-    }
+    if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) await this.persistConfigs();
 
     // Stop adapters that are no longer in config or are now disabled
     for (const id of oldConfigIds) {
@@ -1125,8 +932,8 @@ export class AdapterManager {
    * @param options - Pass `forgetHistory` only when a person removed it.
    */
   async removeAdapter(id: string, options: RemoveAdapterOptions = {}): Promise<void> {
-    const index = this.configs.findIndex((c) => c.id === id);
-    if (index === -1) {
+    const config = this.configs.find((c) => c.id === id);
+    if (!config) {
       // Not a running integration — but it may be one whose saved settings
       // could not be read. Those are held aside rather than started, and
       // without this they were undeletable from every surface: invisible to
@@ -1141,8 +948,6 @@ export class AdapterManager {
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
 
-    const config = this.configs[index];
-
     if (config.type === 'claude-code' && config.builtin) {
       throw new AdapterError(
         'Cannot remove the built-in claude-code adapter',
@@ -1152,6 +957,12 @@ export class AdapterManager {
 
     // Capture name before config removal for the disconnected event
     const adapterName = this.resolveAdapterName(id);
+    // Dropped and its save queued in this tick, before the stop is queued: a
+    // reload queued behind the stop then reads a file without it and cannot
+    // start it again, and a queued start re-checks the config and skips it.
+    this.configs = this.configs.filter((c) => c.id !== id);
+    // Awaited once the adapter is stopped; track() already handles a rejection.
+    const saved = this.persistConfigs();
 
     // Serialized: an in-flight start pass may be registering this adapter
     // right now; queueing the unregister behind it guarantees the removal
@@ -1176,9 +987,10 @@ export class AdapterManager {
     });
 
     await this.emitAdapterLifecycle(id, 'disconnected', adapterName);
-    this.configs.splice(index, 1);
-    await this.persistConfigs();
+    await saved;
     // Best-effort cleanup of the removed adapter's stored secrets (DOR-280).
+    // `config` is the current entry: it was dropped in the same tick it was
+    // found, and every save before ours, which moves secrets into it, is done.
     await deleteAdapterSecrets(config, this.secretsCtx);
     if (options.forgetHistory) await this.deleteConnectionHistory(id);
 
@@ -1432,7 +1244,7 @@ export class AdapterManager {
     nameOverride?: string
   ): Promise<void> {
     // Every connect/disconnect is a status change connected clients should see
-    // without waiting for the 10s poll — signal before the activity early-return.
+    // without waiting for the client's poll — signal before the activity early-return.
     broadcastAdaptersChanged();
 
     // The reconnect catch-up trigger (chats-as-channels §6.1): when an adapter
@@ -1536,13 +1348,6 @@ export class AdapterManager {
         onRefusedAsk: this.deps.onRefusedAsk,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
         approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
-        // The one map both sides of the inbound-budget thread read (DOR-791):
-        // the adapter binds a turn here, the in-session `relay_send*` tools read
-        // it back. Taken off the relay rather than constructed, so there is
-        // exactly one per process.
-        ...(this.deps.relayCore?.inboundBudgets && {
-          inboundBudgets: this.deps.relayCore.inboundBudgets,
-        }),
       },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)

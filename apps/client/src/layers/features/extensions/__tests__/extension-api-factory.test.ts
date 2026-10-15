@@ -30,6 +30,8 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
       getContributions: vi.fn().mockReturnValue([]),
       setTabMarker: vi.fn(),
       clearTabMarkers: vi.fn(),
+      setPageBadge: vi.fn(),
+      clearPageBadges: vi.fn(),
     },
     dispatcherContext: {
       getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
@@ -191,6 +193,55 @@ describe('createExtensionAPI', () => {
       expect(slot).toBe('right-panel');
       expect(contribution.title).toBe('Inspector');
       expect(contribution.icon).toBe(MyIcon);
+    });
+
+    it("marks a right-panel tab as a mini app's and carries its showIn default", () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      api.registerComponent('right-panel', 'queue', () => null, {
+        label: 'Queue',
+        showIn: { agents: ['A1'], pages: ['session'] },
+      });
+
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(contribution.extensionId).toBe('my-ext');
+      expect(contribution.declaredPlacement).toEqual({
+        show: { agents: ['A1'], rooms: [], pages: ['session'] },
+        hide: { agents: [], rooms: [], pages: [] },
+      });
+    });
+
+    it('has no declared placement when showIn is omitted, so the tab shows everywhere', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      api.registerComponent('right-panel', 'queue', () => null, { label: 'Queue' });
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(contribution.declaredPlacement).toBeNull();
+    });
+
+    it('warns when showIn names nothing, or names a page no page has', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      api.registerComponent('right-panel', 'a', () => null, {
+        showIn: { pages: 'session' } as never,
+      });
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('shows nowhere'));
+
+      api.registerComponent('right-panel', 'b', () => null, { showIn: { pages: ['chat'] } });
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("unknown page 'chat'"));
+
+      warn.mockClear();
+      api.registerComponent('right-panel', 'c', () => null, {
+        showIn: { pages: ['session', 'x/other', '*'] },
+      });
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
 
     it('leaves a right-panel contribution iconless when no icon option is given', () => {

@@ -11,7 +11,6 @@
  *
  * @module routes/room-error-response
  */
-import type { Response } from 'express';
 import {
   isOwnerRecord,
   RoomError,
@@ -21,7 +20,6 @@ import {
 } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
-import { ROOM_CALLER_LOCAL } from './room-caller-local.js';
 
 /** HTTP status for each way the room service can refuse. */
 export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
@@ -66,15 +64,6 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // table is total by type. 400 because a direct message is the wrong kind of
   // room to ask this of, and no retry fixes it.
   TOOL_RENAME_NOT_IN_DM: 400,
-  // Same story: an MCP-only verb, mapped because the table is total by type. A
-  // 429 rather than a 400 — the request is perfectly well formed and would have
-  // been accepted a moment earlier, and the remedy is to say less rather than to
-  // say it differently, which is exactly what a rate answer means.
-  TOO_MANY_POSTS_THIS_TURN: 429,
-  // The canvas twin of the line above, and the same 429 for the same reason: the
-  // request is well formed and would have been accepted a moment earlier, and
-  // the remedy is to change less rather than to ask differently.
-  TOO_MANY_CANVAS_OPS_THIS_TURN: 429,
   // A document this room's canvas does not hold. 404 beside `ENTRY_NOT_FOUND`,
   // and scoped to the room for the same reason: an id from elsewhere must not
   // answer differently from an id that never existed.
@@ -106,12 +95,9 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
   TURN_WAS_STOPPED: 409,
-  // This one IS reachable over HTTP today, and the comment above it used to say
-  // otherwise: `POST /api/rooms/:id/entries/:entryId/reactions` resolves an
-  // agent from `X-DorkOS-Agent` and goes through the same `toggleReaction`, so
-  // an agent that has spent its hour gets this from the route as readily as from
-  // the tool. The canonical 429.
-  REACTION_RATE_LIMITED: 429,
+  // An MCP-only verb too. A 429: the request is well formed and would have
+  // been accepted a moment earlier, and the remedy is to say less.
+  TOO_MANY_POSTS_THIS_TURN: 429,
   // A 401 rather than a 403: the caller presented nothing this surface could
   // resolve, so a credential IS what would change the answer. It belongs to the
   // capability surfaces, where "nobody" is a real answer; the room routes reach
@@ -135,6 +121,12 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // one really is somebody asking to claim a row that is not claimable.
   IDENTITY_NOT_EXTERNAL: 400,
   NOT_A_BRIDGED_ROOM: 409,
+  // A 400: the request named somebody who is not an agent member of this
+  // channel, or asked a direct message for a lead.
+  INVALID_LEAD: 400,
+  // A 400: the 👀 receipt is the room's own, so an agent's request for it is
+  // malformed rather than refused for lack of a credential.
+  RECEIPT_EMOJI_RESERVED: 400,
   NO_SURVIVING_BRIDGE: 409,
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
@@ -196,43 +188,50 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   SUBMODULE_NOT_ALLOWED: 409,
   // The exception, and the canonical status for it: the caller waited its turn
   // and the room is still busy. A 429 says "ask again", which is exactly the
-  // remedy, and is the same answer `REACTION_RATE_LIMITED` gives for the same
-  // shape of refusal.
+  // remedy.
   MERGE_IN_FLIGHT: 429,
 };
 
-/**
- * Map a thrown value onto a response. A {@link RoomError} carries its own code;
- * anything else is a bug and gets a generic 500 with the detail in the log, not
- * on the wire.
- *
- * @param res - The response to write to.
- * @param err - The caught value.
- * @param context - Route label for the log line.
- */
-export function sendRoomError(
-  res: Pick<Response, 'status' | 'locals'>,
-  err: unknown,
-  context: string
-): void {
-  if (err instanceof RoomError) {
-    // Worded before a status is set, so nothing can leave a half-written reply.
-    const body = roomRefusalFor(err, () => ownerAsking(res));
-    res.status(STATUS_BY_CODE[err.code]).json(body);
-    return;
-  }
-  logger.error(`[rooms] ${context} failed`, { err });
-  res.status(500).json({ error: 'Internal server error' });
+/** A room refusal as a status and a body, before the chain writes it. */
+export interface RoomErrorReply {
+  /** The HTTP status. */
+  status: number;
+  /** The JSON body. */
+  body: object;
 }
 
 /**
- * Whether the caller `resolveCaller` left on `res.locals` is the install's
- * owner. `false` when no caller was resolved, so a route that refused before
- * resolving its caller shows the operator's refusal to nobody (DOR-2457).
+ * Map a thrown value onto a status and body. A {@link RoomError} carries its
+ * own code; anything else is a bug and gets a generic 500 with the detail in
+ * the log, not on the wire.
  *
- * @param res - The response, carrying the caller `resolveCaller` resolved.
+ * `sendRoomError` wrote it on Express; a Hono route returns
+ * `c.json(reply.body, reply.status)`.
+ *
+ * @param err - The caught value.
+ * @param context - Route label for the log line.
+ * @param ownerAsking - Whether the caller is the install's owner; see
+ *   {@link isOwnerCaller}.
+ * @returns The reply.
  */
-export function ownerAsking(res: Pick<Response, 'locals'>): boolean {
-  const caller = res.locals[ROOM_CALLER_LOCAL] as AuthorRecord | undefined;
+export function roomErrorReply(
+  err: unknown,
+  context: string,
+  ownerAsking: () => boolean
+): RoomErrorReply {
+  if (err instanceof RoomError) {
+    // Worded before a status is chosen, so nothing can leave a half-written reply.
+    return { status: STATUS_BY_CODE[err.code], body: roomRefusalFor(err, ownerAsking) };
+  }
+  logger.error(`[rooms] ${context} failed`, { err });
+  return { status: 500, body: { error: 'Internal server error' } };
+}
+
+/**
+ * Whether a resolved room caller is the install's owner; `false` for none.
+ *
+ * @param caller - The caller `resolveCaller` returned, if it returned one.
+ */
+export function isOwnerCaller(caller: AuthorRecord | undefined): boolean {
   return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 }

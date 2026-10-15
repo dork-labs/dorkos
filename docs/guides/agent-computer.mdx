@@ -1,0 +1,57 @@
+---
+title: Agent computer
+description: Try a separate Linux computer with its own desktop and files on an Apple Silicon Mac.
+---
+
+# Agent computer
+
+The **Agent computer** experiment gives you a separate Linux computer inside DorkOS. View its desktop and take control when needed.
+
+It is off by default and supports Apple Silicon Macs only. Setup downloads the computer’s software when you choose **Create computer**.
+
+The desktop, clicks, and typed text have been checked in the app on desktop and phone layouts. Project files and the Chromium browser profile survived stopping and restarting the computer.
+
+A real research task used the computer’s browser and files to save a report through an existing OpenRouter account. Its checkpoint and chat survived stopping and restarting the computer. Resuming that task after restarting the app has not yet been checked.
+
+## Turn it on
+
+1. Open **Settings**, then **Experiments**.
+2. Turn on **Agent computer**.
+3. Open **Team**, then choose **Create computer**.
+4. Wait for setup to finish. Choose **View** to open the desktop.
+
+This computer has its own Linux system, files, browser, and sign-ins. DorkOS does not mount your Mac’s files or copy its account credentials into it.
+
+## Watch or take control
+
+**View** lets you watch without sending clicks or keys. Choose **Take over** to use the same desktop yourself. DorkOS holds the agent’s work while you have control.
+
+Click the desktop to use the mouse. Choose **Type** to enter text, then **Enter** to send that key. Choose **Return control** when finished.
+
+Leaving the app window also returns control. If another window takes over, this window returns to watching.
+
+## Sign in and open a chat
+
+**Sign in** opens an account sign-in terminal inside the computer. Use its own account credentials there. Your Mac’s existing sign-in stays separate.
+
+The computer starts without your model accounts or a local model. Start it before signing in. If your chosen model needs an account:
+
+1. Choose **Sign in**, then **View**.
+2. Choose **Take over** to use the sign-in terminal.
+3. Select the company your model account belongs to.
+4. Complete that company’s sign-in yourself, including any security code it asks for.
+5. Choose **Return control**, then **Chat**.
+
+Some sign-in methods show a code and a web address. Complete that step on the company’s page yourself.
+
+Model use follows the account you choose. It may use your subscription’s allowance or charge for each request. Check that choice before asking the agent to work. This experiment cannot use DorkOS credits.
+
+**Chat** opens a chat tied to this computer.
+
+## Stop and resume
+
+Choose **Stop** to stop the computer. Its disk, files, and browser profile stay saved. Choose **Start** to resume it.
+
+After starting, open the existing chat and ask the agent to continue from its saved files. Starting the computer does not resend your last message.
+
+If DorkOS cannot confirm the computer’s state, choose **Reconnect**. DorkOS refuses to create a replacement while that uncertainty remains, protecting the existing disk.

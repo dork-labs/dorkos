@@ -1,7 +1,6 @@
 import { captureCurrentIngestIntention } from './current/current-operation-intentions.js';
 import { auditCurrentIngestIntention } from './current/current-operation-row-audit.js';
 /** Internal page-event acceptance. The host supplies a synchronous, verified authority callback. */
-import { randomUUID } from 'node:crypto';
 import { type DbTransaction } from '@dorkos/db';
 import {
   PageEventSchema,
@@ -19,7 +18,7 @@ import {
   type DocChannelAuthorization,
 } from './authorization.js';
 import { copyCurrentDocData, sameCurrentDocData } from './current/current-operation-data.js';
-import { checkboxAuthorityClock } from './writes/authority-snapshot.js';
+import { checkboxAuthorityClock } from './writes/authority/authority-snapshot.js';
 
 import { queueInput } from './coalescer.js';
 const currentIngestBindings = new WeakMap<
@@ -34,10 +33,14 @@ const currentIngestBindings = new WeakMap<
 >();
 
 import { envelopeIdentity } from './envelope.js';
-import { DOC_EVENTS_PROMPT_BYTES, docEventsPromptBytes } from './prompt.js';
+import { validateIngestEnvelope } from './ingest-data/ingest-envelope-validation.js';
 
 import { appendInitialDocStatuses } from './initial-status.js';
-import { DocIngestRefusal, type DocIngestAuthority, type DocIngestAccess } from './ingest-types.js';
+import {
+  DocIngestRefusal,
+  type DocIngestAuthority,
+  type DocIngestAccess,
+} from './ingest-data/ingest-types.js';
 import {
   readCheckboxConversionInput,
   failCheckboxCompletion,
@@ -183,42 +186,7 @@ export class DocChannelIngest {
         deliveries: this.store.listDeliveries(access.documentId, event.id, tx),
       };
     }
-    if (identity.bytes > Math.min(access.envelopeBytes ?? 16384, 16384))
-      throw new DocIngestRefusal('DOC_EVENT_TOO_LARGE', 413);
-    try {
-      const validation: unknown = access.validatePayload?.(event.type, event.payload);
-      if (
-        validation &&
-        (typeof validation === 'object' || typeof validation === 'function') &&
-        'then' in validation
-      ) {
-        void Promise.resolve(validation).catch(() => {});
-        throw new Error('Document payload validation must be synchronous.');
-      }
-    } catch {
-      throw new DocIngestRefusal('INVALID_DOC_EVENT_PAYLOAD', 422);
-    }
-    const matching = access.routes.filter(({ route }) =>
-      matchesCanvasChannelEvent(route.on, event.type)
-    );
-    // Even one input must fit the actual future renderer, including server labels and escaping.
-    for (const { route, grantId } of matching) {
-      if (!grantId || route.to === 'log' || route.turn.mode === 'none') continue;
-      if (
-        docEventsPromptBytes({
-          documentId: access.documentId,
-          documentLabel: access.documentLabel,
-          scope: access.scope,
-          batchId: randomUUID(),
-          routeId: route.id,
-          grantId,
-          events: [
-            { id: event.id, type: event.type, payload: event.payload, docSeq: channel.nextDocSeq },
-          ],
-        }) > DOC_EVENTS_PROMPT_BYTES
-      )
-        throw new DocIngestRefusal('DOC_EVENT_CONTEXT_TOO_LARGE', 413);
-    }
+    const matching = validateIngestEnvelope(event, identity, access, channel.nextDocSeq);
     backfillEnvelopeAccounting(this.store, tx);
     checkIngestCapacity(
       tx,
@@ -278,42 +246,7 @@ export class DocChannelIngest {
         deliveries: this.store.listDeliveries(access.documentId, event.id, tx),
       };
     }
-    if (identity.bytes > Math.min(access.envelopeBytes ?? 16384, 16384))
-      throw new DocIngestRefusal('DOC_EVENT_TOO_LARGE', 413);
-    try {
-      const validation: unknown = access.validatePayload?.(event.type, event.payload);
-      if (
-        validation &&
-        (typeof validation === 'object' || typeof validation === 'function') &&
-        'then' in validation
-      ) {
-        void Promise.resolve(validation).catch(() => {});
-        throw new Error('Document payload validation must be synchronous.');
-      }
-    } catch {
-      throw new DocIngestRefusal('INVALID_DOC_EVENT_PAYLOAD', 422);
-    }
-    const matching = access.routes.filter(({ route }) =>
-      matchesCanvasChannelEvent(route.on, event.type)
-    );
-    // Even one input must fit the actual future renderer, including server labels and escaping.
-    for (const { route, grantId } of matching) {
-      if (!grantId || route.to === 'log' || route.turn.mode === 'none') continue;
-      if (
-        docEventsPromptBytes({
-          documentId: access.documentId,
-          documentLabel: access.documentLabel,
-          scope: access.scope,
-          batchId: randomUUID(),
-          routeId: route.id,
-          grantId,
-          events: [
-            { id: event.id, type: event.type, payload: event.payload, docSeq: channel.nextDocSeq },
-          ],
-        }) > DOC_EVENTS_PROMPT_BYTES
-      )
-        throw new DocIngestRefusal('DOC_EVENT_CONTEXT_TOO_LARGE', 413);
-    }
+    const matching = validateIngestEnvelope(event, identity, access, channel.nextDocSeq);
     backfillEnvelopeAccounting(this.store, tx);
     checkIngestCapacity(
       tx,

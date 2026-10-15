@@ -21,7 +21,6 @@
  * green before it existed.
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import {
   existsSync,
   mkdirSync,
@@ -52,7 +51,8 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 import { initBoundary } from '../../../lib/boundary.js';
-import { createAgentsRouter } from '../../../routes/agents.js';
+import { createAgentsRoutes } from '../../../routes/agents.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { createAgentWorkspace } from '../../core/agent-creator.js';
 import { notifyAgentCreated, setOnAgentCreated } from '../../core/agent-created-hook.js';
 import { runAgentCreatedProjection } from '../project-on-agent-created.js';
@@ -64,10 +64,9 @@ let boundaryRoot = '';
 let dorkHome = '';
 const staged: string[] = [];
 
-const app = express();
-app.use(express.json());
-app.use('/api/agents', createAgentsRouter());
-const testServer = listeningServer(app);
+const testServer = listeningServer(
+  honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() })
+);
 
 beforeAll(async () => {
   boundaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'agent-projection-boundary-')));

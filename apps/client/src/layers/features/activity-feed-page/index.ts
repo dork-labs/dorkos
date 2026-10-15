@@ -18,19 +18,18 @@ export {
   type UseActivityFiltersReturn,
 } from './model/use-activity-filters';
 
+// Which list the page shows
+export {
+  useActivityView,
+  type ActivityView,
+  type UseActivityViewReturn,
+} from './model/use-activity-view';
+
 // Last-visit tracking
 export { useLastVisitedActivity } from './model/use-last-visited-activity';
 
 // Keyboard navigation
 export { useActivityKeyboardNav } from './model/use-activity-keyboard-nav';
-
-// Time grouping
-export {
-  groupByTime,
-  getTimeGroupLabel,
-  type ActivityGroup,
-  type TimeGroupLabel,
-} from './model/time-grouping';
 
 // UI components
 export { ActivityRow, formatActivityTime } from './ui/ActivityRow';
@@ -43,5 +42,7 @@ export { ActivityEmptyState } from './ui/ActivityEmptyState';
 export type { ActivityEmptyStateProps } from './ui/ActivityEmptyState';
 export { ActivityErrorState } from './ui/ActivityErrorState';
 export type { ActivityErrorStateProps } from './ui/ActivityErrorState';
+export { ActivityViewToggle } from './ui/ActivityViewToggle';
+export type { ActivityViewToggleProps } from './ui/ActivityViewToggle';
 export { ActivitySinceLastVisit } from './ui/ActivitySinceLastVisit';
 export type { ActivitySinceLastVisitProps } from './ui/ActivitySinceLastVisit';

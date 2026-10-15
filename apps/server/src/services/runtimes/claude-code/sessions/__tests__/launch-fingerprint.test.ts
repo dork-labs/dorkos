@@ -700,7 +700,8 @@ describe('the tool-surface pin (DOR-2685)', () => {
   /** The tools a fresh build of the `dorkos` server would list. */
   const core: ToolSurfaceEntry[] = [
     { name: 'ping', inputSchema: {} },
-    { name: 'relay_send', inputSchema: { subject: z.string(), payload: z.unknown() } },
+    { name: 'relay_list_endpoints', inputSchema: {} },
+    { name: 'mesh_inspect', inputSchema: { agentId: z.string() } },
   ];
   const extensionTool: ToolSurfaceEntry = {
     name: 'ext_mail_app__send',

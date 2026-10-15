@@ -14,6 +14,7 @@ import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireHandleSchema,
   CommunityConnectionAccessSchema,
+  CommunityWireDisplayNameSchema,
 } from './community-wire.js';
 import {
   CommunityAttachmentSchema,
@@ -22,7 +23,11 @@ import {
   CommunityMemberSchema,
   CommunityRefSchema,
   CommunityRoomSchema,
+  CommunityRulesSchema,
+  CommunityStandingSchema,
+  ReportCommunityEntryInputSchema,
   RoomAddressSchema,
+  type CommunityRules,
 } from './community-adapter.js';
 
 const id = z.string().min(1);
@@ -132,6 +137,34 @@ export const RemoteCommunityMembersResponseSchema = RoomAddressSchema.extend({
   });
 /** Authoritative roster or explicitly stale owner cache. */
 export type RemoteCommunityMembersResponse = z.infer<typeof RemoteCommunityMembersResponseSchema>;
+/** The connected person's standing in one room: a mute, the room's slow mode, and the rules. */
+export const RemoteCommunityStandingSchema = RoomAddressSchema.extend(
+  CommunityStandingSchema.shape
+).strict();
+/** {@link RemoteCommunityStandingSchema}. */
+export type RemoteCommunityStanding = z.infer<typeof RemoteCommunityStandingSchema>;
+/** Accept the rules as they stand in exactly the version the person read. */
+export const RemoteCommunityRulesAcceptRequestSchema = z.strictObject({
+  version: z.number().int().positive(),
+});
+/** The rules after an acceptance. */
+export const RemoteCommunityRulesResponseSchema = z.strictObject({
+  community: CommunityRefSchema,
+  rules: CommunityRulesSchema,
+});
+/** The connected person's new name in one space. */
+export const RemoteCommunityDisplayNameRequestSchema = z.strictObject({
+  displayName: CommunityWireDisplayNameSchema,
+});
+/** The name the space now shows for the connected person. */
+export const RemoteCommunityDisplayNameResponseSchema = z.strictObject({
+  community: CommunityRefSchema,
+  displayName: z.string().min(1),
+});
+/** Report a message: why, and a note only the space's moderators read. */
+export const RemoteCommunityReportRequestSchema = ReportCommunityEntryInputSchema;
+/** {@link RemoteCommunityReportRequestSchema}. */
+export type RemoteCommunityReportRequest = z.infer<typeof RemoteCommunityReportRequestSchema>;
 /** Current human's read position; no arbitrary member can be selected. */
 export const RemoteCommunityReadCursorSchema = z.strictObject({
   cursor: CommunityCursorSchema.nullable(),
@@ -268,6 +301,19 @@ export interface RemoteCommunityTransport {
   joinRemoteCommunityRoom(ref: string, roomId: string): Promise<RemoteCommunityRoom>;
   /** Leave as the connected human, then discard access to protected history. */
   leaveRemoteCommunityRoom(ref: string, roomId: string): Promise<void>;
+  /** Read whether the connected person may post in this room now: a mute, slow mode, the rules. */
+  getRemoteCommunityStanding(ref: string, roomId: string): Promise<RemoteCommunityStanding>;
+  /** Accept the space's rules in exactly the version the person read. */
+  acceptRemoteCommunityRules(ref: string, version: number): Promise<CommunityRules>;
+  /** Change the connected person's own name in this space; returns the name it now shows. */
+  setRemoteCommunityDisplayName(ref: string, displayName: string): Promise<string>;
+  /** Report someone else's message to the space's moderators. */
+  reportRemoteCommunityEntry(
+    ref: string,
+    roomId: string,
+    entryId: string,
+    input: RemoteCommunityReportRequest
+  ): Promise<void>;
   /** Read the connected human's position. */
   getRemoteCommunityReadCursor(ref: string, roomId: string): Promise<RemoteCommunityReadCursor>;
   /** Advance the connected human's position using an opaque entry cursor. */

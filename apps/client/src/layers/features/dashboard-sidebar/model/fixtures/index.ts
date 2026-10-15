@@ -26,6 +26,7 @@ export {
   FIXTURE_NOW,
   HOUR,
   MINUTE,
+  addOn,
   agent,
   emptyState,
   hoursAgo,

@@ -27,6 +27,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(),
     get: vi.fn(),
@@ -48,13 +49,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
 
 /**
  * Open one room's durable stream.
@@ -74,7 +74,9 @@ function openRoomStream(
   return openSseStream(port, `/api/rooms/${roomId}/events${query}`, opts);
 }
 
-const testServer = listeningServer(app);
+// The server's real routing: `/api/read-cursors` answers from the Hono `/api`
+// app, the rooms routes from Express behind it.
+const testServer = listeningServer(composedListener(admission));
 
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {

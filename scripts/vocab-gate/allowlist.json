@@ -48,7 +48,7 @@
       "reason": "Marketing visual-design sandbox routes (hero/diagram prototypes) — \"connection lines\" describes SVG graph edges in a prototype, not shipped product copy."
     },
     {
-      "path": "apps/server/src/services/core/mcp-tool-tiers.ts",
+      "path": "apps/server/src/services/core/mcp-tools/mcp-tool-tiers.ts",
       "terms": ["connection"],
       "reason": "MCP tool titles \"List/Turn a chat connection on/off/Reload chat connections\" describe relay adapters (Telegram/Slack) — the same Connections-domain entity as RelayHealthBar, surfaced to the agent rather than the human."
     },
@@ -414,6 +414,11 @@
       "path": "docs/contributing/architecture.mdx",
       "terms": ["community", "communities"],
       "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/community), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
+    },
+    {
+      "path": "docs/guides/dorkos-community.mdx",
+      "terms": ["community"],
+      "reason": "\"DorkOS Community Space\" / \"Community Space\" is the one proper name VOICE.md carves out of the \"community\" retirement (meta/VOICE.md's Words We Use table): the official space every new account joins, not a space called by the generic noun."
     },
     {
       "path": "apps/site/src/app/(marketing)/marketplace/page.tsx",
@@ -919,6 +924,24 @@
       "path": "apps/site/src/app/(public)/privacy/page.tsx",
       "terms": ["session", "sessions", "conversation", "conversations"],
       "reason": "DOR-2789. The privacy policy is a legal page and is not reworded in a vocabulary sweep. Its uses are legal and analytics terms (a sign-in session record, \"session recording\" in analytics) and data the installation stores, each worded for the policy rather than the app."
+    },
+    {
+      "path": "apps/client/src/layers/entities/community/ui/OfficialSpaceOfferCard.tsx",
+      "terms": ["community"],
+      "contains": "Join the DorkOS community",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
+    },
+    {
+      "path": "apps/client/src/layers/entities/community/ui/OfficialSpaceUnreachableNotice.tsx",
+      "terms": ["community"],
+      "contains": "The DorkOS community isn",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
+    },
+    {
+      "path": "apps/client/src/layers/features/dashboard-sidebar/ui/context/community-context-actions.ts",
+      "terms": ["community"],
+      "contains": "Join the DorkOS community",
+      "reason": "\"The DorkOS community\" names the people who use DorkOS, gathered in the official space, in the words the spec gives its join step (spec `official-community-space` work item 5, DOR-2769). The ordinary English sense, as on the marketplace pages; every other line here still says \"space\"."
     }
   ]
 }

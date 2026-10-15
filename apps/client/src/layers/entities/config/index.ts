@@ -13,7 +13,9 @@ export {
   useExperimentEnabledState,
   useSpacesEnabled,
   useSpacesState,
+  useSpacesAccess,
   type ExperimentEnabledState,
+  type SpacesAccessState,
 } from './model/use-experiment-enabled';
 export { useConfigSync } from './model/use-config-sync';
 export { useLocalCaller } from './model/use-local-caller';
@@ -29,10 +31,14 @@ export type { DefaultAgentSession } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
 export { usePromoDismissals, resetLegacyPromoImportForTests } from './model/use-promo-dismissals';
 export type { PromoDismissals } from './model/use-promo-dismissals';
-export { useAutonomyAcknowledgement } from './model/use-autonomy-acknowledgement';
 export { useWelcomeBack } from './model/use-welcome-back';
 export type { WelcomeBackSetting } from './model/use-welcome-back';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
+export {
+  usePanelTabPlacements,
+  useSetPanelTabPlacement,
+  type SetPanelTabPlacement,
+} from './model/use-panel-tab-placements';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
 export {
   useNotificationPrefs,

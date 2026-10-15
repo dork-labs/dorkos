@@ -5,8 +5,8 @@
  *
  * It is deliberately thin. `@dork-labs/cloud-api/client` already owns the
  * request shape, the schema validation and the problem envelope; all this module
- * adds is where the service lives (the existing cloud config) and who is calling
- * (the existing device-link instance credential). Nothing here bakes in a host,
+ * adds is where the service lives ({@link resolveCloudApiBaseUrl}) and who is
+ * calling (the existing device-link instance credential). Nothing here bakes in
  * a plan, a price or any catalog value.
  *
  * **Not linked is a normal state, not an error.** Every reader returns `null`
@@ -21,11 +21,37 @@ import {
   createCloudApiClient,
   CloudApiProblemError,
   type CloudApiClient,
+  type FetchLike,
 } from '@dork-labs/cloud-api/client';
 import type { Problem } from '@dork-labs/cloud-api';
 import { configManager } from '../config-manager.js';
-import { resolveCloudBaseUrl } from '../auth/cloud-link-client.js';
+import { resolveCloudApiBaseUrl } from './cloud-api-origin.js';
 import { getCloudLinkGeneration } from '../auth/cloud-link.js';
+import { env } from '../../../env.js';
+
+let v1Fetch: FetchLike | undefined;
+
+/**
+ * Replace the `fetch` every `/v1` client is built with, or pass `undefined` to
+ * go back to the global one. Only the test-mode composition root calls this,
+ * to answer `/v1` from an in-process fake; production never sets it.
+ *
+ * @param fetch - The replacement, or `undefined` for the global `fetch`.
+ * @throws If a replacement is set outside `DORKOS_TEST_RUNTIME`: a real
+ *   server always talks to the real service.
+ * @internal
+ */
+export function setCloudV1Fetch(fetch: FetchLike | undefined): void {
+  if (fetch !== undefined && !env.DORKOS_TEST_RUNTIME) {
+    throw new Error('setCloudV1Fetch is test-mode only (DORKOS_TEST_RUNTIME)');
+  }
+  v1Fetch = fetch;
+}
+
+/** Build one contract client, with the replacement `fetch` only when one is set. */
+function buildClient(baseUrl: string, token: string): CloudApiClient {
+  return createCloudApiClient({ baseUrl, token, ...(v1Fetch && { fetch: v1Fetch }) });
+}
 
 let observedToken: string | null = null;
 let tokenEpoch = 0;
@@ -73,7 +99,7 @@ export function isCloudLinked(): boolean {
 export function createCloudV1Client(): CloudApiClient | null {
   const token = readCloudInstanceToken();
   if (token === null) return null;
-  return createCloudApiClient({ baseUrl: resolveCloudBaseUrl(), token });
+  return buildClient(resolveCloudApiBaseUrl(), token);
 }
 
 /**
@@ -86,24 +112,61 @@ export interface CloudV1Context {
   isCurrent(): boolean;
 }
 
+/**
+ * Where each captured context's event streams go, and with which key. Kept
+ * beside the context rather than on it, so the key never becomes a property
+ * anything could read, log or serialize.
+ */
+const streamTargets = new WeakMap<CloudV1Context, { baseUrl: string; token: string }>();
+
 /** Capture the current link for a bounded sequence of Cloud requests. */
 export function captureCloudV1Context(): CloudV1Context | null {
   observeTokenChanges();
   const token = readCloudInstanceToken();
   if (token === null || token.trim() === '') return null;
-  const baseUrl = resolveCloudBaseUrl();
+  const baseUrl = resolveCloudApiBaseUrl();
   const epoch = tokenEpoch;
   const manager = configManager;
   const generation = getCloudLinkGeneration();
-  return {
-    client: createCloudApiClient({ baseUrl, token }),
+  const context: CloudV1Context = {
+    client: buildClient(baseUrl, token),
     isCurrent: () =>
       epoch === tokenEpoch &&
       manager === configManager &&
       token === readCloudInstanceToken() &&
-      baseUrl === resolveCloudBaseUrl() &&
+      baseUrl === resolveCloudApiBaseUrl() &&
       generation === getCloudLinkGeneration(),
   };
+  streamTargets.set(context, { baseUrl, token });
+  return context;
+}
+
+/**
+ * Open a server-sent events stream on a `/v1` route under a captured link,
+ * presenting that link's key. The JSON client cannot read a stream, so the
+ * managed remote access command stream uses this instead.
+ *
+ * @param context - A context from {@link captureCloudV1Context}.
+ * @param path - The `/v1` path, from `V1_ROUTES`.
+ * @param signal - Aborts the request and the stream.
+ * @returns The response, body unread.
+ * @throws When the context is no longer current, or was not captured here.
+ */
+export function openCloudV1Stream(
+  context: CloudV1Context,
+  path: string,
+  signal: AbortSignal
+): Promise<Response> {
+  const target = streamTargets.get(context);
+  if (!target || !context.isCurrent()) {
+    return Promise.reject(new Error('The Cloud link this stream belongs to has ended.'));
+  }
+  // The same test-mode replacement the JSON client uses, when one is set.
+  const doFetch: FetchLike = v1Fetch ?? ((input, init) => globalThis.fetch(input, init));
+  return doFetch(`${target.baseUrl}${path}`, {
+    headers: { authorization: `Bearer ${target.token}`, accept: 'text/event-stream' },
+    signal,
+  });
 }
 
 /** Resolve only a service-issued instance ID under the captured credential. */

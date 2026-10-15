@@ -8,9 +8,8 @@ import {
   isNoLooserThan,
   isSilentReadOnly,
   isTightening,
-  isUnattendedAutonomy,
   isWorkingMode,
-  needsConsentRitual,
+  actsWithoutAsking,
   resolveTrustStops,
   stopExpectation,
   tightensDeclaredMode,
@@ -203,56 +202,53 @@ describe('isBypassSemantics', () => {
   });
 });
 
-describe('needsConsentRitual', () => {
+describe('actsWithoutAsking', () => {
   it('is true at the autonomy stop, whatever that stop can reach', () => {
     expect(
-      needsConsentRitual(descriptor({ stop: 'autonomy', asks: 'never', reach: 'everything' }))
+      actsWithoutAsking(descriptor({ stop: 'autonomy', asks: 'never', reach: 'everything' }))
     ).toBe(true);
     // A sandboxed autonomy stop is still the position a person deliberately took.
     expect(
-      needsConsentRitual(descriptor({ stop: 'autonomy', asks: 'never', reach: 'workspace' }))
+      actsWithoutAsking(descriptor({ stop: 'autonomy', asks: 'never', reach: 'workspace' }))
     ).toBe(true);
   });
 
   it('is true for a middle stop that never asks and can do more than read', () => {
     // Codex's workspace-write: filed at the middle stop, runs shell commands
     // with nothing to ask. The shape this predicate exists for (DOR-816).
-    expect(needsConsentRitual(descriptor({ stop: 'act', asks: 'never', reach: 'workspace' }))).toBe(
+    expect(actsWithoutAsking(descriptor({ stop: 'act', asks: 'never', reach: 'workspace' }))).toBe(
       true
     );
-    expect(needsConsentRitual(descriptor({ stop: 'act', asks: 'never', reach: 'edit' }))).toBe(
-      true
-    );
+    expect(actsWithoutAsking(descriptor({ stop: 'act', asks: 'never', reach: 'edit' }))).toBe(true);
   });
 
   it('is false for a read-only mode that never asks — it has nothing to ask about', () => {
-    expect(needsConsentRitual(descriptor({ stop: 'ask', asks: 'never', reach: 'read' }))).toBe(
+    expect(actsWithoutAsking(descriptor({ stop: 'ask', asks: 'never', reach: 'read' }))).toBe(
       false
     );
   });
 
   it('is false for anything that still stops for the person', () => {
-    expect(needsConsentRitual(descriptor({ stop: 'ask', asks: 'always', reach: 'edit' }))).toBe(
+    expect(actsWithoutAsking(descriptor({ stop: 'ask', asks: 'always', reach: 'edit' }))).toBe(
       false
     );
     expect(
-      needsConsentRitual(descriptor({ stop: 'act', asks: 'when-risky', reach: 'workspace' }))
+      actsWithoutAsking(descriptor({ stop: 'act', asks: 'when-risky', reach: 'workspace' }))
     ).toBe(false);
     // Even reaching everything, if it asks it is one refusal away from stopping.
     expect(
-      needsConsentRitual(descriptor({ stop: 'act', asks: 'when-risky', reach: 'everything' }))
+      actsWithoutAsking(descriptor({ stop: 'act', asks: 'when-risky', reach: 'everything' }))
     ).toBe(false);
   });
 
-  it('is strictly wider than the door it replaced and than the banner’s rule', () => {
+  it('is strictly wider than the door it replaced', () => {
     // The predicates are allowed to disagree, and this is the disagreement that
     // matters: the never-asking middle stop is gated by the door, and reported
-    // by none of the others.
+    // by neither of the others.
     const neverAskingMiddle = descriptor({ stop: 'act', asks: 'never', reach: 'workspace' });
-    expect(needsConsentRitual(neverAskingMiddle)).toBe(true);
+    expect(actsWithoutAsking(neverAskingMiddle)).toBe(true);
     expect(isAutonomyStop(neverAskingMiddle)).toBe(false);
     expect(isBypassSemantics(neverAskingMiddle)).toBe(false);
-    expect(isUnattendedAutonomy(neverAskingMiddle)).toBe(false);
   });
 });
 
@@ -276,13 +272,13 @@ describe('isSilentReadOnly', () => {
     expect(isSilentReadOnly(descriptor({ reach: 'everything', asks: 'never' }))).toBe(false);
   });
 
-  it('is the mirror of what needsConsentRitual waives, never an overlap', () => {
+  it('is the mirror of what actsWithoutAsking waives, never an overlap', () => {
     // The two predicates partition the never-asking modes: one earns a door
     // before you may enter it, the other earns a sentence once you are in it.
     // A mode that earned both would be asking for consent to do nothing.
     const silent = descriptor({ reach: 'read', asks: 'never' });
     expect(isSilentReadOnly(silent)).toBe(true);
-    expect(needsConsentRitual(silent)).toBe(false);
+    expect(actsWithoutAsking(silent)).toBe(false);
   });
 });
 

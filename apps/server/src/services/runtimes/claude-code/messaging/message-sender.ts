@@ -59,7 +59,7 @@ import { recordPhantomCancellation } from '../../../observability/phantom-cancel
 // The projector's own rule for which events REOPEN a turn window, imported
 // rather than restated so the loop's idea of "a window is open" cannot drift
 // from the normalizer's (DOR-1244).
-import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-event-normalizer.js';
+import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/projection/session-event-normalizer.js';
 import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CLAUDE_CODE_RUNTIME_TYPE } from '../sdk/sdk-error-mapping.js';
 

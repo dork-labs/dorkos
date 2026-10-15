@@ -27,7 +27,7 @@ export interface DorkosGuardLoad {
 /** Reduce a host, `host:port`, bracketed IPv6 literal or URL to a bare lowercase host name. */
 export declare function normalizeHost(value: unknown): string;
 
-/** The host of `DORKOS_CLOUD_URL` in `environment`, as a one-item list, or an empty list. */
+/** The hosts of `DORKOS_CLOUD_URL` and `DORKOS_CLOUD_API_URL` in `environment`, de-duplicated. */
 export declare function cloudHostsFrom(
   environment?: Readonly<Record<string, string | undefined>>
 ): string[];

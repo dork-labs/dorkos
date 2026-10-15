@@ -6,13 +6,13 @@ import ts from 'typescript';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const expected: Record<string, number> = {
-  'claude-code/claude-code-runtime.ts': 1,
+  'claude-code/custody/claude-command-cache-custody.ts': 1,
   'claude-code/messaging/message-sender.ts': 1,
   'claude-code/messaging/relay/relay-sdk-launch.ts': 1,
   'claude-code/messaging/runtime-cache.ts': 1,
-  'claude-code/sessions/pump-launch.ts': 1,
+  'claude-code/sessions/warm-process/pump-launch.ts': 1,
   'claude-code/sessions/tracked-spawn.ts': 1,
-  'claude-code/sessions/warm-process-ledger.ts': 1,
+  'claude-code/sessions/warm-process/warm-process-ledger.ts': 1,
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
@@ -72,7 +72,7 @@ function census(text: string, name: string): { count: number; unprojected: strin
     )
       projectedRelayQueryInput = true;
     if (
-      name === 'claude-code/sessions/pump-launch.ts' &&
+      name === 'claude-code/sessions/warm-process/pump-launch.ts' &&
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
       node.name.text === 'queryInput' &&
@@ -127,7 +127,7 @@ function census(text: string, name: string): { count: number; unprojected: strin
         (name === 'claude-code/messaging/relay/relay-sdk-launch.ts' &&
           call === 'input' &&
           projectedRelayQueryInput) ||
-        (name === 'claude-code/sessions/pump-launch.ts' &&
+        (name === 'claude-code/sessions/warm-process/pump-launch.ts' &&
           (call.includes('...plan.sdkOptions') ||
             (call === 'queryInput' && projectedPumpQueryInput))) ||
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
@@ -185,7 +185,7 @@ describe('runtime launch adoption census', () => {
     expect(census(mutant, name).unprojected).toEqual(['query']);
   });
   it('rejects a pump query binding that drops its resolved SDK options', () => {
-    const name = 'claude-code/sessions/pump-launch.ts';
+    const name = 'claude-code/sessions/warm-process/pump-launch.ts';
     const source = readFileSync(path.join(root, name), 'utf8');
     const original = '...plan.sdkOptions';
     expect(source).toContain(original);

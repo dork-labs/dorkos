@@ -17,7 +17,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-const time = (name: string) => timestamp(name, { withTimezone: true }).notNull().defaultNow();
+/** A `timestamptz NOT NULL DEFAULT now()` column, the shape every row's own time takes. */
+export const time = (name: string) =>
+  timestamp(name, { withTimezone: true }).notNull().defaultNow();
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
 // A reference from one community-owned row to another is declared once, as the table's
@@ -57,6 +59,14 @@ export const communities = pgTable(
     importedAt: timestamp('imported_at', { withTimezone: true }),
     /** The host's whole-community takedown this pending deletion belongs to (0025). */
     takedownId: uuid('takedown_id'),
+    /** The space's rules (NULL is none) and their version, which only grows (0034). */
+    rulesText: text('rules_text'),
+    rulesVersion: integer('rules_version').notNull().default(0),
+    /** Display names no member may take (0034). */
+    reservedNames: text('reserved_names')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
     redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
       .notNull()
       .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
@@ -71,8 +81,15 @@ export const communities = pgTable(
     check('communities_settings_version', sql`${table.settingsVersion} > 0`),
     check(
       'communities_admission_policy',
-      sql`${table.admissionPolicy} IN ('invite_only','closed')`
+      sql`${table.admissionPolicy} IN ('invite_only','closed','open')`
     ),
+    check(
+      'communities_rules_text_check',
+      sql`${table.rulesText} IS NULL OR char_length(${table.rulesText}) BETWEEN 1 AND 20000`
+    ),
+    check('communities_rules_version_check', sql`${table.rulesVersion} >= 0`),
+    check('communities_reserved_names_check', sql`cardinality(${table.reservedNames}) <= 200`),
+    check('communities_rules_shape', sql`${table.rulesText} IS NULL OR ${table.rulesVersion} > 0`),
     check(
       'communities_name_length',
       sql`${table.name} = btrim(${table.name}) AND char_length(${table.name}) BETWEEN 1 AND 80`
@@ -370,7 +387,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 9 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 10 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold','communities:takedown','communities:ownership','communities:erasure_journal','accounts:close','communities:reserved_names']::text[]`
     ),
     check(
       'host_api_keys_issuer',
@@ -473,8 +490,13 @@ export const members = pgTable(
     erasedAt: timestamp('erased_at', { withTimezone: true }),
     /** `imported` for an author an import restored from an owner export. */
     origin: text('origin').notNull().default('native'),
+    /** Until when this person and their agents cannot post (0034). */
+    mutedUntil: timestamp('muted_until', { withTimezone: true }),
+    /** The rules version this person accepted; 0 for none (0034). */
+    rulesAcceptedVersion: integer('rules_accepted_version').notNull().default(0),
   },
   (table) => [
+    check('members_rules_accepted_version_check', sql`${table.rulesAcceptedVersion} >= 0`),
     check(
       'members_user_presence',
       sql`${table.userId} IS NOT NULL OR ${table.erasedAt} IS NOT NULL OR (${table.origin} = 'imported' AND NOT ${table.active})`
@@ -765,8 +787,15 @@ export const channels = pgTable(
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     epoch: integer('epoch').notNull().default(1),
     createdAt: time('created_at'),
+    /** Every newly admitted person joins this channel, when it is public and not archived (0033). */
+    autoJoin: boolean('auto_join').notNull().default(false),
+    /** Seconds each person waits between posts here; 0 is off (0034). */
+    slowModeSeconds: integer('slow_mode_seconds').notNull().default(0),
   },
-  (table) => [uniqueIndex('channels_community_id_unique').on(table.communityId, table.id)]
+  (table) => [
+    uniqueIndex('channels_community_id_unique').on(table.communityId, table.id),
+    check('channels_slow_mode_seconds_check', sql`${table.slowModeSeconds} BETWEEN 0 AND 21600`),
+  ]
 );
 /** Explicit human channel membership. */
 export const channelMembers = pgTable(
@@ -962,6 +991,8 @@ export const entries = pgTable(
       .on(table.threadRootEntryId, table.communityId)
       .where(sql`${table.threadRootEntryId} IS NOT NULL`),
     index('entries_community_created_idx').on(table.communityId, table.createdAt.desc()),
+    // The watch-only checks read the last few minutes across every space (0036).
+    index('entries_created_idx').on(table.createdAt),
     foreignKey({
       name: 'entries_channel_tenant_fk',
       columns: [table.communityId, table.channelId],
@@ -1512,42 +1543,7 @@ export const ownerQuotaWindows = pgTable(
     }),
   ]
 );
-/** Security-relevant membership and channel actions. */
-export const auditEvents = pgTable(
-  'audit_events',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
-    actorMemberId: uuid('actor_member_id'),
-    action: text('action').notNull(),
-    subjectId: text('subject_id'),
-    actorKind: text('actor_kind').notNull().default('member'),
-    priorState: text('prior_state'),
-    nextState: text('next_state'),
-    changedFields: text('changed_fields').array().notNull().default([]),
-    /** A host takedown the host chose not to tell the owner about; owner exports leave it out. */
-    withheld: boolean('withheld').notNull().default(false),
-    createdAt: time('created_at'),
-    /** `imported` for an event an import restored from an owner export. */
-    origin: text('origin').notNull().default('native'),
-  },
-  (table) => [
-    check('audit_events_origin', sql`${table.origin} IN ('native','imported')`),
-    index('audit_events_community_created_idx').on(table.communityId, table.createdAt),
-    index('audit_events_actor_idx')
-      .on(table.actorMemberId)
-      .where(sql`${table.actorMemberId} IS NOT NULL`),
-    foreignKey({
-      name: 'audit_events_actor_tenant_fk',
-      columns: [table.communityId, table.actorMemberId],
-      foreignColumns: [members.communityId, members.id],
-    }),
-    check('audit_events_actor_kind', sql`${table.actorKind} IN ('member','system','host')`),
-    check('audit_events_changed_fields', sql`cardinality(${table.changedFields}) <= 16`),
-  ]
-);
+// `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0036).
 
 /** Host-set caps for one community. A community without a row has no limit. */
 export const communityLimits = pgTable(
@@ -1819,336 +1815,6 @@ export const releasedShortNames = pgTable(
     check('released_short_names_name_hmac_check', sql`${table.nameHmac} ~ '^[a-f0-9]{64}$'`),
   ]
 );
-
-/**
- * One import of an owner export into a new, unclaimed community. The community is cleared only
- * after a cancelled or failed import's leftovers are removed; the row stays so its creator can
- * read how it ended.
- */
-export const communityImports = pgTable(
-  'community_imports',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id')
-      .unique()
-      .references(() => communities.id, { onDelete: 'set null' }),
-    idempotencyKey: text('idempotency_key').notNull().unique(),
-    payloadHash: text('payload_hash').notNull(),
-    state: text('state').notNull().default('awaiting_upload'),
-    autoCommit: boolean('auto_commit').notNull().default(false),
-    uploadTokenHash: text('upload_token_hash').notNull().unique(),
-    uploadExpiresAt: timestamp('upload_expires_at', { withTimezone: true }).notNull(),
-    archiveSha256: text('archive_sha256'),
-    archiveBytes: bigint('archive_bytes', { mode: 'number' }),
-    archiveReceivedAt: timestamp('archive_received_at', { withTimezone: true }),
-    uploadLeaseUntil: timestamp('upload_lease_until', { withTimezone: true }),
-    uploadLeaseToken: uuid('upload_lease_token'),
-    stagingBlobKey: text('staging_blob_key')
-      .unique()
-      .references(() => managedBlobs.blobKey, { onDelete: 'set null' }),
-    manifestVersion: integer('manifest_version'),
-    /** Counts and sizes only, never text or names. */
-    report: jsonb('report'),
-    failureCode: text('failure_code'),
-    attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    leaseToken: uuid('lease_token'),
-    settledAt: timestamp('settled_at', { withTimezone: true }),
-    createdByUserId: text('created_by_user_id').references(() => users.id, {
-      onDelete: 'set null',
-    }),
-    createdByApiKeyId: uuid('created_by_api_key_id').references(() => hostApiKeys.id),
-    validatedAt: timestamp('validated_at', { withTimezone: true }),
-    adoptMemberId: uuid('adopt_member_id').references(() => members.id, { onDelete: 'set null' }),
-    /** How the export arrived: one upload, or numbered parts put together by `complete`. */
-    uploadKind: text('upload_kind'),
-    /** Whether the create request named a description; a version 2 export fills it in if not. */
-    descriptionGiven: boolean('description_given').notNull().default(true),
-    /** Whether the create request named an admission policy; as for the description. */
-    admissionPolicyGiven: boolean('admission_policy_given').notNull().default(true),
-    /** Where a version 2 restore stands: step, file, and lines of that file committed. */
-    restoreProgress: jsonb('restore_progress'),
-    createdAt: time('created_at'),
-    updatedAt: time('updated_at'),
-  },
-  (table) => [
-    check(
-      'community_imports_upload_kind',
-      sql`${table.uploadKind} IS NULL OR (${table.uploadKind} IN ('single','parts') AND ${table.archiveSha256} IS NOT NULL)`
-    ),
-    check(
-      'community_imports_restore_progress',
-      sql`${table.restoreProgress} IS NULL OR jsonb_typeof(${table.restoreProgress}) = 'object'`
-    ),
-    check(
-      'community_imports_idempotency_key',
-      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
-    ),
-    check('community_imports_payload_hash', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
-    check('community_imports_token_hash', sql`${table.uploadTokenHash} ~ '^[a-f0-9]{64}$'`),
-    check(
-      'community_imports_state',
-      sql`${table.state} IN ('awaiting_upload','validating','validated','restoring','ready','failed','cancelled')`
-    ),
-    check(
-      'community_imports_archive',
-      sql`(${table.archiveSha256} IS NULL) = (${table.archiveBytes} IS NULL) AND (${table.archiveSha256} IS NULL OR ${table.archiveSha256} ~ '^[a-f0-9]{64}$') AND (${table.archiveBytes} IS NULL OR ${table.archiveBytes} > 0) AND (${table.state} IN ('awaiting_upload','cancelled','failed') OR ${table.archiveSha256} IS NOT NULL) AND (${table.archiveSha256} IS NULL) = (${table.archiveReceivedAt} IS NULL)`
-    ),
-    check(
-      'community_imports_manifest_version',
-      sql`${table.manifestVersion} IS NULL OR ${table.manifestVersion} > 0`
-    ),
-    check(
-      'community_imports_report',
-      sql`(${table.report} IS NULL) = (${table.state} IN ('awaiting_upload','validating') OR (${table.state} IN ('failed','cancelled') AND ${table.validatedAt} IS NULL))`
-    ),
-    check(
-      'community_imports_failure',
-      sql`(${table.state} = 'failed') = (${table.failureCode} IS NOT NULL) AND (${table.failureCode} IS NULL OR ${table.failureCode} ~ '^[A-Z][A-Z0-9_]{0,63}$')`
-    ),
-    check('community_imports_attempts', sql`${table.attempts} >= 0`),
-    check(
-      'community_imports_creator',
-      sql`num_nonnulls(${table.createdByUserId}, ${table.createdByApiKeyId}) <= 1`
-    ),
-    check(
-      'community_imports_community',
-      sql`${table.communityId} IS NOT NULL OR ${table.settledAt} IS NOT NULL`
-    ),
-    check(
-      'community_imports_settled',
-      sql`${table.settledAt} IS NULL OR ${table.state} IN ('ready','failed','cancelled')`
-    ),
-    index('community_imports_due_idx')
-      .on(table.nextAttemptAt, table.id)
-      .where(sql`${table.settledAt} IS NULL`),
-    index('community_imports_settled_idx')
-      .on(table.settledAt)
-      .where(sql`${table.settledAt} IS NOT NULL`),
-  ]
-);
-
-/** Restore progress: one row per file an import worker has stored and verified. */
-export const communityImportFiles = pgTable(
-  'community_import_files',
-  {
-    importId: uuid('import_id')
-      .notNull()
-      .references(() => communityImports.id, { onDelete: 'cascade' }),
-    sourceAttachmentId: uuid('source_attachment_id').notNull(),
-    blobKey: text('blob_key')
-      .notNull()
-      .unique()
-      .references(() => managedBlobs.blobKey),
-    contentType: text('content_type').notNull(),
-    /** A restored attachment, or the community icon (under the nil UUID). */
-    purpose: text('purpose').notNull().default('attachment'),
-  },
-  (table) => [
-    primaryKey({ columns: [table.importId, table.sourceAttachmentId] }),
-    check(
-      'community_import_files_purpose',
-      sql`${table.purpose} IN ('attachment','icon') AND (${table.purpose} = 'icon') = (${table.sourceAttachmentId} = '00000000-0000-0000-0000-000000000000')`
-    ),
-  ]
-);
-
-/** One uploaded part of an export, stored as a managed blob and put together in order. */
-export const communityImportParts = pgTable(
-  'community_import_parts',
-  {
-    importId: uuid('import_id')
-      .notNull()
-      .references(() => communityImports.id, { onDelete: 'cascade' }),
-    partNumber: integer('part_number').notNull(),
-    blobKey: text('blob_key')
-      .notNull()
-      .unique()
-      .references(() => managedBlobs.blobKey, { onDelete: 'cascade' }),
-    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
-    sha256: text('sha256').notNull(),
-    createdAt: time('created_at'),
-  },
-  (table) => [
-    primaryKey({ columns: [table.importId, table.partNumber] }),
-    check('community_import_parts_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
-    check('community_import_parts_size', sql`${table.byteSize} > 0`),
-    check('community_import_parts_sha256', sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
-  ]
-);
-
-/** One part upload in flight on any replica, held by a short renewed lease. */
-export const communityImportPartUploads = pgTable(
-  'community_import_part_uploads',
-  {
-    leaseToken: uuid('lease_token').primaryKey().defaultRandom(),
-    importId: uuid('import_id')
-      .notNull()
-      .references(() => communityImports.id, { onDelete: 'cascade' }),
-    partNumber: integer('part_number').notNull(),
-    /** The size the upload declared, counted toward the import's limit while it arrives. */
-    declaredBytes: bigint('declared_bytes', { mode: 'number' }).notNull(),
-    leaseUntil: timestamp('lease_until', { withTimezone: true }).notNull(),
-  },
-  (table) => [
-    check('community_import_part_uploads_number', sql`${table.partNumber} BETWEEN 1 AND 10000`),
-    check('community_import_part_uploads_size', sql`${table.declaredBytes} > 0`),
-    index('community_import_part_uploads_import_idx').on(table.importId, table.partNumber),
-  ]
-);
-
-/**
- * One host takedown: ids, reasons, and states only (0020). No foreign key to communities, so the
- * record outlives a deleted community.
- */
-export const communityTakedowns = pgTable(
-  'community_takedowns',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    communityId: uuid('community_id').notNull(),
-    targetKind: text('target_kind').notNull(),
-    entryId: uuid('entry_id'),
-    attachmentId: uuid('attachment_id'),
-    channelId: uuid('channel_id'),
-    /** The member the content counts as: its author, or its author agent's owner. */
-    subjectMemberId: uuid('subject_member_id'),
-    category: text('category').notNull(),
-    reference: text('reference'),
-    notify: boolean('notify').notNull(),
-    actorKind: text('actor_kind').notNull(),
-    actorUserId: text('actor_user_id').references(() => users.id),
-    actorApiKeyId: uuid('actor_api_key_id').references(() => hostApiKeys.id),
-    idempotencyKey: text('idempotency_key').notNull(),
-    payloadHash: text('payload_hash').notNull(),
-    state: text('state').notNull().default('active'),
-    evidenceState: text('evidence_state').notNull(),
-    evidenceLocation: text('evidence_location'),
-    evidenceRecordSha256: text('evidence_record_sha256'),
-    evidenceAttempts: integer('evidence_attempts').notNull().default(0),
-    evidenceFailures: integer('evidence_failures').notNull().default(0),
-    evidenceAlertedAt: timestamp('evidence_alerted_at', { withTimezone: true }),
-    priorState: jsonb('prior_state'),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
-    leaseUntil: timestamp('lease_until', { withTimezone: true }),
-    lastErrorClass: text('last_error_class'),
-    createdAt: time('created_at'),
-    reversedAt: timestamp('reversed_at', { withTimezone: true }),
-    releasedByKind: text('released_by_kind'),
-    releasedByUserId: text('released_by_user_id').references(() => users.id),
-    releasedAt: timestamp('released_at', { withTimezone: true }),
-    /** A community takedown's evidence export, while it has one (0025). */
-    evidenceExportId: uuid('evidence_export_id'),
-    /** A community takedown: when its reversal window ends and the deletion is due (0025). */
-    deleteAfter: timestamp('delete_after', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('community_takedowns_idempotency').on(
-      table.actorKind,
-      sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
-      table.idempotencyKey
-    ),
-    index('community_takedowns_created_idx').on(table.createdAt.desc(), table.id.desc()),
-    index('community_takedowns_community_idx').on(
-      table.communityId,
-      table.createdAt.desc(),
-      table.id.desc()
-    ),
-    index('community_takedowns_due_idx')
-      .on(table.nextAttemptAt)
-      .where(sql`${table.evidenceState} IN ('pending','retrying')`),
-    index('community_takedowns_unsettled_idx')
-      .on(table.communityId)
-      .where(sql`${table.evidenceState} IN ('pending','retrying','failed','held_on_primary')`),
-    index('community_takedowns_actor_community_idx')
-      .on(
-        table.actorKind,
-        sql`COALESCE(${table.actorUserId}, ${table.actorApiKeyId}::text)`,
-        table.createdAt
-      )
-      .where(sql`${table.targetKind} = 'community'`),
-    check(
-      'community_takedowns_target_kind_check',
-      sql`${table.targetKind} IN ('entry','attachment','icon','community')`
-    ),
-    check(
-      'community_takedowns_category_check',
-      sql`${table.category} IN ('child_safety','illegal_content','legal_order','terms_violation')`
-    ),
-    check(
-      'community_takedowns_reference_check',
-      sql`${table.reference} ~ '^[A-Za-z0-9._:-]{1,64}$'`
-    ),
-    check('community_takedowns_actor_kind_check', sql`${table.actorKind} IN ('person','api_key')`),
-    check(
-      'community_takedowns_idempotency_key_check',
-      sql`char_length(${table.idempotencyKey}) BETWEEN 1 AND 200`
-    ),
-    check('community_takedowns_payload_hash_check', sql`${table.payloadHash} ~ '^[a-f0-9]{64}$'`),
-    check('community_takedowns_state_check', sql`${table.state} IN ('active','reversed')`),
-    check(
-      'community_takedowns_evidence_state_check',
-      sql`${table.evidenceState} IN ('pending','retrying','stored','failed','not_configured','nothing_to_preserve','held_on_primary')`
-    ),
-    check(
-      'community_takedowns_evidence_record_sha256_check',
-      sql`${table.evidenceRecordSha256} ~ '^[a-f0-9]{64}$'`
-    ),
-    check('community_takedowns_evidence_attempts_check', sql`${table.evidenceAttempts} >= 0`),
-    check('community_takedowns_evidence_failures_check', sql`${table.evidenceFailures} >= 0`),
-    check(
-      'community_takedowns_last_error_class_check',
-      sql`${table.lastErrorClass} ~ '^[A-Z][A-Z0-9_]{0,63}$'`
-    ),
-    check(
-      'community_takedowns_target',
-      sql`(${table.targetKind} = 'entry' AND ${table.entryId} IS NOT NULL AND ${table.attachmentId} IS NULL) OR (${table.targetKind} = 'attachment' AND ${table.attachmentId} IS NOT NULL) OR (${table.targetKind} IN ('icon','community') AND ${table.entryId} IS NULL AND ${table.attachmentId} IS NULL)`
-    ),
-    check(
-      'community_takedowns_actor',
-      sql`(${table.actorKind} = 'person') = (${table.actorUserId} IS NOT NULL) AND (${table.actorKind} = 'api_key') = (${table.actorApiKeyId} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_reversal',
-      sql`(${table.state} = 'reversed') = (${table.reversedAt} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_evidence_stored',
-      sql`(${table.evidenceState} = 'stored') = (${table.evidenceRecordSha256} IS NOT NULL) AND (${table.evidenceState} = 'stored') = (${table.evidenceLocation} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_released_by_kind_check',
-      sql`${table.releasedByKind} IN ('person','offline')`
-    ),
-    check(
-      'community_takedowns_release',
-      sql`(${table.releasedAt} IS NULL) = (${table.releasedByKind} IS NULL) AND (${table.releasedByKind} = 'person') = (${table.releasedByUserId} IS NOT NULL)`
-    ),
-    check(
-      'community_takedowns_evidence_due',
-      sql`${table.evidenceState} NOT IN ('pending','retrying') OR ${table.nextAttemptAt} IS NOT NULL`
-    ),
-    check(
-      'community_takedowns_evidence_export',
-      sql`${table.evidenceExportId} IS NULL OR ${table.targetKind} = 'community'`
-    ),
-    check(
-      'community_takedowns_delete_after',
-      sql`(${table.targetKind} = 'community') = (${table.deleteAfter} IS NOT NULL)`
-    ),
-  ]
-);
-
-/**
- * A takedown's evidence record and held blobs, as they were at the takedown, until the copy
- * lands in the evidence store or a host operator releases them (0020).
- */
-export const takedownEvidenceStaging = pgTable('takedown_evidence_staging', {
-  takedownId: uuid('takedown_id')
-    .primaryKey()
-    .references(() => communityTakedowns.id, { onDelete: 'cascade' }),
-  record: jsonb('record').notNull(),
-  blobKeys: text('blob_keys').array().notNull(),
-});
 
 /**
  * A removed file whose bytes are queued but not yet swept, so a later host takedown of its

@@ -337,6 +337,12 @@ export interface RoomContextInput {
    */
   engaged: EngagementWindow | null;
   /**
+   * Why the dispatcher picked this agent, when a person is owed its answer
+   * without having named it: their exchange with it (`'conversation'`) or its
+   * lead of the channel (`'lead'`), DOR-2823. Absent for every other reason.
+   */
+  answerOwed?: 'conversation' | 'lead';
+  /**
    * The ids, among the entries this turn is about to be shown, of messages that
    * landed while this agent was already mid-turn here (room-participation spec
    * §10.4).
@@ -655,7 +661,10 @@ export function buildRoomContext(
   // `RoomRoster.addressingCandidates`). Not a second rule that happens to agree:
   // the defect this replaced was exactly that, one function returning
   // `agents.name` unfiltered while the picker refused the same string.
-  const handles = addressableHandles(rosterMentionCandidates(members, records, deps.agents).live);
+  const candidates = rosterMentionCandidates(members, records, deps.agents);
+  const handles = addressableHandles(candidates.live);
+  // The same walk the app's roster reads "retired" from (`RoomRoster.list`).
+  const retired = new Set(candidates.unreachable.map((candidate) => candidate.authorId));
 
   const flatten = (entry: RoomEntry): RoomContextEntry => {
     // Native Doc markers carry their own doc_events context, never ordinary message history.
@@ -758,6 +767,7 @@ export function buildRoomContext(
         // the trust bit (§4.3).
         origin: record ? authorOrigin(record.naturalKey) : 'local',
         ...(record?.kind === 'agent' ? { responseMode: member.responseMode } : {}),
+        ...(retired.has(member.authorId) ? { retired: true as const } : {}),
       };
     }),
     working: input.working
@@ -813,6 +823,7 @@ export function buildRoomContext(
       engagedUntil: input.engaged?.until.toISOString() ?? null,
       engagedPostsLeft: input.engaged?.postsLeft ?? null,
       addressedNow: input.entry.mentions.includes(input.agentAuthorId),
+      ...(input.answerOwed ? { answerOwed: input.answerOwed } : {}),
     },
     budget: {
       automaticRepliesLeftInThisRoomThisHour: input.budget.room,
@@ -975,7 +986,7 @@ function frameOf(room: Room, framing: BridgedRoomFraming | null): RoomContextDat
     ...(room.topic ? { topic: room.topic } : {}),
     bridged: framing !== null,
     ...(framing?.visibility ? { visibility: framing.visibility } : {}),
-    ...(framing ? { formatting: framing.formatting } : {}),
+    ...(framing?.formatting ? { formatting: framing.formatting } : {}),
   };
 }
 

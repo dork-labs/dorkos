@@ -76,4 +76,16 @@ export type { RosterAgentInfo } from './lib/agent-details';
  */
 export { agentFacesByRef } from './lib/agent-details';
 export { ChannelComposer } from './ui/ChannelComposer';
+/**
+ * The line over a channel's composer when no agent is in it (DOR-2823),
+ * exported for the Dev Playground's composer bench. The routed app mounts it
+ * through {@link RoomSurface}.
+ */
+export { NoAgentHint } from './ui/NoAgentHint';
 export { useRoomTarget } from './model/room-target';
+/**
+ * The strip under DorkBot's first-run welcome in #team, and whether it is owed
+ * (spec `one-minute-onboarding` §2.4). Home composes it above the composer.
+ */
+export { FirstRunChips, type FirstRunChipsProps } from './ui/FirstRunChips';
+export { useFirstRunChips, type FirstRunChipsMode } from './model/use-first-run-chips';

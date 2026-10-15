@@ -82,6 +82,8 @@ describe('formatFirstRunTelemetryNotice', () => {
     expect(notice).toContain('daily anonymous heartbeat');
     expect(notice).toContain('marketplace install counts');
     expect(notice).toContain('feature-usage events');
+    // The install tag from dorkos.ai is named before anything could carry it (DOR-2862).
+    expect(notice).toContain('install tag from dorkos.ai');
     expect(notice).toContain(TELEMETRY_PAYLOAD_DOC_URL);
     // Both ways in, plus the kill switch that outranks them for anyone running
     // this on someone else's behalf.

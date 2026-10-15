@@ -46,7 +46,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import type { Response } from 'express';
+import type { RequestFacts } from '../../../../http/request-facts.js';
 import { requireOperatorCookieUnderLogin } from '../../../../lib/caller-authority.js';
 import { trustedCaller } from '../../capabilities/trusted-caller.js';
 import type { RequestUser } from '../../auth/session-gate.js';
@@ -101,9 +101,9 @@ const CALLERS: ProbeCaller[] = [
   },
 ];
 
-/** A response carrying only what these seams read off it. */
-function responseFor(caller: ProbeCaller): Response {
-  return { locals: caller.user ? { user: caller.user } : {} } as unknown as Response;
+/** The request's facts, carrying only what these seams read off them. */
+function factsFor(caller: ProbeCaller): Pick<RequestFacts, 'user'> {
+  return { user: caller.user };
 }
 
 const SEAMS: PersonProofSeam[] = [
@@ -111,7 +111,7 @@ const SEAMS: PersonProofSeam[] = [
     name: 'deciding an approval (requireOperatorCookieUnderLogin)',
     allows: (caller) =>
       requireOperatorCookieUnderLogin(
-        responseFor(caller),
+        factsFor(caller),
         'whether a risky action goes ahead',
         () => caller.loginEnabled
       ) === undefined,

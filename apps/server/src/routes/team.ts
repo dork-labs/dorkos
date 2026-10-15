@@ -1,3 +1,4 @@
+import { projectComputerPlacement } from './computer-placement.js';
 /**
  * The team roster — one read of every identity on this install, and what one of
  * those identities is part of.
@@ -21,10 +22,12 @@
  *
  * @module routes/team
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { logError, logger } from '../lib/logger.js';
-import { sendError } from '../lib/route-utils.js';
+import { errorBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import type { AuthorRegistry } from '../services/rooms/author-registry.js';
 import {
   aggregateTeamRoster,
@@ -105,18 +108,18 @@ export interface TeamRouterDeps {
 }
 
 /**
- * Create the team roster router.
+ * The `/api/team` routes.
  *
  * @param deps - The registries and config readers the roster aggregates.
- * @returns Express Router serving `GET /api/team`.
+ * @returns The routes, for `app.route('/api/team', …)`.
  */
-export function createTeamRouter(deps: TeamRouterDeps): Router {
-  const router = Router();
+export function createTeamRoutes(deps: TeamRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   // GET /api/team — the roster. Per-source degradation in the ADR-0310
   // envelope: `{ members, warnings? }`, always 200 when the request itself is
   // well-formed, `warnings` omitted entirely when every source read cleanly.
-  router.get('/', async (_req, res) => {
+  router.get('/', async (c) => {
     try {
       const mesh = deps.meshCore;
 
@@ -158,13 +161,18 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
         defaultAgentName: () => deps.defaultAgentName(),
       });
 
-      return res.json(roster);
+      return c.json({
+        ...roster,
+        members: roster.members.map((member) =>
+          member.agent ? { ...member, agent: projectComputerPlacement(member.agent) } : member
+        ),
+      });
     } catch (err) {
       // Nothing the roster reads reaches here — every source is caught inside
       // the aggregation. This is the backstop for the response itself failing,
       // and it stays, because "unreachable" is a claim about today's code.
       logger.error('[Team] roster read failed', logError(err));
-      return sendError(res, 500, 'Failed to read the team roster', 'TEAM_ROSTER_FAILED');
+      return c.json(errorBody('Failed to read the team roster', 'TEAM_ROSTER_FAILED'), 500);
     }
   });
 
@@ -172,7 +180,7 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
   // `profile-unification` §3.2). 404 means "no member by that id"; a member who
   // is simply in no rooms gets a 200 and an empty list, because those are
   // different sentences on a profile.
-  router.get('/:memberId/rooms', (req, res) => {
+  router.get('/:memberId/rooms', (c) => {
     // **People only, and this one is a boundary rather than a policy.** The
     // route takes ANY member's id, so an agent that could call it would read
     // the titles of every DM the operator has with every other agent — the
@@ -181,13 +189,11 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
     // boundary with the same `PEOPLE_ONLY` code, though it asks a different
     // question to get there — see {@link callerIsAgent}. 403 rather than 404:
     // there is nothing to hide about the route existing.
-    if (callerIsAgent(req, res)) {
-      return sendError(res, 403, 'Only people read a profile', 'PEOPLE_ONLY');
+    if (callerIsAgent(honoRequestFacts(c))) {
+      return c.json(errorBody('Only people read a profile', 'PEOPLE_ONLY'), 403);
     }
 
-    // Express 5 types a param as `string | string[]`; a single-segment param
-    // never arrives as an array, and a non-string is simply not a member id.
-    const memberId = typeof req.params.memberId === 'string' ? req.params.memberId : '';
+    const memberId = c.req.param('memberId');
     try {
       const rooms = listMemberRooms(memberId, {
         listPeople: () => deps.authors.listActive('human'),
@@ -197,16 +203,16 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
         isRegisteredAgent: (id) => knowsAgent(deps.meshCore, id),
       });
       if (rooms === null) {
-        return sendError(res, 404, 'No member with that id', 'MEMBER_NOT_FOUND');
+        return c.json(errorBody('No member with that id', 'MEMBER_NOT_FOUND'), 404);
       }
-      return res.json(rooms);
+      return c.json(rooms);
     } catch (err) {
       // Unlike the roster, this read has ONE answer and no sources to trade off,
       // so a failure is a failure. An empty list would be a lie — "you are in no
       // rooms" is a sentence a profile draws, and it must never mean "the
       // database did not answer".
       logger.error('[Team] member rooms read failed', logError(err));
-      return sendError(res, 500, 'Failed to read this member’s rooms', 'MEMBER_ROOMS_FAILED');
+      return c.json(errorBody('Failed to read this member’s rooms', 'MEMBER_ROOMS_FAILED'), 500);
     }
   });
 
@@ -231,11 +237,10 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
  * (ADR 260806-222535), and a read that created a person to answer "no" would
  * break that on the first anonymous request.
  *
- * @param req - The incoming request, for the raw header.
- * @param res - The response carrying the middleware's resolved identity.
+ * @param request - The request's facts: the raw header and the resolved identity.
  */
-function callerIsAgent(req: Request, res: Response): boolean {
-  return readCallerAuthority(req, res).agentIdentityPresented;
+function callerIsAgent(request: RequestFacts): boolean {
+  return readCallerAuthority(request).agentIdentityPresented;
 }
 
 /**

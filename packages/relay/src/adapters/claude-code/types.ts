@@ -173,6 +173,9 @@ export type TurnRuntimeTypeResolver = (turn: {
  * @param binding.agentDirectory - The agent this conversation belongs to, when
  *   one resolved.
  */
+/** See {@link ClaudeCodeAdapterDeps.noteTurnStart}. Must not throw. */
+export type TurnStartNote = (turn: { sessionId: string; from: string }) => void;
+
 export type SessionRuntimeBinder = (binding: {
   sessionId: string;
   runtimeType: string;
@@ -498,6 +501,13 @@ export interface ClaudeCodeAdapterDeps {
    */
   bindSessionRuntime?: SessionRuntimeBinder;
   /**
+   * Told when a turn is about to start, with the session it runs in and who sent
+   * the message, before anything runs. The host uses it to know, per turn,
+   * whether the turn is a stranger's (a bridged chat, an outside agent), which
+   * the session's first binding alone cannot say. Absent means nobody is told.
+   */
+  noteTurnStart?: TurnStartNote;
+  /**
    * Whether a click on a chat platform may authorize one session's tool call.
    *
    * **Required**, never defaulted: the adapters' own `mayApprove` gate answers
@@ -506,14 +516,6 @@ export interface ClaudeCodeAdapterDeps {
    * default here would be an allow for whatever publisher is added next.
    */
   approvalAuthorizer: ApprovalAuthorizer;
-  /**
-   * Where a running turn records the envelope it is answering, so the agent's
-   * own `relay_send*` calls continue that budget instead of minting a fresh one
-   * (DOR-791). The host passes the SAME instance it gives its tool surface —
-   * `RelayCore.inboundBudgets` — or none, in which case nothing is threaded and
-   * the adapter behaves exactly as it did before.
-   */
-  inboundBudgets?: import('../../inbound-turn-budgets.js').InboundTurnBudgets;
   /**
    * Where the turns an agent starts on its own, after a relay turn ended, are
    * learned about — see {@link LateTurnSource}. Absent means a caller hears

@@ -18,7 +18,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
-// Mock the directory boundary so the /events handler's assertBoundary against
+// Mock the directory boundary so the /events handler's boundaryRefusal against
 // the default cwd doesn't require initBoundary() at startup (mirrors
 // sessions-events.test.ts).
 vi.mock('../../../../lib/boundary.js', () => ({
@@ -40,8 +40,9 @@ vi.mock('../../../../lib/boundary.js', () => ({
 // Declared at module scope so the vi.mock factory closure can reference it.
 let fakeRuntime: FakeAgentRuntime;
 
-vi.mock('../../../../services/core/runtime-registry.js', () => ({
+vi.mock('../../runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
@@ -72,7 +73,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { initAuth } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
-import { createApp, finalizeApp } from '../../../../app.js';
+import { composedListener } from '../../../../http/__tests__/composed-listener.js';
 import { env } from '../../../../env.js';
 
 const fixtureTarget = swappableServer();
@@ -117,7 +118,6 @@ function setAuthEnabled(enabled: boolean): void {
 describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () => {
   let tmpDir: string;
   let db: Db;
-  let app: ReturnType<typeof createApp>;
   let cookies: string[];
 
   beforeAll(async () => {
@@ -126,12 +126,11 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     db = createDb(path.join(tmpDir, 'gate-sse.db'));
     runMigrations(db);
     initAuth(db, tmpDir);
-    app = createApp({ admission: new MainRequestAdmission() });
-    finalizeApp(app);
+    const admission = new MainRequestAdmission();
 
     // Owner + a real session cookie (auth off during setup so sign-up is clean).
     setAuthEnabled(false);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(composedListener(admission));
     await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)

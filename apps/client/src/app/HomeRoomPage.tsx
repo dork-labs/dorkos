@@ -23,7 +23,7 @@ import {
 } from '@/layers/entities/room';
 import { isComposerField } from '@/layers/features/jump-back-in';
 import { usePresenceStrip } from '@/layers/features/presence-strip';
-import { RoomSurface } from '@/layers/widgets/room-view';
+import { FirstRunChips, RoomSurface, useFirstRunChips } from '@/layers/widgets/room-view';
 import {
   FirstOpenSettle,
   HomeQuietState,
@@ -146,6 +146,9 @@ function HomeRoomBody() {
   // above the conversation you just started, for as long as the round trip took.
   const inFlight = usePendingPosts(team.room?.id ?? null, null);
   const dayOne = entries !== undefined && entries.length === 0 && inFlight.length === 0;
+  // The first run's welcome, still the newest thing here: its chips, not the
+  // day-one openers (spec `one-minute-onboarding` §2.4).
+  const firstRun = useFirstRunChips(team.room?.id ?? null);
 
   if (team.status === 'loading') {
     return (
@@ -227,7 +230,13 @@ function HomeRoomBody() {
         }
         // Day one only. The room's first real message takes them away, because
         // an opener offered under a conversation already underway is noise.
-        aboveComposer={dayOne ? <RoomStarterChips roomId={team.room.id} /> : undefined}
+        aboveComposer={
+          firstRun ? (
+            <FirstRunChips roomId={team.room.id} mode={firstRun} />
+          ) : dayOne ? (
+            <RoomStarterChips roomId={team.room.id} />
+          ) : undefined
+        }
       />
     </FirstOpenSettle>
   );

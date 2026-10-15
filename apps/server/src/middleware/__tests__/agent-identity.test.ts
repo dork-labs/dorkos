@@ -1,17 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Request, Response, NextFunction } from 'express';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   AgentIdentityService,
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import {
-  resolveAgentIdentity,
-  getRequestAgentIdentity,
-  presentsAgentIdentity,
-} from '../agent-identity.js';
+import { resolveAgentIdentityFromHeaders, presentsAgentIdentity } from '../agent-identity.js';
+import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
+import { requestFactsFor } from '../../http/__tests__/described-request.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -19,12 +16,33 @@ vi.mock('../../lib/logger.js', () => ({
 
 const AGENT_PATH = '/projects/researcher';
 
-/** Minimal Express doubles — the middleware only touches headers and locals. */
+/** A request's headers, and where the chain's identity step leaves what it resolved. */
 function makeReqRes(headers: Record<string, string | string[]> = {}) {
-  const req = { headers, path: '/api/capabilities/demo.thing/invoke' } as unknown as Request;
-  const res = { locals: {} as Record<string, unknown> } as unknown as Response;
-  const next = vi.fn() as unknown as NextFunction;
-  return { req, res, next };
+  const req = { headers, path: '/api/capabilities/demo.thing/invoke' };
+  const res: { identity?: AgentIdentity } = {};
+  return { req, res };
+}
+
+/** The chain's agent-identity step (`http/api-chain.ts`), for one request. */
+async function resolveAgentIdentity(
+  req: ReturnType<typeof makeReqRes>['req'],
+  res: ReturnType<typeof makeReqRes>['res']
+): Promise<void> {
+  const identity = await resolveAgentIdentityFromHeaders(req.headers, req.path);
+  if (identity) res.identity = identity;
+}
+
+/** What the identity step resolved for a request. */
+function getRequestAgentIdentity(res: ReturnType<typeof makeReqRes>['res']) {
+  return res.identity;
+}
+
+/** The facts a policy reads for the request. */
+function factsOf(
+  req: ReturnType<typeof makeReqRes>['req'],
+  res: ReturnType<typeof makeReqRes>['res']
+) {
+  return { headers: req.headers, agentIdentity: res.identity };
 }
 
 describe('resolveAgentIdentity', () => {
@@ -42,32 +60,30 @@ describe('resolveAgentIdentity', () => {
 
   it('resolves a valid token onto the request context', async () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': token });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toMatchObject({
       agentPath: AGENT_PATH,
       displayName: 'Researcher',
     });
-    expect(next).toHaveBeenCalledOnce();
   });
 
   it('tolerates surrounding whitespace on the header value', async () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': `  ${token}  ` });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': `  ${token}  ` });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeDefined();
-    expect(next).toHaveBeenCalledOnce();
   });
 
   it('takes the first value when the header is repeated', async () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': [token, 'second'] });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': [token, 'second'] });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeDefined();
   });
@@ -75,32 +91,29 @@ describe('resolveAgentIdentity', () => {
   // ── Identity is NEVER required: every miss falls through untouched ────────
 
   it('passes through with no identity when the header is absent', async () => {
-    const { req, res, next } = makeReqRes();
+    const { req, res } = makeReqRes();
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(res.locals).toEqual({});
-    expect(next).toHaveBeenCalledOnce();
+    expect(res).toEqual({});
   });
 
   it('never touches the database when the header is absent', async () => {
     const resolveSpy = vi.spyOn(AgentIdentityService.prototype, 'resolve');
-    const { req, res, next } = makeReqRes();
+    const { req, res } = makeReqRes();
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(resolveSpy).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledOnce();
   });
 
   it('passes through with no identity for an unknown token', async () => {
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': 'bogus' });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': 'bogus' });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledOnce();
   });
 
   it('passes through NAMING a revoked token, marked as shut off', async () => {
@@ -112,36 +125,33 @@ describe('resolveAgentIdentity', () => {
     // tool-group gate hands it no grant, and `room-caller.ts` still 401s.
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
     await service.revoke(AGENT_PATH);
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': token });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toMatchObject({
       agentPath: AGENT_PATH,
       inactive: 'revoked',
     });
     // Still never rejects: identity is attribution, not authorization.
-    expect(next).toHaveBeenCalledOnce();
   });
 
   it('passes through when the service was never initialized', async () => {
     resetAgentIdentityService();
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': 'anything' });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': 'anything' });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledOnce();
   });
 
-  it('calls next() and never rejects when resolution throws', async () => {
+  it('never rejects when resolution throws', async () => {
     vi.spyOn(AgentIdentityService.prototype, 'resolve').mockRejectedValueOnce(new Error('db down'));
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': 'token' });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': 'token' });
 
-    await expect(resolveAgentIdentity(req, res, next)).resolves.toBeUndefined();
+    await expect(resolveAgentIdentity(req, res)).resolves.toBeUndefined();
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledOnce();
   });
 });
 
@@ -169,12 +179,11 @@ describe('resolveAgentIdentity — unresolved token visibility', () => {
     // A revoked one no longer does — it resolves to a marked identity and is
     // refused loudly at the gates, which is louder than a debug line (DOR-486).
     const token = 'deadbeefdeadbeefdeadbeefdeadbeef';
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': token });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledOnce();
     expect(logger.debug).toHaveBeenCalledWith(
       '[agent-identity] Presented token did not resolve',
       expect.objectContaining({ tokenDigestPrefix: expect.any(String) })
@@ -186,17 +195,17 @@ describe('resolveAgentIdentity — unresolved token visibility', () => {
 
   it('says nothing when a token resolves', async () => {
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': token });
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(logger.debug).not.toHaveBeenCalled();
   });
 
   it('says nothing when no token was presented at all', async () => {
-    const { req, res, next } = makeReqRes();
+    const { req, res } = makeReqRes();
 
-    await resolveAgentIdentity(req, res, next);
+    await resolveAgentIdentity(req, res);
 
     expect(logger.debug).not.toHaveBeenCalled();
   });
@@ -226,27 +235,51 @@ describe('presentsAgentIdentity', () => {
   it('is true for a token the middleware resolved', async () => {
     const service = initAgentIdentityService(createTestDb());
     const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': token });
-    await resolveAgentIdentity(req, res, next);
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': token });
+    await resolveAgentIdentity(req, res);
 
     expect(getRequestAgentIdentity(res)).toBeDefined();
-    expect(presentsAgentIdentity(req, res)).toBe(true);
+    expect(presentsAgentIdentity(factsOf(req, res))).toBe(true);
   });
 
   it('is true for a token that resolved to nothing, which is what an unknown token looks like', async () => {
     initAgentIdentityService(createTestDb());
-    const { req, res, next } = makeReqRes({ 'x-dorkos-agent': 'deadbeefdeadbeefdeadbeefdeadbeef' });
-    await resolveAgentIdentity(req, res, next);
+    const { req, res } = makeReqRes({ 'x-dorkos-agent': 'deadbeefdeadbeefdeadbeefdeadbeef' });
+    await resolveAgentIdentity(req, res);
 
     // Nothing resolved — so the narrow reader says "no agent here", and the
     // wide one still says a machine called.
     expect(getRequestAgentIdentity(res)).toBeUndefined();
-    expect(presentsAgentIdentity(req, res)).toBe(true);
+    expect(presentsAgentIdentity(factsOf(req, res))).toBe(true);
   });
 
   it('is false when no header was presented at all, which is every person in the cockpit', () => {
     const { req, res } = makeReqRes();
 
-    expect(presentsAgentIdentity(req, res)).toBe(false);
+    expect(presentsAgentIdentity(factsOf(req, res))).toBe(false);
+  });
+});
+
+/**
+ * The same question asked of a request's facts as `honoRequestFacts` builds
+ * them, which is how every route asks it.
+ */
+describe('presentsAgentIdentity, on facts built by the chain', () => {
+  it('is true for an identity the middleware resolved', async () => {
+    const facts = await requestFactsFor({
+      headers: { 'x-dorkos-agent': 'token' },
+      agentIdentity: { agentId: 'agent_1' } as never,
+    });
+    expect(presentsAgentIdentity(facts)).toBe(true);
+  });
+
+  it('is true for a header that resolved to nothing', async () => {
+    expect(
+      presentsAgentIdentity(await requestFactsFor({ headers: { 'x-dorkos-agent': 'x' } }))
+    ).toBe(true);
+  });
+
+  it('is false when no header was presented at all', async () => {
+    expect(presentsAgentIdentity(await requestFactsFor({ headers: {} }))).toBe(false);
   });
 });

@@ -43,9 +43,9 @@ export interface OverrideProvenance {
 
 /** One captured asset described for downstream consumers. */
 export interface AssetEntry {
-  /** File name relative to the product dir (e.g. `cockpit-light.png`). */
+  /** File name relative to the product dir (e.g. `team-room-light.png`). */
   file: string;
-  /** Logical surface captured (e.g. `cockpit`). */
+  /** Logical surface captured (e.g. `team-room`). */
   surface: string;
   /** Theme variant, or `null` for theme-agnostic assets. */
   theme: 'light' | 'dark' | null;

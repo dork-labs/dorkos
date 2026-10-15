@@ -161,9 +161,9 @@ export type MemoryProviderInfo = z.infer<typeof MemoryProviderInfoSchema>;
  * design: a benched backend hands every call to `builtin` from the inside, with
  * one warning in the server log — this is what lets `GET /api/system/memory`
  * and the standing client banner say the same thing without reading the log.
- * Plain fields rather than a Zod schema, matching {@link UnattendedAutonomyState}
- * in `permission-semantics.ts` — this is a read-only status projection, not
- * something ever parsed back off disk or off the wire into a decision.
+ * Plain fields rather than a Zod schema: this is a read-only status
+ * projection, not something ever parsed back off disk or off the wire into a
+ * decision.
  */
 export interface MemoryProviderStatus {
   /** The id `memory.provider` names. */
@@ -327,6 +327,14 @@ export const MemoryProvenanceSchema = z.object({
   room: z.string().min(1).nullable(),
   /** The day it was learned, `YYYY-MM-DD`. */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'a provenance date must be YYYY-MM-DD'),
+  /**
+   * True when the turn that wrote the note had read words from outside the
+   * owner's circle: a stranger's message, one passed on by another agent, or
+   * one DorkOS could not vouch for (spec `trusted-by-default-flip` §4.7). The
+   * stamp then says so, wherever the note was written, so a later session
+   * never reads it as the operator's own.
+   */
+  outsider: z.boolean().optional(),
 });
 /** Where a note came from. See {@link MemoryProvenanceSchema}. */
 export type MemoryProvenance = z.infer<typeof MemoryProvenanceSchema>;
@@ -505,23 +513,28 @@ export class MemoryMatchError extends Error {
    *
    * @param kind - `'ambiguous'` when the text matched more than once,
    *   `'not-found'` when it matched nothing, `'protected-header'` when it
-   *   matched inside the file's own explanatory header.
+   *   matched inside the file's own explanatory header, `'protected-stamp'`
+   *   when a `replace` would change the stamp DorkOS wrote at the end of a
+   *   note (where it was learned, and whether it was read beside words DorkOS
+   *   cannot vouch for), or would run past the end of one note into the next.
    * @param needle - The text the caller named.
    * @param nearMatches - Lines from the current memory that came closest, for
    *   the caller to choose between or correct against. May be empty when
    *   nothing resembled it.
    */
   constructor(
-    readonly kind: 'ambiguous' | 'not-found' | 'protected-header',
+    readonly kind: 'ambiguous' | 'not-found' | 'protected-header' | 'protected-stamp',
     readonly needle: string,
     readonly nearMatches: string[]
   ) {
     const lead =
       kind === 'ambiguous'
         ? `The text you named appears more than once in your memory, so it does not say which note you meant.`
-        : kind === 'protected-header'
-          ? `The text you named is inside the header comment at the top of your memory file, which explains what the file is and who can see it. That header is not a note and cannot be edited from here — a person can change it by opening the file. Name one of your own notes instead.`
-          : `Nothing in your memory matches the text you named.`;
+        : kind === 'protected-stamp'
+          ? `The text you named reaches into the stamp at the end of a note, which DorkOS wrote to say where the note came from, or past the end of a note. Neither can be edited from here. Name only the words of one note.`
+          : kind === 'protected-header'
+            ? `The text you named is inside the header comment at the top of your memory file, which explains what the file is and who can see it. That header is not a note and cannot be edited from here — a person can change it by opening the file. Name one of your own notes instead.`
+            : `Nothing in your memory matches the text you named.`;
     const near =
       nearMatches.length > 0
         ? ` Closest lines:\n${nearMatches.map((line) => `- ${line}`).join('\n')}`

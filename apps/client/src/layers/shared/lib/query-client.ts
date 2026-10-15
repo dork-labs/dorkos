@@ -184,6 +184,20 @@ export function createQueryClientConfig(): QueryClientConfig {
       queries: {
         staleTime: QUERY_TIMING.DEFAULT_STALE_TIME_MS,
         retry: QUERY_TIMING.DEFAULT_RETRY,
+        // **Coming back to the tab is not a reason to ask again (DOR-2896).**
+        // TanStack's default re-reads every mounted query older than its
+        // staleTime each time the tab is shown, so one glance back at DorkOS
+        // after half a minute fired a request per mounted list, row and badge.
+        // The two ways data really goes stale are covered without it: while the
+        // event stream is up, its events update or invalidate what they own;
+        // and a tab hidden past the stream's grace period
+        // (`SSE_RESILIENCE.VISIBILITY_GRACE_MS`) drops the stream, so showing it
+        // again reconnects, and the reconnect invalidates every non-stream query
+        // once (`event-stream-context.tsx`). A query whose data changes outside
+        // DorkOS with no event to say so opts back in with
+        // `refetchOnWindowFocus: true`. A polling query now catches up on its
+        // next tick rather than the moment the tab is shown.
+        refetchOnWindowFocus: false,
       },
     },
   };

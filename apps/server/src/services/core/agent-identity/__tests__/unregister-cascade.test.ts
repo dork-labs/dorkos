@@ -4,6 +4,12 @@ import type { Db } from '@dorkos/db';
 import type { Logger } from '@dorkos/shared/logger';
 import { AgentIdentityService } from '../agent-identity-service.js';
 import { createAgentIdentityUnregisterCascade } from '../unregister-cascade.js';
+import { agents, agentPauses } from '@dorkos/db';
+import {
+  AgentPauseService,
+  initAgentPause,
+  resetAgentPause,
+} from '../../../mesh/pause/agent-pause.js';
 
 const AGENT_PATH = '/projects/researcher';
 
@@ -88,5 +94,32 @@ describe('createAgentIdentityUnregisterCascade', () => {
       '[AgentIdentity] Could not revoke tokens for an unregistered agent',
       expect.objectContaining({ agentId: 'agent-1', reason: 'db is gone' })
     );
+  });
+
+  it('drops the pause of an unregistered agent, so nothing outlives it', async () => {
+    const now = new Date().toISOString();
+    db.insert(agents)
+      .values({
+        id: 'agent-1',
+        name: 'researcher',
+        runtime: 'claude-code',
+        projectPath: AGENT_PATH,
+        registeredAt: now,
+        updatedAt: now,
+      })
+      .run();
+    const pauses = new AgentPauseService({ db });
+    initAgentPause(pauses);
+    try {
+      await pauses.pause('agent-1', { accountId: 'install:x', kind: 'person', name: 'Owner' });
+      expect(db.select().from(agentPauses).all()).toHaveLength(1);
+
+      createAgentIdentityUnregisterCascade(() => undefined, logger)('agent-1', AGENT_PATH);
+
+      expect(pauses.isPaused('agent-1')).toBeUndefined();
+      expect(db.select().from(agentPauses).all()).toEqual([]);
+    } finally {
+      resetAgentPause();
+    }
   });
 });

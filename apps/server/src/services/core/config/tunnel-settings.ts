@@ -87,10 +87,13 @@ function firstSet(fromEnv: string | undefined, fromConfig: string | null | undef
  *
  * **Environment first, stored config second, per field.** The environment is
  * what someone told THIS process on this launch; the config is what they last
- * told the app through its UI. That order also matches the CLI, which copies the
- * same config keys into the environment before the server boots
- * (`packages/cli/src/cli.ts`) — so for a CLI launch this function reads values
- * that are already in `env` and reaches the identical answer.
+ * told the app through its UI. That order also matches the CLI
+ * (`packages/cli/src/cli.ts`), which copies the saved auth token, basic-auth
+ * pair and domain into the environment only where the environment has none —
+ * so for those, a CLI launch reaches the identical answer. It does NOT copy the
+ * saved `tunnel.enabled`: only `--tunnel` sets `TUNNEL_ENABLED`, and the saved
+ * flag is read here, as the stored half, so a saved DorkOS remote access choice
+ * can outrank it at boot (`remote/remote-boot.ts`, DOR-2086).
  *
  * **`TUNNEL_ENABLED` unset is not `TUNNEL_ENABLED=false`.** Unset means nobody
  * has said anything about this launch, so the stored preference decides — which

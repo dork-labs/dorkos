@@ -19,6 +19,7 @@ import '@testing-library/jest-dom/vitest';
 import { toast } from 'sonner';
 import { MarkdownContent } from '../markdown-content';
 import { MarkdownLink } from '../markdown-link';
+import { registerLinkNavigator, type LinkNavigation } from '../../lib/link-navigation';
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -157,5 +158,111 @@ describe('MarkdownLink — schemes the markdown sanitizer strips never become li
     render(<MarkdownContent content={content} />);
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('MarkdownLink — a link to one of the app’s own pages opens without asking (DOR-2824)', () => {
+  let navigated: LinkNavigation[];
+  let unregister: () => void;
+
+  beforeEach(() => {
+    navigated = [];
+    unregister = registerLinkNavigator((navigation) => navigated.push(navigation));
+  });
+
+  afterEach(() => unregister());
+
+  function modalShown(): boolean {
+    return screen.queryByRole('dialog') !== null;
+  }
+
+  it('opens a chat link in place, through the router, with no confirm', () => {
+    render(
+      <MarkdownContent content="See [Rooms: always answer people](/session?session=abc-123)" />
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Rooms: always answer people' }));
+
+    expect(navigated).toEqual([{ href: '/session?session=abc-123', replace: undefined }]);
+    expect(modalShown()).toBe(false);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('opens an absolute link at our own origin in place too', () => {
+    const href = `${window.location.origin}/session?session=abc-123`;
+    render(<MarkdownLink href={href}>the chat</MarkdownLink>);
+
+    fireEvent.click(screen.getByRole('link', { name: 'the chat' }));
+
+    expect(navigated).toEqual([{ href: '/session?session=abc-123', replace: undefined }]);
+    expect(modalShown()).toBe(false);
+  });
+
+  it.each([
+    ['cmd', { metaKey: true }],
+    ['ctrl', { ctrlKey: true }],
+  ])('opens it in a new tab on %s-click, with no confirm', (_key, modifier) => {
+    render(<MarkdownContent content="See [the chat](/session?session=abc-123)" />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'the chat' }), modifier);
+
+    expect(navigated).toEqual([]);
+    expect(openSpy).toHaveBeenCalledWith(
+      `${window.location.origin}/session?session=abc-123`,
+      '_blank'
+    );
+    expect(modalShown()).toBe(false);
+  });
+
+  it('still confirms an external link', () => {
+    render(<MarkdownContent content="Read [the docs](https://dorkos.ai/docs)" />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'the docs' }));
+
+    expect(modalShown()).toBe(true);
+    expect(navigated).toEqual([]);
+  });
+
+  it.each([
+    ['an API path', '/api/sessions'],
+    ['a path that normalises onto the API', '/session/../api/sessions'],
+    ['a protocol-relative host', '//evil.example/session?session=abc'],
+    ['an extension page', '/x/some-extension/page'],
+    ['a launch link that would send as you', '/session?agentId=a&prompt=delete%20it&send=1'],
+  ])('still confirms a crafted relative link: %s', (_label, href) => {
+    render(<MarkdownLink href={href}>crafted</MarkdownLink>);
+
+    fireEvent.click(screen.getByRole('link', { name: 'crafted' }));
+
+    expect(modalShown()).toBe(true);
+    expect(navigated).toEqual([]);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('never hands a launch link to the browser on cmd-click, even absolute', () => {
+    const href = `${window.location.origin}/session?agentId=a&prompt=hi&send=1`;
+    render(<MarkdownLink href={href}>launch</MarkdownLink>);
+
+    fireEvent.click(screen.getByRole('link', { name: 'launch' }), { metaKey: true });
+
+    expect(modalShown()).toBe(true);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('stops a middle click on a launch link, and leaves one on a chat link to the browser', () => {
+    render(
+      <>
+        <MarkdownLink href="/session?agentId=a&prompt=hi&send=1">launch</MarkdownLink>
+        <MarkdownLink href="/session?session=abc">chat</MarkdownLink>
+      </>
+    );
+
+    const launch = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 });
+    screen.getByRole('link', { name: 'launch' }).dispatchEvent(launch);
+    const chat = new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 });
+    screen.getByRole('link', { name: 'chat' }).dispatchEvent(chat);
+
+    expect(launch.defaultPrevented).toBe(true);
+    expect(chat.defaultPrevented).toBe(false);
   });
 });

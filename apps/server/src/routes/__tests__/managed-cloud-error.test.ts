@@ -1,19 +1,19 @@
-import type { Response } from 'express';
-import { describe, expect, it, vi } from 'vitest';
+import { Hono } from 'hono';
+import { describe, expect, it } from 'vitest';
 import {
   ManagedConnectorCloudError,
   type ManagedConnectorCloudErrorCode,
 } from '../../services/core/auth/cloud-link-client.js';
-import { sendManagedCloudError } from '../managed-cloud-error.js';
+import { managedCloudErrorResponse } from '../managed-cloud-error.js';
 
-function fakeResponse() {
-  const res = { status: vi.fn(), json: vi.fn() };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+/** Answer one request with whatever the helper makes of `error`, or a 418 when it declines. */
+async function answerFor(error: unknown): Promise<globalThis.Response> {
+  const app = new Hono();
+  app.get('/', (c) => managedCloudErrorResponse(c, error) ?? c.body(null, 418));
+  return app.request('/');
 }
 
-describe('sendManagedCloudError', () => {
+describe('managedCloudErrorResponse', () => {
   const cases: Array<[ManagedConnectorCloudErrorCode, number, string]> = [
     ['unauthorized', 401, 'cloud_link_required'],
     ['permission_upgrade_required', 409, 'cloud_link_needs_update'],
@@ -25,25 +25,19 @@ describe('sendManagedCloudError', () => {
     ['conflict', 502, 'cloud_refused'],
   ];
 
-  it.each(cases)('answers %s with %i %s', (code, status, routeCode) => {
-    const res = fakeResponse();
-    const handled = sendManagedCloudError(
-      res as unknown as Response,
+  it.each(cases)('answers %s with %i %s', async (code, status, routeCode) => {
+    const res = await answerFor(
       new ManagedConnectorCloudError(code, { status: 500, reason: 'PRIVATE_REASON' })
     );
-    expect(handled).toBe(true);
-    expect(res.status).toHaveBeenCalledWith(status);
-    const body = res.json.mock.calls[0][0] as { error: string; code: string };
+    expect(res.status).toBe(status);
+    const body = (await res.json()) as { error: string; code: string };
     expect(body.code).toBe(routeCode);
     expect(body.error.length).toBeGreaterThan(0);
     expect(JSON.stringify(body)).not.toContain('PRIVATE_REASON');
   });
 
-  it('leaves any other error to the caller and touches nothing', () => {
-    const res = fakeResponse();
-    expect(sendManagedCloudError(res as unknown as Response, new Error('other'))).toBe(false);
-    expect(sendManagedCloudError(res as unknown as Response, undefined)).toBe(false);
-    expect(res.status).not.toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalled();
+  it('leaves any other error to the caller and answers nothing', async () => {
+    expect((await answerFor(new Error('other'))).status).toBe(418);
+    expect((await answerFor(undefined)).status).toBe(418);
   });
 });

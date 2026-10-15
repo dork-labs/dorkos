@@ -37,7 +37,6 @@ import type {
   PermissionServiceDeps,
 } from './permission-service.js';
 import {
-  AUTONOMY_ACK_MESSAGE,
   PermissionError,
   compact,
   isArrivalScreenLine,
@@ -91,9 +90,6 @@ export interface UndoContext {
  *   secrets): such a key is left alone and reported as `floor`, `force` or
  *   not. A change made outside DorkOS may have recorded such a value; putting
  *   it back would be a widening no door of DorkOS accepts;
- * - move Files & commands to Full autonomy without the acknowledgement on
- *   file (or sent with it): refused with 428 before anything is written, the
- *   same consent door every other write passes;
  * - run for anyone but a person: the route clears the person bars first, so
  *   an agent cannot use Undo to widen its own permissions, and a change an
  *   agent's settings file made outside DorkOS can only be undone by a person.
@@ -103,17 +99,16 @@ export interface UndoContext {
  *
  * @param ctx - The service's dependencies and the helpers it lends.
  * @param eventId - The `permission.changed` event to undo.
- * @param input - `force` to set back keys that changed since, and the Full
- *   autonomy acknowledgement when the Undo needs it.
+ * @param input - `force` to set back keys that changed since.
  * @param writer - Who is undoing it.
  * @returns What the Undo changed, and what it left alone.
  * @throws {PermissionError} `UNKNOWN_EVENT` (404), `NOT_UNDOABLE` (409),
- *   `UNDO_CONFLICT` (409, with `conflicts`), `AUTONOMY_ACK_REQUIRED` (428).
+ *   `UNDO_CONFLICT` (409, with `conflicts`).
  */
 export async function undoPermissionChange(
   ctx: UndoContext,
   eventId: string,
-  input: { force?: boolean; acknowledgeAutonomy?: boolean },
+  input: { force?: boolean },
   writer: PermissionWriter
 ): Promise<UndoPermissionChangeResponse> {
   const { deps, actions } = ctx;
@@ -162,7 +157,6 @@ export async function undoPermissionChange(
     );
   }
   const force = input.force === true;
-  const acknowledge = input.acknowledgeAutonomy === true;
 
   const config = deps.config.get();
   const stops = deps.config.trustStops();
@@ -315,21 +309,6 @@ export async function undoPermissionChange(
     }
   }
 
-  // The consent door, before anything is written.
-  const toAutonomy =
-    (globalStop === 'autonomy' && stops.global !== 'autonomy') ||
-    [...runtimeStops].some(
-      ([rt, stop]) => stop === 'autonomy' && stops.perRuntime[rt] !== 'autonomy'
-    ) ||
-    [...agentNext].some(
-      ([id, next]) =>
-        next.filesAndCommands === 'autonomy' &&
-        storedByAgent.get(id)?.filesAndCommands !== 'autonomy'
-    );
-  if (toAutonomy && !acknowledge && !deps.config.hasAutonomyAck()) {
-    throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
-  }
-
   // The changes this Undo actually makes, current → restored.
   const changes: PermissionChange[] = [];
   const diffRecord = (
@@ -422,11 +401,8 @@ export async function undoPermissionChange(
       (c) => c.target.kind === 'default' && (c.key.kind === 'area' || c.key.kind === 'action')
     );
   if (configMoved) deps.config.set({ ...config, preset, defaults });
-  // The acknowledgement lands before any stop, so no reader can catch Full
-  // autonomy without the consent that licenses it.
-  if (acknowledge && toAutonomy) deps.config.recordAutonomyAck();
   if (globalStop !== undefined && globalStop !== stops.global) {
-    deps.config.setGlobalTrustStop(globalStop, false);
+    deps.config.setGlobalTrustStop(globalStop);
   }
   for (const [runtime, stop] of runtimeStops) {
     if ((stops.perRuntime[runtime] ?? null) !== stop)

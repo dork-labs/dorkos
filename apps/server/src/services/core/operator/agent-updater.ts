@@ -21,10 +21,11 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
-import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
 import {
   composeSoulFile,
   CONVENTION_FILES,
+  HEARTBEAT_MAX_CHARS,
   MEMORY_MAX_CHARS,
   NOPE_MAX_CHARS,
   soulProseBudget,
@@ -36,6 +37,13 @@ import {
   findOperatorOnlyAgentPaths,
   NESTED_AGENT_FIELDS,
 } from './agent-write-policy.js';
+import {
+  canonicalReportsTo,
+  checkReportsToWrite,
+  recordReportsToChange,
+  type ReportsToMesh,
+} from '../../heartbeats/reports-to-writes.js';
+import { recordHeartbeatConfigChange } from '../../heartbeats/heartbeat-file.js';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -51,7 +59,12 @@ const SYSTEM_PROTECTED_FIELDS = ['displayName', 'description', 'isSystem'] as co
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
-  'VALIDATION' | 'NOT_FOUND' | 'SYSTEM_PROTECTED' | 'OPERATOR_ONLY' | 'UNSUPPORTED_MODEL';
+  | 'VALIDATION'
+  | 'NOT_FOUND'
+  | 'SYSTEM_PROTECTED'
+  | 'OPERATOR_ONLY'
+  | 'UNSUPPORTED_MODEL'
+  | 'REPORTS_TO_CYCLE';
 
 /**
  * Typed failure from {@link updateAgentManifest}. Callers translate `code` into
@@ -134,6 +147,7 @@ function conventionRefusal(error: z.ZodError): string {
     soulContent: { file: CONVENTION_FILES.soul, max: SOUL_MAX_CHARS },
     nopeContent: { file: CONVENTION_FILES.nope, max: NOPE_MAX_CHARS },
     memoryContent: { file: CONVENTION_FILES.memory, max: MEMORY_MAX_CHARS },
+    heartbeatContent: { file: CONVENTION_FILES.heartbeat, max: HEARTBEAT_MAX_CHARS },
   };
 
   const issue = error.issues.find(
@@ -209,8 +223,11 @@ function mergedFieldValue(
   };
 }
 
-/** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
-interface MeshSyncLike {
+/**
+ * Minimal MeshCore surface: the post-write DB sync (ADR-0043), and the agent
+ * lookup the reports-to chain is walked through when a patch names `reportsTo`.
+ */
+interface MeshSyncLike extends Partial<ReportsToMesh> {
   syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
 }
 
@@ -221,7 +238,7 @@ interface MeshSyncLike {
  * ({@link AGENT_WRITE_POLICY}), schema validation, existence, the tier-ceiling
  * direction check, and the system-agent identity protections.
  * `soulContent`/`nopeContent`/
- * `memoryContent` are written to their convention files — `SOUL.md` composed
+ * `memoryContent`/`heartbeatContent` are written to their convention files — `SOUL.md` composed
  * around the personality block DorkOS owns rather than stored as sent
  * ({@link composeSoulFile}); remaining fields merge into `agent.json`
  * with `null` meaning "clear this field" (JSON can't carry `undefined`), and a
@@ -299,6 +316,15 @@ export async function updateAgentManifest(opts: {
         `Cannot modify ${blockedFields.join(', ')} on system agents`
       );
     }
+  }
+
+  // Who it reports to must be someone who exists, and must not close a loop:
+  // every chain ends at a person (spec `heartbeats` §4.1). Checked against the
+  // mesh mirror before anything is written.
+  if ('reportsTo' in rawBody) {
+    const refusal = checkReportsToWrite(meshCore, existing.id, parsed.data.reportsTo ?? null);
+    if (refusal) throw new AgentUpdateError(refusal.code, refusal.message);
+    parsed.data.reportsTo = canonicalReportsTo(meshCore, parsed.data.reportsTo ?? null);
   }
 
   // An agent on DorkOS credits names a model credits serve (DOR-2636), on this
@@ -416,6 +442,22 @@ export async function updateAgentManifest(opts: {
   if (conventionUpdates.memoryContent !== undefined) {
     await writeConventionFile(agentPath, CONVENTION_FILES.memory, conventionUpdates.memoryContent);
   }
+  // HEARTBEAT.md (spec `heartbeats` §2): act, then tell. The edit takes effect
+  // at the agent's next beat, which reads the file fresh; the record carries
+  // the frontmatter's field diff so anyone can see how its rhythm changed.
+  if (conventionUpdates.heartbeatContent !== undefined) {
+    const before = await readConventionFile(agentPath, CONVENTION_FILES.heartbeat);
+    await writeConventionFile(
+      agentPath,
+      CONVENTION_FILES.heartbeat,
+      conventionUpdates.heartbeatContent
+    );
+    recordHeartbeatConfigChange(
+      { id: existing.id, name: existing.displayName ?? existing.name },
+      before,
+      conventionUpdates.heartbeatContent
+    );
+  }
 
   // A write that names the runtime, model or effort runs through the observer
   // of outside changes, so DorkOS's own change is never reported as one, and an
@@ -429,6 +471,10 @@ export async function updateAgentManifest(opts: {
     await meshCore?.syncFromDisk(agentPath);
   } catch {
     /* non-fatal */
+  }
+
+  if ('reportsTo' in rawBody) {
+    recordReportsToChange(existing, existing.reportsTo ?? null, updated.reportsTo ?? null);
   }
 
   return updated;

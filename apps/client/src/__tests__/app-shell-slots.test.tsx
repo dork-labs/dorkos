@@ -312,6 +312,11 @@ vi.mock('@/layers/entities/attention', async () => ({
   // Nothing waiting on anybody, and nothing on its way out: the tray and the
   // pill both read these now.
   usePendingInteractions: () => ({ interactions: [], isLoading: false }),
+  // A chat tab observes this cache for its prompt's words (DOR-2820).
+  pendingInteractionsQueryOptions: () => ({
+    queryKey: ['pending-interactions'],
+    queryFn: () => Promise.resolve({ interactions: [] }),
+  }),
   useSettlingAsks: () => [],
   useAskAgentNames: () => ({}),
   usePendingApprovals: () => ({
@@ -390,7 +395,10 @@ vi.mock('@/layers/features/onboarding', () => ({
 
 // ── Mock entity hooks ──
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // The real stores: the window title and tab strip read live status off them
+  // (DOR-2820), and an empty store reads idle.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessionId: () => [null, vi.fn()] as const,
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
@@ -402,14 +410,12 @@ vi.mock('@/layers/entities/session', () => ({
   // The session bar's title, read from the shared session cache. No active
   // session here, so the query is disabled and there is nothing to report.
   useSessionDetail: () => ({ data: undefined }),
-  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
-  // a shell-level isolation test, so every tab reads idle.
-  useSessionBorderState: () => ({
-    kind: 'idle',
-    color: 'transparent',
-    pulse: false,
-    label: 'Idle',
-  }),
+  // A chat tab finds its folder and title through these (DOR-2820). No chat is
+  // open in this isolation test.
+  useSessionRow: () => ({ data: undefined }),
+  useSessionRouteContext: () => undefined,
+  usePendingSessionTarget: () => null,
+  sessionDisplayTitle: (title: string) => title,
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {
@@ -422,7 +428,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
 });
 
 // AppShell mounts useCommandsSync (UX-12), useBindingsSync, useRelayAdaptersSync,
-// useUnattendedAutonomySync, and usePulseFreshness — each subscribes via the
+// and usePulseFreshness — each subscribes via the
 // event stream and so needs an EventStreamProvider. This slot test isolates AppShell and provides no such
 // provider, so no-op the subscriptions here.
 // The live extension-tools subscriber (DOR-2685) reads the event stream this
@@ -491,14 +497,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   };
 });
 
-vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/unattended-autonomy')>();
-  return {
-    ...actual,
-    useUnattendedAutonomySync: () => {},
-  };
-});
-
 // The keep-awake status sync (spec `keep-awake`) subscribes to the event stream
 // too; no-op it like the other syncs.
 vi.mock('@/layers/entities/keep-awake', async (importOriginal) => ({
@@ -549,9 +547,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       sidebarOpen: true,
       setSidebarOpen: vi.fn(),
       isStreaming: false,
-      activeForm: null,
       isWaitingForUser: false,
-      tasksBadgeCount: 0,
       onboardingHiddenForSession: false,
       setOnboardingHiddenForSession: vi.fn(),
       // The moments rail's launch latch. Stable references, because the real

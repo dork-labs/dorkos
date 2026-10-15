@@ -15,6 +15,10 @@ import { agents, authors, eq, type Db } from '@dorkos/db';
 import { AgentRegistry, toManifest } from '@dorkos/mesh';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { AuthorRegistry } from '../../rooms/author-registry.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
+import { AuditLog } from '../../audit/audit-log.js';
+import { AccountIds } from '../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import {
   aggregateTeamRoster,
   type TeamAgentSource,
@@ -801,6 +805,41 @@ describe('aggregateTeamRoster', () => {
       });
       expect(self?.person?.nameSuggestedBy).toBeNull();
       expect(self?.person && 'nameSuggestedBy' in self.person).toBe(true);
+    });
+
+    it('carries the owner’s account id, and whether the viewer is the owner (DOR-2788)', async () => {
+      // What a client needs to save "reports to you" and to say "You" only to
+      // the owner (spec `heartbeats` §4.1).
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({
+          db,
+          installId: 'i1',
+          readOwnerAccount: () => ({ id: 'acct-owner', name: 'Dorian' }),
+        }),
+      });
+      try {
+        const asOwner = await runWithAuditActor(
+          { actor: { accountId: 'acct-owner', kind: 'person', name: 'Dorian' }, surface: 'app' },
+          () => selfRow({})
+        );
+        expect(asOwner?.person).toMatchObject({ accountId: 'acct-owner', isViewer: true });
+
+        const asSomeoneElse = await runWithAuditActor(
+          { actor: { accountId: 'acct-priya', kind: 'person', name: 'Priya' }, surface: 'app' },
+          () => selfRow({})
+        );
+        expect(asSomeoneElse?.person).toMatchObject({ accountId: 'acct-owner', isViewer: false });
+
+        const asAgent = await runWithAuditActor(
+          { actor: { accountId: '01AGENT', kind: 'agent', name: 'Juno' }, surface: 'mcp' },
+          () => selfRow({})
+        );
+        expect(asAgent?.person?.isViewer).toBe(false);
+      } finally {
+        resetAuditTrail();
+      }
     });
 
     it('says nothing about a name the person saved themselves', async () => {

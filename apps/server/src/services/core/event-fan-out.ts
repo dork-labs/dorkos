@@ -136,7 +136,7 @@ class EventFanOut {
    *   would be a silent allow for the next stream somebody adds, which is the
    *   argument `UpgradeRoute.credential` already makes — the gate gets tested,
    *   the WIRING of it does not. Both transports read it from the same
-   *   `res.locals`-shaped facts through `readCallerPrincipal`.
+   *   request facts through `readCallerPrincipal`.
    */
   addClient(client: FanOutClient, principal: CallerPrincipal): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {
@@ -266,18 +266,24 @@ class EventFanOut {
    * @param full - The payload for entitled connections.
    * @param redacted - The payload for everybody else.
    * @param entitled - Which connections may have the full one.
+   * @param audience - Which connections get either rendering; omitted means
+   *   every one of them.
    */
   broadcastRedacted(
     eventName: string,
     full: unknown,
     redacted: unknown,
-    entitled: BroadcastAudience
+    entitled: BroadcastAudience,
+    audience: BroadcastAudience = () => true
   ): void {
     this.notifyListeners(eventName, full);
-    this.writeToClients(() => encodeBroadcast(eventName, full), entitled);
+    this.writeToClients(
+      () => encodeBroadcast(eventName, full),
+      (principal) => audience(principal) && entitled(principal)
+    );
     this.writeToClients(
       () => encodeBroadcast(eventName, redacted),
-      (principal) => !entitled(principal)
+      (principal) => audience(principal) && !entitled(principal)
     );
   }
 

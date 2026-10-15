@@ -24,7 +24,8 @@ import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
-import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { AGENT_FILE_INPUTS } from './agent-file-inputs.js';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
@@ -421,7 +422,11 @@ export const operatorDomain: CapabilityDomain = {
       title: 'Update agent',
       description:
         "Edit an agent's manifest and personality: displayName, description, persona, personaEnabled, " +
-        'traits, conventions, color, icon, and SOUL.md (soulContent) content. ' +
+        'traits, conventions, color, icon, reportsTo, SOUL.md (soulContent) and HEARTBEAT.md ' +
+        '(heartbeatContent) content. ' +
+        'reportsTo is who the agent reports to: an agent id, or a person’s account id; null returns ' +
+        'it to the default (whoever created it, then the owner). A change that would make a loop is ' +
+        'refused with REPORTS_TO_CYCLE. ' +
         'What an agent is allowed to do is not changed here: ask with the tool whose name ends ' +
         'in `change_permission`. ' +
         // The other tool is named as a searchable ENDING, never bare: this same
@@ -485,25 +490,17 @@ export const operatorDomain: CapabilityDomain = {
           .describe('Which convention files are injected'),
         color: z.string().nullable().optional().describe('Accent color (null clears it)'),
         icon: z.string().nullable().optional().describe('Icon name (null clears it)'),
-        // Says what DorkOS does with it, because the honest answer is not "we
-        // store this". The personality block at the top of SOUL.md is rendered
-        // from `traits` and fenced by markers the turn regenerates in place; a
-        // file saved without them has no block to regenerate, so the six dials
-        // stop reaching the agent entirely. The server composes the file around
-        // that block either way (`agent-updater.ts`), and this sentence is what
-        // keeps a caller from spending its budget reproducing a block it does
-        // not own. Found by the `agent-self-edit` eval, 2026-09-12.
-        soulContent: z
+        reportsTo: z
           .string()
-          .max(SOUL_MAX_CHARS)
+          .min(1)
+          .nullable()
           .optional()
           .describe(
-            'SOUL.md: who this agent is, in prose. Send the prose only — DorkOS keeps the ' +
-              'personality block at the top of the file and writes it from `traits`. That block ' +
-              `spends several hundred of the ${SOUL_MAX_CHARS.toLocaleString('en-US')}-character ` +
-              'file budget, so your text has a few hundred less than that; a refusal names the ' +
-              'exact number for this agent.'
+            'Who this agent reports to: an agent id, or a person’s account id. null clears it, ' +
+              'back to whoever created it, then the owner. A loop is refused.'
           ),
+        // SOUL.md and HEARTBEAT.md, the two convention files an agent writes here.
+        ...AGENT_FILE_INPUTS,
         // Retired (spec `agent-permissions`): what an agent may do is its
         // permissions now. Declared only so an old caller that still sends it is
         // REFUSED with a pointer rather than stripped in silence, which would let

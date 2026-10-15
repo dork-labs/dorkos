@@ -27,10 +27,11 @@
  *   {@link TemplateNeedsReviewError} with the inspection, and the retry carries
  *   the content hash it was shown. Their own template is theirs to use, so it
  *   is disclosed, not refused.
- * - **Anyone else** (an agent) ({@link cardTemplateGate}) always gets an
- *   approval card listing everything the template brings, bound to its bytes
- *   and the folder it lands in. An agent may not create another agent whose
- *   sessions run a template's hooks without a person seeing them.
+ * - **Anyone else** (an agent) ({@link cardTemplateGate}) gets an approval card
+ *   listing everything the template brings, bound to its bytes and the folder
+ *   it lands in. An agent may not create another agent whose sessions run a
+ *   template's hooks without a person seeing them. Under Trusted, a built-in
+ *   template that brings nothing that runs on its own lands without one.
  *
  * `createAgentWorkspace` refuses a template with no gate at all, so no caller
  * can skip this by forgetting it.
@@ -309,6 +310,15 @@ export interface CardTemplateGateOptions {
   confirmationToken?: string;
   /** Who asked, for the card. */
   requestedBy?: string;
+  /**
+   * The template comes from a source the install already trusts and the agent
+   * may create agents without asking (Trusted, its Other agents area Allowed;
+   * ADR `261006-225605`). A template that brings nothing that runs on its own
+   * then lands without a card, as an agent package from a configured source
+   * installs without one. One that brings hooks, settings or skill effects
+   * still gets the card.
+   */
+  trustedSource?: boolean;
 }
 
 /**
@@ -336,14 +346,17 @@ function cardRequestOf(
 }
 
 /**
- * The gate for anyone who is not a person at this machine: always an approval
- * card, listing everything the template brings, whether or not it brings
- * anything (its instructions shape the new agent too).
+ * The gate for anyone who is not a person at this machine: an approval card,
+ * listing everything the template brings, whether or not it brings anything
+ * (its instructions shape the new agent too). The one exception is a template
+ * from a trusted source that brings nothing that runs on its own
+ * ({@link CardTemplateGateOptions.trustedSource}).
  *
  * @param opts - The provider and what the card binds.
  */
 export function cardTemplateGate(opts: CardTemplateGateOptions): TemplateGate {
   return async (inspection) => {
+    if (opts.trustedSource && !templateBringsAnything(inspection)) return;
     if (!opts.provider) {
       throw new TemplateDeclinedError(
         'Creating an agent from a template needs a person’s approval, and approvals are not ' +

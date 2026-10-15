@@ -4,6 +4,7 @@ import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-sch
 import type { EffortLevel } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { CHOSEN_BY_DORKOS } from '@dorkos/shared/runtime-connect';
 import {
   agentRunsOnCredits,
   cn,
@@ -280,6 +281,9 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const creditsMenu = onCredits && (models ?? []).some((m) => m.paidFromCredits);
   const suggestedModel = creditsMenu ? (models ?? []).find((m) => m.isDefault) : undefined;
   const effectiveModel = agent.model ?? serverDefaultModel ?? suggestedModel?.value ?? null;
+  // On DorkOS's own engine on credits, nothing chosen (no agent model, no
+  // `runtimes.doe.defaultModel`) is DorkOS choosing, and the row says so.
+  const chosenByDorkos = runtime === 'doe' && creditsMenu && !modelIsSetHere && !serverDefaultModel;
   const selectedModel = effectiveModel
     ? (models ?? []).find((m) => m.value === effectiveModel)
     : undefined;
@@ -454,7 +458,11 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
         <ExecutionRow
           label="Model"
           valueLabel={
-            selectedModel?.displayName ?? effectiveModel ?? (creditsMenu ? 'Default' : 'Automatic')
+            chosenByDorkos
+              ? CHOSEN_BY_DORKOS
+              : (selectedModel?.displayName ??
+                effectiveModel ??
+                (creditsMenu ? 'Default' : 'Automatic'))
           }
           options={[
             ...(models ?? []).map((m) => ({
@@ -472,11 +480,13 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           testId="agent-model-row"
           describedBy={catalogIsUnverified ? unverifiedNoticeId : undefined}
           inheritText={
-            creditsMenu && !serverDefaultModel
-              ? suggestedModel
-                ? `Use the suggested model: ${suggestedModel.displayName}`
-                : 'Use the default model'
-              : undefined
+            chosenByDorkos
+              ? CHOSEN_BY_DORKOS
+              : creditsMenu && !serverDefaultModel
+                ? suggestedModel
+                  ? `Use the suggested model: ${suggestedModel.displayName}`
+                  : 'Use the default model'
+                : undefined
           }
         />
         {catalogIsUnverified && <UnverifiedCatalogNotice id={unverifiedNoticeId} />}

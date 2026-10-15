@@ -48,6 +48,7 @@
  *
  * @module services/core/safe-defaults/default-verdicts
  */
+import { CLOUD_REMOTE_SAFE_DEFAULTS } from '../remote/remote-config-policy.js';
 
 /**
  * What a config default does on the safety axis. See the module docs for the
@@ -127,19 +128,27 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
   'ui.composer.richText',
-  // The power-door answer, both halves (spec `full-power-defaults`, D1). Records
-  // of an ANSWER and nothing more: they send nothing off the machine, grant no
-  // capability, and no gate reads them. That is what separates them from
-  // `ui.autonomyAcknowledgedAt` next door, which is classified `safe` because the
-  // server's autonomy gate really does read it — a value there decides whether a
-  // 428 is raised, and a value here decides whether a modal is shown. A wipe that
-  // lands both back on `null` simply puts the question again, which is the right
-  // outcome and costs one dialog.
-  'ui.fullPowerDecidedAt',
-  'ui.fullPowerChoice',
+  // Where each mini app's tab shows. An empty list means every tab follows its
+  // mini app's own default; nothing here grants anything.
+  'ui.panelTabs[].tab',
+  'ui.panelTabs[].show.agents',
+  'ui.panelTabs[].show.rooms',
+  'ui.panelTabs[].show.pages',
+  'ui.panelTabs[].hide.agents',
+  'ui.panelTabs[].hide.rooms',
+  'ui.panelTabs[].hide.pages',
+  // When the person saw the "agents now work without asking" notice. It gates
+  // that notice and nothing else: no capability, no bound, nothing sent. A wipe
+  // that lands it back on `null` shows the notice once more.
+  'ui.trustNoticeSeenAt',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',
+  // Bookkeeping for the once-per-install Trusted defaults outside config.json
+  // (`services/mesh/seed-open-mesh.ts`). It grants nothing itself: the stores it
+  // records are argued where they live, and a wipe that clears it re-applies
+  // the same defaults a fresh install gets.
+  'permissions.trustedStoresAppliedAt',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -186,6 +195,13 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'onboarding.dismissedAt',
   'onboarding.completedAt',
   'onboarding.runtimeDefaultSetAt',
+  // The first-run path, the welcome entry and the runtime to undo to (spec
+  // `one-minute-onboarding` §7). Each defaults to `null`, which picks nothing,
+  // posts nothing and arms nothing: credits are recorded only after a person
+  // picked the DorkOS path AND a new link was approved.
+  'onboarding.firstRunPath',
+  'onboarding.welcomeEntryId',
+  'onboarding.priorRuntime',
   'tours.seen',
   'tours.declined',
   // The user profile (spec user-profile-onboarding): empty/null defaults send
@@ -206,6 +222,14 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
   'profile.identityPromptDismissedAt',
+  // Zone, hours and away (spec `heartbeats` §3.5): `null` means "not told yet",
+  // Monday to Friday 9 to 5, and "here". None guards, sends or bounds anything.
+  'profile.timezone',
+  'profile.workingHours.days',
+  'profile.workingHours.start',
+  'profile.workingHours.end',
+  'profile.away.until',
+  'profile.away.note',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',
@@ -279,6 +303,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'runtimes.opencode.defaultModel',
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
+  // A model preference, never a payer: the credits ladder still decides who
+  // pays, and `null` lets DorkOS pick (ADR 261010-143211).
+  'runtimes.doe.defaultModel',
   'runtimes.opencode.enabled',
   // Admission alone sends nothing: Doe requires an explicit inference choice.
   'runtimes.doe.enabled',
@@ -304,17 +331,22 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
-  // No permission preset chosen: every action keeps exactly the behavior it had
-  // before permissions existed, which grants nothing new (Rooms stays Blocked),
-  // and the person's own defaults start empty (spec `agent-permissions`).
-  'permissions.preset': null,
+  // The person's own changes on top of the preset start empty: nothing is added
+  // to what the preset says (spec `agent-permissions`). The preset itself is
+  // argued in PERMISSIVE_DEFAULTS, and an Ask or Blocked entry a person added
+  // carries across a wipe (PROTECTIVE_CARRYOVERS).
   'permissions.defaults.areas': {},
   'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
   'browser.enabled': false,
+  // The computer experiment is off until a person enables it.
+  'computers.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
+  // No official space until a release or a person names one (spec
+  // `official-community-space` D4).
+  'spaces.official.url': '',
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
   // reach the ones inside it until a person opens that door (DOR-1304).
   'a2a.enabled': false,
@@ -358,9 +390,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.lateReplyCeilingMinutes': 60,
   // The engaged window's two ceilings. Both ARE bounds: they are what stops
   // `engaged` becoming `always` with extra steps, and a person can set either
-  // lower.
-  'rooms.engagedWindowMinutes': 10,
-  'rooms.engagedWindowPosts': 5,
+  // lower. Raised to 60 and 15 by DOR-2823: people expect an answer to a reply
+  // an hour later, and agents talking to each other stay at the old 10 and 5
+  // whatever these say (`AGENT_POST_WINDOW`), so the longer values only reach a
+  // person's own conversation.
+  'rooms.engagedWindowMinutes': 60,
+  'rooms.engagedWindowPosts': 15,
   // The collect window's two ceilings (room-participation spec §10.4). Both are
   // bounds on how many turns a burst of messages costs — a pause of zero and a
   // cap of one would be one turn per message — so the shipped values are the
@@ -368,14 +403,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.collectDebounceMs': 500,
   'rooms.collectMaxEntries': 20,
   'rooms.responseGate': 'routing',
-  // How many messages one agent may post into a room inside one turn. A real
-  // bound — there was none before it — and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxPostsPerTurn': 3,
-  // How many times one agent may change a room's shared canvas inside one turn.
-  // A real bound of the same kind, and the tightest a person might want is
-  // lower, which is why it carries.
-  'rooms.maxCanvasOpsPerTurn': 3,
   // How many conversations one agent may work in at once. A bound that starts
   // on — well short of the six writers per folder DOR-500 measured as damaging —
   // and the tightest a person might want is `1`, which is why it carries.
@@ -460,23 +487,13 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.doe.inference.credentialEndpoint': undefined,
 
   providers: {},
-  // No standing answer to "how much may a new session do without asking", so
-  // every runtime keeps its own default — and no shipped runtime defaults to a
-  // stop that stops asking (pinned across the whole set by
-  // `services/runtimes/__tests__/permission-semantics.test.ts`). `null` is
-  // therefore the protective value on a real axis: the permissive one is
-  // reachable here, it is `'autonomy'`, and it takes a person and a consent
-  // dialog to write (spec `trust-dial`, decision 6).
-  'runtimes.defaultTrustStop': null,
+  // One runtime's own stop. `null` adds nothing of its own: the runtime follows
+  // `runtimes.defaultTrustStop`, which is argued in PERMISSIVE_DEFAULTS. A person
+  // who set one runtime to Ask keeps it across a wipe (PROTECTIVE_CARRYOVERS).
   'runtimes.claudeCode.defaultTrustStop': null,
   'runtimes.codex.defaultTrustStop': null,
   'runtimes.opencode.defaultTrustStop': null,
   'runtimes.doe.defaultTrustStop': null,
-  // Nobody has been told what Full autonomy means, so DorkOS still tells them:
-  // `null` is the value that keeps the door asking. A wipe landing here is the
-  // right outcome — losing a consent record only costs one dialog, while keeping
-  // one through a reset would silence a question nobody re-answered.
-  'ui.autonomyAcknowledgedAt': null,
   // No account link, so no identity leaves the machine.
   'cloud.instanceToken': null,
   'cloud.instanceName': null,
@@ -489,7 +506,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.credits.offer': 'none',
   // No agent allowed onto credits, and no account the choices belong to yet.
   'cloud.credits.agents': [],
+  // No beat's cheap check runs on credits until a person answers the offer (spec `heartbeats` §6.3).
+  'heartbeats.triageOnCredits': null,
   'cloud.credits.linkedTo': null,
+  // Managed remote access starts off, with no consent, link or credential (DOR-2086).
+  ...CLOUD_REMOTE_SAFE_DEFAULTS,
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
@@ -513,6 +534,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: {},
     reason:
       'No project limits which accounts it may use by default, which is how every project behaved before account rules existed (spec `flow-multiproject` §8). A list a person sets for a project narrows which credentials work there, so it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'heartbeats.enabled': {
+    value: true,
+    reason:
+      'Agents wake on their own by default (spec `heartbeats` §3.6, PRINCIPLES "proactive co-workers"), but only an agent whose HEARTBEAT.md asks for timed beats runs a turn on a timer; the rest wake on events, and a beat that finds nothing runs no model. Every beat is in the record, and one switch turns them all off.',
   },
   'auth.enabled': {
     value: false,
@@ -571,6 +597,17 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'A warm agent holds a process open between messages — the same executable, the same permissions, the same per-dispatch boundary check — so nothing about what it may DO changes and no gate is relaxed. It is listed here rather than as `no-risk` because it does spend something on its own: memory, up to about 1 GB per warm agent. That is bounded in code rather than by this leaf (at most twelve stay warm, and the idle reaper closes the rest), and turning it back off is one switch away: the `Warm agents` row in the Control Center (#1209), which is where the control that left Settings → Experiments now lives.',
+  },
+  // Trusted by default (DOR-2739). Both are one decision, argued once each.
+  'permissions.preset': {
+    value: 'trusted',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). Safety limits and Reach & secrets still ask, and the Careful preset turns asking back on everywhere at once; a Careful choice carries across a wipe (PROTECTIVE_CARRYOVERS).',
+  },
+  'runtimes.defaultTrustStop': {
+    value: 'autonomy',
+    reason:
+      'ADR 261006-225605: in-circle capability defaults to full power; every use is recorded by the audit trail (`audit_events`), and outsider-origin turns seed nothing (`permissionSeedForOrigin`). A new session of our own agents edits files and runs commands without asking; a stop a person set to Ask or Act carries across a wipe (PROTECTIVE_CARRYOVERS).',
   },
   'scheduler.maxConcurrentRuns': {
     value: 4,

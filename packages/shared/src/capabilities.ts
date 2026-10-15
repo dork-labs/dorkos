@@ -34,6 +34,15 @@ export const CAPABILITY_TIERS = ['observe', 'act', 'destructive'] as const;
 /** A capability's permission tier. One of {@link CAPABILITY_TIERS}. */
 export type CapabilityTier = (typeof CAPABILITY_TIERS)[number];
 
+/**
+ * What a destructive action's consent is about, when it is more than the
+ * action itself. `'third-party-code'`: the action puts code someone else wrote
+ * where DorkOS will run it (adding or changing an MCP server's command), so an
+ * area-level Allowed still asks (ADR `261006-225605`). Every other destructive
+ * action runs, recorded, when its area is Allowed.
+ */
+export type ActionConsent = 'third-party-code';
+
 /** The two MCP servers a capability's tool surface can be advertised on. */
 export type McpServerId = 'in-session' | 'external';
 

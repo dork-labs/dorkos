@@ -12,10 +12,11 @@ export { type StreamConnectionOptions } from './ws-connection';
 export {
   StreamManager,
   streamManager,
-  type GenericEventName,
   type DurableStreamConnection,
   type StreamManagerListeners,
 } from './stream-manager';
+export { type GenericEventName } from './generic-events';
+
 export { subscribeDocChannelNotifications } from './doc-channel-notifications';
 export { openOwnedRoomDocStream } from './doc-channel-ownership';
 

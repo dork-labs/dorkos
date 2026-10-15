@@ -2,8 +2,11 @@
 /** Nonissuing sequencing controls. Genuine owner tests remain in frame-admission.test. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
-import { DocChannelFrameResources } from '../model/doc-channel-frame-resources';
-import { prepareDocFrameLoad, attachDocFramePort } from '../model/doc-channel-frame-admission';
+import { DocChannelFrameResources } from '../model/doc-frame/doc-channel-frame-resources';
+import {
+  prepareDocFrameLoad,
+  attachDocFramePort,
+} from '../model/doc-frame/doc-channel-frame-admission';
 afterEach(() => document.body.replaceChildren());
 function observation() {
   const element = document.createElement('iframe');

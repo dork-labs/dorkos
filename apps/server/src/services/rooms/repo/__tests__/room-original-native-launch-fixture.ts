@@ -2,7 +2,8 @@
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express, { type Express } from 'express';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../../../http/api-chain.js';
 import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
@@ -49,13 +50,7 @@ import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js
 import { initBoundary } from '../../../../lib/boundary.js';
 import { env } from '../../../../env.js';
 import { initConfigManager, configManager } from '../../../core/config-manager.js';
-import {
-  initAuth,
-  sessionGate,
-  toNodeHandler,
-  readOwnerAccount,
-  type Auth,
-} from '../../../core/auth/index.js';
+import { initAuth, readOwnerAccount, type Auth } from '../../../core/auth/index.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import {
   createRoomSubsystem,
@@ -89,10 +84,9 @@ import {
   stopInstallationFileWrites,
 } from '../../../canvas/doc-channel/writes/installation-file-writes.js';
 import { createDocChannelHttpComposition } from '../../../canvas/doc-channel/http-composition.js';
-import roomsRouter from '../../../../routes/rooms.js';
-import { resolveAgentIdentity } from '../../../../middleware/agent-identity.js';
-import { auditActor } from '../../../../middleware/audit-actor.js';
-import { errorHandler } from '../../../../middleware/error-handler.js';
+import { composeFrontDoor, type HonoApiDeps } from '../../../../http/hono-api.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../../core/lifecycle/main-request-admission.js';
 
 import {
   withRecognizedInstallationRoomNamespace,
@@ -103,14 +97,14 @@ import {
   afterFailedWrite,
   type RoomWorktreeRefreshTarget,
   type RoomWorktreeRefreshDeps,
-} from '../room-worktree-refresh.js';
+} from '../worktree/room-worktree-refresh.js';
 
 /** Portable public fixture types retain the real constructors and shared native Db. */
 export interface OriginalNativeLaunchFixture {
   dir: string;
   db: Db;
   auth: Auth;
-  app: Express;
+  app: Hono<ApiEnv>;
   server: Server;
   roomId: string;
   subsystem: RoomSubsystem;
@@ -327,10 +321,12 @@ export async function createOriginalNativeLaunchFixture(
     const opened = openServerDatabase(path.join(dir, 'fixture.sqlite'));
     db = opened.db;
     runMigrations(db);
-    const auth = initAuth(db, dir),
-      app = express();
-    app.all('/api/auth/*splat', toNodeHandler(auth));
-    server = createServer(app);
+    const auth = initAuth(db, dir);
+    const admission = new MainRequestAdmission();
+    const sessionDeps: NonNullable<HonoApiDeps['sessions']> = {};
+    const apiDeps: HonoApiDeps = { sessions: sessionDeps };
+    const app = composeFrontDoor(admission, apiDeps);
+    server = createServer(frontDoorListener(app));
     const listening = once(server, 'listening');
     server.listen(0, '127.0.0.1');
     await listening;
@@ -589,12 +585,8 @@ export async function createOriginalNativeLaunchFixture(
       body: { userId: memberId, name: 'genuine-member-control' },
     });
     configManager.set('auth', { ...configManager.get('auth'), enabled: true });
-    app.use(express.json({ limit: '1mb' }));
-    app.use(sessionGate);
-    app.use(resolveAgentIdentity);
-    app.use(auditActor);
-    app.use('/api/rooms', roomsRouter);
-    app.use(errorHandler);
+    apiDeps.docChannel = http;
+    sessionDeps.docChannel = http;
     if (options.seed !== false) {
       const enabled = await request(server!)
         .post(`/api/rooms/${room.id}/repo`)

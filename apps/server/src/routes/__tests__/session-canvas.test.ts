@@ -41,7 +41,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setCanvasService } from '../../services/canvas/index.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -49,10 +49,13 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 /** A real session id — the routes refuse anything that is not a UUID. */
 const SESSION = '0e7270c6-5555-4666-8777-888888888888';
@@ -66,6 +69,15 @@ const open = (url: string, sessionId = SESSION) =>
   request(testServer)
     .post(`/api/sessions/${sessionId}/canvas`)
     .send({ content: urlContent(url) });
+
+// The agent callers below act on agent work, so the session read guard
+// (`routes/session-read-guard.ts`) lets them through to the rule under test.
+beforeEach(() => {
+  initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
+});
+afterEach(() => {
+  resetSessionVisibility();
+});
 
 describe('the session canvas routes', () => {
   let db: Db;

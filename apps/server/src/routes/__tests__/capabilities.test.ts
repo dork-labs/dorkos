@@ -50,6 +50,7 @@ const mockCapabilities = {
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getAllCapabilities: vi.fn(() => ({
       'claude-code': mockCapabilities,
@@ -105,13 +106,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 describe('Capabilities Route', () => {
   beforeEach(() => {

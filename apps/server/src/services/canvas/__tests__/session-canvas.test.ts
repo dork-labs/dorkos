@@ -100,10 +100,8 @@ describe('CanvasService on a session scope', () => {
 
   describe('what a session does NOT have', () => {
     it('has no per-turn ceiling: forty changes in one turn all land', () => {
-      // A room caps this at `rooms.maxCanvasOpsPerTurn` because every change
-      // costs the OTHER members' attention. A session's audience is one person,
-      // who asked for the turn — so the LRU is the only bound it needs, which is
-      // the bound it has always had.
+      // A session's audience is one person, who asked for the turn — so the
+      // LRU is the only bound it needs, which is the bound it has always had.
       for (let n = 0; n < 40; n += 1) {
         const result = applyAsAgent({
           action: 'browser_navigate',

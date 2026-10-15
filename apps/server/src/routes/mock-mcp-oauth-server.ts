@@ -18,7 +18,7 @@
  *                                                    then a normal MCP `initialize` + `tools/list`
  *
  * Gated exactly like `test-control.ts`: mounted only when `DORKOS_TEST_RUNTIME` is
- * set, so none of these paths exist in production. No real vendor and no real
+ * set (`http/hono-api.ts`), so none of these paths exist in production. No real vendor and no real
  * credentials anywhere — the access tokens are minted in-process and validated
  * against an in-memory set.
  *
@@ -43,11 +43,16 @@
  *
  * @module routes/mock-mcp-oauth-server
  */
-import express, { Router, type Request, type Response } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
+import bodyParser from 'body-parser';
+import { Hono, type Context } from 'hono';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
 import { MCP_OAUTH_CALLBACK_PATH } from '../services/mesh/agent-mcp-oauth-service.js';
 
 /** Mount-relative base for the mock's non-discovery (auth + MCP) endpoints. */
@@ -119,9 +124,16 @@ function s256(verifier: string): string {
  * loopback host (the DorkOS OAuth callback is loopback-only), so the metadata we
  * hand back must name that same host — deriving it from the request keeps the
  * discovery, authorize, and token URLs on one consistent origin.
+ *
+ * The scheme trusts one forwarded hop, as the server's `trust proxy, 1` does: a
+ * proxy's `X-Forwarded-Proto` (its first value) wins over the connection's own.
  */
-function mockOrigin(req: Request): string {
-  return `${req.protocol}://${req.get('host')}`;
+function mockOrigin(c: Context<ApiEnv>): string {
+  const { incoming } = c.env;
+  const forwarded = incoming.headers['x-forwarded-proto'];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
+  const encrypted = (incoming.socket as { encrypted?: boolean }).encrypted === true;
+  return `${first || (encrypted ? 'https' : 'http')}://${incoming.headers.host}`;
 }
 
 /** Mint a fresh access token and remember it for the MCP endpoint's bearer gate. */
@@ -149,8 +161,8 @@ function tokenResponseBody(): Record<string, unknown> {
 }
 
 /** The single query parameter `name`, or `''` when absent or repeated. */
-function queryParam(req: Request, name: string): string {
-  const value = req.query[name];
+function queryParam(c: Context<ApiEnv>, name: string): string {
+  const value = readQuery(c)[name];
   return typeof value === 'string' ? value : '';
 }
 
@@ -203,18 +215,18 @@ function buildMockMcpServer(): McpServer {
 }
 
 /** The RFC 9728 protected-resource metadata handler (root + path-suffixed variants). */
-function serveProtectedResourceMetadata(req: Request, res: Response): void {
-  const origin = mockOrigin(req);
-  res.json({
+function serveProtectedResourceMetadata(c: Context<ApiEnv>): Response {
+  const origin = mockOrigin(c);
+  return c.json({
     resource: `${origin}${MOCK_MCP_OAUTH_MCP_PATH}`,
     authorization_servers: [origin],
   });
 }
 
 /** The RFC 8414 authorization-server metadata handler (root + path-suffixed variants). */
-function serveAuthServerMetadata(req: Request, res: Response): void {
-  const origin = mockOrigin(req);
-  res.json({
+function serveAuthServerMetadata(c: Context<ApiEnv>): Response {
+  const origin = mockOrigin(c);
+  return c.json({
     issuer: origin,
     authorization_endpoint: `${origin}${MOCK_MCP_OAUTH_BASE}/authorize`,
     token_endpoint: `${origin}${MOCK_MCP_OAUTH_BASE}/token`,
@@ -228,20 +240,28 @@ function serveAuthServerMetadata(req: Request, res: Response): void {
 
 /**
  * RFC 7591 dynamic client registration → a `client_id` the `/authorize` gate will
- * then accept. The body is JSON, parsed by the app-wide `express.json`.
+ * then accept. The body is JSON, parsed by the chain's body stage.
  */
-function registerClient(req: Request, res: Response): void {
-  const body = (req.body ?? {}) as { redirect_uris?: string[] };
+function registerClient(c: Context<ApiEnv>): Response {
+  const body = readJsonBody(c, { emptyAs: {} }) as { redirect_uris?: string[] };
   const clientId = `mock-client-${randomBytes(6).toString('hex')}`;
   registeredClients.add(clientId);
-  res.status(HTTP_CREATED).json({
-    client_id: clientId,
-    redirect_uris: body.redirect_uris ?? [],
-    token_endpoint_auth_method: 'none',
-    grant_types: ['authorization_code', 'refresh_token'],
-    response_types: ['code'],
-    client_name: 'DorkOS',
-  });
+  return c.json(
+    {
+      client_id: clientId,
+      redirect_uris: body.redirect_uris ?? [],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      client_name: 'DorkOS',
+    },
+    HTTP_CREATED
+  );
+}
+
+/** A refusal in plain words, typed as an HTML page, as it has always been answered. */
+function textAnswer(c: Context<ApiEnv>, text: string, status: 400): Response {
+  return c.body(text, status, { 'Content-Type': 'text/html; charset=utf-8' });
 }
 
 /**
@@ -250,70 +270,80 @@ function registerClient(req: Request, res: Response): void {
  * loopback callback carrying it — the browser never sees a consent screen (like
  * `/api/test/connect-approved`).
  */
-function authorize(req: Request, res: Response): void {
-  const clientId = queryParam(req, 'client_id');
-  const redirectUri = queryParam(req, 'redirect_uri');
+function authorize(c: Context<ApiEnv>): Response {
+  const clientId = queryParam(c, 'client_id');
+  const redirectUri = queryParam(c, 'redirect_uri');
   if (!registeredClients.has(clientId)) {
-    res.status(HTTP_BAD_REQUEST).send('unknown client_id; register through DCR first');
-    return;
+    return textAnswer(c, 'unknown client_id; register through DCR first', HTTP_BAD_REQUEST);
   }
   if (!isLoopbackCallback(redirectUri)) {
-    res.status(HTTP_BAD_REQUEST).send('redirect_uri must be the DorkOS loopback callback');
-    return;
+    return textAnswer(c, 'redirect_uri must be the DorkOS loopback callback', HTTP_BAD_REQUEST);
   }
   const code = randomBytes(16).toString('hex');
   authCodes.set(code, {
-    challenge: queryParam(req, 'code_challenge'),
+    challenge: queryParam(c, 'code_challenge'),
     expiresAt: Date.now() + AUTH_CODE_LIFETIME_MS,
   });
   const dest = new URL(redirectUri);
   dest.searchParams.set('code', code);
-  const state = queryParam(req, 'state');
+  const state = queryParam(c, 'state');
   if (state) dest.searchParams.set('state', state);
-  res.redirect(HTTP_FOUND, dest.toString());
+  const location = dest.toString();
+  // The body a redirect has always carried, for a client that reads it.
+  return c.body(`Found. Redirecting to ${location}`, HTTP_FOUND, {
+    Location: location,
+    'Content-Type': 'text/plain; charset=utf-8',
+  });
 }
 
 /**
  * The `authorization_code` grant: the code must be one this server minted, still
  * unexpired, and matched by the PKCE verifier it was issued against.
  */
-function grantByAuthorizationCode(form: Record<string, string>, res: Response): void {
+function grantByAuthorizationCode(form: Record<string, string>, c: Context<ApiEnv>): Response {
   const code = form.code ?? '';
   const pending = authCodes.get(code);
   authCodes.delete(code); // one-time: a replayed code cannot re-exchange
   const expired = pending !== undefined && pending.expiresAt <= Date.now();
   if (pending === undefined || expired || s256(form.code_verifier ?? '') !== pending.challenge) {
-    res.status(HTTP_BAD_REQUEST).json({ error: 'invalid_grant' });
-    return;
+    return c.json({ error: 'invalid_grant' }, HTTP_BAD_REQUEST);
   }
-  res.json(tokenResponseBody());
+  return c.json(tokenResponseBody());
 }
 
 /**
  * The `refresh_token` grant: the token must be one this server issued, and it is
  * consumed on use so the client has to carry the rotated one forward.
  */
-function grantByRefreshToken(form: Record<string, string>, res: Response): void {
+function grantByRefreshToken(form: Record<string, string>, c: Context<ApiEnv>): Response {
   const presented = form.refresh_token ?? '';
   if (!issuedRefreshTokens.delete(presented)) {
-    res.status(HTTP_BAD_REQUEST).json({ error: 'invalid_grant' });
-    return;
+    return c.json({ error: 'invalid_grant' }, HTTP_BAD_REQUEST);
   }
-  res.json(tokenResponseBody());
+  return c.json(tokenResponseBody());
 }
 
-/** The token endpoint (form-encoded), dispatching on `grant_type`. */
-function issueToken(req: Request, res: Response): void {
-  const form = (req.body ?? {}) as Record<string, string>;
-  if (form.grant_type === 'refresh_token') {
-    grantByRefreshToken(form, res);
-    return;
-  }
-  if (form.grant_type === 'authorization_code') {
-    grantByAuthorizationCode(form, res);
-    return;
-  }
-  res.status(HTTP_BAD_REQUEST).json({ error: 'unsupported_grant_type' });
+/** The form parser the token endpoint reads with, after the chain's JSON one. */
+const parseForm = bodyParser.urlencoded({ extended: false });
+
+/**
+ * The token endpoint (form-encoded, or JSON), dispatching on `grant_type`.
+ *
+ * The chain has already parsed a JSON body; a form body is still unread, and is
+ * parsed here, after the session gate, as the route-level parser always did.
+ */
+async function issueToken(c: Context<ApiEnv>): Promise<Response> {
+  const { incoming, outgoing } = c.env;
+  await new Promise<void>((resolve, reject) =>
+    parseForm(incoming, outgoing, (error) => (error ? reject(error) : resolve()))
+  );
+  const form = (readJsonBody(c) ?? (incoming as { body?: unknown }).body ?? {}) as Record<
+    string,
+    string
+  >;
+  if (form.grant_type === 'refresh_token') return grantByRefreshToken(form, c);
+  if (form.grant_type === 'authorization_code') return grantByAuthorizationCode(form, c);
+  return c.json({ error: 'unsupported_grant_type' }, HTTP_BAD_REQUEST);
 }
 
 /**
@@ -321,58 +351,64 @@ function issueToken(req: Request, res: Response): void {
  * the resource_metadata pointer) until a valid bearer we issued is presented;
  * then a normal stateless MCP session answering `initialize` + `tools/list`.
  */
-async function serveMcp(req: Request, res: Response): Promise<void> {
-  const token = bearerToken(req.headers.authorization);
+async function serveMcp(c: Context<ApiEnv>): Promise<Response> {
+  const token = bearerToken(c.req.header('authorization'));
   if (!token || !issuedTokens.has(token)) {
-    res
-      .status(HTTP_UNAUTHORIZED)
-      .set(
-        'WWW-Authenticate',
-        `Bearer resource_metadata="${mockOrigin(req)}/.well-known/oauth-protected-resource"`
-      )
-      .json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });
-    return;
+    c.header(
+      'WWW-Authenticate',
+      `Bearer resource_metadata="${mockOrigin(c)}/.well-known/oauth-protected-resource"`
+    );
+    return c.json(
+      { jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null },
+      HTTP_UNAUTHORIZED
+    );
   }
-  if (req.method !== 'POST') {
-    res.status(HTTP_METHOD_NOT_ALLOWED).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed (stateless).' },
-      id: null,
-    });
-    return;
+  if (c.req.method !== 'POST') {
+    return c.json(
+      {
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed (stateless).' },
+        id: null,
+      },
+      HTTP_METHOD_NOT_ALLOWED
+    );
   }
   // Stateless: a fresh server + transport per request (per the MCP SDK example),
-  // torn down when the response closes.
-  const server = buildMockMcpServer();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on('close', () => {
-    void transport.close().catch(() => {});
-    void server.close().catch(() => {});
+  // torn down when the response closes. The transport writes the Node response
+  // itself (`http/raw-node-stream.ts`).
+  return streamToNodeResponse(c, async (res) => {
+    const server = buildMockMcpServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => {
+      void transport.close().catch(() => {});
+      void server.close().catch(() => {});
+    });
+    await server.connect(transport);
+    await transport.handleRequest(c.env.incoming, res, readJsonBody(c));
   });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
 }
 
 /**
- * Build the mock OAuth-protected MCP server router. Mount at the app root, gated
- * to `DORKOS_TEST_RUNTIME` — see the module docs for why it is root-mounted.
+ * Build the mock OAuth-protected MCP server's routes. Mount at the app root,
+ * gated to `DORKOS_TEST_RUNTIME` — see the module docs for why it is
+ * root-mounted.
  */
-export function createMockMcpOAuthRouter(): Router {
-  const router = Router();
+export function createMockMcpOAuthRoutes(): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
   // RFC 9728: the SDK inserts the resource pathname before the well-known suffix,
   // so serve both the exact root path and any path-suffixed variant.
   router.get('/.well-known/oauth-protected-resource', serveProtectedResourceMetadata);
-  router.get('/.well-known/oauth-protected-resource/*splat', serveProtectedResourceMetadata);
+  router.get('/.well-known/oauth-protected-resource/*', serveProtectedResourceMetadata);
 
   // RFC 8414: the auth server issuer is the origin root, so this is dialed at the
   // root path; the wildcard covers the path-inserted form defensively.
   router.get('/.well-known/oauth-authorization-server', serveAuthServerMetadata);
-  router.get('/.well-known/oauth-authorization-server/*splat', serveAuthServerMetadata);
+  router.get('/.well-known/oauth-authorization-server/*', serveAuthServerMetadata);
 
   router.post(`${MOCK_MCP_OAUTH_BASE}/register`, registerClient);
   router.get(`${MOCK_MCP_OAUTH_BASE}/authorize`, authorize);
-  router.post(`${MOCK_MCP_OAUTH_BASE}/token`, express.urlencoded({ extended: false }), issueToken);
+  router.post(`${MOCK_MCP_OAUTH_BASE}/token`, issueToken);
   router.all(MOCK_MCP_OAUTH_MCP_PATH, serveMcp);
 
   return router;

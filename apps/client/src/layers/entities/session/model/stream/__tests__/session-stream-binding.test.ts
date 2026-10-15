@@ -19,6 +19,10 @@ import { useAppStore } from '@/layers/shared/model';
 import { initSessionStreamBinding, resetSessionStreamBinding } from '../session-stream-binding';
 import { useSessionStreamStore } from '../session-stream-store';
 import { useSessionListStore } from '../session-list-store';
+import {
+  predatesSessionListReset,
+  resetSessionListResetMarker,
+} from '../../../lib/session-list-reset';
 
 // End-to-end wiring test: prove that driving a StreamManager's (fake) connection
 // results in the stores being updated through the binding's real listener object.
@@ -506,5 +510,121 @@ describe('account_usage matching and the Claude subscription bar', () => {
       detail: 'Using overage capacity',
     });
     expect(get('key')).toEqual({ kind: 'pay-as-you-go', costUsd: 2 });
+  });
+});
+
+describe('when the session lists were last declared wrong (DOR-2891)', () => {
+  beforeEach(() => resetSessionListResetMarker());
+
+  interface Bound {
+    handlers: Map<string, (data: unknown) => void>;
+    setListState: (state: ConnectionState) => void;
+  }
+
+  function bind(): Bound {
+    vi.restoreAllMocks();
+    resetSessionStreamBinding();
+    const handlers = new Map<string, (data: unknown) => void>();
+    const stateListeners: Array<(state: ConnectionState, failedAttempts: number) => void> = [];
+    vi.spyOn(streamManager, 'setListeners').mockImplementation(() => {});
+    vi.spyOn(streamManager, 'subscribeListConnectionState').mockImplementation((listener) => {
+      stateListeners.push(listener);
+      return () => {};
+    });
+    vi.spyOn(streamManager, 'subscribeEvent').mockImplementation((name, handler) => {
+      handlers.set(name, handler);
+      return () => {};
+    });
+    initSessionStreamBinding();
+    return { handlers, setListState: (state) => stateListeners.forEach((l) => l(state, 0)) };
+  }
+
+  it('marks lists a fresh window fetched before its first frame when that frame names a switch', () => {
+    const { handlers } = bind();
+    const before = Date.now() - 1;
+    expect(predatesSessionListReset(before)).toBe(false);
+    handlers.get('connected')!({ sessionListsResetAt: '2026-10-13T11:00:00.000Z' });
+    expect(predatesSessionListReset(before)).toBe(true);
+  });
+
+  it('records a live account switch', () => {
+    const { handlers } = bind();
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    const before = Date.now() - 1;
+    expect(predatesSessionListReset(before)).toBe(false);
+    handlers.get('session_list_invalidated')!({ changedAt: '2026-10-13T11:00:00.000Z' });
+    expect(predatesSessionListReset(before)).toBe(true);
+  });
+
+  it('distrusts every list from a drop until the reconnect names the last switch', () => {
+    // The stream says `connected` (and the reconnect invalidates every list)
+    // one round trip before its first frame can say a switch was missed.
+    const { handlers, setListState } = bind();
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    const cachedAt = Date.now() - 1;
+    setListState('reconnecting');
+    setListState('connecting');
+    setListState('connected');
+    expect(predatesSessionListReset(cachedAt)).toBe(true);
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    expect(predatesSessionListReset(cachedAt)).toBe(false);
+  });
+
+  it('learns of a missed switch on its own clock, whatever the server’s says', () => {
+    // A server clock an hour behind (or ahead) of this window must not decide
+    // which lists are trusted: only that the switch is one not heard before.
+    const { handlers } = bind();
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    const cachedAt = Date.now() - 1;
+    handlers.get('connected')!({ sessionListsResetAt: '1999-01-01T00:00:00.000Z' });
+    expect(predatesSessionListReset(cachedAt)).toBe(true);
+    // A list fetched after the frame is trusted.
+    const fetchedLater = Date.now() + 1;
+    expect(predatesSessionListReset(fetchedLater)).toBe(false);
+  });
+
+  it('does not count a switch twice when a reconnect names one it heard live', () => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-13T12:00:00.000Z') });
+    try {
+      const { handlers } = bind();
+      handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+      handlers.get('session_list_invalidated')!({ changedAt: '2026-10-13T11:00:00.000Z' });
+      vi.advanceTimersByTime(1_000);
+      const fetchedAfterSwitch = Date.now();
+      vi.advanceTimersByTime(1_000);
+      handlers.get('connected')!({ sessionListsResetAt: '2026-10-13T11:00:00.000Z' });
+      expect(predatesSessionListReset(fetchedAfterSwitch)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('distrusts every list while a hidden tab’s released stream opens again', () => {
+    // A hidden tab's stream is closed without ever reporting itself down, then
+    // reopens through `connecting`: a switch could have been missed meanwhile.
+    const { handlers, setListState } = bind();
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    const cachedAt = Date.now() - 1;
+    setListState('connecting');
+    expect(predatesSessionListReset(cachedAt)).toBe(true);
+    handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+    expect(predatesSessionListReset(cachedAt)).toBe(false);
+  });
+
+  it('trusts a list fetched while the stream is down: it is the server as it is now', () => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-13T12:00:00.000Z') });
+    try {
+      const { handlers, setListState } = bind();
+      handlers.get('connected')!({ connectedAt: new Date().toISOString() });
+      const beforeDrop = Date.now();
+      vi.advanceTimersByTime(1_000);
+      setListState('reconnecting');
+      vi.advanceTimersByTime(1_000);
+      const whileDown = Date.now();
+      expect(predatesSessionListReset(beforeDrop)).toBe(true);
+      expect(predatesSessionListReset(whileDown)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

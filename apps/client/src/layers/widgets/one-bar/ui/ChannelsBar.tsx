@@ -1,10 +1,10 @@
 import { useSafeSearch } from '@/layers/shared/model';
-import { useSpacesEnabled } from '@/layers/entities/config';
 import { PageHeading } from '@/layers/shared/ui';
 import {
   communityAccessState,
   useRemoteCommunityRoom,
   useCommunityConnections,
+  useSpaceVisible,
 } from '@/layers/entities/community';
 import {
   BridgeVisibilityBadge,
@@ -17,6 +17,7 @@ import { facesOfRoster, useRoomFaces } from '@/layers/features/room-management';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useOneBarState } from '../model/one-bar-context';
 import { BarTitle, OneBar } from './OneBar';
+import { RoomLeadChip } from './RoomLeadChip';
 import { RoomMembersChip } from './RoomMembersChip';
 import { RoomRunState } from './RoomRunState';
 
@@ -105,9 +106,10 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
  */
 export function ChannelsBar() {
   const search = useSafeSearch() as { community?: string; id?: string };
-  // A space's bar only while spaces are on (DOR-2740); the page redirects.
-  const spaces = useSpacesEnabled();
-  if (spaces && search.community && search.id)
+  // A space's bar only while that space is reachable: every space with spaces
+  // on, the official one alone with them off (DOR-2740); the page redirects.
+  const space = useSpaceVisible(search.community);
+  if (space.visible && search.community && search.id)
     return <RemoteChannelsBar community={search.community} roomId={search.id} />;
   return <LocalChannelsBar />;
 }
@@ -172,6 +174,7 @@ function LocalChannelsBar() {
               mode is a group concept, rooms spec §8). */}
           {room.bridge?.visibility && <BridgeVisibilityBadge visibility={room.bridge.visibility} />}
           <RoomRunState roomId={room.id} roomName={name} />
+          <RoomLeadChip room={room} />
           <RoomMembersChip room={room} count={room.members.length} />
         </>
       }

@@ -117,7 +117,7 @@ Steps to reproduce:
 ### Project Data Flow
 
 ```
-Component → TanStack Query → Transport → Express Route → Service → Data Store (SQLite/JSONL/JSON)
+Component → TanStack Query → Transport → Hono Route → Service → Data Store (SQLite/JSONL/JSON)
 ```
 
 Debug from the outside in or inside out:
@@ -127,7 +127,7 @@ Debug from the outside in or inside out:
 - User sees wrong data
 - Check component receives correct data
 - Check TanStack Query returns correct data
-- Check Express route returns correct data
+- Check Hono route returns correct data
 - Check service returns correct data
 - Check data store has correct data
 
@@ -135,7 +135,7 @@ Debug from the outside in or inside out:
 
 - Verify data store has correct data (SQLite, JSONL transcripts, JSON state files)
 - Verify service reads/writes correctly
-- Verify Express route transforms correctly
+- Verify Hono route transforms correctly
 - Verify TanStack Query caches correctly
 - Verify component renders correctly
 
@@ -145,7 +145,7 @@ Debug from the outside in or inside out:
 | -------------- | -------------------------------------------- | ------------------------ |
 | Component      | Props received, render conditions, state     | Browser DevTools         |
 | TanStack Query | Cache key, staleTime, enabled, queryFn       | React Query Devtools     |
-| Express Route  | Zod validation, boundary check, feature flag | Network tab, server logs |
+| Hono Route     | Zod validation, boundary check, feature flag | Network tab, server logs |
 | Service        | Business logic, error handling               | Server logs (NDJSON)     |
 | Data Store     | SQLite tables, JSONL files, JSON state       | `sqlite3`, `/debug:data` |
 

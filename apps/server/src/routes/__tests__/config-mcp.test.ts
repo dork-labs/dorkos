@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -81,6 +80,13 @@ vi.mock('../../lib/logger.js', () => ({
   logError: vi.fn((err: unknown) => ({ err })),
 }));
 
+// The session gate lets every request through, so the cases that turn login on
+// reach the route's own answer.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 // The auth barrel pulls in Better Auth + the DB adapter; mock the single reader
 // the config route uses so the router imports cleanly without a live auth instance.
 vi.mock('../../services/core/auth/index.js', () => ({
@@ -100,6 +106,7 @@ vi.mock('../../lib/dork-home.js', () => ({
 }));
 
 import configRouter from '../config.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { env } from '../../env.js';
 import { hasAnyApiKey } from '../../services/core/auth/index.js';
@@ -109,10 +116,7 @@ const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 function createTestApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/config', configRouter);
-  return app;
+  return honoGroupListener({ path: '/api/config', routes: configRouter });
 }
 
 describe('Config MCP endpoints', () => {

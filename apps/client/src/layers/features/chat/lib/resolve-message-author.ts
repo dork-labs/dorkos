@@ -5,6 +5,7 @@
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { ChatMessage, MessageAuthor } from '@/layers/shared/model';
+import { resolveAgentVisual } from '@/layers/shared/lib';
 
 /** Name for the human participant when the caller supplies none. */
 const DEFAULT_HUMAN_NAME = 'You';
@@ -23,6 +24,21 @@ const SYSTEM_AUTHOR_NAME = 'System';
  */
 const UNKNOWN_AGENT_ID = 'agent';
 const UNKNOWN_AGENT_NAME = 'Agent';
+
+/**
+ * Prefix for another chat's agent, keeping a message it sent in a group of its
+ * own even when it is the same agent this chat runs.
+ */
+const CHAT_SENDER_ID_PREFIX = 'chat-sender:';
+
+/**
+ * Prefix for a room member who posted the message a room turn answered, keeping
+ * each member in a group of their own (DOR-2113).
+ */
+const ROOM_AUTHOR_ID_PREFIX = 'room-author:';
+
+/** Name for a room post whose author the room no longer has. */
+const UNKNOWN_ROOM_AUTHOR_NAME = 'Room member';
 
 /** Prefix for runtime-brand identity keys, keeping them distinct from agent ids. */
 const RUNTIME_AUTHOR_ID_PREFIX = 'runtime:';
@@ -60,6 +76,15 @@ export interface MessageAuthorContext {
   runtime?: string | null;
   /** What to call the human. Defaults to "You". */
   humanName?: string | null;
+  /**
+   * The face of an agent that sent a message from another chat, when the caller
+   * knows it; else its seeded face. Optional: a seeded face is right for every
+   * agent that never chose one.
+   */
+  senderAgent?: (sender: {
+    agentId?: string;
+    chatId: string;
+  }) => { emoji: string; color: string } | null;
 }
 
 /**
@@ -87,9 +112,29 @@ export function resolveMessageAuthor(
   message: ChatMessage,
   ctx: MessageAuthorContext
 ): MessageAuthor {
-  if (isSystemMessage(message)) {
+  if (isSystemMessage(message) || message._chatStop) {
     return { kind: 'system', id: SYSTEM_AUTHOR_ID, displayName: SYSTEM_AUTHOR_NAME };
   }
+
+  // Words another chat sent (spec `spin-off-chats` §2): the sending agent, as
+  // the server stamped it — never "You", and never the agent this chat runs.
+  const sender = message.role === 'user' ? message.chatMessages?.[0]?.from : undefined;
+  if (sender) {
+    const key = sender.agentId ?? sender.chatId;
+    const visual = ctx.senderAgent?.(sender) ?? resolveAgentVisual({ id: key });
+    return {
+      kind: 'agent',
+      id: `${CHAT_SENDER_ID_PREFIX}${key}`,
+      displayName: sender.agentName,
+      emoji: visual.emoji,
+      color: visual.color,
+    };
+  }
+
+  // A room post that opened a turn in a room-attached chat (DOR-2113): whoever
+  // the room says posted it. Only the person's own room posts read as theirs.
+  const roomPost = message.role === 'user' ? message.roomMessage : undefined;
+  if (roomPost && !roomPost.author?.you) return roomAuthor(roomPost, ctx);
 
   if (message.role === 'user') {
     return {
@@ -115,4 +160,41 @@ export function resolveMessageAuthor(
   }
 
   return { kind: 'agent', id: UNKNOWN_AGENT_ID, displayName: UNKNOWN_AGENT_NAME };
+}
+
+/**
+ * The identity of a room member who posted the message a room turn answered.
+ *
+ * @param post - The server's stamp. Its author is absent when the room no
+ *   longer has the entry.
+ * @param ctx - Caller-resolved identity, for an agent's face by its Mesh id.
+ */
+function roomAuthor(
+  post: NonNullable<ChatMessage['roomMessage']>,
+  ctx: MessageAuthorContext
+): MessageAuthor {
+  const { author } = post;
+  if (!author) {
+    // Keyed by the entry, so two lost authors never share one header.
+    return {
+      kind: 'human',
+      id: `${ROOM_AUTHOR_ID_PREFIX}entry:${post.entryId}`,
+      displayName: UNKNOWN_ROOM_AUTHOR_NAME,
+    };
+  }
+  const id = `${ROOM_AUTHOR_ID_PREFIX}${author.id}`;
+  if (author.kind === 'agent') {
+    // Keyed by the agent's Mesh id, as a chat sender's face is, so the agent
+    // wears the face the rest of the app draws it with.
+    const key = author.agentId ?? author.id;
+    const face =
+      ctx.senderAgent?.({ agentId: key, chatId: key }) ??
+      resolveAgentVisual({
+        id: key,
+        ...(author.emoji ? { icon: author.emoji } : {}),
+        ...(author.color ? { color: author.color } : {}),
+      });
+    return { kind: 'agent', id, displayName: author.displayName, ...face };
+  }
+  return { kind: author.kind, id, displayName: author.displayName };
 }

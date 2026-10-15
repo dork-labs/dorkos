@@ -9,6 +9,7 @@ import {
   declaredScheme,
   internalRoutePath,
   isWebUrl,
+  plainAppAddress,
   openExternalLink,
   openExternalWindowLater,
   openLink,
@@ -888,5 +889,55 @@ describe('redactForLog', () => {
     openExternalLink('irc://irc.example.com/secret-room?key=abc');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-room');
     warn.mockRestore();
+  });
+});
+
+describe('plainAppAddress — which agent-written links open without asking (DOR-2824)', () => {
+  it('passes a chat link, relative or absolute at our own origin', () => {
+    expect(plainAppAddress('/session?session=abc', FROM)).toBe('/session?session=abc');
+    expect(plainAppAddress(`${ORIGIN}/session?session=abc`, FROM)).toBe('/session?session=abc');
+    expect(plainAppAddress('/team', FROM)).toBe('/team');
+  });
+
+  it.each([
+    ['an API path', '/api/sessions'],
+    ['a path that normalises onto the API', '/session/../api/sessions'],
+    ['an encoded traversal', '/session/%2e%2e/api/sessions'],
+    ['a protocol-relative host', '//evil.example/session?session=abc'],
+    ['a backslash host', '/\\evil.example/session'],
+    ['another origin', 'https://evil.example/session?session=abc'],
+    ['another port on our host', 'http://localhost:6666/session?session=abc'],
+    ['an extension page', '/x/some-extension/page'],
+    ['a dev path the router never sees', '/dev/playground'],
+    ['a launch that sends as the person', '/session?agentId=a&prompt=hi&send=1'],
+    ['a launch with only a prompt', '/session?agentId=a&prompt=hi'],
+    ['a launch with an encoded key', '/session?agentId=a&%70rompt=hi&%73end=1'],
+    ['a seeded launch', '/session?seed=dorkbot-help'],
+    ['a query-only launch merged onto this page', '?prompt=hi&send=1'],
+    ['a refused scheme', 'javascript:alert(1)'],
+  ])('refuses %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
+  });
+
+  it.each([
+    ['a chosen folder', '/session?session=abc&dir=/etc'],
+    ['a new chat for an agent', '/session?agentId=a'],
+    ['a prepared launch', '/session?launchRef=r1'],
+    ['a draft', '/session?session=abc&draft=1'],
+    ['a runtime pick', '/session?session=abc&runtime=codex'],
+    ['a settings dialog', '/session?session=abc&settings=open'],
+    ['a param no route knows yet', '/team?doSomething=1'],
+    ['a different case of a known key', '/session?Session=abc'],
+  ])('refuses a link carrying %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
+  });
+
+  it('keeps a hash and every address param', () => {
+    expect(plainAppAddress('/channels?id=r1&thread=t1&entry=4#top', FROM)).toBe(
+      '/channels?id=r1&thread=t1&entry=4#top'
+    );
+    expect(plainAppAddress('/session?session=abc&message=m1', FROM)).toBe(
+      '/session?session=abc&message=m1'
+    );
   });
 });

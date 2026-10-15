@@ -39,9 +39,7 @@ describe('exposure stays behind login, whatever power the agents have', () => {
     const { configManager } = config;
     configManager.set('ui', {
       ...configManager.get('ui'),
-      autonomyAcknowledgedAt: STAMP,
-      fullPowerDecidedAt: STAMP,
-      fullPowerChoice: 'full',
+      trustNoticeSeenAt: STAMP,
     });
     configManager.set('runtimes', {
       ...configManager.get('runtimes'),

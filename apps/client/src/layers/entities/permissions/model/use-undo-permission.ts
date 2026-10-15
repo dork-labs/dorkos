@@ -10,8 +10,6 @@ export interface UndoPermissionInput {
   eventId: string;
   /** Set a key back even when it changed since the recorded change. */
   force?: true;
-  /** The person just confirmed what Full autonomy means. */
-  acknowledgeAutonomy?: true;
 }
 
 /**
@@ -42,11 +40,8 @@ export function useUndoPermission() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ eventId, force, acknowledgeAutonomy }: UndoPermissionInput) =>
-      transport.undoPermissionChange(eventId, {
-        ...(force ? { force: true } : {}),
-        ...(acknowledgeAutonomy ? { acknowledgeAutonomy: true as const } : {}),
-      }),
+    mutationFn: ({ eventId, force }: UndoPermissionInput) =>
+      transport.undoPermissionChange(eventId, force ? { force: true } : {}),
     // The history row answers a refusal itself (the conflict question, or the
     // server's sentence), so the app-wide "Action failed" toast would repeat it.
     meta: { suppressErrorToast: true },

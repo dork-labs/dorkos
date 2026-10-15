@@ -14,10 +14,7 @@
  *   every card can change, and one writer for it means two cards clicked in
  *   quick succession cannot race each other.
  * - **Trust is written here too**, through the single {@link useTrustStopWrites}
- *   call and the single {@link AutonomyConfirmDialog} below. Consent is one
- *   contract with the server — it refuses a Full-autonomy write without an
- *   acknowledgement, and the ack rides the same request — so two dialogs on one
- *   screen would be two contracts that could drift.
+ *   call, so the global row and every runtime's row share one write path.
  *
  * @module features/settings/ui/runtimes/RuntimesTab
  */
@@ -34,10 +31,6 @@ import {
   useRuntimeCapabilities,
   useRuntimeRequirements,
 } from '@/layers/entities/runtime';
-// UI composition across sibling features, which the layer rule allows: the door
-// into Full autonomy is one dialog and one contract, and Settings asks the same
-// question the session dial asks rather than a second version of it.
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { useTrustStopWrites } from '../../model/use-trust-stop-writes';
 import { ExecutionExceptionsStrip } from './ExecutionExceptionsStrip';
 import { RuntimeCard } from './RuntimeCard';
@@ -173,18 +166,6 @@ export function RuntimesTab() {
       />
 
       <ExecutionExceptionsStrip />
-
-      {/* The door, at set-time, once for the whole tab. No "don't show this
-          again" checkbox: agreeing HERE is itself the standing record — the
-          server requires one for this write, and offering the choice would make
-          it look optional when the setting cannot exist without it. */}
-      <AutonomyConfirmDialog
-        descriptor={trust.pendingAutonomy?.descriptor ?? null}
-        canRemember={false}
-        consentNote="Every new session starts here. DorkOS remembers you’ve read this."
-        onCancel={trust.cancelAutonomy}
-        onConfirm={trust.confirmAutonomy}
-      />
     </div>
   );
 }

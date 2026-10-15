@@ -18,6 +18,7 @@
 import { useEffect, useState } from 'react';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useOnboarding } from './use-onboarding';
+import type { PromptHostOptions } from './use-identity-prompt';
 import { useProfile } from '@/layers/entities/user-profile';
 
 /** How long the thanks line lingers before the card collapses (ms). */
@@ -51,9 +52,12 @@ export interface ProfilePromptApi {
  *
  * Call this ONCE per surface and pass the result to `ProfilePromptCard`. Two
  * calls would be two independent phase machines over the same card.
+ *
+ * @param options - What the host surface knows; see {@link PromptHostOptions}.
  */
-export function useProfilePrompt(): ProfilePromptApi {
+export function useProfilePrompt(options: PromptHostOptions = {}): ProfilePromptApi {
   const { state, isLoading, shouldShowGettingStarted } = useOnboarding();
+  const cardShown = options.gettingStartedCardShown ?? shouldShowGettingStarted;
   const {
     roles,
     rolePromptDismissedAt,
@@ -91,7 +95,7 @@ export function useProfilePrompt(): ProfilePromptApi {
     // about your work" row is the single affordance. (The bottom slot enforces
     // this structurally too — one card at a time — but the condition stays,
     // because it is also what stops this card queueing up behind it.)
-    !shouldShowGettingStarted;
+    !cardShown;
 
   let confirmLabel = 'Save';
   if (phase === 'saving') {

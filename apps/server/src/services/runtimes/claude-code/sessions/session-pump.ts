@@ -1,6 +1,6 @@
 const originalPumpStates = new WeakMap<
   object,
-  () => import('./session-pump-contract.js').PumpState
+  () => import('./warm-process/session-pump-contract.js').PumpState
 >();
 /** Genuine constructor-held capacity data; neither permission nor a mutable public state read. */
 export function readOriginalSessionPumpState(pump: object | undefined) {
@@ -64,10 +64,10 @@ import {
   type PumpTeardownReason,
   type Quietness,
   type SessionPumpOptions,
-} from './session-pump-contract.js';
+} from './warm-process/session-pump-contract.js';
 
 // Re-exported so one import site serves both the machine and its vocabulary.
-export * from './session-pump-contract.js';
+export * from './warm-process/session-pump-contract.js';
 
 /** A promise plus the handles to settle it from elsewhere. */
 interface Deferred {

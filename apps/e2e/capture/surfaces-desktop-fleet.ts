@@ -1,14 +1,11 @@
-import path from 'path';
-import { randomUUID } from 'crypto';
 import type { Page } from '@playwright/test';
-import { FLEET_ROOT, MULTI_SESSION_PROMPTS, type Theme } from './config.js';
+import { MULTI_SESSION_PROMPTS, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
   ensureDesktopSidebarExpanded,
-  post,
+  openLiveTurn,
   shoot,
   sleep,
-  url,
   waitForAppShell,
   WAIT_MS,
 } from './lib.js';
@@ -18,10 +15,9 @@ import {
  * once, so the Now/Today sidebar has real concurrent conversations to summarise.
  *
  * Split out of `surfaces-desktop` (which was over the 500-line limit) because
- * this is the one drive that plans and triggers its own turns rather than
- * reusing `openLiveTurn` — it owns a turn model, a prompt cursor, and the
- * pacing constants that keep every row live through both the still and the
- * loop. Nothing else reads any of it. Both the still and the loop are driven
+ * this is the one drive that runs several turns at once — it owns a turn
+ * model, a prompt cursor, and the pacing that keeps every row live through
+ * both the still and the loop. Nothing else reads any of it. Both the still and the loop are driven
  * from `surfaces-desktop`.
  *
  * @module capture/surfaces-desktop-fleet
@@ -29,8 +25,6 @@ import {
 
 /** Settle beat after an agent's conversation opens, before the next one does. */
 const MULTI_SESSION_SETTLE_MS = 600;
-/** Pause after a turn is triggered, so the roster can resolve it as that agent's newest. */
-const MULTI_SESSION_RESOLVE_MS = 1200;
 /**
  * The agents the fleet drive puts to work, in the order it opens them.
  *
@@ -38,7 +32,7 @@ const MULTI_SESSION_RESOLVE_MS = 1200;
  * where the drive lands — so its transcript is what the main pane shows. Three
  * runtimes are on screen at once (`sentinel` runs opencode, `scout` codex,
  * `forge`/`atlas` claude-code), which is exactly what this surface's feature
- * card promises: one cockpit, whatever each agent runs on.
+ * card promises: one app, whatever each agent runs on.
  */
 const MULTI_SESSION_AGENTS: readonly string[] = ['sentinel', 'forge', 'scout', 'atlas'];
 /** The one agent whose turn stops for a permission prompt, so a row reads amber. */
@@ -46,83 +40,52 @@ const MULTI_SESSION_APPROVAL_AGENT = 'sentinel';
 /** Rotates through the prompt pool so repeated drives mint distinct titles. */
 let multiSessionPromptCursor = 0;
 
-/** One agent's live conversation for the fleet drive. */
+/** One agent's turn for the fleet drive: who, what the person asks, and how it runs. */
 interface FleetTurn {
-  readonly id: string;
   readonly agent: string;
-  readonly cwd: string;
   readonly prompt: string;
   readonly scenario: string;
 }
 
-/** The turns this drive will run, one per agent, with fresh session ids. */
+/** The turns this drive will run, one per agent. */
 function planFleetTurns(): FleetTurn[] {
   return MULTI_SESSION_AGENTS.map((agent) => ({
-    id: randomUUID(),
     agent,
-    cwd: path.join(FLEET_ROOT, agent),
     prompt: MULTI_SESSION_PROMPTS[multiSessionPromptCursor++ % MULTI_SESSION_PROMPTS.length]!,
     scenario: agent === MULTI_SESSION_APPROVAL_AGENT ? 'demo-approval' : 'demo-coding',
   }));
 }
 
-/** Trigger one agent's turn through the test-mode seam. */
-async function startFleetTurn(turn: FleetTurn): Promise<void> {
-  await post('/api/test/scenario', { name: turn.scenario, sessionId: turn.id });
-  await post(`/api/sessions/${turn.id}/messages`, {
-    content: turn.prompt,
-    cwd: turn.cwd,
-    create: true,
-  });
-}
-
 /**
- * Drive the fleet moment on the redesigned Now/Today/Library sidebar: start one
- * agent's turn, open that agent from the roster, and repeat down the fleet — so
- * the panel ends up holding four concurrent conversations at once, three
- * streaming green and one stopped amber on a permission prompt, with Now
- * summarising them above ("N working", "sentinel › Waiting on you").
+ * Drive the fleet moment on the Now/Today/Library sidebar: the person starts a
+ * new chat with each agent in turn, so the panel ends up holding four
+ * concurrent conversations at once, three streaming green and one stopped
+ * amber on a permission prompt, with Now summarising them above ("N working",
+ * "sentinel › Waiting on you").
  *
- * Two things about this shape are load-bearing, and both come from the
- * Now/Today/Library redesign (DOR-1066/1068/1071):
+ * Two things about this shape are load-bearing:
  *
- * - **The clicks ARE the drive.** Today's membership is "conversations this
- *   person has been in" (`select-today-items`, BC-15), read from the
- *   interaction record `SidebarChrome.openSession` writes — and the server half
- *   of that key (`userLastMessageAt`) has no source yet. A `page.goto` into a
- *   session therefore leaves no trace: only the one session in the URL would
- *   draw a row, as the anchor. Opening each agent from its roster row (BC-34)
- *   is the product's own path to a populated Today, and the only honest one.
- * - **Turns start one at a time, just before their agent is opened.** Every
- *   click costs a second or two, and a `demo-coding` turn only runs for about
- *   fourteen; launching all four up front left the earliest ones finished
- *   before the still, and long finished before the end of the loop's hold.
- *   Staggering the triggers alongside the clicks keeps every row live through
- *   both.
+ * - **Every chat is one this person started.** Today lists the chats this
+ *   person touched, and an agent click opens the one they touched last
+ *   (DOR-2789). A turn started behind the app's back is neither, so it would
+ *   draw no row, and clicking its agent would open an older chat instead.
+ *   {@link openLiveTurn} opens a new chat and sends through the composer, the
+ *   product's own path, and the chat page records the open.
+ * - **Turns start one at a time.** A `demo-coding` turn only runs for about
+ *   fourteen seconds; starting all four up front left the earliest ones
+ *   finished before the still, and long finished before the end of the loop's
+ *   hold. Starting each just before the next keeps every row live through both.
  *
- * The old drive waited on `[data-testid="session-row"]`, which no longer
- * exists: the panel builds its rows from `SidebarRowModel` (`[data-sidebar-row]`),
- * and an agent's chats are the shared chat list (`[data-slot="chat-list-row"]`).
+ * The panel builds its rows from `SidebarRowModel` (`[data-sidebar-row]`).
  */
 export async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();
-  await page.goto(url('/'));
-  await waitForAppShell(page);
-  await ensureDesktopSidebarExpanded(page);
-
   for (const turn of turns) {
-    await startFleetTurn(turn);
-    await sleep(MULTI_SESSION_RESOLVE_MS);
-    await page
-      .getByRole('button', { name: `Switch to ${turn.agent}` })
-      .first()
-      .click({ timeout: WAIT_MS });
-    // The agent row resumes that agent's newest conversation, which is the turn
-    // just started — waiting on its id proves the click landed there rather
-    // than on one of the seeded, long-finished sessions.
-    await page.waitForURL(new RegExp(`session=${turn.id}`), { timeout: WAIT_MS });
+    await openLiveTurn(page, turn.scenario, turn.prompt, turn.agent);
     await sleep(MULTI_SESSION_SETTLE_MS);
   }
+  await waitForAppShell(page);
+  await ensureDesktopSidebarExpanded(page);
 
   const todayRows = page.locator('[data-sidebar-zone="today"] [data-sidebar-row]');
   await todayRows.nth(turns.length - 1).waitFor({ timeout: WAIT_MS });
@@ -143,7 +106,7 @@ export async function driveMultiSession(page: Page): Promise<void> {
 }
 
 /**
- * Capture the multi-session cockpit: the Now zone counting the running work and
+ * Capture the multi-session sidebar: the Now zone counting the running work and
  * naming what is blocked, over four live conversations in Today.
  */
 export async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {

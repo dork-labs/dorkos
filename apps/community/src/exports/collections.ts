@@ -9,7 +9,14 @@ const PAGE_ROWS = 1_000;
 
 /** The manifest's name for each collection. */
 export type CollectionKey =
-  'channels' | 'members' | 'agents' | 'channelMembers' | 'agentChannelMembers' | 'auditEvents';
+  | 'channels'
+  | 'members'
+  | 'agents'
+  | 'channelMembers'
+  | 'agentChannelMembers'
+  | 'auditEvents'
+  | 'bans'
+  | 'reports';
 
 /** Files and rows written for one collection. */
 export interface CollectionTally {
@@ -29,6 +36,8 @@ export function emptyTallies(): CollectionTallies {
     channelMembers: { files: [], count: 0 },
     agentChannelMembers: { files: [], count: 0 },
     auditEvents: { files: [], count: 0 },
+    bans: { files: [], count: 0 },
+    reports: { files: [], count: 0 },
   };
 }
 
@@ -67,8 +76,9 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
     {
       key: 'channels',
       prefix: 'channels',
-      select: `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at FROM channels c
-        WHERE c.community_id=$1 ${owner ? '' : 'AND c.id=ANY($3::uuid[])'}`,
+      select: `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,c.auto_join,
+          c.slow_mode_seconds
+        FROM channels c WHERE c.community_id=$1 ${owner ? '' : 'AND c.id=ANY($3::uuid[])'}`,
       keys: [uuidKey('c.id', 'id')],
       line: (row) =>
         JSON.stringify({
@@ -78,6 +88,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           visibility: row.visibility,
           archived: row.archived,
           created_at: iso(row.created_at),
+          auto_join: row.auto_join,
+          slow_mode_seconds: row.slow_mode_seconds,
         }),
     },
     {
@@ -85,7 +97,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
       prefix: 'members',
       // LEFT JOIN: an erased member keeps their husk row, with no account and so no email. A
       // personal export holds only the requester's own row.
-      select: `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
+      select: `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email,
+          m.muted_until,m.rules_accepted_version
         FROM members m LEFT JOIN "user" u ON u.id=m.user_id
         WHERE m.community_id=$1 ${owner ? '' : 'AND m.id=$2'}`,
       keys: [uuidKey('m.id', 'id')],
@@ -99,6 +112,8 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           created_at: iso(row.created_at),
           removed_at: iso(row.removed_at),
           email: row.email ?? null,
+          muted_until: iso(row.muted_until),
+          rules_accepted_version: row.rules_accepted_version,
         }),
     },
     {
@@ -160,7 +175,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
       key: 'auditEvents',
       prefix: 'audit-events',
       select: `SELECT ae.id,ae.community_id,ae.actor_member_id,ae.actor_kind,ae.action,ae.subject_id,
-          ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,
+          ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,ae.decision,
           ae.created_at::text AS created_at_key
         FROM audit_events ae WHERE ae.community_id=$1
         ${scope === 'evidence' ? '' : 'AND NOT ae.withheld'}`,
@@ -181,8 +196,61 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           next_state: row.next_state,
           changed_fields: row.changed_fields,
           created_at: iso(row.created_at),
+          // A watch-only check's record: codes, a keyed hash and timings, never the message.
+          ...(row.decision ? { decision: row.decision } : {}),
         }),
     });
+  // Bans are the moderators' record, so owner and evidence exports carry them and a personal
+  // export does not. A confirmed email is the account's, as the members collection already shows
+  // it, so an import elsewhere can key the ban again. The stored key goes too, for a ban whose
+  // account is gone: it matches only on this same host, with this same auth secret.
+  if (owner)
+    list.push({
+      key: 'bans',
+      prefix: 'bans',
+      select: `SELECT b.id,b.member_id,b.actor_member_id,b.email_hash,b.reason,b.created_at,
+          b.lifted_at,CASE WHEN u."emailVerified" THEN u.email END AS email
+        FROM bans b LEFT JOIN "user" u ON u.id=b.user_id WHERE b.community_id=$1`,
+      keys: [uuidKey('b.id', 'id')],
+      line: (row) =>
+        JSON.stringify({
+          id: row.id,
+          member_id: row.member_id,
+          actor_member_id: row.actor_member_id,
+          email: row.email ?? null,
+          email_hash: row.email_hash ?? null,
+          reason: row.reason,
+          created_at: iso(row.created_at),
+          lifted_at: iso(row.lifted_at),
+        }),
+    });
+  // Reports are the moderators' record too: owner and evidence exports carry every one. A
+  // personal export carries the reports the person filed, which are theirs, without who
+  // resolved them.
+  list.push({
+    key: 'reports',
+    prefix: 'reports',
+    select: `SELECT r.id,r.entry_id,r.source,r.reporter_member_id,r.check_name,r.reason,r.note,
+        r.status,r.action,${owner ? 'r.resolver_member_id' : 'NULL::uuid AS resolver_member_id'},
+        r.created_at,r.resolved_at
+      FROM reports r WHERE r.community_id=$1 ${owner ? '' : 'AND r.reporter_member_id=$2'}`,
+    keys: [uuidKey('r.id', 'id')],
+    line: (row) =>
+      JSON.stringify({
+        id: row.id,
+        entry_id: row.entry_id,
+        source: row.source,
+        reporter_member_id: row.reporter_member_id,
+        check_name: row.check_name,
+        reason: row.reason,
+        note: row.note,
+        status: row.status,
+        action: row.action,
+        resolver_member_id: row.resolver_member_id,
+        created_at: iso(row.created_at),
+        resolved_at: iso(row.resolved_at),
+      }),
+  });
   return list;
 }
 

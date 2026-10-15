@@ -8,21 +8,11 @@
  *
  * @module routes/remote-communities
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import {
-  CommunityRefSchema,
-  type CommunityEntry,
-  type CommunityRoom,
-} from '@dorkos/shared/community-adapter';
 import {
   RemoteCommunityHistoryResponseSchema,
   RemoteCommunityAttachmentResponseSchema,
-  RemoteCommunityEjectionResponseSchema,
-  RemoteCommunityEnrollmentResponseSchema,
-  RemoteCommunityEnrollmentsResponseSchema,
-  RemoteCommunityEnrollRequestSchema,
-  RemoteCommunityEventSchema,
   RemoteCommunityMembersResponseSchema,
   RemoteCommunityPostRequestSchema,
   RemoteCommunityPostResponseSchema,
@@ -30,271 +20,93 @@ import {
   RemoteCommunityRoomResponseSchema,
   RemoteCommunityRoomsResponseSchema,
 } from '@dorkos/shared/community-views';
+import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
 import { resolveCommunityOwner } from './community-connections.js';
 import {
   getRemoteCommunityAdapter,
-  getRemotePairingService,
   getRemoteCommunityDeliverySnapshot,
-  getRemoteCommunityEnrollmentStore,
   getRemoteCommunityLifecycle,
-  getRemoteCommunityOriginIdempotencyKey,
-  onRemoteCommunityDeliveryChange,
-  resolveRemoteCommunityLocalAgent,
   retryRemoteCommunityDelivery,
 } from '../services/communities/remote/state.js';
-import { getRoomService } from '../services/rooms/index.js';
+import { RemoteConnectionAuthorizationError } from '../services/communities/remote/connection-store.js';
+import { attachmentHeaders, requestBytes } from './remote-community-attachment-http.js';
+import { registerRemoteCommunityAgentRoutes } from './remote-community-agents.js';
+import { registerRemoteCommunityConductRoutes } from './remote-community-conduct.js';
+import { remoteRoomEvents } from './remote-community-events.js';
 import {
-  remoteAuthorOf,
-  remoteOriginIdempotencyKeyOf,
-  remoteRoomAccessOf,
-  remoteSequenceOf,
-  remoteThreadReplySeqOf,
-} from '../services/communities/remote/remote-community-adapter.js';
-import {
-  RemoteConnectionAuthorizationError,
-  RemoteConnectionNotFoundError,
-} from '../services/communities/remote/connection-store.js';
-import {
-  communityGoneRefusal,
-  communityRefusal,
-  type CommunityRefusal,
-  type CommunityRefusalAction,
-} from './remote-community-refusal.js';
-import {
-  followNativeRedactions,
-  NATIVE_REDACTION_POLL_MS,
-} from '../services/communities/remote/native-redaction-follower.js';
+  communityFailure,
+  communityTarget,
+  remoteEntry,
+  remoteRoom,
+  verifiedConnection,
+} from './remote-community-http.js';
 
-function isSafeAttachmentName(value: string): boolean {
-  return [...value].every((character) => {
-    const code = character.codePointAt(0);
-    return code !== undefined && code >= 0x20 && code !== 0x7f;
-  });
-}
-
-const attachmentHeadersSchema = z.object({
-  name: z.string().min(1).max(255).refine(isSafeAttachmentName),
-  contentType: z.string().min(1).max(255),
-  byteSize: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .max(25 * 1024 * 1024),
-  idempotencyKey: z.string().min(1).max(128),
-});
-
-/** Parse the raw attachment envelope without letting a file MIME select a body parser. */
-function attachmentHeaders(req: import('express').Request) {
-  const envelopeContentType = req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
-  if (envelopeContentType !== 'application/octet-stream') return null;
-  const encodedName = req.header('x-file-name');
-  let name: string | undefined;
-  try {
-    name = encodedName ? decodeURIComponent(encodedName) : undefined;
-  } catch {
-    return null;
-  }
-  const parsed = attachmentHeadersSchema.safeParse({
-    name,
-    contentType: req.header('x-file-content-type'),
-    byteSize: req.header('x-file-size'),
-    idempotencyKey: req.header('idempotency-key'),
-  });
-  return parsed.success ? parsed.data : null;
-}
-
-/** Write one strict event payload without exposing adapter or credential state. */
-function writeEvent(res: import('express').Response, event: unknown): void {
-  const parsed = RemoteCommunityEventSchema.parse(event);
-  res.write(`event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`);
-}
-
-/** Turn an incoming HTTP byte stream into the adapter's portable byte source. */
-async function* requestBytes(req: import('express').Request): AsyncIterable<Uint8Array> {
-  for await (const chunk of req) yield typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
-}
-
-function fail(
-  res: import('express').Response,
-  error: unknown,
-  action?: CommunityRefusalAction
-): void {
-  if (error instanceof RemoteCommunityGoneError) {
-    res.status(error.refusal.status).json({ code: error.refusal.code, error: error.refusal.error });
-    return;
-  }
-  if (error instanceof RemoteConnectionCapabilityError) {
-    res.status(403).json({ code: 'COMMUNITY_ACCESS_DENIED', error: error.message });
-    return;
-  }
-  if (error instanceof RemoteConnectionAuthorizationError) {
-    res.status(409).json({
-      code: 'COMMUNITY_RECONNECT_REQUIRED',
-      error: 'Reconnect this space to continue.',
-    });
-    return;
-  }
-  if (error instanceof RemoteConnectionNotFoundError) {
-    res.status(404).json({ error: 'Space connection not found.' });
-    return;
-  }
-  const refusal = communityRefusal(error, action);
-  if (refusal) {
-    res.status(refusal.status).json({ code: refusal.code, error: refusal.error });
-    return;
-  }
-  res.status(502).json({ error: 'Space unavailable.' });
-}
-
-class RemoteConnectionCapabilityError extends Error {
-  constructor() {
-    super('This space connection does not allow that action.');
-    this.name = 'RemoteConnectionCapabilityError';
-  }
-}
-
-/**
- * The connection's community was recorded deleted or taken down, so it has no capabilities left.
- * Answered as the gone refusal the Community itself gives, never as "not allowed": the app puts a
- * person's refused message back in their draft on exactly these codes (DOR-2575).
- */
-class RemoteCommunityGoneError extends Error {
-  constructor(readonly refusal: CommunityRefusal) {
-    super(refusal.error);
-    this.name = 'RemoteCommunityGoneError';
-  }
-}
-
-async function verifiedConnection(
-  ref: import('@dorkos/shared/community-adapter').CommunityRef,
-  owner: string,
-  capability: 'read' | 'post' | 'enrollAgent' | 'stream'
-) {
-  const connection = await getRemotePairingService().status(ref, owner);
-  if (connection.status === 'reconnect-required') throw new RemoteConnectionAuthorizationError();
-  const gone = communityGoneRefusal(connection.access?.lastKnown?.lifecycle);
-  if (gone) throw new RemoteCommunityGoneError(gone);
-  if (!connection.access || connection.access.state !== 'verified')
-    throw new Error('Space unavailable');
-  if (!connection.access.effective[capability]) throw new RemoteConnectionCapabilityError();
-  return connection;
-}
-
-function remoteRoom(
-  room: CommunityRoom,
-  remoteCommunityId: string,
-  connectionAccess: NonNullable<
-    import('@dorkos/shared/community-connections').CommunityConnectionDescriptor['access']
-  >
-) {
-  const roomAccess = remoteRoomAccessOf(room);
-  if (!roomAccess) throw new Error('Native remote room lost visibility metadata');
-  return {
-    ...room,
-    remoteCommunityId,
-    visibility: roomAccess.visibility,
-    readable:
-      connectionAccess.effective.read && (roomAccess.visibility === 'public' || roomAccess.joined),
-    writable: connectionAccess.effective.post && roomAccess.joined && !room.archived,
-    joined: roomAccess.joined,
-    stale: false,
-    cacheCursor: null,
-    lastRemoteSeq: 0,
-    access: connectionAccess,
-  };
-}
-
-function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
-  const seq = remoteSequenceOf(entry);
-  const author = remoteAuthorOf(entry);
-  if (seq === undefined || !author)
-    throw new Error('Native remote entry lost authoritative metadata');
-  const originIdempotencyKey =
-    ownerAuthorId && author.kind === 'agent'
-      ? (getRemoteCommunityOriginIdempotencyKey(
-          entry.community,
-          entry.roomId,
-          ownerAuthorId,
-          entry.id
-        ) ?? remoteOriginIdempotencyKeyOf(entry))
-      : null;
-  const threadLastReplySeq = entry.thread ? remoteThreadReplySeqOf(entry) : undefined;
-  return {
-    ...entry,
-    remoteSeq: seq,
-    authorDisplayName: author.displayName,
-    authorKind: author.kind,
-    ...(originIdempotencyKey ? { originIdempotencyKey } : {}),
-    ...(threadLastReplySeq === undefined ? {} : { threadLastReplySeq }),
-  };
-}
-
-/** A redaction-feed position a resuming view sends back; opaque and bounded. */
-const RedactionPositionSchema = z.string().min(1).max(1024).optional();
-
-/** Build routes for remote community discovery and read-only qualified views. */
-export function createRemoteCommunitiesRouter(): Router {
-  const router = Router();
-  router.get('/:ref/rooms', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+/** Build the routes for remote community discovery and qualified views. */
+export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  router.get('/:ref/rooms', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
     try {
-      const connection = await verifiedConnection(ref.data, owner, 'read');
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
+      const connection = await verifiedConnection(ref, owner, 'read');
+      const adapter = getRemoteCommunityAdapter(ref, owner);
       const connected = await adapter.connect();
       if (connected.status === 'unauthorized') throw new RemoteConnectionAuthorizationError();
       if (connected.status !== 'connected') throw new Error('Space unavailable');
       const rooms = (await adapter.listRooms()).map((room) =>
         remoteRoom(room, connection.remoteCommunityId, connection.access!)
       );
-      res.json(
-        RemoteCommunityRoomsResponseSchema.parse({ community: ref.data, rooms, stale: false })
+      return c.json(
+        RemoteCommunityRoomsResponseSchema.parse({ community: ref, rooms, stale: false })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/rooms/:roomId', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.get('/:ref/rooms/:roomId', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
     try {
-      const connection = await verifiedConnection(ref.data, owner, 'read');
-      const room = await getRemoteCommunityAdapter(ref.data, owner).getRoom(req.params.roomId);
-      if (!room) return res.status(404).json({ error: 'Room not found.' });
-      res.json(
+      const connection = await verifiedConnection(ref, owner, 'read');
+      const room = await getRemoteCommunityAdapter(ref, owner).getRoom(c.req.param('roomId'));
+      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      return c.json(
         RemoteCommunityRoomResponseSchema.parse({
           room: remoteRoom(room, connection.remoteCommunityId, connection.access!),
         })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/rooms/:roomId/entries', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    const limit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+  router.get('/:ref/rooms/:roomId/entries', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const roomId = c.req.param('roomId');
+    const query = readQuery(c);
+    const limit = query.limit === undefined ? 100 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-      return res.status(400).json({ error: 'Use a history limit from 1 through 100.' });
+      return c.json({ error: 'Use a history limit from 1 through 100.' }, 400);
     try {
-      await verifiedConnection(ref.data, owner, 'read');
-      const page = await getRemoteCommunityAdapter(ref.data, owner).listEntriesWithThreadRoot(
-        req.params.roomId,
-        {
-          cursor: typeof req.query.cursor === 'string' ? (req.query.cursor as never) : undefined,
-          limit,
-          thread: typeof req.query.threadRootId === 'string' ? req.query.threadRootId : undefined,
-        }
-      );
+      await verifiedConnection(ref, owner, 'read');
+      const page = await getRemoteCommunityAdapter(ref, owner).listEntriesWithThreadRoot(roomId, {
+        cursor: typeof query.cursor === 'string' ? (query.cursor as never) : undefined,
+        limit,
+        thread: typeof query.threadRootId === 'string' ? query.threadRootId : undefined,
+      });
       const entries = page.entries.map((entry) => remoteEntry(entry, owner));
       const lastRemoteSeq = entries.at(-1)?.remoteSeq ?? 0;
-      res.json(
+      return c.json(
         RemoteCommunityHistoryResponseSchema.parse({
-          community: ref.data,
-          roomId: req.params.roomId,
+          community: ref,
+          roomId,
           entries,
           nextCursor: page.nextCursor,
           lastRemoteSeq,
@@ -302,269 +114,168 @@ export function createRemoteCommunitiesRouter(): Router {
         })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/rooms/:roomId/read-cursor', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.get('/:ref/rooms/:roomId/read-cursor', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const roomId = c.req.param('roomId');
     try {
-      await verifiedConnection(ref.data, owner, 'read');
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
+      await verifiedConnection(ref, owner, 'read');
+      const adapter = getRemoteCommunityAdapter(ref, owner);
       const [cursor, room] = await Promise.all([
-        adapter.getReadCursor(req.params.roomId),
-        adapter.getRoom(req.params.roomId),
+        adapter.getReadCursor(roomId),
+        adapter.getRoom(roomId),
       ]);
-      if (!room) return res.status(404).json({ error: 'Room not found.' });
-      res.json(
+      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      return c.json(
         RemoteCommunityReadCursorSchema.parse({ cursor, unreadCount: room.unreadCount ?? 0 })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.put('/:ref/rooms/:roomId/read-cursor', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    const cursor = typeof req.body?.cursor === 'string' ? req.body.cursor : null;
-    if (!owner || !ref.success) return;
-    if (!cursor) return res.status(400).json({ error: 'A cursor is required.' });
+  router.put('/:ref/rooms/:roomId/read-cursor', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const roomId = c.req.param('roomId');
+    const body = readJsonBody(c) as { cursor?: unknown } | undefined;
+    const cursor = typeof body?.cursor === 'string' ? body.cursor : null;
+    if (!cursor) return c.json({ error: 'A cursor is required.' }, 400);
     try {
-      await verifiedConnection(ref.data, owner, 'read');
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
-      await adapter.setReadCursor(req.params.roomId, cursor as never);
-      const room = await adapter.getRoom(req.params.roomId);
-      if (!room) return res.status(404).json({ error: 'Room not found.' });
-      res.json(
+      await verifiedConnection(ref, owner, 'read');
+      const adapter = getRemoteCommunityAdapter(ref, owner);
+      await adapter.setReadCursor(roomId, cursor as never);
+      const room = await adapter.getRoom(roomId);
+      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      return c.json(
         RemoteCommunityReadCursorSchema.parse({ cursor, unreadCount: room.unreadCount ?? 0 })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.post('/:ref/rooms/:roomId/membership', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.post('/:ref/rooms/:roomId/membership', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
     try {
-      const connection = await verifiedConnection(ref.data, owner, 'post');
-      const room = await getRemoteCommunityAdapter(ref.data, owner).joinRoom(req.params.roomId);
-      res.json(
+      const connection = await verifiedConnection(ref, owner, 'post');
+      const room = await getRemoteCommunityAdapter(ref, owner).joinRoom(c.req.param('roomId'));
+      return c.json(
         RemoteCommunityRoomResponseSchema.parse({
           room: remoteRoom(room, connection.remoteCommunityId, connection.access!),
         })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.delete('/:ref/rooms/:roomId/membership', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.delete('/:ref/rooms/:roomId/membership', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
     try {
-      await verifiedConnection(ref.data, owner, 'post');
-      await getRemoteCommunityAdapter(ref.data, owner).leaveRoom(req.params.roomId);
-      res.status(204).end();
+      await verifiedConnection(ref, owner, 'post');
+      await getRemoteCommunityAdapter(ref, owner).leaveRoom(c.req.param('roomId'));
+      return c.body(null, 204);
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/rooms/:roomId/members', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.get('/:ref/rooms/:roomId/members', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const roomId = c.req.param('roomId');
     try {
-      await verifiedConnection(ref.data, owner, 'read');
-      const members = await getRemoteCommunityAdapter(ref.data, owner).listMembers(
-        req.params.roomId
-      );
-      res.json(
+      await verifiedConnection(ref, owner, 'read');
+      const members = await getRemoteCommunityAdapter(ref, owner).listMembers(roomId);
+      return c.json(
         RemoteCommunityMembersResponseSchema.parse({
-          community: ref.data,
-          roomId: req.params.roomId,
+          community: ref,
+          roomId,
           members,
           stale: false,
         })
       );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.post('/:ref/rooms/:roomId/entries', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    const input = RemoteCommunityPostRequestSchema.safeParse(req.body);
-    if (!owner || !ref.success) return;
-    if (!input.success) {
-      res.status(400).json({ error: 'Enter a message with a valid retry key.' });
-      return;
-    }
+  router.post('/:ref/rooms/:roomId/entries', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const input = RemoteCommunityPostRequestSchema.safeParse(readJsonBody(c));
+    if (!input.success) return c.json({ error: 'Enter a message with a valid retry key.' }, 400);
     try {
-      await verifiedConnection(ref.data, owner, 'post');
-      const entry = await getRemoteCommunityAdapter(ref.data, owner).postEntry(
-        req.params.roomId,
+      await verifiedConnection(ref, owner, 'post');
+      const entry = await getRemoteCommunityAdapter(ref, owner).postEntry(
+        c.req.param('roomId'),
         input.data
       );
-      res
-        .status(201)
-        .json(RemoteCommunityPostResponseSchema.parse({ entry: remoteEntry(entry, owner) }));
+      return c.json(
+        RemoteCommunityPostResponseSchema.parse({ entry: remoteEntry(entry, owner) }),
+        201
+      );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.post('/:ref/rooms/:roomId/attachments', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    const input = attachmentHeaders(req);
-    if (!input) {
-      res.status(400).json({ error: 'Provide valid file metadata and a retry key.' });
-      return;
-    }
+  router.post('/:ref/rooms/:roomId/attachments', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    const input = attachmentHeaders(c);
+    if (!input) return c.json({ error: 'Provide valid file metadata and a retry key.' }, 400);
     try {
-      await verifiedConnection(ref.data, owner, 'post');
-      const attachment = await getRemoteCommunityAdapter(ref.data, owner).uploadAttachment(
-        req.params.roomId,
-        { ...input, bytes: requestBytes(req) }
+      await verifiedConnection(ref, owner, 'post');
+      const attachment = await getRemoteCommunityAdapter(ref, owner).uploadAttachment(
+        c.req.param('roomId'),
+        { ...input, bytes: requestBytes(c.env.incoming) }
       );
-      res.status(201).json(RemoteCommunityAttachmentResponseSchema.parse({ attachment }));
+      return c.json(RemoteCommunityAttachmentResponseSchema.parse({ attachment }), 201);
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/rooms/:roomId/attachments/:attachmentId', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.get('/:ref/rooms/:roomId/attachments/:attachmentId', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
+    const { owner, ref } = target;
+    let download;
     try {
-      await verifiedConnection(ref.data, owner, 'read');
-      const download = await getRemoteCommunityAdapter(ref.data, owner).downloadAttachment(
-        req.params.roomId,
-        req.params.attachmentId
+      await verifiedConnection(ref, owner, 'read');
+      download = await getRemoteCommunityAdapter(ref, owner).downloadAttachment(
+        c.req.param('roomId'),
+        c.req.param('attachmentId')
       );
-      res.setHeader('Content-Type', download.attachment.contentType);
+    } catch (error) {
+      return communityFailure(c, error);
+    }
+    const { attachment, bytes } = download;
+    return streamToNodeResponse(c, async (res) => {
+      res.setHeader('Content-Type', attachment.contentType);
       res.setHeader('Content-Disposition', 'attachment');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Cache-Control', 'private, no-store');
-      for await (const chunk of download.bytes) res.write(chunk);
+      for await (const chunk of bytes) res.write(chunk);
       res.end();
-    } catch (error) {
-      fail(res, error);
-    }
-  });
-  router.get('/:ref/rooms/:roomId/events', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    let connection;
-    try {
-      connection = await verifiedConnection(ref.data, owner, 'stream');
-    } catch (error) {
-      fail(res, error);
-      return;
-    }
-    const abort = new AbortController();
-    req.once('close', () => abort.abort());
-    res.status(200);
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-    let sawSnapshot = false;
-    const writeDeliveries = () => {
-      if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
-      const deliveries = getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner);
-      writeEvent(res, { type: 'deliveries', ...deliveries });
-    };
-    const removeDeliveryListener = onRemoteCommunityDeliveryChange((changedOwnerAuthorId) => {
-      if (changedOwnerAuthorId === owner) writeDeliveries();
     });
-    try {
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
-      // Deletions, removals and erasures do not travel on the live stream, so the channel's
-      // redaction feed is followed beside it (DOR-2544). Its end is read BEFORE the snapshot, so
-      // a change between the two reaches the first poll; changes go out only after the snapshot.
-      // A resuming view sends back the last position it was given, so a change made while it
-      // was disconnected is read too; the Community snapshot on a resume holds only newer
-      // entries, so nothing else would carry it.
-      const resumeFrom = RedactionPositionSchema.safeParse(req.query.redactions);
-      const redactions = followNativeRedactions(adapter, req.params.roomId, {
-        signal: abort.signal,
-        intervalMs: NATIVE_REDACTION_POLL_MS,
-        ...(resumeFrom.success && resumeFrom.data !== undefined
-          ? { resumeFrom: resumeFrom.data }
-          : {}),
-        onChanged: (items, position) => {
-          if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
-          const mine = items.filter((item) => item.entry.community === ref.data);
-          mine.forEach((item, index) =>
-            writeEvent(res, {
-              type: 'revision',
-              entry: remoteEntry(item.entry, owner),
-              // On the page's last frame: every change before it has been written.
-              ...(index === mine.length - 1 ? { redactionCursor: position } : {}),
-            })
-          );
-        },
-      });
-      await redactions.ready;
-      for await (const event of adapter.subscribeRoom(
-        req.params.roomId,
-        typeof req.query.since === 'string' ? (req.query.since as never) : undefined,
-        abort.signal
-      )) {
-        if (event.type === 'snapshot') {
-          const entries = event.entries.map((entry) => remoteEntry(entry, owner));
-          writeEvent(res, {
-            type: 'snapshot',
-            room: remoteRoom(event.room, connection.remoteCommunityId, connection.access!),
-            entries,
-            cursor: event.cursor,
-            lastRemoteSeq: entries.at(-1)?.remoteSeq ?? 0,
-            stale: false,
-            ...(redactions.position() ? { redactionCursor: redactions.position() } : {}),
-          });
-          sawSnapshot = true;
-          writeDeliveries();
-          redactions.start();
-        } else if (event.type === 'entry') {
-          const author = remoteAuthorOf(event.entry);
-          if (!author) throw new Error('Native remote entry lost authoritative metadata');
-          writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry, owner) });
-        } else if (event.type === 'room_closed') {
-          writeEvent(res, {
-            type: 'closed',
-            community: ref.data,
-            roomId: req.params.roomId,
-            reason: event.reason === 'access-revoked' ? 'revoked' : 'unavailable',
-          });
-          break;
-        }
-      }
-    } catch (error) {
-      if (!abort.signal.aborted)
-        writeEvent(res, {
-          type: 'closed',
-          community: ref.data,
-          roomId: req.params.roomId,
-          reason: error instanceof RemoteConnectionAuthorizationError ? 'revoked' : 'unavailable',
-        });
-    } finally {
-      removeDeliveryListener();
-      if (!res.writableEnded) res.end();
-    }
   });
-  router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    if (!owner) return;
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    const roomId = z.string().min(1).max(128).safeParse(req.params.roomId);
-    const idempotencyKey = z.string().min(1).max(128).safeParse(req.params.idempotencyKey);
+  router.get('/:ref/rooms/:roomId/events', remoteRoomEvents);
+  router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
+    const roomId = z.string().min(1).max(128).safeParse(c.req.param('roomId'));
+    const idempotencyKey = z.string().min(1).max(128).safeParse(c.req.param('idempotencyKey'));
     if (!ref.success || !roomId.success || !idempotencyKey.success) {
-      res.status(400).json({ error: 'Use valid space, room, and delivery identifiers.' });
-      return;
+      return c.json({ error: 'Use valid space, room, and delivery identifiers.' }, 400);
     }
     try {
       await verifiedConnection(ref.data, owner, 'post');
@@ -574,227 +285,46 @@ export function createRemoteCommunitiesRouter(): Router {
         ownerAuthorId: owner,
         idempotencyKey: idempotencyKey.data,
       });
-      if (result === 'missing') return res.status(404).json({ error: 'Delivery not found.' });
-      if (result === 'terminal')
-        return res.status(409).json({ error: 'Delivery cannot be retried.' });
-      res
-        .status(result === 'in-flight' || result === 'queued' ? 202 : 200)
-        .json(getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner));
+      if (result === 'missing') return c.json({ error: 'Delivery not found.' }, 404);
+      if (result === 'terminal') return c.json({ error: 'Delivery cannot be retried.' }, 409);
+      return c.json(
+        getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner),
+        result === 'in-flight' || result === 'queued' ? 202 : 200
+      );
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-
-  router.post('/:ref/rooms/:roomId/halt', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.post('/:ref/rooms/:roomId/halt', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
     try {
       const stopped = await getRemoteCommunityLifecycle().haltRoom(
-        ref.data,
-        req.params.roomId,
-        owner
+        target.ref,
+        c.req.param('roomId'),
+        target.owner
       );
-      res.json({ stopped });
+      return c.json({ stopped });
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.post('/:ref/rooms/:roomId/agents/:localAgentId/halt', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
+  router.post('/:ref/rooms/:roomId/agents/:localAgentId/halt', async (c) => {
+    const target = communityTarget(c);
+    if (target instanceof Response) return target;
     try {
       const stopped = await getRemoteCommunityLifecycle().haltRoomAgent(
-        ref.data,
-        req.params.roomId,
-        req.params.localAgentId,
-        owner
+        target.ref,
+        c.req.param('roomId'),
+        c.req.param('localAgentId'),
+        target.owner
       );
-      res.json({ stopped });
+      return c.json({ stopped });
     } catch (error) {
-      fail(res, error);
+      return communityFailure(c, error);
     }
   });
-  router.get('/:ref/agents', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    try {
-      await verifiedConnection(ref.data, owner, 'enrollAgent');
-      const [agents, bindings] = await Promise.all([
-        getRemoteCommunityAdapter(ref.data, owner).listEnrolledAgents(),
-        Promise.resolve(getRemoteCommunityEnrollmentStore().activeForOwner(ref.data, owner)),
-      ]);
-      const author = getRoomService().authorRegistry.getById(owner);
-      const byRemoteId = new Map(agents.map((agent) => [agent.memberId, agent]));
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
-      const joinedRooms = new Map(
-        await Promise.all(
-          bindings.map(
-            async (binding) =>
-              [
-                binding.localAgentId,
-                (await adapter.listRooms({ actingMemberId: binding.remoteMemberId }))
-                  .filter(
-                    (room) => room.archived === false && remoteRoomAccessOf(room)?.joined === true
-                  )
-                  .map((room) => room.roomId),
-              ] as const
-          )
-        )
-      );
-      const rows = bindings.flatMap((binding) => {
-        const agent = byRemoteId.get(binding.remoteMemberId);
-        return agent
-          ? [
-              {
-                community: ref.data,
-                localAgentId: binding.localAgentId,
-                remoteMemberId: agent.memberId,
-                displayName: agent.displayName,
-                ownerMemberId: agent.ownerMemberId ?? '',
-                ownerDisplayName: author?.displayName ?? 'Owner',
-                roomIds: joinedRooms.get(binding.localAgentId) ?? [],
-                active: true,
-              },
-            ]
-          : [];
-      });
-      res.json(
-        RemoteCommunityEnrollmentsResponseSchema.parse({ community: ref.data, agents: rows })
-      );
-    } catch (error) {
-      fail(res, error);
-    }
-  });
-  router.post('/:ref/agents/:localAgentId/enroll', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    const input = RemoteCommunityEnrollRequestSchema.safeParse(req.body ?? {});
-    if (!input.success) {
-      res.status(400).json({ error: 'Use a valid space handle.' });
-      return;
-    }
-    try {
-      await verifiedConnection(ref.data, owner, 'enrollAgent');
-      const localAgent = resolveRemoteCommunityLocalAgent(req.params.localAgentId);
-      if (!localAgent) return res.status(404).json({ error: 'Local agent not found.' });
-      const adapter = getRemoteCommunityAdapter(ref.data, owner);
-      const member = await adapter.recoverAgent({
-        // Keep the public Mesh manifest id durable. The local author id is
-        // intentionally private and is resolved again at dispatch time.
-        agentId: req.params.localAgentId,
-        displayName: localAgent.displayName,
-        ...(input.data.handle ? { handle: input.data.handle } : {}),
-      });
-      getRemoteCommunityLifecycle().refreshSubscriptions();
-      res.status(201).json(
-        RemoteCommunityEnrollmentResponseSchema.parse({
-          agent: {
-            community: ref.data,
-            localAgentId: req.params.localAgentId,
-            remoteMemberId: member.memberId,
-            displayName: member.displayName,
-            ownerMemberId: member.ownerMemberId ?? '',
-            ownerDisplayName:
-              getRoomService().authorRegistry.getById(owner)?.displayName ?? 'Owner',
-            roomIds: [],
-            active: true,
-          },
-        })
-      );
-    } catch (error) {
-      fail(res, error, 'enroll-agent');
-    }
-  });
-  router.delete('/:ref/agents/:localAgentId', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    try {
-      const enrollments = getRemoteCommunityEnrollmentStore();
-      const binding = enrollments.findAnyRemoteMember(ref.data, req.params.localAgentId, owner);
-      if (!binding) return res.status(404).json({ error: 'Agent enrollment not found.' });
-      // Fence the exact local enrollment before any remote cleanup. This aborts
-      // its stream and pending work, revokes only its mirror accessors, and
-      // prevents a directory pass already in flight from restoring that grant.
-      await getRemoteCommunityLifecycle().revokeEnrollment(
-        ref.data,
-        req.params.localAgentId,
-        owner
-      );
-      let remoteRevoked = false;
-      try {
-        const connection = await getRemotePairingService().status(ref.data, owner);
-        if (
-          connection.status === 'connected' &&
-          connection.access?.state === 'verified' &&
-          connection.access.effective.enrollAgent
-        ) {
-          await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
-          remoteRevoked = true;
-        }
-      } catch {
-        remoteRevoked = false;
-      }
-      getRemoteCommunityLifecycle().refreshSubscriptions();
-      res.json(RemoteCommunityEjectionResponseSchema.parse({ localRevoked: true, remoteRevoked }));
-    } catch (error) {
-      fail(res, error);
-    }
-  });
-  router.post('/:ref/rooms/:roomId/agents/:localAgentId/membership', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    try {
-      await verifiedConnection(ref.data, owner, 'enrollAgent');
-      const binding = getRemoteCommunityEnrollmentStore().findRemoteMember(
-        ref.data,
-        req.params.localAgentId,
-        owner
-      );
-      if (!binding) return res.status(404).json({ error: 'Active agent enrollment not found.' });
-      await getRemoteCommunityAdapter(ref.data, owner).addMember(
-        req.params.roomId,
-        binding.remoteMemberId
-      );
-      getRemoteCommunityLifecycle().refreshSubscriptions();
-      res.status(204).end();
-    } catch (error) {
-      fail(res, error);
-    }
-  });
-  router.delete('/:ref/rooms/:roomId/agents/:localAgentId/membership', async (req, res) => {
-    const owner = resolveCommunityOwner(req, res);
-    const ref = CommunityRefSchema.safeParse(req.params.ref);
-    if (!owner || !ref.success) return;
-    try {
-      await verifiedConnection(ref.data, owner, 'enrollAgent');
-      const binding = getRemoteCommunityEnrollmentStore().findRemoteMember(
-        ref.data,
-        req.params.localAgentId,
-        owner
-      );
-      if (!binding) return res.status(404).json({ error: 'Active agent enrollment not found.' });
-      await getRemoteCommunityAdapter(ref.data, owner).removeMember(
-        req.params.roomId,
-        binding.remoteMemberId
-      );
-      await getRemoteCommunityLifecycle().leaveRoom(
-        ref.data,
-        req.params.roomId,
-        req.params.localAgentId,
-        owner
-      );
-      res.json(
-        RemoteCommunityEjectionResponseSchema.parse({ localRevoked: true, remoteRevoked: true })
-      );
-    } catch (error) {
-      fail(res, error);
-    }
-  });
+  registerRemoteCommunityAgentRoutes(router);
+  registerRemoteCommunityConductRoutes(router);
   return router;
 }

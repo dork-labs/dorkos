@@ -1,8 +1,11 @@
 /** Offline upstream for real Composio clients. Loaded only by the test-runtime bootstrap. */
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import express, { Router } from 'express';
+import { getRequestListener } from '@hono/node-server';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import type { ApiEnv } from '../../../../http/api-chain.js';
+import { readJsonBody } from '../../../../http/request-body.js';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { legacyDefaultProviderInstanceId } from '../../legacy-connection-migration.js';
 import {
@@ -17,6 +20,9 @@ import {
   fixtureOperation,
   fixtureOperations,
 } from './data.js';
+
+/** The test-only fixture instance returned by its canonical factory. */
+export type TestComposioFixture = Awaited<ReturnType<typeof startTestComposioFixture>>;
 
 const accountInput = z
   .object({
@@ -53,6 +59,39 @@ const emitInput = z
     signature: z.enum(['valid', 'invalid']),
   })
   .strict();
+/** A query string as the clients' requests carry it: a repeated key is a list. */
+type Query = Record<string, string | string[] | undefined>;
+
+/** The query string, each key literal (`toolkit_versions[gmail]` is one key). */
+function queryOf(c: Context): Query {
+  const query: Query = {};
+  for (const [key, values] of Object.entries(c.req.queries())) {
+    query[key] = values.length === 1 ? values[0] : values;
+  }
+  return query;
+}
+
+/** The most an offline upstream request body may carry. */
+const BODY_LIMIT = 16 * 1024;
+
+/**
+ * A JSON request body, or `undefined` when there is none, it is not JSON, or
+ * it is larger than {@link BODY_LIMIT}; every route refuses that as a `400`.
+ */
+async function jsonBody(c: Context): Promise<unknown> {
+  if (!c.req.header('content-type')?.includes('json')) return undefined;
+  const text = await c.req.text();
+  if (Buffer.byteLength(text) > BODY_LIMIT) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A refused upstream request. */
+const BAD_REQUEST = (c: Context): Response => c.text('Bad Request', 400);
+
 type Account = {
   id: string;
   uuid: string;
@@ -103,39 +142,31 @@ export async function startTestComposioFixture(options: {
   let upstreamRequests = 0;
   let mutations = 0;
   let baseUrl = '';
-  const app = express();
-  app.disable('x-powered-by');
-  app.use(express.json({ limit: '16kb' }));
-  app.get('/consent/:id', (req, res) => {
-    if (!accounts.has(req.params.id)) return void res.sendStatus(404);
-    res
-      .type('html')
-      .send(
-        '<!doctype html><html lang="en"><title>Offline Gmail consent</title><body><h1>Connect test Gmail</h1><form method="post"><button type="submit">Allow test Gmail</button></form></body></html>'
-      );
+  const app = new Hono();
+  app.get('/consent/:id', (c) => {
+    if (!accounts.has(c.req.param('id'))) return c.text('Not Found', 404);
+    return c.html(
+      '<!doctype html><html lang="en"><title>Offline Gmail consent</title><body><h1>Connect test Gmail</h1><form method="post"><button type="submit">Allow test Gmail</button></form></body></html>'
+    );
   });
-  app.post('/consent/:id', (req, res) => {
-    const account = accounts.get(req.params.id);
-    if (!account) return void res.sendStatus(404);
+  app.post('/consent/:id', (c) => {
+    const account = accounts.get(c.req.param('id'));
+    if (!account) return c.text('Not Found', 404);
     account.status = 'ACTIVE';
-    res
-      .type('html')
-      .send(
-        '<!doctype html><html lang="en"><title>Connected</title><body><p>Test Gmail connected. You may close this window.</p></body></html>'
-      );
+    return c.html(
+      '<!doctype html><html lang="en"><title>Connected</title><body><p>Test Gmail connected. You may close this window.</p></body></html>'
+    );
   });
-  app.use((req, res, next) => {
+  app.use(async (c, next) => {
     upstreamRequests++;
-    if (req.headers['x-api-key'] !== COMPOSIO_FIXTURE_KEY)
-      return void res
-        .status(401)
-        .json({ error: { message: 'Offline project key required', status: 401 } });
-    next();
+    if (c.req.header('x-api-key') !== COMPOSIO_FIXTURE_KEY)
+      return c.json({ error: { message: 'Offline project key required', status: 401 } }, 401);
+    await next();
   });
   const page = (items: unknown[]) => ({ items, current_page: 1, total_pages: 1 });
-  const versionMatches = (query: Record<string, unknown>) =>
+  const versionMatches = (query: Query) =>
     query['toolkit_versions[gmail]'] === COMPOSIO_FIXTURE_VERSION;
-  const listMatches = (query: Record<string, unknown>, key: string, value: string) =>
+  const listMatches = (query: Query, key: string, value: string) =>
     query[key] === value || query[`${key}[]`] === value;
   const toolkit = {
     slug: 'gmail',
@@ -148,15 +179,15 @@ export async function startTestComposioFixture(options: {
       logo: COMPOSIO_FIXTURE_LOGO,
     },
   };
-  app.get('/api/v3.1/toolkits', (_req, res) => res.json(page([toolkit])));
-  app.get('/api/v3.1/toolkits/gmail', (_req, res) => res.json(toolkit));
-  app.get('/api/v3.1/auth_configs', (req, res) => {
-    if (req.query.toolkit_slug !== 'gmail') return void res.sendStatus(400);
-    res.json(page([{ id: 'ac_offline_gmail', is_disabled: false }]));
+  app.get('/api/v3.1/toolkits', (c) => c.json(page([toolkit])));
+  app.get('/api/v3.1/toolkits/gmail', (c) => c.json(toolkit));
+  app.get('/api/v3.1/auth_configs', (c) => {
+    if (queryOf(c).toolkit_slug !== 'gmail') return BAD_REQUEST(c);
+    return c.json(page([{ id: 'ac_offline_gmail', is_disabled: false }]));
   });
-  app.post('/api/v3.1/connected_accounts', (req, res) => {
-    const input = accountInput.safeParse(req.body);
-    if (!input.success || accounts.size >= 100) return void res.sendStatus(400);
+  app.post('/api/v3.1/connected_accounts', async (c) => {
+    const input = accountInput.safeParse(await jsonBody(c));
+    if (!input.success || accounts.size >= 100) return BAD_REQUEST(c);
     const id = `ca_${randomUUID()}`;
     const account: Account = {
       id,
@@ -169,36 +200,37 @@ export async function startTestComposioFixture(options: {
     };
     accounts.set(id, account);
     mutations++;
-    res.json({ id, status: account.status, redirect_url: `${baseUrl}/consent/${id}` });
+    return c.json({ id, status: account.status, redirect_url: `${baseUrl}/consent/${id}` });
   });
-  app.get('/api/v3.1/connected_accounts', (req, res) => {
+  app.get('/api/v3.1/connected_accounts', (c) => {
+    const query = queryOf(c);
     if (
-      !listMatches(req.query, 'user_ids', COMPOSIO_FIXTURE_USER) ||
-      (req.query.toolkit_slugs && req.query.toolkit_slugs !== 'gmail')
+      !listMatches(query, 'user_ids', COMPOSIO_FIXTURE_USER) ||
+      (query.toolkit_slugs && query.toolkit_slugs !== 'gmail')
     )
-      return void res.sendStatus(400);
-    res.json(page([...accounts.values()]));
+      return BAD_REQUEST(c);
+    return c.json(page([...accounts.values()]));
   });
-  app.get('/api/v3.1/connected_accounts/:id', (req, res) => {
-    const account = accounts.get(req.params.id);
-    if (!account) return void res.sendStatus(404);
-    res.json(account);
+  app.get('/api/v3.1/connected_accounts/:id', (c) => {
+    const account = accounts.get(c.req.param('id'));
+    if (!account) return c.text('Not Found', 404);
+    return c.json(account);
   });
-  app.delete('/api/v3.1/connected_accounts/:id', (req, res) => {
-    if (!accounts.delete(req.params.id)) return void res.sendStatus(404);
+  app.delete('/api/v3.1/connected_accounts/:id', (c) => {
+    if (!accounts.delete(c.req.param('id'))) return c.text('Not Found', 404);
     mutations++;
-    res.json({ success: true });
+    return c.json({ success: true });
   });
-  app.get('/api/v3.1/tools', (req, res) => {
-    if (req.query.toolkit_slug !== 'gmail' || !versionMatches(req.query))
-      return void res.sendStatus(400);
-    res.json(page(fixtureOperations()));
+  app.get('/api/v3.1/tools', (c) => {
+    const query = queryOf(c);
+    if (query.toolkit_slug !== 'gmail' || !versionMatches(query)) return BAD_REQUEST(c);
+    return c.json(page(fixtureOperations()));
   });
-  app.get('/api/v3.1/tools/GMAIL_FETCH_EMAILS', (req, res) => {
-    if (req.query.version !== COMPOSIO_FIXTURE_VERSION) return void res.sendStatus(400);
-    res.json(fixtureOperation());
+  app.get('/api/v3.1/tools/GMAIL_FETCH_EMAILS', (c) => {
+    if (queryOf(c).version !== COMPOSIO_FIXTURE_VERSION) return BAD_REQUEST(c);
+    return c.json(fixtureOperation());
   });
-  app.post('/api/v3.1/tools/execute/GMAIL_FETCH_EMAILS', (req, res) => {
+  app.post('/api/v3.1/tools/execute/GMAIL_FETCH_EMAILS', async (c) => {
     const input = z
       .object({
         connected_account_id: z.string(),
@@ -208,43 +240,43 @@ export async function startTestComposioFixture(options: {
         allow_tracing: z.literal(false),
       })
       .strict()
-      .safeParse(req.body);
+      .safeParse(await jsonBody(c));
     const account = input.success && accounts.get(input.data.connected_account_id);
-    if (!input.success || !account || account.status !== 'ACTIVE') return void res.sendStatus(400);
-    res.json({
+    if (!input.success || !account || account.status !== 'ACTIVE') return BAD_REQUEST(c);
+    return c.json({
       successful: true,
       error: null,
       data: { messages: [{ subject: `Offline Gmail account ${account.ordinal}` }] },
       log_id: 'offline_execution',
     });
   });
-  app.get('/api/v3.1/triggers_types', (req, res) => {
-    if (!listMatches(req.query, 'toolkit_slugs', 'gmail') || !versionMatches(req.query))
-      return void res.sendStatus(400);
-    res.json(page(fixtureDefinitions()));
+  app.get('/api/v3.1/triggers_types', (c) => {
+    const query = queryOf(c);
+    if (!listMatches(query, 'toolkit_slugs', 'gmail') || !versionMatches(query))
+      return BAD_REQUEST(c);
+    return c.json(page(fixtureDefinitions()));
   });
-  app.get('/api/v3.1/triggers_types/:slug', (req, res) => {
-    const definition = fixtureDefinitions().find((item) => item.slug === req.params.slug);
-    if (!definition || !versionMatches(req.query)) return void res.sendStatus(400);
-    res.json(definition);
+  app.get('/api/v3.1/triggers_types/:slug', (c) => {
+    const definition = fixtureDefinitions().find((item) => item.slug === c.req.param('slug'));
+    if (!definition || !versionMatches(queryOf(c))) return BAD_REQUEST(c);
+    return c.json(definition);
   });
-  app.get('/api/v3.1/trigger_instances/active', (req, res) => {
-    if (mode === 'unavailable') return void res.sendStatus(503);
+  app.get('/api/v3.1/trigger_instances/active', (c) => {
+    if (mode === 'unavailable') return c.text('Service Unavailable', 503);
+    const query = queryOf(c);
     const account = [...accounts.values()].find((item) =>
-      listMatches(req.query, 'connected_account_ids', item.id)
+      listMatches(query, 'connected_account_ids', item.id)
     );
-    const event = COMPOSIO_FIXTURE_EVENTS.find((item) =>
-      listMatches(req.query, 'trigger_names', item)
-    );
+    const event = COMPOSIO_FIXTURE_EVENTS.find((item) => listMatches(query, 'trigger_names', item));
     if (
       !account ||
       account.status !== 'ACTIVE' ||
       !event ||
-      !listMatches(req.query, 'user_ids', COMPOSIO_FIXTURE_USER) ||
-      req.query.show_disabled !== 'true'
+      !listMatches(query, 'user_ids', COMPOSIO_FIXTURE_USER) ||
+      query.show_disabled !== 'true'
     )
-      return void res.sendStatus(400);
-    res.json(
+      return BAD_REQUEST(c);
+    return c.json(
       page(
         [...triggers.values()].filter(
           (item) => item.connected_account_id === account.id && item.trigger_name === event
@@ -252,26 +284,27 @@ export async function startTestComposioFixture(options: {
       )
     );
   });
-  app.post('/api/v3.1/trigger_instances/:slug/upsert', (req, res) => {
-    const input = triggerInput.safeParse(req.body);
+  app.post('/api/v3.1/trigger_instances/:slug/upsert', async (c) => {
+    const slug = c.req.param('slug');
+    const input = triggerInput.safeParse(await jsonBody(c));
     const account = input.success && accounts.get(input.data.connected_account_id);
     if (
       !input.success ||
       !account ||
       account.status !== 'ACTIVE' ||
-      !COMPOSIO_FIXTURE_EVENTS.some((item) => item === req.params.slug) ||
-      (req.params.slug === 'GMAIL_NEW_GMAIL_MESSAGE'
+      !COMPOSIO_FIXTURE_EVENTS.some((item) => item === slug) ||
+      (slug === 'GMAIL_NEW_GMAIL_MESSAGE'
         ? !gmailTriggerConfig.safeParse(input.data.trigger_config).success
         : !legacyTriggerConfig.safeParse(input.data.trigger_config).success ||
-          (req.params.slug !== 'GMAIL_UNSUPPORTED_FILTER' &&
+          (slug !== 'GMAIL_UNSUPPORTED_FILTER' &&
             Object.keys(input.data.trigger_config).some((key) => key !== 'label')))
     )
-      return void res.sendStatus(400);
-    if (mode === 'unavailable') return void res.sendStatus(503);
+      return BAD_REQUEST(c);
+    if (mode === 'unavailable') return c.text('Service Unavailable', 503);
     const existing = [...triggers.values()].find(
       (item) =>
         item.connected_account_id === account.id &&
-        item.trigger_name === req.params.slug &&
+        item.trigger_name === slug &&
         stableStringify(item.trigger_config) === stableStringify(input.data.trigger_config)
     );
     const trigger: Trigger = existing ?? {
@@ -280,7 +313,7 @@ export async function startTestComposioFixture(options: {
       connected_account_id: account.id,
       connected_account_uuid: account.uuid,
       user_id: COMPOSIO_FIXTURE_USER,
-      trigger_name: req.params.slug,
+      trigger_name: slug,
       version: COMPOSIO_FIXTURE_VERSION,
       trigger_config: input.data.trigger_config,
       disabled_at: null,
@@ -288,28 +321,26 @@ export async function startTestComposioFixture(options: {
     trigger.disabled_at = null;
     triggers.set(trigger.id, trigger);
     mutations++;
-    res.json({ trigger_id: trigger.id });
+    return c.json({ trigger_id: trigger.id });
   });
-  app.patch('/api/v3.1/trigger_instances/manage/:id', (req, res) => {
+  app.patch('/api/v3.1/trigger_instances/manage/:id', async (c) => {
     const input = z
       .object({ status: z.enum(['enable', 'disable']) })
       .strict()
-      .safeParse(req.body);
-    const trigger = triggers.get(req.params.id);
-    if (!input.success || !trigger) return void res.sendStatus(400);
+      .safeParse(await jsonBody(c));
+    const trigger = triggers.get(c.req.param('id'));
+    if (!input.success || !trigger) return BAD_REQUEST(c);
     trigger.disabled_at = input.data.status === 'disable' ? new Date().toISOString() : null;
     mutations++;
-    res.json({ status: 'success' });
+    return c.json({ status: 'success' });
   });
-  app.delete('/api/v3.1/trigger_instances/manage/:id', (req, res) => {
-    if (!triggers.delete(req.params.id)) return void res.sendStatus(404);
+  app.delete('/api/v3.1/trigger_instances/manage/:id', (c) => {
+    if (!triggers.delete(c.req.param('id'))) return c.text('Not Found', 404);
     mutations++;
-    res.json({ status: 'success' });
+    return c.json({ status: 'success' });
   });
-  app.use((_req, res) => {
-    res.status(404).json({ error: 'Unknown offline route' });
-  });
-  const server = createServer(app);
+  app.notFound((c) => c.json({ error: 'Unknown offline route' }, 404));
+  const server = createServer(getRequestListener(app.fetch, { overrideGlobalObjects: false }));
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -324,9 +355,10 @@ export async function startTestComposioFixture(options: {
     server.close();
     throw error;
   }
-  const router = Router();
-  router.get('/status', (_req, res) =>
-    res.json({
+  // The test-control group (`/api/test/composio`) that drives the fake.
+  const routes = new Hono<ApiEnv>();
+  routes.get('/status', (c) =>
+    c.json({
       mode,
       accounts: accounts.size,
       accountOrdinals: [...accounts.values()].map((account) => account.ordinal),
@@ -335,18 +367,18 @@ export async function startTestComposioFixture(options: {
       mutations,
     })
   );
-  router.post('/events-state', (req, res) => {
+  routes.post('/events-state', (c) => {
     const input = z
       .object({ mode: z.enum(['ready', 'unavailable']) })
       .strict()
-      .safeParse(req.body);
-    if (!input.success) return void res.sendStatus(400);
+      .safeParse(readJsonBody(c));
+    if (!input.success) return c.text('Bad Request', 400);
     mode = input.data.mode;
-    res.json({ mode });
+    return c.json({ mode });
   });
-  router.post('/emit', async (req, res) => {
-    const input = emitInput.safeParse(req.body);
-    if (!input.success) return void res.sendStatus(400);
+  routes.post('/emit', async (c) => {
+    const input = emitInput.safeParse(readJsonBody(c));
+    if (!input.success) return c.text('Bad Request', 400);
     const account = [...accounts.values()].find(
       (item) => item.ordinal === input.data.accountOrdinal && item.status === 'ACTIVE'
     );
@@ -357,7 +389,7 @@ export async function startTestComposioFixture(options: {
         item.disabled_at === null
     );
     if (!account || matches.length !== 1)
-      return void res.status(409).json({ error: 'One active offline trigger is required' });
+      return c.json({ error: 'One active offline trigger is required' }, 409);
     const trigger = matches[0]!;
     const timestamp = String(Math.floor(Date.now() / 1000));
     const body = JSON.stringify({
@@ -396,14 +428,14 @@ export async function startTestComposioFixture(options: {
         body,
       });
       await response.body?.cancel();
-      res.json({ eventId: input.data.eventId, status: response.status });
+      return c.json({ eventId: input.data.eventId, status: response.status });
     } catch {
-      res.status(502).json({ error: 'Offline ingress unavailable' });
+      return c.json({ error: 'Offline ingress unavailable' }, 502);
     }
   });
   return {
     baseUrl,
-    router,
+    routes,
     async close() {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

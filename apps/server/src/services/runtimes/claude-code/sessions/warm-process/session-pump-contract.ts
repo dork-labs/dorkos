@@ -1,0 +1,397 @@
+/**
+ * The pump's vocabulary: the states one session's process moves through, the
+ * transitions between them, the seams it is driven through, and the two errors
+ * it raises (spec `persistent-session-runtime` §4.2, task 3.2).
+ *
+ * Split out of `session-pump.ts` so the machine's shape can be read — and
+ * imported by the tasks that build on it — without reading its implementation.
+ * Consumers may import either module: `session-pump.ts` re-exports all of this.
+ *
+ * @module services/runtimes/claude-code/sessions/session-pump-contract
+ */
+import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
+import type { HeldUserPrompt } from '../../sdk/sdk-utils.js';
+
+/**
+ * How long a launch may sit without a `system/init` before it is called dead.
+ *
+ * Nothing else bounds this window. The stall watchdog arms on a turn window
+ * (task 3.7) and the idle timer bounds a WARM session (task 3.4); a process
+ * that boots and never initializes is neither, so without this a dispatch would
+ * await an init that never comes for as long as the server runs. Generous
+ * enough that a cold CLI on a slow disk, loading plugins and MCP servers, still
+ * makes it.
+ */
+export const INIT_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the polite close is given before the process is closed out from
+ * under it. Matches the OpenCode sidecar's shutdown grace: long enough for a
+ * drain that is actually working, short enough that shutdown stays snappy.
+ */
+export const DRAIN_GRACE_MS = 5_000;
+
+/**
+ * How long a warm process may owe a notification delivery before the pump gives
+ * up on it (spec `warm-process-lifecycle` D1).
+ *
+ * A `task_notification` says a delivery is now owed, and the delivery arrives as
+ * a fresh query segment whose `system/init` clears the debt. Nothing guarantees
+ * that segment ever opens. On the RESUME path the debt is bounded by the
+ * deferred stdin close (`stdin-hold.ts`), which a warm process never performs —
+ * so the warm path needs its own clock, and this is it, deliberately the same
+ * thirty seconds the resume path uses rather than a second number to reason
+ * about. A segment starting cancels it; only a debt that is never delivered
+ * pays the full wait.
+ */
+export const OWED_DELIVERY_TIMEOUT_MS = 30_000;
+
+/**
+ * Why a warm process may not be relaunched, reaped or evicted right now — or
+ * that it may (spec `warm-process-lifecycle` D1).
+ *
+ * One predicate, answered synchronously by {@link SessionPump.quietness}, for
+ * every consumer that used to decide for itself: the idle reaper, the
+ * warm-ceiling reclaim, record eviction and (from slice 4a) the dispatch commit
+ * gate. Before it, `reap` asked only about background subagents and eviction
+ * asked about nothing at all, so a process running a Monitor or owing a
+ * delivery was torn down with its work still in flight (DOR-2064, DOR-2065).
+ */
+export type Quietness =
+  | {
+      quiet: true;
+      /**
+       * Background shells alive right now: always 0 here, because a live shell
+       * holds the process (DOR-2065). Kept so both arms answer the same
+       * question the same way.
+       */
+      shells: number;
+      /** When this process last produced any frame at all, as epoch ms. */
+      lastFrameAt: number;
+    }
+  | {
+      quiet: false;
+      /** The first reason found, in the order {@link SessionPump.quietness} checks them. */
+      because: QuietnessBlocker;
+      /** Live helper agents and other non-shell tasks holding the process, by kind. */
+      holding: { agents: number; other: number };
+      /** Background shells alive right now. They hold the process too (DOR-2065). */
+      shells: number;
+      /**
+       * When this busy spell began, as epoch ms — what the four-hour ceiling is
+       * measured from. Cleared only by
+       * `SESSIONS.BACKGROUND_QUIET_RESET_MS` of continuous quiet, so two helpers
+       * running back to back are one spell rather than two.
+       */
+      busySince: number;
+    };
+
+/** The reasons a warm process is not quiet, most specific first. */
+export type QuietnessBlocker =
+  /** A dispatched turn is open: the pump is RUNNING. */
+  | 'turn-open'
+  /**
+   * A turn the AGENT started is open — a helper's report being delivered, or
+   * the agent picking its own work back up (spec `warm-process-lifecycle` D6).
+   * Distinct from `turn-open` because the pump is not RUNNING for one: nobody
+   * dispatched it, so the state machine never left WARM.
+   */
+  | 'runtime-turn-open'
+  /** A helper agent, Monitor or unknown background task is still working. */
+  | 'background-work'
+  /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
+  | 'delivery-owed'
+  /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
+  | 'timer-pending'
+  /** Somebody was asked a question and has not answered it. */
+  | 'waiting-on-person';
+
+/**
+ * Where one session's process is in its life. The five reported by
+ * {@link SessionWarmth} plus the two that are internal to the machine:
+ * `reaped` (the process is gone and this pump object is spent — the registry
+ * drops it, and the next dispatch builds a fresh one) and `resuming` (a
+ * relaunch after a crash is in flight).
+ */
+export type PumpState = 'cold' | 'warming' | 'warm' | 'running' | 'reaped' | 'crashed' | 'resuming';
+
+/**
+ * The only transitions the machine allows, keyed by the state being left (spec
+ * §4.2).
+ *
+ * Every state may go to `cold`, which is the eviction and teardown edge ("any →
+ * COLD: reap first, then drop the session record"). `resuming → crashed` is not
+ * in the spec's table and is the honest reading of its `RESUMING → WARMING` row:
+ * a relaunch whose `query()` throws has crashed again rather than warmed.
+ */
+export const LEGAL_TRANSITIONS: Record<PumpState, readonly PumpState[]> = {
+  cold: ['warming'],
+  warming: ['warm', 'crashed', 'cold'],
+  warm: ['running', 'reaped', 'crashed', 'cold'],
+  running: ['warm', 'crashed', 'cold'],
+  reaped: ['cold'],
+  crashed: ['resuming', 'reaped', 'cold'],
+  resuming: ['warming', 'crashed', 'cold'],
+};
+
+/** How each internal state answers the runtime-facing `getSessionWarmth`. */
+export const WARMTH_OF: Record<PumpState, SessionWarmth> = {
+  cold: 'cold',
+  // A reaped process is gone; the person's session is untouched and the next
+  // message resumes it. `cold` is exactly what that is.
+  reaped: 'cold',
+  warming: 'warming',
+  // A relaunch in flight is a process booting, which is what `warming` means.
+  resuming: 'warming',
+  warm: 'warm',
+  running: 'running',
+  crashed: 'crashed',
+};
+
+/** States in which a subprocess exists (or is being booted) for this session. */
+export const HOLDS_PROCESS: readonly PumpState[] = ['warming', 'warm', 'running', 'resuming'];
+
+/** Why the pump refused something a caller was entitled to ask for. */
+export type PumpRefusalReason =
+  /** A dispatch carried no messages: there is no turn to open. */
+  | 'empty-dispatch'
+  /** The warm ceiling is full and no slot could be reclaimed. */
+  | 'warm-ceiling'
+  /** The session is parked on a person; firing into an open ask is the failure this prevents. */
+  | 'pending-interaction'
+  /** The process is gone (torn down, or the input stream ended under us). */
+  | 'process-gone';
+
+/**
+ * A legal request the pump declined, with the reason a caller can branch on.
+ *
+ * Distinct from {@link IllegalPumpTransitionError}, which means the caller asked
+ * for something the machine has no edge for — a bug, not a condition.
+ */
+export class PumpRefusedError extends Error {
+  /**
+   * Build a refusal.
+   *
+   * @param reason - Which condition refused the request
+   * @param message - What the caller was trying to do, in plain words
+   */
+  constructor(
+    readonly reason: PumpRefusalReason,
+    message: string
+  ) {
+    super(message);
+    this.name = 'PumpRefusedError';
+  }
+}
+
+/** A transition the state machine has no edge for — always a caller bug. */
+export class IllegalPumpTransitionError extends Error {
+  /**
+   * Build the report of an edge the machine does not have.
+   *
+   * @param from - The state the pump is actually in
+   * @param to - The state the caller's request would have moved it to
+   */
+  constructor(
+    readonly from: PumpState,
+    readonly to: PumpState
+  ) {
+    super(`SessionPump cannot go from ${from} to ${to}`);
+    this.name = 'IllegalPumpTransitionError';
+  }
+}
+
+/**
+ * The control-plane slice of the SDK's `Query`: the methods a warm process can
+ * still answer between turns.
+ *
+ * Split out from {@link PumpQuery} because it is what {@link SessionPump}
+ * hands OUT (`controlQuery`), and what the turn windower calls at every window
+ * close to fetch that window's context and subscription accounting while the
+ * process is still alive.
+ *
+ * The four setters are the settable-live half of the relaunch pin list (task
+ * 3.5): the launch parameters a warm process can be moved onto instead of being
+ * replaced. They are applied by `launch-live-settings.ts`, which is also the
+ * only module that should call them — a setter fired from anywhere else moves
+ * the process out from under its own launch fingerprint.
+ */
+export type PumpControlQuery = Pick<
+  Query,
+  | 'getContextUsage'
+  | 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'
+  | 'setModel'
+  | 'setPermissionMode'
+  | 'setMcpServers'
+  | 'reloadPlugins'
+>;
+
+/**
+ * The slice of the SDK's `Query` the pump depends on: its message stream, the
+ * forceful close that actually terminates the CLI child, and the control
+ * methods of {@link PumpControlQuery}. Deliberately the minimum, so a test
+ * double stays short.
+ */
+export type PumpQuery = AsyncIterable<SDKMessage> & Pick<Query, 'close'> & PumpControlQuery;
+
+/** What a launcher is handed to boot one process. */
+export interface PumpLaunchInput {
+  sessionId: string;
+  /** The held input stream to pass as `query({ prompt })`. The pump owns its lifetime. */
+  prompt: HeldUserPrompt['prompt'];
+  /**
+   * True when this launch is recovering from a crash, so the launcher knows to
+   * take the resume path (task 3.6's failover). A first launch says `false` and
+   * the launcher decides for itself whether the conversation has started.
+   */
+  resuming: boolean;
+  /** Original pump/message object identity only; never caller permission. */
+  pump?: object;
+  firstMessage?: PumpDispatch;
+}
+
+/**
+ * Boots one SDK subprocess around the held prompt and returns its live query.
+ *
+ * Everything the launch is PINNED to — cwd, the Claude account root, resolved
+ * credentials, the system-prompt append — is resolved here, which is why task
+ * 3.5's relaunch fingerprint lives on this side of the seam rather than in the
+ * pump.
+ */
+export type PumpLauncher = (input: PumpLaunchInput) => PumpQuery | Promise<PumpQuery>;
+
+/** A process that ended without the PUMP asking it to. */
+export interface PumpCrash {
+  sessionId: string;
+  /** What the pump was doing when the process died. `running` means a turn was open. */
+  stateAtCrash: PumpState;
+  /** What the stream threw, when it threw rather than simply ending. */
+  error?: unknown;
+  /**
+   * True when a DorkOS Stop aimed at THIS process is what ended it — the
+   * escalation in `session-store.ts`'s `interruptGivenQuery`, which closes the
+   * query when the graceful interrupt is refused or goes unacked (DOR-1302).
+   *
+   * **Written by the wiring above the pump, never by the pump itself.** The pump
+   * owns a process and knows nothing about sessions, so from where it sits every
+   * death it did not order is a crash — which is exactly right for the state
+   * machine (the process IS gone, and the next dispatch must relaunch) and
+   * exactly wrong for what the operator is told. `persistent-dispatch.ts` holds
+   * both halves of the answer: the session carrying DorkOS's stop record, and
+   * the query that died. It stamps this on the way to
+   * `SessionCrashRecovery.handleCrash`.
+   *
+   * Two readers, and both would otherwise blame the operator's own Stop on the
+   * agent: the windower settles the open turn as `interrupted` rather than as a
+   * failure, and the crash budget does not spend a life on it.
+   */
+  stopRequested?: boolean;
+}
+
+/**
+ * Why a pump was torn down (`SessionPump.teardown`), for whoever decides what
+ * survives it (DOR-2065).
+ *
+ * - `evict` — the session record went away, a dispatch is relaunching the
+ *   process, or a caller ended it for good.
+ * - `shutdown` — the server is stopping; the next boot picks up what is owed.
+ */
+export type PumpTeardownReason = 'evict' | 'shutdown';
+
+/** One message being dispatched into the pump. */
+export interface PumpDispatch {
+  /** The person's words, exactly as they will reach the model. */
+  content: string;
+  /**
+   * The server-minted correlation id, stamped as this message's SDK `uuid`.
+   *
+   * Required, not optional, and for the same reason the capability flags are
+   * (spec §2.2): a dispatch nobody can correlate is the exact shape of the bug
+   * this exists to prevent — a turn window that never closes. The SDK echoes
+   * the id back on the `result` it answers with (`user_message_uuid`), and the
+   * turn windower (`session-turn-windows.ts`) matches on it and NEVER on
+   * position, because a dequeued batch coalesces into one turn.
+   */
+  messageId: string;
+}
+
+/** Everything a pump needs to own one session's process. */
+export interface SessionPumpOptions {
+  sessionId: string;
+  /** Boots the process. See {@link PumpLauncher}. */
+  launch: PumpLauncher;
+  /**
+   * Every SDK message the process emits, in order — the demux seam task 3.3
+   * cuts turn windows out of. A throw from here is logged and swallowed: a
+   * consumer bug must not take the process down with it.
+   */
+  onMessage?: (message: SDKMessage) => void;
+  /**
+   * The process ended without the pump asking it to — task 3.6's failover seam.
+   * It is that task, not this one, that closes the open turn and preserves the
+   * queue; how that turn settles depends on {@link PumpCrash.stopRequested}.
+   */
+  onCrash?: (crash: PumpCrash) => void;
+  /**
+   * Every state change, after the fact — task 3.4's timer seam (arm the idle
+   * timer on the way into `warm`, disarm it on the way into `running`).
+   */
+  onStateChange?: (change: { from: PumpState; to: PumpState }) => void;
+  /**
+   * True while the session is parked on a person (an approval, a question, an
+   * elicitation). Gates BOTH dispatch and reap: firing a queued prompt into an
+   * open ask is answered by nobody, and a reaped process cannot answer the
+   * approval the person comes back to. Task 3.4 wires the projector's existing
+   * `hasPendingInteractions` probe here rather than inventing a third one.
+   */
+  hasPendingInteraction?: () => boolean;
+  /**
+   * True while a turn the AGENT started is open on this process (spec
+   * `warm-process-lifecycle` D6).
+   *
+   * The windower is what knows — a runtime window is open — and the pump cannot
+   * derive it: nobody dispatched that turn, so the machine never left WARM.
+   * Without it a process mid-sentence reads as quiet, and the idle reaper takes
+   * its subprocess away in the middle of what the agent is saying.
+   */
+  hasRuntimeTurnOpen?: () => boolean;
+  /**
+   * True while a session timer the agent set has not fired yet (DOR-2717). The
+   * CLI reports pending timers only to its Stop hook, so the dispatch layer that
+   * owns the session answers this; the pump cannot see them on the stream.
+   */
+  hasPendingTimer?: () => boolean;
+  /**
+   * Claims a slot under the warm ceiling before a process is booted; throws
+   * {@link PumpRefusedError} with `warm-ceiling` when there is none. The
+   * registry supplies it, and task 3.4 makes it reclaim the least recently used
+   * warm pump instead of refusing.
+   */
+  reserveSlot?: () => Promise<void>;
+  /**
+   * A hold this pump owned has been released, so whatever was waiting on it may
+   * run now (spec `warm-process-lifecycle` D1/D2a `onDispatchGateChange`).
+   *
+   * Fired today by exactly one thing: the owed-delivery clock expiring. That is
+   * the hold with no other way out — every other reason the pump is not quiet
+   * ends with a frame the caller already sees. Slice 3a's pending-segment gate
+   * and slice 4a's gated queue rows are the consumers this exists for; a throw
+   * from it is logged and swallowed, like every other observer here.
+   */
+  onDispatchGateChange?: () => void;
+  /**
+   * The live process started or stopped holding background work — a helper,
+   * shell, Monitor or other task, or a delivery owed (DOR-2065). Fired only on
+   * the flip, and never once the process is being ended: the frames a dying CLI
+   * sends on its way out describe work that is about to die, not work that
+   * finished. A throw is logged and swallowed.
+   */
+  onBackgroundWorkChange?: (holding: boolean) => void;
+  /** Override the grace window between the polite close and the forceful one. */
+  drainGraceMs?: number;
+  /** Override how long an owed delivery is waited for. Tests only. */
+  owedDeliveryTimeoutMs?: number;
+  /** Override how long a launch may wait for `system/init`. */
+  initTimeoutMs?: number;
+}

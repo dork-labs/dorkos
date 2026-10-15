@@ -10,6 +10,11 @@
  */
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { postLevelFor } from '../../core/turn-power/turn-levels.js';
+import {
+  OUTSIDER_TURN_LIMIT,
+  releaseOutsiderOutput,
+  reserveOutsiderOutput,
+} from '../../core/turn-power/outsider-output.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
@@ -75,7 +80,6 @@ export class RoomPosting {
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
-  private readonly maxPostsPerTurn: () => number;
 
   constructor(
     core: RoomCore,
@@ -86,7 +90,6 @@ export class RoomPosting {
     this.attachments = core.attachments;
     this.triggers = core.triggers;
     this.maxAttachmentsPerEntry = core.maxAttachmentsPerEntry;
-    this.maxPostsPerTurn = core.maxPostsPerTurn;
   }
 
   /**
@@ -169,12 +172,6 @@ export class RoomPosting {
    *   resolved reply mode rather than removed, and it is still spelled
    *   `!== 'channel'` — `rooms.kind` is a text column narrowed by an unchecked
    *   cast, and an unknown kind never gets more reach than a DM.
-   * - **A per-turn post ceiling** — `TOO_MANY_POSTS_THIS_TURN`,
-   *   `rooms.maxPostsPerTurn` (§D9). Under the flip, posting is the only voice an
-   *   agent has and nothing else bounds how often it uses it;
-   *   `.claude/rules/room-conduct.md` says a bound is a mechanism, never a
-   *   prompt. Asked AFTER the stop mark and BEFORE the write, so a refusal never
-   *   costs a claim mark and never spends a post.
    * - **A turn somebody STOPPED is refused** — `TURN_WAS_STOPPED`, DOR-1313. An
    *   interrupt is delivered rather than obeyed, so a stopped turn may still be
    *   running and reach for this; the room already throws away its narration and
@@ -258,32 +255,21 @@ export class RoomPosting {
         'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
     }
-    // **The per-turn ceiling** (spec `tool-only-room-replies` §D9). Read per call
-    // rather than captured, like every other live bound this service is handed,
-    // so moving the number in Settings takes effect on the very next post.
-    //
-    // Asked AFTER the stop mark, so a turn that was going to be refused anyway
-    // does not spend a post on the way out — the same ordering the reaction
-    // budget keeps — and BEFORE the write, so a refusal never leaves a claim
-    // marked as having spoken.
-    //
-    // `postsThisTurn` is `undefined` when this agent holds no claim here, and
-    // that is not zero: a post with no turn behind it is not part of one, so
-    // there is no per-turn ceiling to apply. It already costs a turn against the
-    // cascade budget on its own.
-    if (turn !== undefined) {
-      const ceiling = this.maxPostsPerTurn();
-      if (turn.postsThisTurn >= ceiling) {
-        logger.info('[rooms] refused a turn a further post', {
-          roomId,
-          authorId: input.authorId,
-          ceiling,
-        });
-        throw new RoomError(
-          'TOO_MANY_POSTS_THIS_TURN',
-          `You have already posted ${ceiling} ${ceiling === 1 ? 'message' : 'messages'} in this conversation during this turn, which is the limit. Consolidate the rest into one message next turn.`
-        );
-      }
+    // **A stranger's turn is still counted** (DOR-2739). Our own agents post as
+    // often as they need; a turn a stranger started may post a few messages and
+    // no more, so one message from outside the team cannot make it talk without
+    // end. Taken before the write and given back if the write refuses, so a
+    // post refused for any other reason spends nothing.
+    const countedSession = input.callerSessionId ?? turn?.sessionId;
+    if (!reserveOutsiderOutput('post', countedSession)) {
+      logger.info('[rooms] refused a stranger-started turn a further post', {
+        roomId,
+        authorId: input.authorId,
+      });
+      throw new RoomError(
+        'TOO_MANY_POSTS_THIS_TURN',
+        `A message from outside your team started this turn, so it can post ${OUTSIDER_TURN_LIMIT} messages at most. Put the rest in one message next turn.`
+      );
     }
     // The level the turns this post starts are held to. Both sessions vouch:
     // the one that made the call, and the author's turn in this room, which
@@ -294,32 +280,38 @@ export class RoomPosting {
         ? postLevelFor([input.callerSessionId, turn?.sessionId])
         : undefined;
     const { callerSessionId: _caller, ...postInput } = input;
-    const entry = this.post(
-      roomId,
-      {
-        ...postInput,
-        // **What a tool post has never carried, and now must** (spec
-        // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
-        // post passed neither, so `sessionId` fell to `null` and the "answers
-        // this" pointer was simply absent. That was survivable while a deliberate
-        // post was rare. Under the flip it is EVERY agent reply in the product:
-        // the room would stop drawing the pointer, and no entry could be traced
-        // back to the session that wrote it.
-        //
-        // Both facts are in hand at write time — the live claim knows the entry it
-        // is answering, and the `(room, agent)` binding is the session that turn
-        // runs on — so they are filled from there rather than trusted from the
-        // caller. Only for a post made INSIDE a turn: a post with no claim behind
-        // it is answering nothing and belongs to no session here.
-        ...(turn !== undefined
-          ? {
-              answersEntryId: turn.entryId,
-              ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
-            }
-          : {}),
-      },
-      authorLevel
-    );
+    let entry: PostedEntry;
+    try {
+      entry = this.post(
+        roomId,
+        {
+          ...postInput,
+          // **What a tool post has never carried, and now must** (spec
+          // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+          // post passed neither, so `sessionId` fell to `null` and the "answers
+          // this" pointer was simply absent. That was survivable while a deliberate
+          // post was rare. Under the flip it is EVERY agent reply in the product:
+          // the room would stop drawing the pointer, and no entry could be traced
+          // back to the session that wrote it.
+          //
+          // Both facts are in hand at write time — the live claim knows the entry it
+          // is answering, and the `(room, agent)` binding is the session that turn
+          // runs on — so they are filled from there rather than trusted from the
+          // caller. Only for a post made INSIDE a turn: a post with no claim behind
+          // it is answering nothing and belongs to no session here.
+          ...(turn !== undefined
+            ? {
+                answersEntryId: turn.entryId,
+                ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+              }
+            : {}),
+        },
+        authorLevel
+      );
+    } catch (err) {
+      releaseOutsiderOutput('post', countedSession);
+      throw err;
+    }
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

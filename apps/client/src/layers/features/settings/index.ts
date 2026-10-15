@@ -3,12 +3,13 @@
  *
  * @module features/settings
  */
-export { SettingsDialog } from './ui/SettingsDialog';
+// Loaded the first time it is wanted, not with the app (DOR-2901).
+export { SettingsDialog } from './ui/lazy/settings-dialog';
+export { TunnelDialog } from './ui/TunnelDialog';
 // The Preferences tab on its own. Its "Replay setup" control has to close the
 // dialog it sits in, and only `DialogHost` (widgets) decides that a dialog is
 // open — so the test that proves it lives up there and needs this export.
 export { PreferencesTab } from './ui/tabs/PreferencesTab';
-export { TunnelDialog } from './ui/TunnelDialog';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 // Shown on its own in the Dev Playground's Keep Awake showcase.
 export { SleepSettings } from './ui/tools/SleepSettings';
@@ -26,8 +27,8 @@ export { TrustRow } from './ui/runtimes/rows/TrustRow';
 export { ClaudeAccountsSection } from './ui/runtimes/sections/ClaudeAccountsSection';
 export { PowerSourceSectionView } from './ui/runtimes/sections/PowerSourceSection';
 export { ExecutionExceptionsStrip } from './ui/runtimes/ExecutionExceptionsStrip';
-// The one consent-gated trust-stop write path, exported so a widget (the
+// The one trust-stop write path, exported so a widget (the
 // Control Center) can drive the same global dial through the same contract
 // Settings does — a widget importing a feature hook is the allowed direction.
 export { useTrustStopWrites } from './model/use-trust-stop-writes';
-export type { TrustStopWrites, PendingAutonomyDefault } from './model/use-trust-stop-writes';
+export type { TrustStopWrites } from './model/use-trust-stop-writes';

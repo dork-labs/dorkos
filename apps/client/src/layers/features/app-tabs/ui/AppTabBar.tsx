@@ -1,5 +1,9 @@
+import { useMemo } from 'react';
+import { useCopyFeedback } from '@/layers/shared/lib';
 import { useAppTabs, useAppTabsStore } from '@/layers/shared/model';
+import { tabLinkUrl } from '../lib/tab-link';
 import { useAppTabActions } from '../model/use-app-tab-actions';
+import type { AppTabMenuActions } from './AppTabContextMenu';
 import { AppTabStrip } from './AppTabStrip';
 
 interface AppTabBarProps {
@@ -25,7 +29,25 @@ interface AppTabBarProps {
 export function AppTabBar({ className }: AppTabBarProps) {
   const tabs = useAppTabs();
   const activeTabId = useAppTabsStore((s) => s.activeTabId);
-  const { activate, close, create } = useAppTabActions();
+  const { activate, close, create, togglePin, duplicate, closeOthers, reorder } =
+    useAppTabActions();
+  // The menu closes as the item is picked, so nothing is left on screen to
+  // show "copied" — the toast says it instead.
+  const { copy } = useCopyFeedback({ toastOnSettle: true });
+
+  const menu = useMemo<AppTabMenuActions>(
+    () => ({
+      togglePin,
+      duplicate,
+      closeOthers,
+      close,
+      copyLink: (id) => {
+        const tab = useAppTabsStore.getState().tabs.find((t) => t.id === id);
+        if (tab) void copy(tabLinkUrl(tab.href));
+      },
+    }),
+    [togglePin, duplicate, closeOthers, close, copy]
+  );
 
   return (
     <AppTabStrip
@@ -34,6 +56,8 @@ export function AppTabBar({ className }: AppTabBarProps) {
       onActivate={activate}
       onClose={close}
       onCreate={create}
+      menu={menu}
+      onReorder={reorder}
       className={className}
     />
   );

@@ -36,6 +36,7 @@ beforeEach(() => {
   deps = {
     store,
     mayRead: vi.fn(async () => mayRead),
+    maySeeTitle: vi.fn(async () => mayRead),
     history: vi.fn(async () => history),
     status: vi.fn(() => null),
     describe: vi.fn(async () => ({ title: 'Build', agent: 'Bo' })),
@@ -66,7 +67,13 @@ describe('readChat — include status', () => {
     const result = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
 
     expect(result).toEqual({
-      chat: { id: TARGET, title: 'Build', agent: 'Bo', state: 'running' },
+      chat: {
+        id: TARGET,
+        title: 'Build',
+        link: `[Build](/session?session=${TARGET})`,
+        agent: 'Bo',
+        state: 'running',
+      },
       messages: [],
       more: false,
     });
@@ -309,6 +316,42 @@ describe('readChat — messages another chat sent', () => {
       expect.objectContaining({ id: 'm2', from: 'person', text: 'the person typed this' }),
     ]);
     expect(JSON.stringify(result)).not.toContain('BEGIN CHAT MESSAGE');
+  });
+});
+
+describe('readChat — a room post (DOR-2113)', () => {
+  it("reads another member's room post as from the room, and the person's own as theirs", async () => {
+    const author = { id: 'a1', kind: 'agent' as const, displayName: 'Kai', handle: 'kai' };
+    history = [
+      msg(1, 'user', 'the cleanup is done', {
+        roomMessage: {
+          roomId: 'r1',
+          entryId: 'e1',
+          roomLabel: '#dorkos',
+          author: { ...author, you: false },
+        },
+      }),
+      msg(3, 'user', 'ship it', {
+        roomMessage: {
+          roomId: 'r1',
+          entryId: 'e2',
+          roomLabel: '#dorkos',
+          author: { id: 'me', kind: 'human', displayName: 'You', handle: null, you: true },
+        },
+      }),
+    ];
+
+    const result = await readChat(deps, CALLER, { chat: TARGET });
+
+    expect(result.messages).toEqual([
+      expect.objectContaining({
+        id: 'm1',
+        from: 'room',
+        room: { id: 'r1', name: '#dorkos', author: 'Kai' },
+        text: 'the cleanup is done',
+      }),
+      expect.objectContaining({ id: 'm3', from: 'person', text: 'ship it' }),
+    ]);
   });
 });
 

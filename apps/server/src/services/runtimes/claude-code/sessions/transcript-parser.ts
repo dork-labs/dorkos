@@ -1,6 +1,5 @@
 import type {
   HistoryMessage,
-  QuestionItem,
   MessagePart,
   ToolCallPart,
   HistoryToolCall,
@@ -16,132 +15,11 @@ import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-er
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
+import { userHistoryMessage } from '../../../session/chat-messages/room-turn-ref.js';
 
-export interface TranscriptLine {
-  type: string;
-  uuid?: string;
-  /**
-   * CLI-internal record (resume bootstrap, prompt expansions, caveats). The
-   * CLI never renders these; neither does DorkOS.
-   */
-  isMeta?: boolean;
-  message?: {
-    role: string;
-    content: string | ContentBlock[];
-    model?: string;
-    usage?: {
-      input_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-  };
-  timestamp?: string;
-  sessionId?: string;
-  permissionMode?: string;
-  subtype?: string;
-  cwd?: string;
-  /**
-   * The AI-generated title on a standalone `type: 'ai-title'` record (no
-   * `message`, no `timestamp` — just this field and `sessionId`). The SDK
-   * appends a fresh one as the conversation evolves; the transcript can carry
-   * many, and the LAST one in file order is the current title.
-   */
-  aiTitle?: string;
-  /**
-   * The operator-set title on a standalone `type: 'custom-title'` record,
-   * written by `/rename` (SDK `renameSession`). Same shape as `ai-title`:
-   * no `message`, no `timestamp`, last one wins.
-   */
-  customTitle?: string;
-  /**
-   * Top-level content of a `system` record (e.g. `local_command` output, where
-   * the SDK stores the `<local-command-stdout>…</local-command-stdout>` text
-   * here rather than under `message`).
-   */
-  content?: string;
-  /** Marks the post-compaction continuation summary user record (SDK `isCompactSummary`). */
-  isCompactSummary?: boolean;
-  /**
-   * Marks a subagent/sidechain record — a Task-tool subagent's own turn, not
-   * the parent session's conversation. Absent or `false` on the parent
-   * session's own `user`/`assistant` records.
-   */
-  isSidechain?: boolean;
-  /**
-   * Compaction metadata on a `system`/`compact_boundary` record (SDK
-   * `compactMetadata`, already camelCase on disk). Only the token/trigger fields
-   * are consumed here; `preservedSegment`/`preservedMessages` are ignored.
-   */
-  compactMetadata?: {
-    trigger?: 'manual' | 'auto';
-    preTokens?: number;
-    postTokens?: number;
-    durationMs?: number;
-  };
-  /**
-   * The CLI's marker for a SYNTHETIC record it wrote to report an API failure
-   * (an expired sign-in, a 5xx, a hit limit) rather than anything the agent
-   * said. Paired with {@link TranscriptLine.error}; both are read by
-   * `sdk/api-error-record.ts`.
-   */
-  isApiErrorMessage?: boolean;
-  /**
-   * The failure code on an API-error record, e.g. `authentication_failed`.
-   * Typed `unknown` because a `system` record carries an OBJECT here, so every
-   * read narrows before trusting it.
-   */
-  error?: unknown;
-  /** SDK-provided structured answers for AskUserQuestion tool results */
-  toolUseResult?: {
-    questions?: QuestionItem[];
-    answers?: Record<string, string>;
-    commandName?: string;
-  };
-}
+import type { TranscriptLine, ContentBlock } from './transcripts/transcript-records.js';
 
-export interface ContentBlock {
-  type: string;
-  text?: string;
-  thinking?: string;
-  name?: string;
-  id?: string;
-  input?: Record<string, unknown>;
-  tool_use_id?: string;
-  content?: string | ContentBlock[];
-  /**
-   * On an `image` block inside a tool result: where the bytes are. Verified
-   * against a real `Read` of a PNG — the SDK writes
-   * `{ type: 'base64', media_type: 'image/png', data: '<base64>' }`.
-   */
-  source?: { type?: string; media_type?: string; data?: string };
-  /**
-   * On a `tool_result`: whether the call FAILED. The one machine-readable
-   * signal separating a tool that ran from one that was denied, timed out,
-   * withdrawn, or errored — everything else about which is prose, read by
-   * `sessions/tool-result-outcome.ts`.
-   */
-  is_error?: boolean;
-  // Error block fields
-  error_type?: string;
-  message?: string;
-  category?: string;
-  details?: string;
-  // Subagent block fields
-  task_id?: string;
-  description?: string;
-  status?: string;
-  tool_uses?: number;
-  last_tool_name?: string;
-  duration_ms?: number;
-  summary?: string;
-  // Hook block fields
-  hook_id?: string;
-  hook_name?: string;
-  hook_event?: string;
-  stdout?: string;
-  stderr?: string;
-  exit_code?: number;
-}
+export type { TranscriptLine, ContentBlock };
 
 /**
  * Extract text from a tool_result content block.
@@ -462,19 +340,53 @@ export interface TranscriptImageRef {
 }
 
 /**
- * Parse an array of JSONL lines into HistoryMessage objects.
+ * A transcript parser fed one JSONL line at a time.
+ *
+ * Claude Code only ever APPENDS to a transcript, so a reader that remembers how
+ * far it got can feed just the new lines and ask for the result again, instead
+ * of re-parsing the whole file (DOR-2889). Feeding the same lines in one call
+ * or across many gives the same messages.
+ */
+export interface TranscriptParser {
+  /**
+   * Feed one line. A line that is not JSON is skipped.
+   *
+   * @param line - One JSONL record.
+   * @param images - Collects every image this line's tool results carried. Storing
+   *   bytes is I/O and the parser does none, so it records WHERE each picture
+   *   belongs and nothing more. Omit it and images are not read.
+   */
+  push(line: string, images?: TranscriptImageRef[]): void;
+  /**
+   * Feed one record already parsed from its line, for a reader that hands the
+   * same record to more than one parser.
+   *
+   * @param parsed - One transcript record.
+   * @param images - As for {@link TranscriptParser.push}.
+   */
+  pushRecord(parsed: TranscriptLine, images?: TranscriptImageRef[]): void;
+  /** How many messages the parser holds before merging. */
+  readonly messageCount: number;
+  /**
+   * The parser's own message list, before consecutive assistant records are
+   * merged. Live: later lines can still change these objects (a tool result
+   * settles its call). For placing images on the parts they belong to.
+   */
+  unmerged(): HistoryMessage[];
+  /**
+   * The messages so far, consecutive assistant records merged into one turn.
+   * The message objects are fresh; their parts are shared with the parser.
+   */
+  result(): HistoryMessage[];
+}
+
+/**
+ * Start a transcript parser.
  *
  * Implements a state machine that tracks pending slash commands, tool call
  * correlation, and Skill tool args across user/assistant message pairs.
- *
- * @param lines - The transcript's JSONL lines.
- * @param images - Collects every image a tool result carried, in transcript
- *   order, for the caller to resolve. Storing bytes is I/O and this function
- *   does none, so it records WHERE each picture belongs and nothing more. Omit
- *   it and images are simply not read — the behaviour every caller that does
- *   not render a transcript still wants.
  */
-export function parseTranscript(lines: string[], images?: TranscriptImageRef[]): HistoryMessage[] {
+export function createTranscriptParser(): TranscriptParser {
   const messages: HistoryMessage[] = [];
   let pendingCommand: { commandName: string; commandArgs: string; uuid?: string } | null = null;
   let pendingSkillArgs: string | null = null;
@@ -490,14 +402,17 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
   // did not itself record.
   const toolCallStartedAt = new Map<string, number>();
 
-  for (const line of lines) {
+  function push(line: string, images?: TranscriptImageRef[]): void {
     let parsed: TranscriptLine;
     try {
       parsed = JSON.parse(line);
     } catch {
-      continue;
+      return;
     }
+    pushRecord(parsed, images);
+  }
 
+  function pushRecord(parsed: TranscriptLine, images?: TranscriptImageRef[]): void {
     if (parsed.type === 'user' && parsed.message) {
       // Synthetic CLI records: the resume bootstrap ("Continue from where you
       // left off." — written on every `query({resume})` turn DorkOS triggers),
@@ -512,7 +427,7 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
           pendingCommand = null;
           messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
         }
-        continue;
+        return;
       }
 
       const msgContent = parsed.message.content;
@@ -558,45 +473,45 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
             pendingCommand = { commandName: cmdName, commandArgs: pendingSkillArgs || '' };
             pendingSkillArgs = null;
           }
-          continue;
+          return;
         }
 
         if (pendingCommand) {
           const { commandName, commandArgs } = pendingCommand;
           pendingCommand = null;
           messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
-          continue;
+          return;
         }
 
         if (textParts.length > 0) {
-          const cleanText = stripSystemTags(textParts.join('\n'));
+          const rawText = textParts.join('\n');
+          const cleanText = stripSystemTags(rawText);
           if (cleanText.trim()) {
-            messages.push({
-              id: parsed.uuid || crypto.randomUUID(),
-              role: 'user',
-              content: cleanText,
-            });
+            // A room turn keeps the entry it answered, so the sender is shown (DOR-2113).
+            messages.push(
+              userHistoryMessage(parsed.uuid || crypto.randomUUID(), rawText, cleanText)
+            );
           }
         }
-        continue;
+        return;
       }
 
       let text = typeof msgContent === 'string' ? msgContent : '';
 
       if (text.startsWith('<task-notification>')) {
-        continue;
+        return;
       }
 
       // DorkOS-steered corrective notes (DOR-1087) are runtime speech, not the
       // person's — never render them as a user bubble.
       if (text.startsWith('<dorkos-system-note>')) {
-        continue;
+        return;
       }
 
       // Strip relay context wrapper, preserving the actual user content after </relay_context>
       if (text.startsWith('<relay_context>')) {
         const userContent = stripRelayContext(text);
-        if (!userContent) continue; // Pure metadata or malformed
+        if (!userContent) return; // Pure metadata or malformed
         text = userContent; // Fall through to process as normal user message
       }
 
@@ -608,12 +523,12 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
           // won't collide with the separate output message.
           pendingCommand = { ...meta, uuid: parsed.uuid };
         }
-        continue;
+        return;
       }
 
       if (text.startsWith('<local-command')) {
         pendingCommand = null;
-        continue;
+        return;
       }
 
       // The post-compaction continuation summary. `isCompactSummary` is the
@@ -636,24 +551,21 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
           pendingCompactMetadata = null;
         }
         messages.push(compaction);
-        continue;
+        return;
       }
 
       if (pendingCommand) {
         const { commandName, commandArgs } = pendingCommand;
         pendingCommand = null;
         messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
-        continue;
+        return;
       }
 
       const cleanText = stripSystemTags(text);
-      if (!cleanText.trim()) continue;
+      if (!cleanText.trim()) return;
 
-      messages.push({
-        id: parsed.uuid || crypto.randomUUID(),
-        role: 'user',
-        content: cleanText,
-      });
+      // Read off the record as stored, not `text`: a relay payload is not context.
+      messages.push(userHistoryMessage(parsed.uuid || crypto.randomUUID(), msgContent, cleanText));
     } else if (parsed.type === 'assistant' && parsed.message) {
       const contentBlocks = parsed.message.content;
 
@@ -680,10 +592,10 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
           ],
           timestamp: parsed.timestamp,
         });
-        continue;
+        return;
       }
 
-      if (!Array.isArray(contentBlocks)) continue;
+      if (!Array.isArray(contentBlocks)) return;
 
       // The CLI pairs its resume bootstrap with a zero-token synthetic
       // assistant reply, which carries no error markers and is drawn nowhere.
@@ -691,7 +603,7 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
         parsed.message.model === '<synthetic>' &&
         extractTextContent(contentBlocks).trim() === 'No response requested.'
       ) {
-        continue;
+        return;
       }
 
       const parts: MessagePart[] = [];
@@ -841,7 +753,7 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
         // ToolCallPart.hooks. No standalone hook part extraction is performed here.
       }
 
-      if (parts.length === 0) continue;
+      if (parts.length === 0) return;
 
       const text = parts
         .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
@@ -884,13 +796,13 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
         if (meta) {
           messages.push(buildCommandMessage(meta.commandName, meta.commandArgs, parsed.uuid));
         }
-        continue;
+        return;
       }
 
       // The command's captured stdout/stderr. Skip non-output records (caveats)
       // and empty output (e.g. /clear writes an empty stdout wrapper).
       const output = extractLocalCommandOutput(raw);
-      if (output === null || !output.trim()) continue;
+      if (output === null || !output.trim()) return;
 
       // Flush a deferred command bubble (e.g. /context, whose `<command-name>`
       // arrived as a user record) so it precedes its output, then render the
@@ -909,7 +821,31 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
     }
   }
 
-  return mergeConsecutiveAssistantMessages(messages);
+  return {
+    push,
+    pushRecord,
+    get messageCount() {
+      return messages.length;
+    },
+    unmerged: () => messages,
+    result: () => mergeConsecutiveAssistantMessages(messages),
+  };
+}
+
+/**
+ * Parse an array of JSONL lines into HistoryMessage objects in one pass.
+ *
+ * The whole-file form of {@link createTranscriptParser}; see it for the
+ * state machine.
+ *
+ * @param lines - The transcript's JSONL lines.
+ * @param images - Collects every image a tool result carried, in transcript
+ *   order, for the caller to resolve. Omit it and images are not read.
+ */
+export function parseTranscript(lines: string[], images?: TranscriptImageRef[]): HistoryMessage[] {
+  const parser = createTranscriptParser();
+  for (const line of lines) parser.push(line, images);
+  return parser.result();
 }
 
 /**

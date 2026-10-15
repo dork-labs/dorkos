@@ -16,20 +16,13 @@ import { useState, type ReactNode } from 'react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
   PlanModeItem,
-  AutonomyConfirmDialog,
   MakeDefaultStopLine,
   ReadOnlyModeNotice,
   useSessionPermissionPicker,
 } from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
-import {
-  Button,
-  InfoTip,
-  ScheduledRunConsequence,
-  TrustDial,
-  UnattendedAutonomyDialog,
-} from '@/layers/shared/ui';
-import { needsConsentRitual } from '@/layers/shared/lib';
+import { InfoTip, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
+import { actsWithoutAsking } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -43,6 +36,14 @@ const CLAUDE: PermissionModeDescriptor[] = [
     asks: 'always',
     reach: 'edit',
     promise: 'Asks before it edits a file or runs a command.',
+  },
+  {
+    id: 'dontAsk',
+    label: 'Never ask',
+    stop: 'ask',
+    asks: 'always',
+    reach: 'edit',
+    promise: 'Runs only what you allowed. Refuses the rest without asking you.',
   },
   {
     id: 'acceptEdits',
@@ -199,9 +200,9 @@ function LiveDial({
 
 /**
  * The same dial on a surface nobody is watching — a relay binding or a scheduled
- * task. Two things change and nothing else does: a stored mode with no stop is
- * kept until somebody picks one and SAVES, and any stop that never asks asks first
- * — with copy about what stops happening on this particular surface.
+ * task. A stored mode with no stop is kept until somebody picks one and SAVES.
+ * A binding also asks first at any stop that never asks, because strangers can
+ * message it; a task applies every stop on the click (ADR 261006-225605).
  */
 function UnattendedDial({
   descriptors,
@@ -213,7 +214,8 @@ function UnattendedDial({
   initial: string;
   /** How this surface names itself in the stranded sentence. */
   subject: 'This integration' | 'This task';
-  consequence: ReactNode;
+  /** What stops happening on a binding; absent for a task, which never asks. */
+  consequence?: ReactNode;
 }) {
   const [mode, setMode] = useState(initial);
   const [pending, setPending] = useState<PermissionModeDescriptor | null>(null);
@@ -234,25 +236,27 @@ function UnattendedDial({
           </>
         }
         onChangeMode={(next) => {
-          // The same rule the real callers apply, so the playground shows the
-          // dialog on Codex's never-asking middle stop exactly as they do.
+          // The same rule the binding applies, so the playground shows the
+          // dialog on Codex's never-asking middle stop exactly as it does.
           const descriptor = descriptors.find((d) => d.id === next);
-          if (descriptor && needsConsentRitual(descriptor)) {
+          if (consequence !== undefined && descriptor && actsWithoutAsking(descriptor)) {
             setPending(descriptor);
             return;
           }
           setMode(next);
         }}
       />
-      <UnattendedAutonomyDialog
-        descriptor={pending}
-        consequence={consequence}
-        onCancel={() => setPending(null)}
-        onConfirm={() => {
-          if (pending) setMode(pending.id);
-          setPending(null);
-        }}
-      />
+      {consequence !== undefined && (
+        <UnattendedAutonomyDialog
+          descriptor={pending}
+          consequence={consequence}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            if (pending) setMode(pending.id);
+            setPending(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -283,9 +287,6 @@ const BINDING_CONSEQUENCE = (
     </InfoTip>
   </>
 );
-
-/** What a scheduled run gives up at a stop that never asks. */
-const TASK_CONSEQUENCE = <ScheduledRunConsequence />;
 
 /** The three runtimes the settings surfaces below talk about, with their modes. */
 const SETTINGS_RUNTIMES = [
@@ -391,50 +392,6 @@ function LivePlanChip() {
   );
 }
 
-/**
- * The consent door, opened on demand.
- *
- * Two modes reach it and they must not look identical: Codex's full access is
- * green and names itself, while its middle stop is amber, keeps the dial's word
- * ("Act"), and carries the sentence that says what the word does not.
- */
-function LiveAutonomyDialog({
-  descriptor,
-  trigger,
-}: {
-  descriptor: PermissionModeDescriptor;
-  trigger: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
-  const autonomy = descriptor;
-  return (
-    <div className="flex items-center gap-3">
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        {trigger}
-      </Button>
-      {/* The playground shows what the checkbox ANSWERS rather than acting on
-          it: writing the real acknowledgement here would silence the dialog for
-          whoever opened the playground to look at it. */}
-      {lastAnswer && <span className="text-muted-foreground text-xs">{lastAnswer}</span>}
-      <AutonomyConfirmDialog
-        canRemember
-        descriptor={open ? autonomy : null}
-        onCancel={() => {
-          setOpen(false);
-          setLastAnswer('Cancelled');
-        }}
-        onConfirm={(rememberChoice) => {
-          setOpen(false);
-          setLastAnswer(
-            rememberChoice ? 'Confirmed — and asked not to be shown again' : 'Confirmed once'
-          );
-        }}
-      />
-    </div>
-  );
-}
-
 /** Trust Dial showcases for the dev playground. */
 export function TrustDialShowcases() {
   return (
@@ -483,7 +440,7 @@ export function TrustDialShowcases() {
           Stranded — the session is at a mode this runtime no longer offers
         </ShowcaseLabel>
         <ShowcaseDemo>
-          <LiveDial descriptors={CLAUDE} initial="dontAsk" />
+          <LiveDial descriptors={CLAUDE} initial="retired-mode" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Planning — the stops are frozen until Plan goes off</ShowcaseLabel>
@@ -503,27 +460,8 @@ export function TrustDialShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="Trust Dial — the door into a mode that never asks"
-        description="A stop that stops the asking cannot be walked back, so it asks twice — and that is not only the top of the dial. On a runtime that cannot pause mid-turn, the MIDDLE stop never asks either, and it goes through the same door in its own words. The consequence sentence is always the runtime's own; the scope note says what it does not cover."
-      >
-        <ShowcaseLabel>
-          Full autonomy, on a Codex session — green, and it names itself
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveAutonomyDialog descriptor={CODEX[2]!} trigger="Choose Full autonomy (Codex)" />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>
-          Codex’s middle stop — amber, keeps the dial’s word, says what the word hides
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveAutonomyDialog descriptor={CODEX[1]!} trigger="Choose Act (Codex)" />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
         title="Trust Dial — the surfaces nobody is watching"
-        description="An integration binding and a scheduled task ask the same question with the same control. Two things differ: a stored mode with no stop is kept until somebody picks one AND saves, and the confirmation for a stop that never asks names what stops happening HERE — the approval that would have arrived in a chat, the card a run would have waited on."
+        description="An integration binding and a scheduled task ask the same question with the same control. A stored mode with no stop is kept until somebody picks one AND saves. A binding also confirms a stop that never asks, naming what stops happening in the chat, because strangers can message it; a task does not."
       >
         <ShowcaseLabel>
           A binding saved at Plan — kept and named, never quietly widened
@@ -543,7 +481,6 @@ export function TrustDialShowcases() {
             descriptors={CLAUDE.filter((d) => d.id !== 'auto')}
             initial="auto"
             subject="This task"
-            consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>
 
@@ -557,16 +494,6 @@ export function TrustDialShowcases() {
             initial="default"
             subject="This integration"
             consequence={BINDING_CONSEQUENCE}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>The task’s door — an unattended run is never shown a card</ShowcaseLabel>
-        <ShowcaseDemo>
-          <UnattendedDial
-            descriptors={CLAUDE}
-            initial="acceptEdits"
-            subject="This task"
-            consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>
       </PlaygroundSection>

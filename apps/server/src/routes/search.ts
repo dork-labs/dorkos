@@ -26,16 +26,16 @@
  * | Caller | Rooms | Sessions |
  * | --- | --- | --- |
  * | The operator, in the cockpit | all | all |
- * | An agent | the rooms it is in, above its `joinedSeq` | **none** |
+ * | An agent | the rooms it is in, above its `joinedSeq` | agent work sessions only |
  *
- * **Sessions are owner-only in v1, and a caller that presented an agent identity
- * never reaches them** — resolved or not, since a revoked token still says a
- * machine is calling. Two independent conditions have to hold, and either one
- * failing is enough to close the door: the caller is the install owner's author,
- * and no agent header was presented. Spec §7 records why one is not enough — the
- * external MCP surface collapses every caller onto a single Relay sender, and a
- * caller that simply omits the header resolves to the owner. Absence is never
- * consent.
+ * **A caller that presented an agent identity reaches agent work sessions and
+ * never a person's own chat** — resolved or not, since a revoked token still says
+ * a machine is calling (spec `audit-trail` §3.4). Every session at all needs two
+ * independent conditions, and either one failing is enough to close the door:
+ * the caller is the install owner's author, and no agent header was presented.
+ * Spec §7 records why one is not enough — the external MCP surface collapses
+ * every caller onto a single Relay sender, and a caller that simply omits the
+ * header resolves to the owner. Absence is never consent.
  *
  * ## Why this route refuses a short query
  *
@@ -49,15 +49,21 @@
  *
  * @module routes/search
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Db } from '@dorkos/db';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
-import { getRoomService } from '../services/rooms/index.js';
-import { answerSearch } from '../services/search/index.js';
+import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
+import { answerSearch, type SearchScope } from '../services/search/index.js';
+import { readableSessionIds } from '../services/audit/session-visibility.js';
+import { readerOfRequest } from './audit-reader.js';
 import { resolveCaller } from './room-caller.js';
-import { sendRoomError } from './room-error-response.js';
+import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 
 /** What the search router reads. It writes nothing and holds no state. */
 export interface SearchRouterDeps {
@@ -66,18 +72,21 @@ export interface SearchRouterDeps {
 }
 
 /**
- * Build the search router.
+ * The `/api/search` routes.
  *
  * @param deps - The index to read.
- * @returns The router, to mount at `/api/search`.
+ * @returns The routes, for `app.route('/api/search', …)`.
  */
-export function createSearchRouter(deps: SearchRouterDeps): Router {
-  const router = Router();
+export function createSearchRoutes(deps: SearchRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', (c) => {
+    const facts = honoRequestFacts(c);
+    // Held for a refusal's wording, which differs for the owner (DOR-2457).
+    let caller: AuthorRecord | undefined;
     try {
       const rooms = getRoomService();
-      const caller = resolveCaller(req, res);
+      caller = resolveCaller(facts);
       // `isOwnerRecord` answers "is this the person who owns the install", and it
       // is the half that decides today: an agent resolves to an agent author and
       // fails it, and a caller whose token did not verify never gets this far
@@ -87,25 +96,34 @@ export function createSearchRouter(deps: SearchRouterDeps): Router {
       // the WIDER question — "is a machine calling at all" — and it is a second
       // lock on one specific regression: an unverifiable agent token used to fall
       // through to the install owner, and DOR-1361 is the fix that stopped it. If
-      // that branch order is ever loosened again, this line is what keeps session
-      // history closed while the room routes are being argued about. No test here
-      // can turn its key, because nothing today can reach it with the first lock
-      // open; that is the point of it rather than an omission.
-      const sessions =
-        isOwnerRecord(caller, readOwnerAccount()?.id ?? null) && !presentsAgentIdentity(req, res);
+      // that branch order is ever loosened again, this line is what keeps a
+      // person's own chats closed while the room routes are being argued about.
+      //
+      // A machine gets agent work sessions only, through the same rule every
+      // transcript read uses (spec `audit-trail` §3.4): `readableSessionIds`,
+      // which is `canRead` with a session standing in for a row.
+      const agent = presentsAgentIdentity(facts);
+      const sessions: SearchScope['sessions'] = agent
+        ? {
+            readable: (ids) => readableSessionIds(readerOfRequest(facts), ids),
+          }
+        : isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 
       const answer = answerSearch(
         deps.db,
         { rooms: rooms.searchScope(caller.id), sessions },
-        req.query
+        readQuery(c)
       );
       if (!answer.ok) {
-        res.status(answer.status).json({ error: answer.error, code: answer.code });
-        return;
+        return c.json(
+          { error: answer.error, code: answer.code },
+          answer.status as ContentfulStatusCode
+        );
       }
-      res.json(answer.response);
+      return c.json(answer.response);
     } catch (err) {
-      sendRoomError(res, err, 'GET /api/search');
+      const reply = roomErrorReply(err, 'GET /api/search', () => isOwnerCaller(caller));
+      return c.json(reply.body, reply.status as ContentfulStatusCode);
     }
   });
 

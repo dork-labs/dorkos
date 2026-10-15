@@ -23,8 +23,8 @@
  * ## Why the harness is this heavy
  *
  * Nothing here is stubbed on the path under test. Better Auth issues a real
- * session and a real per-user API key, the real `sessionGate` verifies them, and
- * the real approvals router answers. A test that handed the router a `res.locals.user`
+ * session and a real per-user API key, the real session gate verifies them, and
+ * the real approvals routes answer. A test that handed the routes a `c.var.user`
  * of its own would be asserting its own fixture — the seam this exploit uses is
  * exactly the one between `sessionGate` and the route, and that seam has to be
  * crossed for the reproduction to mean anything.
@@ -39,12 +39,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
-import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
+import { initAuth } from '../../services/core/auth/index.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
 import {
@@ -56,7 +55,8 @@ import {
   type CapabilityRegistry,
 } from '../../services/core/capabilities/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
-import { createApprovalsRouter } from '../approvals.js';
+import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { env } from '../../env.js';
 
 const fixtureTarget = swappableServer();
@@ -89,7 +89,6 @@ const INPUT = { name: 'sentry-monitor' };
 describe('an agent holding the API key cannot approve its own work', () => {
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
   let approvals: ApprovalService;
   let registry: CapabilityRegistry;
   let cookies: string[];
@@ -143,17 +142,14 @@ describe('an agent holding the API key cannot approve its own work', () => {
     registry = composeRegistry([{ name: 'demo', capabilities: [UNINSTALL] }], {} as never);
     initCapabilityTierGate({ approvals });
 
-    // Mirrors `app.ts`: Better Auth before the JSON body parser, then the real
-    // gate, then the real router. No middleware of this test's own, and no
-    // `isLoginEnabled` override — the route reads the live config, as it does in
-    // production.
-    app = express();
-    app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-    app.use(express.json());
-    app.use(sessionGate);
-    app.use('/api/approvals', createApprovalsRouter(approvals));
-
-    fixtureTarget.mount(app);
+    // The server's own routing (`composeFrontDoor`): Better Auth before the body
+    // parser, then the real gate, then the real routes. No middleware of this test's own, and no `isLoginEnabled`
+    // override — the route reads the live config, as it does in production.
+    fixtureTarget.mount(
+      composedListener(new MainRequestAdmission(), {
+        approvals: { service: approvals, options: {} },
+      })
+    );
     const signUp = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)

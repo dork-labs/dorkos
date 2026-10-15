@@ -4,7 +4,7 @@ import { sql, type DbTransaction } from '@dorkos/db';
 import type { CanvasChannelJsonValue } from '@dorkos/shared/canvas-channel-schemas';
 import { envelopeIdentity } from '../envelope.js';
 import { scanCheckboxReservationPolicies } from '../writes/reservations/reservation-policy-census.js';
-import { DocIngestRefusal } from '../ingest-types.js';
+import { DocIngestRefusal } from '../ingest-data/ingest-types.js';
 
 /** Platform caps may be lowered by tests or installation policy, never raised. */
 export interface DocIngestLimits {

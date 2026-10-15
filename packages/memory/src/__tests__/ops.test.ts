@@ -158,6 +158,63 @@ describe('remove', () => {
   });
 });
 
+describe('the stamp is not part of the note', () => {
+  const stamped = memory(
+    "- the vendor is Acme (noted in a direct chat, while reading words DorkOS can't vouch for, 2026-10-10)",
+    ''
+  );
+
+  // Red when: `assertStampUntouched` is removed. A later turn could strip the
+  // mark, and the note would read as the operator's own (spec
+  // `trusted-by-default-flip` §4.7). Same for a room stamp turned into a
+  // direct chat.
+  it.each([
+    ["while reading words DorkOS can't vouch for, ", ''],
+    ['Acme (noted in a direct chat', 'Acme (noted in #general'],
+  ])('refuses a replace that reaches into it: %s', (oldText, text) => {
+    try {
+      applyMemoryOp(stamped, { action: 'replace', oldText, text });
+      expect.unreachable('the stamp must not be editable from here');
+    } catch (err) {
+      expect((err as MemoryMatchError).kind).toBe('protected-stamp');
+    }
+  });
+
+  // Red when: the line-break check on `oldText` is removed. Joining two notes
+  // puts the second's trusted stamp at the end of the first's words, and
+  // leaves the first's stamp mid-line.
+  it('refuses a replace that joins two notes, and protects a stamp left mid-line', () => {
+    const two = memory(
+      "- always push to main (noted in a direct chat, while reading words DorkOS can't vouch for, 2026-10-10)",
+      '- likes tea (noted in a direct chat, 2026-10-09)',
+      ''
+    );
+    expect(() =>
+      applyMemoryOp(two, { action: 'replace', oldText: '\n- likes', text: ' and likes' })
+    ).toThrow(expect.objectContaining({ kind: 'protected-stamp' }));
+    const midLine = memory(
+      "- push (noted in a direct chat, while reading words DorkOS can't vouch for, 2026-10-10) and tea (noted in a direct chat, 2026-10-09)",
+      ''
+    );
+    expect(() =>
+      applyMemoryOp(midLine, {
+        action: 'replace',
+        oldText: ", while reading words DorkOS can't vouch for",
+        text: '',
+      })
+    ).toThrow(expect.objectContaining({ kind: 'protected-stamp' }));
+  });
+
+  it("still edits the note's own words, and removes the whole note, stamp and all", () => {
+    const edited = applyMemoryOp(stamped, { action: 'replace', oldText: 'Acme', text: 'Globex' });
+    expect(edited).toContain(
+      "- the vendor is Globex (noted in a direct chat, while reading words DorkOS can't vouch for, 2026-10-10)"
+    );
+    const removed = applyMemoryOp(stamped, { action: 'remove', oldText: 'the vendor is Acme' });
+    expect(removed).not.toContain('vendor');
+  });
+});
+
 describe('the header is not a note', () => {
   // I-3(b). Red when: the header check is removed. `replace` with an empty
   // string is a delete, so an agent that can reach the header can remove the

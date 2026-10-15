@@ -9,6 +9,7 @@ import {
   useCoalescedInvalidation,
   type QueryInvalidation,
 } from '@/layers/shared/model';
+import { AGENT_PAUSES_KEY } from './use-agent-pauses';
 
 /**
  * Every cache an agent's identity can move, spelled as literals.
@@ -38,6 +39,9 @@ import {
  *   not clear. Nothing writes THROUGH this prefix (`setQueriesData` over a
  *   mixed-shape family would be the real trap), which is what makes it safe.
  */
+/** The paused set, which `agent_pauses_changed` moves and nothing else does. */
+const AGENT_PAUSE_CACHES: readonly QueryInvalidation[] = [{ queryKey: [...AGENT_PAUSES_KEY] }];
+
 const AGENT_IDENTITY_CACHES: readonly QueryInvalidation[] = [
   { queryKey: ['mesh'] },
   { queryKey: ['agents'] },
@@ -56,7 +60,8 @@ const AGENT_IDENTITY_CACHES: readonly QueryInvalidation[] = [
 const COALESCE_MS = 400;
 
 /**
- * Follow `agents_changed` on the unified `/api/events` stream.
+ * Follow `agents_changed` (and `agent_pauses_changed`) on the unified
+ * `/api/events` stream.
  *
  * The server broadcasts it once per committed identity write at the mesh
  * registry seam, so EVERY path that registers, renames or removes an agent is
@@ -78,6 +83,9 @@ export function useAgentsSync(coalesceMs: number = COALESCE_MS): void {
   const schedule = useCoalescedInvalidation({ coalesceMs });
 
   useEventSubscription('agents_changed', () => schedule(AGENT_IDENTITY_CACHES));
+  // An agent paused everywhere, or its pause lifted (spec `audit-trail` PR5):
+  // only the paused set moves, so only it is re-read.
+  useEventSubscription('agent_pauses_changed', () => schedule(AGENT_PAUSE_CACHES));
 }
 
 export { AGENT_IDENTITY_CACHES };

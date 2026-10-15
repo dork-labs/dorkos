@@ -70,12 +70,12 @@ vi.mock('../../services/runtimes/connect/doe-credentials.js', () => ({
 import { storeDoeCredential } from '../../services/runtimes/connect/doe-credentials.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import type { Server } from 'node:http';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
-import runtimesRouter from '../runtimes.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createRuntimesRoutes } from '../runtimes.js';
 import { logger } from '../../lib/logger.js';
 import {
   storeRuntimeCredential,
@@ -99,7 +99,8 @@ import {
 } from '../../services/runtimes/opencode/providers/ollama.js';
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
-const app = createApp({ admission: new MainRequestAdmission() });
+const admission = new MainRequestAdmission();
+const app = composedListener(admission);
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never
@@ -114,15 +115,12 @@ const SECRET = 'sk-ant-secret-never-echo';
 /** The TCP peer `peerApp` reports for the current test; set by `appWithPeer`. */
 let currentPeer = '127.0.0.1';
 
-/** The real runtimes router behind a middleware that rewrites the TCP peer. */
-const peerApp = express();
-peerApp.use((req, _res, next) => {
+/** The real runtimes routes behind the `/api` chain, with the TCP peer rewritten first. */
+const peerRoutes = honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() });
+const peerServer = listeningServer((req, res) => {
   Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
-  next();
+  peerRoutes(req, res);
 });
-peerApp.use(express.json());
-peerApp.use('/api/runtimes', runtimesRouter);
-const peerServer = listeningServer(peerApp);
 
 describe('runtime connect endpoints', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -1003,7 +1001,7 @@ describe('DorkOS inference setup', () => {
     vi.mocked(configManager.get).mockImplementation((key) => config[key] as never);
     const response = await request(server).get('/api/runtimes/doe/inference');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ inference, hasKey: true });
+    expect(response.body).toEqual({ inference, hasKey: true, autoProtocol: null });
     expect(response.text).not.toContain('PRIVATE_TEST_KEY');
   });
   it('preserves a same-endpoint key on metadata changes and drops it on an endpoint change', async () => {

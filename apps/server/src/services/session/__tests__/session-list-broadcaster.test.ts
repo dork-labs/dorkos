@@ -22,6 +22,7 @@ import {
   SessionListBroadcaster,
   sendSessionStatusSnapshot,
 } from '../catalog/session-list-broadcaster.js';
+import { fanOutAgentSessions, resetAgentSessionFanoutCache } from '../agent-session-fanout.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -95,18 +96,25 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
   let broadcaster: SessionListBroadcaster;
   let runtimeA: FakeAgentRuntime;
   let runtimeB: FakeAgentRuntime;
-  let broadcastSpy: ReturnType<typeof vi.spyOn>;
+  /** What was broadcast, by name and payload; the audience is the asks suite's to check. */
+  let broadcastSpy: ReturnType<typeof vi.fn<(name: string, data: unknown) => void>>;
 
   beforeEach(() => {
     broadcaster = new SessionListBroadcaster();
     runtimeA = new FakeAgentRuntime();
     runtimeB = new FakeAgentRuntime();
-    broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
+    broadcastSpy = vi.fn<(name: string, data: unknown) => void>();
+    const broadcast = eventFanOut.broadcast.bind(eventFanOut);
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation((name, data, audience) => {
+      broadcastSpy(name, data);
+      broadcast(name, data, audience);
+    });
   });
 
   afterEach(async () => {
     await broadcaster.stop();
     vi.restoreAllMocks();
+    resetAgentSessionFanoutCache();
   });
 
   it('survives a MALFORMED upsert even with a retirement check armed', async () => {
@@ -132,6 +140,57 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
       );
     });
     expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
+  });
+
+  it('marks the machine-wide fan-out stale on every upsert and removal', async () => {
+    // Red when the wiring is lost: the fan-out then hands a caller asking
+    // because of a new chat an answer scanned before that chat existed.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const lister = new FakeAgentRuntime('lister');
+    lister.listSessions.mockResolvedValue([
+      createMockSession({
+        id: SESSION_A,
+        cwd: '/agents/a0',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ]);
+    const ask = () => fanOutAgentSessions({ runtimes: [lister], agentPaths: ['/agents/a0'] });
+    await ask();
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(1);
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_upserted', expect.anything())
+    );
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(2);
+
+    // An update to a chat already listed reuses the fresh answer (DOR-2893).
+    broadcastSpy.mockClear();
+    a.push({
+      type: 'session_upserted',
+      session: createMockSession({
+        id: SESSION_A,
+        title: 'Renamed',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      }),
+    });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_upserted', expect.anything())
+    );
+    const answer = await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(2);
+    expect(answer.perPath[0]!.members[0]!.title).toBe('Renamed');
+
+    a.push({ type: 'session_removed', sessionId: SESSION_A });
+    await vi.waitFor(() =>
+      expect(broadcastSpy).toHaveBeenCalledWith('session_removed', expect.anything())
+    );
+    await ask();
+    expect(lister.listSessions).toHaveBeenCalledTimes(3);
   });
 
   it('suppresses an upsert for an id the runtime has RETIRED', async () => {

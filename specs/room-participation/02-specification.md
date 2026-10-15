@@ -487,18 +487,103 @@ The four rules and the mode that answers each:
 
 ### 9.2 The predicate, which is derived rather than stored
 
-An agent member `M` in room `R` at thread scope `T` is **engaged** when both hold, evaluated over `room_entries` where `room_id = R` and `thread_root_entry_id = T`:
+**DOR-2823 split this predicate by who wrote the post being addressed, "follow the conversation, not the clock."** A PERSON's unaddressed post in a channel is answered by whoever they are talking to in that scope; an AGENT's post keeps the original, mention-anchored rule, because agent-to-agent traffic is the one that must stay quiet.
+
+**A PERSON's post** (channel only; `engagement.ts` `conversationFor`). Walk the scope newest first, starting at the post itself: the first post by an agent member anchors on that agent (the agent that spoke last is the one being answered — an agent's own reply now starts and extends the window, not just a mention of it); failing that, the first person's post that `@mentioned` agent members anchors on the agent they last named. An unmentioned person's post says nothing about who and is passed over, though it still counts toward the post ceiling below. The anchor must hold both:
+
+1. it is less than `rooms.engagedWindowMinutes` old, and
+2. fewer than `rooms.engagedWindowPosts` posts have landed on top of it in that scope.
+
+A thread's scope includes its root — the first message — so a reply anchored on the thread root still counts.
+
+**An AGENT's post** keeps the original rule: an agent member `M` in room `R` at thread scope `T` is **engaged** when both hold, evaluated over `room_entries` where `room_id = R` and `thread_root_entry_id = T`:
 
 1. The most recent entry whose `mentions` contains `M` is less than `rooms.engagedWindowMinutes` old, and
 2. Fewer than `rooms.engagedWindowPosts` entries of `kind: 'post'` by authors other than `M` have landed since it.
 
-`engaged` triggers when `M` is mentioned, or when `M` is engaged. Being mentioned resets both clocks by construction, because it becomes the new most-recent mention.
+— but at a bound that is never longer than the configured values: 10 minutes / 5 posts (`AGENT_POST_WINDOW` in `engagement.ts`), capped by whatever is configured so turning the window off (`0`) still turns it off for agents too.
+
+`engaged` triggers when `M` is mentioned, or when `M` is engaged by either rule above. Being mentioned resets both clocks by construction, because it becomes the new most-recent mention. A trigger picked by the conversation rule carries `TriggerReason: 'conversation'` rather than `'window'`, and is never put through the engaged response gate — the gate only weighs bursts where every message in the burst says `'window'`; a person is owed an answer. When a person's channel post reaches no agent this way, the server logs `[rooms] nobody was picked to answer a person` with one of `no_agents`, `named_unreachable`, `named_not_answering`, `stood_down`, `partner_not_answering`, `no_conversation` (`addressing.ts` `whyNobody`).
 
 **Nothing is stored.** The window is a pure predicate over the room log, which is durable and never trimmed. No column, no table, no in-memory window to reset on restart, and no state that can disagree with the log. Contrast `turn-budget.ts`, whose windows are counted in memory and written to `room_turn_spend` so they survive a restart (ADR `260726-170127`, DOR-1205): that one has to count things the log does not record, and this one does not.
 
 **The query is bounded to `engagedWindowPosts + 1` rows.** Scan backwards from `latestSeq`; if the most recent mention of `M` is not inside that many entries, then by definition more than `engagedWindowPosts` posts by others have landed since it, so the answer is no without reading further. Six rows by default, on the existing `(roomId, seq)` primary key.
 
 Notices do not count. A notice is authored by the system and is the room talking about the conversation, not a turn in it.
+
+### 9.2a The channel lead, when nothing above picked anybody (DOR-2823)
+
+A channel may have a **lead**: one agent member that answers a person's post nothing above
+answered. Stored in the existing `rooms.fallback_seat_author_id` column — it already carried
+#team's default-agent seat from the team-room-home work, and this phase generalizes it to every
+channel rather than adding a second column. The API field is `Room.leadAuthorId`, renamed from
+`fallbackSeatAuthorId` because it is no longer #team's alone.
+
+**Ordering, computed once per entry in `room-trigger.ts`.** Each step runs only when the one
+before it left the post with nobody:
+
+1. **Mention.** `selectTriggerTargets` (the matrix, §9.1/§5) resolves every `@mention` first, as it
+   always has. A named agent is never reached by any step below.
+2. **The exchange.** For a PERSON's post in a channel, `conversationFor` (§9.2) picks who the
+   person is already talking to there, and that agent answers instead of the matrix's own picks.
+3. **Seat stand-down, #team only.** `seatAuthorId` is non-null only for a `wellKnown` room (#team),
+   and equals its lead there. `standDownFallbackSeat` makes that seat stand down exactly where any
+   channel's own lead would: a post that named another agent, or a post an agent wrote. Everywhere
+   else `seatAuthorId` is `null` and this step is a no-op — an ordinary channel's lead is decided by
+   step 4, not this one.
+4. **The lead.** `pickLead` (`addressing.ts`) runs only when steps 1-3 left the post with nobody,
+   the post is a PERSON's, and the room is a channel (the same `followsConversation` guard as §9.2).
+   It returns the lead's selection whatever the lead's `responseMode` says — `TriggerReason: 'lead'`,
+   never put through the engaged response gate, because a person is owed an answer — unless the
+   post `@mentioned` a different agent member (that agent's to answer, or stay silent on) or named
+   only people (`mentions` is non-empty and excludes the lead: `@kai lunch?` is not the lead's).
+
+An AGENT's post never reaches `pickLead`: the lead check is gated on `followsConversation`
+(`authorKind === 'human' && room.kind === 'channel'`), the same predicate §9.2 uses to split the
+exchange rule from the mention-anchored one. Agent-to-agent traffic stays exactly as quiet as it
+was before this phase.
+
+**Defaults.** `POST /api/rooms` accepts `leadAgentPath`; `createRoom` resolves it to the lead,
+defaulting to `agentPaths[0]` when the field is omitted, so the first agent named becomes the lead
+with no further action. A channel created with no agents gets no lead; `addMember` sets one the
+first time an agent joins such a room. A direct message always answers `leadAuthorId: null` and
+refuses any attempt to set one (`INVALID_LEAD`): everything in a DM already addresses whoever is
+in it, so there is nothing for a lead to pick up.
+
+**Changing it.** `PATCH /api/rooms/:id` `{ leadAuthorId }` is person-only, gated the same way the
+rest of that route is. The `update_room` tool exposes the same field as `lead`, resolved by
+`@handle`, and it is a hand-over rather than a choice: an agent may pass the lead on while it holds
+it, or take it when nobody does, never take it from another agent (`updateRoomFromTool`).
+`requireValidLead` (`room-updates.ts`) refuses with `INVALID_LEAD` a non-channel room, a
+`wellKnown` room (#team's lead tracks the default agent and `ensureTeamRoom` would undo a direct
+write), a channel bridged to an outside chat, and an id that is not a live agent member of the
+channel. Removing the lead hands it to the agent member that joined earliest (none in #team or a
+bridged room).
+
+**Bridged channels never have a lead.** A Telegram or Slack group seats its one agent as
+`mention-only` so strangers' messages never reach it unasked. Creation never sets a lead there,
+`addMember` never promotes one, the backfill skips every room with a `room_bridges` row, and the
+dispatcher does not run `pickLead` when `bridgedFraming(room.id)` is non-null.
+
+**The lead's turn owes an answer.** A `'lead'` or `'conversation'` selection travels to the room
+context as `addressing.answerOwed`, and the block then says the message is the agent's to answer
+and never offers "post nothing" (the addressed branch of §11's directive).
+
+**Migration** (`packages/db/drizzle/20261010155953_channel_leads.sql`, carries no DDL). Every
+existing channel with `fallback_seat_author_id IS NULL` gets a value, in order:
+
+1. The agent member that answered a person's post most in the last 14 days — counting replies at
+   cascade depth 1 directly under a person's post, ties going to whichever answered most recently.
+2. Failing that, the agent a topic's `steward: <name>` names, matched by handle or by display name,
+   and only when that agent is a member of the room today. That text was a convention people typed
+   into a topic; nothing in the product read it before this migration.
+3. Otherwise none — a channel the backfill cannot place stays leadless, same as a brand-new one.
+
+Only channels are touched, and only where no lead is already set, so #team keeps the default-agent
+seed it already had. Tested end to end in
+`packages/db/src/__tests__/channel-leads-migration.test.ts` (built against the real migration
+history) and the rule itself in `apps/server/src/services/rooms/__tests__/channel-lead.test.ts`
+(driven through the real `RoomService` and dispatcher with only the turn runner scripted).
 
 ### 9.3 Configuration
 
@@ -509,13 +594,15 @@ Two new fields in the `rooms` block of `packages/shared/src/config-schema.ts:621
  * How long an agent stays addressable after you talk to it, before it goes back
  * to needing an @mention. Talking to it again starts the clock over.
  */
-engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
 /**
  * How many messages from other people can go by before an agent stops treating
  * itself as part of the conversation. Talking to it again starts the count over.
  */
-engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+engagedWindowPosts: z.number().int().min(0).max(100).default(15),
 ```
+
+**DOR-2823 raised both defaults**, 10 → 60 minutes and 5 → 15 posts, because the window now also covers a person's unaddressed follow-ups in a conversation, and an hour reads as patient where ten minutes read as a hang-up. A `conf` migration keyed `0.103.0` moves a stored value to the new default only when it still equals the old one (`10` / `5`); a value anyone has chosen, including `0`, is left alone. Agent-to-agent traffic is unaffected: it is weighed at the old 10-minute / 5-post bound regardless of what `rooms.engagedWindow*` says, only ever capped down by it.
 
 Both numbers are ours and unsourced (§2.2). The TSDoc must not imply otherwise, and §17 carries the caveat where a tuner will read it.
 
@@ -807,13 +894,13 @@ DOR-621 is RP1's first half and DOR-622 is RP2. The rest need tickets.
 
 Everything this spec adds to the `rooms` block of `packages/shared/src/config-schema.ts:621-659`. Each needs the `adding-config-fields` lifecycle: Zod field, defaults object, semver-keyed `conf` migration, docs, tests.
 
-| Field                  | Default | Phase | Sourced?                                                        |
-| ---------------------- | ------- | ----- | --------------------------------------------------------------- |
-| `engagedWindowMinutes` | 10      | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
-| `engagedWindowPosts`   | 5       | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
-| `ambientMaxEntries`    | 30      | RP3   | **No.** Chosen to bound a first-turn replay, not from evidence. |
-| `collectDebounceMs`    | 500     | RP8   | **No.** OpenClaw's shape, not a measured value.                 |
-| `collectMaxEntries`    | 20      | RP8   | **No.**                                                         |
+| Field                  | Default               | Phase | Sourced?                                                        |
+| ---------------------- | --------------------- | ----- | --------------------------------------------------------------- |
+| `engagedWindowMinutes` | 60 (was 10, DOR-2823) | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
+| `engagedWindowPosts`   | 15 (was 5, DOR-2823)  | RP4   | **No. Ours, to be tuned by dogfooding.**                        |
+| `ambientMaxEntries`    | 30                    | RP3   | **No.** Chosen to bound a first-turn replay, not from evidence. |
+| `collectDebounceMs`    | 500                   | RP8   | **No.** OpenClaw's shape, not a measured value.                 |
+| `collectMaxEntries`    | 20                    | RP8   | **No.**                                                         |
 
 Shipped and unchanged, for reference: `maxAgentDepth` (3), `maxAutomaticTurnsPerRoomPerHour` (60), `maxAutomaticTurnsTotalPerHour` (240).
 

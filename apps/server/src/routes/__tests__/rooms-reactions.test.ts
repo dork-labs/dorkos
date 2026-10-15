@@ -32,6 +32,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(),
     get: vi.fn(),
@@ -53,16 +54,16 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { scriptedRunner } from '../../services/rooms/__tests__/room-test-harness.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
-import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
 
 const ANA_PATH = '/agents/ana';
 
@@ -83,7 +84,7 @@ function registerAgent(db: Db, name: string, projectPath: string): void {
     .run();
 }
 
-const testServer = listeningServer(app);
+const testServer = listeningServer(composedListener(admission));
 
 /** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
 function testServerPort(): number {
@@ -151,7 +152,9 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     resetAgentIdentityService();
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
-    const subsystem = createRoomSubsystem({ db });
+    // Ana's turns end at once with nothing to say. No runtime is registered
+    // here, so the real runner would fail them and write a notice.
+    const subsystem = createRoomSubsystem({ db, turns: scriptedRunner(() => null) });
     setRoomService(subsystem.service);
     anaAuthorId = subsystem.authors.resolveAgent(ANA_PATH, 'Ana').id;
     const created = await request(testServer)
@@ -163,6 +166,9 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       .send({ text: 'Deployed to staging.' });
     entryId = posted.body.entryId;
     entrySeq = posted.body.seq;
+    // Ana's turn puts a 👀 receipt on the post until it ends (DOR-2823); these
+    // tests are about the reactions people and agents leave themselves.
+    await subsystem.service.triggersIdle();
   });
 
   afterEach(() => {
@@ -262,8 +268,8 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
 
   it('accepts an agent presenting a real identity token, as itself', async () => {
     // This route used to answer `403 PEOPLE_ONLY` here. ADR 260814-195522
-    // reverses etiquette E16b: an agent may react, bounded by an hourly ceiling
-    // per room rather than by what kind of author it is. The pill it leaves
+    // reverses etiquette E16b: an agent may react, and ADR 261006-225605
+    // removed the hourly count it once had. The pill it leaves
     // carries the AGENT's author id, which is the half worth pinning — the token
     // decides who reacted, and nothing in the body can.
     const identity = initAgentIdentityService(db);
@@ -325,21 +331,13 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     const path = spec.body.paths['/api/rooms/{id}/entries/{entryId}/reactions'];
     expect(path?.post).toBeDefined();
     expect(path.post.tags).toEqual(['Rooms']);
-    expect(Object.keys(path.post.responses).sort()).toEqual([
-      '202',
-      '400',
-      '401',
-      '404',
-      '409',
-      '429',
-    ]);
-    expect(
-      path.post.description,
-      'the refusal a client will actually hit has to be documented, not only returned'
-    ).toContain('REACTION_RATE_LIMITED');
+    expect(Object.keys(path.post.responses).sort()).toEqual(['202', '400', '401', '404', '409']);
+    // The 429 went with the hourly count (DOR-2739): nothing caps an agent's
+    // reactions, so no page may promise a refusal a client will never see.
+    expect(path.post.description).not.toContain('REACTION_RATE_LIMITED');
     // The 403 this route used to advertise is gone with the rule it described:
-    // ADR 260814-195522 lets an agent react, bounded by the hourly ceiling above
-    // rather than by what kind of author it is, so there is no `PEOPLE_ONLY`
+    // ADR 260814-195522 lets an agent react rather than refusing it for what
+    // kind of author it is, so there is no `PEOPLE_ONLY`
     // left to document here and a page that still promised one was a lie a
     // client could code against.
     expect(path.post.description).not.toContain('PEOPLE_ONLY');
@@ -424,6 +422,8 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
+      // Ana's 👀 receipt on it lasts only as long as her turn (DOR-2823).
+      await getRoomService().triggersIdle();
       await react('👍');
 
       const { frames, reactionsByEntry } = await resumeAndCollect(
@@ -454,6 +454,8 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
+      // Ana's 👀 receipt on it lasts only as long as her turn (DOR-2823).
+      await getRoomService().triggersIdle();
       await react('👍');
       // …the reader disconnects here, holding that pill…
       await react('👍');

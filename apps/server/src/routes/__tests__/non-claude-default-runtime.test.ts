@@ -70,6 +70,7 @@ const RUNTIMES: Record<string, typeof openCodeRuntime> = { opencode: openCodeRun
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     // `runtimes.default: opencode` — the acceptance configuration for DOR-768.
     getDefault: vi.fn(() => openCodeRuntime),
@@ -94,10 +95,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 describe('cold-discovery routes with a non-Claude default runtime', () => {
   beforeEach(() => {

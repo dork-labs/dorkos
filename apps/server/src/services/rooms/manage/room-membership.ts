@@ -172,6 +172,18 @@ export class RoomMembership {
     }
 
     const member = this.roster.add(room, input);
+    // A channel with no lead takes the first agent that joins it (DOR-2823), so
+    // a channel opened empty and filled later is never left without one. Not
+    // #team, whose lead follows the default agent in Settings.
+    if (
+      room.kind === 'channel' &&
+      !room.wellKnown &&
+      !room.leadAuthorId &&
+      candidate.kind === 'agent' &&
+      !this.bridges.findBridgeByRoom(roomId)
+    ) {
+      this.store.setLead(roomId, member.authorId);
+    }
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     this.followRosterTitle(room, priorTitleNames);
     return member;
@@ -407,8 +419,18 @@ export class RoomMembership {
     // into a room it could never leave — the identical failure mode that made
     // defending it the wrong answer, and the reason the standing guarantee
     // "taking an AGENT out is never refused, so nothing is ever wedged" holds.
-    if (room.fallbackSeatAuthorId === authorId) {
-      this.store.setFallbackSeat(roomId, null);
+    if (room.leadAuthorId === authorId) {
+      // Handed to the agent that has been here longest, so a channel with agents
+      // in it is not left without anybody to answer (DOR-2823). Not #team, whose
+      // lead follows the default agent, and not a bridged chat, which has none.
+      const next =
+        room.wellKnown || this.bridges.findBridgeByRoom(roomId)
+          ? undefined
+          : this.roster
+              .list(roomId)
+              .filter((m) => m.author.kind === 'agent' && m.authorId !== authorId)
+              .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt))[0];
+      this.store.setLead(roomId, next?.authorId ?? null);
     }
     // Whatever this room was still waiting for from this agent is over: it is
     // not here to answer it. Dropped rather than left to age out, because the

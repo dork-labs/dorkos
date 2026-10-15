@@ -8,6 +8,16 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { describeRuntimeError } from '@dorkos/shared/runtime-error-classification';
 
+/** A tool's arguments as the JSON text every runtime's tool events carry. */
+function inputText(input: unknown): string {
+  if (input === undefined) return '';
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return '';
+  }
+}
+
 /** Accumulate real provider readings without inventing missing cost or token counts. */
 export class DoeTurnEvents {
   private readonly usages: ModelUsage[] = [];
@@ -16,6 +26,22 @@ export class DoeTurnEvents {
     string,
     { parentCallId: string; started: number; toolUses: number }
   >();
+
+  /** Helper tool calls started and not yet finished, by call id. */
+  private readonly childTools = new Map<string, { name: string; input: string; helper: string }>();
+
+  /**
+   * Told about each tool call a helper (a child scope) finishes. Those calls
+   * never reach the turn's stream as tool events, so the audit record of tool
+   * calls (spec `audit-trail` PR3) hears about them here.
+   */
+  onHelperTool?: (call: {
+    callId: string;
+    name: string;
+    input: string;
+    helper: string;
+    failed: boolean;
+  }) => void;
 
   /** Translate engine events; only parent text becomes the person's assistant reply. */
   constructor(
@@ -84,7 +110,24 @@ export class DoeTurnEvents {
           },
         });
       else if (['tool-start', 'tool-progress', 'tool-end'].includes(event.type)) {
-        if (event.type === 'tool-start') child.toolUses++;
+        if (event.type === 'tool-start') {
+          child.toolUses++;
+          this.childTools.set(event.callId, {
+            name: event.name,
+            input: inputText(event.input),
+            helper: event.scope,
+          });
+        } else if (event.type === 'tool-end') {
+          const call = this.childTools.get(event.callId);
+          this.childTools.delete(event.callId);
+          if (call) {
+            this.onHelperTool?.({
+              callId: event.callId,
+              ...call,
+              failed: event.result?.isError === true,
+            });
+          }
+        }
         this.emit({
           type: 'background_task_progress',
           data: {
@@ -108,7 +151,12 @@ export class DoeTurnEvents {
       case 'tool-start':
         this.emit({
           type: 'tool_call_start',
-          data: { toolCallId: event.callId, toolName: event.name, status: 'running' },
+          data: {
+            toolCallId: event.callId,
+            toolName: event.name,
+            status: 'running',
+            ...(event.input === undefined ? {} : { input: inputText(event.input) }),
+          },
         });
         break;
       case 'tool-progress':

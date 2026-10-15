@@ -50,6 +50,7 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
@@ -79,7 +80,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   createRoomSubsystem,
   setRoomAttachmentStores,
@@ -92,9 +93,10 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const server = listeningServer(app);
+// The server's real routing: `/api/read-cursors` answers from the Hono `/api`
+// app, the rooms routes from Express behind it.
+const admission = new MainRequestAdmission();
+const server = listeningServer(composedListener(admission));
 
 const ANA_PATH = '/agents/ana';
 

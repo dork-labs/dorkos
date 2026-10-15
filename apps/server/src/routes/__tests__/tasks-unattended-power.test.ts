@@ -17,7 +17,6 @@
  * @module routes/__tests__/tasks-unattended-power
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -59,6 +58,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     // Read by `capabilitiesForTaskRuntime` for a create that names no runtime
     // of its own (DOR-1615) — which is every fixture in this file, so the create
@@ -110,7 +110,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -192,7 +193,6 @@ function createBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe('POST /api/tasks resolves an omitted permission mode', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let scheduler: TaskSchedulerService;
@@ -209,14 +209,17 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
     db = createTestDb();
     store = new TaskStore(db);
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -224,8 +227,10 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   });
 
   it('lands on exactly acceptEdits when no stop is configured', async () => {
-    // The byte-for-byte regression: anybody who never answered the power door
-    // gets what this route has always produced.
+    // The byte-for-byte regression: with no stop at either tier, this route
+    // produces what it always has. (A fresh install ships the global stop at
+    // Full autonomy, ADR 261006-225605, so it is unset here.)
+    state.runtimes = runtimes({ defaultTrustStop: null });
     const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
@@ -235,6 +240,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('writes no `permissions:` line into the file at that level', async () => {
     // Unchanged behavior, and worth pinning: `acceptEdits` is the level the file
     // format leaves unsaid, so the default must not start writing it out.
+    state.runtimes = runtimes({ defaultTrustStop: null });
     await request(fixtureServer).post('/api/tasks').send(createBody());
 
     const frontmatter = writtenSchedule();
@@ -292,7 +298,6 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
 });
 
 describe('the guards that stand between an agent and a raised task', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let scheduler: TaskSchedulerService;
@@ -305,14 +310,17 @@ describe('the guards that stand between an agent and a raised task', () => {
     db = createTestDb();
     store = new TaskStore(db);
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -372,7 +380,6 @@ describe('the guards that stand between an agent and a raised task', () => {
  * body, because the row is what the scheduler will read at 3am.
  */
 describe('the un-clamp, for a trusted caller who named no mode', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let scheduler: TaskSchedulerService;
@@ -384,14 +391,17 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     db = createTestDb();
     store = new TaskStore(db);
 
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
     );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {

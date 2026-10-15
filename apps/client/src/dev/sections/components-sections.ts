@@ -1,4 +1,5 @@
 import type { PlaygroundSection } from '../playground-registry';
+import { APP_TABS_SECTIONS } from './app-tabs-sections';
 
 /**
  * Component sections from ComponentsPage.
@@ -173,13 +174,7 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
   },
-  {
-    id: 'apptabstrip',
-    title: 'AppTabStrip',
-    page: 'components',
-    category: 'Navigation',
-    keywords: ['tab', 'tabs', 'strip', 'window', 'titlebar', 'close', 'new tab', 'session'],
-  },
+  ...APP_TABS_SECTIONS,
   // SidebarShowcases
   {
     id: 'sidebarrow',

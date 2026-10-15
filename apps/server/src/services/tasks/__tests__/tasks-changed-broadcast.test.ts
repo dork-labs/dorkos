@@ -1,50 +1,33 @@
 /**
- * Every writer that can change what the unattended-autonomy banner says, or
- * what the Tasks list shows, must say so on the global stream.
+ * Every writer that can change what the Tasks list or the Activity feed shows
+ * must say so on the global stream.
  *
  * ## Why this file exists
  *
- * `tasks_changed` has two readers with two different questions, and both
- * freshness contracts were undertested on the server half. The client halves —
- * "invalidate when `tasks_changed` arrives" — are pinned in
- * `entities/unattended-autonomy` and `entities/tasks`, but they MOCK the
- * subscription, so neither proves anyone emits the event. And
- * `eventFanOut.broadcast` is stringly-typed, so deleting every
- * `broadcastTasksChanged()` call in the repo left every other test green: the
- * banner would simply stop appearing when somebody dialled a task up to Full
- * autonomy, the Tasks list would simply stop updating when a schedule
- * appeared, and no test would notice either.
+ * `tasks_changed` has several readers (the Tasks list, the Activity feed's
+ * freshness hook, the pending-schedule-approval strip), and their client halves
+ * — "invalidate when `tasks_changed` arrives" — MOCK the subscription, so none
+ * of them proves anyone emits the event. And `eventFanOut.broadcast` is
+ * stringly-typed, so deleting every `broadcastTasksChanged()` call in the repo
+ * left every other test green: the Tasks list would simply stop updating when a
+ * schedule appeared, and no test would notice.
  *
  * So each writer gets its own case, and each case fails when its own call is
  * removed.
  *
  * ## Which writers, and why these six
  *
- * The unattended-autonomy banner's answer depends on a task's
- * `permissionMode`, `enabled` and `status`:
+ * - The three app routes (`POST`, `PATCH`, `DELETE /api/tasks`).
+ * - MCP `tasks_update` and `tasks_delete`: an agent can edit or re-enable a
+ *   task at act tier, and the list has to show it.
+ * - MCP `tasks_create` (DOR-1380): an agent's proposed schedule sat invisible
+ *   until the next full reload, with no signal anywhere that it was waiting on
+ *   a person.
  *
- * - The three cockpit routes (`POST`, `PATCH`, `DELETE /api/tasks`) can change
- *   all three, `permissionMode` included — they are the only path an operator
- *   has to the autonomy stop.
- * - MCP `tasks_update` and `tasks_delete` are refused `permissionMode` by
- *   `task-write-policy`, but NOT `enabled`: an agent can re-enable a task a
- *   person had already granted bypass to, at act tier, with no approval card.
- *   That is the most important of the six to signal for the banner's sake.
- *
- * MCP `tasks_create` cannot move the banner's answer — it forces
- * `pending_approval` and is refused `permissionMode`, so nothing it produces
- * is a live autonomy driver. It broadcasts anyway (DOR-1380), because the
- * Tasks list is the other reader of this same event: an agent's proposed
- * schedule sat invisible until the next full reload, with no signal anywhere
- * that it was waiting on a person. A broadcast the banner's own computation
- * ignores is not noise once a second reader depends on it.
- *
- * The two writers that CANNOT broadcast — `upsertFromFile` and the reconciler —
- * are named honestly in the collector's module doc, along with the 60-second
- * staleness that covers them.
+ * The two writers that do not broadcast — `upsertFromFile` and the reconciler —
+ * are deliberately left out (see `task-sse-events.ts`).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -76,7 +59,16 @@ vi.mock('../../../lib/boundary.js', () => ({
 }));
 
 vi.mock('../../core/config-manager.js', () => ({
-  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+  // Careful, so an agent's schedule parks: the parked status is what this file
+  // pins. Trusted arming is covered in `create-task-trust.test.ts`.
+  configManager: {
+    get: (key: string) =>
+      key === 'auth'
+        ? { enabled: false }
+        : key === 'permissions'
+          ? { preset: 'careful' }
+          : undefined,
+  },
 }));
 
 vi.mock('@dorkos/skills/writer', () => ({
@@ -111,7 +103,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { createTasksRouter } from '../../../routes/tasks.js';
+import { createTasksRoutes } from '../../../routes/tasks.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
@@ -160,7 +153,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('a task write tells the world it happened', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let activityService: ActivityService;
@@ -173,19 +165,6 @@ describe('a task write tells the world it happened', () => {
     store = new TaskStore(db);
     activityService = new ActivityService(db);
     const scheduler = createMockScheduler();
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        store,
-        scheduler,
-        new TaskRegistrar({ store, scheduler }),
-        DORK_HOME,
-        undefined,
-        activityService
-      )
-    );
 
     const deps = {
       taskStore: store,
@@ -207,7 +186,18 @@ describe('a task write tells the world it happened', () => {
       filePath: '/tmp/tasks/nightly/SKILL.md',
     });
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+          activity: activityService,
+        }),
+      })
+    );
   });
 
   afterEach(() => {
@@ -265,7 +255,7 @@ describe('a task write tells the world it happened', () => {
 
   it('MCP tasks_create broadcasts tasks_changed too (DOR-1380)', async () => {
     // Reverses the earlier "deliberately absent" call: the Tasks list needs
-    // this signal even though the autonomy banner never will.
+    // this signal to show an agent's proposed schedule as it is written.
     const result = await tools['tasks_create']!.handler(
       {
         name: 'agent-proposed',

@@ -1,6 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest';
-import { renderDoeContextEntry } from '../context.js';
+import { chatToolsLine, renderDoeContextEntry } from '../context.js';
 import { connectionToolName } from '../mcp.js';
 describe('Doe context tool names', () => {
   it('names bare authenticated host tools and exact hashed private connection aliases', () => {
@@ -21,6 +21,22 @@ describe('Doe context tool names', () => {
     expect(context).toContain('memory_write');
     expect(context).toContain('compact_my_session');
     expect(context).not.toContain('mcp__');
+  });
+  // DOR-2790: Doe gets DorkOS tools only through the host server, which carries
+  // the capability tools. mesh_list and mesh_inspect never reach it.
+  it('names only the chat tools Doe really has loaded', () => {
+    const line = chatToolsLine(true, true, new Set());
+    expect(line).toContain('chat_send and chat_read are loaded');
+    expect(line).not.toContain('mesh_list');
+    expect(line).not.toContain('mesh_inspect');
+  });
+  it('claims no chat tool without the host, outside an agent session, or when hidden', () => {
+    expect(chatToolsLine(false, true, new Set())).toBe('');
+    expect(chatToolsLine(true, false, new Set())).toBe('');
+    expect(chatToolsLine(true, true, new Set(['chat_send', 'chat_read']))).toBe('');
+    const partial = chatToolsLine(true, true, new Set(['chat_send']));
+    expect(partial).not.toContain('chat_send');
+    expect(partial).toContain('chat_read is loaded');
   });
   it('renders generic neutral data in the context tag', () => {
     expect(

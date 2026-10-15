@@ -1,11 +1,12 @@
 import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from '../../fixtures';
-import { chooseFullPower, readPower, restorePower, type PowerSnapshot } from './full-power-preset';
+import { chooseTrusted, readPower, restorePower, type PowerSnapshot } from './trusted-preset';
 
 /**
  * Agent permissions, phase 1 (spec `agent-permissions`, DOR-2278): the session
  * `e687427b` scenario, where DorkBot could not open a room on a Full power
- * install without a trip to Settings.
+ * install without a trip to Settings. Trusted, the preset every install now
+ * runs on, carries the same promise.
  *
  * Runs on the TEST-MODE leg (`chromium-rooms-agents`) because it acts AS
  * DorkBot with a real minted token (`POST /api/test/agent-token`), which only
@@ -62,7 +63,7 @@ async function roomExists(request: APIRequestContext, title: string): Promise<bo
 }
 
 test.describe('Agent permissions @permissions', () => {
-  // Full power moves the Files & commands stop too; put it back for the specs
+  // Trusted moves the Files & commands stop too; put it back for the specs
   // after this one on the same leg.
   let prior: PowerSnapshot;
   test.beforeAll(async ({ playwright }, testInfo) => {
@@ -77,17 +78,15 @@ test.describe('Agent permissions @permissions', () => {
   });
 
   test.beforeEach(async ({ request }) => {
-    // Full power, as the first-run door leaves it; DorkBot back on the default.
-    await chooseFullPower(request);
+    // Trusted, as every install runs; DorkBot back on the default.
+    await chooseTrusted(request);
     const bot = await dorkbot(request);
     await request.patch(`/api/agents/${bot.id}/permissions`, {
       data: { areas: { rooms: null }, surface: 'api' },
     });
   });
 
-  test('DorkBot opens a room on a Full power install with no settings change', async ({
-    request,
-  }) => {
+  test('DorkBot opens a room on a Trusted install with no settings change', async ({ request }) => {
     const bot = await dorkbot(request);
     const token = await dorkbotToken(request, bot.path);
     const title = `perm-e2e-${Date.now()}`;
@@ -172,15 +171,10 @@ test.describe('Agent permissions @permissions', () => {
     });
   });
 
-  test('each preset sets every row, and Full power asks what Full autonomy means first', async ({
+  test('each preset sets every row, and Trusted is chosen without a dialog', async ({
     request,
     page,
   }) => {
-    // No acknowledgement on file, so Full power has to ask.
-    const cleared = await request.patch('/api/config', {
-      data: { ui: { autonomyAcknowledgedAt: null } },
-    });
-    expect(cleared.ok()).toBe(true);
     await request.put('/api/permissions/preset', {
       data: { preset: 'careful', surface: 'api' },
     });
@@ -206,26 +200,17 @@ test.describe('Agent permissions @permissions', () => {
     // A floor area never offers Allowed.
     await expect(row('safety').getByRole('radio', { name: 'Allowed' })).toHaveCount(0);
 
-    // Balanced.
-    await picker.getByRole('radio', { name: 'Balanced' }).click();
+    // Trusted is a normal choice (ADR 261006-225605): no consent step. Every
+    // area is Allowed except the two that keep asking, Safety and Reach.
+    await picker.getByRole('radio', { name: 'Trusted' }).click();
     await keepTheirs();
     await expect(row('rooms').getByRole('radio', { name: 'Allowed' })).toBeChecked();
-    await expect(row('tasks').getByRole('radio', { name: 'Ask' })).toBeChecked();
-    await expect(row('reach').getByRole('radio', { name: 'Ask' })).toBeChecked();
-
-    // Full power goes through the consent step, and the yes is recorded with it.
-    await picker.getByRole('radio', { name: 'Full power' }).click();
-    await keepTheirs();
-    const consent = page.getByRole('alertdialog');
-    await expect(consent).toBeVisible();
-    await consent.getByRole('button', { name: /Turn on|Full autonomy/ }).click();
-    await expect(consent).toBeHidden();
     await expect(row('tasks').getByRole('radio', { name: 'Allowed' })).toBeChecked();
-    await expect(row('packages').getByRole('radio', { name: 'Ask' })).toBeChecked();
+    await expect(row('packages').getByRole('radio', { name: 'Allowed' })).toBeChecked();
+    await expect(row('reach').getByRole('radio', { name: 'Ask' })).toBeChecked();
 
     const power = await readPower(request);
     expect(power.trustStop).toBe('autonomy');
-    expect(power.autonomyAcknowledgedAt).not.toBeNull();
-    expect((await (await request.get('/api/permissions')).json()).preset).toBe('full');
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('trusted');
   });
 });

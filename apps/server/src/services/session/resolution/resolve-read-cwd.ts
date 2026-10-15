@@ -17,7 +17,7 @@
  * no `res` and cannot answer a request. Every caller MUST judge the directory
  * they get back before reading anything with it, because a directory resolved
  * from the runtime's live binding is one the CALLER never named, and
- * `assertBoundary(undefined)` passes. Skipping that check inverts the boundary:
+ * `boundaryRefusal(undefined)` passes. Skipping that check inverts the boundary:
  * a request that omits `?cwd=` would read a session that the same request with
  * an explicit `?cwd=` is refused for. DOR-1322 shipped with exactly that gap on
  * `/:id/messages` and it was closed with DOR-1444.
@@ -42,8 +42,9 @@
  *   refusing.
  *
  * Native discovery is asynchronous and takes precedence over a caller's
- * directory hint. Directory-scoped fallback applies only when the runtime
- * cannot discover the session by ID. Rename and fork share this resolution
+ * directory hint: the hint is passed to the runtime only as the first place to
+ * look, never as the answer. Directory-scoped fallback applies only when the
+ * runtime cannot discover the session by ID. Rename and fork share this resolution
  * and validate the resulting directory before writing.
  *
  * @module services/session/resolution/resolve-read-cwd
@@ -56,6 +57,7 @@
  * consult — and must stay clear of that guard's match.
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { Session } from '@dorkos/shared/types';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { logger } from '../../../lib/logger.js';
@@ -88,6 +90,22 @@ export function callerNamedCwd(cwdParam: string | undefined): cwdParam is string
 function liveSessionCwd(runtime: AgentRuntime, sessionId: string): string | undefined {
   if (runtime.getSessionCwd === undefined) return undefined;
   return runtime.getSessionCwd(runtime.getInternalSessionId(sessionId) ?? sessionId);
+}
+
+/**
+ * Ask the runtime's own store for the session, passing the caller's directory
+ * as a place to look first. The hint only speeds the search: the runtime still
+ * answers with the directory the session records (DOR-2892).
+ */
+function findNativeSession(
+  runtime: AgentRuntime,
+  sessionId: string,
+  cwdParam: string | undefined
+): Promise<Session | null> | undefined {
+  return runtime.findSession?.(
+    runtime.getInternalSessionId(sessionId) ?? sessionId,
+    callerNamedCwd(cwdParam) ? { cwdHint: cwdParam } : undefined
+  );
 }
 
 /**
@@ -125,7 +143,7 @@ export async function resolveSessionCwdOrNull(
   const knownCwd =
     liveSessionCwd(runtime, sessionId) ??
     runtimeRegistry.getNativeSessionCwd?.(resolveSettingsKey(sessionId, runtime)) ??
-    (await runtime.findSession?.(runtime.getInternalSessionId(sessionId) ?? sessionId))?.cwd;
+    (await findNativeSession(runtime, sessionId, cwdParam))?.cwd;
   if (knownCwd) return knownCwd;
   if (callerNamedCwd(cwdParam)) return cwdParam;
   const persisted = await persistedSessionCwd(runtime, sessionId);
@@ -165,7 +183,7 @@ export async function resolveSessionCwdOrDefault(
   return (
     liveSessionCwd(runtime, sessionId) ??
     runtimeRegistry.getNativeSessionCwd?.(resolveSettingsKey(sessionId, runtime)) ??
-    (await runtime.findSession?.(runtime.getInternalSessionId(sessionId) ?? sessionId))?.cwd ??
+    (await findNativeSession(runtime, sessionId, cwdParam))?.cwd ??
     (callerNamedCwd(cwdParam) ? cwdParam : undefined) ??
     (await persistedSessionCwd(runtime, sessionId)) ??
     DEFAULT_CWD

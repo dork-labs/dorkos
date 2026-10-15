@@ -22,6 +22,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
+// CORS lets this test origin through, so it reaches the routes' own origin
+// bars, which judge against the server's static set and not this list.
+vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example');
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 
 /** Two projects under `/repos`; the name holds a dot to prove it round-trips. */
 vi.mock('../../services/projects/project-registry.js', () => {
@@ -47,12 +56,18 @@ vi.mock('../../services/projects/project-registry.js', () => {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import express, { Router } from 'express';
+import { Router } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createExtensionDecisionsRouter } from '../extension-decisions.js';
-import { createExtensionsRouter } from '../extensions.js';
-import { createExtensionRoutesMiddleware } from '../../middleware/extension-routes.js';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { getRequestListener } from '@hono/node-server';
+import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { parseRequestBody } from '../../http/request-body.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createExtensionsRoutes } from '../extensions.js';
+import { createExtensionApiRoutes } from '../extension-api.js';
+import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import { createDataProviderContext } from '../../services/extensions/extension-server-api-factory.js';
 import {
   createInboxFixture,
@@ -62,6 +77,15 @@ import {
 
 const target = swappableServer();
 const server = target.server;
+/**
+ * The decision routes with no `/api` chain in front, only its body parser. Two
+ * of the person bar's refusals sit behind a chain step that refuses first (CORS
+ * for a foreign `Origin`, the session gate for a request with no credential
+ * under login), so they are defense in depth, and this is the only way to show
+ * they still hold.
+ */
+const bareTarget = swappableServer();
+const bareServer = bareTarget.server;
 const TRUSTED_ORIGIN = 'http://localhost:7777';
 
 afterAll(() => vi.unstubAllEnvs());
@@ -86,28 +110,45 @@ beforeEach(() => {
       id === 'flow' || id === 'other'
         ? { id, manifest: { id, name: id === 'flow' ? 'Flow' : 'Other', version: '1.0.0' } }
         : undefined,
-    getServerRouter: (id: string) => (id === 'flow' ? extRouter : null),
+    getServerHandler: (id: string) => (id === 'flow' ? bridgeExpressRouter(extRouter) : null),
     listPublic: () => [],
   };
 
-  const app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    if (signedInUser) res.locals.user = signedInUser;
-    next();
-  });
-  app.locals.activityService = {
+  const activity = {
     emit: vi.fn(async (event: { summary: string }) => {
       emitted.push(event);
     }),
   };
-  app.use('/api/extension-decisions', createExtensionDecisionsRouter());
-  app.use(
-    '/api/extensions',
-    createExtensionsRouter(manager as never, dorkHome, () => null)
+  // What the session gate would put on `c.var` for a signed-in person.
+  const signedIn: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    if (signedInUser) c.set('user', signedInUser);
+    await next();
+  };
+  const decisions = createExtensionDecisionsRoutes({ activity });
+
+  target.mount(
+    honoGroupListener(
+      [
+        { path: '/api/extension-decisions', routes: decisions },
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as never,
+            dorkHome,
+            getCwd: () => null,
+            activity,
+          }),
+        },
+        { path: '/api/ext', routes: createExtensionApiRoutes(manager as never) },
+      ],
+      { before: signedIn }
+    )
   );
-  app.use('/api/ext/:id', createExtensionRoutesMiddleware(manager as never));
-  target.mount(app);
+  const bare = new Hono<ApiEnv>()
+    .use(parseRequestBody())
+    .use(signedIn)
+    .route('/api/extension-decisions', decisions);
+  bareTarget.mount(getRequestListener(bare.fetch, { overrideGlobalObjects: false }));
 });
 
 afterEach(() => {
@@ -161,7 +202,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
   it('refuses a request from another site', async () => {
     fx.inbox.setHandler('flow', () => ({ resolve: 'approved' }));
     const id = await raised();
-    const res = await request(server)
+    const res = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', 'https://evil.example')
       .send({ action: 'approve' });
@@ -172,13 +213,13 @@ describe('POST /api/extension-decisions/:id/action', () => {
     state.authEnabled = true;
     fx.inbox.setHandler('flow', () => ({ resolve: 'approved' }));
     const id = await raised();
-    const refused = await request(server)
+    const refused = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', TRUSTED_ORIGIN)
       .send({ action: 'approve' });
     expect(refused.status).toBeGreaterThanOrEqual(401);
     signedInUser = { userId: 'u1', credential: 'cookie' };
-    const ok = await request(server)
+    const ok = await request(bareServer)
       .post(`/api/extension-decisions/${id}/action`)
       .set('origin', TRUSTED_ORIGIN)
       .send({ action: 'approve' });

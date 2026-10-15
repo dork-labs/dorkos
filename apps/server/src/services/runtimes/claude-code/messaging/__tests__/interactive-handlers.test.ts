@@ -5,16 +5,16 @@ import {
   handleAskUserQuestion,
   handleElicitation,
   handleToolApproval,
-  resolveModeDecision,
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
+import { resolveModeDecision } from '../../turn-permission.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
 import {
   autoModeStopStats,
   resetAutoModeStops,
 } from '../../../../observability/auto-mode-stops.js';
 import { resolveApprovalDecision } from '../../../opencode/messaging/approvals.js';
-import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
+import { toRawSessionEvent } from '../../../../session/projection/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { PermissionModeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { ElicitationRequest, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
@@ -248,8 +248,7 @@ describe('createCanUseTool — approval gate', () => {
   // group, somebody else's chat, or (chat filter left empty, the default) every
   // chat that has messaged that adapter. That is a bound on the SCOPE, not a
   // promise that only the operator reads it, and the card that went away was the
-  // per-call one, never the setup consent. Frequency is bounded by
-  // `NotifyBudget` instead of by a card.
+  // per-call one, never the setup consent.
   //
   // But the auto-allow is only honest while the session HAS an identity. Without
   // one, `callerAuthor` falls back to the person who owns the install — who sees
@@ -485,12 +484,107 @@ describe('control_ui is auto-allowed per action, not per tool (DOR-625)', () => 
   });
 });
 
+// Trust never extends to strangers (DOR-2790). A turn another agent or an outside
+// sender started carries a ceiling, and from such a turn the chat verbs that cut
+// into another chat's running turn ask; the ones that only add a message do not.
+describe('chat verbs under a turn ceiling', () => {
+  /** Run one chat call through the gate and say what the gate did. */
+  async function gate(
+    toolName: string,
+    input: Record<string, unknown>,
+    withCeiling: boolean
+  ): Promise<'allowed' | 'asked'> {
+    const session = {
+      ...makeSession('default'),
+      ...(withCeiling ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+    };
+    const canUseTool = createCanUseTool(session, noopLog, undefined, async () => ({
+      identity: { agentPath: '/agents/a' },
+    }));
+    // A macrotask rival, so an auto-allow (a microtask) cannot lose the race.
+    return Promise.race([
+      canUseTool(toolName, input, makeContext('chat-1')).then(() => 'allowed' as const),
+      new Promise<'asked'>((resolve) => setTimeout(() => resolve('asked'), 0)),
+    ]);
+  }
+
+  const SEND = 'mcp__dorkos__chat_send';
+  const STOP = 'mcp__dorkos__chat_stop';
+  const READ = 'mcp__dorkos__chat_read';
+
+  it.each([
+    ['chat_stop', STOP, { chat: 'c1' }],
+    ['chat_send interrupt', SEND, { to: 'c1', message: 'hi', delivery: 'interrupt' }],
+    ['chat_send steer', SEND, { to: 'c1', message: 'hi', delivery: 'steer' }],
+    ['chat_send with an unknown delivery', SEND, { to: 'c1', message: 'hi', delivery: 'x' }],
+  ])('asks for %s in a turn held to a ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, true)).toBe('asked');
+  });
+
+  it.each([
+    ['chat_send with no delivery', SEND, { to: 'c1', message: 'hi' }],
+    ['chat_send queue', SEND, { to: 'c1', message: 'hi', delivery: 'queue' }],
+    ['chat_read', READ, { chat: 'c1' }],
+  ])('still auto-allows %s in a turn held to a ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, true)).toBe('allowed');
+  });
+
+  it.each([
+    ['chat_stop', STOP, { chat: 'c1' }],
+    ['chat_send interrupt', SEND, { to: 'c1', message: 'hi', delivery: 'interrupt' }],
+  ])('auto-allows %s in a turn with no ceiling', async (_label, tool, input) => {
+    expect(await gate(tool, input, false)).toBe('allowed');
+  });
+});
+
+// Spec `official-community-space` D10. The CLI asks about a read only when it reaches past the
+// agent's folder, or the web. A stranger's turn must not be waved through on those: any member of
+// a space could otherwise make an agent read the computer and post what it found. Each case fails
+// if the `'stranger'` rule in `isAutoAllowedCall` is removed, or widened to every ceiling.
+describe('read-only tools under a stranger’s ceiling', () => {
+  async function gate(
+    toolName: string,
+    ceilings: {
+      turnPermissionCeiling?: 'runtime-default' | { asks: 'when-risky'; reach: 'workspace' };
+      backgroundPermissionCeiling?: 'runtime-default';
+    }
+  ): Promise<'allowed' | 'asked'> {
+    const session = { ...makeSession('bypassPermissions'), ...ceilings };
+    const canUseTool = createCanUseTool(session, noopLog);
+    return Promise.race([
+      canUseTool(
+        toolName,
+        { file_path: '/etc/hosts', url: 'https://x' },
+        makeContext('read-1')
+      ).then(() => 'allowed' as const),
+      new Promise<'asked'>((resolve) => setTimeout(() => resolve('asked'), 0)),
+    ]);
+  }
+
+  it.each(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'])(
+    'asks for %s on a stranger’s turn',
+    async (tool) => {
+      expect(await gate(tool, { turnPermissionCeiling: 'runtime-default' })).toBe('asked');
+    }
+  );
+
+  it('asks for one from background work a stranger’s turn left running', async () => {
+    expect(await gate('Read', { backgroundPermissionCeiling: 'runtime-default' })).toBe('asked');
+  });
+
+  it('still auto-allows one under another agent’s ceiling, and with no ceiling', async () => {
+    const agentLevel = { asks: 'when-risky', reach: 'workspace' } as const;
+    expect(await gate('Read', { turnPermissionCeiling: agentLevel })).toBe('allowed');
+    expect(await gate('Read', {})).toBe('allowed');
+  });
+});
+
 describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () => {
   /**
    * The whole decision table, written out. Each entry names the mode, the tool,
    * and the expected decision, so a regression says which cell moved.
    */
-  const TABLE: ReadonlyArray<[PermissionMode, 'allow' | 'ask']> = [
+  const TABLE: ReadonlyArray<[PermissionMode, 'allow' | 'ask' | 'refuse']> = [
     // bypassPermissions IS consent — this is the mode's documented meaning, and
     // the CLI resolves it upstream without ever consulting this callback.
     ['bypassPermissions', 'allow'],
@@ -501,7 +595,8 @@ describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () =>
     ['acceptEdits', 'ask'],
     ['auto', 'ask'],
     ['plan', 'ask'],
-    ['dontAsk', 'ask'],
+    // "Never ask" refuses what every other mode asks about (DOR-2838).
+    ['dontAsk', 'refuse'],
   ];
 
   it.each(TABLE)('%s -> %s', (mode, expected) => {

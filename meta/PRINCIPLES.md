@@ -15,7 +15,9 @@ _Status: decided, not built yet. Today the caps exist and the loop guards count 
   - Code from strangers (marketplace hooks, plugins, extensions) still needs a yes.
   - The front-door settings are Owner-only: login, remote access, credentials and package sources.
 - **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats. A person's own private chats stay private. What an agent did still shows in the record.
-- **Irreversible actions in outside accounts just happen.** Everyone is told, there is an undo window where the service allows one, and the action is recorded.
+- **Irreversible actions in outside accounts just happen when a person asked or it is the agent's job.** Everyone is told, there is an undo window where the service allows one, and the action is recorded. This is how we read ADR `261006-225605` item 7, not a change to it: item 7 is about the platform's approval cards, and this clause is the agent's own judgment about when to act.
+- **A few things always need a yes, even inside an agent's job.** A promise to an outsider (a date, price, refund or discount), signing up or agreeing to terms, spending past its limit, and giving anyone new access. The yes comes from the Owner or the agent's manager. For anything else, a member's request is enough, except acting in someone else's name, which needs that person. A guest can ask, and the agent passes it to its manager.
+- **Blocked is never a dead end.** When only a person can unblock an agent, it does every step it can, recommends one way through, and finishes once they choose. The core of these rules is the `<working_rules>` block every agent gets, whatever its settings.
 - **Watch for spinning, not for length.** A loop guard looks for agents going round in circles with no progress, never for long work. Collaboration that runs for days must never trip it. When unsure, the agents keep going.
 - **The record comes first.** The audit trail ships before any gate comes off.
 
@@ -27,7 +29,7 @@ Agents are co-creators working toward shared goals, not helpers waiting for the 
 
 **Proactive and persistent by default.** A co-worker does not wait for a prompt. Every agent owns outcomes, works toward the tiered goals above it (space, then group, then project), and keeps going between conversations: it wakes on a regular beat, notices what changed, and does the next useful thing inside its job. Inside its job it acts; it asks only when the call belongs to someone else (taste, strategy, a relationship, spending past the limit of the card it was given, work outside its role); it tells people after anything they would want to know soon; and otherwise it stays quiet. It reports to someone, person or agent (an optional field; unset, it reports to whoever created it, and every chain ends at a person), and reports up on their rhythm, so its manager is never surprised. Every agent is proactive about what it owns; how it wakes, how far its initiative reaches and what it asks about first depend on its type (lead, business doer, coder, taste, starter), set by an editable template. **Proactive in work, quiet in speech:** initiative shows up as finished work and a line in the record, and [`agent-etiquette.md`](agent-etiquette.md) still governs every word it says in a room. The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
 
-_Status: schedules (Tasks) and memory are built. Heartbeats ship before launch and are not built yet (DOR-2788); reports-to on profiles and commitments are roadmap._
+_Status: schedules (Tasks), memory, heartbeats, reports-to on profiles, commitments and the measures are built (DOR-2788). Agent templates by type, agents creating agents, the loop watcher (DOR-2745) and a roll-up of measures across agents are roadmap._
 
 ## 3. Equal accounts (internal: never say publicly)
 
@@ -48,7 +50,7 @@ A founder's agents, tools, files and data stay theirs, wherever they run. That s
 
 ## 5. DorkOS first, ready in under a minute
 
-_Status: decided 2026-10-07, not built yet (DOR-2782, DOR-2783, DOR-2784)._
+_Status: decided 2026-10-07. Built: the new first run, every own-AI choice (an AI app you already sign in to, a key, or a model on your computer) and DorkOS picking the model, with no runtime or model name on the way (DOR-2783, DOR-2784). The browser test reaches DorkBot's first reply in seconds through an AI app sign-in; the key choice is covered by unit tests, and a model on this computer does not reach a first reply yet (DOR-2843). Still waits on DorkOS Cloud: the DorkOS-account path's real card checkout, because Cloud's approval-and-card page isn't built yet — today that path only runs against a test double._
 
 - **No outside subscription needed.** A new person runs on DorkOS: a DorkOS account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app; bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option.
 - **Our own engine.** DorkOS ships its own agent engine before launch. Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.

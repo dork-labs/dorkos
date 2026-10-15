@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { BETA, ROOM, mockCommunities, room } from './community-mocks.js';
+import { BETA, ROOM, mockCommunities } from './community-mocks.js';
+import { controllableStream, frame, push } from './community-stream.js';
 
 /**
  * Browser proofs for a Community channel's own view (DOR-2268, DOR-2229).
@@ -45,87 +46,6 @@ function tall(label: string) {
   return `${label}\n\nA second paragraph that wraps onto its own line.\n\nAnd a third one.`;
 }
 
-/** One SSE frame, as the local server writes it. */
-function frame(type: string, data: unknown) {
-  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-/** Write text into the newest open stream, from the test's side, once the app has opened one. */
-async function push(page: Page, text: string) {
-  await page.waitForFunction(() => (window as unknown as { __streams: number }).__streams > 0);
-  await page.evaluate(
-    (value) => (window as unknown as { __push: (text: string) => void }).__push(value),
-    text
-  );
-}
-
-/**
- * Replace the room's live stream with one the test writes to.
- *
- * `page.route` can only answer a request whole, which ends the stream and
- * leaves the channel read-only while it reconnects. A person posting needs the
- * channel live, so the stream is answered inside the page instead: an open
- * body the test pushes frames into, which stays open until the app closes it.
- */
-async function controllableStream(page: Page) {
-  await page.addInitScript(
-    ({ path }) => {
-      const encoder = new TextEncoder();
-      const open: ReadableStreamDefaultController<Uint8Array>[] = [];
-      const exposed = window as unknown as {
-        __push: (text: string) => void;
-        __streams: number;
-        __opened: number;
-      };
-      exposed.__streams = 0;
-      exposed.__opened = 0;
-      exposed.__push = (text) => open.at(-1)?.enqueue(encoder.encode(text));
-      const original = window.fetch.bind(window);
-      window.fetch = (input, init) => {
-        const url =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (!new URL(url, location.href).pathname.endsWith(path)) return original(input, init);
-        let controller!: ReadableStreamDefaultController<Uint8Array>;
-        const body = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) });
-        open.push(controller);
-        exposed.__streams = open.length;
-        exposed.__opened += 1;
-        init?.signal?.addEventListener('abort', () => {
-          open.splice(open.indexOf(controller), 1);
-          exposed.__streams = open.length;
-          try {
-            controller.error(new DOMException('Aborted', 'AbortError'));
-          } catch {
-            // Already closed by the reader.
-          }
-        });
-        return Promise.resolve(
-          new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-        );
-      };
-    },
-    { path: `/api/communities/${REF}/rooms/${ROOM}/events` }
-  );
-  return {
-    /** Open the stream: the room and everything it holds now. */
-    snapshot: (entries: Entry[]) =>
-      push(
-        page,
-        frame('snapshot', {
-          type: 'snapshot',
-          room: room(BETA),
-          entries,
-          cursor: entries.at(-1)?.cursor ?? null,
-          lastRemoteSeq: entries.at(-1)?.remoteSeq ?? 0,
-          stale: false,
-        })
-      ),
-    /** Deliver committed entries one by one, the way a live burst arrives. */
-    arrive: (entries: Entry[]) =>
-      push(page, entries.map((item) => frame('entry', { type: 'entry', entry: item })).join('')),
-  };
-}
-
 /**
  * Serve the room's history, accept posts, and hand the test the live stream.
  *
@@ -134,7 +54,7 @@ async function controllableStream(page: Page) {
  */
 async function mockChannel(page: Page, history: Entry[]) {
   await mockCommunities(page, [BETA]);
-  const stream = await controllableStream(page);
+  const stream = await controllableStream(page, BETA);
   let nextSeq = 1_000;
   // Registered after `mockCommunities`, so this path answers first and
   // everything else falls through to it.
@@ -255,7 +175,9 @@ test.describe('Space channel view', () => {
     page,
   }) => {
     // The local server re-checks every Community connection each time the app
-    // lists them — every 30 seconds — and stamps the answer with the time. The
+    // lists them — on the app's one-minute safety-net poll
+    // (`QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS`, DOR-2909) — and stamps the
+    // answer with the time. The
     // channel must treat an unchanged answer as unchanged: rebuilding itself
     // restarted the stream, emptied the list and dropped the receipt of a post
     // in flight, which is how a person's own message took ~20 seconds to show.
@@ -305,7 +227,7 @@ test.describe('Space channel view', () => {
     const recheck = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/community-connections'
     );
-    await page.clock.fastForward('00:31');
+    await page.clock.fastForward('01:01');
     await recheck;
     expect(listings).toBeGreaterThan(before);
     // A window for the regression to show in, not a wait for the fix: when the

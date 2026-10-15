@@ -22,10 +22,10 @@ import {
 } from '@dorkos/db';
 import { DocChannelStore } from '../../store.js';
 import { DOC_INGEST_LIMITS } from '../../current/accounting.js';
-import { DocIngestRefusal } from '../../ingest-types.js';
+import { DocIngestRefusal } from '../../ingest-data/ingest-types.js';
 import { scanCheckboxReservationPolicies } from '../reservations/reservation-policy-census.js';
 import { DocCheckboxAuthority } from '../authority.js';
-import { CheckboxAuthorityCallbackError } from '../authority-snapshot.js';
+import { CheckboxAuthorityCallbackError } from '../authority/authority-snapshot.js';
 import { authorityFixture } from './authority-fixtures.js';
 import { prepareCheckboxBytes, rawByteHash } from '../checkbox-bytes.js';
 import { observedCheckboxIntent } from '../checkbox-evidence.js';
@@ -772,7 +772,7 @@ const roomCanvasEntry = new URL('../../../../rooms/canvas/room-canvas-service.ts
 const importEntries = [
   new URL('../../store.ts', import.meta.url).href,
   new URL('../authority.ts', import.meta.url).href,
-  new URL('../authority-policy.ts', import.meta.url).href,
+  new URL('../authority/authority-policy.ts', import.meta.url).href,
   new URL('../reservations/reservation-bridge.ts', import.meta.url).href,
   new URL('../reservations/reservation-policy-census.ts', import.meta.url).href,
   canvasEntry,

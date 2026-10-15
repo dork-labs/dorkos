@@ -1,8 +1,9 @@
 /** Canonical session and Mesh authority for runtime connector turns. */
 import type { OpenConnectorTurnInput, ConnectorRuntime } from '../runtime-principal-port.js';
-import type {
-  ConnectorRuntimeAuthority,
-  ConnectorRuntimeAuthorityResolver,
+import {
+  ConnectorRuntimeAuthorityError,
+  type ConnectorRuntimeAuthority,
+  type ConnectorRuntimeAuthorityResolver,
 } from './runtime-principal-service.js';
 import type { ConnectorOwnerAuthority, ServerPrincipalClaims } from './server-principal.js';
 
@@ -44,8 +45,17 @@ export class CanonicalConnectorRuntimeAuthorityResolver implements ConnectorRunt
       input.canonicalSessionId,
       input.agentPath
     );
-    if (!agentId) throw new Error('Canonical runtime authority could not be verified.');
-    return { owner: this.options.owner, agentId };
+    if (agentId) return { owner: this.options.owner, agentId };
+    // A chat started in an agent's folder without naming the agent has no
+    // recorded agent at all (DOR-2752). That is not a mismatch to refuse loudly:
+    // there is simply no agent to grant connected apps to.
+    if ((await this.options.sessions.getSessionAgentPath(input.canonicalSessionId)) === null) {
+      throw new ConnectorRuntimeAuthorityError(
+        'agent_unrecorded',
+        'This chat isn’t linked to an agent, so it can’t use connected apps.'
+      );
+    }
+    throw new Error('Canonical runtime authority could not be verified.');
   }
 
   /** Recheck the exact session, runtime, and stable agent binding. */

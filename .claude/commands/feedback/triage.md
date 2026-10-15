@@ -171,10 +171,15 @@ For every open issue whose number matches nothing in FB:
    this command cannot tell the two doors apart:
    - Team `81f94d0d-8c04-424c-affc-b8462769c6b0`. Triage is on, so it lands
      there by itself.
-   - One kind label: GitHub `bug` → `Bug`
-     (`384c8c3f-3f98-492b-afea-a91f37ba117c`), GitHub `enhancement` → `Feature`
-     (`7d46bb73-289c-4a35-8e4f-552818d2d57b`). If the issue has neither label or
-     both, read the body and pick one. Every FB issue carries exactly one.
+   - One `reported/*` intake label, the same one the site intake stamps
+     (`apps/site/src/lib/feedback/reported-labels.ts`): GitHub `bug` →
+     `reported/defect` (`5e47b612-05b4-46ab-86cf-e1abf67fae2a`), GitHub
+     `enhancement` → `reported/idea` (`e5f22327-e2c8-4e9c-9550-4e7407a31a23`),
+     anything else → `reported/feedback`
+     (`9566baec-d2c3-4056-93be-ca3d2fc189bc`). Set it in the create's
+     `labelIds`, never with `issueAddLabel`: the `reported` group rejects a
+     second member rather than swapping it. The label records the reporter's
+     claim; `Bug` / `Feature` stay triage's verdict, set later by a person.
    - The title **verbatim**. Do not summarize it or re-title it.
    - A description shaped like this, and only like this:
 

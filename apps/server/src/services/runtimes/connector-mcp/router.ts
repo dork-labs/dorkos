@@ -1,9 +1,10 @@
-/** Stateless Streamable HTTP router for authenticated connector runtime calls. */
-import { Router } from 'express';
+/** Stateless Streamable HTTP routes for authenticated connector runtime calls. */
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
-import type { ConnectorRuntimeAuthLocals } from './auth.js';
+import { CONNECTOR_RUNTIME_REFUSAL, type ConnectorRuntimeEnv } from './auth.js';
 
 /** Builds the exact connector-only capability projection for one principal. */
 export type ConnectorRuntimeMcpServerFactory = (
@@ -11,65 +12,59 @@ export type ConnectorRuntimeMcpServerFactory = (
 ) => McpServer | null | Promise<McpServer | null>;
 
 /**
- * Create the authenticated connector runtime MCP router.
+ * Create the authenticated connector runtime MCP routes.
  *
- * Authentication middleware must run before this router. A missing principal is
- * treated as a composition failure and still fails closed.
+ * Authentication middleware must run before these routes. A missing principal
+ * is treated as a composition failure and still fails closed.
+ *
+ * The MCP transport writes the Node response itself, so the headers the
+ * listener decided before the route (its rate-limit headers) are copied onto
+ * that response first, as Express set them there.
  *
  * @param serverFactory - Broker-owned exact connector capability projection.
- * @returns Stateless MCP router.
+ * @returns Stateless MCP routes, mounted at one path.
  */
-export function createConnectorRuntimeMcpRouter(
+export function createConnectorRuntimeMcpRoutes(
   serverFactory: ConnectorRuntimeMcpServerFactory
-): Router {
-  const router = Router();
-  router.post('/', async (req, res) => {
-    const principal = (res.locals as ConnectorRuntimeAuthLocals).connectorPrincipal;
-    if (!principal) {
-      res.status(401).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32001,
-          message: 'Connections access ended. Start a new turn to continue.',
-        },
-        id: null,
-      });
-      return;
-    }
+): Hono<ConnectorRuntimeEnv> {
+  const router = new Hono<ConnectorRuntimeEnv>();
+  router.post('/', async (c) => {
+    const principal = c.get('connectorPrincipal');
+    if (!principal) return c.json(CONNECTOR_RUNTIME_REFUSAL, 401);
 
     const server = await serverFactory(principal);
     if (!server) {
-      res.status(401).json({
-        jsonrpc: '2.0',
-        error: { code: -32001, message: 'Unauthorized' },
-        id: null,
-      });
-      return;
+      return c.json(
+        { jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null },
+        401
+      );
     }
+    const { incoming, outgoing } = c.env;
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.once('close', () => {
+    outgoing.once('close', () => {
       void transport.close().catch(() => undefined);
       void server.close().catch(() => undefined);
     });
+    c.res.headers.forEach((value, name) => outgoing.setHeader(name, value));
     try {
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      await transport.handleRequest(incoming, outgoing, c.get('body'));
     } catch {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
+      if (!outgoing.headersSent) {
+        return c.json(
+          { jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null },
+          500
+        );
       }
     }
+    // A fresh marker each time: the shared one has mutable headers.
+    return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
   });
-  router.all('/', (_req, res) => {
-    res.status(405).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed' },
-      id: null,
-    });
-  });
+  router.all('/', (c) =>
+    c.json(
+      { jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null },
+      405
+    )
+  );
   return router;
 }

@@ -17,7 +17,7 @@ import { autoSkippedShotIds } from './overrides.js';
 import { partitionShots, SHOTS } from './shots.js';
 import { addAutoSkip, setAutoSkip, sleep } from './lib.js';
 import { captureAgentDiscovery, captureLightStills, captureLoops } from './surfaces-desktop.js';
-import { captureFullPowerDoor } from './surfaces-desktop-power.js';
+import { captureTrustNotice } from './surfaces-desktop-power.js';
 import { captureMobile } from './surfaces-mobile.js';
 
 /**
@@ -40,21 +40,21 @@ import { captureMobile } from './surfaces-mobile.js';
 /**
  * Drive every desktop and mobile surface into `rec`. Ordering is load-bearing:
  * mobile runs after the desktop loops (so the multi-session drives have filled
- * the sidebar), and the two global-state flips run at the end — agent-discovery
- * (which re-opens onboarding, and every other shot needs it dismissed) then the
- * full-power door (which un-answers the power decision, and every other shot
- * needs it settled or the modal covers them). Their order relative to each other
- * carries no dependency — a flip-and-restore drive simply belongs after
- * everything that reads the settled value, so both go at the end. A shard
- * captures only its assigned shots; the rest are skipped in place, preserving
- * this ordering.
+ * the sidebar), and the one remaining global-state flip, the trust notice
+ * (which marks the notice unseen, and every other shot needs it seen or the
+ * modal covers them), runs last of all. Agent-discovery opens its own
+ * dialog through the command palette now (spec `one-minute-onboarding`
+ * deleted the onboarding conversation it used to flip through) and leaves no
+ * global state behind, so it no longer needs to be a closing drive — it still
+ * runs after the loops out of habit, not necessity. A shard captures only its
+ * assigned shots; the rest are skipped in place, preserving this ordering.
  */
 export async function driveCaptures(browser: Browser, rec: RunRecorder): Promise<void> {
   await captureLightStills(browser, rec);
   await captureLoops(browser, rec);
   await captureMobile(browser, rec);
   await captureAgentDiscovery(browser, rec);
-  await captureFullPowerDoor(browser, rec);
+  await captureTrustNotice(browser, rec);
 }
 
 /**

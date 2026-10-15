@@ -2,6 +2,7 @@ import { PlaygroundPageLayout } from '../../PlaygroundPageLayout';
 import { CONVERSATION_SECTIONS } from '../../playground-registry';
 import { SurfacesShowcase } from '../../showcases/SurfacesShowcases';
 import { MessageShowcases } from '../../showcases/MessageShowcases';
+import { ChatMessagingShowcases } from '../../showcases/ChatMessagingShowcases';
 import { TimelineShowcase } from '../../showcases/TimelineShowcases';
 import { ToolShowcases } from '../../showcases/ToolShowcases';
 import { AsksShowcase } from '../../showcases/AsksShowcases';
@@ -39,6 +40,7 @@ export function ConversationPage() {
     >
       <SurfacesShowcase />
       <MessageShowcases />
+      <ChatMessagingShowcases />
       <TimelineShowcase />
       <ToolShowcases />
       <AsksShowcase />

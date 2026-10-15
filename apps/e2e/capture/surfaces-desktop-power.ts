@@ -15,14 +15,13 @@ import {
 
 /**
  * The power-surface drives: the Control Center flyout, the Settings → Room limits
- * dials behind one of its switches, and the one-time full-power consent door.
- * Split out of `surfaces-desktop` (which was over the 500-line limit) because
- * these three are one cohesive group — every one of them frames a power
- * control, and the door drive un-answers and restores the very decision the
- * Control Center's dial displays.
+ * dials behind one of its switches, and the one-time trust notice. Split out
+ * of `surfaces-desktop` (which was over the 500-line limit) because these three
+ * are one cohesive group — every one of them frames how much agents may do on
+ * their own.
  *
  * The two still drives here are called from `captureLightStills`, on its shared
- * themed page; the door owns its own context, because it needs a cold load.
+ * themed page; the notice owns its own context, because it needs a cold load.
  *
  * @module capture/surfaces-desktop-power
  */
@@ -128,24 +127,22 @@ export async function shootSettingsRooms(
 }
 
 /**
- * The settled power decision the seed leaves behind (`settleFullPowerDoor` in
+ * The settled notice stamp the seed leaves behind (`settleTrustNotice` in
  * `seed.ts`), restated here because this drive is the one thing that un-settles
  * it and has to put it back byte-for-byte.
  */
-const SETTLED_POWER_DECISION = {
-  fullPowerDecidedAt: '2026-07-01T00:00:00.000Z',
-  fullPowerChoice: 'supervised',
+const SETTLED_TRUST_NOTICE = {
+  trustNoticeSeenAt: '2026-07-01T00:00:00.000Z',
 } as const;
 
 /**
- * Capture the one-time full-power consent door — the modal that asks the power
- * question once and never again.
+ * Capture the one-time trust notice — the modal that says agents now work
+ * without asking, shown once to a Trusted install.
  *
- * The seed deliberately pre-answers it (`settleFullPowerDoor`) so it cannot
+ * The seed deliberately marks it seen (`settleTrustNotice`) so it cannot
  * focus-trap itself over any other frame, so this drive is a flip-and-restore in
- * the shape of `captureAgentDiscovery`: un-answer the decision, shoot the door
- * in its own fresh context, and put the settled answer back in a `finally`
- * whatever happened.
+ * the shape of `captureAgentDiscovery`: mark it unseen, shoot it in its own
+ * fresh context, and put the stamp back in a `finally` whatever happened.
  *
  * ## Why a plain cold load is enough here
  *
@@ -153,32 +150,27 @@ const SETTLED_POWER_DECISION = {
  * confirmed during THIS launch — `dataUpdatedAt > LAUNCH_STARTED_AT`, where the
  * launch stamp is sampled at module evaluation. A fresh `browser.newContext()`
  * carries no warm-boot persister, so its first config fetch resolves after the
- * bundle evaluates and satisfies the gate outright. That is why this drive does
- * NOT need the two-load, wait-out-the-30s-stale-window dance in
- * `tests/full-power-door.spec.ts`: that spec runs with the boot cache left ON to
- * reproduce a returning user, and the stale window is the price of the warm
- * restore it is deliberately exercising. (Its docblock still describes the older
- * `isFetchedAfterMount` gate, which a cold load genuinely could not satisfy; the
- * timestamp gate that replaced it can.)
+ * bundle evaluates and satisfies the gate outright.
  *
- * The door also needs onboarding SETTLED, which the seed's `dismissedAt` already
- * is — and it runs after `captureAgentDiscovery` because a flip-and-restore
- * drive belongs after everything that reads the settled value it restores.
+ * The notice also needs onboarding SETTLED, which the seed's `dismissedAt`
+ * already is, and the install on Trusted, which the capture stack is unless a
+ * drive picked Careful (none does). It runs after `captureAgentDiscovery`
+ * because a flip-and-restore drive belongs after everything that reads the
+ * settled value it restores.
  */
-export async function captureFullPowerDoor(browser: Browser, rec: RunRecorder): Promise<void> {
+export async function captureTrustNotice(browser: Browser, rec: RunRecorder): Promise<void> {
   // Skip when this shot is not ours — a human override supplies it, or it
-  // belongs to another shard. Either way, don't un-answer this stack's decision.
-  if (isShotSkipped('full-power-door')) {
-    process.stdout.write('  ⤿ full-power-door skipped (captured elsewhere)\n');
+  // belongs to another shard. Either way, don't un-settle this stack's notice.
+  if (isShotSkipped('trust-notice')) {
+    process.stdout.write('  ⤿ trust-notice skipped (captured elsewhere)\n');
     return;
   }
-  const unanswerPowerDecision = () =>
-    patch('/api/config', { ui: { fullPowerDecidedAt: null, fullPowerChoice: null } });
-  const settlePowerDecision = () => patch('/api/config', { ui: SETTLED_POWER_DECISION });
+  const unsettleNotice = () => patch('/api/config', { ui: { trustNoticeSeenAt: null } });
+  const settleNotice = () => patch('/api/config', { ui: SETTLED_TRUST_NOTICE });
 
   try {
-    await attempt('full-power-door-light', async () => {
-      await unanswerPowerDecision();
+    await attempt('trust-notice-light', async () => {
+      await unsettleNotice();
       const ctx = await newCaptureContext(browser, {
         viewport: DESKTOP_VIEWPORT,
         deviceScaleFactor: DEVICE_SCALE_FACTOR,
@@ -188,15 +180,11 @@ export async function captureFullPowerDoor(browser: Browser, rec: RunRecorder): 
       try {
         const page = await ctx.newPage();
         await page.goto(url('/'));
-        // `full-power-door` is the right anchor because it sits ONLY on the
-        // question branch's title, never on the "Full power is on / one thing
-        // didn't finish" variant — so it cannot resolve on the error shape.
-        // The decision button after it is belt-and-braces: the dialog renders
-        // in one synchronous pass (no Suspense, no progressive mount), so it
-        // proves nothing the first wait didn't.
-        await page.getByTestId('full-power-door').waitFor({ timeout: WAIT_MS });
-        await page.getByRole('button', { name: 'Unlock full power' }).waitFor({ timeout: WAIT_MS });
-        await shoot(page, 'full-power-door', 'light', rec);
+        // The title carries the anchor; the answer button after it is
+        // belt-and-braces, since the dialog renders in one synchronous pass.
+        await page.getByTestId('trust-notice').waitFor({ timeout: WAIT_MS });
+        await page.getByRole('button', { name: 'Got it' }).waitFor({ timeout: WAIT_MS });
+        await shoot(page, 'trust-notice', 'light', rec);
       } finally {
         await ctx.close();
       }
@@ -213,6 +201,6 @@ export async function captureFullPowerDoor(browser: Browser, rec: RunRecorder): 
     // skipping `rec.finalize()` — and in a SHARDED run that failure deletes the
     // whole run dir, discarding every other shard's finished raws. Log the `✗`
     // and let the run land.
-    await attempt('full-power-door restore', settlePowerDecision);
+    await attempt('trust-notice restore', settleNotice);
   }
 }

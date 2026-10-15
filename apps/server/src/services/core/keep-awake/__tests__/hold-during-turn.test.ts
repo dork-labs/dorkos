@@ -9,7 +9,12 @@ import {
   holdAwakeDuringTurns,
   observeOriginalAwakeRoomRuntimeStream,
 } from '../hold-during-turn.js';
-import { KeepAwakeService, keepAwakeService, TURN_IDLE_CEILING_MS } from '../keep-awake-service.js';
+import {
+  BACKGROUND_ONLY_CEILING_MS,
+  KeepAwakeService,
+  keepAwakeService,
+  TURN_IDLE_CEILING_MS,
+} from '../keep-awake-service.js';
 import { RuntimeRegistry } from '../../runtime-registry.js';
 
 const EVENT: StreamEvent = { type: 'text_delta', data: { text: 'hi' } } as StreamEvent;
@@ -23,6 +28,8 @@ function runtimeWith(
     type,
     sendMessage: (sessionId: string, _content: string, opts?: MessageOpts) => impl(sessionId, opts),
     isHelperWorking: () => false,
+    acquireLock: vi.fn(() => false),
+    releaseLock: vi.fn(),
   } as unknown as AgentRuntime;
 }
 
@@ -274,12 +281,7 @@ describe('the registry seam', () => {
     // scheduled run, relay delivery) resolves through, so a runtime fetched
     // from it must count its turn — once, not once per wrapper layer.
     const registry = new RuntimeRegistry();
-    registry.register({
-      ...runtimeWith(() => events(2), 'fake-registry-keep-awake'),
-      // Registry observers capture these required methods; this fake owns no lock.
-      acquireLock: vi.fn(() => false),
-      releaseLock: vi.fn(),
-    });
+    registry.register(runtimeWith(() => events(2), 'fake-registry-keep-awake'));
     const before = working(keepAwakeService).chats;
 
     const stream = registry.get('fake-registry-keep-awake').sendMessage('s-reg', 'hello');
@@ -290,6 +292,229 @@ describe('the registry seam', () => {
       // drain
     }
     expect(working(keepAwakeService).chats).toBe(before);
+  });
+
+  it('holds a turn the agent starts on its own through every registry decorator', async () => {
+    let turnListener: ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | null =
+      null;
+    const registry = new RuntimeRegistry();
+    registry.register({
+      ...runtimeWith(() => events(0), 'fake-registry-late-turn'),
+      getSessionCwd: () => undefined,
+      onRuntimeTurn: (
+        listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+      ) => {
+        turnListener = listener;
+        return () => {};
+      },
+    } as unknown as AgentRuntime);
+    const before = working(keepAwakeService).chats;
+    let stream: AsyncIterator<StreamEvent> | null = null;
+    registry.get('fake-registry-late-turn').onRuntimeTurn!((_sessionId, turnEvents) => {
+      stream = turnEvents[Symbol.asyncIterator]();
+    });
+
+    turnListener!('s-late', events(1));
+    await stream!.next();
+    expect(working(keepAwakeService).chats).toBe(before + 1);
+    await stream!.next();
+    expect(working(keepAwakeService).chats).toBe(before);
+  });
+});
+
+describe('work that outlives the turn', () => {
+  /** A runtime whose background work and self-started turns the test controls. */
+  function backgroundRuntime() {
+    const state = { background: false, helper: false };
+    let turnListener: ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | null =
+      null;
+    const runtime = {
+      ...runtimeWith(() => events(1)),
+      holdsBackgroundWork: () => state.background,
+      isHelperWorking: () => state.helper,
+      onRuntimeTurn: (
+        listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+      ) => {
+        turnListener = listener;
+        return () => {
+          turnListener = null;
+        };
+      },
+    } as unknown as AgentRuntime;
+    const startTurn = (sessionId: string, turnEvents: AsyncIterable<StreamEvent>) =>
+      turnListener?.(sessionId, turnEvents);
+    return { runtime, state, startTurn };
+  }
+
+  async function drain(stream: AsyncIterable<StreamEvent>): Promise<void> {
+    for await (const _event of stream) {
+      // drain
+    }
+  }
+
+  it('keeps holding after the turn ends while a helper works, and lets go when it is done', async () => {
+    // Purpose: "I'll report back" must not let the computer sleep under the helper.
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    state.background = true;
+
+    await drain(wrapped.sendMessage('s1', 'hello'));
+    expect(working(service).chats).toBe(1);
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(1);
+
+    state.background = false;
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('lets go at the turn end when no background work is left', async () => {
+    const service = new KeepAwakeService();
+    const { runtime } = backgroundRuntime();
+    await drain(holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello'));
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('holds for a working helper past twenty minutes, and for only a shell or timer up to twenty', async () => {
+    // Purpose: a server left in a background shell, or a timer, cannot keep
+    // the computer up for hours; a working helper can (the runtime caps it).
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    state.background = true;
+    state.helper = true;
+    const ended = Date.now();
+    await drain(holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello'));
+
+    service.sweepIdleTurns(ended + TURN_IDLE_CEILING_MS * 2);
+    expect(working(service).chats).toBe(1);
+
+    state.helper = false;
+    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS - 1);
+    expect(working(service).chats).toBe(1);
+    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS);
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('keeps one background hold per session: a newer one replaces the older', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    state.background = true;
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    await drain(wrapped.sendMessage('s1', 'one'));
+    await drain(wrapped.sendMessage('s1', 'two'));
+    expect(working(service).chats).toBe(1);
+
+    state.background = false;
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('labels a self-started turn in a room session a room', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state, startTurn } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    let stream: AsyncIterator<StreamEvent> | null = null;
+    wrapped.onRuntimeTurn!((_sessionId, turnEvents) => {
+      stream = turnEvents[Symbol.asyncIterator]();
+    });
+    state.background = true;
+    await drain(wrapped.sendMessage('s1', 'hello', { roomTurn: {} } as unknown as MessageOpts));
+    expect(working(service)).toMatchObject({ chats: 0, rooms: 1 });
+
+    startTurn('s1', events(1));
+    await stream!.next();
+    expect(working(service)).toMatchObject({ chats: 0, rooms: 1 });
+  });
+
+  it('holds nothing for the background work of a paused agent', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    state.background = true;
+    let paused = false;
+    const wrapped = holdAwakeDuringTurns(runtime, service, () => paused);
+
+    await drain(wrapped.sendMessage('s1', 'hello'));
+    expect(working(service).chats).toBe(1);
+    paused = true;
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('holds a turn the agent starts on its own, from its first event to its end', async () => {
+    // Purpose: a helper reporting back opens a turn with no dispatch behind it.
+    const service = new KeepAwakeService();
+    const { runtime, startTurn } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    let stream: AsyncIterator<StreamEvent> | null = null;
+    wrapped.onRuntimeTurn!((_sessionId, turnEvents) => {
+      stream = turnEvents[Symbol.asyncIterator]();
+    });
+
+    startTurn('s1', events(2));
+    expect(working(service).chats).toBe(0);
+    await stream!.next();
+    expect(working(service).chats).toBe(1);
+    await stream!.next();
+    expect(working(service).chats).toBe(1);
+    expect((await stream!.next()).done).toBe(true);
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('counts a self-started turn and the turn held for its helper as one chat', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state, startTurn } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service);
+    let stream: AsyncIterator<StreamEvent> | null = null;
+    wrapped.onRuntimeTurn!((_sessionId, turnEvents) => {
+      stream = turnEvents[Symbol.asyncIterator]();
+    });
+    state.background = true;
+    await drain(wrapped.sendMessage('s1', 'hello'));
+
+    startTurn('s1', events(1));
+    await stream!.next();
+    expect(working(service).chats).toBe(1);
+
+    state.background = false;
+    await stream!.next();
+    service.sweepIdleTurns();
+    expect(working(service).chats).toBe(0);
+  });
+
+  it('does not hold a turn a paused agent starts on its own', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, startTurn } = backgroundRuntime();
+    const wrapped = holdAwakeDuringTurns(runtime, service, () => true);
+    const seen: StreamEvent[] = [];
+    let done!: Promise<void>;
+    wrapped.onRuntimeTurn!((_sessionId, turnEvents) => {
+      done = (async () => {
+        for await (const event of turnEvents) {
+          expect(working(service).chats).toBe(0);
+          seen.push(event);
+        }
+      })();
+    });
+
+    startTurn('s1', events(2));
+    await done;
+    expect(seen).toHaveLength(2);
+  });
+
+  it('holds native Room background work until pause without re-entry', async () => {
+    const service = new KeepAwakeService();
+    const { runtime, state } = backgroundRuntime();
+    const entered = vi.spyOn(runtime, 'sendMessage');
+    let paused = false;
+    const wrapped = holdAwakeDuringTurns(runtime, service, () => paused);
+    state.background = true;
+    await drain(observeOriginalAwakeRoomRuntimeStream(wrapped, 'native-bg', events(1)));
+    expect(working(service)).toMatchObject({ rooms: 1, chats: 0 });
+    paused = true;
+    service.sweepIdleTurns();
+    expect(working(service)).toMatchObject({ rooms: 0, chats: 0 });
+    expect(entered).not.toHaveBeenCalled();
   });
 });
 

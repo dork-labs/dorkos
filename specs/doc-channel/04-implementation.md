@@ -221,3 +221,50 @@ Accepted tasks remain 1.1, 1.2, 2.2 and 2.3: 4/22 (18.2%). Nine tasks are in pro
 The fd2 delivery branch passed both independent whole-source reviews but Linux CI failed the 105-input warning test at 5,432 ms against its unchanged 5,000 ms limit. A separately reviewed fixture correction prepares three parameterized queries once per connection while reading fresh authority rows at every check. It preserves all original counts, assertions and timing limits and adds six authority-change controls. All 256 targeted tests across 27 files passed, as did server types, scoped lint and formatting. Local timing improvement is not evidence of Linux CI margin. The latest main documentation was merged normally; full verification, a new committed-head pair of independent reviews and actual CI remain required.
 
 Independent SDK, metrics and tree-lease reviews found additional gaps. Corrections and fresh review are active. The warning migration remains the exclusive schema allocation until actual merge and a named handoff. Full v1/v1.1/v2 acceptance and cleanup remain open.
+
+## Current integration verification — 2026-10-11
+
+Document actions keep delivery, agent replies, app acknowledgment, and saving as
+separate outcomes. Persisted delivery records and saved document edits survive
+restarts. App acknowledgment still requires a live, authorized agent turn and the
+active document frame. Work that may have started stays visible for review. Document replacement retires the old frame
+and keeps stale events from regaining authority.
+
+The Main integration preserves migrations 150–156 and published Doc/Room history.
+Canonical Room migration 157 adds the missing Room schema without dropping
+referenced tables. Its reviewed additive SQL is distinct from the generator's
+original output. Populated data, published ledger rows, quoted CHECK values, and
+composite foreign-key groups remain part of the upgrade checks.
+
+Accepted validation on the reviewed scopes:
+
+- Four whole package typechecks passed: server, client, E2E, and shared.
+- The whole Room suite passed 663 tests across 29 files in 669.14 seconds.
+- The whole document-channel suite passed 877 tests across 87 files in 284.29 seconds.
+- Eight whole database files passed 151 tests, covering populated upgrades, history
+  preservation, rollback, restart, and schema parity.
+- Ordinary shared and relay package builds passed. Earlier cloud-api outputs were
+  verified unchanged after those builds.
+- The ordinary file-size update lowered 15 limits and removed five unused entries.
+  The follow-up check passed all 156 remaining entries. No limit increased.
+
+- The original runtime suite passed 651 tests, with 17 skips, across 19 files.
+- The Mock SDK suite passed 707 tests, with 10 skips, across 22 files.
+- Three whole owner-tool files passed 28 tests.
+
+- Fourteen whole mapped regression files passed 379 tests.
+- The whole Community unit suite passed 647 tests, with one skip, across 75 files.
+
+- The ordinary Community build passed. The whole Community package typecheck
+  passed again after the reviewed isolated-socket test fixture correction.
+
+- The whole Community PostgreSQL suite passed 1,946 tests, with four skips,
+  across 67 files in 437.32 seconds.
+- The original directory-size gate passed with no violations.
+
+Final lint and ordinary hooks remain pending.
+The earlier import audit retained 294 static origin limits and found no new held origins.
+
+Ordinary hooks, a reviewed final commit, integration checkout rebase validation,
+required CI, protected merge, shipping, tracker completion, and safe cleanup remain
+pending. Paid SDK execution and Managed Browser delivery remain paused.

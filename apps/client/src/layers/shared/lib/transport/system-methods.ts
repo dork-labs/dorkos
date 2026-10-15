@@ -1,6 +1,6 @@
 import { CanvasDocumentSaveIdentitySchema } from '@dorkos/shared/schemas';
 import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
-import type { DoeCreditsCatalog } from '@dorkos/shared/runtime-connect';
+import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
  * System Transport methods factory — filesystem, config, health, tunnel, admin,
@@ -59,56 +59,12 @@ import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { MAX_CAPABILITY_LIMIT, type CapabilityCatalog } from '@dorkos/shared/capabilities';
 import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
-import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { postSseAction, readOpenRouterOAuthStatus } from './system-action-stream';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
-
-/**
- * POST an SSE-streaming action and fold its frames into a single terminal result.
- *
- * The shared shape for every streamed install/pull endpoint (runtime provision,
- * Ollama pull, Ollama install): `progress` frames drive `onProgress` while a
- * terminal `result` frame carries the outcome. A non-2xx opening response throws
- * an honest error; a stream that ends with no `result` frame resolves to
- * `fallback`.
- *
- * @param url - The absolute endpoint URL to POST.
- * @param body - Optional JSON body (omit for a bodyless trigger).
- * @param fallback - The result returned when the stream carries no terminal frame.
- * @param onProgress - Optional callback for streamed progress frames.
- */
-async function postSseAction<TProgress, TResult>(
-  url: string,
-  body: Record<string, unknown> | undefined,
-  fallback: TResult,
-  onProgress?: (progress: TProgress) => void
-): Promise<TResult> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!response.ok) {
-    const errBody = (await response.json().catch(() => ({
-      error: response.statusText,
-    }))) as { error?: string };
-    throw new Error(errBody.error ?? `HTTP ${response.status}`);
-  }
-
-  const reader = response.body!.getReader();
-  let result = fallback;
-  for await (const event of parseSSEStream<TProgress | TResult>(reader)) {
-    if (event.type === 'result') {
-      result = event.data as TResult;
-    } else if (event.type === 'progress') {
-      onProgress?.(event.data as TProgress);
-    }
-  }
-  return result;
-}
 
 /**
  * Create all system-level methods bound to a base URL.
@@ -519,10 +475,6 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
     },
 
-    getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {
-      return fetchJSON<UnattendedAutonomyState>(baseUrl, '/system/unattended-autonomy');
-    },
-
     getKeepAwake(): Promise<KeepAwakeStatus> {
       return fetchJSON<KeepAwakeStatus>(baseUrl, '/keep-awake');
     },
@@ -545,14 +497,12 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Runtime Connect (terminal-free auth) ──────────────────────────────
 
-    getDoeInference(): Promise<{ inference: DoeInferenceConfig | null; hasKey: boolean }> {
+    getDoeInference(): Promise<DoeInferenceStatus> {
       return fetchJSON(baseUrl, '/runtimes/doe/inference');
     },
     setDoeInference(inference: DoeInferenceConfig): Promise<{ ok: true }> {
-      return fetchJSON(baseUrl, '/runtimes/doe/inference', {
-        method: 'PUT',
-        body: JSON.stringify(inference),
-      });
+      const init = { method: 'PUT', body: JSON.stringify(inference) };
+      return fetchJSON(baseUrl, '/runtimes/doe/inference', init);
     },
     storeDoeCredential(
       inference: DoeInferenceConfig,
@@ -662,11 +612,7 @@ export function createSystemMethods(baseUrl: string) {
     },
 
     getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
-      const qs = buildQueryString({ state });
-      return fetchJSON<OpenRouterOAuthStatus>(
-        baseUrl,
-        `/runtimes/opencode/openrouter/oauth/status${qs}`
-      );
+      return readOpenRouterOAuthStatus(baseUrl, state);
     },
 
     detectOllama(): Promise<OllamaStatus> {

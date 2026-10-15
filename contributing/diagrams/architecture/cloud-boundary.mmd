@@ -12,7 +12,7 @@ flowchart TB
     local --> runtime
     local --> tunnel
   end
-  control["Configured service origin<br/>DORKOS_CLOUD_URL; defaults to website<br/>Account handover is route-specific"]
+  control["Configured service origin<br/>Link: DORKOS_CLOUD_URL, defaults to website<br/>/v1: DORKOS_CLOUD_API_URL, defaults to the service<br/>Account handover is route-specific"]
   remote["Managed remote command consumer<br/>Draft · enrollment / ingress contracts settled<br/>Implementation + deployed acceptance pending"]
   remote -.->|"Unwired command SSE + lease/ack"| control
   inference["Inference endpoint<br/>URL + scoped token returned at runtime"]

@@ -17,8 +17,8 @@ vi.mock('../../config-manager.js', () => ({
     return link.managers.at(-1);
   },
 }));
-vi.mock('../../auth/cloud-link-client.js', () => ({
-  resolveCloudBaseUrl: () => link.origin.replace(/\/+$/, ''),
+vi.mock('../cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => link.origin.replace(/\/+$/, ''),
 }));
 vi.mock('../../auth/cloud-link.js', () => ({ getCloudLinkGeneration: () => link.generation }));
 
@@ -30,6 +30,7 @@ import {
   primeCreditsInferenceGated,
   revokeHeldCreditsToken,
   primeCreditsInferenceWithContext,
+  creditsMintRefusal,
 } from '../credits-inference.js';
 
 const session = { authenticated: true, instanceId: 'service-issued-id', scopes: [] };
@@ -127,6 +128,35 @@ describe('authoritative Cloud identity for credits', () => {
     );
     expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('remembers that minting was refused for eligibility, until a mint succeeds', async () => {
+    let refuse = true;
+    fakeCloud((url) => {
+      if (url.pathname === '/v1/session') return answer(session);
+      return refuse
+        ? answer({ code: 'entitlement_required', status: 403, title: 'Not available' }, 403)
+        : answer(tokenFixture);
+    });
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
+    expect(creditsMintRefusal()).toBe('entitlement_required');
+    refuse = false;
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(true);
+    expect(creditsMintRefusal()).toBeNull();
+  });
+
+  it('keeps a real refusal through a mint that got no answer', async () => {
+    let offline = false;
+    fakeCloud((url) => {
+      if (offline) return Promise.reject(new Error('offline'));
+      if (url.pathname === '/v1/session') return answer(session);
+      return answer({ code: 'entitlement_required', status: 403, title: 'Not available' }, 403);
+    });
+    await primeCreditsInferenceWithContext(captureCloudV1Context());
+    expect(creditsMintRefusal()).toBe('entitlement_required');
+    offline = true;
+    expect(await primeCreditsInferenceWithContext(captureCloudV1Context())).toBe(false);
+    expect(creditsMintRefusal()).toBe('entitlement_required');
   });
 
   it('refuses a network failure without minting', async () => {

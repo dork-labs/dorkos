@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Express routes that delegate to services.
+This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Hono routes that delegate to services.
 
 ## Key Files
 
@@ -21,7 +21,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | Tasks entity hooks       | `apps/client/src/layers/entities/tasks/`                         |
 | Marketplace entity hooks | `apps/client/src/layers/entities/marketplace/`                   |
 | Chat feature hooks       | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
-| Express routes           | `apps/server/src/routes/`                                        |
+| Hono routes              | `apps/server/src/routes/`                                        |
 | Zod schemas              | `packages/shared/src/schemas.ts`                                 |
 
 ## When to Use What
@@ -235,28 +235,30 @@ export function useTunnelSync(): void {
 }
 ```
 
-**Example** — relay event stream with conditional invalidation:
+**Example** — a query that listens for its own events, coalesced, with a slow poll as the safety net (DOR-2909):
 
 ```typescript
-// apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts
-import { useEventSubscription } from '@/layers/shared/model';
-
-export function useRelayEventStream(enabled: boolean) {
-  const queryClient = useQueryClient();
-
-  useEventSubscription('relay_message', () => {
-    if (enabled) {
-      queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
-    }
-  });
-
-  useEventSubscription('relay_signal', () => {
-    if (enabled) {
-      queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
-    }
+// apps/client/src/layers/entities/relay/model/use-relay-conversations.ts
+export function useRelayConversations(enabled = true) {
+  const transport = useTransport();
+  const schedule = useCoalescedInvalidation({ coalesceMs: CONVERSATIONS_COALESCE_MS });
+  const refresh = () => {
+    if (enabled) schedule([{ queryKey: [...RELAY_CONVERSATIONS_KEY] }]);
+  };
+  useEventSubscription('relay_message', refresh);
+  useEventSubscription('relay_signal', refresh);
+  useEventSubscription('relay_flow', refresh);
+  useEventSubscription('relay_dead_letter', refresh);
+  return useQuery({
+    queryKey: [...RELAY_CONVERSATIONS_KEY],
+    queryFn: () => transport.listRelayConversations(),
+    enabled,
+    refetchInterval: CONVERSATIONS_BACKSTOP_MS,
   });
 }
 ```
+
+Put the subscription in the hook that owns the query, so the list stays live on every surface that shows it. A poll stays only as a backstop for changes no event announces, and `QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS` is the default for that.
 
 > **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and per-endpoint SSE hooks that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
 

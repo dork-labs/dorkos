@@ -4,7 +4,7 @@ import { render, screen, cleanup, within, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
+import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import { CANONICAL_TRUST_STOPS, TrustDial } from '../trust-dial';
 
 afterEach(cleanup);
@@ -371,12 +371,12 @@ describe('TrustDial', () => {
 
   describe('a session at a mode the dial has no stop for', () => {
     it('says which mode it is instead of showing an empty dial', () => {
-      render(<TrustDial mode="dontAsk" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+      render(<TrustDial mode="retired-mode" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
 
       const note = screen.getByTestId('trust-dial-stranded');
-      // Named by the shared fallback label, the same words every other surface
-      // uses for a mode with no descriptor in hand.
-      expect(note).toHaveTextContent(/Don’t ask/);
+      // Named by the shared fallback, the same words every other surface uses
+      // for a mode with no descriptor in hand: an id nobody labelled is itself.
+      expect(note).toHaveTextContent(/retired-mode/);
       expect(note).toHaveAttribute('role', 'status');
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });
@@ -522,7 +522,7 @@ describe('CANONICAL_TRUST_STOPS', () => {
     // from the stop alone — which is only sound while `autonomy` is the one
     // canonical stop the note fires on. A second one here would make cards go
     // quiet at a stop nothing covers (DOR-2102).
-    expect(CANONICAL_TRUST_STOPS.filter(needsConsentRitual).map((stop) => stop.stop)).toEqual([
+    expect(CANONICAL_TRUST_STOPS.filter(actsWithoutAsking).map((stop) => stop.stop)).toEqual([
       'autonomy',
     ]);
   });

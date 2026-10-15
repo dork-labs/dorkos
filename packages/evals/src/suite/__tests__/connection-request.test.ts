@@ -10,6 +10,7 @@ import { selectSuite } from '../index.js';
 import {
   connectionRequestCases,
   connectionRequestFromChatCase,
+  replyOffersBothWays,
   requestNamesGmail,
 } from '../connection-request.js';
 
@@ -30,7 +31,9 @@ function call(toolName: string, input: unknown): SseFrame {
   } as SseFrame;
 }
 
-const GMAIL_CALL = call('mcp__dorkos__connectors.request_connection', {
+const CALL_NAME = 'mcp__dorkos__connectors.request_connection';
+
+const GMAIL_CALL = call(CALL_NAME, {
   version: 1,
   serviceSlug: 'gmail',
   reason: 'Read today’s mail to summarise it',
@@ -57,6 +60,25 @@ describe('connection-request eval', () => {
     expect((await requestNamesGmail(ctx([GMAIL_CALL]))).passed).toBe(true);
   });
 
+  it('reads a request whose arguments arrive in pieces, as Claude Code streams them', async () => {
+    const text = JSON.stringify({
+      serviceSlug: 'gmail',
+      reason: 'Summarise today',
+      access: 'read',
+    });
+    const piece = (input: string): SseFrame =>
+      ({
+        event: 'tool_call',
+        data: { type: 'tool_call', toolCallId: 'p', toolName: CALL_NAME, input },
+      }) as SseFrame;
+    const frames = [piece(text.slice(0, 9)), piece(text.slice(9, 30)), piece(text.slice(30))];
+    expect((await requestNamesGmail(ctx(frames))).passed).toBe(true);
+  });
+
+  it('answers the held request no, so the turn ends instead of timing out', () => {
+    expect(connectionRequestFromChatCase.approvalPolicy?.connectionRequests).toBe('deny');
+  });
+
   it('fails a request for the wrong app or with no reason', async () => {
     const slack = call('mcp__dorkos__connectors.request_connection', {
       serviceSlug: 'slack',
@@ -68,5 +90,20 @@ describe('connection-request eval', () => {
     });
     expect((await requestNamesGmail(ctx([slack]))).passed).toBe(false);
     expect((await requestNamesGmail(ctx([reasonless]))).passed).toBe(false);
+  });
+
+  it('passes a reply that offers both ways in, and fails one that names only one (FB-57)', async () => {
+    const say = (text: string) =>
+      ({ event: 'text_delta', data: { type: 'text_delta', text } }) as SseFrame;
+    const both = [
+      GMAIL_CALL,
+      say('You can sign in to a DorkOS account, '),
+      say('or use a Composio key.'),
+    ];
+    expect((await replyOffersBothWays(ctx(both))).passed).toBe(true);
+    expect(
+      (await replyOffersBothWays(ctx([GMAIL_CALL, say('Link your DorkOS account.')]))).passed
+    ).toBe(false);
+    expect((await replyOffersBothWays(ctx([GMAIL_CALL]))).passed).toBe(false);
   });
 });

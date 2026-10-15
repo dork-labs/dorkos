@@ -595,7 +595,13 @@ describe('RoomMergeService', () => {
           worktree: slugOf(BEN),
         });
 
-        const rows = auditDb.select().from(auditEvents).all();
+        // The authenticated enable request also leaves an HTTP audit row.
+        // Select the merge event by its meaning rather than its position.
+        const rows = auditDb
+          .select()
+          .from(auditEvents)
+          .all()
+          .filter((row) => row.action === 'room.merged');
         expect(rows).toMatchObject([
           {
             action: 'room.merged',

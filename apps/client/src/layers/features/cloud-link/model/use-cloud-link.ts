@@ -140,7 +140,14 @@ export function useCheckCloudLink(): (
 export type CloudLinkView =
   | { kind: 'loading' }
   | { kind: 'idle' }
-  | { kind: 'pending'; userCode: string; verificationUri: string; expiresAt: string }
+  | {
+      kind: 'pending';
+      userCode: string;
+      verificationUri: string;
+      /** The approval page with the code filled in, when the service sent one. */
+      verificationUriComplete?: string;
+      expiresAt: string;
+    }
   | {
       kind: 'linked';
       accountLabel: string | null;
@@ -326,6 +333,9 @@ export function useCloudLink(): UseCloudLink {
     // back to must read the flow on focus, or it would keep offering a new
     // start while another tab's code is already waiting.
     staleTime: 0,
+    // Opted back in: the app's default no longer re-reads on focus (DOR-2896),
+    // and this flow can move in another tab with no event to say so.
+    refetchOnWindowFocus: true,
     // Poll while a link waits for approval, whichever tab started it; every
     // terminal state stops it.
     refetchInterval: (query) => (query.state.data?.state === 'pending' ? POLL_INTERVAL_MS : false),
@@ -437,10 +447,16 @@ export function useCloudLink(): UseCloudLink {
     // it is waiting on (the same in every tab), else the one this tab holds.
     const codes = flowState === 'pending' ? (linkStatus?.pending ?? flow.codes) : null;
     if (codes) {
+      // The filled-in address rides this tab's own codes when the server's
+      // flow read leaves it out.
+      const complete =
+        codes.verificationUriComplete ??
+        (flow.codes?.userCode === codes.userCode ? flow.codes.verificationUriComplete : undefined);
       return {
         kind: 'pending',
         userCode: codes.userCode,
         verificationUri: codes.verificationUri,
+        ...(complete ? { verificationUriComplete: complete } : {}),
         expiresAt: codes.expiresAt,
       };
     }

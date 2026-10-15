@@ -1,5 +1,5 @@
 /**
- * The four things a person can do to the tab strip, wired to the store and the
+ * The things a person can do to the tab strip, wired to the store and the
  * router in one place so the strip, the keyboard shortcuts, and the desktop
  * shell's Close Tab menu item all go through the same code.
  *
@@ -48,6 +48,14 @@ export interface AppTabActions {
   closeActive: () => boolean;
   /** Open a new tab on {@link NEW_TAB_HREF} and focus it. */
   create: () => void;
+  /** Pin a tab, or unpin it when it is pinned. */
+  togglePin: (id: string) => void;
+  /** Open a copy of a tab right after it, and go to the copy. */
+  duplicate: (id: string) => void;
+  /** Close every other unpinned tab, and go to the one kept. */
+  closeOthers: (id: string) => void;
+  /** Move the tab at `from` to `to`; never across the pinned line. */
+  reorder: (from: number, to: number) => void;
 }
 
 /** Bind tab creation, selection and closing to the current router. */
@@ -111,6 +119,20 @@ export function useAppTabActions(): AppTabActions {
         return closed;
       },
       create: () => openTabAt(router, NEW_TAB_HREF),
+      togglePin: (id) => {
+        const tab = useAppTabsStore.getState().tabs.find((t) => t.id === id);
+        if (tab) useAppTabsStore.getState().setTabPinned(id, !tab.pinned);
+      },
+      duplicate: (id) => {
+        useAppTabsStore.getState().duplicateTab(id);
+        goToActive();
+      },
+      closeOthers: (id) => {
+        useAppTabsStore.getState().closeOtherTabs(id);
+        goToActive();
+      },
+      // Order is window furniture: nothing to navigate to.
+      reorder: (from, to) => useAppTabsStore.getState().moveTab(from, to),
     };
   }, [router]);
 }

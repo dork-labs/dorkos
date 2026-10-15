@@ -1,11 +1,12 @@
 /** Original FILE token scope over real HTTP sockets; SOURCE UNRUN. */
 import { expect, it } from 'vitest';
-import express from 'express';
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/registry.js';
 import { createDocChannelManagementCapabilities } from '../management/capabilities.js';
 import { createDocChannelGrantCapabilities } from '../grant-capabilities.js';
-import { createCanvasDocManagementRouter } from '../../../../routes/canvas-doc-management.js';
+import { originalDocHttpListener } from './original-doc-http-listener.js';
+import { composedListener } from '../../../../http/__tests__/composed-listener.js';
+import { MainRequestAdmission } from '../../../core/lifecycle/main-request-admission.js';
 import { setRoomService, clearRoomService } from '../../../rooms/index.js';
 import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
@@ -13,8 +14,6 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import ordinaryDocRoutes, { canvasDocJsonParser } from '../../../../routes/canvas-doc-events.js';
-import { standaloneDocTokenReadRouter } from '../../../../routes/canvas-doc-token-events.js';
 import { nativeRoomAuthorityFixture } from '../writes/__tests__/authority-fixtures.js';
 import {
   issueServiceOriginalDocToken,
@@ -64,7 +63,7 @@ async function withOriginalHttp(
     ownedDrainWaits: number;
     requestHost?: string;
   } = { resetFalse: 0, eventFalse: 0, ownedDrainWaits: 0 };
-  let app = express();
+  let listener: import('node:http').RequestListener | undefined;
   // A real socket/response high water mark makes these small frames report actual backpressure.
   const server = createServer({ highWaterMark: 1 }, (req, res) => {
     observed.requestHost = req.headers.host;
@@ -85,7 +84,8 @@ async function withOriginalHttp(
       }
       return accepted;
     }) as typeof res.write;
-    app(req, res);
+    if (!listener) throw new Error('Original native HTTP listener not initialized.');
+    listener(req, res);
   });
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -96,43 +96,31 @@ async function withOriginalHttp(
       checkboxFile: true,
     });
     setRoomService(h.rooms.service);
-    if (options.fullApp) {
-      const { createApp } = await import('../../../../app.js');
-      const { MainRequestAdmission } =
-        await import('../../../core/lifecycle/main-request-admission.js');
-      app = createApp({ admission: new MainRequestAdmission() });
-    }
-    app.locals.docChannelHttp = h.http;
-    if (!options.fullApp) {
-      app.use('/api/canvas/token/docs', standaloneDocTokenReadRouter);
-      const registry = composeRegistry(
-        [
-          {
-            name: 'ui',
-            capabilities: [
-              ...createDocChannelGrantCapabilities(),
-              ...createDocChannelManagementCapabilities(),
-            ],
-          },
-        ],
+    const registry = composeRegistry(
+      [
         {
-          logger: noopLogger,
-          docChannelManagementService: h.http.service,
-          docChannelManagementFileWrites: h.http.fileWrites,
-          docChannelGrantDeps: { service: h.http.grants, authorization: h.http.authorization },
-        }
-      );
-      app.use(
-        '/api/canvas/docs',
-        canvasDocJsonParser,
-        createCanvasDocManagementRouter(registry, h.http),
-        ordinaryDocRoutes
-      );
-    }
-    if (options.fullApp) {
-      const { finalizeApp } = await import('../../../../app.js');
-      finalizeApp(app);
-    }
+          name: 'ui',
+          capabilities: [
+            ...createDocChannelGrantCapabilities(),
+            ...createDocChannelManagementCapabilities(),
+          ],
+        },
+      ],
+      {
+        logger: noopLogger,
+        docChannelManagementService: h.http.service,
+        docChannelManagementFileWrites: h.http.fileWrites,
+        docChannelGrantDeps: { service: h.http.grants, authorization: h.http.authorization },
+      }
+    );
+    const admission = new MainRequestAdmission();
+    listener = options.fullApp
+      ? composedListener(admission, { docChannel: h.http, capabilities: registry })
+      : originalDocHttpListener(() => h?.http, {
+          docMount: '/api/canvas/docs',
+          standaloneTokens: true,
+          capabilities: registry,
+        });
     const token = await issueServiceOriginalDocToken(
       h.http.service,
       h.operator,

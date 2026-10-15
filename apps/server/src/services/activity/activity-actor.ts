@@ -43,10 +43,10 @@
  * @module services/activity/activity-actor
  */
 import path from 'node:path';
-import type { Request, Response } from 'express';
 import type { ActorType } from '@dorkos/shared/activity-schemas';
 import type { AgentIdentity } from '../core/agent-identity/agent-identity-service.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import type { RequestFacts } from '../../http/request-facts.js';
 
 /** What the feed says about a caller DorkOS cannot name. */
 export const UNIDENTIFIED_ACTOR_LABEL = 'Unidentified caller';
@@ -86,16 +86,15 @@ export function activityActorForIdentity(identity: AgentIdentity | undefined): A
 /**
  * Read the actor an HTTP request should be recorded under.
  *
- * @param req - The incoming request, read for the raw agent header.
- * @param res - The response carrying whatever the identity middleware resolved.
+ * @param caller - The request's facts (`http/request-facts.ts`), read for the
+ *   raw agent header and whatever the identity step resolved.
  * @returns The actor fields to spread into an `ActivityService.emit()` call.
  */
 export function readActivityActor(
-  req: Pick<Request, 'headers'>,
-  res: Pick<Response, 'locals'>
+  caller: Pick<RequestFacts, 'headers' | 'agentIdentity'>
 ): ActivityActor {
-  if (!presentsAgentIdentity(req, res)) {
+  if (!presentsAgentIdentity(caller)) {
     return { actorType: 'user', actorLabel: OPERATOR_ACTOR_LABEL };
   }
-  return activityActorForIdentity(getRequestAgentIdentity(res));
+  return activityActorForIdentity(caller.agentIdentity);
 }

@@ -4,28 +4,27 @@ paths: apps/server/src/routes/**/*.ts
 
 # API Route Handler Rules
 
-These rules apply to all API route handlers in the Express server.
+These rules apply to all API route handlers in the Hono server.
 
 ## Required Patterns
 
 ### Input Validation
 
-Always validate request body with Zod before processing:
+Always validate the request body with Zod before processing, reading it through `readJsonBody` (`http/request-body.ts`), never a raw body property:
 
 ```typescript
 import { z } from 'zod';
+import { readJsonBody } from '../http/request-body.js';
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
-router.post('/', async (req, res) => {
-  const result = createSchema.safeParse(req.body);
+router.post('/', async (c) => {
+  const result = createSchema.safeParse(readJsonBody(c));
 
   if (!result.success) {
-    return res
-      .status(400)
-      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+    return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
   }
 
   // Use result.data (typed and validated)
@@ -38,16 +37,16 @@ Return consistent error responses:
 
 ```typescript
 // Success
-res.json(data);
-res.status(201).json(created);
+c.json(data);
+c.json(created, 201);
 
 // Client errors
-res.status(400).json({ error: 'Validation failed' });
-res.status(401).json({ error: 'Unauthorized' });
-res.status(404).json({ error: 'Not found' });
+c.json({ error: 'Validation failed' }, 400);
+c.json({ error: 'Unauthorized' }, 401);
+c.json({ error: 'Not found' }, 404);
 
 // Server errors
-res.status(500).json({ error: 'Internal server error' });
+c.json({ error: 'Internal server error' }, 500);
 ```
 
 ### Use Service Functions

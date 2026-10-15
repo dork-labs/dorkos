@@ -73,6 +73,7 @@ import { ZodError, type ZodType } from 'zod';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
+import { rateLimitWaitMs, readJsonUntil, sleepUnlessAborted } from './device-poll-wait.js';
 
 /**
  * Stable `client_id` a DorkOS instance presents on the device-authorization
@@ -133,7 +134,7 @@ export interface DeviceCodeResponse {
   device_code: string;
   user_code: string;
   verification_uri: string;
-  verification_uri_complete: string;
+  verification_uri_complete?: string;
   expires_in: number;
   interval: number;
 }
@@ -580,41 +581,6 @@ export async function requestDeviceCode(opts: {
 export const DEVICE_TOKEN_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * Read a JSON body, giving up when `signal` aborts. The race is explicit
- * rather than left to the fetch implementation, so a body that stalls after
- * its headers ends at the bound whichever fetch delivered it.
- */
-function readJsonUntil(res: Response, signal: AbortSignal): Promise<unknown> {
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    res
-      .json()
-      .then(resolve, reject)
-      .finally(() => signal.removeEventListener('abort', onAbort));
-  });
-}
-
-/** Wait `ms`, or less if `signal` aborts first. */
-function sleepUnlessAborted(
-  sleep: (ms: number) => Promise<void>,
-  ms: number,
-  signal: AbortSignal | undefined
-): Promise<void> {
-  if (!signal) return sleep(ms);
-  if (signal.aborted) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const done = () => {
-      signal.removeEventListener('abort', done);
-      resolve();
-    };
-    signal.addEventListener('abort', done, { once: true });
-    sleep(ms).then(done, done);
-  });
-}
-
-/**
  * Poll the device-token endpoint until the flow reaches a terminal state,
  * honoring the RFC 8628 `interval`, `slow_down` backoff, and the code's expiry.
  *
@@ -644,12 +610,16 @@ export async function pollForToken(opts: {
 
   const deadline = now() + opts.expiresIn * 1000;
   let intervalSeconds = opts.interval;
+  // What the cloud's last 429 asked for beyond the interval, honoured once.
+  let rateLimitMs = 0;
 
   for (;;) {
     if (opts.signal?.aborted) return { status: 'expired' };
     // An abort ends the wait at once. A token request already sent is never
     // abandoned: the cloud issues the key when it answers.
-    await sleepUnlessAborted(sleep, intervalSeconds * 1000, opts.signal);
+    const waitMs = Math.max(intervalSeconds * 1000, rateLimitMs);
+    rateLimitMs = 0;
+    await sleepUnlessAborted(sleep, waitMs, opts.signal);
     if (opts.signal?.aborted) return { status: 'expired' };
     if (now() >= deadline) return { status: 'expired' };
 
@@ -703,6 +673,16 @@ export async function pollForToken(opts: {
         default:
           throw new Error(`Unexpected device-token error: ${body.error ?? 'unknown'}`);
       }
+    }
+
+    // A rate limiter in front of the poll can refuse a compliant poller (many
+    // machines behind one address). The code is still good, so back off as
+    // `slow_down` does and honour any Retry-After; only the expiry ends it
+    // (DOR-2496).
+    if (res.status === 429) {
+      intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS;
+      rateLimitMs = rateLimitWaitMs(res.headers, now(), deadline);
+      continue;
     }
 
     throw new Error(`Device-token poll failed (HTTP ${res.status})`);

@@ -69,6 +69,20 @@ describe('insert and get', () => {
     expect(result!.projectPath).toBe(entry.projectPath);
   });
 
+  it('mirrors reportsTo and createdBy, and clears reportsTo on update', () => {
+    // The reports-to chain is walked from this mirror (spec `heartbeats` §4.1).
+    registry.upsert(makeEntry({ reportsTo: '01MANAGER', createdBy: 'install:abc' }));
+    expect(registry.get('01JKABC00001')).toMatchObject({
+      reportsTo: '01MANAGER',
+      createdBy: 'install:abc',
+    });
+
+    registry.update('01JKABC00001', { reportsTo: null });
+    const after = registry.get('01JKABC00001');
+    expect(after?.reportsTo).toBeUndefined();
+    expect(after?.createdBy).toBe('install:abc');
+  });
+
   it('returns undefined for non-existent id', () => {
     expect(registry.get('nonexistent')).toBeUndefined();
   });
@@ -221,6 +235,43 @@ describe('upsert()', () => {
     registry.upsert(makeEntry({ id: 'agent-1', name: 'V2', projectPath: '/path/a' }));
     expect(registry.get('agent-1')?.name).toBe('V2');
     expect(registry.list()).toHaveLength(1);
+  });
+
+  it('writes nothing when the same agent is registered again (DOR-2900)', async () => {
+    // The reconciler re-reads every manifest every five minutes.
+    const { agents } = await import('@dorkos/db');
+    const { eq } = await import('drizzle-orm');
+    const stamp = () => db.select().from(agents).where(eq(agents.id, 'agent-1')).get()!.updatedAt;
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
+    const first = stamp();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
+    expect(stamp()).toBe(first);
+
+    registry.upsert(makeEntry({ id: 'agent-1', name: 'renamed', projectPath: '/path/a' }));
+    expect(stamp()).not.toBe(first);
+    expect(registry.get('agent-1')?.name).toBe('renamed');
+  });
+
+  it.each<[string, Partial<AgentRegistryEntry>]>([
+    ['model', { model: 'opus' }],
+    ['account', { account: 'claude3' }],
+    ['capabilities', { capabilities: ['code-review'] }],
+    ['isSystem', { isSystem: true }],
+    ['personaEnabled', { personaEnabled: false }],
+    ['description', { description: 'Something else' }],
+  ])('still writes a change to %s', (_column, change) => {
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', ...change }));
+    expect(registry.get('agent-1')).toMatchObject(change);
+  });
+
+  it('still clears unreachable when an unchanged agent registers again', () => {
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
+    registry.markUnreachable('agent-1');
+    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
+    expect(registry.getAggregateStats().unreachableCount).toBe(0);
   });
 
   it('replaces stale entry when different ID registered at same path', () => {

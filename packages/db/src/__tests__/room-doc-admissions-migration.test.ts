@@ -4,12 +4,20 @@ function normalizeBooleanDefault(value: string | null): string | null {
   return lower === 'true' || lower === 'false' ? lower : value;
 }
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb, runMigrations, type Db } from '../index.js';
 import * as migrationLocation from '../migrations-folder.js';
+import {
+  assertRecognizedRoomDocSchema,
+  matchesRoomDocSchema,
+  roomDocExpectedSchema,
+  type RoomDocSchemaObject,
+  type RoomDocSchemaRows,
+} from '../room-doc-schema.js';
 
 const migrationDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../drizzle');
 const handles: Db[] = [];
@@ -770,8 +778,8 @@ it('migrates an existing Room queue without giving private acceptance or claimed
     .prepare('SELECT * FROM __drizzle_migrations ORDER BY id')
     .all();
   expect(upgradedHistory.slice(0, historyBefore.length)).toEqual(historyBefore);
-  // Complete the archived queue fix, then apply shipped Chats and record the
-  // schema-equivalent regenerated Doc migration without replaying its CREATEs.
+  // Complete the archived queue fix, then record every shipped canonical migration.
+  // The consolidated Doc completion is distinct from the immutable published Room receipt.
   expect(
     upgradedHistory.slice(historyBefore.length).map((row) => {
       const entry = row as { hash: string; created_at: number };
@@ -782,14 +790,9 @@ it('migrates an existing Room queue without giving private acceptance or claimed
       hash: 'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
       created_at: 1791478834000,
     },
-    {
-      hash: '55b1201b98db390ccf33bb4069645f6c542ef20739f8bd1a2e4c1078275582fc',
-      created_at: 1791565991417,
-    },
-    {
-      hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
-      created_at: 1791577212201,
-    },
+    ...readMigrationFiles({ migrationsFolder: migrationDir })
+      .filter((entry) => entry.folderMillis >= 1791565991417)
+      .map((entry) => ({ hash: entry.hash, created_at: entry.folderMillis })),
   ]);
   insert(db, 'canvas_doc_batches', room('room-second'));
   insert(db, 'canvas_doc_batches', { ...legacy, batch_id: 'private-first' });
@@ -843,4 +846,94 @@ it('migrates an existing Room queue without giving private acceptance or claimed
   expect(reopened.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all()).toEqual(
     history
   );
+});
+
+/** Read genuine migrated native Room tables through the same strict PRAGMA comparator. */
+function readCompleteRoomSchema(db: Db) {
+  const objects: RoomDocSchemaObject[] = [];
+  const rows: Record<string, RoomDocSchemaRows[string]> = {};
+  for (const name of Object.keys(roomDocExpectedSchema)) {
+    objects.push(
+      ...(db.$client
+        .prepare('SELECT type,name,tbl_name,sql FROM main.sqlite_master WHERE tbl_name=?')
+        .all(name) as RoomDocSchemaObject[])
+    );
+    rows[name] = {
+      columns: db.$client
+        .prepare(`PRAGMA main.table_xinfo('${name}')`)
+        .all() as RoomDocSchemaRows[string]['columns'],
+      foreignKeys: db.$client
+        .prepare(`PRAGMA main.foreign_key_list('${name}')`)
+        .all() as RoomDocSchemaRows[string]['foreignKeys'],
+    };
+  }
+  return { objects, rows };
+}
+
+describe('native Room schema after shipped Main151 agent migration', () => {
+  it('admits exact real nullable TEXT agent columns after full migration and FILE reopen', () => {
+    const filename = path.join(directory(), 'native-agent-schema.sqlite');
+    const db = database(filename);
+    const original = readCompleteRoomSchema(db);
+    expect(
+      original.rows
+        .agents!.columns.filter((row) => row.name === 'reports_to' || row.name === 'created_by')
+        .map((row) => [row.name, row.type, row.notnull, row.pk, row.dflt_value, row.hidden])
+    ).toEqual([
+      ['reports_to', 'TEXT', 0, 0, null, 0],
+      ['created_by', 'TEXT', 0, 0, null, 0],
+    ]);
+    expect(matchesRoomDocSchema(original.objects, original.rows)).toBe(true);
+    expect(() =>
+      assertRecognizedRoomDocSchema(false, original.objects, original.rows)
+    ).not.toThrow();
+    // This is shape compatibility only: an independent unknown-object finding still refuses.
+    expect(() => assertRecognizedRoomDocSchema(true, original.objects, original.rows)).toThrow(
+      'Unrecognized native Room schema'
+    );
+    db.$client.close();
+    const reopened = database(filename);
+    const current = readCompleteRoomSchema(reopened);
+    expect(current).toEqual(original);
+    expect(() => assertRecognizedRoomDocSchema(false, current.objects, current.rows)).not.toThrow();
+  });
+
+  for (const column of ['reports_to', 'created_by'] as const) {
+    it.each(['missing', 'wrong-type', 'not-null', 'default'] as const)(
+      `refuses ${column} %s from real SQLite metadata`,
+      (invalid) => {
+        const db = database(':memory:');
+        const original = readCompleteRoomSchema(db);
+        expect(() =>
+          assertRecognizedRoomDocSchema(false, original.objects, original.rows)
+        ).not.toThrow();
+        // Isolated fixture DDL changes actual PRAGMA metadata, never the comparator or expected literal.
+        db.$client.exec(`ALTER TABLE agents DROP COLUMN ${column}`);
+        if (invalid === 'wrong-type') db.$client.exec(`ALTER TABLE agents ADD ${column} INTEGER`);
+        else if (invalid === 'not-null')
+          db.$client.exec(`ALTER TABLE agents ADD ${column} TEXT NOT NULL DEFAULT ''`);
+        else if (invalid === 'default')
+          db.$client.exec(`ALTER TABLE agents ADD ${column} TEXT DEFAULT ''`);
+        const changed = readCompleteRoomSchema(db);
+        expect(matchesRoomDocSchema(changed.objects, changed.rows)).toBe(false);
+        expect(() => assertRecognizedRoomDocSchema(false, changed.objects, changed.rows)).toThrow(
+          'Unrecognized native Room schema'
+        );
+      }
+    );
+  }
+
+  it('continues refusing an extra agent column after exact Main151 columns are present', () => {
+    const db = database(':memory:');
+    const original = readCompleteRoomSchema(db);
+    expect(() =>
+      assertRecognizedRoomDocSchema(false, original.objects, original.rows)
+    ).not.toThrow();
+    db.$client.exec('ALTER TABLE agents ADD forged_room_authority TEXT');
+    const changed = readCompleteRoomSchema(db);
+    expect(matchesRoomDocSchema(changed.objects, changed.rows)).toBe(false);
+    expect(() => assertRecognizedRoomDocSchema(false, changed.objects, changed.rows)).toThrow(
+      'Unrecognized native Room schema'
+    );
+  });
 });

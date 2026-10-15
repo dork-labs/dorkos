@@ -27,6 +27,7 @@ vi.mock('../../session-state-projector.js', () => ({
 vi.mock('../../projector-persistence.js', () => ({ persistenceModeFor: vi.fn(() => 'none') }));
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     resolveForSession: vi.fn(async () => runtime),
   },

@@ -12,6 +12,7 @@ import {
   creditsNotices,
   fillCreditsGaps,
   readCreditsSettings,
+  recordFirstRunCreditsChoice,
 } from './credits-defaults.js';
 import type { CreditsRuntimeView } from './credits-defaults.js';
 import {
@@ -20,6 +21,7 @@ import {
   creditsWiringReport,
 } from './credits-inference.js';
 import { creditsCapabilitiesFor } from './credits-protocols.js';
+import { creditsReadiness } from './credits-readiness.js';
 import { isCloudLinked } from './v1-client.js';
 
 /** Every registered runtime, with its declared capabilities, whether credits reach it, and its sign-in state. */
@@ -49,6 +51,7 @@ export async function creditsStatus(): Promise<CloudCreditsStatus> {
     ...report,
     defaults: creditsChoices(settings),
     notices: await creditsNotices(settings, { linked: isCloudLinked(), runtimes: views }),
+    readiness: creditsReadiness(),
   };
 }
 
@@ -61,12 +64,28 @@ export async function creditsStatus(): Promise<CloudCreditsStatus> {
  *
  * @param accountKey - The account the new link was made under.
  * @param waitForToken - The bounded wait for the first token.
- * @returns The runtimes switched to credits.
+ * @returns The runtimes DorkOS switched to credits (a first-run pick is the
+ *   person's, so it is not among them).
  */
 export async function fillCreditsGapsOnNewLink(
   accountKey: string | null,
   waitForToken: () => Promise<boolean> = () => awaitCreditsToken()
 ): Promise<string[]> {
   await waitForToken();
-  return fillCreditsGaps(creditsRuntimeViews(), { key: accountKey });
+  const switched = await fillCreditsGaps(creditsRuntimeViews(), { key: accountKey });
+  // A link made from the first run's DorkOS path: the person's own pick, so it
+  // is recorded after the gap fill has started the choices over.
+  if (!recordFirstRunCreditsChoice()) return switched;
+  return switched.filter((type) => type !== 'doe');
+}
+
+/**
+ * Stop every Codex turn running on DorkOS credits, when Codex is registered.
+ * Structural, because the Codex runtime is constructed inside an optional
+ * registration and is not held by the composition root.
+ */
+export function stopCodexCreditsTurns(): void {
+  const codex = runtimeRegistry.listRuntimes().find((runtime) => runtime.type === 'codex') as
+    { stopCreditsTurns?: () => void } | undefined;
+  codex?.stopCreditsTurns?.();
 }

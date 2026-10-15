@@ -44,6 +44,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      computerRuntimeForAgentPath: () => undefined,
       getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
@@ -81,16 +82,15 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import request from '@dorkos/test-utils/supertest';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { resolveLaunchAccountRoot } from '../../services/runtimes/claude-code/claude-config-dir.js';
 import { projectOfFolder } from '../../services/core/usage/account-eligibility.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const server = createServer(app);
+const admission = new MainRequestAdmission();
+const server = createServer(composedListener(admission));
 
 const S1 = '00000000-0000-4000-8000-0000000000e1';
 

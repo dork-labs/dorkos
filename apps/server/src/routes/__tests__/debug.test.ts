@@ -25,6 +25,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getSessionRuntimeType: vi.fn(async () => 'claude-code'),
     // Bound on purpose: the canonical binding probe routes through
@@ -52,7 +53,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   recordDispatchStart,
   recordDispatchEnd,
@@ -90,10 +91,8 @@ const POISON = {
 };
 
 function buildApp(deps?: DebugDeps) {
-  const app = createApp({ admission: new MainRequestAdmission() });
-  if (deps) app.locals.debugDeps = deps;
-  finalizeApp(app);
-  return target.mount(app);
+  const admission = new MainRequestAdmission();
+  return target.mount(composedListener(admission, deps ? { debug: deps } : undefined));
 }
 
 beforeEach(() => {

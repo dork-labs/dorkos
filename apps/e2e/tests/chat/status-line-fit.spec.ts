@@ -271,13 +271,11 @@ test.describe('Chat — status line fits its row', () => {
         const statusLine = chatPage.page.locator('[data-testid="status-line"]');
         await expect(statusLine).toBeVisible();
 
-        // The model item always promotes, so it is the signal that the line has
-        // real content rather than an empty row that trivially fits.
-        await expect(chatPage.page.locator('[data-testid="status-item-model"]')).toBeVisible();
-        expectNoOverlap(await measureSettledStatusLines(chatPage.page));
-
-        // The runtime item resolves from a second query; re-measure once it lands,
-        // because two items side by side is exactly what overflowed before.
+        // The runtime item is the signal that the line has real content rather
+        // than an empty row that trivially fits: a fresh chat promotes it (it can
+        // still be chosen). The model item used to be that signal; it shows only
+        // when pinned now (ADR 261010-143211). The directory is no signal either:
+        // it shows only when the chat has a folder, and this one may not.
         await expect(chatPage.page.locator('[data-testid="status-item-runtime"]')).toBeVisible();
         expectNoOverlap(await measureSettledStatusLines(chatPage.page));
 
@@ -299,11 +297,13 @@ test.describe('Chat — status line fits its row', () => {
       // past any prediction — six more items carrying absurd values — to prove the
       // failure mode is a visible ellipsis and not silently unreachable content.
       const statusLine = chatPage.page.locator('[data-testid="status-line"]');
-      await expect(chatPage.page.locator('[data-testid="status-item-model"]')).toBeVisible();
+      // The runtime item is the right-cluster item a fresh chat promotes (it can
+      // still be chosen); the model item shows only when pinned.
+      await expect(chatPage.page.locator('[data-testid="status-item-runtime"]')).toBeVisible();
 
       const overflowingValues = await statusLine.evaluate((line) => {
         const rightCluster = line.children[1];
-        const template = rightCluster.querySelector('[data-testid="status-item-model"]');
+        const template = rightCluster.querySelector('[data-testid="status-item-runtime"]');
         if (!template) throw new Error('no right-cluster item to clone');
         for (let i = 0; i < 6; i++) {
           const clone = template.cloneNode(true) as HTMLElement;
@@ -405,12 +405,11 @@ test.describe('Status line — the tier floors, under a degraded session', () =>
    * `LiveMakeDefaultOffer` (`TrustDialShowcases.tsx`) wires the real
    * component to a real stop change in a `w-72` (288px) box — narrower even
    * than the ~296px `w-80` the session popover gives it in production — with
-   * no session, no config write, no consent dialog, and none of
+   * no session, no config write, and none of
    * `useMakeDefaultStop`'s 6-second `OFFER_MS` timer standing between a
    * click and a measurement. That combination is what makes the reading
    * deterministic: a live-chat version of this test drove the SAME bug
-   * through `runtimes.defaultTrustStop` / `ui.autonomyAcknowledgedAt` /
-   * `ui.statusBar.pins` writes on the real-runtime `chromium` project, which
+   * through `runtimes.defaultTrustStop` / `ui.statusBar.pins` writes on the real-runtime `chromium` project, which
    * runs under `fullyParallel` workers against one shared server (the same
    * shape `playwright.config.ts` calls out for `composer-escape-and-ime`,
    * DOR-948) — worth avoiding for a bug that has nothing to do with the

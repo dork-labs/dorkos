@@ -1,26 +1,37 @@
-import { Router } from 'express';
+/**
+ * The MCP servers an agent folder has (`GET /api/mcp-config`), as its runtime
+ * reports them live, or from its `.mcp.json` for Claude Code.
+ *
+ * @module routes/mcp-config
+ */
+import { Hono } from 'hono';
 import { z } from 'zod';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { readMcpJsonServers, summarizeMcpJsonServers } from '../services/mesh/mcp-json.js';
+import {
+  readMcpJsonServers,
+  summarizeMcpJsonServers,
+} from '../services/mesh/capabilities/mcp-json.js';
 import { logger } from '../lib/logger.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 const QuerySchema = z.object({
   path: z.string().min(1),
   runtime: z.string().min(1).optional(),
 });
 
-router.get('/', async (req, res) => {
-  const parsed = QuerySchema.safeParse(req.query);
+router.get('/', async (c) => {
+  const parsed = QuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Missing required query param: path' });
+    return c.json({ error: 'Missing required query param: path' }, 400);
   }
 
   const runtimeParam = parsed.data.runtime;
   if (runtimeParam !== undefined && !runtimeRegistry.has(runtimeParam)) {
-    return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
+    return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
   }
 
   try {
@@ -35,24 +46,24 @@ router.get('/', async (req, res) => {
 
     const liveStatus = runtime.getMcpStatus?.(validatedPath);
     if (liveStatus) {
-      return res.json({ servers: liveStatus });
+      return c.json({ servers: liveStatus });
     }
 
     // The `.mcp.json` fallback is a Claude Code artifact — its format is
     // Claude-specific. Only fall back for the claude-code runtime; any other
     // runtime with no live status honestly reports no MCP servers.
     if (runtime.type !== 'claude-code') {
-      return res.json({ servers: [] });
+      return c.json({ servers: [] });
     }
 
     const mcpServers = await readMcpJsonServers(validatedPath);
-    res.json({ servers: summarizeMcpJsonServers(mcpServers) });
+    return c.json({ servers: summarizeMcpJsonServers(mcpServers) });
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[mcp-config] GET / failed', { err, path: parsed.data.path });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

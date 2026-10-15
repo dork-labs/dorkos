@@ -35,6 +35,9 @@ export default defineConfig({
     // tsconfig.scripts.json exists.
     include: ['src/**/__tests__/**/*.test.ts', 'scripts/**/__tests__/**/*.test.ts'],
     globals: false,
+    // Points the real electron-log file transport at a temp file, so a test that forgets to
+    // mock it cannot write into the installed app's log (DOR-2042).
+    setupFiles: ['src/__tests__/log-file-guard.setup.ts'],
     passWithNoTests: true,
     // The main-process tests wait on mock children behind real socket I/O (the
     // free-port probe), bounded in wall clock rather than event-loop turns

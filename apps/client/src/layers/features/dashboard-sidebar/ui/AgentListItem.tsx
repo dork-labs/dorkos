@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { BellOff } from 'lucide-react';
+import { BellOff, Pause } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { getAgentDisplayName } from '@/layers/shared/lib';
@@ -46,6 +46,12 @@ interface AgentListItemProps {
    * clickable (DOR-339).
    */
   isMuted?: boolean;
+  /**
+   * Whether this agent is paused everywhere (spec `audit-trail` PR5), as the
+   * sidebar's one read of the paused set answers it. Draws a pause mark after
+   * the name; nothing else about the row changes.
+   */
+  isPaused?: boolean;
   /**
    * How many of this agent's sessions are live right now, when that is enough
    * to be worth saying — `SidebarRowModel.liveCount`, straight off the model.
@@ -104,6 +110,7 @@ export function AgentListItem({
   visual,
   isActive,
   isMuted = false,
+  isPaused = false,
   liveCount,
   onSelect,
   onViewProfile,
@@ -215,6 +222,16 @@ export function AgentListItem({
           <>
             {isMuted && (
               <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
+            )}
+            {/* Paused everywhere (spec `audit-trail` PR5): a quiet mark after
+                the name, like the mute one. The row stays clickable: a paused
+                agent is still readable and messageable. */}
+            {isPaused && (
+              <Pause
+                className="text-sidebar-foreground/50 size-3"
+                aria-label="Paused"
+                data-testid="agent-row-paused"
+              />
             )}
             {/*
               No chip here: `trailingAction` below draws it, and reserves its own

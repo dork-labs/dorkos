@@ -91,7 +91,7 @@ import {
   type PumpState,
   type SessionPumpOptions,
 } from './session-pump.js';
-import { WarmSlotBook } from './warm-slot-book.js';
+import { WarmSlotBook } from './warm-process/warm-slot-book.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** Registries holding at least one pump, so shutdown can reach every process. */

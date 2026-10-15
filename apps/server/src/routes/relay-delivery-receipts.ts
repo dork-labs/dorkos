@@ -1,5 +1,5 @@
 /** HTTP receipt ownership and response boundaries, independent of message payloads. */
-import type { Request, Response, RequestHandler } from 'express';
+import type { Context, Handler } from 'hono';
 import {
   isDetachedAgentSubject,
   RelayReceiptUnavailableError,
@@ -17,33 +17,46 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+
+/** What publishing reads besides the message: the bus, and what an adapter delivery is recorded in. */
+export interface RelayPublishDeps {
+  /** The message bus. */
+  relayCore: RelayCore;
+  /** Names the adapter a delivery went through, when one did. */
+  adapterManager?: AdapterManager;
+  /** Where adapter deliveries and failures are recorded. */
+  activity?: ActivityService;
+}
+
+/** The answer for a client that is gone: nothing more is written to it. */
+const UNANSWERABLE = (): Response => new Response(null);
 
 function loginEnabled(): boolean {
   return !!configManager.get('auth')?.enabled;
 }
-function verifiedUserId(res: Response): string | null {
-  const id: unknown = res.locals.user?.userId;
+function verifiedUserId(c: Context<ApiEnv>): string | null {
+  const id: unknown = c.get('user')?.userId;
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
-function cannotRespond(res: Response): boolean {
-  return res.headersSent || res.writableEnded || res.destroyed;
+function cannotRespond(c: Context<ApiEnv>): boolean {
+  const { outgoing } = c.env;
+  return outgoing.headersSent || outgoing.writableEnded || outgoing.destroyed;
 }
 
 /** Publish with a locator captured by the durable acceptance callback, never error metadata. */
 export async function publishRelayMessage(
-  req: Request,
-  res: Response,
-  relayCore: RelayCore,
-  adapterManager: AdapterManager | undefined,
+  c: Context<ApiEnv>,
+  deps: RelayPublishDeps,
   data: RelaySendMessageRequest
-) {
+): Promise<Response> {
+  const { relayCore } = deps;
   let messageId: string | undefined;
   let statusUrl: string | undefined;
   const tracked = isDetachedAgentSubject(data.subject);
   const enabled = loginEnabled();
-  const userId = verifiedUserId(res);
-  if (enabled && !userId)
-    return res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+  const userId = verifiedUserId(c);
+  if (enabled && !userId) return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
   try {
     const publishResult = await relayCore.publish(data.subject, data.payload, {
       from: data.from,
@@ -61,43 +74,45 @@ export async function publishRelayMessage(
           }
         : {}),
     });
-    await emitPublishActivity(req, publishResult, adapterManager, data);
-    if (cannotRespond(res)) return;
-    return res.json({ ...publishResult, ...(statusUrl ? { statusUrl } : {}) });
+    await emitPublishActivity(deps, publishResult, data);
+    if (cannotRespond(c)) return UNANSWERABLE();
+    return c.json({ ...publishResult, ...(statusUrl ? { statusUrl } : {}) });
   } catch (error) {
-    if (cannotRespond(res)) return;
+    if (cannotRespond(c)) return UNANSWERABLE();
     if (messageId)
-      return res.status(503).json({
-        error: 'Delivery receipt response is unavailable.',
-        code: 'RELAY_RECEIPT_RESPONSE_UNAVAILABLE',
-        messageId,
-        statusUrl,
-      });
+      return c.json(
+        {
+          error: 'Delivery receipt response is unavailable.',
+          code: 'RELAY_RECEIPT_RESPONSE_UNAVAILABLE',
+          messageId,
+          statusUrl,
+        },
+        503
+      );
     if (error instanceof RelayReceiptUnavailableError)
-      return res.status(503).json({ error: error.message, code: error.code });
-    return res.status(422).json({
-      error: error instanceof Error ? error.message : 'Publish failed',
-      code: (error as { code?: string })?.code ?? 'PUBLISH_FAILED',
-    });
+      return c.json({ error: error.message, code: error.code }, 503);
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : 'Publish failed',
+        code: (error as { code?: string })?.code ?? 'PUBLISH_FAILED',
+      },
+      422
+    );
   }
 }
 
 /** Authenticated, minimized SQL status; all missing/expired/inaccessible locators look alike. */
-export function createReceiptStatusHandler(relayCore: RelayCore): RequestHandler {
-  return (req, res) => {
-    res.set('Cache-Control', 'no-store');
+export function createReceiptStatusHandler(relayCore: RelayCore): Handler<ApiEnv> {
+  return (c) => {
+    c.header('Cache-Control', 'no-store');
     const enabled = loginEnabled();
-    const userId = verifiedUserId(res);
+    const userId = verifiedUserId(c);
     if (enabled && !userId) {
-      res.status(401).json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
-      return;
+      return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
     }
-    const id = RelayMessageIdSchema.safeParse(req.params.messageId);
+    const id = RelayMessageIdSchema.safeParse(c.req.param('messageId'));
     if (!id.success) {
-      res
-        .status(400)
-        .json({ error: 'Invalid relay message ID.', code: 'INVALID_RELAY_MESSAGE_ID' });
-      return;
+      return c.json({ error: 'Invalid relay message ID.', code: 'INVALID_RELAY_MESSAGE_ID' }, 400);
     }
     try {
       const receipt = relayCore.getDeliveryReceipt(
@@ -111,36 +126,38 @@ export function createReceiptStatusHandler(relayCore: RelayCore): RequestHandler
           : { loginEnabled: false }
       );
       if (!receipt) {
-        res
-          .status(404)
-          .json({ error: 'Delivery receipt not found.', code: 'RELAY_RECEIPT_NOT_FOUND' });
-        return;
+        return c.json(
+          { error: 'Delivery receipt not found.', code: 'RELAY_RECEIPT_NOT_FOUND' },
+          404
+        );
       }
-      res.json(RelayDeliveryReceiptSchema.parse(receipt));
+      return c.json(RelayDeliveryReceiptSchema.parse(receipt));
     } catch (error) {
-      if (cannotRespond(res)) return;
-      res.status(503).json({
-        error: 'Delivery receipt status is unavailable.',
-        code:
-          error instanceof RelayReceiptUnavailableError
-            ? error.code
-            : 'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
-      });
+      if (cannotRespond(c)) return UNANSWERABLE();
+      return c.json(
+        {
+          error: 'Delivery receipt status is unavailable.',
+          code:
+            error instanceof RelayReceiptUnavailableError
+              ? error.code
+              : 'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
+        },
+        503
+      );
     }
   };
 }
 
 /** Auxiliary activity cannot change publication outcome or disclose a thrown error. */
 async function emitPublishActivity(
-  req: Request,
+  deps: RelayPublishDeps,
   publishResult: PublishResult,
-  adapterManager: AdapterManager | undefined,
   data: RelaySendMessageRequest
 ) {
+  const { adapterManager, activity: activityService } = deps;
   try {
     // Emit message delivery/failure activity events when an adapter was involved
     if (publishResult.adapterResult && adapterManager) {
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         const from = data.from;
         const isAgent = from?.startsWith('relay.agent.');

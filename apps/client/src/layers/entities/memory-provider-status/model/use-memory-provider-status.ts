@@ -13,7 +13,8 @@ const MEMORY_PROVIDER_STATUS_KEY = ['memory-provider-status'] as const;
  * autonomy aggregate, which rides three SSE events for exactly that reason. A
  * bench firing mid-session is rare (it needs a live fault from an otherwise
  * healthy backend), so a plain re-ask on a normal cadence — this staleTime plus
- * TanStack's default refetch-on-window-focus — is proportionate; a dedicated
+ * a refetch when the tab is shown again, opted into below since the app's
+ * default no longer does that (DOR-2896) — is proportionate; a dedicated
  * event for a state that only ever moves once per process would outweigh what
  * it buys.
  */
@@ -24,8 +25,8 @@ const STALE_TIME_MS = 60_000;
  * calls right now, and why they differ.
  *
  * Returns `undefined` until the first answer lands, which the banner treats as
- * "nothing to report" — the same convention `useUnattendedAutonomy` uses, so a
- * page load never flashes a false warning before the real answer arrives.
+ * "nothing to report", so a page load never flashes a false warning before the
+ * real answer arrives.
  */
 export function useMemoryProviderStatus(): MemoryProviderStatus | undefined {
   const transport = useTransport();
@@ -34,6 +35,7 @@ export function useMemoryProviderStatus(): MemoryProviderStatus | undefined {
     queryKey: [...MEMORY_PROVIDER_STATUS_KEY],
     queryFn: () => transport.getMemoryProviderStatus(),
     staleTime: STALE_TIME_MS,
+    refetchOnWindowFocus: true,
   });
 
   return data;

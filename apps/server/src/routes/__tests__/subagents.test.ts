@@ -33,6 +33,7 @@ const TEST_MODE_SESSION = '22222222-2222-4222-8222-222222222222';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => claudeRuntime),
     getDefaultType: vi.fn(() => 'claude-code'),
@@ -59,11 +60,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
 
 describe('Subagents Routes', () => {
   beforeEach(() => {

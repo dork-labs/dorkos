@@ -37,6 +37,13 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
 
+// The tunnel is open at the phone's address, so the `/api` host guard trusts
+// that name and the request reaches the routes' own answers.
+vi.mock('../../lib/trusted-origins.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/trusted-origins.js')>()),
+  getTunnelHosts: () => ['quiet-otter-1234.ngrok.app'],
+}));
+
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), getDot: vi.fn(), set: vi.fn() },
 }));
@@ -49,30 +56,27 @@ vi.mock('../../lib/boundary.js', () => ({
   expandTilde: (p: string) => (p.startsWith('~/') ? `/Users/test-user/${p.slice(2)}` : p),
 }));
 
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import runtimesRouter from '../runtimes.js';
+import { createRuntimesRoutes } from '../runtimes.js';
 import configRouter from '../config.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** The TCP peer the app reports for the current request. */
 let currentPeer = '127.0.0.1';
 
-const app = express();
-// Production sets this in `app.ts`, and without it this file could not catch the
-// regression it exists for. `req.hostname` only DIVERGES from the raw `Host`
-// header once Express is willing to prefer `X-Forwarded-Host` — so on a bare app
-// the two are always equal, and swapping the raw header for `req.hostname` (the
-// DOR-532 bug, re-introduced) would keep every row here green.
-app.set('trust proxy', 1);
-app.use((req, _res, next) => {
+// Both groups answer from the Hono `/api` app, as the running server routes
+// them. The peer is rewritten before the chain sees the request. The Hono chain
+// computes its forwarded address with one trusted hop, as `app.ts` sets
+// `trust proxy`, so a forwarded host still cannot stand in for the raw `Host`.
+const routes = honoGroupListener([
+  { path: '/api/config', routes: configRouter },
+  { path: '/api/runtimes', routes: createRuntimesRoutes() },
+]);
+const server = listeningServer((req, res) => {
   Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
-  next();
+  routes(req, res);
 });
-app.use(express.json());
-app.use('/api/runtimes', runtimesRouter);
-app.use('/api/config', configRouter);
-const server = listeningServer(app);
 
 beforeEach(() => {
   currentPeer = '127.0.0.1';

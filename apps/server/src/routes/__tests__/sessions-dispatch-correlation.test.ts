@@ -41,6 +41,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      computerRuntimeForAgentPath: () => undefined,
       getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
@@ -71,7 +72,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -83,9 +84,8 @@ import {
   resetDispatchBuffers,
 } from '../../services/observability/dispatch-buffers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000d1';
 /** The canonical id the adapter assigns to a brand-new session mid-turn. */

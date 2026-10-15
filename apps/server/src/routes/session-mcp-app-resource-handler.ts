@@ -12,41 +12,43 @@
  *
  * @module routes/session-mcp-app-resource-handler
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { McpAppResourceRequestSchema } from '@dorkos/shared/schemas';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { getOrCreateProjector } from '../services/session/index.js';
 import { resolveAppResource, McpAppResourceError, UI_SCHEME } from '../services/mcp-apps/index.js';
 
 /**
- * Express handler for `POST /api/sessions/:id/mcp-app/resource`. Mounted
- * directly by `sessions.ts` (Express 5 forwards async rejections natively).
- * Returns 200 with the resource + sandbox metadata, or 400 (bad scheme/body) /
- * 404 (unknown session or server) / 502 (upstream MCP read failed).
+ * Handler for `POST /api/sessions/:id/mcp-app/resource`, mounted by
+ * `sessions.ts`. Returns 200 with the resource + sandbox metadata, or 400 (bad
+ * scheme/body) / 404 (unknown session or server) / 502 (upstream MCP read
+ * failed).
  *
- * @param req - Express request (`:id` param + `McpAppResourceRequest` body).
- * @param res - Express response.
+ * @param c - The request context (`:id` param + `McpAppResourceRequest` body).
  */
-export async function sessionMcpAppResourceHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+export async function sessionMcpAppResourceHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
 
-  const parsed = McpAppResourceRequestSchema.safeParse(req.body);
+  const parsed = McpAppResourceRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+    return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
   }
   const { serverName, uri } = parsed.data;
 
   // Cheap early reject before any runtime work — the service re-checks too.
   if (!uri.startsWith(UI_SCHEME)) {
-    return sendError(res, 400, `Resource URI must use the ${UI_SCHEME} scheme`, 'INVALID_URI');
+    return c.json(errorBody(`Resource URI must use the ${UI_SCHEME} scheme`, 'INVALID_URI'), 400);
   }
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   if (!runtime.hasSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
   }
 
   // Server-authoritative cwd: the projector tracks the directory the session's
@@ -54,40 +56,43 @@ export async function sessionMcpAppResourceHandler(req: Request, res: Response):
   // this is set; a session with no turn yet has no MCP context to fetch from.
   const cwd = getOrCreateProjector(sessionId).cwd;
   if (!cwd) {
-    return sendError(res, 404, 'No MCP context for session', 'NO_MCP_CONTEXT');
+    return c.json(errorBody('No MCP context for session', 'NO_MCP_CONTEXT'), 404);
   }
 
   // Membership: the server must be in this cwd's live MCP set.
   const servers = runtime.getMcpStatus?.(cwd) ?? [];
   if (!servers.some((s) => s.name === serverName)) {
-    return sendError(
-      res,
-      404,
-      `MCP server "${serverName}" not found for session`,
-      'SERVER_NOT_FOUND'
+    return c.json(
+      errorBody(`MCP server "${serverName}" not found for session`, 'SERVER_NOT_FOUND'),
+      404
     );
   }
 
   const connection = runtime.getMcpServerConfig?.(cwd, serverName);
   if (!connection) {
-    return sendError(
-      res,
-      404,
-      `No connection config captured for "${serverName}"`,
-      'SERVER_CONFIG_UNAVAILABLE'
+    return c.json(
+      errorBody(`No connection config captured for "${serverName}"`, 'SERVER_CONFIG_UNAVAILABLE'),
+      404
     );
   }
 
   try {
     const resource = await resolveAppResource({ serverName, uri, connection });
-    res.status(200).json(resource);
+    return c.json(resource, 200);
   } catch (err) {
     if (err instanceof McpAppResourceError) {
-      if (err.code === 'INVALID_SCHEME') return sendError(res, 400, err.message, err.code);
-      if (err.code === 'UNSUPPORTED_MIME') return sendError(res, 415, err.message, err.code);
-      if (err.code === 'NOT_FOUND') return sendError(res, 404, err.message, err.code);
-      logger.warn('[POST /mcp-app/resource] read failed', { sessionId, serverName, uri });
-      return sendError(res, 502, err.message, err.code);
+      const status: ContentfulStatusCode =
+        err.code === 'INVALID_SCHEME'
+          ? 400
+          : err.code === 'UNSUPPORTED_MIME'
+            ? 415
+            : err.code === 'NOT_FOUND'
+              ? 404
+              : 502;
+      if (status === 502) {
+        logger.warn('[POST /mcp-app/resource] read failed', { sessionId, serverName, uri });
+      }
+      return c.json(errorBody(err.message, err.code), status);
     }
     throw err;
   }

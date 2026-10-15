@@ -1,7 +1,4 @@
-import {
-  CanvasChannelDeclarationSchema,
-  type CanvasChannelDeclaration,
-} from '@dorkos/shared/canvas-channel-schemas';
+import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { hashApprovalInput } from '../../core/approvals/approval-input-hash.js';
 /** Atomic document closure and recoverable canonical ownership movement. */
 import { randomUUID } from 'node:crypto';
@@ -19,8 +16,6 @@ import {
   canvasDocIdentityIntents,
   sessionMessageAcceptanceReceipts,
   sessionMessageQueue,
-  sessionMetadata,
-  agents,
   type Db,
   type DbTransaction,
   type SessionMessageAcceptanceReceipt,
@@ -29,37 +24,23 @@ import { assertIdentityMoveTarget } from './identity/identity-target.js';
 import { DocChannelStore } from './store.js';
 import { QUEUE_POSITION_STEP } from '../../session/message-queue-store.js';
 
-/** Source-owned canonical receipt rebinding, inside the document move's transaction. */
-export interface DocChannelReceiptRebinder {
-  /** Suspend an exact authenticated source observation only after SQLite ownership rollback. */
-  onRebindFailed?(error: unknown): undefined;
-  /** Revalidate and rebind one accepted receipt without changing its source authority. */
-  rebindAccepted(
-    tx: DbTransaction,
-    receiptId: string,
-    fromId: string,
-    toId: string,
-    previousSourceScope?: string
-  ): boolean;
-}
-/** Lifecycle collaborators; no token authority exists until its own implementation arrives. */
-export interface DocChannelLifecycleOptions {
-  now?: () => string;
-  receipts?: DocChannelReceiptRebinder;
-  /** Future token storage must revoke inside this same closure transaction. */
-  revokeTokens?: (tx: DbTransaction, documentId: string, now: string) => void;
-}
-/** Server-derived origin and optional declaration for a fresh physical document only. */
-export interface DocChannelInitialization {
-  declaration?: CanvasChannelDeclaration;
-  openerAgentId?: string | null;
-}
-/** Private identity data sufficient for closure, including unreadable document content. */
-export interface DocChannelDocumentIdentity {
-  id: string;
-  scope: string;
-  sourceKey: string | null;
-}
+import {
+  readLifecycleReceipt,
+  sameLifecycleReceiptTarget,
+  readLifecycleHealth,
+} from './lifecycle-receipt-reads.js';
+import type {
+  DocChannelReceiptRebinder,
+  DocChannelLifecycleOptions,
+  DocChannelInitialization,
+  DocChannelDocumentIdentity,
+} from './lifecycle-receipt-reads.js';
+export type {
+  DocChannelReceiptRebinder,
+  DocChannelLifecycleOptions,
+  DocChannelInitialization,
+  DocChannelDocumentIdentity,
+} from './lifecycle-receipt-reads.js';
 
 export { DocChannelIdentityBlockedError } from './identity/identity-error.js';
 import { DocChannelIdentityBlockedError } from './identity/identity-error.js';
@@ -155,7 +136,7 @@ export class DocChannelLifecycle {
         AND batch_id=${batch.batchId} LIMIT 1`)
       )
         continue;
-      const receipt = this.receipt(tx, batch.admissionReceiptId);
+      const receipt = readLifecycleReceipt(tx, batch.admissionReceiptId);
       if (receipt && receipt.state !== 'accepted') continue;
       if (!['pending', 'waiting', 'accepted'].includes(batch.status)) continue;
       if (receipt) {
@@ -244,24 +225,7 @@ export class DocChannelLifecycle {
 
   /** Payload-free repair health; caller must authorize operator access first. */
   health(documentId: string): { status: 'ready' | 'in_doubt'; reasons: string[] } {
-    const intents = this.db
-      .select()
-      .from(canvasDocIdentityIntents)
-      .where(
-        and(
-          eq(canvasDocIdentityIntents.documentId, documentId),
-          inArray(canvasDocIdentityIntents.status, ['pending', 'failed', 'in_doubt'])
-        )
-      )
-      .all();
-    return intents.length
-      ? {
-          status: 'in_doubt',
-          reasons: [
-            ...new Set(intents.map((intent) => intent.errorCode ?? 'identity_move_pending')),
-          ],
-        }
-      : { status: 'ready', reasons: [] };
+    return readLifecycleHealth(this.db, documentId);
   }
 
   /** Persist intent first, then move documents, linked receipts and queues atomically. */
@@ -476,14 +440,14 @@ export class DocChannelLifecycle {
         .where(eq(canvasDocBatches.documentId, document.id))
         .all();
       for (const batch of batches) {
-        const receipt = this.receipt(tx, batch.admissionReceiptId);
+        const receipt = readLifecycleReceipt(tx, batch.admissionReceiptId);
         if (batch.admissionReceiptId && !receipt) throw new DocChannelIdentityBlockedError();
         if (receipt?.state === 'accepted') {
           const movedTarget = receipt.sessionId === fromId;
           const destination = movedTarget ? toId : receipt.sessionId;
           if (!owners.has(document.id) && !movedTarget) continue;
           if (
-            !this.sameTarget(tx, receipt, destination) ||
+            !sameLifecycleReceiptTarget(tx, receipt, destination) ||
             !this.options.receipts?.rebindAccepted(
               tx,
               receipt.id,
@@ -531,37 +495,6 @@ export class DocChannelLifecycle {
     return changed;
   }
 
-  private receipt(
-    tx: DbTransaction,
-    id: string | null
-  ): SessionMessageAcceptanceReceipt | undefined {
-    return id === null
-      ? undefined
-      : tx
-          .select()
-          .from(sessionMessageAcceptanceReceipts)
-          .where(eq(sessionMessageAcceptanceReceipts.id, id))
-          .get();
-  }
-  private sameTarget(
-    tx: DbTransaction,
-    receipt: SessionMessageAcceptanceReceipt,
-    sessionId: string
-  ): boolean {
-    const target = tx
-      .select()
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    const agent = tx.select().from(agents).where(eq(agents.id, receipt.agentId)).get();
-    return (
-      target?.runtime === receipt.originRuntime &&
-      target.agentPath === receipt.originAgentPath &&
-      agent?.status === 'active' &&
-      agent.runtime === receipt.originRuntime &&
-      agent.projectPath === receipt.originAgentPath
-    );
-  }
   private moveQueue(
     tx: DbTransaction,
     receipt: SessionMessageAcceptanceReceipt,

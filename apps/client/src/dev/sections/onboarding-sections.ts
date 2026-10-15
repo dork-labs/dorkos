@@ -1,7 +1,9 @@
 import type { PlaygroundSection } from '../playground-registry';
 
 /**
- * Onboarding page sections — full flow, individual steps, and supporting components.
+ * Onboarding page sections — the first run, each of its screens, the #team
+ * chips it lands on, the trust notice the next launch shows, and the supporting
+ * sidebar card.
  */
 export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
   {
@@ -9,14 +11,35 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     title: 'OnboardingFlow',
     page: 'onboarding',
     category: 'Flow',
-    keywords: ['onboarding', 'flow', 'interactive', 'full', 'walkthrough', 'ftue'],
+    keywords: ['onboarding', 'flow', 'interactive', 'first run', 'ftue', 'one minute'],
   },
   {
-    id: 'systemrequirementsstep',
-    title: 'SystemRequirementsStep',
+    id: 'welcomestep',
+    title: 'WelcomeStep',
     page: 'onboarding',
-    category: 'Steps',
-    keywords: ['system', 'requirements', 'check', 'dependencies', 'install', 'claude', 'cli'],
+    category: 'Screens',
+    keywords: ['welcome', 'continue with dorkos', 'own ai', 'without an account', 'eligibility'],
+  },
+  {
+    id: 'connectingstep',
+    title: 'ConnectingStep',
+    page: 'onboarding',
+    category: 'Screens',
+    keywords: ['connecting', 'link', 'code', 'browser', 'card', 'refused', 'us only', 'expired'],
+  },
+  {
+    id: 'ownaistep',
+    title: 'OwnAiStep',
+    page: 'onboarding',
+    category: 'Screens',
+    keywords: ['own ai', 'api key', 'openai', 'anthropic', 'openrouter', 'ollama', 'ai app'],
+  },
+  {
+    id: 'firstrunchips',
+    title: 'FirstRunChips',
+    page: 'onboarding',
+    category: 'Landing',
+    keywords: ['chips', 'team', 'welcome', 'dorkbot', 'tracker', 'plan board', 'connect'],
   },
   {
     id: 'runtimesetuppanel',
@@ -26,24 +49,17 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     keywords: ['runtime', 'setup', 'needs setup', 'add a runtime', 'opencode', 'codex', 'install'],
   },
   {
-    id: 'welcomestep',
-    title: 'WelcomeStep',
-    page: 'onboarding',
-    category: 'Steps',
-    keywords: ['welcome', 'step', 'onboarding', 'get started', 'skip', 'animation'],
-  },
-  {
-    id: 'onboardingnavbar',
-    title: 'OnboardingNavBar',
-    page: 'onboarding',
-    category: 'Supporting',
-    keywords: ['nav', 'bar', 'back', 'skip', 'setup'],
-  },
-  {
     id: 'progresscard',
     title: 'ProgressCard',
     page: 'onboarding',
     category: 'Supporting',
-    keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started'],
+    keywords: ['progress', 'card', 'sidebar', 'checklist', 'getting started', 'community', 'space'],
+  },
+  {
+    id: 'trustnoticemoment',
+    title: 'TrustNoticeMoment',
+    page: 'onboarding',
+    category: 'Landing',
+    keywords: ['trust', 'notice', 'trusted', 'careful', 'permissions', 'moment', 'without asking'],
   },
 ];

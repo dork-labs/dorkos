@@ -29,7 +29,8 @@ import type { RoomRoster } from '../room-roster.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
 import type { RoomMirrorWritePolicy } from '../service/room-service-deps.js';
 import type { RoomStore } from '../room-store.js';
-import type { RoomDispatchSummary, RoomTriggerDispatcher } from '../room-trigger.js';
+import type { RoomDispatchSummary } from '../service/room-trigger-deps.js';
+import type { RoomTriggerDispatcher } from '../room-trigger.js';
 
 /**
  * Resolve the two thread pointers an entry is written with.

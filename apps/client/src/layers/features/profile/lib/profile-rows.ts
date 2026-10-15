@@ -10,11 +10,13 @@
  * @module features/profile/lib/profile-rows
  */
 import type { MemberRoom, TeamMember } from '@dorkos/shared/team-schemas';
+import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { roomDisplayTitle } from '@/layers/entities/room';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import type { ProfilePageId } from '../model/profile-stack';
 import type { ProfileRelationship } from './profile-relationship';
+import { nextCheckMeta, wakeRowValue } from './heartbeat-words';
 
 /**
  * What a row lets you do.
@@ -47,7 +49,7 @@ export interface ProfileRowModel {
   /** Where a `nav` row goes. */
   page?: ProfilePageId;
   /** Which popover a `pick` row opens. */
-  pick?: 'runs-on' | 'personality';
+  pick?: 'runs-on' | 'personality' | 'reports-to';
   /** What a `copy` row puts on the clipboard. */
   copyValue?: string;
   /** Why a `locked` row is locked. Shown on hover and read out via `aria-describedby`. */
@@ -115,6 +117,34 @@ export interface ProfileRowsContext {
   firstSeenAt?: string | null;
   /** What this agent has been doing, when the profile has asked. */
   facts?: ProfileAgentFacts;
+  /**
+   * Who this agent reports to, in the row's words ("You (default)"), or `null`
+   * while its manifest is still being read (spec `heartbeats` §4.3).
+   */
+  reportsTo?: string | null;
+  /**
+   * This agent's open promises and how many are overdue, or `null` while
+   * unknown. Read for every agent: anyone may read any agent's promises.
+   */
+  commitments?: ProfileCommitmentsSummary | null;
+  /**
+   * How this agent wakes on its own, or `null` while unknown. Read for every
+   * agent: anyone may read any agent's heartbeat (spec `heartbeats` §7.6).
+   */
+  heartbeat?: Pick<HeartbeatStatus, 'enabled' | 'wake' | 'skippedReason' | 'nextBeatAt'> | null;
+  /**
+   * The moment "next in 12 min" is read from, as epoch ms. Passed in by a
+   * ticking caller so the row moves with the clock; defaults to now.
+   */
+  now?: number;
+}
+
+/** An agent's promises, as the Commitments row wants them. */
+export interface ProfileCommitmentsSummary {
+  /** Promises still open. */
+  open: number;
+  /** Open promises past their due date. */
+  overdue: number;
 }
 
 /**
@@ -261,6 +291,42 @@ function roomsRow(ctx: ProfileRowsContext): ProfileRowModel {
   };
 }
 
+/**
+ * The Commitments row: how many promises are open, and how many are overdue.
+ * Drawn on every agent's profile, because anyone may read any agent's list.
+ */
+function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const summary = ctx.commitments;
+  return {
+    id: 'commitments',
+    kind: 'nav',
+    label: 'Commitments',
+    value: countValue(summary?.open, 'open', 'open'),
+    ...(summary && summary.overdue > 0 ? { meta: `${summary.overdue} overdue` } : {}),
+    page: 'commitments',
+  };
+}
+
+/**
+ * The Heartbeat row: how this agent wakes, and when it next checks in. Drawn
+ * on every agent's profile, like Commitments.
+ */
+function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const status = ctx.heartbeat;
+  const meta =
+    status?.enabled && status.wake === 'timed'
+      ? nextCheckMeta(status.nextBeatAt, new Date(ctx.now ?? Date.now()))
+      : undefined;
+  return {
+    id: 'heartbeat',
+    kind: 'nav',
+    label: 'Heartbeat',
+    value: status ? wakeRowValue(status) : null,
+    ...(meta ? { meta } : {}),
+    page: 'heartbeat',
+  };
+}
+
 /** Another person on this install: what they do, what they own, where they are. */
 function personRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const rows: ProfileRowModel[] = [];
@@ -287,7 +353,8 @@ function runsOnValue(member: TeamMember): string | null {
 }
 
 /**
- * What this agent has been doing: its conversations, its schedules, its rooms.
+ * What this agent has been doing: its conversations, its schedules, its rooms,
+ * and every action on record.
  *
  * The same three rows for an agent you manage and for DorkBot — what DorkBot
  * withholds is its identity, not its work.
@@ -316,6 +383,8 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
       page: 'tasks',
     });
   }
+  rows.push(commitmentsRow(ctx));
+  rows.push(heartbeatRow(ctx));
   rows.push(roomsRow(ctx));
   // No count on this one, deliberately. Everything above answers "how much of
   // this exists"; this answers "what has it told me", and the number that would
@@ -327,6 +396,9 @@ function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
     value: null,
     page: 'notifications',
   });
+  // What it did, and what was done to it, from the audit log. No value: a count
+  // of every recorded action is a number nobody acts on.
+  rows.push({ id: 'activity', kind: 'nav', label: 'Activity', value: null, page: 'activity' });
   return rows;
 }
 
@@ -344,6 +416,14 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
       // than the fact it replaced.
       value: ctx.facts?.personality ?? null,
       pick: 'personality',
+    },
+    // Who gets this agent's report and its escalations (spec `heartbeats` §4).
+    {
+      id: 'reports-to',
+      kind: 'pick',
+      label: 'Reports to',
+      value: ctx.reportsTo ?? null,
+      pick: 'reports-to',
     },
   ];
   if (folder) {
@@ -433,6 +513,8 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
       rows: [
         { id: 'about', kind: 'text', label: 'About', value: ctx.description ?? null },
         { id: 'runs-on', kind: 'text', label: 'Runs on', value: runsOnValue(member) },
+        commitmentsRow(ctx),
+        heartbeatRow(ctx),
         roomsRow(ctx),
       ],
     },

@@ -45,7 +45,7 @@ import {
   type McpOAuthProviderContext,
 } from './agent-mcp-oauth-provider.js';
 import { McpOAuthSecretStore, type StoredMcpTokens } from './agent-mcp-oauth-secret-store.js';
-import { classifySigninFailure, McpSigninStartError } from './mcp-signin-failure.js';
+import { classifySigninFailure, McpSigninStartError } from './capabilities/mcp-signin-failure.js';
 import {
   McpTokenRefresher,
   attemptTokenRefresh,

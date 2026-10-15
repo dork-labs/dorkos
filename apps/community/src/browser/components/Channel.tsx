@@ -18,8 +18,12 @@ import type { Agent, Channel as ChannelType, Entry, Member } from '../types.js';
 import { EntryCard } from './EntryCard.js';
 import type { RemovalRequest } from './EntryRemoval.js';
 import { useChannelChanges } from './channel-changes.js';
+import { mergeEntries, replaceEntries } from './channel-entries.js';
+import { PostingStanding } from '../moderation/PostingStanding.js';
+import { createUploadReuse } from '../uploads/upload-reuse.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
+type ErrorAction = 'reload' | 'retry-send' | 'remove-file' | null;
 type MemberDirectoryPage = { members: Member[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
 type ThreadSummaries = { threads: CommunityWireThreadSummary[] };
@@ -37,17 +41,6 @@ type Props = {
   /** When this community's history was imported; channels from before it say so at the top. */
   importedAt?: string | null;
 };
-function mergeEntries(previous: Entry[], incoming: Entry[]) {
-  const byId = new Map(previous.map((entry) => [entry.id, entry]));
-  for (const entry of incoming) byId.set(entry.id, entry);
-  return [...byId.values()].sort((a, b) => a.seq - b.seq);
-}
-/** Replace the entries already shown with their changed versions; never add one. */
-function replaceEntries(previous: Entry[], changed: ReadonlyMap<string, Entry>) {
-  return previous.some((entry) => changed.has(entry.id))
-    ? previous.map((entry) => changed.get(entry.id) ?? entry)
-    : previous;
-}
 /** Render channel history, live events, threads and composition. */
 export function ChannelView({
   communityId,
@@ -66,13 +59,14 @@ export function ChannelView({
   const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<number | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [uploads] = useState(() => createUploadReuse(upload));
   const [rejectedFile, setRejectedFile] = useState<File | null>(null);
-  const [errorAction, setErrorAction] = useState<'reload' | 'retry-send' | 'remove-file' | null>(
-    null
-  );
+  const [errorAction, setErrorAction] = useState<ErrorAction>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Counts refused posts, so what holds a post is read again after each one, even a repeat.
+  const [refusals, setRefusals] = useState(0);
   const [livePaused, setLivePaused] = useState(false);
   // Bumped to open the live stream again after the server refused it outright.
   const [streamAttempt, setStreamAttempt] = useState(0);
@@ -456,9 +450,7 @@ export function ChannelView({
       const attachmentIds: string[] = [];
       for (const file of files) {
         uploadingFile = file;
-        attachmentIds.push(
-          await upload(channel.id, file, `${key}:${attachmentIds.length}`, setProgress)
-        );
+        attachmentIds.push(await uploads.attach(channel.id, file, setProgress, !!pendingKey));
       }
       const body = {
         text: text.trim() || 'Shared a file',
@@ -471,6 +463,7 @@ export function ChannelView({
         setReplies((previous) => mergeEntries(previous, [posted.entry]));
         seeReplies([posted.entry]);
       } else setEntries((previous) => mergeEntries(previous, [posted.entry]));
+      uploads.forget(files);
       setText('');
       setFiles([]);
       setPendingKey(null);
@@ -480,6 +473,7 @@ export function ChannelView({
       onChanged();
     } catch (cause) {
       setError(describeError(cause));
+      setRefusals((count) => count + 1);
       setProgress(null);
       if (
         cause instanceof RequestError &&
@@ -642,6 +636,11 @@ export function ChannelView({
             void submit();
           }}
         >
+          <PostingStanding
+            channelId={channel.id}
+            exempt={me.role !== 'member'}
+            revision={refusals}
+          />
           <Label htmlFor="message" className="sr-only">
             Message #{channel.name}
           </Label>

@@ -18,8 +18,8 @@
  *
  * Pure and descriptor-shaped on purpose: no hooks, no queries. The caller
  * resolves the descriptor from the runtime's capability profile and passes it
- * in, which is what lets one rule serve the status line, the banner, the scope
- * note, and the session rail.
+ * in, which is what lets one rule serve the status line, the scope note, and
+ * the session rail.
  *
  * ## Why `shared` and not `apps/client`
  *
@@ -139,7 +139,7 @@ export function isTightening(
  *
  * Both halves must hold, the same two ranks {@link isTightening} reads. One
  * deliberate exception, the one {@link isDivergent} and
- * {@link needsConsentRitual} already make: a mode that can only READ is judged
+ * {@link actsWithoutAsking} already make: a mode that can only READ is judged
  * on reach alone. It never asks because it has nothing to ask about — Codex's
  * read-only sandbox declares `asks: 'never'` for exactly that reason — and
  * ranking that as "asks less than Accept edits" would put the safest mode on
@@ -219,10 +219,9 @@ export function isDivergent(descriptor: PermissionModeDescriptor): boolean {
 /**
  * Whether a mode hands the agent the keys — runs any tool, anywhere, without
  * asking. The semantic replacement for the old id list, and the authoritative
- * answer wherever the runtime's profile is in hand: the standing banner, the
- * status line's severity, and the scope note beside every mode picker must all
- * agree, or one session warns on one surface and looks ordinary on another
- * (DOR-482, DOR-463, DOR-501).
+ * answer wherever the runtime's profile is in hand: the status line's severity
+ * and the scope note beside every mode picker must agree, or one session warns
+ * on one surface and looks ordinary on another (DOR-482, DOR-463, DOR-501).
  *
  * @param descriptor - A mode as its runtime declared it.
  */
@@ -253,53 +252,34 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
 }
 
 /**
- * Whether choosing this mode should ask the person first — the rule the consent
- * door is built on (spec `trust-dial`, decision 5, widened 2026-08-01).
+ * Whether this mode acts without ever stopping to ask: the autonomy stop,
+ * whatever it can reach, or any mode that never asks and can do more than read.
  *
  * True for two shapes, and they are one question asked twice:
  *
- * 1. **The autonomy stop**, whatever it can reach. It is the position a person
- *    deliberately takes, and consent is about the position.
+ * 1. **The autonomy stop**, whatever it can reach.
  * 2. **Any mode that never asks and can do more than read**, wherever its
  *    runtime filed it. Codex's middle stop is the live case: `workspace-write`
- *    sits at "act, ask when risky" and runs shell commands with no way to pause
- *    and ask. Nothing about the dial's position makes that walk-back-able, so
- *    gating the position alone let it in through a door held open.
+ *    sits at "act, ask when risky" and runs shell commands with no way to pause.
  *
  * `reach: 'read'` is excluded for the reason {@link isDivergent} excludes it: a
- * mode that can only read never asks because it has nothing to ask about, and a
- * consent dialog in front of the safest setting on offer is how a consent dialog
- * stops being read.
+ * mode that can only read never asks because it has nothing to ask about.
  *
- * ## Why this is not composed from the predicates beside it
+ * It once decided which mode changes needed a consent ritual first; that
+ * ritual is retired (ADR 261006-225605: full power is the default, and the
+ * audit trail is the record). What still reads it: the rule that no runtime is
+ * BORN at such a mode (`runtimeConformance`), the "Always allow" card that may
+ * not adopt one for a whole session, `session_start`'s rule that such a level
+ * is named rather than inherited, and the scope notes that say what such a mode
+ * covers.
  *
- * {@link isBypassSemantics} is this same never-asking shape narrowed to
- * `reach: 'everything'` — a strict subset of clause 2, so OR-ing it in would add
- * a term that can never change the answer. Widening THAT predicate instead is
- * the tempting shortcut and the wrong one: it drives the standing banner and the
- * mark on a session's row, and a mode confined to the workspace earns neither.
- * {@link isUnattendedAutonomy} is
- * built on that one and was left where it stood for the same reason: widening a
- * door decides what a person is asked before choosing, and widening an always-on
- * banner decides what a standing alarm is for. Three questions, three answers,
- * allowed to disagree.
- *
- * ## Who consumes it
- *
- * The server's door (`PATCH /api/sessions/:id`, which answers `428
- * AUTONOMY_ACK_REQUIRED` without an acknowledgement) and every client surface
- * that opens a mode-change dialog before sending one: the session's Trust Dial,
- * the relay binding dialog, and the scheduled-task form. All four must apply the
- * same rule, or a mode is gated on one surface and slips through on another.
- *
- * Not consumed by the `defaultTrustStop` config door: that axis stores one of
- * the dial's three STOPS, not a runtime mode, so `'autonomy'` is the only value
- * there that can mean "never asks" and its own gate stays stop-shaped
- * (`services/core/approvals/autonomy-consent.ts`).
+ * {@link isBypassSemantics} is this same shape narrowed to `reach:
+ * 'everything'`, a strict subset of clause 2; it drives a different question
+ * and is not composed from this one.
  *
  * @param descriptor - A mode as its runtime declared it.
  */
-export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolean {
+export function actsWithoutAsking(descriptor: PermissionModeDescriptor): boolean {
   if (isAutonomyStop(descriptor)) return true;
   return descriptor.asks === 'never' && descriptor.reach !== 'read';
 }
@@ -320,7 +300,7 @@ export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolea
  * gains an approval channel stops matching on the day it declares `asks` as
  * anything but `never`, with no edit here.
  *
- * The mirror of {@link needsConsentRitual}'s `reach: 'read'` exclusion: that one
+ * The mirror of {@link actsWithoutAsking}'s `reach: 'read'` exclusion: that one
  * leaves this shape alone because it is the safest thing on offer, and this one
  * exists because being safe is not the same as being understood.
  *
@@ -351,8 +331,9 @@ export interface TrustStop {
   mode: PermissionModeDescriptor;
   /**
    * Further modes the runtime declares at the same position — settings INSIDE
-   * the stop rather than stops of their own. Claude's `auto` is the only one
-   * today: it sits where "act" sits and changes how the agent decides, not how
+   * the stop rather than stops of their own. Claude has two: `auto` sits where
+   * "act" sits and changes how the agent decides, and `dontAsk` ("Never ask")
+   * sits where "ask" sits and refuses instead of asking. Neither changes how
    * far the person has let it go.
    */
   refinements: PermissionModeDescriptor[];
@@ -483,67 +464,6 @@ export function findWorkingMode(
   return descriptors.find(isWorkingMode);
 }
 
-/**
- * Whether a posture runs an agent with nobody left to ask.
- *
- * The rule the unattended-autonomy banner is built on, and the reason it is a
- * function rather than two calls at the call site: {@link isAutonomyStop} and
- * {@link isBypassSemantics} answer different questions and are allowed to
- * disagree, and on a surface nobody is watching BOTH answers are disqualifying.
- *
- * - The autonomy stop is the position a person deliberately took, behind the
- *   unattended door. Report it even if a future runtime sandboxes it — what was
- *   consented to is what should be visible.
- * - Bypass semantics is what a mode DOES. A mode that never asks and reaches
- *   everything belongs in this report whatever position its runtime filed it
- *   under; Codex's `workspace-write` is the live reminder that a runtime can put
- *   "never asks" at the middle stop.
- *
- * @param descriptor - A mode as its runtime declared it.
- */
-export function isUnattendedAutonomy(descriptor: PermissionModeDescriptor): boolean {
-  return isAutonomyStop(descriptor) || isBypassSemantics(descriptor);
-}
-
-/** Which kind of driver starts an agent turn with nobody in front of it. */
-export type UnattendedDriverKind = 'binding' | 'task';
-
-/**
- * One live driver that runs an agent without asking, on a surface nobody is
- * watching. Deliberately three small fields: enough to name the thing on a
- * banner and send a person to it, and nothing that would make this aggregate
- * expensive to compute or interesting to leak.
- *
- * There is no mode name here on purpose. The obvious fourth field is the
- * runtime's own word for the mode ("Bypass permissions"), and it was carried
- * for a while before anything rendered it. Two reasons it is gone: nothing on
- * screen needs it, and it is the WRONG vocabulary — the product speaks in the
- * dial's three stops, so a payload offering a runtime's private spelling only
- * invites a surface to print it. If a detail view ever wants one, it should
- * take the stop, not the label.
- */
-export interface UnattendedAutonomyDriver {
-  /** Which surface owns it — decides the word the banner uses and where it links. */
-  kind: UnattendedDriverKind;
-  /** The driver's own id (binding uuid, task ULID). */
-  id: string;
-  /** What to call it on screen. Never empty — the server resolves a fallback. */
-  name: string;
-}
-
-/**
- * Every unattended surface currently set to run without asking.
- *
- * The whole answer, not a page of it: the count that matters is small by
- * construction (a person has to have walked through the unattended-autonomy
- * door for each one), and a banner that could only say "some" would be the kind
- * of alarm people learn to ignore.
- */
-export interface UnattendedAutonomyState {
-  /** The live drivers, bindings first, each in its store's own order. */
-  drivers: UnattendedAutonomyDriver[];
-}
-
 /** Claude Code's Auto mode id: see `TurnPermissionLevel.auto`. */
 const AUTO_MODE_ID = 'auto';
 
@@ -616,12 +536,35 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
  * bounds the other it is returned as is; when neither does (one asks less, the
  * other reaches further — Codex's read-only default against Claude's Default),
  * the two are combined: the more frequent asking and the shorter reach, and
- * Auto only when both are Auto.
+ * Auto only when both are Auto. Either level's outsider mark is kept: the
+ * stricter of two turns' levels is one that read whatever either read.
  *
  * @param a - One level.
  * @param b - The other.
  */
 export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
+  const level = stricterPower(a, b);
+  return (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true } : level;
+}
+
+/**
+ * Whether a ceiling carries an outsider's words: it holds the runtime-default
+ * bound (a stranger, or a sender DorkOS cannot vouch for), a level recorded
+ * from a turn that read them, or nothing at all (an empty list vouches for no
+ * one).
+ *
+ * @param ceiling - The ceiling a turn was sent with.
+ */
+export function ceilingCarriesOutsider(ceiling: TurnPermissionCeiling): boolean {
+  if (!Array.isArray(ceiling)) {
+    return ceiling === 'runtime-default' || (ceiling as TurnPermissionLevel).outsider === true;
+  }
+  const bounds = ceiling as readonly TurnPermissionBound[];
+  return bounds.length === 0 || bounds.some(ceilingCarriesOutsider);
+}
+
+/** {@link stricterLevel} on asking and reach alone. */
+function stricterPower(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
   const fits = (inner: TurnPermissionLevel, outer: TurnPermissionLevel) =>
     isNoLooserThan(outer, inner) && (!inner.auto || outer.auto === true || outer.asks === 'never');
   if (fits(a, b)) return a;

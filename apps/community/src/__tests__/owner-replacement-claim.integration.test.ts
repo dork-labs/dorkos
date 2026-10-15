@@ -642,6 +642,32 @@ describe('refused claims change nothing and keep the cookie', () => {
     }
   });
 
+  it('refuses a person banned from the space', async () => {
+    // Purpose: fails if a ban can be undone by taking ownership of the space (DOR-2764).
+    const c = await ownedCommunity(plain);
+    const name = `Banned ${unique()}`;
+    const banned = await admit(plain.h, c.communityId, c.owner.cookie, {
+      name,
+      email: `${name.toLowerCase().replaceAll(' ', '-')}@member.test`,
+    });
+    await expectStatus(
+      await plain.h.call(`/api/v1/communities/${c.communityId}/members/${banned.memberId}/ban`, {
+        cookie: c.owner.cookie,
+        body: {},
+      }),
+      201,
+      'ban'
+    );
+    const { replacementId, claimToken } = await requestReplacement(plain, c);
+    await toClaimable(plain, replacementId);
+    const { cookie: claimCookie } = await preflightClaim(plain, claimToken);
+    const before = await everything(plain, c, replacementId);
+    const refused = await claim(plain, cookies(banned.cookie, claimCookie));
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).message).toBe("You can't join this space.");
+    expect(await everything(plain, c, replacementId)).toEqual(before);
+  });
+
   it('asks a person with no session to sign in, and keeps the cookie', async () => {
     // Purpose: fails if a missing session spends or drops the claim.
     const c = await ownedCommunity(plain);

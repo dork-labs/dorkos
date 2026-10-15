@@ -1,6 +1,6 @@
 import { notifySessionLookupFailed } from '@/layers/entities/session';
 import { reportClientError } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useNow, useTransport } from '@/layers/shared/model';
 import { sessionLocationTarget } from '@/layers/shared/lib';
 /**
  * One Profile — the whole surface, for every identity on this install (spec
@@ -21,9 +21,12 @@ import { useCurrentAgent } from '@/layers/entities/agent';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
+import { useCommitments } from '@/layers/entities/commitment';
+import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
+import { describeReportsTo } from '../lib/profile-reports-to';
 import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
 import {
   beneathMemberId,
@@ -97,6 +100,19 @@ export function ProfileView({
   // and must not be asked about it.
   const ownsWork = relationship === 'managed' || relationship === 'system';
   const facts = useManagedAgentFacts(member, ownsWork);
+  // The Commitments row's counts. Asked for on every agent's profile: anyone
+  // may read any agent's promises (spec `heartbeats` §12). The page it pushes
+  // reads the same key, so opening it is a cache hit.
+  const commitmentAgentId = member.agent?.manifestId;
+  const commitments = useCommitments(
+    { agentId: commitmentAgentId ?? '' },
+    { enabled: Boolean(commitmentAgentId) }
+  );
+  // The Heartbeat row's words, read for every agent for the same reason. The
+  // page reads the same key live, so opening it is a cache hit too.
+  const heartbeat = useAgentHeartbeat(commitmentAgentId ?? null);
+  // Ticks the row's "next in 12 min", which moves with no new data.
+  const now = useNow(30_000);
   // Where this agent works in the room the page is showing, when one is. Answers
   // `null` everywhere else, which is what leaves the docked home — and every
   // route that is not a room — resolving exactly as it always did.
@@ -108,6 +124,15 @@ export function ProfileView({
     description: manifest.data?.description ?? null,
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
     facts,
+    reportsTo: manifest.data ? describeReportsTo(manifest.data, roster, member).label : null,
+    commitments: commitments.data
+      ? {
+          open: commitments.data.filter((c) => c.state === 'open').length,
+          overdue: commitments.data.filter((c) => c.overdue).length,
+        }
+      : null,
+    heartbeat: heartbeat.data ?? null,
+    now,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
@@ -142,7 +167,13 @@ export function ProfileView({
       return;
     }
     try {
-      void navigate(await sessionLocationTarget(transport, target.projectPath));
+      const destination = await sessionLocationTarget(transport, target.projectPath);
+      const effectiveRuntimeId = member.agent?.effectiveRuntimeId;
+      void navigate(
+        effectiveRuntimeId
+          ? { ...destination, search: { ...destination.search, runtime: effectiveRuntimeId } }
+          : destination
+      );
     } catch (error) {
       reportClientError(transport, error);
       notifySessionLookupFailed(target.projectPath);

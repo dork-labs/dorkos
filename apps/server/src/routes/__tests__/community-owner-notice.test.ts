@@ -11,7 +11,6 @@ import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
@@ -27,6 +26,10 @@ vi.mock('../../services/rooms/index.js', () => ({
 vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: 'author-a' }),
 }));
+// The `/api` chain these routes run behind reads login and the host allowlist from config.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined) },
+}));
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
@@ -39,9 +42,11 @@ const adapters = vi.hoisted(() => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: (ref: string, owner: string) => adapters.make!(ref, owner),
   getRemotePairingService: vi.fn(),
+  getRemoteWakePolicy: () => ({ get: vi.fn(), set: vi.fn() }),
 }));
 
-import { createCommunityConnectionsRouter } from '../community-connections.js';
+import { createCommunityConnectionsRoutes } from '../community-connections.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import { RemoteCommunityPairingService } from '../../services/communities/remote/pairing-service.js';
 import { RemoteCommunityAdapter } from '../../services/communities/remote/remote-community-adapter.js';
@@ -255,18 +260,18 @@ async function router(
     return { notification: payload, deduped: false };
   });
   announcers.push(announcer);
-  const app = express();
-  app.use(
-    '/api/community-connections',
-    createCommunityConnectionsRouter(
-      service,
-      undefined,
-      new CommunityAttentionCache(),
-      noticeCache,
-      announcer
-    )
-  );
-  const server = app.listen(0, '127.0.0.1');
+  const server = createServer(
+    honoGroupListener({
+      path: '/api/community-connections',
+      routes: createCommunityConnectionsRoutes(
+        service,
+        undefined,
+        new CommunityAttentionCache(),
+        noticeCache,
+        announcer
+      ),
+    })
+  ).listen(0, '127.0.0.1');
   await once(server, 'listening');
   openServers.push(server);
   return server;

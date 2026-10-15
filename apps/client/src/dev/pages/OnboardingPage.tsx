@@ -2,17 +2,19 @@ import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ONBOARDING_SECTIONS } from '../playground-registry';
 import { OnboardingFlowShowcases } from '../showcases/OnboardingFlowShowcases';
 import { RuntimeSetupShowcases } from '../showcases/RuntimeSetupShowcases';
+import { TrustNoticeShowcases } from '../showcases/TrustNoticeShowcases';
 
 /** Dedicated onboarding flow playground page with full flow and individual step showcases. */
 export function OnboardingPage() {
   return (
     <PlaygroundPageLayout
       title="Onboarding"
-      description="Full interactive onboarding flow, individual step previews, and supporting components."
+      description="The first run, each of its screens and states, and the #team chips it lands on."
       sections={ONBOARDING_SECTIONS}
     >
       <OnboardingFlowShowcases />
       <RuntimeSetupShowcases />
+      <TrustNoticeShowcases />
     </PlaygroundPageLayout>
   );
 }

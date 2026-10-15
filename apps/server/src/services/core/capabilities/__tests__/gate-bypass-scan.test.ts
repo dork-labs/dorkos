@@ -134,25 +134,39 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/operator/config-patch.ts':
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
       'index.ts':
-        'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+        'the boot permissions writer and profile route setter, at boot or behind the profile route (logConfigWrite records the guarded fixed-section writes)',
+      'startup/telemetry.ts':
+        'records only the first-run telemetry notice at boot; the captured pre-notice gate keeps sends off, and logConfigWrite records the fixed lastPromptedVersion write',
+      'startup/marketplace.ts':
+        'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
         'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
       'routes/tunnel.ts':
         'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
-      'services/runtimes/connect/doe-setup-router.ts':
-        'PUT /doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode` with `off` writes `tunnel.enabled: false`, exactly as `POST /api/tunnel/stop` does, and only after the cookie, trusted-caller and local-caller bars; it only ever narrows (logConfigWrite: "turning remote access off")',
+      'routes/runtimes-doe-setup.ts':
+        'PUT /api/runtimes/doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup. Moved with its routes from services/runtimes/connect/doe-setup-router.ts when they left Express (DOR-2802); the bars run on the request facts the Hono chain resolved, the same ones the Express pair carried',
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
-      'services/core/auth/cloud-link.ts':
-        'stores the token this instance was linked with, behind the link flow (logConfigWrite: "the account link" / "unlinking this instance")',
+      'services/core/auth/cloud-link-config.ts':
+        'stores the token this instance was linked with, behind the link flow; an unlink, and a new key replacing a held one, also narrow `cloud.remote` with `withdrawnRemoteState` (logConfigWrite: "the account link" / "unlinking this instance")',
       'services/core/auth/seed-legacy-mcp-key.ts':
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
+      'services/core/remote/remote-state.ts':
+        'the one writer of `cloud.remote` (DOR-2086), behind `updateRemoteState(`, whose callers are pinned in their own entry below. It spreads the stored `cloud` section and replaces only `remote`, validates the whole record (a raw secret fails the reference pattern; `managed` needs an active enrolment), and never reads or writes `tunnel` (logConfigWrite: the caller-named subsystem)',
       'services/shapes/shape-services.ts':
         'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
+      'services/heartbeats/triage/triage-mount.ts':
+        'records what a PERSON answered to the one-time "Run cheap checks on DorkOS credits?" offer (spec `heartbeats` §6.3): `heartbeats.triageOnCredits` is operator-only and reached only from `PUT /api/heartbeats/triage-credits` in `routes/heartbeat-triage.ts`, behind errorRefusalUnlessOwner, so no agent can say yes; every answer leaves a `heartbeat.config_changed` audit row',
       'services/harness/hook-consent.ts':
         'records what a PERSON decided about a package hook — a yes from the approval card or from `dorkos harness sync --fix --allow-hooks`, a no from the card, and a revoke from `dorkos harness hooks --revoke`. Both leaves (`harness.approvedHooks`, `harness.refusedHooks`) are operator-only, and the approval route is the gate in front of the card (DOR-522, DOR-1849)',
       'services/harness/global-scope.ts':
         'records which agent tools a PERSON chose to share their all-projects packages with — written only by `dorkos harness global --enable` and `--disable`, two explicit verbs somebody types, and never by a read-only path or by the boot pass, which cannot ask and does not (DOR-1924). Both leaves (`harness.global.harnesses`, `harness.global.askedAt`) are operator-only and sit under the `reach` stake, because the list is what decides whether DorkOS puts a link in a home directory at all (logConfigWrite: "dorkos harness global --enable" / "dorkos harness global --disable")',
+      'services/extensions/extension-scaffold-approval.ts':
+        'approves the extension an agent just scaffolded with `create_extension`, and only under the Trusted posture (ADR 261006-225605 item 5): never an id the person dismissed, and path- and permission-bound, so a copy elsewhere or a widened manifest still waits. Moved out of extension-manager.ts (Hard Rule 9) (logConfigWrite: "approving an extension an agent created")',
+      'services/mesh/seed-open-mesh.ts':
+        'a boot step no request reaches: once per install it opens the mesh between our own agents and stamps `permissions.trustedStoresAppliedAt`, a bookkeeping leaf that grants nothing (spec `trusted-by-default-flip` §5.3)',
       'services/extensions/extension-manager.ts':
         'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
     },
@@ -161,9 +175,11 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'stores an encrypted endpoint-bound DorkOS API key and updates its providers/runtimes config references',
     call: 'storeDoeCredential(',
     allowed: {
-      'services/runtimes/connect/doe-setup-router.ts':
-        'POST /doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key',
+      'routes/runtimes-doe-setup.ts':
+        'POST /api/runtimes/doe/credential runs the same loopback and refuseUnlessAccountOwner bars before the encrypted store is touched; the helper audits both changed config sections without logging the plaintext key. Moved with its routes from services/runtimes/connect/doe-setup-router.ts (DOR-2802)',
       'services/runtimes/connect/doe-credentials.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        'POST /api/onboarding/first-run saves the key a person typed in the Own AI list, after the same loopback and refuseUnlessAccountOwner bars as POST /doe/credential, and only once the key passed `validateDoeSecret` and the service listed models with it. Its other writes (the default runtime, the DorkOS model setup, the credits record, the onboarding record, whose `firstRunPath`, `priorRuntime`, `welcomeEntryId`, `completedAt` and `dismissedAt` are operator-only) go through `services/core/onboarding/first-run.ts`, one call at a time, each leaving a logConfigWrite line (spec `one-minute-onboarding` §4.1)',
     },
   },
   {
@@ -443,9 +459,205 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/shapes.ts':
         'the cockpit REST route — runs the tier gate first, and it is the ONLY entry point an agent can reach (DOR-625)',
-      'index.ts':
+      'startup/marketplace.ts':
         'the marketplace update hook: re-applies the ACTIVE Shape in place after an update replaced it. The name is read from config, never from a caller, and reaching it at all requires already having cleared the install gate',
       'services/shapes/apply-shape.ts': 'the definition itself',
+    },
+  },
+  {
+    // DOR-2086. The marker that lets one Cloud command open, close, rotate or
+    // revoke managed remote access. `cloud-authority.ts` explains why one
+    // watched token is exhaustive for it: the class is not exported.
+    what: 'mints the marker that lets a Cloud command act on managed remote access',
+    call: 'mintCloudAuthority(',
+    allowed: {
+      'services/core/capabilities/cloud-authority.ts': 'the definition itself',
+      'services/core/remote/command-dispatcher.ts':
+        'the command dispatcher, its only caller: it mints once per command read from the instance-authenticated stream, under the link context the stream was opened with, only after the command is journaled; the mint itself refuses a stale link, a non-authorizing kind, a missing lease and an absent enrolment, and `inbox_pending` never reaches it',
+    },
+  },
+  {
+    // DOR-2086. Opening managed forwarding publishes this computer at a Cloud
+    // address. `TunnelManager.startManaged` is the door: it queues the open
+    // behind the person's own tunnel and hands it to `ManagedForwarding`, which
+    // runs `canExpose()` and the edge-proof check itself, so this pins who may
+    // ASK. The two entries after the next pin the layer beneath it.
+    what: 'opens managed forwarding, publishing this computer at the address Cloud issued',
+    call: 'tunnelManager.startManaged(',
+    allowed: {
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `open` command, or the listener switch of a confirmed `rotate`, holding a `CloudAuthority` for that verb that it re-checks with `isStillValid()` immediately before the call; never from a request',
+    },
+  },
+  {
+    // DOR-2086. Changing which hostnames an open managed session serves. It can
+    // only ever serve hostnames the open credential allows, but adding one
+    // publishes this computer at another address, so who may ask is pinned.
+    what: 'changes which Cloud-issued hostnames managed forwarding serves',
+    call: 'tunnelManager.applyHosts(',
+    // No caller, on purpose: a host change rides `startManaged`, which diffs
+    // the host set of an open session itself. A caller added later has to be
+    // listed here with the gate it runs.
+    allowed: {},
+  },
+  {
+    // DOR-2086. The layer beneath `tunnelManager.startManaged(`. Reached around
+    // `TunnelManager`, an open skips the queue that keeps it from overlapping
+    // the person's own tunnel, so only `TunnelManager` may call it.
+    what: "opens managed forwarding beneath the queue that keeps it apart from the person's own tunnel",
+    call: 'managedForwarding.open(',
+    allowed: {
+      'services/core/tunnel-manager.ts':
+        '`startManaged`, inside the queue every open of either kind runs through, with the close count read when the open was asked for',
+    },
+  },
+  {
+    what: "changes managed forwarding's hostnames beneath the queue",
+    call: 'managedForwarding.applyHosts(',
+    allowed: {
+      'services/core/tunnel-manager.ts': '`applyHosts`, inside the same queue as every open',
+    },
+  },
+  {
+    // A second `ManagedForwarding` would be a managed session `TunnelManager`
+    // cannot see, so nothing would keep it apart from the person's own tunnel.
+    what: 'builds another managed forwarding session holder',
+    call: 'new ManagedForwarding(',
+    allowed: {
+      'services/core/tunnel-manager.ts': 'the one holder, owned by the `tunnelManager` singleton',
+    },
+  },
+  {
+    // Likewise a second `TunnelManager`: its own managed session and its own
+    // queue, invisible to the one every route and shutdown path reads.
+    what: 'builds another tunnel manager, with its own remote access the app cannot see',
+    call: 'new TunnelManager(',
+    allowed: {
+      'services/core/tunnel-manager.ts': 'the module singleton, `tunnelManager`',
+    },
+  },
+  {
+    // DOR-2086. Storing a managed credential's two one-time secrets.
+    what: 'stores a managed tunnel credential and its edge proof secret',
+    call: 'remoteCredentials.put(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts':
+        'the enrolment ceremony a person started on this computer: stores what Cloud issued only after a person approved on Cloud and only while the captured link and setup are still current, reached through `startEnrolment(` (pinned below to the setup route and its cookie, trusted-caller, local-caller and login bars). The references reach config only after Cloud confirmed the store',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `rotate` command, holding a `CloudAuthority` for `rotate` it re-checks immediately before; the replacement is stored under its own new id, and its references reach config only after Cloud confirmed it',
+    },
+  },
+  {
+    // DOR-2086. Forgetting one. Only ever narrows reach.
+    what: 'forgets a managed tunnel credential and its edge proof secret',
+    call: 'remoteCredentials.delete(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts':
+        'local withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar) and the unlink step the server runs itself, and a setup that went stale or was not confirmed forgetting what it stored: forgetting narrows only',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `revoke` command, the replaced credential after a confirmed `rotate`, or a replacement that was not confirmed, each holding a `CloudAuthority`; forgetting narrows only',
+    },
+  },
+  {
+    // DOR-2086. Reading the managed credential's secrets, just before
+    // forwarding. Not a mutation, but it hands out the tunnel value and the
+    // edge secret, so who may ask is pinned like the writes.
+    what: 'reads the managed tunnel credential and its edge proof secret out of the encrypted store',
+    call: 'remoteCredentials.resolve(',
+    allowed: {
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `open` or `rotate` switch, holding a `CloudAuthority` it re-checks immediately before, resolving the secrets it hands to `tunnelManager.startManaged(` and nothing else',
+    },
+  },
+  {
+    // DOR-2086. A second store over the same secrets would be a door this scan
+    // could not see, so constructing one is watched too.
+    what: 'builds another handle on the managed credential store',
+    call: 'new RemoteCredentials(',
+    allowed: {
+      'services/core/remote/remote-credentials.ts': 'the module singleton, `remoteCredentials`',
+    },
+  },
+  {
+    // DOR-2086. The writer of `cloud.remote`: mode, enrolment and credential
+    // references. The general config door refuses the block outright
+    // (`USE_REMOTE_ACCESS_API`), so this is the only way in.
+    what: 'writes the managed remote access record: the selected mode, the enrolment a person approved, and the credential references',
+    call: 'updateRemoteState(',
+    allowed: {
+      'services/core/remote/remote-state.ts': 'the definition itself',
+      'services/core/remote/managed-remote-coordinator.ts':
+        'a person selecting a mode (`selectMode(`) or finishing enrolment (`startEnrolment(`) on this computer, both pinned below to the setup route and its cookie, trusted-caller and local-caller bars, with a real login for anything managed; withdrawal (`POST /api/remote-access/withdraw`, behind the cookie, trusted-caller and local-caller bars but never the login bar, so it works with login or Cloud down; and the unlink step the server runs itself): mode off, enrolment and references cleared; and narrowing an enrolment recorded under another link (`withdrawnRemoteState`), which only narrows',
+      'services/core/remote/command-dispatcher.ts':
+        'a Cloud `rotate` or `revoke` command recording the credential it switched to or forgot, holding a `CloudAuthority` it re-checks immediately before; it writes only the credential fields, never the mode or the enrolment',
+    },
+  },
+  {
+    // DOR-2086 S5. Reconnecting Cloud's command stream at boot: once it runs,
+    // Cloud's `open` commands can publish this computer (each still behind its
+    // own `CloudAuthority` and `canExpose()`). Boot is the one automatic door,
+    // and the boot rule decides whether it may.
+    what: "reconnects DorkOS Cloud's command stream at boot, through which Cloud may later open managed access",
+    call: 'managedRemoteCommands.boot(',
+    allowed: {
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`: an explicit TUNNEL_ENABLED holds it down, a saved managed choice under an active enrolment lets it reconnect); the stream still checks the flag, availability, the enrolment under the current link, a stored credential and `canExpose()` before connecting, and opens nothing itself",
+    },
+  },
+  {
+    // A second command service would be a second stream and dispatcher the
+    // shutdown and withdrawal paths never stop.
+    what: "builds another holder of DorkOS Cloud's command stream",
+    call: 'new ManagedCommandService(',
+    allowed: {
+      'services/core/remote/managed-command-service.ts':
+        'the module singleton, `managedRemoteCommands`',
+    },
+  },
+  {
+    // DOR-2086 S5. Opening the person's own tunnel with nobody asking, at boot.
+    what: "opens the person's own ngrok tunnel at boot, publishing this computer",
+    call: 'autostartOwnTunnel(',
+    allowed: {
+      'services/core/remote/remote-boot.ts':
+        'the definition itself: it opens only when the boot rule says so and `canExpose()` allows it',
+      'index.ts':
+        "the server's own start, with the boot rule's answer (`currentRemoteBootPlan`), never from a request",
+    },
+  },
+  {
+    // DOR-2086 S5. Who hears every managed request the session gate admitted.
+    // It reads nothing secret (the ingress already stripped the edge proof), but
+    // it drives the idle close, so a second listener is not allowed in silently.
+    what: 'hears every managed request the session gate admitted, which drives the activity count and the idle close',
+    call: 'setManagedAdmissionListener(',
+    allowed: {
+      'services/core/remote/ingress-mark.ts': 'the definition itself',
+      'services/core/remote/managed-command-service.ts':
+        'the one activity window, `managedActivity`, which only counts and closes managed access gently when idle; closing only narrows',
+    },
+  },
+  {
+    // DOR-2086. Starting managed setup: it asks Cloud for an enrolment request
+    // and, once a person approves it there, stores a credential and selects
+    // managed mode. A person's, at this computer, so its one caller is pinned.
+    what: 'starts DorkOS remote access setup, which ends in a stored credential and managed mode once a person approves on Cloud',
+    call: 'startEnrolment(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/enrolment`, behind the cookie bar under login, the trusted-caller bar, the local-caller bar and `canExpose`, in that order',
+    },
+  },
+  {
+    // DOR-2086. Choosing managed mode is a person's choice of who can reach
+    // this computer; choosing off or byo closes managed access.
+    what: "records the remote access mode a person chose, closing the other kind's listeners",
+    call: 'selectMode(',
+    allowed: {
+      'services/core/remote/managed-remote-coordinator.ts': 'the definition itself',
+      'routes/remote-access.ts':
+        '`POST /api/remote-access/mode`, behind the cookie bar under login, the trusted-caller bar and the local-caller bar, and `canExpose` for `managed`',
     },
   },
   {
@@ -474,6 +686,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/workspaces.ts':
         'a person making a workspace over HTTP (DOR-2335). It does not skip a gate: a person is SHOWN what a new workspace brings (409 `workspace_needs_review`) and makes it with the review hash they saw; everyone else gets an approval card',
+      'routes/session-decision-caller.ts':
+        'the workspace caller helper reads trustedCaller from resolved request authority only; the session route still reviews a new workspace or gives an agent a remembered approval card',
       'routes/sessions.ts':
         'a turn that names a workspaceKey (DOR-2335): a person is shown a new workspace, never let through unseen (one that needs review is skipped and the turn runs where it would have); everyone else gets a remembered card',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
@@ -485,6 +699,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
+      'routes/remote-access.ts':
+        'a person starting DorkOS remote access setup or choosing a remote access mode on this computer (DOR-2086). Gated: the cookie bar under login, then this one, then `isLocalCaller` (a phone over a tunnel or managed access is not at this computer), then `canExpose` for anything managed. `POST /withdraw` runs the cookie, trusted-caller and local-caller bars but never `canExpose`, so it works with login or Cloud down; `POST /close` runs no bar on purpose: it only narrows',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },
@@ -577,6 +793,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/operator/operator-tool-handlers.ts':
         '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
       'services/core/operator/agent-updater.ts': 'the definition itself',
+      'routes/onboarding.ts':
+        "`POST /api/onboarding/first-run` writes DorkBot's `runtime` and nothing else, to the runtime the person picked on the Welcome screen or back to the one before it, after the loopback and refuseUnlessAccountOwner bars, which refuse an agent in every posture (spec `one-minute-onboarding` §4.1)",
     },
   },
   // `meshCore.update(` and its spellings. A mesh handle is named `mesh` or
@@ -702,6 +920,23 @@ function callersOf(call: string): string[] {
   }
   return hits.sort();
 }
+
+describe('the managed credential store names (DOR-2086)', () => {
+  it('appear in exactly one production module', async () => {
+    // `remote-credentials.ts` is the only place a managed secret's store name
+    // is built. A second module spelling `remote-tunnel-` or `remote-edge-`
+    // could read or overwrite a managed secret around every entry above. Read
+    // RAW, comments and strings included: here the string IS the door.
+    const hits: string[] = [];
+    for (const file of SOURCES) {
+      const text = await readFile(file, 'utf-8');
+      if (text.includes('remote-tunnel-') || text.includes('remote-edge-')) {
+        hits.push(path.relative(SERVER_SRC, file));
+      }
+    }
+    expect(hits.sort()).toEqual(['services/core/remote/remote-credentials.ts']);
+  });
+});
 
 describe('no ungated path reaches a protected effect', () => {
   it('found the server sources to scan', () => {

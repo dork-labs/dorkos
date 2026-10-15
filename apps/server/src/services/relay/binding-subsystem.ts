@@ -272,8 +272,7 @@ async function resolveSessionCreatorRuntime(
  *
  * Used by every chat notice that did not come from the binding router — most
  * importantly the one for a turn that died after acceptance, whose subject is
- * the failed envelope's `replyTo` and therefore, on `relay_send`, a string the
- * model chose. Resolving it here means a chat with no binding, or one whose
+ * the failed envelope's `replyTo` and therefore a string the sender chose. Resolving it here means a chat with no binding, or one whose
  * binding is paused, is answered with `null`: silence.
  *
  * @param bindingStore - The store to resolve chat subjects against.

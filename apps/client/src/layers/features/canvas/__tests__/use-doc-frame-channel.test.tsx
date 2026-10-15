@@ -2,7 +2,7 @@
 /** Mechanical mount ordering; original recovery/facade authority has separate controls. */
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { useRef } from 'react';
+import { StrictMode, useLayoutEffect, useRef } from 'react';
 import { createMockTransport } from '@dorkos/test-utils';
 import { createDocChannelOwner } from '../model/doc-channel-owner';
 import { emptyDocChannelView, projectDocChannelPort } from '../model/doc-channel-view';
@@ -351,4 +351,254 @@ it('renews a quarantined original loaded frame only after same-birth private HTT
     remember(cause);
   }
   if (failure) throw failure.cause;
+});
+
+async function settleFreshPreparation() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+const freshLoadHandlers = new WeakMap<HTMLIFrameElement, () => boolean>();
+function FreshMount({ documentId = 'doc', eligible = true, retireSiblingContext = false }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const frame = useDocFrameChannel({
+    freshPhysicalFrame: true,
+    iframeRef,
+    documentId,
+    logicalUrl: '/preview',
+    reloadNonce: 0,
+    resolvedSource: '/preview',
+    previewOrigin: 'http://localhost:4242',
+    bridgeEligibility: eligible ? 'preview-listener' : null,
+  });
+  useLayoutEffect(() => {
+    if (retireSiblingContext) frame.noteFrameRetired();
+  }, [documentId, retireSiblingContext, frame.noteFrameRetired]);
+  return (
+    <iframe
+      key={frame.physicalMountKey}
+      ref={(element) => {
+        iframeRef.current = element;
+        frame.noteFrameMounted?.(element);
+        if (element) freshLoadHandlers.set(element, () => frame.noteFrameLoaded(element));
+      }}
+      title="fresh native subject"
+      src={frame.navigationSource ?? undefined}
+      onLoad={(event) => {
+        // JSDOM queues automatic iframe loads after ref attachment, unlike the
+        // browser's synchronous initial blank insertion. This mechanical fixture
+        // controls every load explicitly with fireEvent; production has no trust filter.
+        if (!event.nativeEvent.isTrusted) frame.noteFrameLoaded(event.currentTarget);
+      }}
+    />
+  );
+}
+function opaqueStableWindow() {
+  vi.spyOn(HTMLIFrameElement.prototype, 'contentDocument', 'get').mockReturnValue(null);
+  // Mechanical WindowProxy model; genuine record/baseline authority is separately controlled.
+  vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue(window);
+}
+it('captures a fresh opaque physical node before real source assignment without a blank witness', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  let sourceAtCapture: string | null | undefined;
+  const original = own.prepare.getMockImplementation()!;
+  own.prepare.mockImplementation(
+    (controller: FrameLifetimeController, observation: FrameObservation) => {
+      sourceAtCapture = screen.getByTitle('fresh native subject').getAttribute('src');
+      return original(controller, observation);
+    }
+  );
+  const mounted = render(<FreshMount />);
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(sourceAtCapture).toBe('about:blank');
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(iframe.getAttribute('src')).toBe('/preview');
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(own.attach).not.toHaveBeenCalled();
+  mounted.rerender(<FreshMount />); // Duplicate ref callback cannot remint a capture.
+  await settleFreshPreparation();
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  fireEvent.load(iframe);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+  expect(own.attach).toHaveBeenCalledTimes(1);
+  fireEvent.load(iframe);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+});
+it('does not prepare a fresh frame until the original replay is observed', async () => {
+  const own = subject();
+  fixture.doc.replayObserved = false;
+  opaqueStableWindow();
+  const mounted = render(<FreshMount />);
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  fireEvent.load(iframe);
+  expect(own.prepare).not.toHaveBeenCalled();
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(iframe.getAttribute('src')).toBe('about:blank');
+  fixture.doc.replayObserved = true;
+  mounted.rerender(<FreshMount />);
+  await settleFreshPreparation();
+  expect(screen.getByTitle('fresh native subject')).toBe(iframe);
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(iframe);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+});
+it('refuses a queued opaque old-element load after a new document mounts its own physical frame', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const mounted = render(<FreshMount documentId="old" />);
+  await settleFreshPreparation();
+  const oldFrame = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  const oldLoad = freshLoadHandlers.get(oldFrame)!;
+  mounted.rerender(<FreshMount documentId="new" />);
+  await settleFreshPreparation();
+  const newFrame = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(newFrame).not.toBe(oldFrame);
+  expect(own.prepare).toHaveBeenCalledTimes(2);
+  expect(oldLoad()).toBe(false); // Actual old currentTarget, never the synthesized new ref.
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(own.attach).not.toHaveBeenCalled();
+  fireEvent.load(newFrame);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+  expect(own.attach).toHaveBeenCalledTimes(1);
+});
+it('retires a fresh pending original load on revocation before real load delivery', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  render(<FreshMount />);
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  act(() => own.revoke());
+  fireEvent.load(iframe);
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(own.attach).not.toHaveBeenCalled();
+});
+it('changes the physical frame on transport replacement and refuses its old pending load', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const mounted = render(<FreshMount />);
+  await settleFreshPreparation();
+  const oldFrame = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  const oldLoad = freshLoadHandlers.get(oldFrame)!;
+  fixture.transport = {};
+  mounted.rerender(<FreshMount />);
+  await settleFreshPreparation();
+  const newFrame = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(newFrame).not.toBe(oldFrame);
+  expect(oldLoad()).toBe(false);
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(newFrame);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+});
+
+it('refuses reentrant revocation during preparation before assigning the original real source', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const original = own.prepare.getMockImplementation()!;
+  own.prepare.mockImplementation(
+    (controller: FrameLifetimeController, observation: FrameObservation) => {
+      const prepared = original(controller, observation);
+      own.revoke();
+      return prepared;
+    }
+  );
+  render(<FreshMount />);
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(iframe.getAttribute('src')).toBe('about:blank');
+  fireEvent.load(iframe);
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(own.attach).not.toHaveBeenCalled();
+});
+
+it('requires a fresh physical node when an existing displayed frame becomes eligible', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const mounted = render(<FreshMount eligible={false} />);
+  await settleFreshPreparation();
+  const external = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(own.prepare).not.toHaveBeenCalled();
+  mounted.rerender(<FreshMount eligible />);
+  await settleFreshPreparation();
+  const fresh = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(fresh).not.toBe(external);
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(freshLoadHandlers.get(external)!()).toBe(false);
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(fresh);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+});
+
+it('prepares after the sibling layout context retirement and before real source assignment', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  render(<FreshMount retireSiblingContext />);
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(iframe.getAttribute('src')).toBe('/preview');
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(iframe);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+  expect(own.attach).toHaveBeenCalledTimes(1);
+});
+
+it('StrictMode cancels its retired setup before the one live fresh capture and real setter', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  render(
+    <StrictMode>
+      <FreshMount />
+    </StrictMode>
+  );
+  expect(own.prepare).not.toHaveBeenCalled();
+  await settleFreshPreparation();
+  const iframe = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(iframe.getAttribute('src')).toBe('/preview');
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(iframe);
+  expect(own.complete).toHaveBeenCalledTimes(1);
+  expect(own.attach).toHaveBeenCalledTimes(1);
+});
+it('cancels queued fresh preparation on actual unmount before its microtask', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const mounted = render(<FreshMount />);
+  mounted.unmount();
+  await settleFreshPreparation();
+  expect(own.prepare).not.toHaveBeenCalled();
+  expect(own.complete).not.toHaveBeenCalled();
+});
+it('cancels queued fresh preparation on original owner revocation before its microtask', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  render(<FreshMount />);
+  act(() => own.revoke());
+  await settleFreshPreparation();
+  expect(own.prepare).not.toHaveBeenCalled();
+  expect(own.complete).not.toHaveBeenCalled();
+  expect(own.attach).not.toHaveBeenCalled();
+});
+it('cancels an old transport microtask before preparing only the new physical node', async () => {
+  const own = subject();
+  opaqueStableWindow();
+  const mounted = render(<FreshMount />);
+  const oldFrame = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  const oldLoad = freshLoadHandlers.get(oldFrame)!;
+  fixture.transport = {};
+  mounted.rerender(<FreshMount />);
+  await settleFreshPreparation();
+  const fresh = screen.getByTitle('fresh native subject') as HTMLIFrameElement;
+  expect(fresh).not.toBe(oldFrame);
+  expect(own.prepare).toHaveBeenCalledTimes(1);
+  expect(oldLoad()).toBe(false);
+  expect(own.complete).not.toHaveBeenCalled();
+  fireEvent.load(fresh);
+  expect(own.complete).toHaveBeenCalledTimes(1);
 });

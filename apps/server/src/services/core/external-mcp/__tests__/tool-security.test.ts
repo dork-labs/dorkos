@@ -52,21 +52,19 @@ import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabili
 import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
-import type { McpCapabilityDeps } from '../../../mesh/mcp-capability-deps.js';
+import type { McpCapabilityDeps } from '../../../mesh/capabilities/mcp-capability-deps.js';
 import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import { NotifyBudget } from '../../../relay/notify-budget.js';
 
 const requestTarget = swappableServer();
 
 /** Minimal McpToolDeps — only the fields registration touches are set. */
 function createMinimalDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],

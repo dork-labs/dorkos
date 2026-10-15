@@ -27,9 +27,19 @@
       "reason": "Names a hypothetical `admin.` subdomain of the PUBLIC product domain as option B, and then rejects it. The host was never provisioned, and an ADR records the options it weighed."
     },
     {
-      "path": "meta/",
+      "path": "meta/archive/positioning-202607/01-market-landscape.md",
       "rules": ["BND-301", "BND-302"],
-      "reason": "Internal strategy artifacts — positioning, the revenue model, persona economics — whose whole job is to reason about what things cost. This is a PRE-EXISTING exemption, not an endorsement: AGENTS.md says prices do not belong in this repo, and retiring or relocating the modelled pricing under meta/ is a separate decision flagged on DOR-2024, not something a CI guard should decide by going red on 100 lines."
+      "reason": "Market landscape quotes COMPETITORS' public plan prices as evidence. None of it is ours. Replaced a blanket meta/ exemption (DOR-2761): DorkOS's own modelled prices were removed from meta/ in 2026-10, so the rest of meta/ is now guarded."
+    },
+    {
+      "path": "meta/customer-voice.md",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Quotes a developer's own public post about what they spent on a third-party AI service. Not our price (DOR-2761)."
+    },
+    {
+      "path": "meta/value-architecture-applied.md",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Names a competitor's public starting price as the alternative a buyer weighs. Not our price (DOR-2761)."
     },
     {
       "path": "research/",

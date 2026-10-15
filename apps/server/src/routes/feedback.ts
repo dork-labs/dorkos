@@ -22,8 +22,11 @@
  *
  * @module routes/feedback
  */
-import express, { Router, type RequestHandler } from 'express';
+import bodyParser from 'body-parser';
+import { Hono } from 'hono';
 import { FeedbackSubmissionSchema, type FeedbackSubmission } from '@dorkos/shared/telemetry-events';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody, underMount, type BodyRule } from '../http/request-body.js';
 import {
   sendFeedback,
   resolveFeedbackIdentity,
@@ -34,13 +37,12 @@ import { getSessionTranscriptExcerpt } from '../lib/transcript-excerpt.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { SERVER_VERSION } from '../lib/version.js';
-import type { RequestUser } from '../services/core/auth/index.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
- * JSON body parser for this route alone, with a ceiling above the app-wide
- * `express.json({ limit: '1mb' })`.
+ * The JSON body rule for this group alone, with a ceiling above the app-wide
+ * 1 MB limit (`http/request-body.ts`).
  *
  * A feedback submission may carry an opt-in screenshot inline as a `data:` URL
  * (`MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN`, 850,000 chars) on top of the
@@ -53,15 +55,15 @@ const router = Router();
  * for the site's own byte cap further along, the drop-the-screenshot retry in
  * `feedback-reporter.ts`.
  *
- * **It must be mounted BEFORE the app-wide parser to have any effect** — see
- * `app.ts`, which is where the ordering lives. body-parser skips a request
- * whose body another parser already read, so the same middleware mounted on
- * this router (which `app.ts` mounts after the app-wide parser) is inert: the
- * app-wide 1 MB limit rejects the request first and this never runs. Measured,
- * not assumed — a router-local parser behind the global one returned
- * `413 entity.too.large` on a 1.4 MB body.
+ * It is a rule of the chain's body stage, chosen INSTEAD of the app-wide
+ * parser for every path under `/api/feedback`, because the body is parsed
+ * before any route runs: a parser on the route itself would come too late, and
+ * the app-wide 1 MB limit would refuse the submission first.
  */
-export const feedbackJsonParser: RequestHandler = express.json({ limit: '2mb' });
+export const feedbackBodyRule: BodyRule = {
+  matches: (_method, path) => underMount(path, '/api/feedback'),
+  parse: bodyParser.json({ limit: '2mb' }),
+};
 
 /**
  * Fold a scrubbed server-log excerpt into a validated bug submission, when the
@@ -143,20 +145,20 @@ function stripServerAuthoredFields(submission: FeedbackSubmission): FeedbackSubm
 }
 
 /** POST /api/feedback — validate the submission and forward it to the ingest. */
-router.post('/', async (req, res) => {
-  const parsed = FeedbackSubmissionSchema.safeParse(req.body);
+router.post('/', async (c) => {
+  const parsed = FeedbackSubmissionSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid feedback', code: 'INVALID_FEEDBACK' });
+    return c.json({ error: 'Invalid feedback', code: 'INVALID_FEEDBACK' }, 400);
   }
 
-  // Identity is resolved from the verified session ONLY — `res.locals.user` is
-  // set by `sessionGate` (never by anything in the request body), so a client
+  // Identity is resolved from the verified session ONLY — `c.var.user` is
+  // set by the session gate (never by anything in the request body), so a client
   // cannot spoof `reporterEmail`/`reporterName` even indirectly. `undefined`
   // when auth is off or no session exists (unchanged pseudonymous behavior), and
   // also when the dialog's "Send anonymously" flag is set — the one path that
   // withholds a verified identity on purpose (design-decisions §3): the lookup
   // is skipped entirely, so no reporter identity is ever attached.
-  const requestUser = res.locals.user as RequestUser | undefined;
+  const requestUser = c.get('user');
   const identity =
     requestUser && !parsed.data.anonymous
       ? await resolveFeedbackIdentity(requestUser.userId)
@@ -180,7 +182,7 @@ router.post('/', async (req, res) => {
   // Always 200 with an honest `ok` — a failed forward is not a client error to
   // retry; the UI reads `ok` to choose between "Sent. Thank you!" and the
   // try-again message that keeps the person's words in the form.
-  return res.json(result);
+  return c.json(result);
 });
 
 /**
@@ -189,14 +191,20 @@ router.post('/', async (req, res) => {
  * response) so the client's error state has something honest to show; never
  * a client-error status, since nothing about the request itself is invalid.
  */
-router.get('/mine', async (_req, res) => {
+router.get('/mine', async (c) => {
   try {
     const items = await listMyFeedback({ dorkHome: resolveDorkHome() });
-    return res.json(items);
+    return c.json(items);
   } catch (err) {
     logger.warn('[Feedback] Failed to read feedback history', logError(err));
-    return res.status(502).json({ error: 'Could not reach the feedback service' });
+    return c.json({ error: 'Could not reach the feedback service' }, 502);
   }
 });
+/**
+ * Claim every path under `/api/feedback`, served or not, so a request to one
+ * no route serves still gets this group's body limit before its `/api` 404,
+ * as it always had.
+ */
+router.all('*', (c) => c.notFound());
 
 export default router;

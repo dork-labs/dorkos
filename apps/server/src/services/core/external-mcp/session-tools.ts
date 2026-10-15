@@ -15,7 +15,7 @@ import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { getSessionTools } from '../../runtimes/claude-code/mcp-tools/session-tools.js';
-import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
+import { ToolAnnotationPresets } from '../mcp-tools/mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
 
 /** The external-only additions for each session tool. */

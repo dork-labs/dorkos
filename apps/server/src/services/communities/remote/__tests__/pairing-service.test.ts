@@ -2542,6 +2542,13 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
         communityId: null,
         shortName: 'my-club-2',
       });
+      // A reserved name that is not a path may belong to a space a host operator gave it to,
+      // such as the host's official space; the host's lookup decides.
+      expect(parseCommunityLink(`${origin}/dorkos`)).toEqual({
+        origin: new URL(origin),
+        communityId: null,
+        shortName: 'dorkos',
+      });
       for (const invalid of [
         `${origin}/acme/`,
         `${origin}/acme/x`,

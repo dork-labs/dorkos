@@ -11,21 +11,33 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-start-permission
  */
-import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { isNoLooserThan, needsConsentRitual } from '@dorkos/shared/permission-semantics';
-import { logError, logger } from '../../../../lib/logger.js';
+import type {
+  AgentRuntime,
+  PermissionModeDescriptor,
+  PermissionStop,
+} from '@dorkos/shared/agent-runtime';
 import {
-  AUTONOMY_ACK_REQUIRED_CODE,
-  hasStandingAutonomyAck,
-} from '../../../core/approvals/autonomy-consent.js';
+  actsWithoutAsking,
+  isNoLooserThan,
+  isSilentReadOnly,
+  resolveStopMode,
+} from '@dorkos/shared/permission-semantics';
+import { logError, logger } from '../../../../lib/logger.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { turnPermissionMode } from '../turn-permission.js';
+import {
+  readAgentExecutionDefaults,
+  resolveUnattendedDefaultStop,
+} from '../../../session/resolution/resolve-session-defaults.js';
+import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
+import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
 import type { McpToolSession } from './types.js';
 
 /**
- * The ceiling for a caller that has no chat (the external `/mcp` server): Claude
- * Code's `acceptEdits`. There is no chat level to inherit, so it keeps the limit
- * every caller had before chats could pass on their own.
+ * The ceiling for a caller that has no chat (the external `/mcp` server) and no
+ * Files & commands stop to go by: Claude Code's `acceptEdits`. There is no chat
+ * level to inherit, so it keeps the limit every caller had before chats could
+ * pass on their own. A registered agent with a stop is held to that stop
+ * instead (spec `trusted-by-default-flip` §5.2).
  */
 const NO_CHAT_CEILING_MODE = 'acceptEdits';
 
@@ -71,7 +83,11 @@ export function runningPermissionMode(
   session:
     | Pick<
         McpToolSession,
-        'permissionMode' | 'model' | 'autoModeConfirmedFor' | 'turnPermissionCeiling'
+        | 'permissionMode'
+        | 'model'
+        | 'autoModeConfirmedFor'
+        | 'turnPermissionCeiling'
+        | 'backgroundPermissionCeiling'
       >
     | undefined
 ): string | undefined {
@@ -79,10 +95,15 @@ export function runningPermissionMode(
   // own level for that turn, and must start nothing above it (spec
   // `trusted-by-default-flip` §4).
   const mode = session
-    ? turnPermissionMode({
+    ? gatePermissionMode({
         permissionMode: session.permissionMode,
         ...(session.turnPermissionCeiling !== undefined
           ? { turnPermissionCeiling: session.turnPermissionCeiling }
+          : {}),
+        // And background work an earlier ceilinged turn left running, which can
+        // call `session_start` too (`warm-ceiling.ts`).
+        ...(session.backgroundPermissionCeiling !== undefined
+          ? { backgroundPermissionCeiling: session.backgroundPermissionCeiling }
           : {}),
       })
     : undefined;
@@ -113,6 +134,12 @@ export interface CallingChat {
   permissionMode: string | null;
   /** The runtime it runs on. */
   runtime: string;
+  /**
+   * Whether the chat is SET to "Never ask", whatever its turn runs at. A
+   * stricter ceiling can hold the turn to Plan, which asks; a chat set to never
+   * ask still starts only chats that cannot ask.
+   */
+  neverAsks?: boolean;
 }
 
 /** The highest level a call may start a chat at. */
@@ -135,6 +162,8 @@ interface Ceiling {
   exact: boolean;
   /** Whether the call came from a chat, which decides how a refusal reads. */
   inChat: boolean;
+  /** Whether the calling chat never asks: set to, or running at, "Never ask". */
+  neverAsks: boolean;
 }
 
 /** The modes a registered runtime declares, or an empty list. */
@@ -175,14 +204,20 @@ async function storedModeOf(sessionId: string | null): Promise<string | null> {
  * 2. In a chat with no live mode: its stored settings row.
  * 3. Neither, or an id its runtime does not declare: that runtime's declared
  *    default, and {@link FLOOR} when even that cannot be found. Fails closed.
- * 4. No chat at all: {@link NO_CHAT_CEILING_MODE}.
+ * 4. No chat at all: the calling agent's own Files & commands stop, as the new
+ *    chat's runtime declares it; {@link NO_CHAT_CEILING_MODE} when it has none
+ *    or that runtime declares no mode at it.
  */
-async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
+async function ceilingOf(
+  chat: CallingChat | null,
+  noChat: { stop: PermissionStop | null; runtimeType: string }
+): Promise<Ceiling> {
   if (!chat) {
-    const found = declaredModes(NO_CHAT_CEILING_RUNTIME).values.find(
-      (m) => m.id === NO_CHAT_CEILING_MODE
-    );
-    const base = { callerMode: null, exact: false, inChat: false };
+    const ownStop = resolveStopMode(noChat.stop, declaredModes(noChat.runtimeType).values);
+    const found = ownStop
+      ? declaredModes(noChat.runtimeType).values.find((m) => m.id === ownStop)
+      : declaredModes(NO_CHAT_CEILING_RUNTIME).values.find((m) => m.id === NO_CHAT_CEILING_MODE);
+    const base = { callerMode: null, exact: false, inChat: false, neverAsks: false };
     return found
       ? { ...base, level: found, label: found.label, inheritId: null }
       : { ...base, level: FLOOR, label: FLOOR_LABEL, inheritId: null };
@@ -198,10 +233,16 @@ async function ceilingOf(chat: CallingChat | null): Promise<Ceiling> {
       callerMode: own.id,
       exact: true,
       inChat: true,
+      neverAsks: chat.neverAsks === true || isPersonOnlyMode(own.id),
     };
   }
   const fallback = modes.values.find((m) => m.id === modes.default);
-  const base = { callerMode: id ?? null, exact: false, inChat: true };
+  const base = {
+    callerMode: id ?? null,
+    exact: false,
+    inChat: true,
+    neverAsks: chat.neverAsks === true || isPersonOnlyMode(id ?? undefined),
+  };
   return fallback
     ? { ...base, level: fallback, label: fallback.label, inheritId: fallback.id }
     : { ...base, level: FLOOR, label: FLOOR_LABEL, inheritId: null };
@@ -220,6 +261,17 @@ function allowsAuto(ceiling: Ceiling): boolean {
 type Grant =
   { ok: true; mode: PermissionModeDescriptor } | { ok: false; error: string; code: string };
 
+/**
+ * Whether a chat that never asks may start one at this mode: only one that
+ * cannot ask either. "Never ask" refuses what Default would put to a person, so
+ * a chat it starts may not put those same calls to a person instead (DOR-2838):
+ * "Never ask" itself, or a mode that only reads and has nothing to ask about
+ * (`isSilentReadOnly`, Codex's read-only sandbox).
+ */
+function cannotAsk(mode: PermissionModeDescriptor): boolean {
+  return mode.id === NEVER_ASK_MODE_ID || isSilentReadOnly(mode);
+}
+
 /** The refusal for a mode above the ceiling. */
 function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
   return {
@@ -233,6 +285,17 @@ function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
   };
 }
 
+/** The refusal for a chat that never asks naming a mode that can ask. */
+function neverAsksRefusal(mode: PermissionModeDescriptor): Grant {
+  return {
+    ok: false,
+    error:
+      `This chat never asks, so it cannot start a chat at ${mode.label}, which can. ` +
+      'Leave permissionMode out to start one that never asks too.',
+    code: 'ABOVE_YOUR_LEVEL',
+  };
+}
+
 /**
  * The mode a start runs at, against the target runtime's declared modes: the one
  * asked for when it is not above the ceiling; with none asked for, the caller's
@@ -242,8 +305,21 @@ function aboveRefusal(ceiling: Ceiling, mode: PermissionModeDescriptor): Grant {
  */
 function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType: string): Grant {
   const target = declaredModes(runtimeType);
+  const callerNeverAsks = ceiling.neverAsks;
   const fits = (mode: PermissionModeDescriptor) =>
-    isNoLooserThan(ceiling.level, mode) && (mode.id !== AUTO_MODE_ID || allowsAuto(ceiling));
+    isNoLooserThan(ceiling.level, mode) &&
+    (mode.id !== AUTO_MODE_ID || allowsAuto(ceiling)) &&
+    (!callerNeverAsks || cannotAsk(mode));
+  // "Never ask" is a person's choice. An agent may pass it on by starting a chat
+  // from one (inheriting it, or naming it from inside one), never pick it.
+  if (isPersonOnlyMode(requested) && !callerNeverAsks) {
+    return {
+      ok: false,
+      error:
+        'Only a person can set a chat to never ask. Leave permissionMode out, or name another mode.',
+      code: 'PERSON_ONLY_MODE',
+    };
+  }
   if (requested !== undefined) {
     const mode = target.values.find((m) => m.id === requested);
     if (!mode) {
@@ -253,12 +329,20 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
         code: 'UNKNOWN_PERMISSION_MODE',
       };
     }
-    return fits(mode) ? { ok: true, mode } : aboveRefusal(ceiling, mode);
+    if (fits(mode)) return { ok: true, mode };
+    return callerNeverAsks ? neverAsksRefusal(mode) : aboveRefusal(ceiling, mode);
   }
   const own = ceiling.inheritId ? target.values.find((m) => m.id === ceiling.inheritId) : undefined;
   if (own && fits(own)) return { ok: true, mode: own };
   const fallback = target.values.find((m) => m.id === target.default);
   if (fallback && fits(fallback)) return { ok: true, mode: fallback };
+  if (callerNeverAsks) {
+    return {
+      ok: false,
+      error: `The ${runtimeType} runtime has no mode that never asks, so this chat cannot start one there.`,
+      code: 'NO_MODE_FITS',
+    };
+  }
   return {
     ok: false,
     error:
@@ -269,45 +353,64 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
 }
 
 /**
+ * The ceiling a caller with no chat (the external `/mcp` server) is held to:
+ * the agent the token names, at its own Files & commands stop (spec
+ * `trusted-by-default-flip` §5.2). Only a registered agent reaches here: a plain
+ * key, a per-user key or an unidentified caller is refused before it.
+ *
+ * @param chat - The calling chat, or null for a caller with none.
+ * @param runtime - The runtime the new chat runs on, for its config section.
+ * @param agentPath - The calling agent's folder.
+ * @returns The agent's resolved stop, or `null` in a chat, whose own level is
+ *   the ceiling.
+ */
+export async function chatlessCallerStop(
+  chat: CallingChat | null,
+  runtime: Pick<AgentRuntime, 'getCapabilities'>,
+  agentPath: string | undefined
+): Promise<PermissionStop | null> {
+  if (chat) return null;
+  return resolveUnattendedDefaultStop({
+    configSection: runtime.getCapabilities().settings.configSection,
+    agent: await readAgentExecutionDefaults(agentPath),
+  });
+}
+
+/**
  * Everything `session_start` decides about the level, in one call: the ceiling,
- * the grant against the target runtime's declared modes, the rule that Full
- * autonomy is only ever granted when asked for by name, and the standing
- * acknowledgement it needs. Nothing is written here; a refusal
+ * the grant against the target runtime's declared modes, and the rule that Full
+ * autonomy is only ever granted when asked for by name. Nothing is written here; a refusal
  * leaves nothing behind.
  *
  * @param requested - The mode the tool was asked for, if any.
  * @param chat - The calling chat, or null for a caller with none.
  * @param runtimeType - The runtime the new chat runs on.
+ * @param callerStop - With no chat, the calling agent's own resolved Files &
+ *   commands stop (its own, then the runtime's, then the global one), which
+ *   is its ceiling; `null` keeps {@link NO_CHAT_CEILING_MODE}. Ignored in a
+ *   chat, whose own level is the ceiling.
  */
 export async function resolveStartPermission(
   requested: string | undefined,
   chat: CallingChat | null,
-  runtimeType: string
+  runtimeType: string,
+  callerStop: PermissionStop | null = null
 ): Promise<
   { ok: true; permission: SessionStartPermission } | { ok: false; error: string; code: string }
 > {
-  const ceiling = await ceilingOf(chat);
+  const ceiling = await ceilingOf(chat, { stop: callerStop, runtimeType });
   const grant = grantMode(requested, ceiling, runtimeType);
   if (!grant.ok) return grant;
   // Full autonomy is never granted silently. An approval card shows only the
   // arguments a call sent, so an inherited Full autonomy would be invisible to
   // the person approving it: that level has to be asked for by name.
-  if (requested === undefined && needsConsentRitual(grant.mode)) {
+  if (requested === undefined && actsWithoutAsking(grant.mode)) {
     return {
       ok: false,
       error:
         `A new chat at ${grant.mode.label} has to be asked for by name, so the person ` +
         `approving can see it. Pass permissionMode "${grant.mode.id}", or a lower mode.`,
       code: 'NAME_FULL_AUTONOMY',
-    };
-  }
-  if (needsConsentRitual(grant.mode) && !hasStandingAutonomyAck()) {
-    return {
-      ok: false,
-      error:
-        `Starting a chat at ${grant.mode.label} needs the person's standing okay for Full ` +
-        'autonomy, and there is none on file. Ask for a lower mode, or ask the person.',
-      code: AUTONOMY_ACK_REQUIRED_CODE,
     };
   }
   return {

@@ -14,6 +14,7 @@ import {
   type PermissionState,
 } from '@dorkos/shared/permissions';
 
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { PermissionWriter } from './permission-history.js';
 
 /** A permission write the service refused, with the HTTP status that fits it. */
@@ -38,11 +39,6 @@ export class PermissionError extends Error {
     super(message);
   }
 }
-
-/** The sentence a Full-autonomy write without an acknowledgement is refused with. */
-export const AUTONOMY_ACK_MESSAGE =
-  'Full autonomy lets agents edit files and run commands without asking. Confirm that in the ' +
-  'app first, then try again.';
 
 /**
  * True for a real state value.
@@ -171,4 +167,57 @@ export function isArrivalScreenLine(
 ): boolean {
   if (metadata.origin !== undefined) return metadata.origin === 'arrival-screen';
   return metadata.note !== undefined && PRE_MARKER_ARRIVAL_NOTES.has(metadata.note);
+}
+
+/** A per-key request: a state to set, or `null` to remove the change. */
+export type PermissionPatch = {
+  areas?: Record<string, PermissionState | null>;
+  actions?: Record<string, PermissionState | null>;
+  /** An agent's own Files & commands stop; `null` = back to the default. */
+  filesAndCommands?: PermissionStop | null;
+};
+
+/**
+ * The patch with every action key dropped whose stored value is no longer the
+ * expected one (see `setAgent`'s `expectActions`).
+ *
+ * @param stored - The agent's stored permissions.
+ * @param patch - The requested patch.
+ * @param expected - The value each action key was expected to hold.
+ */
+export function unchanged(
+  stored: AgentPermissions,
+  patch: PermissionPatch,
+  expected: Record<string, PermissionState | null>
+): PermissionPatch {
+  const actions: Record<string, PermissionState | null> = {};
+  for (const [key, value] of Object.entries(patch.actions ?? {})) {
+    const current = (stored.actions as Record<string, unknown> | undefined)?.[key] ?? null;
+    if (!(key in expected) || current === expected[key]) actions[key] = value;
+  }
+  return { ...(patch.areas ? { areas: patch.areas } : {}), actions };
+}
+
+/**
+ * The install-wide changes a move to `preset` keeps: on a move INTO Careful
+ * from another preset, every area and action a person set to Blocked (Careful
+ * is the way back to being asked and must never loosen anything, DOR-2739); on
+ * any other move, including choosing Careful again to reset it, none.
+ *
+ * @param preset - The preset being chosen.
+ * @param from - The preset the install is on now.
+ * @param defaults - The changes on top of the old preset.
+ * @returns The changes that survive the move.
+ */
+export function keptOnPresetMove(
+  preset: string,
+  from: string | null,
+  defaults: { areas: Record<string, string>; actions: Record<string, string> }
+): { areas: Record<string, PermissionState>; actions: Record<string, PermissionState> } {
+  const intoCareful = preset === 'careful' && from !== 'careful';
+  const keep = (map: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(map).filter(([, state]) => intoCareful && state === 'blocked')
+    ) as Record<string, PermissionState>;
+  return { areas: keep(defaults.areas), actions: keep(defaults.actions) };
 }

@@ -105,8 +105,6 @@ import {
   ComposerPrefsSchema,
   NOTIFICATION_PREFS_DEFAULTS,
   SidebarPrefsSchema,
-  ClaudeCodeAccountSchema,
-  ClaudeCodeSettingsSchema,
   claudeAccountId,
   toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
@@ -114,505 +112,35 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { ConfigUnreadableError, formatConfigLoadError } from './config/boot-errors.js';
+export {
+  ConfigBootError,
+  ConfigUnreadableError,
+  ConfigMigrationFailedError,
+} from './config/boot-errors.js';
 import { browserSettingRefusal } from './config/browser-setting.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
+import { readStoredConfigForSalvage } from './config/salvage-read.js';
+import { loadConfigStore } from './config/load-store.js';
+import {
+  tolerateLegacyClaudeAccountEncoding,
+  tolerateRetiredRoomKeys,
+  tolerateRetiredRuntimeKeys,
+  tolerateRetiredUiKeys,
+} from './config/retired-key-tolerance.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 import {
   describeWidenedLeaf,
+  findUnreadableLeaves,
   preserveWidenedLeaves,
   relaxWidenedLeaves,
   repairWidenedLeaves,
+  unreadableSettingsWarning,
 } from './config/widened-leaves.js';
 import type { WidenedLeaf, WidenedLeafPolicy } from './config/widened-leaves.js';
 
-/**
- * The result of reading a config file that `conf` refused, before replacing it.
- *
- * The two cases are kept apart because only one of them permits a replacement.
- * `read: true` means the bytes are in hand, which is both what salvage needs
- * and the only proof that the file, rather than the machine, is the problem.
- * `read: false` means the file was never read at all, and nothing may be
- * concluded from that except that DorkOS must keep its hands off it.
- */
-type SalvageRead = { read: true; value: unknown } | { read: false; error: unknown };
-
-/**
- * Read a config file that `conf` just refused, so its protections can be
- * salvaged before the file is replaced.
- *
- * Retried on the same staircase as the load itself, and for the same reason.
- * This read happens during whatever is going wrong on the machine, so a single
- * unretried attempt is at its least likely to succeed exactly when it matters
- * most: a storm that condemns the file is still blowing when salvage runs, and
- * a salvage that comes back empty silently costs the person a protection
- * (DOR-584) rather than a preference.
- *
- * Never throws. A read that worked but whose contents will not parse is still
- * `read: true` with an `undefined` value — a truncated file is genuinely
- * unsalvageable, and that is a different fact from never having seen it.
- *
- * @param configPath - Absolute path to the config file being replaced.
- * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
- * @returns The parsed contents, or the failure that stopped the read.
- */
-function readStoredConfigForSalvage(
-  configPath: string,
-  retryDelaysMs: readonly number[]
-): SalvageRead {
-  for (let attempt = 0; ; attempt++) {
-    let raw: string;
-    try {
-      raw = fs.readFileSync(configPath, 'utf-8');
-    } catch (error) {
-      const delay = retryDelaysMs[attempt];
-      if (delay === undefined) return { read: false, error };
-      sleepSync(delay);
-      continue;
-    }
-    try {
-      return { read: true, value: JSON.parse(raw) };
-    } catch {
-      // Read fine, will not parse. Nothing to salvage, but the file is
-      // genuinely damaged and may be replaced.
-      return { read: true, value: undefined };
-    }
-  }
-}
-
-/**
- * What a failed `conf` load says about the file on disk.
- *
- * The four kinds differ in exactly one way that matters: whether the file may
- * be replaced, and after how long.
- *
- * - `corrupt` — the stored bytes are unusable and only replacing the file gets
- *   past it: the JSON does not parse, the contents fail the schema, or they
- *   cannot be decrypted. Condemned immediately, because re-reading the same
- *   bytes cannot change the answer. Note what is NOT in this class any more.
- *   A key this build does not declare is another build's key
- *   (`config/version-skew.ts`), and a named scalar leaf holding a value a newer
- *   build widened is another build's value (`config/widened-leaves.ts`);
- *   neither is a violation the validator can even see now. So what reaches this
- *   class is a SHAPE the schema does not describe — a section that is a list, a
- *   list that is a string, a required field with no default and nothing in it —
- *   which is what damage looks like and what a build widening a setting never
- *   produces.
- * - `io` — the READ failed and the contents were never in question. An `EMFILE`
- *   while the machine is out of file descriptors, an `EACCES` after an
- *   ownership change, an `EBUSY` while another program holds the file, an `EIO`
- *   off a flaky disk. **Never condemns the file, however long it lasts.**
- * - `migration` — a migration BODY threw. That is a defect in DorkOS's own
- *   upgrade code, and it says nothing about the file, so it condemns nothing:
- *   the boot stops loudly and the settings stay where they are. Same principle
- *   as `io`, one layer up — the code was wrong, not the data.
- * - `unknown` — none of those. Retried, and condemned only if it survives the
- *   whole backoff staircase, at which point it is deterministic and the file is
- *   the only thing it can be about.
- */
-export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'migration' | 'unknown';
-
-/**
- * Decide what a `conf` load failure says about the stored file.
- *
- * ## The defect this exists for
- *
- * `conf` reports every failure the same way — it rethrows — and the recovery
- * below used to treat *any* throw as proof of corruption, back the file up and
- * delete it. So a config that was perfectly valid, read during a burst of
- * file-descriptor pressure, was destroyed by the code meant to protect it.
- * (Observed: a valid `config.json` replaced with defaults while the machine was
- * in an `EMFILE` storm. The `.bak` it left behind parsed and validated
- * cleanly.)
- *
- * ## Why `io` is a class of its own, and not just "did not clear yet"
- *
- * An errno failure is never evidence about what a file contains, and that stays
- * true no matter how many times it repeats. The storm that motivated this ran
- * for far longer than any sensible boot-time backoff, so "it failed four times,
- * therefore the file is bad" would hand the original defect straight back on a
- * timer. An errno error is therefore fatal-but-harmless: DorkOS stops, says so,
- * and the file is exactly where the person left it.
- *
- * ## Why `unknown` is condemned rather than retried forever
- *
- * `conf` runs the migration chain inside its constructor, and `_migrate` feeds
- * the file's own `__internal__.migrations.version` into `semver` (`conf@15`,
- * `_shouldPerformMigration`). One flipped byte in that string — still valid
- * JSON, still schema-valid, and outside the Ajv schema entirely — throws
- * `TypeError: Invalid Version` from inside the constructor. That is as
- * file-caused as a syntax error, and treating it as unreadable would brick boot
- * permanently while telling the person to try again. So the residual class is
- * condemned once the staircase has proved it deterministic.
- *
- * That is the general rule rather than a list of conf's internals: the caller
- * retries, and time does the classifying. It costs a broken file one 750ms
- * staircase before it is recovered.
- *
- * ## Why a throwing migration body is NOT in that class
- *
- * It used to be, and it was the same mistake as the errno class in a different
- * costume: a bug in DorkOS's own upgrade code failed identically four times,
- * looked deterministic, and was read as proof that the file was bad. The file
- * was fine. Whoever fixed the migration would have been able to boot straight
- * into their settings — except the settings had already been replaced.
- *
- * `conf` marks that case for us. `_migrate` wraps everything thrown inside its
- * per-migration `try` with {@link CONF_MIGRATION_WRAPPER}, and the semver check
- * above sits OUTSIDE that `try` (`conf@15`, `_migrate`: the version filter runs
- * before the loop), so a corrupt migration version still arrives bare and still
- * lands in `unknown`. The errno check runs first, so a laundered `EMFILE` from
- * inside a migration body is still `io`. What is left under the wrapper is
- * DorkOS's own code throwing, which condemns nothing.
- *
- * ## The three `corrupt` shapes
- *
- * Taken from where `conf` itself decides what `clearInvalidConfig` would have
- * cleared (`conf@15`, `get store()`). DorkOS sets `clearInvalidConfig: false`,
- * so `conf` rethrows all three rather than handling them, which is what puts
- * the decision here. They are named only to skip a pointless staircase — the
- * `unknown` path would reach the same verdict 750ms later.
- *
- * A partly-written file is not a case this has to cover: `conf` writes through
- * `atomically`, so a reader sees either the old file or the new one.
- *
- * @param error - Whatever the `Conf` constructor threw.
- * @returns What the failure says about the file.
- */
-export function classifyConfigLoadFailure(error: unknown): ConfigLoadFailureKind {
-  if (!(error instanceof Error)) return 'unknown';
-  // `JSON.parse` inside conf's `_deserialize`.
-  if (error.name === 'SyntaxError') return 'corrupt';
-  // conf's Ajv wrapper: `Config schema violation: mesh/scanRoots must be array`.
-  if (error.message.startsWith('Config schema violation:')) return 'corrupt';
-  // conf's decrypt failure, raised with exactly this message. Unreachable while
-  // DorkOS passes no `encryptionKey`, and kept so it stays right if one is ever
-  // added.
-  if (error.message === 'Failed to decrypt config data.') return 'corrupt';
-  // Before the wrapper check, because a wrapped errno is still the machine's
-  // fault rather than the migration's.
-  if (isIoFailure(error)) return 'io';
-  if (error.message.startsWith(CONF_MIGRATION_WRAPPER)) return 'migration';
-  return 'unknown';
-}
-
-/**
- * The first sentence `conf` puts on anything thrown from inside a migration.
- *
- * `conf@15`'s `_migrate` catches every failure in its per-migration `try` and
- * rethrows it as a plain `Error`, appending the original message and keeping
- * neither `code` nor `cause`.
- */
-const CONF_MIGRATION_WRAPPER = 'Something went wrong during the migration!';
-
-/** A bare errno code as Node writes it: `EMFILE`, `EACCES`, `EIO`. */
-const ERRNO_CODE = /^E[A-Z0-9]+$/;
-
-/**
- * The same code as it appears at the head of an `fs` error's message, e.g.
- * `EMFILE: too many open files, open '/…'`.
- */
-const ERRNO_IN_MESSAGE = /(?:^|\s)E[A-Z0-9]{2,}: /;
-
-/**
- * Whether an error is the operating system refusing a file operation.
- *
- * Node stamps every failed syscall with a bare errno code (`EMFILE`, `EACCES`,
- * `EBUSY`, `EIO`, …). Node's own `ERR_*` codes carry underscores and are
- * excluded deliberately: those report a bad call, not a disk or descriptor
- * problem, so they belong in the deterministic class.
- *
- * ## The laundered case
- *
- * A bare code is not always there to read. `conf` runs the migration chain
- * inside its constructor, and the per-migration `try` in `_migrate` wraps
- * anything thrown into a plain `Error` — no `code`, no `cause`. That block
- * contains READS (every migration body calls `store.get`/`store.has`, and each
- * one reads the file), so an `EMFILE` on any read after the first arrives here
- * with nothing left to identify it. Left unrecognised it looked deterministic,
- * failed identically four times, and cost a valid config its life on the one
- * boot after an upgrade — which is exactly when a migration body runs.
- *
- * So a wrapped error is unwrapped by looking for the errno at the head of the
- * message `conf` appended. The match is gated on `conf`'s own wrapper sentence
- * rather than applied to every message, because a false `io` verdict is not
- * free: it makes a deterministic failure un-condemnable, and the boot it blocks
- * would never clear. Anything this misses is still caught by the rule that
- * nothing gets replaced unless {@link readStoredConfigForSalvage} could read
- * it — a message format is a weaker guarantee than a successful read.
- *
- * @param error - The error to inspect.
- */
-function isIoFailure(error: Error): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  if (typeof code === 'string' && ERRNO_CODE.test(code)) return true;
-  return error.message.startsWith(CONF_MIGRATION_WRAPPER) && ERRNO_IN_MESSAGE.test(error.message);
-}
-
-/**
- * A reason DorkOS stopped instead of touching somebody's settings.
- *
- * Every subclass means the same thing to a caller — print the message, stop —
- * and both entry points (`apps/server/src/index.ts` and the CLI) branch on this
- * base rather than on the individual classes, so a new reason to refuse cannot
- * arrive as an uncaught stack trace.
- *
- * The message is written for the person reading a terminal, because that is
- * where it lands. The underlying failure travels as `cause`.
- */
-export abstract class ConfigBootError extends Error {
-  /** Absolute path of the config file this is about. */
-  readonly configPath: string;
-
-  /**
-   * What the person can actually do about it, as a paragraph of its own.
-   *
-   * Split out so `dorkos doctor` can show the same next step on its checklist
-   * without restating it. Two copies of this advice drifted apart once already.
-   */
-  readonly advice: string;
-
-  /**
-   * Build one, from a message a subclass has already written.
-   *
-   * @param message - The whole terminal message, advice included.
-   * @param configPath - Absolute path of the config file.
-   * @param advice - The next step, repeated on doctor's checklist.
-   * @param cause - The failure being reported.
-   */
-  protected constructor(message: string, configPath: string, advice: string, cause: unknown) {
-    super(message, { cause });
-    this.configPath = configPath;
-    this.advice = advice;
-  }
-}
-
-/**
- * Raised when the operating system would not let DorkOS read the config file,
- * after retrying.
- *
- * @see {@link unreadableMessage} for why there are two of them.
- */
-export class ConfigUnreadableError extends ConfigBootError {
-  /**
-   * Build the message a person sees when their settings could not be read.
-   *
-   * @param configPath - Absolute path of the config file.
-   * @param cause - The last failure from the `Conf` constructor.
-   * @param backupPath - Where the old settings were copied, when this happened
-   *   on the second leg of corrupt-recovery and the original is already gone.
-   */
-  constructor(configPath: string, cause: unknown, backupPath?: string) {
-    const advice = adviceFor(cause, configPath, backupPath);
-    super(unreadableMessage(configPath, cause, advice, backupPath), configPath, advice, cause);
-    this.name = 'ConfigUnreadableError';
-  }
-}
-
-/**
- * Raised when one of DorkOS's own migration bodies threw while updating a
- * config file to this version.
- *
- * The file is not the problem here, so it is not touched — not backed up, not
- * replaced, not deleted. This is the same rule the errno class follows, applied
- * one layer up: DorkOS's code was wrong, and a person's settings must not pay
- * for that. Whoever ships the fix boots straight back into them.
- */
-export class ConfigMigrationFailedError extends ConfigBootError {
-  /**
-   * Build the message a person sees when an update to their settings failed.
-   *
-   * @param configPath - Absolute path of the config file.
-   * @param cause - The failure `conf` wrapped and rethrew.
-   */
-  constructor(configPath: string, cause: unknown) {
-    const advice =
-      `Nothing you can change in that file will help, because the problem is in\n` +
-      `DorkOS. Start the version you were using before, or install a newer one.\n` +
-      `If you would rather not wait, rename the file: DorkOS will make a new one\n` +
-      `and your settings stay in the file you renamed.`;
-    super(
-      [
-        `DorkOS could not update your settings to this version, so it stopped`,
-        `rather than replacing them.`,
-        ``,
-        `  file: ${configPath}`,
-        `  why:  ${describeLoadError(cause)}`,
-        ``,
-        `DorkOS did not replace or delete your settings.`,
-        advice,
-      ].join('\n'),
-      configPath,
-      advice,
-      cause
-    );
-    this.name = 'ConfigMigrationFailedError';
-  }
-}
-
-/**
- * Errno codes that pass on their own, given a moment.
- *
- * The distinction is the whole point of {@link adviceFor}: "try again" is good
- * advice for a machine that ran out of descriptors and terrible advice for a
- * file the person is not allowed to open, where it means "loop forever".
- */
-const SELF_CLEARING_ERRNOS = new Set([
-  'EMFILE',
-  'ENFILE',
-  'EBUSY',
-  'EAGAIN',
-  'EINTR',
-  'EIO',
-  'ETIMEDOUT',
-  'ENOMEM',
-]);
-
-/** Errno codes that mean the person, not the machine, has to do something. */
-const PERMISSION_ERRNOS = new Set(['EACCES', 'EPERM', 'EROFS']);
-
-/**
- * Errno codes that mean there is nowhere to put the bytes.
- *
- * Separate from the permission set because the fix is different and the rename
- * hatch is useless: renaming the file does not let DorkOS write a new one when
- * the disk is full. Reachable through the backup copy on the recovery path.
- */
-const NO_SPACE_ERRNOS = new Set(['ENOSPC', 'EDQUOT', 'EFBIG']);
-
-/**
- * The errno behind a failure, whether it is on the error or only in its text.
- *
- * @param cause - The failure to read a code out of.
- * @returns The code, or `undefined` when there is none to find.
- */
-function errnoOf(cause: unknown): string | undefined {
-  if (!(cause instanceof Error)) return undefined;
-  const code = (cause as NodeJS.ErrnoException).code;
-  if (typeof code === 'string' && ERRNO_CODE.test(code)) return code;
-  return ERRNO_IN_MESSAGE.exec(cause.message)?.[0].trim().replace(':', '');
-}
-
-/**
- * The next step to offer, chosen by what the operating system actually said.
- *
- * Every branch names something a person can do. "Check that you can open that
- * file" was the old text, and it names no action at all.
- *
- * Two things this must not do. It must not point at a line by position: the
- * same string is shown under three different layouts (with a backup, without
- * one, and as a `dorkos doctor` row), and "the line above" is a different line
- * in each. And when `backupPath` is set it must not offer the rename hatch,
- * because on that path the person's settings are in the BACKUP and the file
- * they would be renaming is the failed replacement, which keeps nothing.
- *
- * @param cause - The failure being reported.
- * @param configPath - Absolute path of the config file.
- * @param backupPath - Where the old settings already went, if they did.
- */
-function adviceFor(cause: unknown, configPath: string, backupPath?: string): string {
-  const code = errnoOf(cause);
-  if (code !== undefined && SELF_CLEARING_ERRNOS.has(code)) {
-    return (
-      `This usually means the file was busy, or your computer had too many\n` +
-      `files open at once. Both pass on their own, so start DorkOS again.`
-    );
-  }
-  if (code !== undefined && NO_SPACE_ERRNOS.has(code)) {
-    return (
-      `There is no room left to write the file. Free up some disk space, then\n` +
-      `start DorkOS again.`
-    );
-  }
-  if (code !== undefined && PERMISSION_ERRNOS.has(code)) {
-    const fix =
-      `DorkOS is not allowed to open that file, and waiting will not change\n` +
-      `that. Give yourself permission to read and write it (on a Mac or Linux:\n` +
-      `chmod u+rw "${configPath}"; on Windows, right-click the file, then\n` +
-      `Properties and Security).`;
-    if (backupPath !== undefined) return `${fix} Then start DorkOS again.`;
-    return (
-      `${fix} If you would rather start fresh, rename the file. DorkOS will\n` +
-      `make a new one, and your old settings stay in the file you renamed.`
-    );
-  }
-  if (backupPath !== undefined) {
-    // Named and actionable, like the permission branch above it: the failure
-    // here is a file that could not be CREATED, so the folder is the subject.
-    return (
-      `DorkOS could not create a file in this folder:\n\n` +
-      `  ${path.dirname(configPath)}\n\n` +
-      `Give yourself permission to write there (on a Mac or Linux:\n` +
-      `chmod u+w "${path.dirname(configPath)}"; on Windows, right-click the\n` +
-      `folder, then Properties and Security). Then start DorkOS again.`
-    );
-  }
-  return (
-    `That is unlikely to fix itself. If you cannot clear the problem named\n` +
-    `above, rename the file and DorkOS will make a new one, keeping your old\n` +
-    `settings in the file you renamed.`
-  );
-}
-
-/**
- * The text of a {@link ConfigUnreadableError}, in the two situations it covers.
- *
- * They have to be different, because the reassuring one would otherwise be a
- * lie. Corrupt-recovery copies the old file to `.bak` and deletes the original
- * before creating a replacement; if THAT creation is what the OS refuses, the
- * settings are neither untouched nor where the person left them. Sending them
- * to `config.json` at that point would point at the wrong file, when theirs is
- * sitting next to it under another name.
- *
- * ## What the plain branch may and may not claim
- *
- * It says DorkOS did not REPLACE OR DELETE anything, which is the guarantee
- * this module actually delivers, and it holds absolutely. It does not say the
- * bytes are untouched, because `conf` writes before DorkOS gets a verdict:
- * `#runMigrations` calls `_write(storeWithDefaults)` BEFORE `_migrate` runs, so
- * on any boot where the stored file is not already default-shaped — every
- * upgrade boot — the file has been rewritten with the defaults merged in
- * before this error is even constructed. Nothing is lost by that (the merge is
- * shallow and the stored value wins per top-level key), but a 131-byte config
- * can be 2429 bytes by the time a person reads this, so "nothing was changed"
- * was false wherever it mattered most.
- *
- * @param configPath - Absolute path of the config file.
- * @param cause - The failure being reported.
- * @param advice - The next step, from {@link adviceFor}.
- * @param backupPath - Where the old settings were copied, if they were.
- */
-function unreadableMessage(
-  configPath: string,
-  cause: unknown,
-  advice: string,
-  backupPath?: string
-): string {
-  const what = `  file: ${configPath}\n  why:  ${describeLoadError(cause)}`;
-  if (backupPath !== undefined) {
-    return [
-      `DorkOS could not finish repairing your settings.`,
-      ``,
-      what,
-      ``,
-      `Your old settings could not be used, so DorkOS copied them to the file`,
-      `below and tried to start a new one. That did not work either.`,
-      ``,
-      `  ${backupPath}`,
-      ``,
-      `Your old settings are still in that file.`,
-      advice,
-    ].join('\n');
-  }
-  return [
-    `DorkOS could not read your settings, so it stopped rather than replacing them.`,
-    ``,
-    what,
-    ``,
-    `DorkOS did not replace or delete your settings.`,
-    advice,
-  ].join('\n');
-}
+export { classifyConfigLoadFailure, type ConfigLoadFailureKind } from './config/load-failure.js';
 
 /**
  * One line describing a load failure, for a log or an error message.
@@ -624,7 +152,7 @@ function unreadableMessage(
  * @param error - Whatever was thrown.
  */
 function describeLoadError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatConfigLoadError(error);
 }
 
 /**
@@ -639,103 +167,6 @@ function describeLoadError(error: unknown): string {
  * reported rather than guessed at.
  */
 export const CONFIG_LOAD_RETRY_DELAYS_MS = [50, 200, 500] as const;
-
-/**
- * Block this thread for `ms`.
- *
- * Deliberately blocking: {@link ConfigManager} is constructed synchronously
- * during boot and everything after it needs the config, so there is nothing
- * useful to yield to. Only ever reached on the retry path, and bounded by
- * {@link CONFIG_LOAD_RETRY_DELAYS_MS}.
- *
- * @param ms - How long to block for.
- */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-/** The exact options object both `Conf` constructions below are built from. */
-type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
-
-/**
- * Open the `conf` store, riding out a failure that is not the file's fault.
- *
- * Three outcomes, and they are deliberately not the same shape:
- *
- * 1. It opened — the store comes back.
- * 2. The file is condemned — the error comes back so the caller can back it up,
- *    salvage what protects the person, and start a fresh one. Either the
- *    failure was `corrupt` outright, or it was `unknown` and survived the whole
- *    staircase, which makes it deterministic and therefore about the file.
- * 3. The OS refused the file (`io`) — retried on a short backoff, then thrown.
- *    **The file is never touched on this path, however long the failure
- *    lasts.** Losing the ability to read a file is not evidence that the file
- *    is bad, and the person's settings are sitting in it, intact.
- * 4. A migration body threw (`migration`) — thrown straight away, with the file
- *    untouched. Not retried, because DorkOS's own code failing is deterministic
- *    and a staircase would only delay the same answer.
- *
- * @param options - Constructor options, shared with the recovery construction.
- * @param configPath - Absolute path of the config file, for logs.
- * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
- * @param backupPath - Where the old settings already went, when this call is
- *   the second leg of corrupt-recovery. Only changes what an error says.
- * @returns The opened store, or the error that condemned the file.
- * @throws {ConfigUnreadableError} When every attempt was refused by the OS.
- * @throws {ConfigMigrationFailedError} When a migration body threw.
- */
-function loadConfigStore(
-  options: ConfConstructorOptions,
-  configPath: string,
-  retryDelaysMs: readonly number[],
-  backupPath?: string
-): { store: Conf<UserConfig> } | { corruptedBy: Error } {
-  let lastError: unknown;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return { store: new Conf<UserConfig>(options) };
-    } catch (error) {
-      lastError = error;
-      const kind = classifyConfigLoadFailure(error);
-      const condemn = (): { corruptedBy: Error } => ({
-        corruptedBy: error instanceof Error ? error : new Error(String(error)),
-      });
-      if (kind === 'corrupt') return condemn();
-      if (kind === 'migration') {
-        logger.error(
-          `[Config] A migration failed while updating ${configPath}. ` +
-            `Leaving the file exactly as it is.`,
-          logError(error)
-        );
-        throw new ConfigMigrationFailedError(configPath, error);
-      }
-      const delay = retryDelaysMs[attempt];
-      if (delay === undefined) {
-        // The staircase is spent. An `io` failure still says nothing about the
-        // contents, so it is reported and the file survives. An `unknown` one
-        // has now failed identically across ~750ms, which is what a
-        // file-caused failure looks like and a transient one does not: condemn
-        // it, so a config `conf` can never open again gets recovered instead of
-        // blocking every boot from here on.
-        if (kind === 'unknown') {
-          logger.warn(
-            `[Config] ${configPath} failed to open the same way on every attempt: ` +
-              `${describeLoadError(error)}. Treating it as damaged.`
-          );
-          return condemn();
-        }
-        break;
-      }
-      logger.warn(
-        `[Config] Could not read ${configPath}: ${describeLoadError(error)}. ` +
-          `Leaving the file alone and retrying in ${delay}ms.`
-      );
-      sleepSync(delay);
-    }
-  }
-  logger.error(`[Config] Gave up reading ${configPath} without modifying it`, logError(lastError));
-  throw new ConfigUnreadableError(configPath, lastError, backupPath);
-}
 
 /**
  * Append-only `conf` migration chain keyed by app version. See
@@ -930,6 +361,39 @@ export function seedCodexTransport(store: {
 }
 
 /**
+ * Migration body: seed `spaces.official: { url: '' }` for configs persisted
+ * before the official DorkOS space had a setting (spec
+ * `official-community-space` D4).
+ *
+ * `''` is the only honest seed: it means "no official space", which is what a
+ * config that predates the setting had. A link reaches an install through a
+ * release default or a person, never through this body. Additive and
+ * idempotent: writes only when `official.url` is not already a string, and
+ * keeps every other `spaces` member (`enabled` above all). A config with no
+ * `spaces` object is skipped: a whole missing section is written by conf's own
+ * defaults merge before any key runs.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedSpacesOfficial(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const spaces = store.get('spaces');
+  if (!spaces || typeof spaces !== 'object' || Array.isArray(spaces)) return;
+  const official = (spaces as { official?: unknown }).official;
+  if (
+    official &&
+    typeof official === 'object' &&
+    !Array.isArray(official) &&
+    typeof (official as { url?: unknown }).url === 'string'
+  )
+    return;
+  store.set('spaces', { ...(spaces as Record<string, unknown>), official: { url: '' } });
+}
+
+/**
  * Migration body: seed `extensions.trustedSources: []` for configs persisted
  * before a person could trust a code source outright (spec `flow-multiproject`
  * §9.3).
@@ -980,6 +444,62 @@ export function seedCloudCreditsChoices(store: {
   store.set('cloud', {
     ...(cloud as Record<string, unknown>),
     credits: { defaults: {}, offer: linked ? 'pending' : 'none' },
+  });
+}
+
+/**
+ * Migration body: seed `cloud.remote` for configs persisted before managed
+ * remote access existed (DOR-2086).
+ *
+ * **Seeds the mode the person already has, and nothing else.** A computer whose
+ * own ngrok tunnel is switched on (`tunnel.enabled === true`) is seeded `byo`,
+ * so it reads back as the remote access it already uses; every other computer
+ * is seeded `off`. No enrolment, no link binding, no credential reference, no
+ * hosts: only a person's approval on this computer creates an enrolment, so an
+ * upgrade can never stand for one. `tunnel` is READ for that one flag and never
+ * written: the person's own ngrok token stays exactly where it is and is never
+ * copied into managed storage.
+ *
+ * The literal is written out here rather than taken from
+ * `defaultRemoteAccessSettings()`, so this frozen body cannot move when the
+ * schema's defaults do; a test pins that the two agree today.
+ *
+ * Additive and idempotent: writes only when `cloud` is an object whose
+ * `remote` member is not, and never touches the link fields or `credits`
+ * beside it. A config with no `cloud` key is skipped (the schema default
+ * supplies the whole section on read, and conf persists a missing top-level
+ * section on its own).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedCloudRemoteAccess(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const cloud = store.get('cloud');
+  if (!cloud || typeof cloud !== 'object' || Array.isArray(cloud)) return;
+  const remote = (cloud as { remote?: unknown }).remote;
+  if (remote && typeof remote === 'object' && !Array.isArray(remote)) return;
+  const tunnel = store.get('tunnel');
+  const byoEnabled =
+    tunnel !== null &&
+    typeof tunnel === 'object' &&
+    (tunnel as { enabled?: unknown }).enabled === true;
+  store.set('cloud', {
+    ...(cloud as Record<string, unknown>),
+    remote: {
+      mode: byoEnabled ? 'byo' : 'off',
+      enrolmentId: null,
+      consentVersion: null,
+      instanceId: null,
+      credentialRef: null,
+      credentialId: null,
+      fingerprint: null,
+      hosts: [],
+      edgeProofRef: null,
+      edgeProofHeader: null,
+    },
   });
 }
 
@@ -1170,6 +690,140 @@ export function dropSchedulerTimezone(store: {
 }): void {
   if (store.has('scheduler.timezone')) {
     store.delete('scheduler.timezone');
+  }
+}
+
+/** A stored value as a plain object, or `null` when it is anything else. */
+function plainObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Migration body: move an existing install to the Trusted posture once, unless
+ * the person already chose to be asked (DOR-2739, ADR 261006-225605, spec
+ * `trusted-by-default-flip` §5.7).
+ *
+ * | Stored                                                        | Becomes                                                     |
+ * | ------------------------------------------------------------- | ----------------------------------------------------------- |
+ * | `permissions.preset: 'careful'`                               | unchanged; `ui.trustNoticeSeenAt` stamped (no notice)       |
+ * | preset `null` or `'trusted'`, and `ui.fullPowerChoice: 'supervised'` | preset `'careful'`; `ui.trustNoticeSeenAt` stamped     |
+ * | anything else (`null`, `'balanced'`, `'full'`, unknown)       | preset `'trusted'`; notice left to show                     |
+ * | `runtimes.defaultTrustStop` `null` or `'act'`, on that last row | `'autonomy'` (`'ask'` and `'autonomy'` kept)              |
+ * | `ui.fullPowerDecidedAt`, `ui.fullPowerChoice`                 | deleted (the door is retired)                               |
+ *
+ * **Why an explicit Careful choice is respected.** A person who already said
+ * "keep asking me" answered the question the notice asks; moving them would be
+ * the silent flip the ADR forbids. Full and Balanced were both answers to "how
+ * much should agents ask", and Trusted is what that answer now means.
+ *
+ * **Why `'trusted'` counts as unanswered beside `'supervised'`.** Before this
+ * release no build offered Trusted, so a stored `'trusted'` is conf's own
+ * top-level defaults merge: an install from before `permissions` existed gets
+ * the section from `USER_CONFIG_DEFAULTS` before any key runs, and `'0.83.0'`
+ * (which maps a "keep asking me" answer to Careful) then sees a preset and steps
+ * aside. Reading that seed as an answer would move exactly the person who chose
+ * to be asked.
+ *
+ * **What it leaves alone.** `permissions.defaults` and every per-agent override
+ * (a person's own changes stay on top of the preset), the per-runtime stops
+ * (`null` already follows the global one), and a stop a person set to `'ask'`.
+ * `permissions.trustedStoresAppliedAt` is not set here: the mesh rules and the
+ * database are not in this file, so the boot steps that change them stamp it.
+ *
+ * Idempotent: a second run finds the preset it wrote, keeps a stamped notice,
+ * and has no door fields left to delete.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ * @param now - The time to stamp; injectable for tests.
+ */
+export function applyTrustedPosture(
+  store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  },
+  now: Date = new Date()
+): void {
+  const permissions = plainObject(store.get('permissions'));
+  const ui = plainObject(store.get('ui'));
+  const preset = permissions?.preset ?? null;
+  const keptAsking =
+    preset === 'careful' ||
+    ((preset === null || preset === 'trusted') && ui?.fullPowerChoice === 'supervised');
+
+  const nextPermissions = {
+    ...(permissions ?? { defaults: { areas: {}, actions: {} }, upgradeSweptVersion: null }),
+    preset: keptAsking ? 'careful' : 'trusted',
+  };
+  if (nextPermissions.preset !== preset) store.set('permissions', nextPermissions);
+
+  if (!keptAsking) {
+    const runtimes = plainObject(store.get('runtimes'));
+    const stop = runtimes?.defaultTrustStop ?? null;
+    if (runtimes && (stop === null || stop === 'act')) {
+      store.set('runtimes', { ...runtimes, defaultTrustStop: 'autonomy' });
+    }
+  }
+
+  if (!ui) return;
+  const { fullPowerDecidedAt: _decidedAt, fullPowerChoice: _choice, ...nextUi } = ui;
+  if (keptAsking && (nextUi.trustNoticeSeenAt ?? null) === null) {
+    nextUi.trustNoticeSeenAt = now.toISOString();
+  }
+  const changed =
+    'fullPowerDecidedAt' in ui ||
+    'fullPowerChoice' in ui ||
+    nextUi.trustNoticeSeenAt !== ui.trustNoticeSeenAt;
+  if (changed) store.set('ui', nextUi);
+}
+
+/**
+ * Migration body: remove `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn`
+ * (DOR-2739).
+ *
+ * Both capped how often one of our own agents could post into a room, or change
+ * its canvas, inside one turn. ADR 261006-225605 retires agent-only caps on
+ * routine output: etiquette is held by review and the record, not refusal, and
+ * the loop guards (cascade guard, turn budgets) still stop runaway exchanges. So
+ * neither leaf is declared any more, and both are deleted rather than left
+ * riding along in every config.
+ *
+ * Idempotent: only deletes a key when it is present. Nothing else under `rooms`
+ * is touched.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance.
+ */
+export function dropAgentTurnCaps(store: Pick<Conf, 'has' | 'delete'>): void {
+  for (const key of ['rooms.maxPostsPerTurn', 'rooms.maxCanvasOpsPerTurn']) {
+    if (store.has(key)) store.delete(key);
+  }
+}
+
+/**
+ * Migration body: remove `ui.autonomyAcknowledgedAt` (DOR-2739).
+ *
+ * It recorded that a person had read what Full autonomy means, and the server
+ * refused every Full-autonomy write without it. ADR 261006-225605 retires that
+ * ritual: our own agents run at full power by default and the audit trail is
+ * the record, so the field gates nothing and is no longer declared. Deleting it
+ * rather than leaving it is what keeps a key no build reads from riding along
+ * in every config for ever.
+ *
+ * Idempotent: only deletes the key when it is present. Nothing else under `ui`
+ * is touched.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `has`/`delete`).
+ */
+export function dropAutonomyAcknowledgement(store: {
+  has: (key: string) => boolean;
+  delete: (key: string) => void;
+}): void {
+  if (store.has('ui.autonomyAcknowledgedAt')) {
+    store.delete('ui.autonomyAcknowledgedAt');
   }
 }
 
@@ -3341,6 +2995,9 @@ export function retireToolOnlyReplies(store: {
   const next: Record<string, unknown> = { ...rest };
   let changed = 'toolOnlyReplies' in current;
   if (current.maxPostsPerTurn == null) {
+    // @ts-expect-error -- `rooms.maxPostsPerTurn` left the schema (DOR-2739). This
+    // shipped body is frozen and still names the default it seeded; that reads
+    // `undefined` now, and the `'0.113.0'` key deletes the leaf either way.
     next.maxPostsPerTurn = USER_CONFIG_DEFAULTS.rooms.maxPostsPerTurn;
     changed = true;
   }
@@ -3423,6 +3080,75 @@ export function seedIdentityPromptDismissedDefault(store: {
     ...current,
     identityPromptDismissedAt: USER_CONFIG_DEFAULTS.profile.identityPromptDismissedAt,
   });
+}
+
+/**
+ * Seed `profile.timezone`, `profile.workingHours` and `profile.away` — a
+ * person's zone, hours and away note (spec `heartbeats` §3.5).
+ *
+ * **The mechanism, not an anchor**, for the reason
+ * {@link seedDisplayNameSourceDefault} gives: nested leaves inside a section
+ * every stored config already carries, and conf's pre-migration merge is
+ * shallow, so nothing else writes them to disk for an upgraded install.
+ *
+ * **Each seeds `null`, which is the honest answer for all three.** Nobody has
+ * told this install a zone yet: the app fills `timezone` from the browser the
+ * first time it opens, and seeding the server's own zone here would decide it
+ * from a machine that may sit in a container or another country. `null` hours
+ * read as Monday to Friday, 09:00 to 17:00, and `null` away means here.
+ *
+ * Per leaf, and absence is tested with `in`: the defaults are `null`, so a
+ * `== null` guard would rewrite a stored `null` on every corrupt-recovery
+ * re-run, and a person who already set one leaf keeps it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedWorkingHoursDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  const missing = (['timezone', 'workingHours', 'away'] as const).filter(
+    (leaf) => !(leaf in current)
+  );
+  if (missing.length === 0) return;
+  store.set('profile', {
+    ...current,
+    ...Object.fromEntries(missing.map((leaf) => [leaf, USER_CONFIG_DEFAULTS.profile[leaf]])),
+  });
+}
+
+/**
+ * Migration body: seed the three first-run leaves (spec
+ * `one-minute-onboarding` §7) on an `onboarding` block that predates them:
+ * `firstRunPath`, `welcomeEntryId` and `priorRuntime`.
+ *
+ * `onboarding` is a section every stored config already carries, and conf's
+ * pre-write merge is SHALLOW, so this body is the only thing that puts the
+ * leaves on the file; see "Which of these bodies is a real no-op" above
+ * {@link CONFIG_MIGRATIONS}.
+ *
+ * **Each seeds `null`.** An install that already onboarded never picked a
+ * first-run path, posted no first-run welcome, and had no runtime to undo to.
+ * Absence is tested with `in`, per leaf, for the reason
+ * {@link seedWorkingHoursDefaults} gives.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedFirstRunOnboardingLeaves(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const onboarding = store.get('onboarding');
+  if (onboarding == null || typeof onboarding !== 'object') return;
+  const current = onboarding as Record<string, unknown>;
+  const leaves = ['firstRunPath', 'welcomeEntryId', 'priorRuntime'].filter((l) => !(l in current));
+  if (leaves.length > 0)
+    store.set('onboarding', { ...current, ...Object.fromEntries(leaves.map((l) => [l, null])) });
 }
 
 /**
@@ -3562,6 +3288,8 @@ export function seedRoomCanvasOps(store: {
   if (current.maxCanvasOpsPerTurn != null) return;
   store.set('rooms', {
     ...current,
+    // @ts-expect-error -- `rooms.maxCanvasOpsPerTurn` left the schema (DOR-2739).
+    // Same frozen-body note as `retireToolOnlyReplies`: `'0.113.0'` deletes it.
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
   });
 }
@@ -3908,6 +3636,70 @@ export function seedDoeRuntime(store: {
     store.set('runtimes.doe', { enabled: true, inference: null, defaultTrustStop: null });
   if (store.get('runtimes.environment.inherit.doe') === undefined)
     store.set('runtimes.environment.inherit.doe', []);
+}
+
+/**
+ * Seed `ui.panelTabs` (spec `mini-app-placement`): where each mini app's
+ * right-panel tab shows. An empty list, so every tab keeps following its mini
+ * app's own default, which is where it already showed.
+ *
+ * A nested leaf in a section every stored config already has, so nothing else
+ * writes it to disk (conf's top-level merge is shallow). Idempotent: a list
+ * already there, or any value a person or agent wrote, is left alone.
+ *
+ * @param store - The conf store, narrowed to what this body reads and writes.
+ */
+export function seedUiPanelTabs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object' || Array.isArray(ui) || 'panelTabs' in ui) return;
+  store.set('ui', { ...ui, panelTabs: [] });
+}
+
+/**
+ * Migration body: seed `runtimes.doe.defaultModel: null` (DOR-2784) — the
+ * model new DorkOS chats prefer on credits; `null` means DorkOS picks.
+ *
+ * **The mechanism, not an anchor**: a nested leaf inside `runtimes.doe`, which
+ * the `'0.101.0'` key already wrote without it, and conf's pre-migration merge
+ * is shallow. Absence is tested with `in`, so a stored `null` or a person's
+ * pick is never rewritten on a corrupt-recovery re-run.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedDoeDefaultModel(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const doe = store.get('runtimes.doe');
+  if (doe == null || typeof doe !== 'object' || 'defaultModel' in doe) return;
+  store.set('runtimes.doe', { ...doe, defaultModel: null });
+}
+
+/**
+ * Raise the engaged window from the old shipped defaults to the new ones
+ * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
+ *
+ * Only a value still AT the old default, or missing, moves. A person who chose
+ * a number, including the operator's own stopgap of 60 and 15, keeps it. A
+ * stored `10` cannot say whether somebody chose it, and the old default is the
+ * far likelier reading: the setting has no UI. Missing is filled because a
+ * stored `rooms` block never inherits a new leaf from conf's shallow defaults.
+ *
+ * @param store - The conf store.
+ */
+export function raiseEngagedWindowDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('rooms') === undefined) return;
+  const minutes = store.get('rooms.engagedWindowMinutes');
+  if (minutes === 10 || minutes === undefined) store.set('rooms.engagedWindowMinutes', 60);
+  const posts = store.get('rooms.engagedWindowPosts');
+  if (posts === 5 || posts === undefined) store.set('rooms.engagedWindowPosts', 15);
 }
 
 export const CONFIG_MIGRATIONS = {
@@ -4864,6 +4656,107 @@ export const CONFIG_MIGRATIONS = {
     seedCodexTransport(store);
   },
   '0.101.0': seedDoeRuntime,
+  // v0.101.0 is tagged, so 0.102.0 is the next key.
+  // Frozen from merge, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.103.0'`.
+  //
+  // Disjoint from every other key here: it deletes one leaf under `ui` and
+  // touches nothing beside it.
+  '0.102.0': (store: { has: (key: string) => boolean; delete: (key: string) => void }) => {
+    // `ui.autonomyAcknowledgedAt` — the Full-autonomy acknowledgement, retired
+    // with its ritual (ADR 261006-225605, DOR-2739). See
+    // `dropAutonomyAcknowledgement`.
+    dropAutonomyAcknowledgement(store);
+  },
+  // 0.102.0 has merged (the acknowledgement above), so 0.103.0 is the next
+  // key. Frozen from merge; anything further opens `'0.104.0'`.
+  //
+  // Disjoint from every other key here: it rewrites two `rooms` leaves, and
+  // only when each still holds the old shipped default.
+  '0.103.0': raiseEngagedWindowDefaults,
+  // v0.103.0 is the newest tag and 0.104.0 is claimed by work in flight, so
+  // this opens 0.105.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.106.0'`.
+  //
+  // Disjoint from every other key here: it adds three nested leaves under
+  // `profile`, beside the fields it preserves.
+  '0.105.0': seedWorkingHoursDefaults,
+  // v0.103.0 is the newest tag and 0.105.0 has merged (working hours above),
+  // so this opens 0.106.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.107.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `cloud`,
+  // beside the link fields and `credits` (which `'0.96.0'` writes), all of
+  // which it preserves. It reads `tunnel.enabled` and never writes `tunnel`.
+  '0.106.0': seedCloudRemoteAccess,
+  // v0.103.0 is the newest tag and 0.106.0 has merged (remote access above),
+  // so this opens 0.107.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.108.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `spaces`, beside `enabled`, which it preserves.
+  '0.107.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `spaces.official.url` — the official DorkOS space's link (spec
+    // `official-community-space` D4). See `seedSpacesOfficial`.
+    seedSpacesOfficial(store);
+  },
+  // v0.103.0 is the newest tag and 0.107.0 has merged (the official space
+  // above), so this opens 0.108.0. Frozen from merge, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.109.0'`.
+  //
+  // Disjoint from every other key here: it adds three nested leaves under
+  // `onboarding`, beside the fields it preserves.
+  '0.108.0': seedFirstRunOnboardingLeaves,
+  // v0.103.0 is the newest tag and 0.108.0 has merged (first-run onboarding
+  // above), so this opens 0.109.0. Frozen from merge, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.110.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.doe`, beside the fields it preserves.
+  '0.109.0': seedDoeDefaultModel,
+  // v0.111.0 is the newest tag, so this opens 0.112.0. Frozen from merge, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.113.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `ui`,
+  // beside the fields it preserves. See `seedUiPanelTabs`.
+  '0.112.0': seedUiPanelTabs,
+  // v0.111.0 is the newest tag and 0.112.0 has merged (panel tabs above), so
+  // this opens 0.113.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.114.0'`.
+  //
+  // Disjoint from every other key here: it deletes two leaves under `rooms`
+  // and touches nothing beside them.
+  //
+  // `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` — the per-turn caps
+  // on our own agents, retired (ADR 261006-225605, DOR-2739).
+  '0.113.0': dropAgentTurnCaps,
+  // 0.113.0 has merged; this new key preserves an explicit computer choice.
+  '0.114.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const computers = store.get('computers');
+    if (computers !== null && typeof computers === 'object' && !Array.isArray(computers)) {
+      store.set('computers', {
+        ...computers,
+        enabled: (computers as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
+  // v0.111.0 is the newest tag and 0.114.0 has merged (computers above), so
+  // this opens 0.115.0. Frozen from merge, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.116.0'`.
+  //
+  // Writes `permissions.preset`, `runtimes.defaultTrustStop` and
+  // `ui.trustNoticeSeenAt`, and deletes the two door fields `'0.67.0'` seeded
+  // and `'0.83.0'` read. Both earlier keys run first, so this one sees their
+  // output; nothing after it reads what it removes. Trusted by default (ADR
+  // 261006-225605, DOR-2739): an install that chose to be asked keeps Careful,
+  // every other install moves to Trusted once and is shown a notice.
+  '0.115.0': applyTrustedPosture,
 } as const;
 
 /**
@@ -4955,199 +4848,6 @@ function tolerateRetiredSidebarKeys(ctx: {
   }
 }
 
-/**
- * Widen the generated JSON Schema so conf's Ajv ACCEPTS a Claude account
- * registry written before ids existed, instead of condemning the whole config
- * file (spec `billing-account-ladder`, ADR 260821-205324).
- *
- * The second rename in this file's history, and the same hazard
- * {@link tolerateRetiredSidebarKeys} exists for — with one difference worth
- * naming, because it is why the unknown-key tolerance already in place does not
- * cover it. `tolerateUnknownKeys` REOPENS objects, so a key this build does not
- * know is survivable. Nothing reopens a `required` list. `accounts[].id` is
- * required and did not exist before 0.65.0, so EVERY config file that has ever
- * been written is schema-invalid the moment the `'0.65.0'` migration is skipped
- * — and the constructor's recovery path then backs the file up and replaces it
- * with defaults. Not the accounts. The whole file: `mesh.scanRoots`,
- * `approvals`, `runtimes`, `cloud`, `onboarding`.
- *
- * And it is skipped routinely: a dev tree resolves `SERVER_VERSION` to `0.0.0`
- * and runs no migrations at all, and cutting a release below `0.65.0` skips it
- * for everyone on that release. Correctness must not hang on the migration
- * running — which is the whole lesson of DOR-579, restated one rename later.
- *
- * The property stays DECLARED, so an id of the wrong TYPE is still refused; only
- * its presence is optional. What fills it in is
- * `backfillMissingAccountIds` inside `ClaudeCodeAccountsSchema`
- * (`packages/shared/src/config-schema.ts`), which heals a missing id on every
- * Zod parse by the migration's own rule. Ajv has to be widened separately
- * because `z.toJSONSchema` emits a pipe's OUTPUT schema and so never sees that
- * preprocess step — verified by the generated node still listing `id` as
- * required.
- *
- * ## Removing it
- *
- * The `activeAccount` declaration is back-compat for one release, exactly like
- * its sibling: delete it once the `'0.65.0'` migration has shipped in a tagged
- * release that every supported install has passed through. The tests in `'a
- * Claude account registry written before ids'` fail if it is removed early.
- *
- * The row tolerance is NOT back-compat and stays (spec `claude-account-fleet`
- * D1): the registry is a contract flow writes too, and its read rules skip a
- * bad row rather than refuse the file, so Ajv accepts any value as an account
- * row.
- *
- * @param ctx - The `z.toJSONSchema` override context for one schema node.
- */
-function tolerateLegacyClaudeAccountEncoding(ctx: {
-  zodSchema: unknown;
-  jsonSchema: Record<string, unknown>;
-}): void {
-  // The retired `activeAccount` spelling, DECLARED — with its real type, not as
-  // an open catchall, on the same rule the sidebar's retired keys follow.
-  //
-  // Declaring it is not about letting it past Ajv; `tolerateUnknownKeys` already
-  // does that. It is about `preserveUnknownKeys` (`config/version-skew.ts`),
-  // which carries every key the schema does NOT declare from the stored value
-  // onto the value replacing it — so that an older build saving a theme cannot
-  // delete a newer build's settings. Left undeclared, `activeAccount` was
-  // re-attached to the file after EVERY write, including the write that had just
-  // cleared the account. The next read healed it straight back, and "go back to
-  // inheriting" became "pin to the old account, permanently". Declared, this
-  // build owns the key: a write whose parse output drops it genuinely removes it.
-  if (ctx.zodSchema === ClaudeCodeSettingsSchema) {
-    const properties = ctx.jsonSchema.properties as
-      Record<string, Record<string, unknown>> | undefined;
-    if (!properties) return;
-    // Deliberately no `default`: conf builds Ajv with `useDefaults`, so a
-    // declared default would WRITE this retired key into every config on earth.
-    properties.activeAccount = { anyOf: [{ type: 'string' }, { type: 'null' }] };
-    // The standalone default's color (DOR-2492) follows a row's `color`: a bad
-    // hand edit reads as "no choice" (`.catch(null)` in the Zod schema, and
-    // `isAccountColor` in every reader) rather than condemning the file, so Ajv
-    // takes any string here. Its `default` stays, as the generated node had it.
-    properties.defaultAccountColor = {
-      anyOf: [{ type: 'string' }, { type: 'null' }],
-      default: null,
-    };
-    // The account rules (spec `flow-multiproject` §8.1) are hand-editable too,
-    // and every reader reads a wrong shape as "no rule" (`readProjectRootList`,
-    // `readEligibilityRules`, and the tolerant Zod schemas). Ajv refusing one
-    // would move the whole config aside for a fresh file, losing every other
-    // setting over one bad edit, so both accept any value here. Their defaults
-    // stay, as the generated nodes had them.
-    properties.defaultAccountOnlyProjects = { default: null };
-    properties.projectAccounts = { default: {} };
-    return;
-  }
-  if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
-  // The registry is shared with flow and hand-editable (marketplace
-  // `specs/flow-cli-core` §1.1a), and its readers SKIP a bad row with a warning
-  // rather than fail: a row that is not an object, has no absolute path, an
-  // empty or non-string id, a non-string label, or a color that is not
-  // lowercase `#rrggbb`. Ajv refusing any of those would condemn the whole file
-  // instead, so an account row accepts ANY value here: no type, no required
-  // list, no per-field shape. `readClaudeAccountSettings` applies the read
-  // rules; the write path (`applyConfigPatch`) carries such a row across
-  // untouched. Emptied in place because the override is handed the node to
-  // edit. No `default` survives either: conf builds Ajv with `useDefaults`,
-  // so a declared default would write `color: null` into every row it
-  // validates, including rows this build never listed.
-  for (const key of Object.keys(ctx.jsonSchema)) delete ctx.jsonSchema[key];
-}
-
-/**
- * Declare the retired `runtimes.dorkosTools` key, so that **a write whose parse
- * output drops it genuinely removes it** rather than having it carried straight
- * back from disk.
- *
- * The same mechanism {@link tolerateRetiredSidebarKeys} explains at length, and
- * the same two halves: `'0.80.0'` moves what the key MEANT (nothing — the
- * experiment graduated and every runtime carries the tools now), and this is
- * what makes the husk go away on an install that key never reaches. A dev tree
- * resolves `SERVER_VERSION` to `0.0.0` and runs no migration at all, so without
- * this the leaf could never leave: `ConfigManager.write` carries keys the schema
- * does not declare across from disk on purpose, so an older build saving a theme
- * cannot delete a newer build's settings. Naming it here puts it back inside
- * "what this build knows about", so `preserveUnknownKeys` stops re-attaching it.
- *
- * ## What that does and does not promise
- *
- * Not "the first write", which is what this said before it was measured. This
- * removes the FLOOR under the key; it does not reach a write that re-supplies it
- * by hand. `ConfigManager.write` writes the value its caller passed, so:
- *
- * - A write whose value came through Zod drops it — `PATCH /api/config` and the
- *   `config_patch` operator tool both go through `applyConfigPatch`, which
- *   re-parses the whole config, and Zod strips what it does not declare. Tested.
- * - A write that spreads the STORED object back over itself keeps it, because
- *   the caller put it in `next` itself and nothing here overrules a caller.
- *   `persist-provider-credential.ts` is the live example — `config.set(
- *   'runtimes', { ...config.get('runtimes'), opencode })`, where `get` hands
- *   back conf's stored object rather than a parse. Also tested, so the limit is
- *   pinned rather than discovered again.
- * - `setDot('ui.theme')` does not touch `runtimes` at all, so of course it keeps
- *   it.
- *
- * That is the honest shape, and it is enough: `'0.80.0'` is what covers every
- * install a release at or past `'0.80.0'` reaches, and this covers the ones it
- * does not.
- *
- * It is written by PATH rather than by schema identity, which is the one way it
- * differs from its sidebar sibling: `runtimes` is an inline object inside
- * `UserConfigSchema` with no exported symbol to compare against, and inventing
- * one to be able to match it would be a larger change than the thing it enables.
- *
- * Deliberately no `default`: conf builds Ajv with `useDefaults`, so a declared
- * default would WRITE this retired key into every config on earth — the trap
- * {@link tolerateLegacyClaudeAccountEncoding} names for `activeAccount`.
- *
- * Declared with its real type rather than as an open catchall: "let yesterday's
- * key through" must not quietly become "validate nothing".
- *
- * @param schema - The generated JSON Schema for the whole config, mutated in place.
- */
-function tolerateRetiredRuntimeKeys(schema: { properties?: Record<string, unknown> }): void {
-  const runtimes = schema.properties?.['runtimes'];
-  if (runtimes == null || typeof runtimes !== 'object') return;
-  const properties = (runtimes as { properties?: Record<string, unknown> }).properties;
-  if (properties == null || typeof properties !== 'object') return;
-  properties['dorkosTools'] = { type: 'boolean' };
-}
-
-/**
- * Declare the retired `rooms.toolOnlyReplies` key, for the same reason and with
- * the same limits as {@link tolerateRetiredRuntimeKeys} next door.
- *
- * Its own pair of halves: `'0.81.0'` moves what the key MEANT (nothing — the
- * experiment graduated, and a room turn speaks by calling the tool or not at
- * all), and this is what makes the husk go away on an install that key never
- * reaches. A dev tree resolves `SERVER_VERSION` to `0.0.0` and runs no migration
- * at all, so without this the leaf could never leave: `ConfigManager.write`
- * carries keys the schema does not declare across from disk on purpose, so an
- * older build saving a theme cannot delete a newer build's settings.
- *
- * A SIBLING rather than an argument to the one next door, because the two name
- * different sections and a single function taking a path table would be a bigger
- * change than the thing it enables — the same call the sidebar and runtime
- * tolerances already make twice.
- *
- * Everything its sibling says about what this does and does not promise applies
- * here unchanged: it removes the floor under the key, it does not reach a write
- * that re-supplies it by hand, and it carries no `default` because conf builds
- * Ajv with `useDefaults` and a declared default would write the retired key into
- * every config on earth.
- *
- * @param schema - The generated JSON Schema for the whole config, mutated in place.
- */
-function tolerateRetiredRoomKeys(schema: { properties?: Record<string, unknown> }): void {
-  const rooms = schema.properties?.['rooms'];
-  if (rooms == null || typeof rooms !== 'object') return;
-  const properties = (rooms as { properties?: Record<string, unknown> }).properties;
-  if (properties == null || typeof properties !== 'object') return;
-  properties['toolOnlyReplies'] = { type: 'boolean' };
-}
-
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   // Two tolerances, composed. `z.toJSONSchema` takes ONE override, so a second
@@ -5176,6 +4876,9 @@ tolerateRetiredRuntimeKeys(jsonSchemaFull);
 // route. Two calls rather than one call doing both: they name two sections, and
 // a miss on either is a husk that never leaves.
 tolerateRetiredRoomKeys(jsonSchemaFull);
+
+// And the retired power-door and autonomy-acknowledgement leaves under `ui`.
+tolerateRetiredUiKeys(jsonSchemaFull);
 
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.
@@ -5507,11 +5210,7 @@ export class ConfigManager {
    * server, and a stale "all clear" is the wrong way for this to be wrong.
    */
   unreadableSettings(): readonly WidenedLeaf[] {
-    const found: WidenedLeaf[] = [];
-    for (const [key, value] of Object.entries(this.store.store)) {
-      found.push(...repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).skewed);
-    }
-    return found;
+    return findUnreadableLeaves(this.store.store, WIDENED_LEAF_POLICY);
   }
 
   /**
@@ -5534,14 +5233,8 @@ export class ConfigManager {
    * same list on demand.
    */
   private announceUnreadableSettings(): void {
-    const unreadable = this.unreadableSettings();
-    if (unreadable.length === 0) return;
-    const what = unreadable.length === 1 ? 'setting holds a value' : 'settings hold values';
-    logger.warn(
-      `[Config] ${unreadable.length} ${what} this build cannot read, so it is running on ` +
-        `the defaults and leaving your values in ${this.store.path}: ` +
-        unreadable.map(describeWidenedLeaf).join(', ')
-    );
+    const warning = unreadableSettingsWarning(this.unreadableSettings(), this.store.path);
+    if (warning) logger.warn(warning);
   }
 
   /**
@@ -5682,9 +5375,7 @@ export class ConfigManager {
    */
   onChange(listener: ConfigChangeListener): () => void {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => void this.listeners.delete(listener);
   }
 
   /** Notify subscribers that the named sections, at the named key paths, were just written. */

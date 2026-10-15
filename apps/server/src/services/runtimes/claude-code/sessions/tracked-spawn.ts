@@ -41,7 +41,7 @@ import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sd
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { logger } from '../../../../lib/logger.js';
-import type { WarmProcessLedger } from './warm-process-ledger.js';
+import type { WarmProcessLedger } from './warm-process/warm-process-ledger.js';
 
 /** How much of the child's stderr is kept to explain a bad exit. */
 const STDERR_TAIL_LIMIT = 4096;

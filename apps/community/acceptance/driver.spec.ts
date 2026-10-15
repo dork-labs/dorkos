@@ -41,7 +41,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // The packaged local install starts as a person would see it. Finish this
       // actual first-visit UI before the connection controls are navigable.
       await localPage.goto(env.local);
-      const skipSetup = localPage.getByRole('button', { name: 'Skip all setup', exact: true });
+      // "Continue without an account" is the first run's skip (DOR-2783).
+      const skipSetup = localPage.getByRole('button', {
+        name: 'Continue without an account',
+        exact: true,
+      });
       await expect(skipSetup).toBeVisible();
       await skipSetup.click();
       await expect(skipSetup).toBeHidden();
@@ -57,7 +61,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           onboarding: { dismissedAt: now },
           profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
           telemetry: { userHasDecided: true },
-          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+          ui: { trustNoticeSeenAt: now },
           // Spaces are an experiment, off by default (DOR-2740). This proof is
           // about spaces, so it turns them on the way a person would.
           spaces: { enabled: true },

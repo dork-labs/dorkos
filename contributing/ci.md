@@ -126,7 +126,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 **Split by what each is good at.** GitHub Actions splits by cost (2026-08-23/24, the CI-saturation fix):
 
 - On PRs, `test` runs **affected-only** and `browser-test` reports an instant pass-through.
-- The **full monorepo `test` sweep and the Playwright shards run only on `merge_group`**, as required merge-queue checks. The queue's combined-tree build decides every merge.
+- The **full monorepo `test` sweep and the Playwright shards run only on `merge_group`**, as required merge-queue checks. The queue's combined-tree build decides every merge. So does the one-minute first run (`browser-test.yml`'s `first-run` job, `pnpm --filter @dorkos/e2e e2e:first-run`): it boots two never-onboarded servers and the `browser-test` fan-in fails unless it passed.
 - The PR legs exist because GitHub requires a required check to succeed **on the PR** before the PR may enter the queue at all. A `merge_group`-only required check deadlocks every PR out of the queue (measured on PR #1246).
 - Push-to-main no longer re-runs the suites: the queue already tested the exact tree content (squash rewrites the SHA, not the content).
 
@@ -459,6 +459,10 @@ gh api repos/{owner}/{repo}/rules/branches/main
 ### "CI Steward census" is red in `typecheck`
 
 **Cause:** YAML and the `ci/` hand files disagree (a new job with no `ci/gates.yaml` entry, a missing `timeout-minutes`, a generated block out of date, a required check that can deadlock). **Fix:** read the step log, which names the gate. `node packages/ci-steward/src/cli.ts census --fix` regenerates the blocks; gates and timeouts are hand edits.
+
+### "File-size ratchet (DOR-2822)" is red in `typecheck`
+
+**Cause:** a file over 500 lines (ESLint's `max-lines` count) grew, a new file passed 500, a file shrank and its entry in `scripts/max-lines/baseline.json` was not lowered, or the baseline was raised against the base. **Fix:** the step names each file and what to do. Move code out of a file that grew or is new; run `pnpm check:max-lines -- --update` to lower entries after a shrink, or to carry an entry to a file's new path after a `git mv`. Never raise an entry: that is the one fix the check refuses.
 
 ### "CI Steward ledger coverage" is red
 

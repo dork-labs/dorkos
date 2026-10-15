@@ -32,352 +32,112 @@
  *
  * @module server/services/rooms/repo/room-repo-store
  */
-import { requireServerNativeDatabaseQueryCustody } from '@dorkos/db/internal-server';
 import { randomUUID } from 'node:crypto';
 import { constants, promises as fs, type Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
-import { types as utilTypes } from 'node:util';
 import { eq } from 'drizzle-orm';
 import { roomRepos, rooms, type Db } from '@dorkos/db';
 import { RoomRepoSidecarSchema, type RoomRepoSidecar } from '@dorkos/shared/room-repo';
 import { logger } from '../../../lib/logger.js';
-import {
-  readOriginalRoomRepoStoreOperation,
-  readOriginalRoomRepoCleanupOperation,
-} from './room-repo-service.js';
+import { readOriginalRoomRepoCleanupOperation } from './room-repo-service.js';
 import { readOriginalRoomRepoMaintenanceOperation } from './room-repo-reconciler.js';
-import { readOriginalRoomMergeStoreOperation } from './room-merge-service.js';
 import {
   checkInstallationRoomMutationTarget,
-  requireInstallationRoomMutationTarget,
-  readInstallationRoomMutationRoots,
   readInstallationRoomStoreRoots,
   type InstallationRoomMutationContext,
 } from '../../canvas/doc-channel/writes/installation-room-writes.js';
 
-/**
- * The file inside a room's home directory that records its repo.
- *
- * A constant rather than an inline string because the reconciler's directory
- * walk and the store's path builder must name the same file, and a typo in
- * either would look like "no room on this install has a repo".
- */
-export const ROOM_REPO_SIDECAR_FILENAME = 'room-repo.json';
-/** New internal persistence refusal ceiling; oversize historical files stay untouched. */
-const ROOM_REPO_SIDECAR_MAX_BYTES = 64 * 1024;
-function requireBoundedRoomRepoScalars(sidecar: RoomRepoSidecar): void {
-  // Bound each variable scalar before stringify; the byte check also covers UTF8/JSON escaping.
-  for (const value of [sidecar.roomId, sidecar.createdAt, sidecar.createdBy]) {
-    if (typeof value !== 'string' || value.length > ROOM_REPO_SIDECAR_MAX_BYTES)
-      throw new Error('Room sidecar exceeds its persistence ceiling.');
-  }
-}
-function captureRoomRepoPersistenceMetadata(input: RoomRepoSidecar): RoomRepoSidecar {
-  const capture = (value: object, allowed: readonly string[]): Record<string, unknown> => {
-    if (
-      utilTypes.isProxy(value) ||
-      !value ||
-      typeof value !== 'object' ||
-      (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-    )
-      throw new Error('Room sidecar persistence requires plain metadata.');
-    const result: Record<string, unknown> = Object.create(null);
-    for (const key of Reflect.ownKeys(value)) {
-      if (typeof key !== 'string' || !allowed.includes(key))
-        throw new Error('Room sidecar contains unsupported persistence fields.');
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable)
-        throw new Error('Room sidecar persistence requires plain data fields.');
-      result[key] = descriptor.value;
-    }
-    return result;
-  };
-  const result = capture(input, [
-    'roomId',
-    'mode',
-    'createdAt',
-    'createdBy',
-    'defaultBranch',
-    'caps',
-    'lastMergeSeq',
-  ]);
-  if (result.caps !== undefined)
-    result.caps = Object.freeze(
-      capture(result.caps as object, ['maxFileBytes', 'maxRepoBytes', 'maxRoomMdBytes'])
-    );
-  const sidecar = Object.freeze(result) as unknown as RoomRepoSidecar;
-  requireBoundedRoomRepoScalars(sidecar);
-  return sidecar;
-}
-function serializeBoundedRoomRepoSidecar(sidecar: RoomRepoSidecar): Buffer {
-  requireBoundedRoomRepoScalars(sidecar);
-  if (
-    (Object.getPrototypeOf(sidecar) !== Object.prototype &&
-      Object.getPrototypeOf(sidecar) !== null) ||
-    Object.prototype.hasOwnProperty.call(sidecar, 'toJSON')
-  )
-    throw new Error('Room sidecar persistence requires plain metadata.');
-  // Legacy public fixture input must also have a finite known shape; refuse extra data rather than discard it.
-  for (const key in sidecar) {
-    if (
-      !Object.prototype.hasOwnProperty.call(sidecar, key) ||
-      ![
-        'roomId',
-        'mode',
-        'createdAt',
-        'createdBy',
-        'defaultBranch',
-        'caps',
-        'lastMergeSeq',
-      ].includes(key)
-    )
-      throw new Error('Room sidecar contains unsupported persistence fields.');
-  }
-  if (sidecar.mode !== 'owned' || sidecar.defaultBranch !== 'main')
-    throw new Error('Unsupported Room sidecar binding.');
-  if (sidecar.caps !== undefined) {
-    if (
-      sidecar.caps === null ||
-      typeof sidecar.caps !== 'object' ||
-      (Object.getPrototypeOf(sidecar.caps) !== Object.prototype &&
-        Object.getPrototypeOf(sidecar.caps) !== null) ||
-      Object.prototype.hasOwnProperty.call(sidecar.caps, 'toJSON')
-    )
-      throw new Error('Room sidecar cap persistence requires plain metadata.');
-    for (const key in sidecar.caps) {
-      if (
-        !Object.prototype.hasOwnProperty.call(sidecar.caps, key) ||
-        !['maxFileBytes', 'maxRepoBytes', 'maxRoomMdBytes'].includes(key)
-      )
-        throw new Error('Room sidecar contains unsupported cap fields.');
-    }
-    for (const value of [
-      sidecar.caps.maxFileBytes,
-      sidecar.caps.maxRepoBytes,
-      sidecar.caps.maxRoomMdBytes,
-    ]) {
-      if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value)))
-        throw new Error('Invalid Room sidecar numeric cap.');
-    }
-  }
-  if (
-    sidecar.lastMergeSeq !== null &&
-    (typeof sidecar.lastMergeSeq !== 'number' || !Number.isFinite(sidecar.lastMergeSeq))
-  )
-    throw new Error('Invalid Room sidecar merge sequence.');
-  const bytes = Buffer.from(JSON.stringify(sidecar, null, 2) + '\n', 'utf8');
-  if (bytes.byteLength > ROOM_REPO_SIDECAR_MAX_BYTES)
-    throw new Error('Room sidecar exceeds its persistence ceiling.');
-  return bytes;
+import {
+  ROOM_REPO_SIDECAR_FILENAME,
+  ROOM_REPO_SIDECAR_MAX_BYTES,
+  SAFE_ROOM_ID,
+  InvalidRoomIdError,
+  captureRoomRepoPersistenceMetadata,
+  serializeBoundedRoomRepoSidecar,
+  toRow,
+  captureRoomRepoCacheRow,
+  captureRoomRepoInventoryRow,
+} from './repository-store/room-repo-sidecar-data.js';
+export {
+  ROOM_REPO_SIDECAR_FILENAME,
+  SAFE_ROOM_ID,
+  InvalidRoomIdError,
+} from './repository-store/room-repo-sidecar-data.js';
+import { createIsolatedRoomRepoOwnerCustody } from './repository-store/room-repo-owner-custody.js';
+
+import { publishOriginalRoomRepoSidecar } from './repository-store/room-repo-publish-current.js';
+import type { OriginalRoomRepoPublicationView } from './repository-store/room-repo-publication-context.js';
+
+const originalRoomRepoPublicationViews = new WeakMap<object, OriginalRoomRepoPublicationView>();
+const originalRoomRepoPublicationGet = WeakMap.prototype.get;
+const originalRoomRepoPublicationSet = WeakMap.prototype.set;
+const originalRoomRepoPublicationApply = Reflect.apply;
+/** Only the original constructor-private key may retrieve its fixed publication view. */
+export function readOriginalRoomRepoPublicationView(
+  owner: object
+): OriginalRoomRepoPublicationView {
+  const view = originalRoomRepoPublicationApply(
+    originalRoomRepoPublicationGet,
+    originalRoomRepoPublicationViews,
+    [owner]
+  ) as OriginalRoomRepoPublicationView | undefined;
+  if (!view) throw new Error('Unknown original Room repository publication owner.');
+  return view;
 }
 
-/**
- * The characters a room id may be made of before it reaches the filesystem.
- *
- * The same allowlist `LocalRoomAttachmentStore` applies to the same segment of
- * the same path, and an allowlist for the same reason: a room id arrives here
- * from a URL path segment, and the only safe way to know a string is not a path
- * is that it cannot contain one.
- */
-export const SAFE_ROOM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/** Thrown when a room id could be read as a path. */
-export class InvalidRoomIdError extends Error {
-  constructor(roomId: string) {
-    super(`Invalid room id: ${roomId}`);
-    this.name = 'InvalidRoomIdError';
-  }
-}
-
-/** Map a sidecar onto its derived cache row. */
-function toRow(sidecar: RoomRepoSidecar): typeof roomRepos.$inferInsert {
-  return {
-    roomId: sidecar.roomId,
-    mode: sidecar.mode,
-    createdAt: sidecar.createdAt,
-    lastMergeSeq: sidecar.lastMergeSeq,
-  };
-}
-
-interface RoomRepoOwner {
-  db: Db;
-  native: Db['$client'];
-  root: string;
-  read(roomId: string): typeof roomRepos.$inferSelect | null;
-  rows(): readonly Readonly<typeof roomRepos.$inferSelect>[];
-  exists(roomId: string): boolean;
-  remove(context: InstallationRoomMutationContext, roomId: string): void;
-  readSidecar(
-    context: InstallationRoomMutationContext,
-    roomId: string
-  ): Promise<RoomRepoSidecar | null>;
-  write(context: InstallationRoomMutationContext, sidecar: RoomRepoSidecar): Promise<void>;
-  upsert(context: InstallationRoomMutationContext, sidecar: RoomRepoSidecar): void;
-  rollback(context: InstallationRoomMutationContext): Promise<void>;
-}
-const roomRepoOwners = new WeakMap<object, RoomRepoOwner>();
-/** Constructor custody only: this never establishes room or document permission. */
-export function requireRoomRepoStoreDatabase(store: unknown, db: Db): undefined {
-  const owner = store && typeof store === 'object' ? roomRepoOwners.get(store) : undefined;
-  if (!owner || owner.db !== db || owner.native !== db.$client || !owner.native.open)
-    throw new Error('Unknown room repository store or native database.');
-  if (owner.native.inTransaction)
-    throw new Error('Room filesystem ownership cannot await inside SQL.');
-  return undefined;
-}
-/** Fixed constructor-owned row/root reader; public method replacement cannot manufacture data. */
-export function readOwnedRoomRepoSource(
-  store: RoomRepoStore,
-  db: Db,
-  roomId: string
-): Readonly<{
-  root: string;
-  home: string;
-  repo: string;
-  row: Readonly<typeof roomRepos.$inferSelect> | null;
-}> {
-  requireRoomRepoStoreDatabase(store, db);
-  if (!SAFE_ROOM_ID.test(roomId)) throw new InvalidRoomIdError(roomId);
-  const owner = roomRepoOwners.get(store)!;
-  const row = owner.read(roomId);
-  requireRoomRepoStoreDatabase(store, db);
-  if (roomRepoOwners.get(store) !== owner) throw new Error('Room repository owner changed.');
-  const home = path.join(owner.root, roomId);
-  return Object.freeze({
-    root: owner.root,
-    home,
-    repo: path.join(home, 'repo'),
-    row: row === null ? null : Object.freeze({ ...row }),
-  });
-}
-
-/**
- * Fixed synchronous native transaction DATA; this never permits filesystem ownership awaits.
- * @param store - Actual constructor-owned repository store.
- * @param db - The same original native database.
- * @param roomId - Room whose original row/layout is read.
- * @returns Fresh original row and constructor-captured layout DATA.
- */
-export function readOwnedRoomRepoTransactionSource(
-  store: RoomRepoStore,
-  db: Db,
-  roomId: string
-): ReturnType<typeof readOwnedRoomRepoSource> {
-  requireServerNativeDatabaseQueryCustody(db);
-  const owner = roomRepoOwners.get(store);
-  if (
-    !owner ||
-    owner.db !== db ||
-    owner.native !== db.$client ||
-    !owner.native.open ||
-    !owner.native.inTransaction
-  )
-    throw new Error('Original room repository transaction DATA unavailable.');
-  if (!SAFE_ROOM_ID.test(roomId)) throw new InvalidRoomIdError(roomId);
-  const row = owner.read(roomId);
-  requireServerNativeDatabaseQueryCustody(db);
-  if (
-    roomRepoOwners.get(store) !== owner ||
-    owner.native !== db.$client ||
-    !owner.native.open ||
-    !owner.native.inTransaction
-  )
-    throw new Error('Original room repository transaction DATA retired.');
-  const home = path.join(owner.root, roomId);
-  return Object.freeze({
-    root: owner.root,
-    home,
-    repo: path.join(home, 'repo'),
-    row: row === null ? null : Object.freeze({ ...row }),
-  });
-}
-
-function requireOriginalStoreOperation(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext,
-  roomId: string
-): void {
-  requireRoomRepoStoreDatabase(store, db);
-  const operation =
-    readOriginalRoomRepoStoreOperation(context, store, db) ??
-    readOriginalRoomMergeStoreOperation(context, store, db) ??
-    readOriginalRoomRepoMaintenanceOperation(context, store, db);
-  if (!operation || operation.roomId !== roomId)
-    throw new Error('Room sidecar mutation requires its original active service operation.');
-  const source = readOwnedRoomRepoSource(store, db, roomId),
-    roots = readInstallationRoomMutationRoots(context);
-  if (roots.homePath !== source.home || roots.repoPath !== source.repo)
-    throw new Error('Room sidecar mutation belongs to another source.');
-  requireInstallationRoomMutationTarget(context, source.home);
-}
-/** Write a sidecar through the original Room repository store operation. */
-export function executeOriginalRoomRepoStoreWrite(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext,
-  sidecar: RoomRepoSidecar
-): Promise<void> {
-  requireOriginalStoreOperation(store, db, context, sidecar.roomId);
-  return roomRepoOwners.get(store)!.write(context, sidecar);
-}
-/** Read a sidecar through the original Room repository store operation. */
-export function executeOriginalRoomRepoStoreRead(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext,
-  roomId: string
-): Promise<RoomRepoSidecar | null> {
-  requireOriginalStoreOperation(store, db, context, roomId);
-  return roomRepoOwners.get(store)!.readSidecar(context, roomId);
-}
-/** Upsert repository DATA through the original Room store operation. */
-export function executeOriginalRoomRepoStoreUpsert(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext,
-  sidecar: RoomRepoSidecar
-): void {
-  requireOriginalStoreOperation(store, db, context, sidecar.roomId);
-  roomRepoOwners.get(store)!.upsert(context, sidecar);
-}
-/** Retract only this Store's exact acquired publication, under its original admitted cleanup lifetime. */
-export function rollbackOriginalRoomRepoStoreWrite(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext
-): Promise<void> {
-  requireRoomRepoStoreDatabase(store, db);
-  const operation = readOriginalRoomRepoCleanupOperation(context, store, db);
-  if (!operation) throw new Error('Room sidecar cleanup lost its original admitted operation.');
-  return roomRepoOwners.get(store)!.rollback(context);
-}
-/** Fixed constructor native inventory for the original accepted maintenance pass, not user permission. */
-export function readOriginalRoomRepoInventory(store: RoomRepoStore, db: Db) {
-  requireRoomRepoStoreDatabase(store, db);
-  const owner = roomRepoOwners.get(store)!;
-  const result = Object.freeze({ root: owner.root, rows: owner.rows() });
-  requireRoomRepoStoreDatabase(store, db);
-  return result;
-}
-/** Read room existence through the original repository store. */
-export function originalRoomRepoRoomExists(store: RoomRepoStore, db: Db, roomId: string): boolean {
-  requireRoomRepoStoreDatabase(store, db);
-  const result = roomRepoOwners.get(store)!.exists(roomId);
-  requireRoomRepoStoreDatabase(store, db);
-  return result;
-}
-/** Remove a cache entry through the original Room repository operation. */
-export function executeOriginalRoomRepoCacheRemove(
-  store: RoomRepoStore,
-  db: Db,
-  context: InstallationRoomMutationContext,
-  roomId: string
-): void {
-  requireRoomRepoStoreDatabase(store, db);
-  roomRepoOwners.get(store)!.remove(context, roomId);
-}
+const originalRoomRepoCustody = createIsolatedRoomRepoOwnerCustody();
+const requireOriginalStoreOperation = originalRoomRepoCustody.requireOriginalStoreOperation;
+/** Original constructor-owned Room repository operation. */
+export const requireRoomRepoStoreDatabase: (
+  ...args: Parameters<typeof originalRoomRepoCustody.requireRoomRepoStoreDatabase>
+) => ReturnType<typeof originalRoomRepoCustody.requireRoomRepoStoreDatabase> =
+  originalRoomRepoCustody.requireRoomRepoStoreDatabase;
+/** Original constructor-owned Room repository operation. */
+export const readOwnedRoomRepoSource: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOwnedRoomRepoSource>
+) => ReturnType<typeof originalRoomRepoCustody.readOwnedRoomRepoSource> =
+  originalRoomRepoCustody.readOwnedRoomRepoSource;
+/** Original constructor-owned Room repository operation. */
+export const readOwnedRoomRepoTransactionSource: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOwnedRoomRepoTransactionSource>
+) => ReturnType<typeof originalRoomRepoCustody.readOwnedRoomRepoTransactionSource> =
+  originalRoomRepoCustody.readOwnedRoomRepoTransactionSource;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreWrite: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreRead: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreRead>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreRead> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreRead;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreUpsert: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert;
+/** Original constructor-owned Room repository operation. */
+export const rollbackOriginalRoomRepoStoreWrite: (
+  ...args: Parameters<typeof originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite>
+) => ReturnType<typeof originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite> =
+  originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite;
+/** Original constructor-owned Room repository operation. */
+export const readOriginalRoomRepoInventory: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOriginalRoomRepoInventory>
+) => ReturnType<typeof originalRoomRepoCustody.readOriginalRoomRepoInventory> =
+  originalRoomRepoCustody.readOriginalRoomRepoInventory;
+/** Original constructor-owned Room repository operation. */
+export const originalRoomRepoRoomExists: (
+  ...args: Parameters<typeof originalRoomRepoCustody.originalRoomRepoRoomExists>
+) => ReturnType<typeof originalRoomRepoCustody.originalRoomRepoRoomExists> =
+  originalRoomRepoCustody.originalRoomRepoRoomExists;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoCacheRemove: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove> =
+  originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove;
 
 function sameStoreInode(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
@@ -390,6 +150,7 @@ function sameStoreInode(left: Stats, right: Stats): boolean {
  * `os.homedir()`, which is banned in `apps/server/src` (Hard Rule 3).
  */
 export class RoomRepoStore {
+  readonly #publicationKey = Object.freeze({});
   /** `{dorkHome}/rooms` — the same root the attachment store hangs off. */
   readonly #root: string;
   readonly #db: Db;
@@ -444,38 +205,18 @@ export class RoomRepoStore {
     this.#nativeUpsert = (sidecar) => {
       runUpsert(sidecar.roomId, sidecar.mode, sidecar.createdAt, sidecar.lastMergeSeq);
     };
-    roomRepoOwners.set(this, {
+    originalRoomRepoCustody.register(this, {
       db,
       native: db.$client,
       root: this.#root,
       read: (roomId) => {
         const row = readRow(roomId) as typeof roomRepos.$inferSelect | undefined;
-        if (row === undefined) return null;
-        if (
-          row.roomId !== roomId ||
-          typeof row.mode !== 'string' ||
-          typeof row.createdAt !== 'string' ||
-          (row.lastMergeSeq !== null &&
-            (!Number.isSafeInteger(row.lastMergeSeq) || row.lastMergeSeq < 0))
-        )
-          throw new Error('Room repository cache row is invalid.');
-        return row;
+        return captureRoomRepoCacheRow(row, roomId);
       },
       rows: () => {
         requireRoomRepoStoreDatabase(this, db);
         return Object.freeze(
-          (allRows() as (typeof roomRepos.$inferSelect)[]).map((row) => {
-            if (
-              typeof row.roomId !== 'string' ||
-              !SAFE_ROOM_ID.test(row.roomId) ||
-              row.mode !== 'owned' ||
-              typeof row.createdAt !== 'string' ||
-              (row.lastMergeSeq !== null &&
-                (!Number.isSafeInteger(row.lastMergeSeq) || row.lastMergeSeq < 0))
-            )
-              throw new Error('Invalid native Room repo inventory row.');
-            return Object.freeze({ ...row });
-          })
+          (allRows() as (typeof roomRepos.$inferSelect)[]).map(captureRoomRepoInventoryRow)
         );
       },
       exists: (roomId) => {
@@ -488,6 +229,23 @@ export class RoomRepoStore {
       upsert: (context, sidecar) => this.#upsertOwned(context, sidecar),
       rollback: (context) => this.#rollbackOwned(context),
     });
+    originalRoomRepoPublicationApply(
+      originalRoomRepoPublicationSet,
+      originalRoomRepoPublicationViews,
+      [
+        this.#publicationKey,
+        Object.freeze({
+          store: this,
+          db,
+          publications: this.#publications,
+          readOwner: originalRoomRepoCustody.readOwner,
+          requireOriginalStoreOperation,
+          sameStoreInode,
+          upsertOwned: (context: InstallationRoomMutationContext, sidecar: RoomRepoSidecar) =>
+            this.#upsertOwned(context, sidecar),
+        }),
+      ]
+    );
   }
 
   #removeMaintenanceRow(context: InstallationRoomMutationContext, roomId: string): void {
@@ -523,7 +281,7 @@ export class RoomRepoStore {
       !sameStoreInode(publication.acquired, file)
     )
       throw new Error('Room sidecar cleanup refuses a foreign publication/parent.');
-    const row = roomRepoOwners.get(this)!.read(publication.sidecar.roomId);
+    const row = originalRoomRepoCustody.readOwner(this)!.read(publication.sidecar.roomId);
     if (
       row &&
       (row.mode !== publication.sidecar.mode ||
@@ -693,196 +451,7 @@ export class RoomRepoStore {
     context: InstallationRoomMutationContext,
     input: RoomRepoSidecar
   ): Promise<void> {
-    const captured = captureRoomRepoPersistenceMetadata(input);
-    const sidecar = Object.freeze(RoomRepoSidecarSchema.parse(captured));
-    const serialized = serializeBoundedRoomRepoSidecar(sidecar);
-    const roots = readInstallationRoomStoreRoots(context, this, this.#db),
-      dir = roots.home;
-    requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-    const installation = await fs.lstat(roots.installation);
-    if (
-      !installation.isDirectory() ||
-      installation.isSymbolicLink() ||
-      (await fs.realpath(roots.installation)) !== roots.canonicalInstallation
-    )
-      throw new Error('Room installation root changed.');
-    requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-    for (const directory of [roots.root, dir]) {
-      const parentPath = path.dirname(directory),
-        parentBefore = await fs.lstat(parentPath);
-      if (
-        !parentBefore.isDirectory() ||
-        parentBefore.isSymbolicLink() ||
-        (await fs.realpath(parentPath)) !==
-          path.join(roots.canonicalInstallation, path.relative(roots.installation, parentPath))
-      )
-        throw new Error('Room sidecar directory parent is not its actual directory.');
-      let before: Stats | undefined;
-      try {
-        before = await fs.lstat(directory);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-      }
-      if (before && (!before.isDirectory() || before.isSymbolicLink()))
-        throw new Error('Room sidecar directory is not its actual directory.');
-      if (
-        !sameStoreInode(parentBefore, await fs.lstat(parentPath)) ||
-        !sameStoreInode(installation, await fs.lstat(roots.installation))
-      )
-        throw new Error('Room sidecar directory parent replaced before acquisition.');
-      requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-      if (!before) await fs.mkdir(directory);
-      const stat = await fs.lstat(directory);
-      if (
-        !stat.isDirectory() ||
-        stat.isSymbolicLink() ||
-        (before && !sameStoreInode(before, stat)) ||
-        (await fs.realpath(directory)) !==
-          path.join(roots.canonicalInstallation, path.relative(roots.installation, directory)) ||
-        !sameStoreInode(parentBefore, await fs.lstat(parentPath)) ||
-        !sameStoreInode(installation, await fs.lstat(roots.installation))
-      )
-        throw new Error('Room sidecar parent is not its actual directory.');
-      requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-    }
-    const parent = await fs.lstat(dir),
-      target = path.join(dir, ROOM_REPO_SIDECAR_FILENAME),
-      tmp = path.join(dir, `.${randomUUID()}.tmp`);
-    const previousRow = roomRepoOwners.get(this)!.read(sidecar.roomId);
-    let previousTarget: Stats | undefined;
-    try {
-      previousTarget = await fs.lstat(target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-    if (previousTarget && (!previousTarget.isFile() || previousTarget.isSymbolicLink()))
-      throw new Error('Room sidecar destination is not its actual regular file.');
-    await checkInstallationRoomMutationTarget(context, target);
-    requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-    let file: FileHandle | undefined, acquired: Stats | undefined;
-    let failed = false,
-      cause: unknown;
-    // Join this scope to its captured cleanup before returning or reporting failure.
-    const drainOriginalCleanup = async () => {
-      if (file) {
-        try {
-          await file.close();
-        } catch (error) {
-          if (!failed) {
-            failed = true;
-            cause = error;
-          }
-        }
-      }
-      // Acquired cleanup custody only: no new forward permission or pathname inference.
-      // Scope lifetime remains held by the original caller until this finally returns.
-      if (acquired) {
-        try {
-          const currentParent = await fs.lstat(dir),
-            currentInstallation = await fs.lstat(roots.installation);
-          let currentFile: Stats | undefined;
-          try {
-            currentFile = await fs.lstat(tmp);
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-          }
-          if (currentFile) {
-            if (
-              !sameStoreInode(parent, currentParent) ||
-              !sameStoreInode(installation, currentInstallation) ||
-              !sameStoreInode(acquired, currentFile)
-            )
-              throw new Error('Room sidecar cleanup refuses a foreign file/parent.');
-            requireRoomRepoStoreDatabase(this, this.#db);
-            await fs.unlink(tmp);
-          }
-        } catch (error) {
-          if (!failed) {
-            failed = true;
-            cause = error;
-          }
-        }
-      }
-    };
-    try {
-      await checkInstallationRoomMutationTarget(context, tmp);
-      if (
-        !sameStoreInode(parent, await fs.lstat(dir)) ||
-        !sameStoreInode(installation, await fs.lstat(roots.installation))
-      )
-        throw new Error('Room sidecar parent replaced before acquisition.');
-      requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-      file = await fs.open(
-        tmp,
-        constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW,
-        0o600
-      );
-      acquired = await file.stat();
-      if (!acquired.isFile()) throw new Error('Room sidecar temporary acquisition is not a file.');
-      await checkInstallationRoomMutationTarget(context, tmp);
-      await file.writeFile(serialized);
-      await checkInstallationRoomMutationTarget(context, tmp);
-      await file.sync();
-      await checkInstallationRoomMutationTarget(context, tmp);
-      if (
-        !sameStoreInode(acquired, await file.stat()) ||
-        !sameStoreInode(acquired, await fs.lstat(tmp)) ||
-        !sameStoreInode(parent, await fs.lstat(dir)) ||
-        !sameStoreInode(installation, await fs.lstat(roots.installation))
-      )
-        throw new Error('Room sidecar publication lost its acquired file/parent.');
-      let currentTarget: Stats | undefined;
-      try {
-        currentTarget = await fs.lstat(target);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-      }
-      if (
-        (previousTarget === undefined) !== (currentTarget === undefined) ||
-        (previousTarget &&
-          currentTarget &&
-          (!currentTarget.isFile() ||
-            currentTarget.isSymbolicLink() ||
-            !sameStoreInode(previousTarget, currentTarget)))
-      )
-        throw new Error('Room sidecar destination replaced before publication.');
-      // Repeat parent/acquired identity after the awaited destination observation.
-      if (
-        !sameStoreInode(parent, await fs.lstat(dir)) ||
-        !sameStoreInode(installation, await fs.lstat(roots.installation)) ||
-        !sameStoreInode(acquired, await file.stat()) ||
-        !sameStoreInode(acquired, await fs.lstat(tmp))
-      )
-        throw new Error('Room sidecar publication lost its acquired file/parent.');
-      requireOriginalStoreOperation(this, this.#db, context, sidecar.roomId);
-      // These identity checks refuse observed replacement; pathname rename still has an external race.
-      await fs.rename(tmp, target);
-      // Record only our acquired inode; a later seed refusal may retract this exact publication.
-      this.#publications.set(context, {
-        sidecar,
-        installation: roots.installation,
-        installationStat: installation,
-        parent: dir,
-        parentStat: parent,
-        target,
-        acquired,
-        previousRow,
-        newTarget: previousTarget === undefined,
-      });
-      await checkInstallationRoomMutationTarget(context, target);
-      if (
-        !sameStoreInode(acquired, await fs.lstat(target)) ||
-        !sameStoreInode(parent, await fs.lstat(dir))
-      )
-        throw new Error('Room sidecar readback lost its acquired publication.');
-      this.#upsertOwned(context, sidecar);
-    } catch (error) {
-      failed = true;
-      cause = error;
-    } finally {
-      await drainOriginalCleanup();
-    }
-    if (failed) throw cause;
+    return publishOriginalRoomRepoSidecar(this.#publicationKey, context, input);
   }
 
   /**

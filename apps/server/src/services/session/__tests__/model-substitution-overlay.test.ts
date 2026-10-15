@@ -17,7 +17,7 @@ import {
   setSessionEventStore,
   type RawSessionEvent,
 } from '../session-state-projector.js';
-import { toRawSessionEvent } from '../session-event-normalizer.js';
+import { toRawSessionEvent } from '../projection/session-event-normalizer.js';
 
 let currentStore: SessionEventStore | undefined;
 afterEach(() => {

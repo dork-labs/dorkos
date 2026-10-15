@@ -5,7 +5,7 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * Integration tests for `GET /api/sessions/recent` (DOR-329): query validation
  * (limit 1-50, default 10) and the `{ sessions, agentActivity, warnings }`
  * response envelope. Agent paths are resolved from a stub mesh registry on
- * `app.locals.meshCore`; sessions come from a single `FakeAgentRuntime`.
+ * `sessionLocals.meshCore`; sessions come from a single `FakeAgentRuntime`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -45,13 +45,17 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const testServer = listeningServer(
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 function makeSession(id: string, updatedAt: string, cwd: string): Session {
   return {
@@ -65,9 +69,9 @@ function makeSession(id: string, updatedAt: string, cwd: string): Session {
   };
 }
 
-/** Stub the mesh registry the route reads off app.locals. */
+/** Stub the mesh registry the route reads off sessionLocals. */
 function setAgentPaths(paths: string[]): void {
-  app.locals.meshCore = {
+  sessionLocals.meshCore = {
     listWithPaths: () =>
       paths.map((projectPath) => ({ id: projectPath, name: 'agent', projectPath })),
   };
@@ -100,9 +104,9 @@ describe('GET /api/sessions/recent', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    delete app.locals.meshCore;
-    delete app.locals.resolveTaskOrigins;
-    delete app.locals.resolveRoomOrigins;
+    delete sessionLocals.meshCore;
+    delete sessionLocals.resolveTaskOrigins;
+    delete sessionLocals.resolveRoomOrigins;
   });
 
   it('returns the { sessions, agentActivity, warnings } envelope', async () => {
@@ -178,7 +182,7 @@ describe('GET /api/sessions/recent', () => {
     runtime.listSessions.mockImplementation((dir: string) =>
       Promise.resolve(dir === '/p1' ? [makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1')] : [])
     );
-    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
+    sessionLocals.resolveTaskOrigins = (sessionIds: string[]) =>
       sessionIds.includes('s1') ? new Map([['s1', { taskName: 'daily-digest' }]]) : new Map();
 
     const res = await request(testServer).get('/api/sessions/recent');
@@ -204,7 +208,7 @@ describe('GET /api/sessions/recent', () => {
           : []
       )
     );
-    app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+    sessionLocals.resolveRoomOrigins = (sessionIds: string[]) =>
       sessionIds.includes('s1')
         ? new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]])
         : new Map();
@@ -278,9 +282,9 @@ describe('GET /api/sessions/recent', () => {
       { ...makeSession('s-task', '2026-03-01T10:30:00.000Z', '/p1'), userLastMessageAt: wrote },
       { ...makeSession('s-yours', '2026-03-01T10:00:00.000Z', '/p1'), userLastMessageAt: wrote },
     ]);
-    app.locals.resolveRoomOrigins = () =>
+    sessionLocals.resolveRoomOrigins = () =>
       new Map([['s-room', { roomLabel: '#general', roomId: 'room-1' }]]);
-    app.locals.resolveTaskOrigins = () => new Map([['s-task', { taskName: 'nightly-sync' }]]);
+    sessionLocals.resolveTaskOrigins = () => new Map([['s-task', { taskName: 'nightly-sync' }]]);
 
     const res = await request(testServer).get('/api/sessions/recent');
 
@@ -298,9 +302,9 @@ describe('GET /api/sessions/recent', () => {
     runtime.listSessions.mockImplementation((dir: string) =>
       Promise.resolve(dir === '/p1' ? [makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1')] : [])
     );
-    app.locals.resolveRoomOrigins = () =>
+    sessionLocals.resolveRoomOrigins = () =>
       new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]]);
-    app.locals.resolveTaskOrigins = () => new Map([['s1', { taskName: 'daily-digest' }]]);
+    sessionLocals.resolveTaskOrigins = () => new Map([['s1', { taskName: 'daily-digest' }]]);
 
     const res = await request(testServer).get('/api/sessions/recent');
 

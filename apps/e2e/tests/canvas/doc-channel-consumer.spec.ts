@@ -1020,6 +1020,7 @@ test('two original managed Doc frames correlate log-only receipts across tabs an
 }) => {
   const host = await startIsolatedConsumerHost('session', 'none', 'none', 'log-only');
   let second: import('@playwright/test').Page | undefined;
+  let secondNavigation: ReturnType<import('@playwright/test').Page['goto']> | undefined;
   let failed = false,
     first: unknown;
   const remember = (cause: unknown) => {
@@ -1038,6 +1039,11 @@ test('two original managed Doc frames correlate log-only receipts across tabs an
     await expect(page.getByRole('heading', { name: 'Welcome to DorkOS' })).toBeHidden();
     await page.getByRole('button', { name: 'Keep asking me first', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'DorkOS runs at full power' })).toBeHidden();
+    // Load the second authenticated tab while the first original frame mounts.
+    second = await page.context().newPage();
+    secondNavigation = second.goto(location);
+    // Observe concurrent rejection immediately; retain the original first cause.
+    void secondNavigation.catch(remember);
     const firstPanel = new RightPanelPage(page);
     await firstPanel.ensureTabStripOpen();
     await firstPanel.browserTab.click();
@@ -1046,8 +1052,7 @@ test('two original managed Doc frames correlate log-only receipts across tabs an
     const firstFrame = await (await firstElement.elementHandle())?.contentFrame();
     if (!firstFrame) throw new Error('First original managed frame unavailable');
     await expectOriginalFrameReady(firstFrame, firstElement);
-    second = await page.context().newPage();
-    await second.goto(location);
+    await secondNavigation;
     // Same authenticated owner/context; the next original per-launch consent is a real UI decision.
     const consent = second.getByRole('dialog', {
       name: 'Share anonymous usage data?',
@@ -1193,6 +1198,7 @@ test('two original managed Doc frames correlate log-only receipts across tabs an
   const retire = [
     page.goto('about:blank').catch(remember),
     ...(second ? [second.close().catch(remember)] : []),
+    ...(secondNavigation ? [secondNavigation.catch(remember)] : []),
     host.close().catch(remember),
   ];
   await Promise.allSettled(retire);

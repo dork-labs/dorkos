@@ -1,12 +1,14 @@
-import express from 'express';
 import fs from 'node:fs/promises';
+import { WriteFileRequestSchema } from '@dorkos/shared/schemas';
 import { describe, expect, it } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import files from '../../../../../routes/files.js';
+import { originalDocHttpListener } from '../../__tests__/original-doc-http-listener.js';
 import { authorityFixture } from './authority-fixtures.js';
 import { setRoomService, clearRoomService } from '../../../../rooms/index.js';
 import { saveRecognizedNormalFileService } from '../normal-file-save.js';
+import { originalDocHonoRequest } from '../../../../../http/original-doc-request.js';
+import { readJsonBody } from '../../../../../http/request-body.js';
 
 const target = swappableServer();
 
@@ -15,26 +17,29 @@ describe('original installed ordinary file route', () => {
   it('uses the captured normal writer for changed/no-op/conflict and refuses a stopped owner', async () => {
     const h = await authorityFixture();
     setRoomService(h.rooms.service);
-    const app = express();
-    app.use(express.json());
-    app.locals.docChannelHttp = h.http;
     let directFailure: { cause: unknown } | undefined;
-    app.put('/original-save-cause', async (req, res) => {
-      try {
-        const result = await saveRecognizedNormalFileService(
-          h.http.normalFileSave,
-          req,
-          res,
-          req.body
-        );
-        res.status('code' in result ? 409 : 200).json(result);
-      } catch (cause) {
-        directFailure = { cause };
-        res.status(500).end();
-      }
-    });
-    app.use('/files', files);
-    const server = target.mount(app);
+    const server = target.mount(
+      originalDocHttpListener(() => h.http, {
+        fileMount: '/files',
+        registerRoutes: (app) => {
+          app.put('/original-save-cause', async (c) => {
+            try {
+              const own = originalDocHonoRequest(c);
+              const result = await saveRecognizedNormalFileService(
+                h.http.normalFileSave,
+                own.req,
+                own.res,
+                WriteFileRequestSchema.parse(readJsonBody(c))
+              );
+              return c.json(result, 'code' in result ? 409 : 200);
+            } catch (cause) {
+              directFailure = { cause };
+              return c.body(null, 500);
+            }
+          });
+        },
+      })
+    );
     try {
       h.http.normalFileSave.saveHttp = () => {
         throw new Error('Reflected ordinary save used');

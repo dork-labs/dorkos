@@ -81,6 +81,13 @@ export interface SessionStreamState {
    */
   queuedMessages: QueuedMessage[];
   /**
+   * Bumped by every `chat_activity` event (spec `spin-off-chats` §6): what this
+   * chat sent other chats, or another chat did to it, changed. A nudge, not
+   * the data — the Sent cards and "Stopped by" lines re-read the chat's
+   * messaging when it moves.
+   */
+  chatActivityVersion: number;
+  /**
    * The delivery receipt for each still-waiting message, keyed by message id.
    *
    * Only messages whose acceptance said something worth repeating are in here —
@@ -253,6 +260,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   messages: [],
   optimisticUserMessage: null,
   queuedMessages: [],
+  chatActivityVersion: 0,
   queueOutcomes: {},
   inProgressTurn: [],
   status: null,
@@ -912,7 +920,12 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start': {
       session.turnOrigin = event.origin === 'runtime' ? 'runtime' : 'user';
-      if (event.origin !== 'runtime') session.userTurnCount += 1;
+      // A turn another chat's message started is not somebody here asking for
+      // something, so it does not re-arm the turn-finished chime: agent-to-agent
+      // messages never notify the person (spec `spin-off-chats` §6).
+      if (event.origin !== 'runtime' && !(event.chatMessages && event.chatMessages.length > 0)) {
+        session.userTurnCount += 1;
+      }
       if (event.origin === 'runtime') {
         // A window nobody asked for APPENDS. Resetting is right when a person
         // sends the next message — by then the settled turn has long since been
@@ -1054,6 +1067,9 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       session.queueOutcomes = outcomes;
       break;
     }
+    case 'chat_activity':
+      session.chatActivityVersion += 1;
+      break;
     case 'subagent_update':
       // Explicit case rather than the default arm: the event both rides the turn
       // — so the turn's own subagent fold still draws it — AND maintains the
@@ -1167,6 +1183,9 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // Marks every lifecycle value the snapshot carries as hydration, not
             // a live transition (the turn-end reconcile re-baselines on this).
             session.hydrationGeneration += 1;
+            // A (re)connect may have skipped `chat_activity` nudges in the gap,
+            // so the Sent cards and "Stopped by" lines re-read (spin-off-chats §6).
+            session.chatActivityVersion += 1;
             // A snapshot whose history already ends with the optimistic message
             // means the send was persisted server-side before this (re)connect —
             // e.g. a mid-turn reconnect, where the user message is written at turn
@@ -1538,6 +1557,16 @@ const EMPTY_QUEUE_OUTCOMES: Record<string, MessageDeliveryOutcome> = {};
 export function useSessionQueue(sessionId: string): QueuedMessage[] {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: a counter that moves whenever this chat's messaging with
+ * other chats changes (spec `spin-off-chats` §6).
+ */
+export function useChatActivityVersion(sessionId: string): number {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.chatActivityVersion ?? 0, [sessionId])
   );
 }
 

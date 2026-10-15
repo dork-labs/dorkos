@@ -18,15 +18,14 @@ import {
   PermissionList,
   PresetPicker,
 } from '@/layers/features/permissions';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import { useTrustStopWrites } from '../../model/use-trust-stop-writes';
 
 /**
  * The Files & commands stop everyone has. It is the `runtimes.defaultTrustStop`
- * setting, so it writes through the one consent-gated path Settings has for it,
- * the same one Settings → Runtimes uses.
+ * setting, so it writes through the one path Settings has for it, the same one
+ * Settings → Runtimes uses.
  */
 function FilesAndCommandsSetting() {
   const { data } = usePermissions();
@@ -46,13 +45,6 @@ function FilesAndCommandsSetting() {
           {trust.writeError}
         </p>
       ) : null}
-      <AutonomyConfirmDialog
-        descriptor={trust.pendingAutonomy?.descriptor ?? null}
-        canRemember={false}
-        consentNote="Every new session starts here. DorkOS remembers you’ve read this."
-        onCancel={trust.cancelAutonomy}
-        onConfirm={trust.confirmAutonomy}
-      />
     </>
   );
 }

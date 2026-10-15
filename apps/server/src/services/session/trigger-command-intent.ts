@@ -29,7 +29,7 @@ import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
-import { feedProjector } from './session-event-normalizer.js';
+import { feedProjector } from './projection/session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { withStallGuard } from './stall-guard.js';
 import {
@@ -199,7 +199,7 @@ export interface TriggerCommandIntentResult {
  * cannot be: the web transport arms `AbortSignal.timeout` on this request
  * (`COMMAND_INTENT_REQUEST_TIMEOUT_MS`, `runCommandIntent` in
  * `apps/client/src/layers/shared/lib/transport/session-methods.ts`), and
- * aborting a fetch does not cancel the Express handler behind it. A wait that
+ * aborting a fetch does not cancel the route handler behind it. A wait that
  * outlasts the client's therefore showed the person an error at 30s and
  * compacted the conversation minutes later anyway — "we told you it failed and
  * did it anyway", which reads as data loss.

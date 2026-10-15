@@ -48,14 +48,22 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
   NODE_ENV: 'set by the way the server is started, not by a person editing .env',
   GITHUB_TOKEN: 'the standard GitHub convention, already in the environment of anyone who uses gh',
   CLIENT_DIST_PATH: 'set by the CLI and the desktop shell to point at their own bundled client',
+  DORKOS_OLLAMA_URL:
+    'loopback only and defaults to where Ollama always listens; it exists so tests can point the server at a stub Ollama',
   DORKOS_APPROVAL_TTL_MS:
     'shortens the approval window for the eval harness (DOR-498); it can only ever shorten it, and nothing an operator wants is on the other end',
+  DORKOS_OFFICIAL_SPACE_URL:
+    'overrides spaces.official.url, which is documented with it in docs/getting-started/configuration.mdx; the official space has no link to put here yet',
   DORKOS_TEST_RUNTIME: 'e2e only — swaps the real runtime for the fake one',
   DORKOS_TEST_RUNTIME_SECONDARY: 'e2e only — a second fake runtime, for the multi-runtime UI',
   DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'e2e only — a third fake runtime under the claude-code name',
+  DORKOS_TEST_RUNTIME_DOE: 'e2e only — the DorkOS runtime beside the fake one, on the fake Cloud',
+  DORKOS_TEST_CLOUD_AUTO_APPROVE: 'capture only — the fake Cloud approves its own code',
   DORKOS_Q3_DURATION_MS: 'read only by the q3 contention harness (scripts/q3-contention/run.ts)',
   DORKOS_Q3_TICK_MS: 'read only by the q3 contention harness',
   DORKOS_Q3_CANARY_MAP: 'read only by the q3 contention harness',
+  DORKOS_MANAGED_REMOTE:
+    'switches on DorkOS managed remote access (DOR-2086), which stays off until its live supplier acceptance passes; documenting it would offer a feature that does not work yet',
 };
 
 /**

@@ -18,7 +18,8 @@ vi.mock('../services/core/tunnel-manager.js', () => ({
 vi.mock('../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-import { createApp } from '../app.js';
+import { frontDoorListener } from '../http/front-door.js';
+import { composeFrontDoor } from '../http/hono-api.js';
 import { logger } from '../lib/logger.js';
 
 const target = swappableServer();
@@ -45,15 +46,17 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 function mount() {
-  const app = createApp({
-    admission: new MainRequestAdmission(),
+  const admission = new MainRequestAdmission();
+  // Routed as the running server routes, with one ordinary route beside the
+  // signed webhook.
+  const app = composeFrontDoor(admission, {
     connectorEventIngress: { verifier: () => verifier, accept },
   });
-  app.get('/api/ordinary-event-test', (_req, res) => res.json({ ordinary: true }));
-  target.mount(app);
+  app.get('/api/ordinary-event-test', (c) => c.json({ ordinary: true }));
+  target.mount(frontDoorListener(app));
 }
 
-describe('signed events in the real createApp middleware stack', () => {
+describe('signed events in the real composed middleware stack', () => {
   it.each([true, false])(
     'preserves exact signed bytes with login=%s and keeps ordinary routes gated',
     async (enabled) => {

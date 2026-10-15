@@ -84,6 +84,7 @@ for (const integrityCase of ['select-builder', 'event-codec'] as const) {
           )
         );
         for (const response of responses) expect(response.status()).toBe(201);
+        expect(await host.startNativeEmissionIntegrityObservation()).toEqual({ started: true });
         await step(); // Releases only the preceding genuine busy turn.
         // Do not run replay/row decoders while the genuine descriptor fault is armed.
         await expect

@@ -130,7 +130,7 @@ import {
   type TierEnforcementDecision,
 } from './capabilities/tier-enforcement.js';
 import { CapabilityToolError } from './capabilities/mcp-envelope.js';
-import { gatedActionForMcpTool } from './mcp-tool-tiers.js';
+import { gatedActionForMcpTool } from './mcp-tools/mcp-tool-tiers.js';
 import { runWithAuditActor } from '../audit/audit-context.js';
 import { auditTrail, recordAudit } from '../audit/audit-trail.js';
 
@@ -258,6 +258,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     action,
     input,
     ...(identity ? { identity } : {}),
+    ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
   });
 
   const decision = enforceCapabilityTier({

@@ -1,27 +1,25 @@
+import { createMockBinding } from './mock-relay-and-readiness.js';
 import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
+import { commitmentTransportMocks } from './mock-commitments.js';
+import { roomFileTransportMocks } from './mock-room-files.js';
+import { remoteCommunityTransportMocks } from './mock-remote-community.js';
+import { remoteAccessTransportMocks } from './mock-remote-access.js';
+import { doeTransportMocks } from './doe-transport-mocks.js';
 import type {
   Session,
   StreamEvent,
   CommandEntry,
-  InterruptOutcome,
-  InterruptReason,
-  InterruptReceipt,
   Task,
   ServerConfig,
   TaskRun,
   UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import { transportSliceMocks } from './mock-transport-slices.js';
+import { mockOnboardingMethods, mockProfileMethods } from './mock-person-methods.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
-import {
-  CONNECTION_GONE_AGENT_COPY,
-  CONNECTION_READINESS_COPY,
-  ConnectionReadinessSchema,
-  disconnectStuckOwnerLine,
-  type ConnectionReadiness,
-} from '@dorkos/shared/connector-schemas';
 import type { LimitPlan, SessionLimit } from '@dorkos/shared/session-stream';
 import type { TrackerItemRef } from '@dorkos/shared/types';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
@@ -35,12 +33,7 @@ import { canvasSourceKey } from '@dorkos/shared/canvas-source-key';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
-import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
-import type {
-  ObservedChat,
-  AdapterBinding,
-  UpdateBindingRequest,
-} from '@dorkos/shared/relay-schemas';
+import type { AdapterBinding, UpdateBindingRequest } from '@dorkos/shared/relay-schemas';
 
 /**
  * Create a mock Session with sensible defaults. Every optional `Session`
@@ -300,18 +293,6 @@ const mockAgent: AgentManifest = {
  */
 // eslint-disable-next-line require-yield
 async function* emptyAsyncIterable(): AsyncIterable<never> {}
-
-/**
- * The refusal a room with no files of its own answers with, shaped the way the
- * HTTP adapter shapes it: an `Error` carrying `code` and `status`, which is
- * what every client reads to tell one refusal from another.
- */
-function mockRoomHasNoRepoError(): Error & { code: string; status: number } {
-  return Object.assign(new Error('This room does not have files of its own.'), {
-    code: 'ROOM_HAS_NO_REPO',
-    status: 409,
-  });
-}
 
 /**
  * One page of a room's history, shaped the way `GET /api/rooms/:id/entries`
@@ -710,22 +691,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getRoom: vi.fn(),
     updateRoom: vi.fn(),
     listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
-    // A room with no files of its own, which is what nearly every room is: the
-    // surfaces that offer files read this code and show nothing at all. A test
-    // about a room's files overrides both; a test about anything else must not
-    // have to know rooms can have files.
-    readRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomFileContent: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    saveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    uploadRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    moveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    deleteRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    saveAttachmentToRoomFiles: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    repairRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    mergeRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    readRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
-    writeRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    ...roomFileTransportMocks(),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     // Nothing attached, by default: a test that is about attachments overrides
     // this, and every other test posts a message with no files the way a person
@@ -1090,7 +1056,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         },
       },
     }),
-    getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
     getKeepAwake: vi.fn().mockResolvedValue({
       enabled: true,
       supported: true,
@@ -1107,10 +1072,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
-    getDoeInference: vi.fn().mockResolvedValue({ inference: null, hasKey: false }),
-    setDoeInference: vi.fn().mockResolvedValue({ ok: true }),
-    storeDoeCredential: vi.fn().mockResolvedValue({ ok: true, hasKey: true }),
-    getDoeCreditsModels: vi.fn().mockResolvedValue({ endpoint: null, models: [] }),
+    ...doeTransportMocks(),
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     getOpenCodeDirectSetup: vi
@@ -1136,8 +1098,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       installMethod: 'brew',
       status: { running: true, models: [] },
     }),
-    startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
-    stopTunnel: vi.fn().mockResolvedValue(undefined),
+    ...remoteAccessTransportMocks(),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),
@@ -1283,8 +1244,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     prepareReset: vi.fn().mockResolvedValue({ token: 'test-reset-token' }),
     resetAllData: vi.fn().mockResolvedValue({ message: 'Reset initiated. Server will restart.' }),
     restartServer: vi.fn().mockResolvedValue({ message: 'Restart initiated.' }),
-    // Activity Feed
-    listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    ...transportSliceMocks(),
     // Templates
     getTemplates: vi.fn().mockResolvedValue([]),
     // Marketplace
@@ -1377,7 +1337,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       changeCount: 0,
       filesAndCommands: {
         stop: null,
-        presetStop: null,
+        presetStop: 'autonomy',
         runtimes: [],
         exceptions: [],
         followingAgentIds: [],
@@ -1386,6 +1346,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       exceptions: [],
       agentCount: 0,
     }),
+    ...commitmentTransportMocks(),
     getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
       Promise.resolve({
         agentId,
@@ -1442,16 +1403,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ project: null, allow: null, accounts: [] }),
     setAccountOnlyProjects: vi.fn().mockResolvedValue({ onlyProjects: null }),
-    // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
-    // Each resolves with what the real route answers, so a component under test
-    // takes its success path unless a test deliberately makes one reject.
-    updateProfile: vi
-      .fn()
-      .mockImplementation((displayName: string) => Promise.resolve({ displayName })),
-    uploadProfileAvatar: vi
-      .fn()
-      .mockResolvedValue({ imageUrl: '/api/profile/avatar/person-1?v=abc' }),
-    deleteProfileAvatar: vi.fn().mockResolvedValue(undefined),
+    ...mockProfileMethods(),
+    ...mockOnboardingMethods(),
     setIdentityLinkedToMe: vi.fn().mockResolvedValue(undefined),
     // Answers with the `AuthorRef` the real route returns, echoing the handle
     // it was asked for. A bare `vi.fn()` resolves `undefined`, which is not a
@@ -1470,28 +1423,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
     forkShape: vi.fn(),
-    listRemoteCommunityRooms: vi.fn(),
-    getRemoteCommunityRoom: vi.fn(),
-    listRemoteCommunityEntries: vi.fn(),
-    postRemoteCommunityEntry: vi.fn(),
-    subscribeRemoteCommunityRoom: vi.fn(),
-    listRemoteCommunityMembers: vi.fn(),
-    joinRemoteCommunityRoom: vi.fn(),
-    leaveRemoteCommunityRoom: vi.fn(),
-    getRemoteCommunityReadCursor: vi.fn(),
-    setRemoteCommunityReadCursor: vi.fn(),
-    listRemoteCommunityAgents: vi.fn(),
-    enrollRemoteCommunityAgent: vi.fn(),
-    ejectRemoteCommunityAgent: vi.fn(),
-    joinRemoteCommunityAgentRoom: vi.fn(),
-    leaveRemoteCommunityAgentRoom: vi.fn(),
-    haltRemoteCommunityRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
-    haltRemoteCommunityAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
-    retryRemoteCommunityDelivery: vi
-      .fn()
-      .mockImplementation(async (community, roomId) => ({ community, roomId, deliveries: [] })),
-    uploadRemoteCommunityAttachment: vi.fn(),
-    downloadRemoteCommunityAttachment: vi.fn(),
+    ...remoteCommunityTransportMocks(),
     listCommunityConnections: vi.fn().mockResolvedValue([]),
     startCommunityConnection: vi.fn(),
     getCommunityConnection: vi.fn(),
@@ -1678,145 +1610,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
   };
 }
 
-/**
- * Generate a valid HMAC-SHA256 signature for webhook testing.
- *
- * Produces headers that `WebhookAdapter.handleInbound()` will accept, using
- * the same Stripe-style format: `{timestamp}.{body}`.
- *
- * @param body - The raw request body string to sign
- * @param secret - The HMAC secret to sign with
- * @param timestamp - Optional Unix timestamp in seconds (defaults to now)
- * @returns Object with `signature`, `timestamp`, and `nonce` header values
- */
-export function signPayload(
-  body: string,
-  secret: string,
-  timestamp?: number
-): { signature: string; timestamp: string; nonce: string } {
-  const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
-  const nonce = crypto.randomUUID();
-  const message = `${ts}.${body}`;
-  const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
-  return { signature, timestamp: ts, nonce };
-}
-
-/**
- * Create a mock ObservedChat with sensible defaults.
- *
- * @param overrides - Partial overrides for the chat fields
- */
-export function createMockObservedChat(overrides: Partial<ObservedChat> = {}): ObservedChat {
-  return {
-    chatId: '12345',
-    displayName: 'Test Chat',
-    channelType: 'dm',
-    lastMessageAt: new Date().toISOString(),
-    messageCount: 5,
-    ...overrides,
-  };
-}
-
-/**
- * Create a mock AdapterBinding with sensible defaults.
- *
- * @param overrides - Partial overrides for the binding fields
- */
-export function createMockBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
-  return {
-    id: crypto.randomUUID(),
-    adapterId: 'telegram-1',
-    agentId: 'agent-1',
-    sessionStrategy: 'per-chat',
-    label: '',
-    permissionMode: 'acceptEdits',
-    enabled: true,
-    canInitiate: false,
-    canReply: true,
-    canReceive: true,
-    notifyOnTaskComplete: true,
-    bridge: 'off',
-    roomId: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  };
-}
-
-/**
- * Create a mock RelayAdapter with all methods stubbed via vi.fn().
- *
- * @param overrides - Partial overrides for adapter properties and methods
- */
-export function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayAdapter {
-  const defaultStatus: AdapterStatus = {
-    state: 'connected',
-    messageCount: { inbound: 0, outbound: 0 },
-    errorCount: 0,
-  };
-
-  return {
-    id: 'mock-adapter',
-    subjectPrefix: 'relay.test.mock',
-    displayName: 'Mock Adapter',
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-    deliver: vi.fn().mockResolvedValue(undefined),
-    getStatus: vi.fn().mockReturnValue(defaultStatus),
-    ...overrides,
-  };
-}
-
-/**
- * Build one {@link InterruptReceipt} for a test.
- *
- * The stop vocabulary is five outcomes and six reasons, and a test that spells
- * a literal out inline is a test that can spell one WRONG — a `not-running`
- * carrying `refused` type-checks perfectly and means nothing. This picks each
- * outcome's canonical reason so a caller states only what it cares about.
- *
- * @param outcome - Which of the five endings to stage
- * @param overrides - `runtime` (defaults to `'fake'`) and an explicit `reason`,
- *   for the cells where the outcome alone carries the fact — a bare `closed`,
- *   which is what a runtime with no graceful path to abandon answers
- */
-export function mockInterruptReceipt(
-  outcome: InterruptOutcome,
-  overrides: { runtime?: string; reason?: InterruptReason | null } = {}
-): InterruptReceipt {
-  const canonicalReason: Record<InterruptOutcome, InterruptReason | undefined> = {
-    acked: undefined,
-    closed: 'ack-timeout',
-    'not-running': 'no-open-turn',
-    unconfirmed: 'runtime-declined',
-    failed: 'delivery-failed',
-  };
-  const reason = overrides.reason === undefined ? canonicalReason[outcome] : overrides.reason;
-  return {
-    outcome,
-    ...(reason ? { reason } : {}),
-    runtime: overrides.runtime ?? 'fake',
-  };
-}
-
-/**
- * A connected account's server readiness for client fixtures: ready unless
- * overridden. Client code renders readiness and never derives it, so a fixture
- * names the state it wants the surface to show; the server's own table
- * (`deriveConnectionReadiness`) is tested on its own. Words come from the one
- * copy table unless given, and the result is checked against the schema, so a
- * fixture can never hold a readiness the server could not send.
- *
- * @param overrides - The state, reason, fix or copy to use instead.
- */
-export function createMockConnectionReadiness(
-  overrides: Partial<ConnectionReadiness> = {}
-): ConnectionReadiness {
-  const reason = overrides.reason ?? 'usable';
-  const copy =
-    overrides.copy ??
-    (reason === 'disconnect_stuck'
-      ? { owner: disconnectStuckOwnerLine('unconfirmed'), agent: CONNECTION_GONE_AGENT_COPY }
-      : CONNECTION_READINESS_COPY[reason]);
-  return ConnectionReadinessSchema.parse({ state: 'ready', ...overrides, reason, copy });
-}
+export {
+  signPayload,
+  createMockObservedChat,
+  createMockBinding,
+  createMockAdapter,
+  mockInterruptReceipt,
+  createMockConnectionReadiness,
+} from './mock-relay-and-readiness.js';

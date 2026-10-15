@@ -63,6 +63,7 @@ export type {
   ExtensionReadableState,
   ExtensionPageProps,
   ExtensionPageOptions,
+  ExtensionTabPlacement,
   ProjectRef,
   StatusBarItemOptions,
   StatusBarSlotContext,
@@ -73,6 +74,13 @@ export type {
   ExtensionDecisionView,
 } from './extension-api.js';
 export type { StartWorkInput } from './start-work.js';
+export {
+  PAGE_BADGE_STATUSES,
+  PAGE_BADGE_SENTENCE_MAX,
+  pageBadgeProblem,
+  copyPageBadge,
+} from './page-badge.js';
+export type { ExtensionPageBadge, PageBadgeStatus } from './page-badge.js';
 export { StartWorkError } from './start-work.js';
 export {
   EXTENSION_EVENT_KINDS,
@@ -112,6 +120,9 @@ export type {
   SettingsStore,
   DataProviderContext,
   ServerExtensionRegister,
+  ServerExtensionRegisterResult,
+  ServerExtensionHandlers,
+  ExtensionFetchHandler,
   AccountsApi,
   AccountSummary,
   AccountUsage,

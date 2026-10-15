@@ -106,6 +106,22 @@ export function agentRequestWriter(agent: { id?: string; name: string }): Permis
   };
 }
 
+/**
+ * The writer for a change an agent made with `change_permission` on its own,
+ * because its Permissions area is Allowed (ADR `261006-225605`): no card was
+ * shown, so the history names the agent and nobody else.
+ *
+ * @param agent - The agent that made the change, by the name a person knows it by.
+ */
+export function agentWriter(agent: { id?: string; name: string }): PermissionWriter {
+  return {
+    attribution: 'agent',
+    actorType: 'agent',
+    ...(agent.id ? { actorId: agent.id } : {}),
+    actorLabel: agent.name,
+  };
+}
+
 /** How a Files & commands stop reads in a sentence. */
 const STOP_WORD: Record<string, string> = {
   ask: 'Ask first',
@@ -643,7 +659,6 @@ function resolverKeys(entry: {
  * key never is: a later change to the default does not touch an agent's own
  * setting, and naming it would credit the state to the wrong change.
  *
- * `unchanged` decides at the same place `preset` does (no preset chosen yet).
  * `floor` and `always-asks` clamp a stored Allowed and hide which layer said
  * it, so every key is a candidate.
  *
@@ -657,8 +672,7 @@ export function lastChangeFor(
 ): PermissionLastChange | undefined {
   if (entry.source === 'inactive') return undefined;
   const keys = resolverKeys(entry);
-  const decider = entry.source === 'unchanged' ? 'preset' : entry.source;
-  const stop = keys.findIndex((k) => k.source === decider);
+  const stop = keys.findIndex((k) => k.source === entry.source);
   const hidden = entry.source === 'floor' || entry.source === 'always-asks';
   const candidates = hidden || stop === -1 ? keys : keys.slice(0, stop + 1);
   return newestOf(

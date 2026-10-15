@@ -4,6 +4,7 @@ import {
   CONNECTION_CLOSED_BY_NEW_LINK_EVENT,
   recordConnectionsClosedByNewLink,
   agentAppSetupNote,
+  agentConnectChoices,
   appReachProblem,
   chooseNewAppsWay,
   signInThroughFor,
@@ -138,6 +139,21 @@ describe('agent notes', () => {
       expect(note).toContain('Gmail');
       expect(note).toContain('still request');
     }
+  });
+
+  it('gives the agent the real choices to offer when the person must pick a way in (FB-57)', () => {
+    const note = agentAppSetupNote('nothing_set_up', 'Gmail');
+    expect(note).toContain('ask which one they want, then help them do it');
+    // The DorkOS account first, as on the first-run screen; the own key second.
+    expect(note.indexOf('DorkOS account, or create one')).toBeLessThan(
+      note.indexOf('Composio key')
+    );
+    expect(agentConnectChoices('dorkos_account_unlinked')).toContain(
+      'link their DorkOS account again'
+    );
+    expect(agentConnectChoices('own_key_unavailable')).toMatch(
+      /^.*\(1\) check or replace their own key/
+    );
   });
 });
 

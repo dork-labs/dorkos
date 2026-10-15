@@ -27,6 +27,7 @@ import {
   type TakedownHooks,
   type TakedownRow,
 } from './takedowns.js';
+import { notifyLive } from '../live/notices.js';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -280,6 +281,7 @@ export async function createCommunityTakedown(
      WHERE id=$1 RETURNING lifecycle_version`,
     [community.id, input.now, deleteAfter, requester, id]
   );
+  await notifyLive(client, { k: 'community', c: community.id });
   await client.query(
     `INSERT INTO community_deletion_jobs(
        community_id,requested_by_host_actor,lifecycle_version,delete_after,next_attempt_at,
@@ -465,6 +467,7 @@ export async function reverseCommunityTakedown(
      WHERE id=$1`,
     [row.community_id, suspendedFrom, input.now]
   );
+  await notifyLive(client, { k: 'community', c: row.community_id });
   await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [
     row.community_id,
   ]);

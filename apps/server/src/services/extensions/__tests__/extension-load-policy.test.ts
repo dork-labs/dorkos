@@ -302,7 +302,7 @@ describe('the load gate, at every path that runs extension code', () => {
     // `require()` would read, or "we did not load it" is only half true.
     expect(mockCompileServer).not.toHaveBeenCalled();
     expect(mockWriteFile).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('my-ext')).toBeNull();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 
   it('refuses POST /api/extensions/:id/init-server (the direct REST primitive)', async () => {
@@ -313,7 +313,7 @@ describe('the load gate, at every path that runs extension code', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Settings > Extensions');
     expect(mockCompileServer).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('my-ext')).toBeNull();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 
   it('refuses the server half of enable(), which is what the marketplace and Shapes reach', async () => {
@@ -330,7 +330,7 @@ describe('the load gate, at every path that runs extension code', () => {
     expect(result!.extension.status).toBe('compiled');
     // But nothing ran in this process.
     expect(mockCompileServer).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('my-ext')).toBeNull();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
     expect(result!.extension.approvedToRun).toBe(false);
   });
 
@@ -346,7 +346,7 @@ describe('the load gate, at every path that runs extension code', () => {
     expect(mockCompile).toHaveBeenCalled();
     // The server entry does not load.
     expect(mockCompileServer).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('my-ext')).toBeNull();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 
   it('refuses test_extension BEFORE compiling, and never imports the bundle', async () => {
@@ -376,7 +376,7 @@ describe('the load gate, at every path that runs extension code', () => {
     await manager.initialize(null);
 
     expect(mockCompileServer).toHaveBeenCalled();
-    expect(manager.getServerRouter('linear-issues')).not.toBeNull();
+    expect(manager.getServerHandler('linear-issues')).not.toBeNull();
   });
 });
 
@@ -423,7 +423,7 @@ describe('the dev loop stays free after one approval', () => {
     });
     // The approve route is what makes one click enough: the extension is running
     // now, without a restart.
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
     // Everything from here on must happen with NO further config write. That is
     // the whole claim of this feature, so it is watched rather than assumed.
@@ -438,7 +438,7 @@ describe('the dev loop stays free after one approval', () => {
     mockCompile.mockResolvedValue({ code: 'bundle-v2', sourceHash: 'h2' });
     const reloaded = await manager.reloadExtension('my-ext');
     expect(reloaded.status).toBe('compiled');
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
     // --- 5. The agent breaks the build. This is the case a per-call approval card
     // would have carded, and the reason the gate is on the artifact instead.
@@ -454,7 +454,7 @@ describe('the dev loop stays free after one approval', () => {
     mockCompile.mockResolvedValue({ code: 'bundle-v3', sourceHash: 'h4' });
     const fixed = await manager.reloadExtension('my-ext');
     expect(fixed.status).toBe('compiled');
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
     const afterFix = await manager.testExtension('my-ext');
     expect(afterFix.status).toBe('ok');
@@ -491,13 +491,13 @@ describe('the dev loop stays free after one approval', () => {
       approvedSources: MY_EXT_SOURCE,
     });
     // Back on, still approved, running again with nothing asked of the person.
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
   });
 
   it('stops the extension again when a person withdraws the approval', async () => {
     stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
     await manager.initialize(null);
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
 
     await manager.revokeRunApproval('my-ext');
 
@@ -517,7 +517,7 @@ describe('the dev loop stays free after one approval', () => {
         },
       },
     });
-    expect(manager.getServerRouter('my-ext')).toBeNull();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
   });
 });
 
@@ -544,14 +544,14 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     ]);
     await manager.initialize(null);
 
-    expect(manager.getServerRouter('flow')).toBeNull();
+    expect(manager.getServerHandler('flow')).toBeNull();
     expect(await manager.readBundle('flow')).toBeNull();
 
     const approved = await manager.approveToRun('flow');
 
     expect(stored.value.approvedSources).toEqual({ flow: { path: PLUGIN_COPY, plugin: 'flow' } });
     expect(approved).toMatchObject({ approvedToRun: true, sourcePlugin: 'flow' });
-    expect(manager.getServerRouter('flow')).not.toBeNull();
+    expect(manager.getServerHandler('flow')).not.toBeNull();
     expect(await manager.readBundle('flow')).toBe(OBSERVABLE_BUNDLE);
   });
 
@@ -572,7 +572,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     ]);
     await manager.initialize(null);
 
-    expect(manager.getServerRouter('flow')).toBeNull();
+    expect(manager.getServerHandler('flow')).toBeNull();
     expect(await manager.readBundle('flow')).toBeNull();
     expect(manager.listPublic().find((e) => e.id === 'flow')?.approvedToRun).toBe(false);
 
@@ -582,7 +582,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     expect(stored.value.approvedSources).toEqual({
       flow: { path: OTHER_PLUGIN_COPY, plugin: 'aaa-other' },
     });
-    expect(manager.getServerRouter('flow')).not.toBeNull();
+    expect(manager.getServerHandler('flow')).not.toBeNull();
   });
 
   it('keeps an approval given before copies were recorded working for the direct install', async () => {
@@ -594,7 +594,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     expect(stored.value.approvedSources).toEqual({
       'my-ext': { path: '/fake/dork-home/extensions/my-ext' },
     });
-    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+    expect(manager.getServerHandler('my-ext')).not.toBeNull();
   });
 
   it('leaves an earlier id-only approval unbound, and so unapproved, when only a plugin carries it', async () => {
@@ -607,7 +607,7 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
 
     expect(stored.value.approvedSources).toBeUndefined();
     expect(mockConfigSet).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('flow')).toBeNull();
+    expect(manager.getServerHandler('flow')).toBeNull();
   });
 
   it('forgets the copy along with the id when the approval is withdrawn', async () => {
@@ -707,7 +707,7 @@ describe('reload_extensions --id on an extension the user turned OFF', () => {
     // the routes mounted and `server.ts` ran while the cockpit toggle still read
     // off. Assert the record was not touched either, not just the load.
     expect(mockCompileServer).not.toHaveBeenCalled();
-    expect(manager.getServerRouter('off-ext')).toBeNull();
+    expect(manager.getServerHandler('off-ext')).toBeNull();
     expect(manager.get('off-ext')!.status).toBe('disabled');
   });
 });

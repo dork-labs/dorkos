@@ -40,13 +40,24 @@ function applyUpdateLikeServer(
  *   `shared/lib/query-client`, which prefers this over a toast at the call
  *   site: the cache handler always runs, a `mutate` callback does not).
  *   Without it the failure still reports, in the generic line.
+ * @param options.isShownInline - Answers true for a failure the calling
+ *   surface reports itself, under its own control, so the shared toast skips
+ *   that one (`meta.isShownInline` in `shared/lib/query-client`). It must answer
+ *   false once the surface is gone.
  */
-export function useUpdateAgent(options?: { errorLabel?: string }) {
+export function useUpdateAgent(options?: {
+  errorLabel?: string;
+  isShownInline?: (error: Error) => boolean;
+}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const meta = {
+    ...(options?.errorLabel ? { errorLabel: options.errorLabel } : {}),
+    ...(options?.isShownInline ? { isShownInline: options.isShownInline } : {}),
+  };
 
   return useMutation({
-    ...(options?.errorLabel ? { meta: { errorLabel: options.errorLabel } } : {}),
+    ...(Object.keys(meta).length > 0 ? { meta } : {}),
     mutationFn: (opts: { path: string; updates: AgentManifestUpdate }) =>
       transport.updateAgentByPath(opts.path, opts.updates),
     onMutate: async ({ path, updates }) => {

@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 import type { Pool } from 'pg';
 import {
+  CommunityWireChannelAutoJoinResponseSchema,
   CommunityWireChannelCreateRequestSchema,
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelMemberRequestSchema,
@@ -25,6 +26,7 @@ import {
 } from '../../data.js';
 import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
+import { notifyLive } from '../../live/notices.js';
 
 interface ChannelRow {
   id: string;
@@ -48,6 +50,12 @@ function project(row: ChannelRow): CommunityWireChannel {
     joined: row.joined,
     unreadCount: Number(row.unread_count),
   };
+}
+
+/** A private channel is never joined on arrival: only the people it names may read it. */
+function refusePrivateAutoJoin(visibility: string, autoJoin: boolean | undefined): void {
+  if (autoJoin && visibility !== 'public')
+    throw new ApiError(409, 'STATE_CONFLICT', 'Only public channels can be joined on arrival.');
 }
 
 async function channelProjection(pool: Pool, id: string, member: Member | Principal) {
@@ -90,13 +98,36 @@ export function registerChannelRoutes(
     return json(c, CommunityWireChannelListResponseSchema, { channels: result.rows.map(project) });
   });
 
+  // Before `/channels/:id`, which would otherwise take `auto-join` for a channel id.
+  app.get('/channels/auto-join', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const rows = await transaction(pool, async (client) => {
+      await requireLiveRole(client, member, ['owner', 'admin'], { allowHeld: true });
+      return client.query<{ id: string }>(
+        'SELECT id FROM channels WHERE community_id=$1 AND auto_join ORDER BY created_at,id',
+        [member.community_id]
+      );
+    });
+    return json(c, CommunityWireChannelAutoJoinResponseSchema, {
+      channelIds: rows.rows.map((row) => row.id),
+    });
+  });
+
   app.post('/channels', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireChannelCreateRequestSchema);
+    refusePrivateAutoJoin(body.visibility ?? 'public', body.autoJoin);
     const id = await transaction(pool, async (client) => {
       const row = await client.query<{ id: string }>(
-        `INSERT INTO channels(community_id,name,description,visibility) VALUES($1,$2,$3,$4) RETURNING id`,
-        [member.community_id, body.name, body.description ?? null, body.visibility ?? 'public']
+        `INSERT INTO channels(community_id,name,description,visibility,auto_join)
+         VALUES($1,$2,$3,$4,$5) RETURNING id`,
+        [
+          member.community_id,
+          body.name,
+          body.description ?? null,
+          body.visibility ?? 'public',
+          body.autoJoin ?? false,
+        ]
       );
       // A concurrent demotion may complete while INSERT waits; this check is inside the transaction.
       await requireLiveRole(client, member, ['owner', 'admin']);
@@ -123,19 +154,31 @@ export function registerChannelRoutes(
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireChannelUpdateRequestSchema);
     await transaction(pool, async (client) => {
-      await lockChannel(client, c.req.param('id'), member);
+      const channel = await lockChannel(client, c.req.param('id'), member);
       await requireLiveRole(client, member, ['owner', 'admin']);
+      refusePrivateAutoJoin(channel.visibility, body.autoJoin);
       await client.query(
         `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
-           archived=COALESCE($5,archived),epoch=epoch+1 WHERE id=$1`,
+           archived=COALESCE($5,archived),auto_join=COALESCE($6,auto_join),
+           slow_mode_seconds=COALESCE($7,slow_mode_seconds),epoch=epoch+1 WHERE id=$1`,
         [
           c.req.param('id'),
           body.name ?? null,
           'description' in body,
           body.description ?? null,
           body.archived ?? null,
+          body.autoJoin ?? null,
+          body.slowModeSeconds ?? null,
         ]
       );
+      if (body.slowModeSeconds !== undefined)
+        await client.query(
+          `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,next_state,changed_fields)
+           VALUES($1,$2,'channel.slow_mode',$3,$4,ARRAY['slow_mode_seconds'])`,
+          [member.community_id, member.id, c.req.param('id'), String(body.slowModeSeconds)]
+        );
+      // Archiving and the epoch change both end the channel's open streams.
+      await notifyLive(client, { k: 'channel', c: member.community_id, ch: c.req.param('id') });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), member),
@@ -175,6 +218,7 @@ export function registerChannelRoutes(
         channel.id,
         member.id,
       ]);
+      await notifyLive(client, { k: 'member', c: member.community_id, m: member.id });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), member),
@@ -243,6 +287,11 @@ export function registerChannelRoutes(
         channel.id,
         c.req.param('memberId'),
       ]);
+      await notifyLive(client, {
+        k: 'member',
+        c: actor.community_id,
+        m: c.req.param('memberId'),
+      });
     });
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), actor),

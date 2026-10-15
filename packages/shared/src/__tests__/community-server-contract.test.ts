@@ -85,6 +85,8 @@ describe('community server port additions', () => {
       credential: 'browser-approved',
       agentActing: true,
       attachments: true,
+      conduct: true,
+      reports: true,
     };
     expect(CommunityCapabilitiesSchema.safeParse(base).success).toBe(true);
     expect(CommunityCapabilitiesSchema.safeParse({ ...base, credential: 'random' }).success).toBe(
@@ -114,7 +116,34 @@ describe('community server port additions', () => {
         oidc: null,
         minimumAge: null,
       })
-    ).toEqual({ google: false, github: true, oidc: null, minimumAge: null, emailLinks: false });
+    ).toEqual({
+      google: false,
+      github: true,
+      oidc: null,
+      minimumAge: null,
+      allowedCountries: null,
+      emailLinks: false,
+    });
+    // Allowed countries cross as a non-empty list of two-capital-letter codes, or null.
+    for (const [allowedCountries, ok] of [
+      [['US'], true],
+      [['US', 'CA'], true],
+      [null, true],
+      [[], false],
+      [['us'], false],
+      [['USA'], false],
+      ['US', false],
+    ] as const)
+      expect(
+        CommunityWireAuthOptionsSchema.safeParse({
+          google: false,
+          github: false,
+          oidc: null,
+          minimumAge: null,
+          allowedCountries,
+        }).success,
+        JSON.stringify(allowedCountries)
+      ).toBe(ok);
     // A Community from before mailed links reads as having none; a newer one says so.
     expect(
       CommunityWireAuthOptionsSchema.parse({

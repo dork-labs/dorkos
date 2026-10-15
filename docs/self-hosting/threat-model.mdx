@@ -79,27 +79,28 @@ The A2A agent endpoints work the same way, with one difference: while login is o
 
 ## Agent-to-agent messaging and budgets
 
-Agents can talk to each other and to you through the relay. These controls keep that from running away:
+Agents message each other in chats you can open, and reach you and outside systems through the relay. These controls apply:
 
-- **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
-- **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
-- **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the chat the agent is running in instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
+- **Relay budgets are enforced before delivery.** Every relay message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
+- **An hourly ceiling caps the relay's cost, whatever the route in.** A relay message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
+- **Messages between your agents' chats have no loop limit.** Two agents can keep messaging each other's chats for as long as they keep going, and each round uses your plan. Every message is in a chat you can open, and you can stop either chat. DorkOS still limits how many chats agents can start running at once, to protect the machine.
+- **An agent cannot choose its own identity through the supported messaging path.** The server takes the sender from the calling chat, or from the chat for relay messages, instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
 - **A message never raises an agent's power.** A turn another agent's message starts runs no looser than the agent that sent it. A message a bridged Telegram or Slack chat posts into a room, or one from another company's agent over A2A, runs at the level a brand-new chat starts at, even in a chat set to Full autonomy. A chat that turn starts can be no stronger than it.
 - **Reaching a human is a consent choice.** Whether an agent may start a chat with you on a chat app like Telegram is set for each agent on each chat app.
 
 ## What stops an agent operating DorkOS itself
 
-Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels, and the label decides what happens:
+Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels:
 
-| Label            | What happens                                                                             |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| Read only        | Runs. Nothing to undo.                                                                   |
-| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked. |
-| Cannot be undone | Does not run. It returns a pending approval, and waits for somebody to answer.           |
+| Label            | What happens                                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read only        | Runs. Nothing to undo.                                                                                                                                                                                |
+| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked.                                                                                                              |
+| Cannot be undone | On a **Trusted** install (the default) most of these run too, recorded the same way. Three never do: they return a pending approval and wait for somebody to answer, on Trusted and on Careful alike. |
 
-Six actions carry the last label today: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. Changing what an agent runs on can be changed back, and carries the label anyway because every schedule that follows the agent runs differently from then on. Running a package from a folder lets whatever is in that folder run, edits included, without another review. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
+Six actions carry the "Cannot be undone" label: removing an installed package, deleting a scheduled task, removing an agent, changing an agent's safety boundaries, changing what an agent runs on (its runtime, model or effort), and running a package from a folder. The last three always wait, whatever preset you are on, because each brings in code nobody has reviewed or moves an agent the way every one of its scheduled runs would also move. The first three no longer stop to ask on Trusted: they run and land in your activity feed, named to the agent that did them. Creating a new package in your personal marketplace waits too, and so does installing or updating one, because a package is code from outside your team. A package's own hooks and any global plugins it carries ask separately as well. On a **Careful** install, every action above waits for your yes, the way DorkOS always used to work.
 
-The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these five. A new tool with no declared label fails the server build rather than running unlabelled.
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a chat's permission mode cannot reach it: an agent in bypass-permissions mode still stops at the ones that always ask. A new tool with no declared label fails the server build rather than running unlabelled.
 
 There is a third, much smaller tool server, for Codex chats, and it is outside that gate. It carries exactly one tool, for changing what the app is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
 

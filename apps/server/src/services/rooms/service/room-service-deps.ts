@@ -18,14 +18,14 @@ import type { EngagedWindow } from '../engagement.js';
 import type { CollectWindow } from '../room-collect.js';
 import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
-import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { CanvasDocumentStore, CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
-import type { RoomDispatchSummary, RoomTurnRunner } from '../room-trigger.js';
+import type { RoomTurnRunner } from '../room-trigger.js';
+import type { RoomDispatchSummary } from './room-trigger-deps.js';
 import type { RoomTurnBudget } from '../limits/turn-budget.js';
 
 /**
@@ -153,6 +153,11 @@ export interface RoomServiceDeps {
   /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
   attachments: AttachmentRowStore;
   authors: AuthorRegistry;
+  /**
+   * The usage limit a chat's account hit during its last turn (DOR-2823), so a
+   * failed room turn can say when the agent can answer again. Absent in tests.
+   */
+  usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */
@@ -170,15 +175,6 @@ export interface RoomServiceDeps {
   worktrees?: () => RoomWorktreeManager | null;
   /** The per-room ceiling on automatic turns, counted whoever is calling. */
   budget: RoomTurnBudget;
-  /**
-   * The per-`(room, agent)` hourly ceiling on reactions — the price of letting
-   * agents react at all (ADR 260814-195522).
-   *
-   * Required rather than defaulted, because a budget this class could build for
-   * itself is one a caller could forget to build — and the failure mode of
-   * forgetting is an unbounded one.
-   */
-  reactionBudget: ReactionBudget;
   /**
    * How `search_room_history` finds a message by words: the message index, behind
    * a port so this domain neither imports it nor knows it is FTS5
@@ -240,25 +236,6 @@ export interface RoomServiceDeps {
    * what this may be SET to, not the limit anyone feels.
    */
   maxAttachmentsPerEntry(): number;
-  /**
-   * The live `rooms.maxPostsPerTurn` — how many messages one agent may post into
-   * a room inside a single turn (spec `tool-only-room-replies` §D9).
-   *
-   * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this
-   * domain still reads no config. Read PER POST rather than captured, because an
-   * operator who feels the number is wrong must be able to move it without
-   * restarting anything — posting is the agent's only voice in a room.
-   */
-  maxPostsPerTurn(): number;
-  /**
-   * The live `rooms.maxCanvasOpsPerTurn` — how many times one agent may change a
-   * room's shared canvas inside a single turn (spec `room-canvas` §3.4).
-   *
-   * Injected and read PER OPERATION for the same reasons its sibling above is:
-   * this domain reads no config, and moving the number in Settings has to bind
-   * the very next change rather than the next server start.
-   */
-  maxCanvasOpsPerTurn(): number;
   /**
    * The room's own shared checkout, or `null` when the room has no files.
    *

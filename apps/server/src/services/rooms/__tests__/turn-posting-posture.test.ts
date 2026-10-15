@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
-import { warnIfTurnCannotPost } from '../room-turn-runner.js';
+import { warnIfTurnCannotPost } from '../turn-guards/turn-posting.js';
 
 /** A runtime that answers the capability question however a test says. */
 function runtimeThat(

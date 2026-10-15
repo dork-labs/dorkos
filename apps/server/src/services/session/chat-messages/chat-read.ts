@@ -12,6 +12,7 @@
 import type { ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -53,10 +54,12 @@ export interface ChatReadInput {
 export interface ChatReadMessage {
   /** The message's id in the chat. */
   id: string;
-  /** Who said it: the person, the chat's own agent, or another chat. */
-  from: 'person' | 'agent' | 'chat';
+  /** Who said it: the person, the chat's own agent, another chat, or a room member. */
+  from: 'person' | 'agent' | 'chat' | 'room';
   /** When the message carries words another chat sent: who sent them. */
   sender?: ChatMessageSender;
+  /** When a room post opened the turn (DOR-2113): the room, and who posted it. */
+  room?: { id: string; name?: string; author?: string };
   /** When another chat sent it: what kind. */
   kind?: ChatMessageKind;
   /** When it was said (ISO 8601), when the chat recorded it. */
@@ -75,6 +78,8 @@ export interface ChatReadResult {
   chat: {
     id: string;
     title: string | null;
+    /** A markdown link that opens the chat, to use instead of its id. */
+    link: string;
     agent: string | null;
     state: ChatState;
   };
@@ -92,6 +97,12 @@ export interface ChatReadDeps {
   store: ChatMessageStore;
   /** Whether the calling chat may read the target. */
   mayRead: (caller: ChatCaller, target: string) => Promise<boolean>;
+  /**
+   * Whether the calling chat may learn the target's title: the reader rule
+   * alone (spec `audit-trail` §3.4), so sending to a person's own chat never
+   * hands back what it is called.
+   */
+  maySeeTitle: (caller: ChatCaller, target: string) => Promise<boolean>;
   /** The chat's history, stamped. */
   history: (sessionId: string) => Promise<HistoryMessage[]>;
   /** The chat's status, when a live projector holds one. */
@@ -141,6 +152,15 @@ function readMessages(message: HistoryMessage, include: 'text' | 'tools'): ChatR
         ...at,
         text: stamp.text,
       }));
+    }
+    const post = message.roomMessage;
+    if (post && !post.author?.you) {
+      const room = {
+        id: post.roomId,
+        ...(post.roomLabel ? { name: post.roomLabel } : {}),
+        ...(post.author ? { author: post.author.displayName } : {}),
+      };
+      return [{ id: message.id, from: 'room', room, ...at, text: message.content }];
     }
     return [{ id: message.id, from: 'person', ...at, text: message.content }];
   }
@@ -203,6 +223,7 @@ export async function readChat(
   const chat = {
     id: input.chat,
     title: described.title,
+    link: chatMarkdownLink(input.chat, described.title),
     agent: described.agent,
     state: chatStateOf(deps.status(input.chat)),
   };

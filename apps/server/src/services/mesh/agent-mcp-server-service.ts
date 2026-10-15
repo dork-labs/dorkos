@@ -30,7 +30,7 @@ import type {
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
 
-import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
+import { readMcpJsonServers, resolveMcpJsonConnection } from './capabilities/mcp-json.js';
 import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
 import { ensureAgentBrowserStateFile } from './agent-browser-preset.js';
 

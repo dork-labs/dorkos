@@ -21,6 +21,7 @@ import {
   ProfilePhotoField,
 } from './fields/ProfileFields';
 import { ProfileRolesField } from './fields/ProfileRolesField';
+import { ProfileHoursField } from './fields/ProfileHoursField';
 
 export interface ProfilePanelProps {
   /** The operator's own roster row. */
@@ -28,7 +29,8 @@ export interface ProfilePanelProps {
 }
 
 /**
- * Edit your photo, your name, your handle, and what kind of work you do.
+ * Edit your photo, your name, your handle, what kind of work you do, and your
+ * hours.
  *
  * Each field saves on its own and reports on its own, because they fail for
  * unrelated reasons: a handle can be taken while a name is perfectly fine, and
@@ -50,6 +52,7 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
       <ProfileHandleField member={member} />
       <ProfileEmailField member={member} />
       <ProfileRolesField />
+      <ProfileHoursField />
     </div>
   );
 }

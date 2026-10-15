@@ -13,6 +13,8 @@ import { readingActivity } from './skills/reading-activity.js';
 import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js';
 import { workingInRoomRepos } from './skills/working-in-room-repos.js';
 import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
+import { workingWithSpinOffChats } from './skills/working-with-spin-off-chats.js';
+import { workingOnAHeartbeat } from './skills/working-on-a-heartbeat.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -327,8 +329,35 @@ export interface OperatingSkill {
  *   reports (DOR-2736), replacing "the control layer a person uses to run many
  *   AI agents". An agent seeded at 36 would describe itself as a tool a person
  *   runs rather than a member of the team.
+ * - 38: `working-with-spin-off-chats` joins the pack (spec `spin-off-chats` §7,
+ *   DOR-2790). The relay send, inbox and endpoint tools are gone; agents message
+ *   chats with `chat_send`, check on them with `chat_read` and stop them with
+ *   `chat_stop`, and a spin-off reports back by itself. The new skill seeds
+ *   without a bump, so the bump is for the sibling lists in `operating-dorkos`
+ *   and `answering-dorkos-questions`, which would otherwise keep omitting it.
+ * - 39: `operating-dorkos` tells agents to record a promise with
+ *   `commitment_add` once made, mark it kept with `commitment_update`, and ask
+ *   before promising an outsider anything (spec `heartbeats` §12, DOR-2788). An
+ *   agent seeded at 38 would keep its promises only in a chat nobody else reads.
+ * - 40: `working-on-a-heartbeat` joins the pack (spec `heartbeats` §10 PR 6,
+ *   DOR-2788). Agents now wake on a beat or an event, and a beat's words reach
+ *   people only through `end_beat`, so an agent with no page on it writes its
+ *   findings into a chat nobody reads. The page teaches the four moves, the
+ *   rungs, what urgent means, pace, resolved, the report and
+ *   `heartbeat_status`. The new skill seeds without a bump; the bump is for the
+ *   sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 41: `operating-dorkos` tells an agent to get a service's exact name from
+ *   `connector_list_toolkits` before `request_connection`, and that a shell CLI
+ *   sign-in grants DorkOS nothing (DOR-2236), matching what the refusal, the
+ *   tool description and the per-turn Accounts guidance already say (DOR-2231).
+ * - 42: agents are trusted by default (ADR 261006-225605, DOR-2739).
+ *   `scheduling-tasks` says a task an agent makes in a session is live at once
+ *   and the person is told, that it waits only on Careful or when made without
+ *   the agent's token, and that an edit re-asks only for a file or package task
+ *   or on Careful. An agent seeded at 41 would tell a person a live schedule is
+ *   waiting on them.
  */
-export const OPERATING_SKILLS_VERSION = 37;
+export const OPERATING_SKILLS_VERSION = 42;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -343,4 +372,6 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   answeringDorkosQuestions,
   workingInRoomRepos,
   usingTheAgentBrowser,
+  workingWithSpinOffChats,
+  workingOnAHeartbeat,
 ];

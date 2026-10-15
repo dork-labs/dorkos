@@ -538,6 +538,15 @@ export class CodexThreadLoader {
     return out;
   }
 
+  /** Every session with a thread loaded in a live process. */
+  sessionIds(): string[] {
+    const ids = new Set<string>();
+    for (const records of this.byProcess.values()) {
+      for (const record of records.values()) ids.add(record.sessionId);
+    }
+    return [...ids];
+  }
+
   /**
    * The threads loaded in one process.
    *

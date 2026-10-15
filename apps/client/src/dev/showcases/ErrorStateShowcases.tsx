@@ -7,6 +7,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { RouteErrorFallback } from '@/layers/shared/ui';
 import { NotFoundFallback } from '@/layers/shared/ui';
 import { AppCrashFallback } from '@/layers/shared/ui';
+import { AgentPausedNotice } from '@/layers/entities/mesh';
 
 /**
  * Controlled component that throws when `shouldThrow` is true.
@@ -17,7 +18,7 @@ function ErrorTrigger({ shouldThrow }: { shouldThrow: boolean }) {
   return <p className="text-muted-foreground text-sm">No error — component is healthy.</p>;
 }
 
-/** Error state component showcases: RouteErrorFallback, NotFoundFallback, AppCrashFallback, toasts. */
+/** Error state component showcases: RouteErrorFallback, NotFoundFallback, AppCrashFallback, the paused-agent notice, toasts. */
 export function ErrorStateShowcases() {
   const [shouldThrow, setShouldThrow] = useState(false);
 
@@ -83,6 +84,20 @@ export function ErrorStateShowcases() {
           This component uses inline styles only. If context providers crash, any dependency on them
           would also crash — so this fallback has zero bundle dependencies.
         </p>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Agent Paused Notice"
+        description="What the composer shows when a message could not go because its agent is paused everywhere. A notice, not an error: somebody chose it."
+      >
+        <ShowcaseLabel>Named agent</ShowcaseLabel>
+        <ShowcaseDemo>
+          <AgentPausedNotice agentId="agent-scout" agentName="Scout" />
+        </ShowcaseDemo>
+        <ShowcaseLabel>Agent the composer cannot name</ShowcaseLabel>
+        <ShowcaseDemo>
+          <AgentPausedNotice agentId="agent-unknown" />
+        </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection

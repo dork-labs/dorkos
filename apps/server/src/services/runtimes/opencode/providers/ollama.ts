@@ -18,20 +18,23 @@
  *
  * @module services/runtimes/opencode/providers/ollama
  */
+import { env } from '../../../../env.js';
 import type {
   OllamaPullProgress,
   OllamaPullResult,
   OllamaStatus,
 } from '@dorkos/shared/runtime-connect';
 
-/** Local Ollama base origin (loopback only — never a remote host). */
-const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
-
-/** Local Ollama tags endpoint. */
-const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`;
-
-/** Local Ollama pull endpoint (streamed). */
-const OLLAMA_PULL_URL = `${OLLAMA_BASE_URL}/api/pull`;
+/** Read the validated loopback origin only when a probe or pull needs it. */
+function ollamaEndpoint(endpoint: '/api/tags' | '/api/pull'): string {
+  const origin = env.DORKOS_OLLAMA_URL;
+  if (
+    typeof origin !== 'string' ||
+    !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin).hostname)
+  )
+    throw new Error('DORKOS_OLLAMA_URL must be a loopback address');
+  return `${origin.replace(/\/$/, '')}${endpoint}`;
+}
 
 /** Hard bound on the probe so a hung Ollama degrades fast instead of blocking. */
 const OLLAMA_PROBE_TIMEOUT_MS = 1_500;
@@ -83,7 +86,7 @@ async function probeOllama(fetchImpl: FetchFn): Promise<OllamaStatus> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), OLLAMA_PROBE_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(OLLAMA_TAGS_URL, { signal: controller.signal });
+    const res = await fetchImpl(ollamaEndpoint('/api/tags'), { signal: controller.signal });
     if (!res.ok) return { running: false, models: [] };
     try {
       const body = (await res.json()) as { models?: OllamaTag[] };
@@ -165,7 +168,7 @@ export async function pullOllamaModel(
 
   let res: Response;
   try {
-    res = await fetchImpl(OLLAMA_PULL_URL, {
+    res = await fetchImpl(ollamaEndpoint('/api/pull'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, stream: true }),

@@ -18,7 +18,7 @@ environment (a worktree, or any machine whose default ports are busy).
   `test-connector` provider exist, so these specs can walk the real save-key →
   connect → attach flow with no vendor anywhere.
 - `chromium-production` — `tests/production/`, and the only project whose
-  baseURL is an **Express** port rather than a Vite one. It is how a browser
+  baseURL is the server's own port rather than a Vite one. It is how a browser
   here ever sees the shipped `Content-Security-Policy`; see below.
 
 ## webServer legs
@@ -26,14 +26,14 @@ environment (a worktree, or any machine whose default ports are busy).
 Playwright's `webServer` array is global: whatever legs are listed boot for
 every run, regardless of `--project`. The legs are:
 
-| Leg                      | Default port | Env override                           | Readiness timeout |
-| ------------------------ | ------------ | -------------------------------------- | ----------------- |
-| Express API              | 4245         | `DORKOS_COCKPIT_PORT`                  | 240s              |
-| Vite client              | 4244         | `DORKOS_COCKPIT_VITE_PORT`             | 120s              |
-| Express API (test-mode)  | 4243         | `DORKOS_MOCK_PORT`                     | 241s              |
-| Vite client (test-mode)  | 4248         | `DORKOS_MOCK_VITE_PORT`                | 121s              |
-| Marketing site           | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) | 242s              |
-| Express API (production) | 4246         | `DORKOS_PROD_PORT` (opt-in, see below) | 243s              |
+| Leg                     | Default port | Env override                           | Readiness timeout |
+| ----------------------- | ------------ | -------------------------------------- | ----------------- |
+| API server              | 4245         | `DORKOS_COCKPIT_PORT`                  | 240s              |
+| Vite client             | 4244         | `DORKOS_COCKPIT_VITE_PORT`             | 120s              |
+| API server (test-mode)  | 4243         | `DORKOS_MOCK_PORT`                     | 241s              |
+| Vite client (test-mode) | 4248         | `DORKOS_MOCK_VITE_PORT`                | 121s              |
+| Marketing site          | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) | 242s              |
+| API server (production) | 4246         | `DORKOS_PROD_PORT` (opt-in, see below) | 243s              |
 
 Every timeout is a distinct value on purpose (DOR-1243): Playwright's own
 readiness-timeout error names only the millisecond number — `Timed out
@@ -51,13 +51,13 @@ this suite reads the `DORKOS_COCKPIT_*` names.
 
 ## Every leg keeps its own data, and throws it away
 
-All three Express legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
+All three API legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
 deleted before every boot:
 
-| Leg                     | `DORK_HOME`                    |
-| ----------------------- | ------------------------------ |
-| Express API             | `/tmp/dorkos-cockpit-<port>`   |
-| Express API (test-mode) | `/tmp/dorkos-test-mode-<port>` |
+| Leg                    | `DORK_HOME`                    |
+| ---------------------- | ------------------------------ |
+| API server             | `/tmp/dorkos-cockpit-<port>`   |
+| API server (test-mode) | `/tmp/dorkos-test-mode-<port>` |
 
 So a run cannot reach your data, and cannot inherit yesterday's rows. The cockpit
 leg used to have no `DORK_HOME` of its own, which meant it resolved the server's
@@ -131,14 +131,14 @@ nested-worktree checkout no longer watches the entire outer repo tree.
 
 Every other leg serves the app from a Vite dev server, whose shell carries **no
 `Content-Security-Policy` header at all**. The shipped policy (`SHELL_CSP` in
-`apps/server/src/app.ts`) goes out only with the built shell an
+`apps/server/src/http/client-files.ts`) goes out only with the built shell an
 `NODE_ENV=production` server serves — so until this leg existed, a directive that
 broke a real browser surface was invisible to this whole suite. DOR-560 shipped
 exactly that: a `connect-src` without `http:` makes the canvas report every
 healthy dev server as unreachable, and `workbench/dev-server-preview.spec.ts`
 would have stayed green through it forever.
 
-The leg is one Express server under `NODE_ENV=production`, serving the built
+The leg is one server under `NODE_ENV=production`, serving the built
 client itself — no Vite in front of it, which is the point. It has to build
 `@dorkos/client` before it can serve anything, so it boots only when `E2E_PROD=1`
 (and in CI, where the config defaults it on unless `E2E_PROD=0`;
@@ -246,7 +246,7 @@ Either way the suite needs no new project and no new server leg.
 
 `DORKOS_TASKS_ENABLED` and `DORKOS_RELAY_ENABLED` are off by default in the
 server, and the Tasks and Relay dialogs render a "start DorkOS with…"
-placeholder instead of the real panel when they are. The `Express API` leg sets
+placeholder instead of the real panel when they are. The `API server` leg sets
 both, so the specs assert the real thing. Do not rely on your own `.env` for
 this — it is untracked, so it would make "does this spec pass" a property of
 your machine.
@@ -289,13 +289,16 @@ Notes:
   _instead of_ the app shell — so every spec would time out waiting for
   `[data-testid="app-shell"]`. `global-setup.ts` dismisses it on every API leg
   before the first spec runs, which is what makes a throwaway `DORK_HOME` usable
-  at all.
+  at all. The one exception is the first-run journey (`first-run/`, its own
+  `playwright.first-run.config.ts`), which needs that wizard: it boots its own
+  never-onboarded servers, runs with `pnpm e2e:first-run`, and gates the merge
+  queue as `browser-test.yml`'s `first-run` job.
 - `--project chromium` runs the cockpit project; add `-g "<title>"` to run a
   single test by name.
 
 ## Why the API legs do not watch
 
-Every Express leg boots with `turbo run build` + a plain `tsx` — never
+Every API leg boots with `turbo run build` + a plain `tsx` — never
 `turbo dev`, which is `tsx watch`.
 
 On boot the server compiles each core extension to

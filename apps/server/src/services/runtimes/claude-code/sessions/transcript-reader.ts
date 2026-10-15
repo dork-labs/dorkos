@@ -1,7 +1,5 @@
-import { AmbiguousSessionError } from '../../../session/resolution/session-lookup-error.js';
+import { normalizeTranscriptPermissionMode } from './transcript-permission-mode.js';
 import fs from 'fs/promises';
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
 import path from 'path';
 import type {
   Session,
@@ -13,17 +11,20 @@ import type {
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import {
-  parseTranscript,
   extractTextContent,
   isPersonAuthoredUserRecord,
   stripSystemTags,
 } from './transcript-parser.js';
-import type { TranscriptImageRef, TranscriptLine } from './transcript-parser.js';
+import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
-import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
+import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
+import {
+  TranscriptHistoryCache,
+  type AttachTranscriptImages,
+} from './transcripts/transcript-history-cache.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
 import { resolveActiveClaudeRoot, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
@@ -38,37 +39,6 @@ import { dropUserLastMessageAtWithoutOperator } from '../../../session/origin/us
 import { logger } from '../../../../lib/logger.js';
 
 export type { HistoryMessage, HistoryToolCall };
-
-/**
- * Translate the permission mode the SDK recorded in a transcript into the
- * DorkOS mode a session row reports, or `undefined` when the value is not one
- * this build knows.
- *
- * Every mode Claude Code declares needs its own entry here. A missing arm does
- * not fail loudly — it silently reports a permissive session as `default`, so
- * the list tells the operator a session is prompting on every tool while it is
- * really running unattended. `dangerously-skip` is the SDK's older spelling of
- * `bypassPermissions` and still appears in transcripts written by older CLIs.
- */
-function normalizeTranscriptPermissionMode(sdkMode: string): PermissionMode | undefined {
-  switch (sdkMode) {
-    case 'bypassPermissions':
-    case 'dangerously-skip':
-      return 'bypassPermissions';
-    case 'plan':
-      return 'plan';
-    case 'acceptEdits':
-      return 'acceptEdits';
-    case 'auto':
-      return 'auto';
-    case 'dontAsk':
-      return 'dontAsk';
-    case 'default':
-      return 'default';
-    default:
-      return undefined;
-  }
-}
 
 /**
  * Single source of truth for session data — reads SDK JSONL transcript files
@@ -107,6 +77,24 @@ export class TranscriptReader {
    */
   private rootIndex = new SessionRootIndex();
 
+  /** Session id → transcript path, so an id-only read walks the accounts once. */
+  private locator = new SessionLocator((filePath, sessionId) =>
+    this.cachedMeta(filePath, sessionId)
+  );
+
+  /** Parsed transcripts kept between reads, see {@link TranscriptHistoryCache}. */
+  private readonly historyCache: TranscriptHistoryCache;
+
+  /**
+   * Build a reader.
+   *
+   * @param options - `attachImages` places the images a transcript's tool
+   *   results carried; without it, history reads leave them out.
+   */
+  constructor(options: { attachImages?: AttachTranscriptImages } = {}) {
+    this.historyCache = new TranscriptHistoryCache({ attachImages: options.attachImages });
+  }
+
   /**
    * Drop the cached metadata for a session so the next listSessions/getSession
    * re-extracts it. Called after a rename so the SDK-persisted title surfaces
@@ -127,6 +115,8 @@ export class TranscriptReader {
   invalidateAll(): void {
     this.metaCache.clear();
     this.rootIndex.clear();
+    this.locator.clear();
+    this.historyCache.clear();
   }
 
   /**
@@ -481,62 +471,37 @@ export class TranscriptReader {
     return sessions;
   }
 
-  /** Find an existing native transcript across configured accounts; never reverse a lossy slug. */
-  async findSession(sessionId: string): Promise<Session | null> {
-    if (!/^[a-f0-9-]{36}$/i.test(sessionId)) return null;
-    let found: Session | null = null;
-    for (const root of resolveClaudeRootSet()) {
-      const projects = path.join(root, 'projects');
-      let entries;
-      try {
-        entries = await fs.readdir(projects, { withFileTypes: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const filePath = path.join(projects, entry.name, `${sessionId}.jsonl`);
-        try {
-          const { session } = await this.extractSessionMeta(filePath, sessionId);
-          if (!session.cwd) {
-            const input = createReadStream(filePath);
-            const lines = createInterface({ input, crlfDelay: Infinity });
-            try {
-              for await (const line of lines) {
-                let record;
-                try {
-                  record = JSON.parse(line);
-                } catch {
-                  continue;
-                }
-                if (typeof record?.cwd === 'string' && record.cwd) {
-                  session.cwd = record.cwd;
-                  break;
-                }
-              }
-            } finally {
-              lines.close();
-              input.destroy();
-            }
-          }
-          if (!session.cwd) continue;
-          await validateBoundaryOrDorkHome(session.cwd);
-          if (found) throw new AmbiguousSessionError();
-          found = session;
-        } catch (error) {
-          if (error instanceof AmbiguousSessionError) throw error;
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-      }
+  /**
+   * Find an existing native transcript across configured accounts; never
+   * reverse a lossy slug. The caller's directory is searched first and a found
+   * path is remembered, so only the first lookup walks every project folder
+   * (see {@link SessionLocator}).
+   */
+  async findSession(sessionId: string, options?: FindSessionOptions): Promise<Session | null> {
+    return this.locator.find(sessionId, options);
+  }
+
+  /**
+   * A transcript's metadata, from {@link metaCache} while the file's mtime is
+   * unchanged. Always a copy: callers fill in fields the cache must not keep.
+   * Throws ENOENT for a missing file, like the read it replaces.
+   */
+  private async cachedMeta(filePath: string, sessionId: string): Promise<Session> {
+    const fileStat = await fs.stat(filePath);
+    const cached = this.metaCache.get(sessionId);
+    if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.filePath === filePath) {
+      return { ...cached.session };
     }
-    return found;
+    const { session, hidden } = await this.extractSessionMeta(filePath, sessionId, fileStat);
+    this.metaCache.set(sessionId, { session, mtimeMs: fileStat.mtimeMs, hidden, filePath });
+    return { ...session };
   }
 
   /**
    * Get metadata for a single session. Both the head (title/timestamps) and the
    * tail (latest model/context/auto-compaction) are read inside
-   * {@link extractSessionMeta} — the single tail-read path shared with the list.
+   * {@link extractSessionMeta} — the single tail-read path shared with the list,
+   * and served from the same mtime-keyed cache.
    *
    * Unfiltered by design: unlike {@link listSessionsInDir}, a sidechain or
    * empty transcript is still returned when fetched directly by id — those
@@ -546,7 +511,7 @@ export class TranscriptReader {
     await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = await this.transcriptPath(vaultRoot, sessionId);
     try {
-      const { session } = await this.extractSessionMeta(filePath, sessionId);
+      const session = await this.cachedMeta(filePath, sessionId);
       // Attribute a head-record-less transcript to the directory it was
       // fetched from — same rule as listSessions (ADR 260707-193314).
       if (session.cwd === undefined) session.cwd = vaultRoot;
@@ -963,32 +928,18 @@ export class TranscriptReader {
   }
 
   /**
-   * Read messages from an SDK session transcript.
+   * Read messages from an SDK session transcript, through {@link historyCache}:
+   * an unchanged transcript is not read again, and a grown one is parsed only
+   * from where the last read stopped (DOR-2889). Images tool results carried
+   * are placed by the attacher this reader was built with.
    *
    * @param vaultRoot - The session's working directory.
    * @param sessionId - SDK session UUID.
-   * @param images - Collects the images tool results carried, for the caller to
-   *   resolve through the attachment store. This class stays a JSONL parser and
-   *   learns nothing about where DorkOS keeps bytes — the same division that
-   *   keeps approval receipts out of here (see `getMessageHistory`).
+   * @returns A copy the caller may change.
    */
-  async readTranscript(
-    vaultRoot: string,
-    sessionId: string,
-    images?: TranscriptImageRef[]
-  ): Promise<HistoryMessage[]> {
+  async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const filePath = await this.transcriptPath(vaultRoot, sessionId);
-
-    let content: string;
-    try {
-      content = await fs.readFile(filePath, 'utf-8');
-    } catch {
-      return [];
-    }
-
-    const lines = content.split('\n').filter((l) => l.trim());
-    return parseTranscript(lines, images);
+    return this.historyCache.read(await this.transcriptPath(vaultRoot, sessionId), sessionId);
   }
 
   /**
@@ -1111,19 +1062,11 @@ export class TranscriptReader {
     const fileTasks = await this.readTodosFromFile(sessionId);
     if (fileTasks !== null) return fileTasks;
 
-    // Fallback: parse TaskCreate/TaskUpdate tool_use blocks from JSONL transcript
+    // Fallback: TaskCreate/TaskUpdate tool_use blocks, folded by the same
+    // cached parse that serves the messages.
     await validateBoundaryOrDorkHome(vaultRoot);
     const filePath = await this.transcriptPath(vaultRoot, sessionId);
-
-    let content: string;
-    try {
-      content = await fs.readFile(filePath, 'utf-8');
-    } catch {
-      return [];
-    }
-
-    const lines = content.split('\n').filter((l) => l.trim());
-    return parseTasks(lines);
+    return this.historyCache.readTasks(filePath, sessionId);
   }
 
   /**

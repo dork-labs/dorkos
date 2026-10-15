@@ -9,13 +9,16 @@ import {
   defaultNopeTemplate,
   CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
-import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import {
+  writeConventionFile,
+  writeConventionFileIfAbsent,
+} from '@dorkos/shared/convention-files-io';
 import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { scaffoldInstructions } from '@dorkos/harness';
-import { seedOperatingSkills } from '@dorkos/operating-skills';
+import { renderHeartbeatTemplate, seedOperatingSkills } from '@dorkos/operating-skills';
 import type { MeshCore } from '@dorkos/mesh';
 import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
 import { logger } from '../../lib/logger.js';
@@ -73,6 +76,37 @@ async function backfillDorkbotMemory(dorkbotDir: string): Promise<void> {
 }
 
 /** DorkBot's branded display name — the label every roster surface renders. */
+/** Written once DorkBot was given its starter `HEARTBEAT.md`, so it is never given it twice. */
+const HEARTBEAT_SEEDED_MARKER = '.heartbeat-seeded';
+
+/**
+ * Give DorkBot its `HEARTBEAT.md` once: the `lead` template with `report: off`
+ * until it has work (spec `heartbeats` §2, canon §9.1 "Starter"). Once, ever: a
+ * marker beside it records the seeding, so a file a person deleted is not put
+ * back on the next boot, and an existing file is never overwritten.
+ *
+ * @param dorkbotDir - DorkBot's home directory.
+ */
+async function seedDorkbotHeartbeat(dorkbotDir: string): Promise<void> {
+  const marker = path.join(dorkbotDir, MANIFEST_DIR, HEARTBEAT_SEEDED_MARKER);
+  try {
+    await fs.access(marker);
+    return;
+  } catch {
+    // Not seeded yet.
+  }
+  try {
+    await writeConventionFileIfAbsent(
+      dorkbotDir,
+      CONVENTION_FILES.heartbeat,
+      renderHeartbeatTemplate('lead', { report: 'off' })
+    );
+    await fs.writeFile(marker, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    logger.warn('[Mesh] Failed to seed DorkBot heartbeat file: %s', String(err));
+  }
+}
+
 const DORKBOT_DISPLAY_NAME = 'DorkBot';
 
 /**
@@ -143,6 +177,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     // down there would ship a memory file to NEW installs only — every existing
     // one, which is every install an upgrade is for, would get nothing.
     await backfillDorkbotMemory(dorkbotDir);
+    await seedDorkbotHeartbeat(dorkbotDir);
     await provisionDorkbotSkills(dorkbotDir);
     await meshCore.syncFromDisk(dorkbotDir);
     return;
@@ -187,6 +222,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   );
   await writeConventionFile(dorkbotDir, CONVENTION_FILES.nope, defaultNopeTemplate());
   await writeConventionFile(dorkbotDir, CONVENTION_FILES.memory, defaultMemoryTemplate());
+  await seedDorkbotHeartbeat(dorkbotDir);
 
   // Scaffold cross-harness instruction files: a canonical root AGENTS.md (DorkBot's
   // orientation template) plus per-harness pointers. Replaces the old

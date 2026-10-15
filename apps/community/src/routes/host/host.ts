@@ -1,7 +1,5 @@
-import { createHash } from 'node:crypto';
 import type { Hono } from 'hono';
-import type { Pool, PoolClient } from 'pg';
-import type { z } from 'zod';
+import type { Pool } from 'pg';
 import {
   CommunityAdminCreateRequestSchema,
   CommunityAdminCreateResponseSchema,
@@ -11,155 +9,22 @@ import {
 import type { CommunityConfig } from '../../config.js';
 import { transaction } from '../../data.js';
 import {
-  assignShortName,
   releaseCommunityShortNames,
   shortNameHoldKey,
   type ShortNameHolds,
 } from '../../host/short-names.js';
 import {
-  createCommunityGated,
   hostProjectionSql,
   legalHoldActive,
   parseHostCommunityId,
   projectCommunity,
   type HostCommunityRow,
 } from '../../host/communities.js';
-import {
-  assertHostActor,
-  recordHostAudit,
-  type HostActor,
-  type HostAuthority,
-} from '../../host/authority.js';
+import { assertHostActor, recordHostAudit, type HostAuthority } from '../../host/authority.js';
+import { createHostCommunity } from '../../host/create-community.js';
 import { ApiError, json, readJson } from '../../http.js';
-import { hashSecret, randomToken } from '../../security.js';
 import type { BlobStore } from '../../storage/index.js';
-
-function payloadHash(body: z.infer<typeof CommunityAdminCreateRequestSchema>): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        name: body.name,
-        description: body.description ?? null,
-        admissionPolicy: body.admissionPolicy ?? 'invite_only',
-        // Only when sent, so receipts written before limits existed still replay.
-        ...(body.limits
-          ? {
-              limits: {
-                maxActiveMembers: body.limits.maxActiveMembers,
-                maxStorageBytes: body.limits.maxStorageBytes,
-              },
-            }
-          : {}),
-        ...(body.shortName ? { shortName: body.shortName } : {}),
-      })
-    )
-    .digest('hex');
-}
-
-async function createPendingCommunity(
-  client: PoolClient,
-  input: {
-    actor: HostActor;
-    /** Read after the creation lock, so a key that expires while this waits is refused. */
-    now: () => Date;
-    body: z.infer<typeof CommunityAdminCreateRequestSchema>;
-    tokenHash: string;
-    expiresAt: Date;
-    reservedNames: ReadonlySet<string>;
-    holds: ShortNameHolds;
-  }
-): Promise<{ row: HostCommunityRow; grantId: string; expiresAt: Date; replayed: boolean }> {
-  await client.query('SELECT pg_advisory_xact_lock(77281503)');
-  await assertHostActor(client, input.actor, input.now());
-  const hash = payloadHash(input.body);
-  const receipt = await client.query<{
-    payload_hash: string;
-    community_id: string;
-    owner_claim_grant_id: string;
-    expires_at: Date;
-  }>(
-    `SELECT r.payload_hash,r.community_id,r.owner_claim_grant_id,g.expires_at
-     FROM community_creation_receipts r
-     JOIN bootstrap_grants g ON g.id=r.owner_claim_grant_id
-     WHERE r.idempotency_key=$1 FOR UPDATE OF r`,
-    [input.body.idempotencyKey]
-  );
-  if (receipt.rows[0]) {
-    if (receipt.rows[0].payload_hash !== hash) {
-      throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'That creation key has different inputs.');
-    }
-    const existing = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
-      receipt.rows[0].community_id,
-    ]);
-    if (!existing.rows[0])
-      throw new ApiError(409, 'STATE_CONFLICT', 'Creation receipt is invalid.');
-    return {
-      row: existing.rows[0],
-      grantId: receipt.rows[0].owner_claim_grant_id,
-      expiresAt: receipt.rows[0].expires_at,
-      replayed: true,
-    };
-  }
-  const community = await client.query<{ id: string }>(
-    `INSERT INTO communities(name,description,admission_policy,lifecycle)
-     VALUES($1,$2,$3,'pending_owner') RETURNING id`,
-    [input.body.name, input.body.description ?? null, input.body.admissionPolicy ?? 'invite_only']
-  );
-  const grant = await client.query<{ id: string }>(
-    `INSERT INTO bootstrap_grants(token_hash,purpose,community_id,expires_at)
-     VALUES($1,'owner_claim',$2,$3) RETURNING id`,
-    [input.tokenHash, community.rows[0].id, input.expiresAt]
-  );
-  if (input.body.limits)
-    await client.query(
-      `INSERT INTO community_limits(community_id,max_active_members,max_storage_bytes)
-       VALUES($1,$2,$3)`,
-      [community.rows[0].id, input.body.limits.maxActiveMembers, input.body.limits.maxStorageBytes]
-    );
-  if (input.body.shortName)
-    await assignShortName(client, {
-      communityId: community.rows[0].id,
-      shortName: input.body.shortName,
-      reservedNames: input.reservedNames,
-      holds: input.holds,
-      at: input.now(),
-    });
-  await client.query(
-    `INSERT INTO community_creation_receipts(
-       idempotency_key,operator_user_id,operator_api_key_id,payload_hash,community_id,
-       owner_claim_grant_id
-     ) VALUES($1,$2,$3,$4,$5,$6)`,
-    [
-      input.body.idempotencyKey,
-      input.actor.kind === 'person' ? input.actor.userId : null,
-      input.actor.kind === 'api_key' ? input.actor.keyId : null,
-      hash,
-      community.rows[0].id,
-      grant.rows[0].id,
-    ]
-  );
-  await recordHostAudit(client, input.actor, {
-    action: 'community.create',
-    communityId: community.rows[0].id,
-    nextState: 'pending_owner',
-    changedFields: [
-      'name',
-      'description',
-      'admission_policy',
-      ...(input.body.limits ? ['limits'] : []),
-      ...(input.body.shortName ? ['short_name'] : []),
-    ],
-  });
-  const row = await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
-    community.rows[0].id,
-  ]);
-  return {
-    row: row.rows[0],
-    grantId: grant.rows[0].id,
-    expiresAt: input.expiresAt,
-    replayed: false,
-  };
-}
+import { registerReservedNameCreation } from './host-reserved-names.js';
 
 /**
  * Register the host plane's community records (list, read, create, abandon, and lifecycle) and
@@ -216,33 +81,17 @@ export function registerHostRoutes(
   app.post('/host/communities', async (c) => {
     const actor = await authority.require(c, 'communities:write');
     const body = await readJson(c, CommunityAdminCreateRequestSchema);
-    const token = randomToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000);
-    const result = await createCommunityGated(pool, blobStore, (client: PoolClient) =>
-      createPendingCommunity(client, {
-        actor,
-        now,
-        body,
-        tokenHash: hashSecret(token),
-        expiresAt,
-        reservedNames: config.reservedShortNames,
-        holds,
-      })
+    const created = await createHostCommunity(
+      { pool, blobStore, reservedNames: config.reservedShortNames, holds, now },
+      actor,
+      body,
+      null
     );
     c.header('Cache-Control', 'no-store');
-    return json(
-      c,
-      CommunityAdminCreateResponseSchema,
-      {
-        community: projectCommunity(result.row, actor),
-        ownerClaimGrantId: result.grantId,
-        ownerClaimToken: result.replayed ? null : token,
-        expiresAt: result.expiresAt.toISOString(),
-        replayed: result.replayed,
-      },
-      result.replayed ? 200 : 201
-    );
+    return json(c, CommunityAdminCreateResponseSchema, created.response, created.status);
   });
+
+  registerReservedNameCreation(app, { pool, config, blobStore, authority, now, holds });
 
   app.delete('/host/communities/:id', async (c) => {
     const actor = await authority.require(c, 'communities:write');

@@ -35,11 +35,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+// The routes are served from the Hono `/api` app, so the test serves the
+// server's real routing rather than the Express app alone.
+const admission = new MainRequestAdmission();
+const testServer = listeningServer(composedListener(admission));
 
 describe('Git Routes', () => {
   beforeEach(() => {

@@ -1,11 +1,11 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
 import type { DurableEventsResult } from '@dorkos/test-utils';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
-// Mock the directory boundary so the /events handler's assertBoundary against
+// Mock the directory boundary so the /events handler's boundaryRefusal against
 // the default cwd doesn't require initBoundary() at startup. Mirrors
 // sessions-streaming.test.ts.
 vi.mock('../../lib/boundary.js', () => ({
@@ -30,6 +30,7 @@ let fakeRuntime: FakeAgentRuntime;
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
@@ -70,12 +71,17 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import http from 'node:http';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../services/audit/session-visibility.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the session routes answer from Hono.
+const listener = composedListener(admission);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -91,7 +97,7 @@ const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 function collectEvents(
   opts: { lastEventId?: string; after?: number; headers?: Record<string, string> } = {}
 ): Promise<DurableEventsResult> {
-  return collectDurableEvents(app, SESSION_ID, opts);
+  return collectDurableEvents(listener, SESSION_ID, opts);
 }
 
 /** Build a finite `subscribeSession` mock that yields the given events then ends. */
@@ -159,7 +165,7 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     fakeRuntime.getSessionSnapshot.mockResolvedValue(baseSnapshot());
     fakeRuntime.subscribeSession = finiteSubscribe([{ seq: 1, type: 'text_delta', text: 'hi' }]);
 
-    const { frames, status } = await collectDurableEvents(app, SESSION_ID, { cwd: agentHome });
+    const { frames, status } = await collectDurableEvents(listener, SESSION_ID, { cwd: agentHome });
 
     expect(status).toBe(200); // not 403
     expect(frames[0]?.event).toBe('snapshot');
@@ -360,7 +366,7 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     });
 
     await new Promise<void>((resolve, reject) => {
-      const server = app.listen(0, () => {
+      const server = http.createServer(listener).listen(0, () => {
         const addr = server.address();
         const port = typeof addr === 'object' && addr ? addr.port : 0;
         const req = http.request(
@@ -435,6 +441,9 @@ describe('who may read an Ask on a session’s own stream', () => {
   }
 
   beforeEach(() => {
+    // Agent work, so an agent may open its stream at all (spec `audit-trail`
+    // §3.4); a person's own chat is refused outright before any of this.
+    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
     fakeRuntime.getSessionSnapshot.mockResolvedValue(parkedSnapshot());
     fakeRuntime.subscribeSession = finiteSubscribe([
       {
@@ -450,6 +459,8 @@ describe('who may read an Ask on a session’s own stream', () => {
       { seq: 2, type: 'text_delta', text: 'carrying on' },
     ] as unknown as SessionEvent[]);
   });
+
+  afterEach(() => resetSessionVisibility());
 
   it('gives a person the parked Ask in the snapshot and the live prompt after it', async () => {
     const { frames } = await collectEvents();

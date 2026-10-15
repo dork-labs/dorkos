@@ -16,14 +16,14 @@
  * What must NOT be doubled is the part that is hard to get right: snapshot,
  * gap-free replay, cursor framing, live dedupe. That logic is written once
  * against this interface, and the two protocols are the only thing that
- * differs — an SSE sink writes `event:`/`data:`/`id:` lines to an Express
+ * differs — an SSE sink writes `event:`/`data:`/`id:` lines to a Node
  * response, a socket sink writes JSON frames. A bug fixed in the sequencing is
  * fixed for both by construction.
  *
  * @module services/core/streams/durable-stream-sink
  */
 import { once } from 'node:events';
-import type { Response } from 'express';
+import type { ServerResponse } from 'node:http';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import { SSE } from '../../../config/constants.js';
 
@@ -50,7 +50,9 @@ export interface DurableStreamSink {
 }
 
 /**
- * A durable stream delivered as Server-Sent Events over an Express response.
+ * A durable stream delivered as Server-Sent Events over a Node response: an
+ * Express response, or the raw one a Hono route writes to
+ * (`http/raw-node-stream.ts`).
  *
  * Writes exactly the wire format the SSE protocol doc specifies: an optional
  * `id:` line, then `event:` and `data:`. Heartbeats are SSE comments, which the
@@ -58,17 +60,17 @@ export interface DurableStreamSink {
  * they never surface as a frame, and the sequencer above never knows about them.
  */
 export class SseStreamSink implements DurableStreamSink {
-  private readonly res: Response;
+  private readonly res: ServerResponse;
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private readonly controller = new AbortController();
 
   /**
-   * Take over an Express response for SSE, writing its headers and starting the
+   * Take over a Node response for SSE, writing its headers and starting the
    * heartbeat.
    *
    * @param res - The response to stream over.
    */
-  constructor(res: Response) {
+  constructor(res: ServerResponse) {
     this.res = res;
     // `X-Accel-Buffering: no` defeats proxy buffering on a durable stream.
     res.writeHead(200, {

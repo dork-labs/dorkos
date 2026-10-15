@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
+import { openServerDatabase, consumeServerNativeRoomConstruction } from '../server-database.js';
 import {
   chmodSync,
   copyFileSync,
@@ -26,7 +27,9 @@ import {
   snapshotBeforeExtensionMigration,
   snapshotBeforeMigrations,
   snapshotDaily,
+  takeDailySnapshot,
   snapshotSqlite,
+  snapshotSqliteInSteps,
   SnapshotFailedError,
   SNAPSHOT_RETENTION,
 } from '../index';
@@ -396,15 +399,18 @@ describe('snapshotBeforeMigrations', () => {
 });
 
 describe('snapshotDaily', () => {
-  it('writes one snapshot per UTC day, however often it is called', () => {
+  it('writes one snapshot per UTC day, however often it is called', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
     const backups = path.join(home, 'backups');
 
-    const first = snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T00:00:01Z') });
-    const again = snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T23:59:59Z') });
-    const nextDay = snapshotDaily(db, { dir: backups, now: new Date('2026-08-16T04:00:00Z') });
+    const first = await snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T00:00:01Z') });
+    const again = await snapshotDaily(db, { dir: backups, now: new Date('2026-08-15T23:59:59Z') });
+    const nextDay = await snapshotDaily(db, {
+      dir: backups,
+      now: new Date('2026-08-16T04:00:00Z'),
+    });
 
     expect(path.basename(first!)).toBe('dork-20260815-daily.db');
     expect(again).toBeNull();
@@ -415,14 +421,14 @@ describe('snapshotDaily', () => {
     ]);
   });
 
-  it('keeps a week of days and drops the oldest', () => {
+  it('keeps a week of days and drops the oldest', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
     const backups = path.join(home, 'backups');
 
     for (let day = 1; day <= 10; day++) {
-      snapshotDaily(db, {
+      await snapshotDaily(db, {
         dir: backups,
         now: new Date(`2026-08-${String(day).padStart(2, '0')}T12:00:00Z`),
       });
@@ -440,7 +446,7 @@ describe('snapshotDaily', () => {
     expect(readdirSync(backups)).toHaveLength(SNAPSHOT_RETENTION.daily);
   });
 
-  it('retakes a day whose snapshot is a zero-byte decoy', () => {
+  it('retakes a day whose snapshot is a zero-byte decoy', async () => {
     // Without this, one disk-full failure marks the UTC day permanently
     // "covered" by an empty file — silently, and while holding one of the seven
     // slots a real snapshot would otherwise occupy.
@@ -453,15 +459,15 @@ describe('snapshotDaily', () => {
     mkdirSync(backups, { recursive: true });
     writeFileSync(dest, '');
 
-    const written = snapshotDaily(db, { dir: backups, now });
+    const written = await snapshotDaily(db, { dir: backups, now });
 
     expect(written).toBe(dest);
     expect(statSync(dest).size).toBeGreaterThan(0);
     // And a real one on the same day is still left alone.
-    expect(snapshotDaily(db, { dir: backups, now })).toBeNull();
+    expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
   });
 
-  it('opens on its own, holding what the database held', () => {
+  it('opens on its own, holding what the database held', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
@@ -471,7 +477,7 @@ describe('snapshotDaily', () => {
       )
       .run();
 
-    const written = snapshotDaily(db, { dir: path.join(home, 'backups') })!;
+    const written = (await snapshotDaily(db, { dir: path.join(home, 'backups') }))!;
 
     const snapshot = new Database(written);
     try {
@@ -481,6 +487,291 @@ describe('snapshotDaily', () => {
       expect(snapshot.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
     } finally {
       snapshot.close();
+    }
+  });
+
+  it('copies rows still in the WAL, and leaves a file that needs no WAL beside it', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    expect(db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
+    db.$client
+      .prepare(
+        "INSERT INTO rooms (id, kind, slug, title, topic, archived, created_at, last_activity_at) VALUES ('01WAL', 'channel', 'wal', '#wal', NULL, 0, '2026-08-15T10:00:00Z', '2026-08-15T10:00:00Z')"
+      )
+      .run();
+
+    const written = (await snapshotDaily(db, { dir: path.join(home, 'backups') }))!;
+
+    const backups = readdirSync(path.join(home, 'backups'));
+    expect(backups).toEqual([path.basename(written)]);
+    const snapshot = new Database(written, { readonly: true });
+    try {
+      expect(snapshot.pragma('journal_mode', { simple: true })).toBe('delete');
+      expect(snapshot.prepare('SELECT id FROM rooms').all()).toEqual([{ id: '01WAL' }]);
+    } finally {
+      snapshot.close();
+    }
+  });
+
+  it('hands the event loop back while it copies (DOR-2906)', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    // Enough pages for the backup to take many steps.
+    db.$client.exec('CREATE TABLE filler (blob TEXT)');
+    const insert = db.$client.prepare('INSERT INTO filler (blob) VALUES (?)');
+    db.$client.transaction(() => {
+      for (let i = 0; i < 2_000; i++) insert.run('x'.repeat(4_000));
+    })();
+
+    let ticks = 0;
+    const timer = setInterval(() => (ticks += 1), 0);
+    try {
+      await snapshotDaily(db, { dir: path.join(home, 'backups') });
+    } finally {
+      clearInterval(timer);
+    }
+    expect(ticks).toBeGreaterThan(0);
+  });
+
+  it('takeDailySnapshot warns instead of rejecting when the copy cannot be written', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const blocked = path.join(home, 'not-a-dir');
+    writeFileSync(blocked, 'a file where the folder should be');
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    await expect(takeDailySnapshot(db, blocked, log)).resolves.toBeUndefined();
+    expect(log.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('daily snapshots preserve protected native Room readers', () => {
+  it('keeps an already constructed Room reader usable after a real daily backup', async () => {
+    const home = tempDir();
+    const opened = openServerDatabase(path.join(home, 'dork.db'));
+    const { db } = opened;
+    try {
+      runMigrations(db);
+      const room = consumeServerNativeRoomConstruction(opened.serverNativeRoomConstruction, db);
+      const owner = room.readCurrentOwnerAccount();
+      const schema = () =>
+        db.$client.prepare('SELECT * FROM sqlite_master ORDER BY type, name').all();
+      const before = schema();
+      const log = { info: vi.fn(), warn: vi.fn() };
+      await takeDailySnapshot(db, path.join(home, 'backups'), log);
+      expect(log.warn).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledTimes(1);
+      expect(schema()).toEqual(before);
+      expect(room.readCurrentOwnerAccount()).toEqual(owner);
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it('still invalidates native Room custody after an opaque public backup', async () => {
+    const home = tempDir();
+    const opened = openServerDatabase(path.join(home, 'dork.db'));
+    const { db } = opened;
+    try {
+      runMigrations(db);
+      const room = consumeServerNativeRoomConstruction(opened.serverNativeRoomConstruction, db);
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+      await db.$client.backup(path.join(home, 'public-copy.db'));
+      expect(() => room.readCurrentOwnerAccount()).toThrow('Unrecognized native Room schema');
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it('constructs the original Room reader after backing up a persisted reopened database', async () => {
+    const home = tempDir();
+    const filename = path.join(home, 'dork.db');
+    const first = openServerDatabase(filename);
+    try {
+      runMigrations(first.db);
+      const room = consumeServerNativeRoomConstruction(
+        first.serverNativeRoomConstruction,
+        first.db
+      );
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+    } finally {
+      first.db.$client.close();
+    }
+    const reopened = openServerDatabase(filename);
+    const { db } = reopened;
+    try {
+      runMigrations(db);
+      const schema = () =>
+        db.$client.prepare('SELECT * FROM sqlite_master ORDER BY type, name').all();
+      const before = schema();
+      const log = { info: vi.fn(), warn: vi.fn() };
+      await takeDailySnapshot(db, path.join(home, 'backups'), log);
+      expect(log.warn).not.toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledTimes(1);
+      expect(schema()).toEqual(before);
+      const room = consumeServerNativeRoomConstruction(reopened.serverNativeRoomConstruction, db);
+      expect(() => room.readCurrentOwnerAccount()).not.toThrow();
+    } finally {
+      db.$client.close();
+    }
+  });
+});
+
+describe('snapshotSqliteInSteps (DOR-2906)', () => {
+  /** A migrated database with enough rows for the copy to take many steps. */
+  function bigDb() {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    db.$client.exec('CREATE TABLE filler (blob TEXT)');
+    const insert = db.$client.prepare('INSERT INTO filler (blob) VALUES (?)');
+    db.$client.transaction(() => {
+      for (let i = 0; i < 2_000; i++) insert.run('x'.repeat(4_000));
+    })();
+    return { home, db };
+  }
+
+  /** Count the steps the copy takes, by wrapping its progress callback. */
+  function countSteps(sqlite: Database.Database, report?: { totalPages: number }) {
+    const steps = { count: 0 };
+    const original = sqlite.backup.bind(sqlite);
+    vi.spyOn(sqlite, 'backup').mockImplementation((dest, options) =>
+      original(dest, {
+        ...options,
+        progress: (info) => {
+          steps.count += 1;
+          return options!.progress!(report ? { ...info, ...report } : info);
+        },
+      })
+    );
+    return steps;
+  }
+
+  it('copies a page range at a time, many steps for a large database', async () => {
+    const { home, db } = bigDb();
+    const steps = countSteps(db.$client);
+    await snapshotSqliteInSteps(db.$client, path.join(home, 'copy.db'));
+    expect(steps.count).toBeGreaterThan(10);
+  });
+
+  it('refuses to write over an existing file', async () => {
+    const { home, db } = bigDb();
+    const dest = path.join(home, 'copy.db');
+    writeFileSync(dest, 'something already here');
+    await expect(snapshotSqliteInSteps(db.$client, dest)).rejects.toThrow(/already exists/);
+    expect(readFileSync(dest, 'utf8')).toBe('something already here');
+  });
+
+  it('gives up on a copy that keeps starting over, and leaves nothing behind', async () => {
+    const { home, db } = bigDb();
+    // Pretend the source is one page: three passes' worth is soon exceeded.
+    countSteps(db.$client, { totalPages: 1 });
+    const dest = path.join(home, 'copy.db');
+    await expect(snapshotSqliteInSteps(db.$client, dest)).rejects.toThrow(/kept changing/);
+    expect(readdirSync(home).filter((name) => name.startsWith('copy.db'))).toEqual([]);
+  });
+
+  it.each(['progress', 'completion'] as const)(
+    'aborts and closes its owned reader if the original closes during %s',
+    async (when) => {
+      const { home, db } = bigDb();
+      const readers: Database.Database[] = [];
+      const original = Database.prototype.backup;
+      const backup = vi.spyOn(Database.prototype, 'backup').mockImplementation(function (
+        this: Database.Database,
+        filename,
+        options
+      ) {
+        readers.push(this);
+        return original
+          .call(this, filename, {
+            ...options,
+            progress: (info) => {
+              if (when === 'progress' && db.$client.open) db.$client.close();
+              return options!.progress!(info);
+            },
+          })
+          .then((info) => {
+            if (when === 'completion') db.$client.close();
+            return info;
+          });
+      });
+      const dir = path.join(home, 'backups');
+      try {
+        await expect(snapshotDaily(db, { dir })).rejects.toThrow(/closed while copying/);
+        expect(readers).toHaveLength(1);
+        expect(readers[0].readonly).toBe(true);
+        expect(readers[0].open).toBe(false);
+        expect(readdirSync(dir)).toEqual([]);
+      } finally {
+        backup.mockRestore();
+        if (db.$client.open) db.$client.close();
+      }
+    }
+  );
+
+  it('retains the original source view for an already active read transaction', async () => {
+    const { home, db } = bigDb();
+    db.$client.exec('BEGIN');
+    const rows = db.$client.prepare('SELECT count(*) AS count FROM filler').get();
+    try {
+      const dest = await snapshotDaily(db, { dir: path.join(home, 'backups') });
+      expect(dest).not.toBeNull();
+      expect(db.$client.inTransaction).toBe(true);
+      const copy = new Database(dest!, { readonly: true });
+      try {
+        expect(copy.prepare('SELECT count(*) AS count FROM filler').get()).toEqual(rows);
+      } finally {
+        copy.close();
+      }
+    } finally {
+      db.$client.exec('ROLLBACK');
+      db.$client.close();
+    }
+  });
+
+  it('refuses to reopen a closed source for a daily snapshot', async () => {
+    const { home, db } = bigDb();
+    db.$client.close();
+    const dir = path.join(home, 'backups');
+    await expect(snapshotDaily(db, { dir })).rejects.toThrow(/source database is closed/);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('runs one daily snapshot at a time', async () => {
+    const { home, db } = bigDb();
+    const readers: Database.Database[] = [];
+    const original = Database.prototype.backup;
+    const backup = vi.spyOn(Database.prototype, 'backup').mockImplementation(function (
+      this: Database.Database,
+      filename,
+      options
+    ) {
+      readers.push(this);
+      return original.call(this, filename, options);
+    });
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const dir = path.join(home, 'backups');
+    try {
+      await Promise.all([
+        takeDailySnapshot(db, dir, log),
+        takeDailySnapshot(db, dir, log),
+        takeDailySnapshot(db, dir, log),
+      ]);
+
+      expect(backup).toHaveBeenCalledTimes(1);
+      expect(readers).toHaveLength(1);
+      expect(readers[0]).not.toBe(db.$client);
+      expect(readers[0].name).toBe(db.$client.name);
+      expect(readers[0].readonly).toBe(true);
+      expect(readers[0].open).toBe(false);
+      expect(readdirSync(dir).filter((name) => /-daily\.db$/.test(name))).toHaveLength(1);
+      expect(log.warn).not.toHaveBeenCalled();
+    } finally {
+      backup.mockRestore();
     }
   });
 });

@@ -2,10 +2,25 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261012-211000",
+      "slug": "local-agent-computer",
+      "title": "Local agent computers use a direct Linux VM and an isolated runtime",
+      "status": "proposed",
+      "created": "2026-10-12",
+      "extractedFrom": "specs/agent-computer-mvp/02-specification.md",
+      "specSlug": "agent-computer-mvp",
+      "supersedes": null,
+      "amends": [],
+      "affects": [
+        "apps/server/src/services/computers/**",
+        "apps/server/src/services/runtimes/opencode/computer/**"
+      ]
+    },
+    {
       "id": "261009-192542",
       "slug": "move-the-local-server-to-hono",
       "title": "Move the local server to Hono behind a front door, one route group at a time",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-10-09",
       "extractedFrom": null,
       "specSlug": null,
@@ -5528,7 +5543,6 @@
       "specSlug": "room-participation",
       "affects": [
         "apps/server/src/services/rooms/room-service.ts",
-        "apps/server/src/services/rooms/reactions/reaction-budget.ts",
         "apps/server/src/services/rooms/room-capabilities.ts",
         "apps/server/src/services/rooms/data/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts",
@@ -7566,7 +7580,8 @@
         "260819-022912",
         "260923-223910",
         "260821-190444",
-        "260822-235801"
+        "260822-235801",
+        "260814-195522"
       ],
       "supersedes": ["260822-235759", "0033"],
       "affects": [
@@ -7588,6 +7603,36 @@
       "extractedFrom": null,
       "specSlug": "spin-off-chats",
       "amends": ["261006-235240", "0077", "0081"]
+    },
+    {
+      "id": "261010-092116",
+      "slug": "heartbeats-skill-content-platform-beat-runner",
+      "title": "Heartbeats are a skill-shaped HEARTBEAT.md plus a platform beat runner; beats end with end_beat",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "heartbeats",
+      "amends": ["261001-000811"]
+    },
+    {
+      "id": "261010-143210",
+      "slug": "the-first-run-is-account-first-and-lands-in-team",
+      "title": "The first run is account-first, skippable, and lands in #team with a server-posted DorkBot welcome",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "one-minute-onboarding",
+      "amends": ["260722-111314"]
+    },
+    {
+      "id": "261010-143211",
+      "slug": "dorkos-picks-the-model-per-chat",
+      "title": "DorkOS picks the model per chat from the credits catalog; the model item is hidden by default",
+      "status": "accepted",
+      "created": "2026-10-10",
+      "extractedFrom": null,
+      "specSlug": "one-minute-onboarding",
+      "amends": ["261008-052830"]
     }
   ]
 }

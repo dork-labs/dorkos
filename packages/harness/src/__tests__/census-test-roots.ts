@@ -75,5 +75,11 @@ export const TEST_ROOTS: readonly CensusTestRoot[] = [
     least: 2,
   },
   { dir: 'apps/server/src/routes/__tests__', match: /^harness\.test\.ts$/, least: 1 },
+  // A room worktree's turn retires the old seeding (TR-05, spec `agent-home-desk` §5.9).
+  {
+    dir: 'apps/server/src/services/rooms/repo/__tests__',
+    match: /^room-worktree-manager\.test\.ts$/,
+    least: 1,
+  },
   { dir: 'apps/e2e/tests/harness', match: /\.spec\.ts$/, least: 1 },
 ] as const;

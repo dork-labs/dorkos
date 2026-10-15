@@ -139,6 +139,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     reloadNonce,
   });
   const docFrame = useDocFrameChannel({
+    freshPhysicalFrame: true,
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
@@ -283,6 +284,8 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       )}
 
       <BrowserBody
+        physicalMountKey={docFrame.physicalMountKey}
+        onFrameMount={docFrame.noteFrameMounted}
         target={target}
         resolved={resolved}
         resolveError={resolveError}
@@ -413,6 +416,8 @@ function AddressDisplay({ url, onActivate }: { url: string; onActivate: () => vo
 }
 
 interface BrowserBodyProps {
+  physicalMountKey?: string;
+  onFrameMount?: (frame: HTMLIFrameElement | null) => void;
   navigationSource?: string;
   target: ReturnType<typeof classifyBrowserTarget>;
   /** What the resolve cascade settled on, or `null` while it is still deciding. */
@@ -471,6 +476,8 @@ function explainResolveError(
 
 /** The frame (or a message) for the current navigation state. */
 function BrowserBody({
+  physicalMountKey,
+  onFrameMount,
   navigationSource,
   target,
   resolved,
@@ -510,8 +517,9 @@ function BrowserBody({
       // reload of the SAME src still bumps the nonce. Remounting is also what
       // resets "has it loaded yet" and "is it past its deadline" — a page's
       // loading state belongs to that page and nothing else.
-      key={`${resolved.src}:${reloadNonce}`}
+      key={`${physicalMountKey ?? 'legacy'}:${resolved.src}:${reloadNonce}`}
       src={navigationSource ?? resolved.src}
+      onFrameMount={onFrameMount}
       sandbox={resolved.sandbox}
       title={title}
       iframeRef={iframeRef}
@@ -528,6 +536,7 @@ function BrowserBody({
 }
 
 interface PreviewFrameProps {
+  onFrameMount?: (frame: HTMLIFrameElement | null) => void;
   src: string;
   sandbox: string;
   title: string;
@@ -549,6 +558,7 @@ interface PreviewFrameProps {
  * page is still a page, and unmounting it would throw away a load in progress.
  */
 function PreviewFrame({
+  onFrameMount,
   src,
   sandbox,
   title,
@@ -562,6 +572,13 @@ function PreviewFrame({
 }: PreviewFrameProps) {
   const [loaded, setLoaded] = useState(false);
   const [pastDeadline, setPastDeadline] = useState(false);
+  const mountedRef = useCallback(
+    (frame: HTMLIFrameElement | null) => {
+      iframeRef.current = frame;
+      onFrameMount?.(frame);
+    },
+    [iframeRef, onFrameMount]
+  );
 
   // One clock per mount, and the caller remounts this component per document —
   // so the deadline starts over with each page and never carries across one.
@@ -585,7 +602,7 @@ function PreviewFrame({
         </FrameBanner>
       )}
       <iframe
-        ref={iframeRef}
+        ref={onFrameMount ? mountedRef : iframeRef}
         src={src}
         sandbox={sandbox}
         onLoad={(event) => {

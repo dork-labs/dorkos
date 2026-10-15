@@ -1,14 +1,7 @@
-import {
-  DocChannelDownstream,
-  type DocDownstreamAuthority,
-  requireOriginalDownstreamRoomEmitterOwner,
-} from '../downstream/service.js';
-import type { OriginalDownstreamRoomEmitter } from '../downstream/native-room-emitter.js';
 /** One fixed owning installation gate, canonical coordinator and same-Db fence. */
-import { realpath, stat } from 'node:fs/promises';
 import { types as utilTypes } from 'node:util';
 import path from 'node:path';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import { WriteFileRequestSchema, type WriteFileRequest } from '@dorkos/shared/schemas';
 import { getBoundary } from '../../../../lib/boundary.js';
@@ -25,22 +18,17 @@ import {
   InstallationMutations,
   withRecognizedInstallationMutation,
   stopRecognizedInstallationMutations,
-  type OwnedMutation,
 } from './installation-mutations.js';
-import { MutationRefusal, type TrustedTreeRoot, type TreeRootIdentity } from './mutation-roots.js';
 import {
   CanonicalFileWriteCoordinator,
   withRecognizedCanonicalFiles,
   stopRecognizedCanonicalWriter,
   CanonicalFileIdentityChangedError,
-  type CanonicalFileIdentity,
-  type CanonicalWriteLease,
 } from './canonical-writer.js';
 import { CheckboxWriteFence, assertRecognizedCheckboxAdmission } from './checkbox-fence.js';
 import { performNormalFileSave, type NormalFileSaveOutcome } from './normal-file-save.js';
 import {
   InstallationRoomWrites,
-  requireInstallationRoomWrites,
   stopRecognizedInstallationRoomWrites,
   requireInstallationRoomStopOutside,
 } from './installation-room-writes.js';
@@ -52,565 +40,99 @@ import { requireRoomRepoMutex, type RoomRepoMutex } from '../../../rooms/repo/ro
 
 import {
   InstallationHttpFileWrites,
-  requireInstallationHttpFileWrites,
   requireInstallationHttpFileStopOutside,
   stopRecognizedInstallationHttpFileWrites,
 } from './installation-http-file-writes.js';
-import {
-  DocCheckboxWriteService,
-  requireOriginalCheckboxWriterAssembly,
-} from './checkbox-service.js';
-import type { DocCheckboxAuthority } from './authority.js';
-import { notifyServiceOriginalCheckboxCommitted, type DocChannelService } from '../service.js';
-import { DOC_INGEST_LIMITS } from '../current/accounting.js';
-import { approveOriginalDocRoute, type DocChannelGrants, type DocGrantResult } from '../grants.js';
-import { DocRouteGrantRequestSchema, declaredRoute, grantTypes } from '../grant-policy.js';
-import { requireOriginalDocGrantStore } from '../store.js';
-import { matchesCanvasChannelEvent } from '@dorkos/shared/canvas-channel-schemas';
-import { createOriginalDocTokenFileSourceReader } from '../tokens/token-native-file-source.js';
-import {
-  OriginalCheckboxGrantPreparation,
-  requireOriginalCheckboxGrantPreparationAssembly,
-  requireOriginalCheckboxGrantPreparationGrants,
-  grantOriginalCheckboxRoute,
-} from './checkbox-grant-preparation.js';
 
-interface Assembly {
-  managementSourceReader?: ReturnType<typeof createOriginalDocTokenFileSourceReader>;
-  db: Db;
-  store: DocChannelStore;
-  root: string;
-  installation: InstallationMutations;
-  coordinator: CanonicalFileWriteCoordinator;
-  fence: CheckboxWriteFence;
-  rooms?: InstallationRoomWrites;
-  httpFiles?: InstallationHttpFileWrites;
-  roomRepos?: RoomRepoStore;
-  downstream?: Readonly<{
-    downstream: DocChannelDownstream;
-    emitter: OriginalDownstreamRoomEmitter;
-    stop: () => Promise<void>;
-  }>;
-  downstreamConstruction?: 'constructing' | 'finished';
-  downstreamConstructed?: Promise<void>;
-  checkbox?: Readonly<{ writer: DocCheckboxWriteService; stop: () => Promise<void> }>;
-  checkboxConstruction?: 'constructing' | 'finished';
-  checkboxConstructed?: Promise<void>;
-  checkboxGrant?: Readonly<{ helper: OriginalCheckboxGrantPreparation; stop: () => Promise<void> }>;
-  checkboxGrantConstruction?: 'constructing' | 'finished';
-  checkboxGrantConstructed?: Promise<void>;
-  requireAdmission(): void;
-  saveHttp(req: Request, res: Response, input: WriteFileRequest): Promise<NormalFileSaveOutcome>;
-  stop(): Promise<void>;
-}
-interface SaveScope {
-  owner: InstallationFileWrites;
-  assembly: Assembly;
-  caller: object;
-  owned: OwnedMutation;
-  input: Readonly<WriteFileRequest>;
-  identity: CanonicalFileIdentity;
-  lease: CanonicalWriteLease;
-  forceConflict: boolean;
-  replacements: WeakSet<CanonicalFileIdentity>;
-  active: boolean;
-  completedSave?: Extract<NormalFileSaveOutcome, { ok: true }>;
-}
-const owners = new WeakMap<object, Assembly>();
-const connections = new WeakMap<object, InstallationFileWrites>();
-const nativeClients = new WeakMap<Db, Db['$client']>();
-const scopes = new WeakMap<object, SaveScope>();
-const originalCheckboxChildren = new WeakMap<
-  DocCheckboxWriteService,
-  { owner: InstallationFileWrites; assembly: Assembly }
->();
-const originalCheckboxGrantChildren = new WeakMap<
-  OriginalCheckboxGrantPreparation,
-  { owner: InstallationFileWrites; assembly: Assembly }
->();
+import { createIsolatedInstallationFileWriteCustody } from './installation/file/installation-file-custody.js';
+import type { SaveScope } from './installation/file/installation-file-custody-types.js';
 
-function outsideSql(db: Db, native = nativeClients.get(db)): void {
-  if (!native || db.$client !== native || !native.open)
-    throw new Error('Owning native database connection changed or closed.');
-  if (native.inTransaction) throw new Error('File mutation cannot await inside SQL.');
-}
-async function hostRoot(db: Db, root: TrustedTreeRoot): Promise<TreeRootIdentity> {
-  outsideSql(db);
-  if (!path.isAbsolute(root.directory)) throw new MutationRefusal('invalid-root');
-  const canonicalPath = await realpath(root.directory);
-  outsideSql(db);
-  const info = await stat(canonicalPath, { bigint: true });
-  outsideSql(db);
-  if (!info.isDirectory()) throw new MutationRefusal('invalid-root');
-  const ancestorPhysicalKeys: string[] = [];
-  let parent = path.dirname(canonicalPath);
-  while (parent !== canonicalPath) {
-    outsideSql(db);
-    const ancestor = await stat(parent, { bigint: true });
-    outsideSql(db);
-    if (!ancestor.isDirectory()) throw new MutationRefusal('invalid-root');
-    ancestorPhysicalKeys.push(`${ancestor.dev}:${ancestor.ino}`);
-    const next = path.dirname(parent);
-    if (next === parent) break;
-    parent = next;
-  }
-  return Object.freeze({
-    canonicalPath,
-    physicalKey: `${info.dev}:${info.ino}`,
-    ancestorPhysicalKeys: Object.freeze(ancestorPhysicalKeys),
-  });
-}
-async function physical(db: Db, path: string): Promise<CanonicalFileIdentity> {
-  outsideSql(db);
-  const canonicalPath = await realpath(path);
-  outsideSql(db);
-  const info = await stat(canonicalPath, { bigint: true });
-  outsideSql(db);
-  if (!info.isFile()) throw Object.assign(new Error('Not a regular file'), { code: 'NOT_A_FILE' });
-  return { canonicalPath, device: String(info.dev), inode: String(info.ino) };
-}
-function same(a: CanonicalFileIdentity, b: CanonicalFileIdentity): boolean {
-  return a.canonicalPath === b.canonicalPath && a.device === b.device && a.inode === b.inode;
-}
-/** Private constructor membership and exact original dependencies; no structural certification. */
-export function requireInstallationFileWritesOwner(
-  owner: unknown,
-  exactDb: Db,
-  exactStore: DocChannelStore
-): undefined {
-  const assembly = owner && typeof owner === 'object' ? owners.get(owner) : undefined;
-  if (!assembly || assembly.db !== exactDb || assembly.store !== exactStore)
-    throw new Error('Unknown owning file writer or database.');
-  requireDocChannelStoreDatabase(exactStore, exactDb);
-  if (nativeClients.get(exactDb) !== exactDb.$client)
-    throw new Error('Owning native database connection changed.');
-  return undefined;
-}
-/** Constructor admission guard, not a caller-provided readiness proof; existing scopes may drain after closure. */
-export function requireInstallationFileWritesAdmission(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore
-): undefined {
-  requireInstallationFileWritesOwner(owner, db, store);
-  outsideSql(db);
-  owners.get(owner)!.requireAdmission();
-  return undefined;
-}
-/** Exact captured original room instance only. No registrar or cross-module reader recursion. */
-export function requireInstallationFileRoomWriter(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  repos: RoomRepoStore,
-  writer: InstallationRoomWrites
-): undefined {
-  requireInstallationFileWritesOwner(owner, db, store);
-  const assembly = owners.get(owner)!;
-  if (assembly.rooms !== writer || assembly.roomRepos !== repos)
-    throw new Error('Room writer is not the original factory-captured instance.');
-  return undefined;
-}
-/** Compare the exact factory-captured finite namespace instance, never another constructor. */
-export function requireInstallationHttpFileWriter(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  writer: InstallationHttpFileWrites
-): undefined {
-  requireInstallationFileWritesOwner(owner, db, store);
-  if (owners.get(owner)!.httpFiles !== writer)
-    throw new Error('Unknown original namespace writer.');
-  return undefined;
-}
-/** Read the HTTP file child retained by the original installation. */
-export function readInstallationHttpFileWrites(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore
-): InstallationHttpFileWrites {
-  requireInstallationFileWritesOwner(owner, db, store);
-  return requireInstallationHttpFileWrites(owners.get(owner)!.httpFiles);
-}
-/** Return only this factory's actual captured original room writer, never another constructor instance. */
-export function readInstallationFileRoomWrites(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  repos: RoomRepoStore
-): InstallationRoomWrites {
-  requireInstallationFileWritesOwner(owner, db, store);
-  const assembly = owners.get(owner)!;
-  if (!assembly.rooms || assembly.roomRepos !== repos)
-    throw new Error('Owning room mutation integration is unavailable.');
-  return requireInstallationRoomWrites(assembly.rooms, owner, db, store, repos);
-}
-/** Original composition receives the actual single objects, never a caller-created port. */
-export function requireInstallationFileWriteAssembly(
-  owner: InstallationFileWrites,
-  exactDb: Db,
-  exactStore: DocChannelStore
-): Readonly<Pick<Assembly, 'installation' | 'coordinator' | 'fence'>> {
-  requireInstallationFileWritesOwner(owner, exactDb, exactStore);
-  const { installation, coordinator, fence } = owners.get(owner)!;
-  return Object.freeze({ installation, coordinator, fence });
-}
-/** Actual installation constructor creates one retained native sender; no attached child/stop callback. */
-export function createInstallationOriginalRoomDownstream(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  authority: DocDownstreamAuthority,
-  principals: object
-): DocChannelDownstream {
-  requireInstallationFileWritesAdmission(owner, db, store);
-  const assembly = owners.get(owner)!;
-  if (assembly.downstreamConstruction)
-    throw new Error('Original installation downstream already constructed.');
-  assembly.downstreamConstruction = 'constructing';
-  let finished!: () => void;
-  assembly.downstreamConstructed = new Promise<void>((resolve) => {
-    finished = resolve;
-  });
-  try {
-    const child = DocChannelDownstream.createInstallationDownstream(
-      db,
-      store,
-      authority,
-      principals
-    );
-    assembly.downstream = child;
-    requireInstallationFileWritesAdmission(owner, db, store);
-    return child.downstream;
-  } finally {
-    assembly.downstreamConstruction = 'finished';
-    finished();
-  }
-}
-/** Only the installation's original retained sender may enter the actual runtime constructor. */
-export function readInstallationOriginalRoomEmitter(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  principals: object
-): OriginalDownstreamRoomEmitter {
-  requireInstallationFileWritesAdmission(owner, db, store);
-  const child = owners.get(owner)!.downstream;
-  if (!child) throw new Error('Original installation Room emitter unavailable.');
-  requireOriginalDownstreamRoomEmitterOwner(child.emitter, db, principals);
-  requireInstallationFileWritesAdmission(owner, db, store);
-  return child.emitter;
-}
-/** The owning constructor creates and retains its one actual checkbox child, never an attached callback. */
-export function createInstallationOriginalCheckboxWriter(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  authority: DocCheckboxAuthority,
-  service: DocChannelService
-): DocCheckboxWriteService {
-  requireInstallationFileWritesAdmission(owner, db, store);
-  const assembly = owners.get(owner)!;
-  if (assembly.checkboxConstruction) throw new Error('Owning checkbox writer already constructed.');
-  // Latch before any constructor/native check can reenter this factory or owner stop.
-  assembly.checkboxConstruction = 'constructing';
-  let finished!: () => void;
-  assembly.checkboxConstructed = new Promise<void>((resolve) => {
-    finished = resolve;
-  });
-  try {
-    const writer = new DocCheckboxWriteService(db, store, assembly.coordinator, authority, {
-      policyLimits: DOC_INGEST_LIMITS,
-      notifyCommitted: (_documentId) => notifyServiceOriginalCheckboxCommitted(service),
-      service,
-    });
-    const captured = requireOriginalCheckboxWriterAssembly(writer, db, store, assembly.coordinator);
-    // Preserve this actual constructed child in the parent drain even if admission retired during construction.
-    assembly.checkbox = Object.freeze({ writer, stop: captured.stop });
-    originalCheckboxChildren.set(writer, { owner, assembly });
-    requireInstallationFileWritesAdmission(owner, db, store);
-    if (owners.get(owner) !== assembly) throw new Error('Owning checkbox factory changed.');
-    return writer;
-  } finally {
-    assembly.checkboxConstruction = 'finished';
-    finished();
-  }
-}
-/** Lookup of only the internally constructed child; a second genuine constructor is not original custody. */
-export function requireInstallationOriginalCheckboxWriter(
-  writer: DocCheckboxWriteService,
-  db: Db,
-  store: DocChannelStore,
-  coordinator: CanonicalFileWriteCoordinator
-): undefined {
-  const child = originalCheckboxChildren.get(writer);
-  if (!child) throw new Error('Unknown original installation checkbox writer.');
-  requireInstallationFileWritesOwner(child.owner, db, store);
-  if (
-    owners.get(child.owner) !== child.assembly ||
-    child.assembly.coordinator !== coordinator ||
-    child.assembly.checkbox?.writer !== writer
-  )
-    throw new Error('Original installation checkbox custody changed.');
-  return undefined;
-}
-/** Construct the one original FILE grant preparation after the same installation's actual writer. */
-export function createInstallationOriginalCheckboxGrantPreparation(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore,
-  authority: DocCheckboxAuthority,
-  service: DocChannelService,
-  grants: DocChannelGrants
-): OriginalCheckboxGrantPreparation {
-  requireInstallationFileWritesAdmission(owner, db, store);
-  const assembly = owners.get(owner)!;
-  if (!assembly.checkbox || assembly.checkboxGrantConstruction || assembly.checkboxGrant)
-    throw new Error(
-      'Original checkbox grant preparation cannot be constructed twice or before its writer.'
-    );
-  requireInstallationOriginalCheckboxWriter(
-    assembly.checkbox.writer,
-    db,
-    store,
-    assembly.coordinator
-  );
-  assembly.checkboxGrantConstruction = 'constructing';
-  let constructed!: () => void;
-  assembly.checkboxGrantConstructed = new Promise<void>((resolve) => {
-    constructed = resolve;
-  });
-  try {
-    const helper = new OriginalCheckboxGrantPreparation(
-      db,
-      store,
-      assembly.coordinator,
-      authority,
-      service,
-      grants
-    );
-    const captured = requireOriginalCheckboxGrantPreparationAssembly(
-      helper,
-      db,
-      store,
-      assembly.coordinator
-    );
-    assembly.checkboxGrant = Object.freeze({ helper, stop: captured.stop });
-    originalCheckboxGrantChildren.set(helper, Object.freeze({ owner, assembly }));
-    requireInstallationFileWritesAdmission(owner, db, store);
-    if (owners.get(owner) !== assembly) throw new Error('Owning checkbox grant factory changed.');
-    return helper;
-  } finally {
-    assembly.checkboxGrantConstruction = 'finished';
-    constructed();
-  }
-}
+const originalFileCustody = createIsolatedInstallationFileWriteCustody();
+const {
+  owners,
+  connections,
+  nativeClients,
+  scopes,
+  originalCheckboxChildren,
+  originalCheckboxGrantChildren,
+  outsideSql,
+  hostRoot,
+  physical,
+  same,
+} = originalFileCustody;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationFileWritesOwner =
+  originalFileCustody.requireInstallationFileWritesOwner;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationFileWritesAdmission =
+  originalFileCustody.requireInstallationFileWritesAdmission;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationFileRoomWriter =
+  originalFileCustody.requireInstallationFileRoomWriter;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationHttpFileWriter =
+  originalFileCustody.requireInstallationHttpFileWriter;
+/** Original installation custody API backed by the sole private instance. */
+export const readInstallationHttpFileWrites = originalFileCustody.readInstallationHttpFileWrites;
+/** Original installation custody API backed by the sole private instance. */
+export const readInstallationFileRoomWrites = originalFileCustody.readInstallationFileRoomWrites;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationFileWriteAssembly =
+  originalFileCustody.requireInstallationFileWriteAssembly;
+/** Original installation custody API backed by the sole private instance. */
+export const createInstallationOriginalRoomDownstream =
+  originalFileCustody.createInstallationOriginalRoomDownstream;
+/** Original installation custody API backed by the sole private instance. */
+export const readInstallationOriginalRoomEmitter =
+  originalFileCustody.readInstallationOriginalRoomEmitter;
+/** Original installation custody API backed by the sole private instance. */
+export const createInstallationOriginalCheckboxWriter =
+  originalFileCustody.createInstallationOriginalCheckboxWriter;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationOriginalCheckboxWriter =
+  originalFileCustody.requireInstallationOriginalCheckboxWriter;
+/** Original installation custody API backed by the sole private instance. */
+export const createInstallationOriginalCheckboxGrantPreparation =
+  originalFileCustody.createInstallationOriginalCheckboxGrantPreparation;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationOriginalCheckboxGrantPreparation =
+  originalFileCustody.requireInstallationOriginalCheckboxGrantPreparation;
+/** Original installation custody API backed by the sole private instance. */
+export const approveInstallationOriginalDocRoute =
+  originalFileCustody.approveInstallationOriginalDocRoute;
+/** Original installation custody API backed by the sole private instance. */
+export const stopInstallationOriginalCheckboxWriter =
+  originalFileCustody.stopInstallationOriginalCheckboxWriter;
+/** Original installation custody API backed by the sole private instance. */
+export const runInstallationFileSave = originalFileCustody.runInstallationFileSave;
+/** Original installation custody API backed by the sole private instance. */
+export const stopInstallationFileWrites = originalFileCustody.stopInstallationFileWrites;
+/** Original installation custody API backed by the sole private instance. */
+export const readInstallationFileSaveScope = originalFileCustody.readInstallationFileSaveScope;
+/** Original installation custody API backed by the sole private instance. */
+export const readOriginalDocumentFileSave = originalFileCustody.readOriginalDocumentFileSave;
+/** Original installation custody API backed by the sole private instance. */
+export const readOriginalDocumentFileSaveIdentity =
+  originalFileCustody.readOriginalDocumentFileSaveIdentity;
+/** Original installation custody API backed by the sole private instance. */
+export const readOriginalDocumentFileSaveCurrent =
+  originalFileCustody.readOriginalDocumentFileSaveCurrent;
+/** Original installation custody API backed by the sole private instance. */
+export const requireOriginalDocumentFileSaveCompleted =
+  originalFileCustody.requireOriginalDocumentFileSaveCompleted;
+/** Original installation custody API backed by the sole private instance. */
+export const requireInstallationFileSaveCurrent =
+  originalFileCustody.requireInstallationFileSaveCurrent;
+/** Original installation custody API backed by the sole private instance. */
+export const checkInstallationFileSaveScope = originalFileCustody.checkInstallationFileSaveScope;
+/** Original installation custody API backed by the sole private instance. */
+export const markInstallationFileSaveReplaced =
+  originalFileCustody.markInstallationFileSaveReplaced;
+/** Original installation custody API backed by the sole private instance. */
+export const checkInstallationFileSaveCleanup =
+  originalFileCustody.checkInstallationFileSaveCleanup;
 
-/** Lookup only of the internally constructed child; native SQL may consume this exact relationship. */
-export function requireInstallationOriginalCheckboxGrantPreparation(
-  helper: OriginalCheckboxGrantPreparation,
-  db: Db,
-  store: DocChannelStore,
-  coordinator: CanonicalFileWriteCoordinator
-): undefined {
-  const child = originalCheckboxGrantChildren.get(helper);
-  if (
-    !child ||
-    child.assembly.db !== db ||
-    child.assembly.store !== store ||
-    child.assembly.coordinator !== coordinator ||
-    child.assembly.checkboxGrant?.helper !== helper ||
-    owners.get(child.owner) !== child.assembly
-  )
-    throw new Error('Foreign original checkbox grant preparation.');
-  requireInstallationFileWritesOwner(child.owner, db, store);
-  return undefined;
-}
-
-/** Approve through the installed original source preparation, never a supplied write observation. */
-export function approveInstallationOriginalDocRoute(
-  owner: InstallationFileWrites,
-  grants: DocChannelGrants,
-  raw: unknown,
-  actor: import('../authorization.js').DocChannelActor,
-  approvalToken?: string
-): Promise<DocGrantResult> {
-  const assembly = owners.get(owner);
-  if (!assembly) throw new Error('Original installation required.');
-  requireInstallationFileWritesAdmission(owner, assembly.db, assembly.store);
-  const helper = assembly.checkboxGrant?.helper;
-  if (!helper) throw new Error('Original route preparation unavailable.');
-  requireOriginalCheckboxGrantPreparationGrants(helper, grants);
-  const request = DocRouteGrantRequestSchema.omit({ write: true }).parse(raw);
-  const channel = requireOriginalDocGrantStore(assembly.store, assembly.db).getChannel(
-    request.documentId
-  );
-  if (!channel) throw new Error('Original document channel unavailable.');
-  const types = grantTypes(declaredRoute(channel, request.routeId), request.allowedTypes);
-  const checkbox = types.some((type) => matchesCanvasChannelEvent(type, 'md.task.toggled'));
-  // Comparison DATA selects the existing native preparation. Each chosen grant
-  // operation independently repeats current source, manifest and approval checks.
-  const reader = (assembly.managementSourceReader ??= createOriginalDocTokenFileSourceReader(
-    assembly.db,
-    assembly.roomRepos
-  ));
-  const source = reader.observe(request.documentId);
-  if (source.canonicalFile !== null && checkbox)
-    return grantOriginalCheckboxRoute(helper, raw, actor, approvalToken);
-  return Promise.resolve(approveOriginalDocRoute(grants, request, actor, approvalToken));
-}
-
-/** Exact factory child only; public writer methods cannot replace its original drain. */
-export function stopInstallationOriginalCheckboxWriter(
-  owner: InstallationFileWrites,
-  db: Db,
-  store: DocChannelStore
-): Promise<void> {
-  requireInstallationFileWritesOwner(owner, db, store);
-  const child = owners.get(owner)!.checkbox;
-  if (!child) throw new Error('Owning checkbox writer is unavailable.');
-  return child.stop();
-}
-/** Run a file save through the original installation owner. */
-export function runInstallationFileSave(
-  owner: InstallationFileWrites,
-  exactDb: Db,
-  exactStore: DocChannelStore,
-  req: Request,
-  res: Response,
-  input: WriteFileRequest
-): Promise<NormalFileSaveOutcome> {
-  requireInstallationFileWritesOwner(owner, exactDb, exactStore);
-  return owners.get(owner)!.saveHttp(req, res, input);
-}
-/** Stop the original installation and drain its captured child lifetimes. */
-export function stopInstallationFileWrites(
-  owner: InstallationFileWrites,
-  exactDb: Db,
-  exactStore: DocChannelStore
-): Promise<void> {
-  requireInstallationFileWritesOwner(owner, exactDb, exactStore);
-  return owners.get(owner)!.stop();
-}
-function scopeOf(handle: object): SaveScope {
-  const scope = scopes.get(handle);
-  if (!scope?.active) throw new Error('Inactive owning file-save operation.');
-  outsideSql(scope.assembly.db);
-  scope.owned.assertActive();
-  return scope;
-}
-/** Detached finite arguments only; access requires an actually active private operation. */
-export function readInstallationFileSaveScope(handle: object): Readonly<{
-  input: Readonly<WriteFileRequest>;
-  identity: Readonly<CanonicalFileIdentity>;
-  lease: CanonicalWriteLease;
-  forceConflict: boolean;
-}> {
-  const scope = scopeOf(handle);
-  return Object.freeze({
-    input: scope.input,
-    identity: Object.freeze({ ...scope.identity }),
-    lease: scope.lease,
-    forceConflict: scope.forceConflict,
-  });
-}
-/** Read actual private save custody outside SQL; no caller can create this handle. */
-export function readOriginalDocumentFileSave(handle: object, db: Db, store: DocChannelStore) {
-  const scope = scopeOf(handle);
-  requireInstallationFileWritesOwner(scope.owner, db, store);
-  if (scope.assembly.db !== db || scope.assembly.store !== store || !scope.input.documentSave)
-    throw new Error('Foreign document-bound save scope.');
-  return Object.freeze({ input: scope.input, identity: Object.freeze({ ...scope.identity }) });
-}
-/** Retain only the request identity for the same original service store. */
-export function readOriginalDocumentFileSaveIdentity(handle: object, store: DocChannelStore) {
-  const scope = scopeOf(handle);
-  if (scope.assembly.store !== store || !scope.input.documentSave)
-    throw new Error('Foreign document save request.');
-  requireInstallationFileWritesOwner(scope.owner, scope.assembly.db, store);
-  return scope.input.documentSave;
-}
-/** Read only the active original save identity inside the final document inspection transaction. */
-export function readOriginalDocumentFileSaveCurrent(
-  handle: object,
-  db: Db,
-  store: DocChannelStore
-) {
-  const scope = scopes.get(handle);
-  if (
-    !scope?.active ||
-    scope.assembly.db !== db ||
-    scope.assembly.store !== store ||
-    !scope.input.documentSave
-  )
-    throw new Error('Document save has no active original scope.');
-  requireInstallationFileWritesOwner(scope.owner, db, store);
-  return Object.freeze({ request: scope.input.documentSave, path: scope.identity.canonicalPath });
-}
-/** Verify the actual original changed result inside the exact completion transaction. */
-export function requireOriginalDocumentFileSaveCompleted(
-  handle: object,
-  db: Db,
-  store: DocChannelStore,
-  hash: string
-): void {
-  const scope = scopes.get(handle);
-  if (
-    !scope?.active ||
-    scope.assembly.db !== db ||
-    scope.assembly.store !== store ||
-    scope.completedSave?.effect !== 'changed' ||
-    scope.completedSave.hash !== hash
-  )
-    throw new Error('Document save has no original changed completion.');
-  requireInstallationFileWritesOwner(scope.owner, db, store);
-}
-
-/** Final synchronous current checks directly precede each participating effect. */
-export function requireInstallationFileSaveCurrent(handle: object): undefined {
-  const scope = scopeOf(handle);
-  if (getBoundary() !== scope.assembly.root) throw new Error('Installed file boundary changed.');
-  requireDocHttpFileWriteCurrent(scope.owner, scope.caller);
-  assertRecognizedCheckboxAdmission(
-    scope.assembly.fence,
-    scope.assembly.db,
-    scope.assembly.store,
-    scope.identity
-  );
-  return undefined;
-}
-/** Awaited roots/path/identity work never replaces the final synchronous current checks. */
-export async function checkInstallationFileSaveScope(handle: object): Promise<void> {
-  const scope = scopeOf(handle);
-  await scope.owned.assertCurrentRoots();
-  scopeOf(handle);
-  const { resolved } = await resolveWithinCwd(scope.input.cwd, scope.input.path);
-  scopeOf(handle);
-  const current = await physical(scope.assembly.db, resolved);
-  scopeOf(handle);
-  if (!same(current, scope.identity)) throw new CanonicalFileIdentityChangedError();
-  requireInstallationFileSaveCurrent(handle);
-}
-/** Only this operation's already reserved replacement may become its expected target. */
-export function markInstallationFileSaveReplaced(
-  handle: object,
-  replacement: CanonicalFileIdentity
-): undefined {
-  const scope = scopeOf(handle);
-  if (!scope.replacements.has(replacement)) throw new Error('Unknown replacement reservation.');
-  if (replacement.canonicalPath === scope.identity.canonicalPath)
-    throw new Error('Replacement must originate from a distinct owned temporary path.');
-  scope.identity = { ...replacement, canonicalPath: scope.identity.canonicalPath };
-  return undefined;
-}
-/** Mandatory owned-temp cleanup has exclusion/lifetime, not a fresh caller permission grant. */
-export async function checkInstallationFileSaveCleanup(handle: object): Promise<void> {
-  const scope = scopeOf(handle);
-  await scope.owned.assertCurrentRoots();
-  scopeOf(handle);
-}
-
-/** Own installation file writers, mutation admission and child shutdown custody. */
+/** Own original installation file writes and drain their existing active lifetimes on shutdown. */
 export class InstallationFileWrites {
   #closed = false;
   #draining?: Promise<void>;
@@ -677,11 +199,19 @@ export class InstallationFileWrites {
     }
   }
 
-  saveHttp(req: Request, res: Response, raw: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  saveHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+    raw: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     return this.#admit(req, res, raw);
   }
 
-  #admit(req: Request, res: Response, raw: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  #admit(
+    req: IncomingMessage,
+    res: ServerResponse,
+    raw: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     if (this.#closed) return Promise.reject(new Error('File writes are stopped.'));
     // Parse/copy all request data before admission; no mutable caller object survives awaits.
     const input = Object.freeze(WriteFileRequestSchema.parse(raw));

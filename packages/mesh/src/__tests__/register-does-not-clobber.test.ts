@@ -191,6 +191,30 @@ describe('registration adopts rather than overwrites', () => {
 
     mesh.close();
   });
+
+  it('writes createdBy on a minted manifest and leaves an adopted one alone (DOR-2788)', async () => {
+    const base = await makeTempDir();
+    const fresh = path.join(base, 'fresh');
+    const repo = path.join(base, 'repo');
+    await fs.mkdir(fresh, { recursive: true });
+    await fs.mkdir(repo, { recursive: true });
+    await writeManifest(repo, makeManifest({ id: '01ANA0000000000000000000F' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base, logger: quietLogger() });
+    const minted = await mesh.registerByPath(fresh, {
+      name: 'fresh',
+      runtime: 'claude-code',
+      createdBy: '01CREATOR',
+    });
+    expect(JSON.parse((await manifestBytes(fresh))!).createdBy).toBe('01CREATOR');
+    // And the mirror the reports-to chain reads carries it.
+    expect(mesh.get(minted.id)?.createdBy).toBe('01CREATOR');
+
+    await mesh.registerByPath(repo, { createdBy: '01CREATOR' });
+    expect(JSON.parse((await manifestBytes(repo))!)).not.toHaveProperty('createdBy');
+
+    mesh.close();
+  });
 });
 
 describe('unregistration never deletes a git-tracked manifest', () => {

@@ -177,6 +177,99 @@ describe('RuntimeRegistry', () => {
       expect(found.getCapabilities().supportsResume).toBe(true);
     });
 
+    // Spec `audit-trail` PR3: the one seam every turn passes through records
+    // every tool call, so a runtime registered here cannot run a tool unseen.
+    it('wraps a registered runtime so its tool calls reach the audit log', async () => {
+      const { initAuditTrail, resetAuditTrail } = await import('../../audit/audit-trail.js');
+      const { AuditLog } = await import('../../audit/audit-log.js');
+      const { AccountIds } = await import('../../audit/account-ids.js');
+      const { auditEvents } = await import('@dorkos/db');
+      const db = createTestDb();
+      initAuditTrail({
+        log: new AuditLog(db),
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      });
+      try {
+        registry.register({
+          ...createMockRuntime('claude-code'),
+          sendMessage: async function* () {
+            yield {
+              type: 'tool_call_start',
+              data: {
+                toolCallId: 't1',
+                toolName: 'Bash',
+                input: '{"command":"ls"}',
+                status: 'running',
+              },
+            };
+            yield {
+              type: 'tool_result',
+              data: { toolCallId: 't1', toolName: 'Bash', status: 'complete' },
+            };
+          },
+        } as AgentRuntime);
+        for await (const _event of registry.get('claude-code').sendMessage('s1', 'go', {})) {
+          // drain
+        }
+        expect(
+          db
+            .select()
+            .from(auditEvents)
+            .all()
+            .map((row) => [row.action, row.targetId])
+        ).toEqual([['runtime.tool_used', 'ls']]);
+      } finally {
+        resetAuditTrail();
+      }
+    });
+
+    // Spec `audit-trail` PR5: the backstop. A turn for a paused agent is
+    // refused at the one seam every turn passes, whatever surface started it.
+    it('refuses a paused agent’s turn sent straight through the registry', async () => {
+      const { AgentPauseService, initAgentPause, resetAgentPause } =
+        await import('../../mesh/pause/agent-pause.js');
+      const { setAgentHomeRegistry } = await import('../agent-identity/agent-home.js');
+      const { agents } = await import('@dorkos/db');
+      const db = createTestDb();
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: 'agent-1',
+          name: 'scout',
+          runtime: 'claude-code',
+          projectPath: '/projects/scout',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === '/projects/scout',
+        listRegisteredHomes: () => ['/projects/scout'],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      const pauses = new AgentPauseService({ db });
+      initAgentPause(pauses);
+      try {
+        await pauses.pause('agent-1', { accountId: 'p', kind: 'person', name: 'Owner' });
+        const sent = vi.fn();
+        registry.register({
+          ...createMockRuntime('claude-code'),
+          sendMessage: async function* () {
+            sent();
+          },
+        } as AgentRuntime);
+        const turn = registry
+          .get('claude-code')
+          .sendMessage('s1', 'go', { cwd: '/projects/scout' });
+        await expect(turn.next()).rejects.toMatchObject({ code: 'AGENT_PAUSED' });
+        expect(sent).not.toHaveBeenCalled();
+      } finally {
+        resetAgentPause();
+        setAgentHomeRegistry(undefined);
+      }
+    });
+
     it('throws when getting an unregistered type', () => {
       expect(() => registry.get('nonexistent')).toThrow("Runtime 'nonexistent' not registered");
     });
@@ -316,6 +409,14 @@ describe('RuntimeRegistry', () => {
   });
 
   describe('applyConfiguredDefaultRuntime', () => {
+    it('keeps the host default when the configured runtime is placement-only', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('computer-local'));
+      expect(applyConfiguredDefaultRuntime(registry, 'computer-local')).toBe(false);
+      expect(registry.getDefaultType()).toBe('claude-code');
+      expect(() => registry.setDefault('computer-local')).toThrow('placement-only');
+    });
+
     it('applies a registered configured default and reports success', () => {
       registry.register(createMockRuntime('claude-code'));
       registry.register(createMockRuntime('opencode'));

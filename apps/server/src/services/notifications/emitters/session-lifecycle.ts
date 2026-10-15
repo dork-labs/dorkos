@@ -34,14 +34,18 @@
  *
  * @module services/notifications/emitters/session-lifecycle
  */
+import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
+import { isBeatTurn } from '../../heartbeats/beat-turns.js';
+import { wakeAgent } from '../../heartbeats/event-wakes.js';
+import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
-import { armEscalation } from '../escalation-service.js';
-import type { NotificationPayload } from '../notification-registry.js';
+import { armEscalation, cancelEscalationByKey } from '../escalation-service.js';
+import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { canonicalAccountPath } from '../../core/usage/runtime-accounts.js';
@@ -218,17 +222,20 @@ export function notifyAccountReset(
   facts: AccountResetFacts
 ): void {
   const agentId = resolveAgentIdForPath(cwd);
+  // The session's own runtime, as for the limit it ends: Codex's and
+  // OpenCode's accounts are not Claude Code's (DOR-2475).
+  const runtime = ledgerRuntimeOf(sessionId);
   const usageStore = getAccountUsageStore();
   const usage = facts.accountId
-    ? usageStore?.peek('claude-code', [facts.accountId])[0]
+    ? usageStore?.peek(runtime, [facts.accountId])[0]
     : facts.accountPath
-      ? (usageStore?.usageAtPath('claude-code', facts.accountPath) ?? undefined)
+      ? (usageStore?.usageAtPath(runtime, facts.accountPath) ?? undefined)
       : undefined;
   void notify('account.reset', {
     sessionId,
     accountId: facts.accountId,
     // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
-    accountLabel: usage?.label ?? 'Your Claude account',
+    accountLabel: usage?.label ?? UNLABELLED_ACCOUNT[runtime],
     pausedCount: facts.pausedCount,
     resetsAt: facts.resetsAt,
     resetConfirmedAt: facts.resetConfirmedAt,
@@ -251,11 +258,24 @@ export function watchSessionLifecycle(): () => void {
 
   return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, status }) => {
     // A rekey re-announce carries the id this projector streamed under before
-    // its canonical id resolved. Retiring it keeps the maps from holding state
-    // nothing will ever move again.
+    // its canonical id resolved. Its state MOVES to the new id rather than being
+    // dropped: an error episode armed under the old id would otherwise keep a
+    // timer nothing can resolve, beside a second one armed here (DOR-2136).
     if (retiredSessionId) {
+      const carried = previous.get(retiredSessionId);
+      const episode = errorSince.get(retiredSessionId);
       previous.delete(retiredSessionId);
       errorSince.delete(retiredSessionId);
+      if (carried !== undefined && !previous.has(sessionId)) previous.set(sessionId, carried);
+      if (episode !== undefined) {
+        cancelEscalationByKey(
+          notificationEntry('session.error').dedupeKey(
+            sessionErrorPayload(retiredSessionId, cwd, episode)
+          )
+        );
+        errorSince.set(sessionId, episode);
+        armEscalation('session.error', sessionErrorPayload(sessionId, cwd, episode));
+      }
     }
 
     const before = previous.get(sessionId);
@@ -263,6 +283,13 @@ export function watchSessionLifecycle(): () => void {
     if (before === status.lifecycle) return;
 
     if (before === 'streaming' && status.lifecycle === 'idle') {
+      // A turn another chat's message started is agents working with each
+      // other; it only matters to the person if the agent decides so (spec
+      // `spin-off-chats` §6, "quiet in speech").
+      if (isChatStartedTurn(sessionId)) return;
+      // A beat finishing is not news either: only what the agent raises through
+      // `end_beat` reaches a person (spec `heartbeats` §7.4).
+      if (isBeatTurn(sessionId)) return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the
@@ -290,6 +317,17 @@ export function watchSessionLifecycle(): () => void {
     }
 
     if (status.lifecycle === 'error') {
+      // A beat's own failure feeds its health check and the record, never a
+      // person's notifications (spec `heartbeats` §7.4). `account.limited`
+      // above still fires for a beat: an account at its limit is news.
+      if (isBeatTurn(sessionId)) return;
+      // A turn of its own failed outside a beat: its beat looks, once a day
+      // per chat (spec `heartbeats` §3.3).
+      const failedAgentId = resolveAgentIdForPath(cwd);
+      // A stranger's failed turn is not the agent's to chase (§3.3).
+      if (failedAgentId && !turnStartedByOutsider(sessionId)) {
+        wakeAgent(failedAgentId, { type: 'turn-failed', eventId: sessionId, source: sessionId });
+      }
       // A new episode begins, and this is the only place its identity is
       // minted. The early return above means a session already in `error`
       // cannot re-stamp itself.

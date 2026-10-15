@@ -50,11 +50,11 @@ interface RuntimeItemProps {
    */
   canSelect: boolean;
   /**
-   * Say it in as few pixels as possible. Drops the `· <model>` half, which the
-   * line's own model item already spells out at every tier (DOR-1971) — the
-   * runtime name is what makes this item worth a slot. The composer's status
-   * line passes this `true` unconditionally for exactly that reason; a caller
-   * with no neighbouring model item of its own may still choose to show it.
+   * Say it in as few pixels as possible. Drops the `· <model>` half (DOR-1971)
+   * — the runtime name is what makes this item worth a slot. The composer's
+   * status line passes this `true` unconditionally: the model has its own item,
+   * shown when a person pins it (ADR 261010-143211), and the Chat details panel
+   * names it either way. A caller with no model item of its own may show it.
    */
   compact?: boolean;
   /**
@@ -137,8 +137,8 @@ export function RuntimeItem({
   // chip's steady state, so it renders at full strength like the other info
   // items. Identity is runtime + model via the shared RuntimeIdentity.
   //
-  // Below the status line's widest tier the model half is redundant: the line's own
-  // model item sits two slots away saying the same thing for ~90px.
+  // In the status line the model half stays off: the model has its own item when
+  // pinned, and the Chat details panel names it regardless.
   const shownModel = compact ? null : model;
   const chip = (
     <RuntimeIdentity runtime={runtime} model={shownModel} iconClassName="size-(--size-icon-xs)" />

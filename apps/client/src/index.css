@@ -233,7 +233,7 @@
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
-     and the inverted white label on the full-power door's green fill. At 31% it
+     and the inverted white label on a green fill. At 31% it
      missed WCAG AA (4.2-4.5:1 for normal text); 24% is the darkest the reward
      green needs to be for every green surface to clear 4.5:1 — the binding case
      is the "N live" green-on-green chip over the sidebar (4.53:1). `-fg` tracks

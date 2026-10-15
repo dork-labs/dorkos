@@ -156,7 +156,13 @@ describe('config default verdicts cover the whole schema', () => {
     // below is what settled it: a leaf a wipe must not silently re-enable is by
     // this file's own rule not a preference. If a later change makes that
     // reading wrong, move the entry rather than raising this again.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(16);
+    //
+    // Raised 16 -> 18 for `permissions.preset` and `runtimes.defaultTrustStop`
+    // (DOR-2739, ADR 261006-225605). Not a quiet raise either: trusted by
+    // default is a decision the ADR argues in full, both entries carry its
+    // reason, and both have a carryover rule, so a Careful install never loses
+    // its answer to a wipe.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(18);
   });
 });
 

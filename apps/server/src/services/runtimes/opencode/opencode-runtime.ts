@@ -1,20 +1,19 @@
-import { captureTurnLevelOptions } from '../../core/turn-power/turn-levels.js';
-import {
-  readOriginalRegisteredNativeStream,
-  readOriginalRegisteredRuntime,
-} from '../../core/runtime-registry.js';
-const originalOpenCodeLockedStreams = new WeakMap<
-  object,
-  { runtime: object; sessionId: string; options: Readonly<MessageOpts>; current(): boolean }
->();
+import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
+import '../../core/turn-power/turn-levels.js';
+import '../../core/runtime-registry.js';
+const originalOpenCodeLockedStreams = new WeakMap<object, OriginalOpenCodeLockedStreamData>();
 /** Fixed constructor-created stream identity plus the original live acquisition; never a supplied stream matcher. */
 export function readOpenCodeOriginalLockedStream(
   runtime: object,
   sessionId: string,
   stream: object
 ): boolean {
-  const own = originalOpenCodeLockedStreams.get(stream);
-  return !!own && own.runtime === runtime && own.sessionId === sessionId && own.current();
+  return openCodeNativePublic.readOpenCodeOriginalLockedStream(
+    originalOpenCodeModuleOwner,
+    runtime,
+    sessionId,
+    stream
+  );
 }
 /** Exact original opened turn DATA; a supplied observer cannot replace these options. */
 export function readOpenCodeOriginalLockedTurnOptions(
@@ -22,49 +21,22 @@ export function readOpenCodeOriginalLockedTurnOptions(
   sessionId: string,
   stream: object
 ) {
-  const own = originalOpenCodeLockedStreams.get(stream);
-  return own && own.runtime === runtime && own.sessionId === sessionId && own.current()
-    ? { options: own.options }
-    : undefined;
+  return openCodeNativePublic.readOpenCodeOriginalLockedTurnOptions(
+    originalOpenCodeModuleOwner,
+    runtime,
+    sessionId,
+    stream
+  );
 }
-import { isNonFatalErrorCode, isAbsolvingTerminalReason } from '@dorkos/shared/run-outcome';
-import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
-const originalOpenCodeRoomStreams = new WeakMap<
-  object,
-  {
-    runtime: object;
-    prepared: PreparedRoomResponder;
-    operation: object;
-    committed: OriginalCommittedRoomResponder;
-    emitted: WeakSet<object>;
-    close(): Promise<IteratorResult<StreamEvent, void>>;
-    reason?: string;
-    failed: boolean;
-    done: boolean;
-  }
->();
+import '@dorkos/shared/run-outcome';
+import '@dorkos/shared/schemas';
+const originalOpenCodeRoomStreams = new WeakMap<object, OriginalOpenCodeRoomStreamData>();
 /** Retire the original OpenCode Room responder stream and its captured lifecycle. */
-export async function retireOpenCodeOriginalRoomResponderStream(stream: object): Promise<void> {
-  const own = originalOpenCodeRoomStreams.get(stream);
-  if (!own) return;
-  originalOpenCodeRoomStreams.delete(stream);
-  let failed = false,
-    first: unknown;
-  try {
-    retireOriginalCommittedRoomResponder(own.committed, own.runtime, own.prepared, own.operation);
-  } catch (cause) {
-    failed = true;
-    first = cause;
-  }
-  try {
-    await own.close();
-  } catch (cause) {
-    if (!failed) {
-      failed = true;
-      first = cause;
-    }
-  }
-  if (failed) throw first;
+export function retireOpenCodeOriginalRoomResponderStream(stream: object): Promise<void> {
+  return openCodeNativePublic.retireOpenCodeOriginalRoomResponderStream(
+    originalOpenCodeModuleOwner,
+    stream
+  );
 }
 /** Read evidence from the original OpenCode Room responder stream. */
 export function readOpenCodeOriginalRoomResponderStream(
@@ -72,50 +44,22 @@ export function readOpenCodeOriginalRoomResponderStream(
   stream: object,
   event?: StreamEvent
 ) {
-  stream = readOriginalRegisteredNativeStream(stream) ?? stream;
-  if (runtime) runtime = readOriginalRegisteredRuntime(runtime) ?? runtime;
-
-  const own = originalOpenCodeRoomStreams.get(stream);
-  if (!own) return undefined;
-  if (
-    (runtime !== undefined && own.runtime !== runtime) ||
-    readOpenCodePreparedRoomResponder(own.runtime, own.prepared)?.nativeOperation !==
-      own.operation ||
-    (event !== undefined && !own.emitted.has(event))
-  )
-    throw new Error('Original Room stream retired or changed.');
-  return Object.freeze({
-    runtime: own.runtime,
-    prepared: own.prepared,
-    operation: own.operation,
-    committed: own.committed,
-    outcome: own.done
-      ? own.reason === 'error' || (own.failed && !isAbsolvingTerminalReason(own.reason))
-        ? ('failed' as const)
-        : isInterruptedTerminalReason(own.reason)
-          ? ('cancelled' as const)
-          : ('turn_done' as const)
-      : undefined,
-  });
+  return openCodeNativePublic.readOpenCodeOriginalRoomResponderStream(
+    originalOpenCodeModuleOwner,
+    runtime,
+    stream,
+    event
+  );
 }
-import {
-  captureOriginalRoomDispatchLifecycle,
-  readOriginalRoomDispatchLifecycle,
-} from '../../session/trigger-turn.js';
+import { captureOriginalRoomDispatchLifecycle } from '../../session/trigger-turn.js';
 import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
-import {
-  readOriginalFrozenRoomTarget,
-  requireOriginalRoomPrincipalService,
-  requireOriginalCommittedRoomResponder,
-  consumeOriginalCommittedRoomResponder,
-  retireOriginalCommittedRoomResponder,
-} from '../../canvas/doc-channel/operations/room-current-operation.js';
+import { readOriginalFrozenRoomTarget } from '../../canvas/doc-channel/operations/room-current-operation.js';
 import type {
   OriginalFrozenRoomSource,
   PreparedRoomResponder,
   OriginalCommittedRoomResponder,
 } from '../../canvas/doc-channel/current/current-operation-types.js';
-import { openOriginalNativeTurn } from '../../connectors/principal/runtime-principal-service.js';
+import '../../connectors/principal/runtime-principal-service.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * OpenCode Runtime — implements the AgentRuntime interface for OpenCode.
@@ -151,17 +95,16 @@ import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
   ModelOption,
-  SubagentInfo,
   Session,
   HistoryMessage,
   TaskItem,
   CommandRegistry,
   SessionSettings,
+  SubagentInfo,
   InterruptReceipt,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
-  DirectoryGrant,
   RuntimeCapabilities,
   DependencyCheck,
   SessionOpts,
@@ -173,7 +116,7 @@ import type {
   AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
-  TurnPermissionCeiling,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -182,146 +125,82 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import {
-  getOrCreateProjector,
-  peekProjector,
-  streamGenerationOf,
-} from '../../session/session-state-projector.js';
-import { readLogBackedHistory } from '../../session/log-backed-history.js';
-import { SessionDiscoveryUnavailableError } from '../../session/resolution/session-lookup-error.js';
-import { overlayModelSubstitutions } from '../../session/overlays/model-substitution-overlay.js';
-import { overlayAgentCompactions } from '../../session/overlays/agent-compaction-overlay.js';
+import { peekProjector } from '../../session/session-state-projector.js';
+import '../../session/log-backed-history.js';
+import '../../session/resolution/session-lookup-error.js';
+import '../../session/overlays/model-substitution-overlay.js';
+import '../../session/overlays/agent-compaction-overlay.js';
 import {
   SessionLockManager,
   captureNativeSessionAcquisition,
-  captureNativeSessionActivity,
-  readNativeSessionAcquisition,
   type NativeSessionAcquisition,
 } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
+import '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
-import {
-  checkOpenCodeDependencies,
-  getConnectedOpenCodeProvider,
-} from './providers/check-dependencies.js';
-import { detectOllama } from './providers/ollama.js';
-import { fetchOpenRouterCatalog, type OpenRouterCatalog } from './providers/openrouter.js';
-import {
-  createOpenCodeEventContext,
-  mapOpenCodeTurn,
-  matchesOpenCodeSession,
-  matchesOpenCodeSubagentSession,
-  type OpenCodeWireEvent,
-} from './events/event-mapper.js';
-import { mapOpenCodeTodos } from './events/session-event-mapper.js';
-import {
-  OpenCodeSessionMapper,
-  isDerivedOpenCodeSessionId,
-  unwrap,
-  type OpenCodeClientProvider,
-  type OpenCodeSessionMapStore,
-} from './sessions/session-mapper.js';
-import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
+import './messaging/turn-context.js';
+import './providers/check-dependencies.js';
+import './providers/ollama.js';
+import { type OpenRouterCatalog } from './providers/openrouter.js';
+import './events/event-mapper.js';
+import './events/session-event-mapper.js';
+import { OpenCodeSessionMapper, type OpenCodeClientProvider } from './sessions/session-mapper.js';
+import { OpenCodeGlobalEventHub } from './events/global-event-hub.js';
 import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
 import {
-  enforceApprovals,
   PendingApprovalStore,
   respondPermission,
   type ApprovalGateDeps,
-  type ApprovalRouting,
 } from './messaging/approvals.js';
-import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
-import { awaitAbortAck, awaitStreamLive } from './messaging/bounded-abort.js';
-import {
-  buildOpenCodeParts,
-  buildOpenCodeSystem,
-  parseModelSelection,
-} from './messaging/turn-input.js';
-import { resolveCompactionModel } from './messaging/compaction-model.js';
-import { validatedGrants } from './messaging/directory-grants.js';
-import { projectModelOptions, projectedProviderIds } from './providers/models.js';
+import { OPENCODE_CAPABILITIES } from './runtime-constants.js';
+import './messaging/bounded-abort.js';
+import './messaging/turn-input.js';
+import './messaging/compaction-model.js';
+import './messaging/directory-grants.js';
+import './providers/models.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
-import { captureOpenCodeMedia } from './events/media-capture.js';
+import './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
-import {
-  connectorRuntimeHeaders,
-  type ConnectorRuntimeMcpInjection,
-  type ConnectorRuntimeTools,
-} from '../connector-tools.js';
-import type {
-  OpenConnectorTurnResult,
-  RevokeConnectorTurnReason,
-} from '../../connectors/runtime-principal-port.js';
-import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
-import {
-  OPENCODE_CREDITS_PROVIDER_ID,
-  OPENCODE_LABEL,
-  OPENCODE_OWN_PLAN,
-  OpenCodeSwitchPendingError,
-  creditsModelFor,
-  openCodeRunsOnCredits,
-  type OpenCodeSidecarPlan,
-} from './credits-sidecar.js';
-import {
-  CreditsUnavailableError,
-  asCreditsStopped,
-  creditsRefusalEvent,
-} from '../../core/cloud/credits-protocols.js';
-import {
-  catalogNameFor,
-  decideCreditsLaunchModel,
-  type CreditsModelDecision,
-} from '../../core/cloud/credits-models.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
+import { type ConnectorRuntimeTools } from '../connector-tools.js';
+import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
+import { ConnectorTurnLeaseManager } from './mcp/connector-turn-lease.js';
+import { openCodeRunsOnCredits, type OpenCodeSidecarPlan } from './credits-sidecar.js';
+import '../../core/cloud/credits-protocols.js';
+import '../../core/cloud/credits-models.js';
 
-/** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
-export interface OpenCodeRuntimeOptions {
-  /**
-   * Sidecar client source — the `openCodeServerManager` singleton in
-   * production, a mock in tests (the `opencode` binary is never required).
-   */
-  provider: OpenCodeClientProvider;
-  /**
-   * Durable sessionId <-> OpenCode-session-id store (`OpenCodeSessionMap`
-   * over the shared Drizzle handle in production). Keeps DorkOS-facing ids
-   * stable across server restarts (DOR-251); tests that don't exercise
-   * persistence may omit it.
-   */
-  sessionMap?: OpenCodeSessionMapStore;
-  /**
-   * Where images this runtime's turns produce are stored (the local store over
-   * the resolved data directory in production). Omitted, the runtime declares
-   * `mediaOutput: 'none'` and says so per image rather than dropping one
-   * quietly — see {@link OpenCodeRuntime.getCapabilities}.
-   */
-  attachments?: SessionAttachmentStore;
-}
+import type {
+  OpenCodeRuntimeOptions,
+  ActiveTurn,
+  SettingUpTurn,
+  OpenCodeNativeEntry,
+  OpenCodePreparedRoomContinuation,
+  OriginalOpenCodeLockedStreamData,
+  OriginalOpenCodeRoomStreamData,
+  OriginalOpenCodeLockedRunner,
+  OriginalOpenCodeRoomPreparer,
+  OriginalOpenCodePreparedRoomData,
+} from './opencode-runtime-data.js';
+export type {
+  OpenCodeRuntimeOptions,
+  ActiveTurn,
+  SettingUpTurn,
+  OpenCodeNativeEntry,
+  OpenCodePreparedRoomContinuation,
+} from './opencode-runtime-data.js';
+import * as openCodeNativePublic from './opencode-native-public-lifetimes.js';
+import type { OriginalOpenCodeRuntimeView } from './opencode-private-method-contracts.js';
+import * as openCodeMessageLifetime from './opencode-message-lifetime.js';
+import * as openCodeNativeRoomPreparation from './opencode-native-room-preparation.js';
+import * as openCodeNativeTurnExecution from './opencode-native-turn-execution.js';
+import * as openCodeSessionQueryStorage from './opencode-session-query-storage.js';
+import * as openCodeProviderDiscovery from './opencode-provider-discovery.js';
+import * as openCodeAccountTurnLifecycle from './opencode-account-turn-lifecycle.js';
 
 /** One in-flight turn (identity-matched on teardown, like Codex's controllers). */
 // Only the original Room reader installs cancellation for its captured sidecar session.
 const openCodeOriginalReadStops = new WeakMap<ActiveTurn, () => Promise<void>>();
-interface ActiveTurn {
-  ocSessionId: string;
-  cwd: string;
-  controller: AbortController;
-  phase: 'waiting' | 'setup' | 'running';
-  connectorBinding?: OpenConnectorTurnResult;
-  connectorSupervisor?: ConnectorTurnLeaseSupervisorHandle;
-  connectorRevocation?: Promise<void>;
-}
-
-/** One turn that has started and is not yet tracked as active. Identity-compared. */
-interface SettingUpTurn {
-  /** The session the turn belongs to. */
-  sessionId: string;
-}
 
 /**
  * OpenCode runtime implementing the universal AgentRuntime interface.
@@ -329,30 +208,8 @@ interface SettingUpTurn {
 const nativeMapGet = Map.prototype.get;
 const nativeMapSet = Map.prototype.set;
 const nativeSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
-type OpenCodeNativeEntry = {
-  roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-  acquisition?: NativeSessionAcquisition;
-  instance: object;
-  active: Map<string, ActiveTurn>;
-  key: string;
-  entry: ActiveTurn;
-  signal: AbortSignal;
-  retired: boolean;
-  runtime: 'opencode';
-  agentPath: string | undefined;
-  cwd: string;
-  client: OpencodeClient;
-};
-const openCodeLockedRunners = new WeakMap<
-  object,
-  (
-    sessionId: string,
-    content: string,
-    opts: MessageOpts | undefined,
-    holder: SseResponse,
-    lockKey: string
-  ) => AsyncGenerator<StreamEvent>
->();
+
+const openCodeLockedRunners = new WeakMap<object, OriginalOpenCodeLockedRunner>();
 /** Original constructor-owned turn entry. A holder selects data; it cannot issue lock/principal authority. */
 export function sendOpenCodeOriginalLockedMessage(
   runtime: object,
@@ -362,38 +219,19 @@ export function sendOpenCodeOriginalLockedMessage(
   holder: SseResponse,
   lockKey: string
 ): AsyncGenerator<StreamEvent> | undefined {
-  return openCodeLockedRunners.get(runtime)?.(sessionId, content, opts, holder, lockKey);
+  return openCodeNativePublic.sendOpenCodeOriginalLockedMessage(
+    originalOpenCodeModuleOwner,
+    runtime,
+    sessionId,
+    content,
+    opts,
+    holder,
+    lockKey
+  );
 }
-const openCodeRoomPreparers = new WeakMap<
-  object,
-  (
-    source: OriginalFrozenRoomSource,
-    holder: SseResponse,
-    key: string
-  ) => Promise<PreparedRoomResponder | undefined>
->();
-type OpenCodePreparedRoomContinuation = {
-  prepared: PreparedRoomResponder;
-  committed: OriginalCommittedRoomResponder;
-  turn: ActiveTurn;
-  nativeOperation: object;
-  nativeEntry: OpenCodeNativeEntry;
-  plan: OpenCodeSidecarPlan;
-  client: OpencodeClient;
-  directory: string;
-  retire: () => Promise<void>;
-};
-const openCodeRoomPrepared = new WeakMap<
-  PreparedRoomResponder,
-  {
-    runtime: object;
-    retire: () => Promise<void>;
-    source: OriginalFrozenRoomSource;
-    nativeOperation: object;
-    acquisition: NativeSessionAcquisition;
-    start: (committed: OriginalCommittedRoomResponder) => AsyncGenerator<StreamEvent>;
-  }
->();
+const openCodeRoomPreparers = new WeakMap<object, OriginalOpenCodeRoomPreparer>();
+
+const openCodeRoomPrepared = new WeakMap<PreparedRoomResponder, OriginalOpenCodePreparedRoomData>();
 /** Fixed genuine setup may create a local sidecar session, but never sends a model prompt. */
 export function prepareOpenCodeOriginalLockedRoomResponder(
   runtime: object,
@@ -401,46 +239,35 @@ export function prepareOpenCodeOriginalLockedRoomResponder(
   key: string,
   source: OriginalFrozenRoomSource
 ): Promise<PreparedRoomResponder | undefined> {
-  const prepare = openCodeRoomPreparers.get(runtime);
-  if (!prepare) return Promise.resolve(undefined);
-  return prepare(source, holder, key);
+  return openCodeNativePublic.prepareOpenCodeOriginalLockedRoomResponder(
+    originalOpenCodeModuleOwner,
+    runtime,
+    holder,
+    key,
+    source
+  );
 }
 /** Exact original preparation retirement, before provider/revocation callbacks. */
 export function retireOpenCodePreparedRoomResponder(
   runtime: object,
   prepared: PreparedRoomResponder
 ): Promise<void> {
-  const own = openCodeRoomPrepared.get(prepared);
-  if (!own || own.runtime !== runtime)
-    throw new Error('Room responder preparation is not original.');
-  openCodeRoomPrepared.delete(prepared);
-  return own.retire();
+  return openCodeNativePublic.retireOpenCodePreparedRoomResponder(
+    originalOpenCodeModuleOwner,
+    runtime,
+    prepared
+  );
 }
 /** Fixed lookup of one genuinely constructor-prepared entry; returned identities never register authority. */
 export function readOpenCodePreparedRoomResponder(
   runtime: object,
   prepared: PreparedRoomResponder
 ) {
-  const own = openCodeRoomPrepared.get(prepared);
-  if (!own || own.runtime !== runtime) return undefined;
-  const at = Date.now(),
-    activity = captureNativeSessionActivity(own.acquisition, at);
-  const native = readOpenCodeNativeOperation(own.nativeOperation);
-  if (
-    !activity ||
-    !native ||
-    native.acquisition !== own.acquisition ||
-    !readNativeSessionAcquisition(own.acquisition, activity, at, native.canonicalSessionId) ||
-    openCodeRoomPrepared.get(prepared) !== own ||
-    !readOpenCodeNativeOperation(own.nativeOperation)
-  )
-    return undefined;
-  return Object.freeze({
-    source: own.source,
-    nativeOperation: own.nativeOperation,
-    acquisition: own.acquisition,
-    native,
-  });
+  return openCodeNativePublic.readOpenCodePreparedRoomResponder(
+    originalOpenCodeModuleOwner,
+    runtime,
+    prepared
+  );
 }
 
 /** Continue the same original setup only after its native COMMIT and private FIRST. */
@@ -449,11 +276,12 @@ export function startOpenCodeCommittedRoomResponder(
   prepared: PreparedRoomResponder,
   committed?: OriginalCommittedRoomResponder
 ): AsyncGenerator<StreamEvent> {
-  const own = openCodeRoomPrepared.get(prepared);
-  if (!own || own.runtime !== runtime)
-    throw new Error('Room responder preparation is not original.');
-  requireOriginalCommittedRoomResponder(committed, runtime, prepared, own.nativeOperation);
-  return own.start(committed!);
+  return openCodeNativePublic.startOpenCodeCommittedRoomResponder(
+    originalOpenCodeModuleOwner,
+    runtime,
+    prepared,
+    committed
+  );
 }
 const openCodeOriginalActiveSlots = new WeakMap<object, Map<string, ActiveTurn>>();
 const openCodeNativeConstructors = new WeakSet<object>();
@@ -461,48 +289,74 @@ const openCodeNativeOperations = new WeakMap<object, OpenCodeNativeEntry>();
 const openCodeNativeTurns = new WeakMap<ActiveTurn, OpenCodeNativeEntry>();
 /** Fixed native lifetime read; retired entries cannot regain authority through map reinsertion. */
 export function readOpenCodeNativeOperation(token: object) {
-  const entry = openCodeNativeOperations.get(token);
-  if (
-    entry?.roomOrigin &&
-    readOriginalRoomDispatchLifecycle(entry.roomOrigin.holder, entry.instance) !==
-      entry.roomOrigin.custody
-  ) {
-    entry.retired = true;
-    return undefined;
-  }
-  const slot = entry ? Object.getOwnPropertyDescriptor(entry.instance, 'activeTurns') : undefined;
-  if (
-    entry &&
-    (!openCodeNativeConstructors.has(entry.instance) ||
-      !slot ||
-      !('value' in slot) ||
-      slot.value !== entry.active)
-  ) {
-    entry.retired = true;
-    return undefined;
-  }
-  if (
-    !entry ||
-    entry.retired ||
-    nativeSignalAborted.call(entry.signal) ||
-    nativeMapGet.call(entry.active, entry.key) !== entry.entry
-  )
-    return undefined;
-  return {
-    roomCustody: entry.roomOrigin?.custody,
-    acquisition: entry.acquisition,
-    runtime: entry.runtime,
-    canonicalSessionId: entry.key,
-    agentPath: entry.agentPath,
-    canonicalCwd: entry.cwd,
-    signal: entry.signal,
-  };
+  return openCodeNativePublic.readOpenCodeNativeOperation(originalOpenCodeModuleOwner, token);
+}
+
+/** Exact original private module custody types; this declaration exports no map or registrar. */
+export interface OriginalOpenCodeModuleCustody {
+  readonly originalOpenCodeLockedStreams: typeof originalOpenCodeLockedStreams;
+  readonly originalOpenCodeRoomStreams: typeof originalOpenCodeRoomStreams;
+  readonly openCodeOriginalReadStops: typeof openCodeOriginalReadStops;
+  readonly openCodeOriginalActiveSlots: typeof openCodeOriginalActiveSlots;
+  readonly openCodeNativeConstructors: typeof openCodeNativeConstructors;
+  readonly openCodeNativeOperations: typeof openCodeNativeOperations;
+  readonly openCodeNativeTurns: typeof openCodeNativeTurns;
+  readonly openCodeRoomPrepared: typeof openCodeRoomPrepared;
+  readonly nativeMapGet: typeof nativeMapGet;
+  readonly nativeMapSet: typeof nativeMapSet;
+  readonly openCodeLockedRunners: typeof openCodeLockedRunners;
+  readonly openCodeRoomPreparers: typeof openCodeRoomPreparers;
+  readonly nativeSignalAborted: typeof nativeSignalAborted;
+}
+
+const originalOpenCodeMethodGet = WeakMap.prototype.get;
+const originalOpenCodeMethodSet = WeakMap.prototype.set;
+const originalOpenCodeMethodApply = Reflect.apply;
+const originalOpenCodeMethodFreeze = Object.freeze;
+const originalOpenCodeModuleOwner = originalOpenCodeMethodFreeze({});
+const originalOpenCodeModuleCustody: Readonly<OriginalOpenCodeModuleCustody> =
+  originalOpenCodeMethodFreeze({
+    originalOpenCodeLockedStreams,
+    originalOpenCodeRoomStreams,
+    openCodeOriginalReadStops,
+    openCodeOriginalActiveSlots,
+    openCodeNativeConstructors,
+    openCodeNativeOperations,
+    openCodeNativeTurns,
+    openCodeRoomPrepared,
+    nativeMapGet,
+    nativeMapSet,
+    nativeSignalAborted,
+    openCodeLockedRunners,
+    openCodeRoomPreparers,
+  });
+/** Require the private original module selector before native lifetime operations. */
+export function readOriginalOpenCodeModuleCustody(
+  moduleOwner: object
+): OriginalOpenCodeModuleCustody {
+  if (moduleOwner !== originalOpenCodeModuleOwner)
+    throw new Error('OpenCode operation requires its original runtime.');
+  return originalOpenCodeModuleCustody;
+}
+const originalOpenCodeMethodViews = new WeakMap<object, OriginalOpenCodeRuntimeView>();
+/** Resolve only the actual runtime constructor-private selector before effects. */
+export function readOriginalOpenCodeRuntimeView(runtimeOwner: object): OriginalOpenCodeRuntimeView {
+  const view: OriginalOpenCodeRuntimeView | undefined = originalOpenCodeMethodApply(
+    originalOpenCodeMethodGet,
+    originalOpenCodeMethodViews,
+    [runtimeOwner]
+  );
+  if (!view) throw new Error('OpenCode operation requires its original runtime.');
+  return view;
 }
 
 /** Run OpenCode sessions with their original client and native turn lifetimes. */
 export class OpenCodeRuntime implements AgentRuntime {
+  readonly #originalMethodOwner = originalOpenCodeMethodFreeze({});
   readonly #roomPreparing = new Map<string, { retired: boolean }>();
-  readonly type = 'opencode' as const;
+  readonly type: ConnectorRuntime;
+  private readonly runsOnCredits: () => boolean;
+  private readonly modelDirectory: string;
 
   private readonly provider: OpenCodeClientProvider;
   /** Where a turn's images go, or `null` when the composition root wired none. */
@@ -541,6 +395,12 @@ export class OpenCodeRuntime implements AgentRuntime {
   private meshCore: AgentRegistryPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
+    this.type = options.runtimeId ?? 'opencode';
+    this.runsOnCredits = options.runsOnCredits ?? (() => openCodeRunsOnCredits());
+    this.modelDirectory = options.modelDirectory ?? DEFAULT_CWD;
+    const originalRuntimeType = this.type;
+    const originalRunsOnCredits = this.runsOnCredits;
+    const originalModelDirectory = this.modelDirectory;
     openCodeNativeConstructors.add(this);
     openCodeOriginalActiveSlots.set(this, this.activeTurns);
     const originalLocks = this.locks;
@@ -568,6 +428,159 @@ export class OpenCodeRuntime implements AgentRuntime {
       approvals: this.approvals,
       registry: this.registry,
     };
+    const createOriginalMethodView = (
+      runtime: OpenCodeRuntime
+    ): Readonly<OriginalOpenCodeRuntimeView> =>
+      originalOpenCodeMethodFreeze<OriginalOpenCodeRuntimeView>({
+        runtime,
+        custody: originalOpenCodeModuleCustody,
+        get roomPreparing() {
+          return runtime.#roomPreparing;
+        },
+        get accountsAccess() {
+          return runtime.accountsAccess;
+        },
+        get activeTurns() {
+          return runtime.activeTurns;
+        },
+        get approvalGate() {
+          return runtime.approvalGate;
+        },
+        get approvals() {
+          return runtime.approvals;
+        },
+        get attachments() {
+          return runtime.attachments;
+        },
+        get binding() {
+          return runtime.binding;
+        },
+        get connectorLeases() {
+          return runtime.connectorLeases;
+        },
+        get connectorRuntimeTools() {
+          return runtime.connectorRuntimeTools;
+        },
+        get contextWindows() {
+          return runtime.contextWindows;
+        },
+        get directoryByOcId() {
+          return runtime.directoryByOcId;
+        },
+        get hub() {
+          return runtime.hub;
+        },
+        get mapper() {
+          return runtime.mapper;
+        },
+        get mcp() {
+          return runtime.mcp;
+        },
+        get meshCore() {
+          return runtime.meshCore;
+        },
+        get provider() {
+          return runtime.provider;
+        },
+        get registry() {
+          return runtime.registry;
+        },
+        get settingUp() {
+          return runtime.settingUp;
+        },
+        get settingsPort() {
+          return runtime.settingsPort;
+        },
+        get type() {
+          return originalRuntimeType;
+        },
+        get runsOnCredits() {
+          return originalRunsOnCredits;
+        },
+        get modelDirectory() {
+          return originalModelDirectory;
+        },
+        get createMessage() {
+          const fn = runtime.#createMessage;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get installNativeTurn() {
+          const fn = runtime.#installNativeTurn;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveNativeClient() {
+          const fn = runtime.#resolveNativeClient;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get sendOwnedMessage() {
+          const fn = runtime.#sendOwnedMessage;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get getCapabilities() {
+          const fn = runtime.getCapabilities;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get getMessageHistory() {
+          const fn = runtime.getMessageHistory;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get listSessions() {
+          const fn = runtime.listSessions;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get overlayTrackedSettings() {
+          const fn = runtime.overlayTrackedSettings;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get prepareSidecar() {
+          const fn = runtime.prepareSidecar;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get registerWithPersisted() {
+          const fn = runtime.registerWithPersisted;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveInstalledOllamaTags() {
+          const fn = runtime.resolveInstalledOllamaTags;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveOpenCodeSession() {
+          const fn = runtime.resolveOpenCodeSession;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveOpenRouterCatalog() {
+          const fn = runtime.resolveOpenRouterCatalog;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveSessionDirectory() {
+          const fn = runtime.resolveSessionDirectory;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get resolveTurnSettings() {
+          const fn = runtime.resolveTurnSettings;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get revokeConnectorTurn() {
+          const fn = runtime.revokeConnectorTurn;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get runOpenCodeTurn() {
+          const fn = runtime.runOpenCodeTurn;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get updateSession() {
+          const fn = runtime.updateSession;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+        get withContextWindow() {
+          const fn = runtime.withContextWindow;
+          return (...args: Parameters<typeof fn>) => originalOpenCodeMethodApply(fn, runtime, args);
+        },
+      });
+    originalOpenCodeMethodApply(originalOpenCodeMethodSet, originalOpenCodeMethodViews, [
+      this.#originalMethodOwner,
+      createOriginalMethodView(this),
+    ]);
     // A switch between own sign-in and DorkOS credits restarts the sidecar,
     // so it waits while any turn here is running (ADR 261002-221210).
     this.provider.setBusyProbe?.(() => this.hasRunningTurns());
@@ -589,20 +602,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * first `sendMessage` retries the binding and surfaces real errors.
    */
   ensureSession(sessionId: string, opts: SessionOpts): void {
-    this.registry.register(sessionId, {
-      permissionMode: opts.permissionMode,
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    });
-    if (opts.cwd !== undefined) {
-      void this.resolveOpenCodeSession(sessionId, opts.cwd).catch((err: unknown) => {
-        logger.debug(
-          '[OpenCodeRuntime] eager session bind failed (will retry on first message)',
-          logError(err)
-        );
-      });
-    }
+    return openCodeAccountTurnLifecycle.ensureSession(this.#originalMethodOwner, sessionId, opts);
   }
 
   hasSession(sessionId: string): boolean {
@@ -611,10 +611,7 @@ export class OpenCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc A turn still setting up its sidecar counts: it is about to send. */
   isTurnOpen(sessionId: string): boolean {
-    return (
-      this.activeTurns.has(sessionId) ||
-      [...this.settingUp].some((turn) => turn.sessionId === sessionId)
-    );
+    return openCodeAccountTurnLifecycle.isTurnOpen(this.#originalMethodOwner, sessionId);
   }
 
   /**
@@ -640,7 +637,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param _sessionId - The session; every OpenCode session answers the same.
    */
   async sessionRunsOnCredits(_sessionId: string): Promise<boolean> {
-    return openCodeRunsOnCredits();
+    return this.runsOnCredits();
   }
 
   /**
@@ -661,14 +658,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * supported by OpenCode" false in the one place that matters (spec
    * `execution-defaults` §4).
    */
-  async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
-    const { effort: _unsupported, ...storable } = opts;
-    // Hydrate BEFORE the write-through, so the row this reads is the one that
-    // stood before this PATCH: the settings it says nothing about are exactly
-    // what has to be recovered, and the ones it names outrank them anyway.
-    await this.registerWithPersisted(sessionId, storable);
-    await this.settingsPort?.saveSessionSettings(sessionId, storable);
-    return { updated: true };
+  updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
+    return openCodeAccountTurnLifecycle.updateSession(this.#originalMethodOwner, sessionId, opts);
   }
 
   /**
@@ -708,316 +699,30 @@ export class OpenCodeRuntime implements AgentRuntime {
     roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
     roomPrepared?: OpenCodePreparedRoomContinuation
   ): AsyncGenerator<StreamEvent> {
-    const lifetime: {
-      closed: boolean;
-      entered: boolean;
-      retire?: () => void;
-      acquisition?: NativeSessionAcquisition;
-      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-      roomPrepared?: OpenCodePreparedRoomContinuation;
-    } = {
-      closed: false,
-      entered: false,
+    return openCodeMessageLifetime.createMessage(
+      this.#originalMethodOwner,
+      sessionId,
+      content,
+      opts,
       acquisition,
       roomOrigin,
-      roomPrepared,
-      retire: roomPrepared
-        ? () => {
-            roomPrepared.nativeEntry.retired = true;
-            roomPrepared.turn.controller.abort();
-          }
-        : undefined,
-    };
-    const stream = this.#sendOwnedMessage(sessionId, content, opts, lifetime);
-    const close = () => {
-      lifetime.closed = true;
-      lifetime.retire?.();
-      // Cancel the actual prepared native owner before generator return queues
-      // behind a pending transport read. Its memo is joined below and in finally.
-      if (roomPrepared) void roomPrepared.retire().catch(() => {});
-    };
-    const joinOriginalClose = async (result: ReturnType<typeof stream.return>) => {
-      let failed = false;
-      let first: unknown;
-      let outcome: Awaited<ReturnType<typeof stream.return>> | undefined;
-      try {
-        outcome = await result;
-      } catch (cause) {
-        failed = true;
-        first = cause;
-      }
-      const own = lifetime.roomPrepared!;
-      try {
-        retireOriginalCommittedRoomResponder(
-          own.committed!,
-          this,
-          own.prepared,
-          own.nativeOperation
-        );
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-      try {
-        await own.retire();
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-      if (failed) throw first;
-      return outcome!;
-    };
-    const capturedReturn = stream.return.bind(stream);
-    const returnOriginal: AsyncGenerator<StreamEvent>['return'] = (value) => {
-      close();
-      const result = capturedReturn(value);
-      return roomPrepared ? joinOriginalClose(result) : result;
-    };
-    const returned: AsyncGenerator<StreamEvent> = {
-      next: (value) => {
-        if (!roomPrepared) return stream.next(value);
-        return stream.next(value).then((result) => {
-          const own = originalOpenCodeRoomStreams.get(returned)!;
-          if (!result.done && result.value) {
-            own.emitted.add(result.value);
-            const data = result.value.data;
-            if (
-              data &&
-              typeof data === 'object' &&
-              'terminalReason' in data &&
-              typeof data.terminalReason === 'string'
-            )
-              own.reason = data.terminalReason;
-            if (
-              result.value.type === 'error' &&
-              !isNonFatalErrorCode(
-                data && typeof data === 'object' && 'code' in data && typeof data.code === 'string'
-                  ? data.code
-                  : undefined
-              )
-            )
-              own.failed = true;
-            if (result.value.type === 'done') own.done = true;
-          }
-          return result;
-        });
-      },
-      return: returnOriginal,
-      [Symbol.asyncDispose]: async () => {
-        await returnOriginal(undefined);
-      },
-      throw: (error) => {
-        close();
-        const result = stream.throw(error);
-        return roomPrepared ? joinOriginalClose(result) : result;
-      },
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-    };
-    if (acquisition)
-      originalOpenCodeLockedStreams.set(returned, {
-        runtime: this,
-        sessionId,
-        options: captureTurnLevelOptions(opts),
-        current: () => {
-          if (lifetime.closed) return false;
-          const at = Date.now(),
-            activity = captureNativeSessionActivity(acquisition, at);
-          return !!activity && !!readNativeSessionAcquisition(acquisition, activity, at, sessionId);
-        },
-      });
-    const originalReturn = returned.return.bind(returned);
-    if (roomPrepared && roomPrepared.committed)
-      originalOpenCodeRoomStreams.set(returned, {
-        runtime: this,
-        prepared: roomPrepared.prepared,
-        operation: roomPrepared.nativeOperation,
-        committed: roomPrepared.committed,
-        emitted: new WeakSet(),
-        close: () => originalReturn(undefined),
-        failed: false,
-        done: false,
-      });
-    return returned;
+      roomPrepared
+    );
   }
 
-  async *#sendOwnedMessage(
+  #sendOwnedMessage(
     sessionId: string,
     content: string,
     opts: MessageOpts | undefined,
-    lifetime: {
-      closed: boolean;
-      entered: boolean;
-      retire?: () => void;
-      acquisition?: NativeSessionAcquisition;
-      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-      roomPrepared?: OpenCodePreparedRoomContinuation;
-    }
+    lifetime: Parameters<OriginalOpenCodeRuntimeView['sendOwnedMessage']>[3]
   ): AsyncGenerator<StreamEvent> {
-    let failed = false,
-      first: unknown;
-    const cleanup = async (work: () => unknown | Promise<unknown>) => {
-      try {
-        await work();
-      } catch (cause) {
-        if (!failed) {
-          failed = true;
-          first = cause;
-        }
-      }
-    };
-    // Join this scope to its captured cleanup before returning or reporting failure.
-    const drainOriginalCleanup = async () => {
-      const own = lifetime.roomPrepared;
-      if (own) {
-        if (failed || lifetime.closed)
-          await cleanup(() =>
-            retireOriginalCommittedRoomResponder(
-              own.committed,
-              this,
-              own.prepared,
-              own.nativeOperation
-            )
-          );
-        await cleanup(() => own.retire());
-      }
-      if (failed) throw first;
-    };
-    try {
-      lifetime.entered = true;
-      let settings = await this.resolveTurnSettings(sessionId, opts);
-      const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
-      // Who a room turn is for, which every identity decision below is checked
-      // against (DOR-2091). Absent on every turn a room did not trigger.
-      const forAgent = turnAgentOf(opts);
-      // **Which model a credits turn runs** (DOR-2636), the same decision every
-      // runtime on credits makes: once the service says which formats its models
-      // are in, a model it does not serve in OpenCode's chat format runs on the
-      // service's suggestion, said once and saved only once said, and a list
-      // naming none refuses the turn. While the service says nothing, the
-      // session's model stands and the sidecar's own fallback applies, as before.
-      if (openCodeRunsOnCredits()) {
-        let decided: CreditsModelDecision;
-        try {
-          decided = await decideCreditsLaunchModel({
-            capabilities: this.getCapabilities(),
-            runtimeLabel: OPENCODE_LABEL,
-            sessionId,
-            model: creditsModelIdOf(settings.model),
-            nameOf: async () =>
-              settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
-            remember: async (id) => {
-              await this.updateSession(sessionId, { model: creditsSelection(id) });
-            },
-          });
-        } catch (err) {
-          const refusal = creditsRefusalEvent(err);
-          if (!refusal) throw err;
-          const original = lifetime.roomPrepared;
-          if (original) {
-            // This claimed source did not start a model: retire its genuine
-            // native authority before the refusal becomes observable. No retry.
-            lifetime.closed = true;
-            original.nativeEntry.retired = true;
-            retireOriginalCommittedRoomResponder(
-              original.committed,
-              this,
-              original.prepared,
-              original.nativeOperation
-            );
-          }
-          yield refusal;
-          return;
-        }
-        if (decided.model !== undefined && decided.model !== creditsModelIdOf(settings.model)) {
-          settings = { ...settings, model: creditsSelection(decided.model) };
-        }
-        if (decided.swap?.notice) yield decided.swap.notice;
-        await decided.swap?.commit();
-      }
-      this.registry.recordMessage(sessionId, content, {
-        cwd,
-        ...(opts?.title !== undefined ? { title: opts.title } : {}),
-      });
-
-      yield* this.runOpenCodeTurn(
-        sessionId,
-        cwd,
-        opts?.title,
-        async (client, ocSessionId, dorkosApplied, connectionsApplied, plan) => {
-          // Build the prompt only after the leased MCP reconcile, so the room
-          // verbs describe what this exact turn can actually call.
-          // The agent this turn acts as — anchored, so a room worktree reads as its
-          // agent and a room turn as nobody but the agent it is for (DOR-2091).
-          const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
-          const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
-          // On credits the prompt always names the credits provider: the
-          // session's model when it is a credits model, else the default one.
-          const model =
-            plan.mode === 'credits'
-              ? creditsPromptModel(settings.model, plan)
-              : parseModelSelection(settings.model);
-          const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-          const accessContext =
-            connectionsApplied && this.connectorRuntimeTools && agent
-              ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId, {
-                  serviceCatalog: dorkosApplied,
-                })
-              : undefined;
-          const turnOpts = accessContext
-            ? {
-                ...opts,
-                additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
-              }
-            : opts;
-          const system = buildOpenCodeSystem(turnOpts, agentContext);
-          const sessionApi = client.session;
-          const promptAsync = sessionApi.promptAsync;
-          const promptInput = {
-            path: { id: ocSessionId },
-            body: {
-              parts: buildOpenCodeParts(content, turnOpts),
-              ...(system !== undefined ? { system } : {}),
-              ...(model !== undefined ? { model } : {}),
-            },
-          };
-          if (lifetime.roomPrepared) {
-            const prepared = lifetime.roomPrepared;
-            consumeOriginalCommittedRoomResponder(
-              prepared.committed,
-              this,
-              prepared.prepared,
-              prepared.nativeOperation
-            );
-          }
-          const prompted = await promptAsync.call(sessionApi, promptInput);
-          const promptError = 'error' in prompted ? prompted.error : undefined;
-          if (promptError === undefined) accessContext?.commit();
-          if (promptError !== undefined) {
-            throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(promptError)}`);
-          }
-        },
-        {
-          connectorTurn: true,
-          lifetime,
-          ...(forAgent !== undefined ? { forAgent } : {}),
-          grants: validatedGrants(opts?.additionalDirectories, cwd),
-          ...(opts?.permissionCeiling !== undefined
-            ? { permissionCeiling: opts.permissionCeiling }
-            : {}),
-        }
-      );
-    } catch (cause) {
-      failed = true;
-      first = cause;
-    } finally {
-      await drainOriginalCleanup();
-    }
+    return openCodeMessageLifetime.sendOwnedMessage(
+      this.#originalMethodOwner,
+      sessionId,
+      content,
+      opts,
+      lifetime
+    );
   }
 
   /**
@@ -1037,41 +742,16 @@ export class OpenCodeRuntime implements AgentRuntime {
    * `OPENCODE_CAPABILITIES.commandIntents` gates the route before this is ever
    * called.
    */
-  async *executeCommandIntent(
+  executeCommandIntent(
     sessionId: string,
     _intent: RuntimeCommandIntentId,
     opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    // NOTE: `opts.instructions` is deliberately ignored — `session.summarize`
-    // takes no instruction parameter, so OpenCode compaction cannot be guided.
-    // An honest per-runtime difference (claude-code forwards instructions).
-    //
-    // Settings are resolved the same way a prompt resolves them (registry →
-    // persisted store), because the model DorkOS would run the next TURN on is
-    // the first rung of the compaction model ladder.
-    const settings = await this.resolveTurnSettings(sessionId, opts);
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
-    yield* this.runOpenCodeTurn(
+    return openCodeAccountTurnLifecycle.executeCommandIntent(
+      this.#originalMethodOwner,
       sessionId,
-      cwd,
-      undefined,
-      async (client, ocSessionId, _d, _c, plan) => {
-        const model =
-          plan.mode === 'credits'
-            ? creditsPromptModel(settings.model, plan)
-            : await resolveCompactionModel(client, {
-                ocSessionId,
-                cwd,
-                trackedModel: settings.model,
-              });
-        const summarized = await client.session.summarize({
-          path: { id: ocSessionId },
-          body: model,
-        });
-        if (summarized.error !== undefined) {
-          throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
-        }
-      }
+      _intent,
+      opts
     );
   }
 
@@ -1091,18 +771,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param own - This turn's own setting-up marker, which is not "another".
    * @throws {CreditsUnavailableError} On credits, when credits cannot pay.
    */
-  private async prepareSidecar(
-    sessionId: string,
-    own: SettingUpTurn
-  ): Promise<OpenCodeSidecarPlan> {
-    const othersActive =
-      [...this.activeTurns.keys()].some((id) => id !== sessionId) ||
-      [...this.settingUp].some((other) => other !== own && other.sessionId !== sessionId);
-    if (this.provider.prepareTurn) return this.provider.prepareTurn(othersActive);
-    // A provider that cannot be made right for credits never runs a turn the
-    // person set to credits: refused, not sent on whatever it holds.
-    if (openCodeRunsOnCredits()) throw new CreditsUnavailableError('not-supported', OPENCODE_LABEL);
-    return OPENCODE_OWN_PLAN;
+  private prepareSidecar(sessionId: string, own: SettingUpTurn): Promise<OpenCodeSidecarPlan> {
+    return openCodeNativeRoomPreparation.prepareSidecar(this.#originalMethodOwner, sessionId, own);
   }
 
   /**
@@ -1123,20 +793,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param opts - Marks a model prompt that receives connector runtime tools,
    *   and names the agent a room turn is for (DOR-2091).
    */
-  async #resolveNativeClient(
+  #resolveNativeClient(
     sessionId: string,
     cwd: string,
     title?: string,
     pending?: { retired: boolean }
   ) {
-    if (pending?.retired) throw new Error('Room responder preparation retired.');
-    const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
-    if (pending?.retired) throw new Error('Room responder preparation retired.');
-    const client = await this.provider.getClient(cwd);
-    if (pending?.retired) throw new Error('Room responder preparation retired.');
-    const directory = await this.resolveSessionDirectory(client, ocSessionId);
-    if (pending?.retired) throw new Error('Room responder preparation retired.');
-    return { ocSessionId, client, directory };
+    return openCodeNativeRoomPreparation.resolveNativeClient(
+      this.#originalMethodOwner,
+      sessionId,
+      cwd,
+      title,
+      pending
+    );
   }
   #installNativeTurn(
     sessionId: string,
@@ -1147,559 +816,45 @@ export class OpenCodeRuntime implements AgentRuntime {
     refuseExisting = false,
     roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>
   ) {
-    if (
-      roomOrigin &&
-      readOriginalRoomDispatchLifecycle(roomOrigin.holder, this) !== roomOrigin.custody
-    )
-      throw new Error('Original Room dispatch lifetime is retired.');
-    const controller = turn.controller;
-    const active = openCodeOriginalActiveSlots.get(this),
-      slot = Object.getOwnPropertyDescriptor(this, 'activeTurns');
-    if (!active || !slot || !('value' in slot) || slot.value !== active)
-      throw new Error('Native preparation requires its original active slot.');
-    if (refuseExisting && nativeMapGet.call(active, sessionId))
-      throw new Error('Native preparation cannot replace a live entry.');
-    nativeMapSet.call(active, sessionId, turn);
-    const nativeOperation = Object.freeze({});
-    if (!openCodeNativeConstructors.has(this))
-      throw new Error('Native runtime operation requires its genuine constructor.');
-    const nativeEntry = {
-      roomOrigin,
-      acquisition: acquisition,
-      instance: this,
-      active,
-      key: sessionId,
-      entry: turn,
-      signal: controller.signal,
-      retired: false,
-      runtime: 'opencode' as const,
-      cwd: directory,
+    return openCodeNativeRoomPreparation.installNativeTurn(
+      this.#originalMethodOwner,
+      sessionId,
+      directory,
       client,
-      agentPath: undefined as string | undefined,
-    };
-    openCodeNativeOperations.set(nativeOperation, nativeEntry);
-    openCodeNativeTurns.set(turn, nativeEntry);
-    return { nativeOperation, nativeEntry };
+      turn,
+      acquisition,
+      refuseExisting,
+      roomOrigin
+    );
   }
-  async #prepareRoomResponder(
+  #prepareRoomResponder(
     source: OriginalFrozenRoomSource,
     target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
     acquisition: NativeSessionAcquisition
   ): Promise<PreparedRoomResponder | undefined> {
-    const { sessionId, agentPath } = target,
-      tools = this.connectorRuntimeTools;
-    if (
-      !tools ||
-      nativeMapGet.call(openCodeOriginalActiveSlots.get(this)!, sessionId) ||
-      [...this.settingUp].some((value) => value.sessionId === sessionId)
-    )
-      return undefined;
-    requireOriginalRoomPrincipalService(source, tools.principals);
-    if (
-      homeOf(resolveAgentHome(agentPath, agentPath)) !== agentPath ||
-      this.meshCore?.getByPath(agentPath)?.id !== target.agentId
-    )
-      throw new Error('Room responder differs from its approved target.');
-    const pending = { retired: false };
-    this.#roomPreparing.set(sessionId, pending);
-    const settingUp = { sessionId };
-    this.settingUp.add(settingUp);
-    let preparedNative: { turn: ActiveTurn; nativeEntry: OpenCodeNativeEntry } | undefined;
-    const provider = this.provider;
-    let turnSettled: typeof provider.turnSettled | undefined;
-    let providerSettlement: Promise<void> | undefined;
-    const settleProvider = (): Promise<void> => {
-      providerSettlement ??= Promise.resolve().then(() =>
-        turnSettled ? Reflect.apply(turnSettled, provider, []) : undefined
-      );
-      return providerSettlement;
-    };
-    try {
-      turnSettled = provider.turnSettled;
-      const plan = await this.prepareSidecar(sessionId, settingUp);
-      if (pending.retired) throw new Error('Room responder preparation retired.');
-      const { ocSessionId, client, directory } = await this.#resolveNativeClient(
-        sessionId,
-        agentPath,
-        undefined,
-        pending
-      );
-      if (pending.retired) throw new Error('Room responder preparation retired.');
-      const controller = new AbortController();
-      const turn: ActiveTurn = { ocSessionId, cwd: agentPath, controller, phase: 'setup' };
-      const { nativeOperation, nativeEntry } = this.#installNativeTurn(
-        sessionId,
-        directory,
-        client,
-        turn,
-        acquisition,
-        true
-      );
-      preparedNative = { turn, nativeEntry };
-      nativeEntry.agentPath = agentPath;
-      this.settingUp.delete(settingUp);
-      turn.connectorBinding = await openOriginalNativeTurn(
-        tools.principals,
-        {
-          runtime: 'opencode',
-          canonicalSessionId: sessionId,
-          agentPath,
-          canonicalCwd: directory,
-          signal: controller.signal,
-        },
-        nativeOperation
-      );
-      controller.signal.throwIfAborted();
-      const at = Date.now(),
-        activity = captureNativeSessionActivity(acquisition, at);
-      if (
-        !activity ||
-        !readNativeSessionAcquisition(acquisition, activity, at, sessionId) ||
-        !readOpenCodeNativeOperation(nativeOperation)
-      )
-        throw new Error('Room responder retired during preparation.');
-      let retirement: Promise<void> | undefined;
-      const retire = (): Promise<void> => {
-        if (retirement) return retirement;
-        let resolve!: () => void, reject!: (cause: unknown) => void;
-        retirement = new Promise<void>((done, refused) => {
-          resolve = done;
-          reject = refused;
-        });
-        const stopRead = openCodeOriginalReadStops.get(turn);
-        nativeEntry.retired = true;
-        let failed = false,
-          firstCause: unknown;
-        const remember = (cause: unknown) => {
-          if (!failed) {
-            failed = true;
-            firstCause = cause;
-          }
-        };
-        try {
-          if (this.activeTurns.get(sessionId) === turn) this.activeTurns.delete(sessionId);
-        } catch (cause) {
-          remember(cause);
-        }
-        try {
-          controller.abort();
-        } catch (cause) {
-          remember(cause);
-        }
-        let readDrain: Promise<void> | undefined;
-        try {
-          readDrain = stopRead?.().catch(remember);
-        } catch (cause) {
-          remember(cause);
-        }
-        void (async () => {
-          try {
-            await this.revokeConnectorTurn(turn, 'turn_cancelled');
-          } catch (cause) {
-            remember(cause);
-          }
-          try {
-            await readDrain;
-          } catch (cause) {
-            remember(cause);
-          }
-          try {
-            await settleProvider();
-          } catch (cause) {
-            remember(cause);
-          }
-          if (failed) throw firstCause;
-        })().then(resolve, reject);
-        return retirement;
-      };
-      const prepared: PreparedRoomResponder = Object.freeze({ kind: 'prepared-room-responder' });
-      openCodeRoomPrepared.set(prepared, {
-        runtime: this,
-        retire,
-        source,
-        nativeOperation,
-        acquisition,
-        start: (() => {
-          let started = false;
-          return (committed: OriginalCommittedRoomResponder) => {
-            if (started || !readOpenCodePreparedRoomResponder(this, prepared))
-              throw new Error('Room prepared entry cannot start twice or after retirement.');
-            started = true;
-            return this.#createMessage(
-              sessionId,
-              'Document update',
-              { cwd: agentPath },
-              acquisition,
-              undefined,
-              {
-                prepared,
-                committed,
-                turn,
-                nativeOperation,
-                nativeEntry,
-                plan,
-                client,
-                directory,
-                retire,
-              }
-            );
-          };
-        })(),
-      });
-      if (this.#roomPreparing.get(sessionId) === pending) this.#roomPreparing.delete(sessionId);
-      return prepared;
-    } catch (cause) {
-      pending.retired = true;
-      if (this.#roomPreparing.get(sessionId) === pending) this.#roomPreparing.delete(sessionId);
-      this.settingUp.delete(settingUp);
-      if (preparedNative) {
-        const { turn, nativeEntry } = preparedNative;
-        nativeEntry.retired = true;
-        try {
-          if (this.activeTurns.get(sessionId) === turn) this.activeTurns.delete(sessionId);
-        } catch {}
-        try {
-          turn.controller.abort();
-        } catch {}
-        try {
-          await this.revokeConnectorTurn(turn, 'setup_failed');
-        } catch {}
-      }
-      try {
-        await settleProvider();
-      } catch {}
-      throw cause;
-    }
+    return openCodeNativeRoomPreparation.prepareRoomResponder(
+      this.#originalMethodOwner,
+      source,
+      target,
+      acquisition
+    );
   }
 
-  private async *runOpenCodeTurn(
+  private runOpenCodeTurn(
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (
-      client: OpencodeClient,
-      ocSessionId: string,
-      dorkosApplied: boolean,
-      connectionsApplied: boolean,
-      plan: OpenCodeSidecarPlan
-    ) => Promise<void>,
-    opts?: {
-      connectorTurn?: boolean;
-      forAgent?: string;
-      grants?: readonly DirectoryGrant[];
-      permissionCeiling?: TurnPermissionCeiling;
-      lifetime?: {
-        closed: boolean;
-        retire?: () => void;
-        acquisition?: NativeSessionAcquisition;
-        roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
-        roomPrepared?: OpenCodePreparedRoomContinuation;
-      };
-    }
+    trigger: Parameters<OriginalOpenCodeRuntimeView['runOpenCodeTurn']>[3],
+    opts?: Parameters<OriginalOpenCodeRuntimeView['runOpenCodeTurn']>[4]
   ): AsyncGenerator<StreamEvent> {
-    // **Who pays** (ADR 261001-000811), decided before anything is sent: the
-    // sidecar is made right for OpenCode's recorded choice, and a credits turn
-    // that credits cannot pay for is REFUSED here, with nothing sent.
-    // Counted as running from here, before the sidecar is prepared: a switch
-    // between own sign-in and credits must not restart the sidecar under a
-    // turn that is still setting up. Released once the turn is tracked as
-    // active below, or when it ends before that.
-    const settingUp: SettingUpTurn = { sessionId };
-    this.settingUp.add(settingUp);
-    const originalPrepared = opts?.lifetime?.roomPrepared;
-    let plan: OpenCodeSidecarPlan;
-    let ocSessionId: string;
-    let client: OpencodeClient;
-    let directory: string;
-    if (originalPrepared) {
-      plan = originalPrepared.plan;
-      ocSessionId = originalPrepared.turn.ocSessionId;
-      client = originalPrepared.client;
-      directory = originalPrepared.directory;
-    } else {
-      try {
-        plan = await this.prepareSidecar(sessionId, settingUp);
-      } catch (err) {
-        this.settingUp.delete(settingUp);
-        void this.provider.turnSettled?.().catch(() => undefined);
-        if (err instanceof OpenCodeSwitchPendingError) {
-          yield {
-            type: 'error',
-            data: { message: err.message, code: err.code, category: 'execution_error' },
-          };
-          return;
-        }
-        const refusal = creditsRefusalEvent(err);
-        if (!refusal) throw err;
-        yield refusal;
-        return;
-      }
-      try {
-        ({ ocSessionId, client, directory } = await this.#resolveNativeClient(
-          sessionId,
-          cwd,
-          title
-        ));
-      } catch (err) {
-        this.settingUp.delete(settingUp);
-        void this.provider.turnSettled?.().catch(() => undefined);
-        throw err;
-      }
-    }
-
-    if (opts?.lifetime?.closed) {
-      this.settingUp.delete(settingUp);
-      return;
-    }
-    const controller = originalPrepared?.turn.controller ?? new AbortController();
-    const turn: ActiveTurn = originalPrepared?.turn ?? {
-      ocSessionId,
+    return openCodeNativeTurnExecution.runOpenCodeTurn(
+      this.#originalMethodOwner,
+      sessionId,
       cwd,
-      controller,
-      phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
-    };
-    const { nativeOperation, nativeEntry } =
-      originalPrepared ??
-      this.#installNativeTurn(
-        sessionId,
-        directory,
-        client,
-        turn,
-        opts?.lifetime?.acquisition,
-        false,
-        opts?.lifetime?.roomOrigin
-      );
-    if (opts?.lifetime)
-      opts.lifetime.retire = () => {
-        nativeEntry.retired = true;
-      };
-    this.settingUp.delete(settingUp);
-    let lease: ConnectorTurnLease | undefined;
-    let connectorInjection: ConnectorRuntimeMcpInjection | undefined;
-    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
-    let subscription: ReturnType<OpenCodeGlobalEventHub['subscribe']> | undefined;
-    let stopQueueRead: (() => void) | undefined;
-
-    let sourceFailed = false,
-      sourceCause: unknown;
-
-    // Join this scope to its captured cleanup before returning or reporting failure.
-    const drainOriginalCleanup = async () => {
-      if (stopQueueRead) controller.signal.removeEventListener('abort', stopQueueRead);
-      openCodeOriginalReadStops.delete(turn);
-      nativeEntry.retired = true;
-      if (originalPrepared) {
-        const cleanup = async (work: () => unknown | Promise<unknown>) => {
-          try {
-            await work();
-          } catch (cause) {
-            if (!sourceFailed) {
-              sourceFailed = true;
-              sourceCause = cause;
-            }
-          }
-        };
-        await cleanup(() => turn.connectorSupervisor?.stop());
-        // The outer original prepared owner performs the one genuine durable revoke.
-        await cleanup(() => lease?.release());
-        await cleanup(() => subscription?.unsubscribe());
-        if (this.activeTurns.get(sessionId) === turn) {
-          await cleanup(() => this.approvals.clearSession(sessionId));
-          this.activeTurns.delete(sessionId);
-        }
-        // The outer original prepared retirement owns provider settlement once,
-        // even when genuine durable revocation rejects before it.
-        if (sourceFailed) throw sourceCause;
-      } else {
-        if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
-        turn.connectorSupervisor?.stop();
-        try {
-          await this.revokeConnectorTurn(turn, connectorRevokeReason);
-        } catch (err) {
-          // The principal port invalidates the bearer in-process before a durable
-          // write can reject. Contain persistence failure here so the terminal
-          // stream still settles and the safely tombstoned directory can hand off.
-          logger.warn('[OpenCodeRuntime] connector revocation persistence failed at teardown', {
-            sessionId,
-            ...logError(err),
-          });
-        } finally {
-          lease?.release();
-          subscription?.unsubscribe();
-          // Identity guard: only the session's ACTIVE turn may tear down shared
-          // per-session state. A stale turn racing a newer one must clear neither
-          // the newer turn's record nor its pending approvals — unconditionally
-          // clearing would disarm the newer turn's auto-deny timers and dead-end
-          // its approveTool() calls.
-          if (this.activeTurns.get(sessionId) === turn) {
-            this.approvals.clearSession(sessionId);
-            this.activeTurns.delete(sessionId);
-          }
-          // A Runs on switch that waited for running turns may happen now.
-          void this.provider.turnSettled?.().catch((err) => {
-            logger.warn(
-              '[OpenCodeRuntime] could not apply the waiting Runs on switch',
-              logError(err)
-            );
-          });
-        }
-      }
-    };
-    try {
-      // Once connector tools are installed, every path below can reconcile a
-      // directory map that contains session-bound connector state. Hold the
-      // same canonical-directory lease for the whole turn so an unbound path
-      // such as compaction cannot remove or replace another live turn's
-      // registration. There is exactly one acquisition per turn, which also
-      // keeps waiting visible and cancellable. Installs without connector tools
-      // retain the runtime's established same-session overlap behavior.
-      if (this.connectorRuntimeTools) {
-        lease = await this.connectorLeases.acquire(directory, controller.signal);
-        turn.phase = 'setup';
-      }
-
-      // Whose identity this turn carries: the directory's own agent, or the one
-      // a room worktree was handed to — never by prefix, and never another agent
-      // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
-      // looked up exactly hosts nobody, which is how opencode agents in a room
-      // with files used to get no `dorkos` server at all.
-      const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
-      const meshAgent =
-        opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
-      nativeEntry.agentPath = agentPath;
-      if (this.connectorRuntimeTools && meshAgent && agentPath) {
-        turn.connectorBinding =
-          turn.connectorBinding ??
-          (await this.connectorRuntimeTools.principals.openTurn(
-            {
-              runtime: this.type,
-              canonicalSessionId: sessionId,
-              agentPath,
-              canonicalCwd: directory,
-              signal: controller.signal,
-            },
-            { isCurrent: () => this.activeTurns.get(sessionId) === turn, nativeOperation }
-          ));
-        controller.signal.throwIfAborted();
-        connectorInjection = {
-          url: this.connectorRuntimeTools.listenerUrl,
-          agentToolsUrl: this.connectorRuntimeTools.agentToolsUrl,
-          headers: connectorRuntimeHeaders({
-            bearer: turn.connectorBinding.bearer,
-            runtime: this.type,
-            canonicalCwd: directory,
-          }),
-        };
-      }
-
-      // Registration and the lease use the sidecar's canonical directory. The
-      // anchored agent path is the agent lookup key — the original cwd when it
-      // anchors to itself, which also covers symlinks that differ — and `null`
-      // when the turn anchors to nobody, so a refused turn standing in another
-      // agent's folder is given none of that agent's servers.
-      const mcpResult = await this.mcp.ensureManaged(
-        client,
-        directory,
-        connectorInjection,
-        agentPath ?? null
-      );
-      if (connectorInjection && !mcpResult.connectorApplied) {
-        if (originalPrepared) {
-          await originalPrepared.retire();
-          throw new Error('Original prepared connector setup refused.');
-        }
-        await this.revokeConnectorTurn(turn, 'setup_failed');
-      } else if (turn.connectorBinding && this.connectorRuntimeTools) {
-        const createSupervisor =
-          this.connectorRuntimeTools.createLeaseSupervisor ??
-          ((options) => new ConnectorTurnLeaseSupervisor(options));
-        turn.connectorSupervisor = createSupervisor({
-          principals: this.connectorRuntimeTools.principals,
-          bindingId: turn.connectorBinding.bindingId,
-          permit: turn.connectorBinding.renewalPermit,
-          runtime: this.type,
-          expiresAt: turn.connectorBinding.expiresAt,
-          signal: controller.signal,
-          onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
-        });
-      }
-      controller.signal.throwIfAborted();
-
-      const ctx = createOpenCodeEventContext(sessionId);
-      // Read the model catalog now, so the reply's context reading finds its
-      // window ready rather than waiting on it (bounded either way).
-      this.contextWindows.prefetch(client, directory);
-      const queue = new TurnEventQueue<OpenCodeWireEvent>();
-      if (originalPrepared) {
-        stopQueueRead = () => queue.fail(controller.signal.reason);
-        controller.signal.addEventListener('abort', stopQueueRead, { once: true });
-        if (controller.signal.aborted) stopQueueRead();
-        openCodeOriginalReadStops.set(turn, async () => {
-          const stopped = unwrap(
-            await client.session.abort({ path: { id: ocSessionId } }),
-            'session.abort'
-          );
-          if (stopped !== true) throw new Error('Original Room sidecar abort unconfirmed.');
-        });
-      }
-      subscription = this.hub.subscribe({
-        cwd,
-        onEvent: (event) => {
-          // The turn's own session, plus any child session a `task` tool part has
-          // revealed — that is how a subagent's activity reaches its parent card.
-          const admit =
-            matchesOpenCodeSession(event, directory, ocSessionId) ||
-            matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (admit) queue.push(event.payload as OpenCodeWireEvent);
-        },
-        onStreamDrop: (error) => queue.fail(error),
-      });
-
-      turn.phase = 'running';
-      connectorRevokeReason = 'runtime_failed';
-      let sawRuntimeError = false;
-      // Trigger only once the stream is observably live (or the bounded wait
-      // elapses) — a fast turn must not complete before we can see its idle.
-      await awaitStreamLive(subscription.live, STREAM_LIVE_TIMEOUT_MS);
-
-      controller.signal.throwIfAborted();
-      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied, plan);
-
-      const routing: ApprovalRouting = {
-        sessionId,
-        ocSessionId,
-        cwd,
-        permissions: ctx,
-        ...(opts?.grants ? { grants: opts.grants } : {}),
-        ...(opts?.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
-      };
-      for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
-        // On credits, a refused token is the credits card, never an OpenCode
-        // sign-in error: the person's own sign-in was not used.
-        const event = await this.withContextWindow(
-          client,
-          directory,
-          ctx.providerId,
-          plan.mode === 'credits' ? asCreditsStopped(mapped, OPENCODE_LABEL) : mapped
-        );
-        if (event.type === 'error') sawRuntimeError = true;
-        yield* enforceApprovals(this.approvalGate, routing, event);
-        // The async half of media mapping. `mapOpenCodeTurn` is pure and cannot
-        // store bytes, so it records what it saw on `ctx` and this drains it
-        // here — after the event it rode in on, so an image lands in the
-        // transcript exactly where the tool result that produced it did.
-        yield* captureOpenCodeMedia(this.attachments, sessionId, ctx);
-      }
-      connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
-    } catch (cause) {
-      if (!originalPrepared) throw cause;
-      sourceFailed = true;
-      sourceCause = cause;
-    } finally {
-      await drainOriginalCleanup();
-    }
+      title,
+      trigger,
+      opts
+    );
   }
 
   /**
@@ -1716,24 +871,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param providerId - The reply's provider, as the mapper recorded it.
    * @param event - One mapped event; only a context reading is touched.
    */
-  private async withContextWindow(
+  private withContextWindow(
     client: OpencodeClient,
     directory: string,
     providerId: string | undefined,
     event: StreamEvent
   ): Promise<StreamEvent> {
-    if (event.type !== 'session_status') return event;
-    const data = event.data as Record<string, unknown>;
-    if (data.contextTokens === undefined || data.contextMaxTokens !== undefined) return event;
-    const window = await this.contextWindows.lookup(
+    return openCodeNativeTurnExecution.withContextWindow(
+      this.#originalMethodOwner,
       client,
       directory,
       providerId,
-      typeof data.model === 'string' ? data.model : undefined
+      event
     );
-    return window === undefined
-      ? event
-      : ({ ...event, data: { ...data, contextMaxTokens: window } } as StreamEvent);
   }
 
   /**
@@ -1770,25 +920,15 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS session id.
    * @param explicit - The fields this caller states, which outrank the stored ones.
    */
-  private async registerWithPersisted(
+  private registerWithPersisted(
     sessionId: string,
     explicit: OpenCodeSessionPatch = {}
   ): Promise<void> {
-    const tracked = this.registry.has(sessionId);
-    const persisted = tracked ? null : await this.settingsPort?.getSessionSettings(sessionId);
-    // A tracked session keeps the mode it is running under unless this call
-    // names one; a cold one is born with the persisted mode, or the default.
-    const permissionMode = tracked
-      ? explicit.permissionMode
-      : (explicit.permissionMode ?? persisted?.permissionMode ?? 'default');
-    const model = explicit.model ?? persisted?.model;
-    const fastMode = explicit.fastMode ?? persisted?.fastMode;
-    this.registry.register(sessionId, {
-      ...(permissionMode !== undefined ? { permissionMode } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-      ...(explicit.cwd !== undefined ? { cwd: explicit.cwd } : {}),
-    });
+    return openCodeAccountTurnLifecycle.registerWithPersisted(
+      this.#originalMethodOwner,
+      sessionId,
+      explicit
+    );
   }
 
   /**
@@ -1796,28 +936,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * persisted store (hydrated once for untracked sessions, e.g. resume after
    * a server restart) → runtime default.
    */
-  private async resolveTurnSettings(
-    sessionId: string,
-    opts?: MessageOpts
-  ): Promise<SessionSettings> {
-    if (!this.registry.has(sessionId)) {
-      // Only the mode and cwd are stated here. A per-send `model`/`fastMode` is
-      // a transient override for THIS turn (Tasks, relay) — it is applied to
-      // the returned settings below and deliberately never tracked, so the
-      // session keeps running on the operator's own choice afterwards.
-      await this.registerWithPersisted(sessionId, {
-        permissionMode: opts?.permissionMode,
-        cwd: opts?.cwd,
-      });
-    }
-    const tracked = this.registry.get(sessionId)!;
-    const model = opts?.model ?? tracked.model;
-    const fastMode = opts?.fastMode ?? tracked.fastMode;
-    return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-    };
+  private resolveTurnSettings(sessionId: string, opts?: MessageOpts): Promise<SessionSettings> {
+    return openCodeAccountTurnLifecycle.resolveTurnSettings(
+      this.#originalMethodOwner,
+      sessionId,
+      opts
+    );
   }
 
   // --- Interactive flows ---
@@ -1880,6 +1004,17 @@ export class OpenCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
+   * Live here is a turn in flight: the sidecar is shared by every OpenCode
+   * session and keeps no background work of a session's own between turns,
+   * so stopping the turn ends the session's work.
+   */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    return openCodeAccountTurnLifecycle.endSessionsWhere(this.#originalMethodOwner, belongs);
+  }
+
+  /**
+   * @inheritdoc
+   *
    * Aborts the in-flight turn via `POST /session/{id}/abort`, bounded by
    * {@link awaitAbortAck} (DOR-1299): a wedged sidecar drops the request the
    * same way an ended stdin drops claude-code's, and nothing then answers it,
@@ -1902,74 +1037,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * by every OpenCode session on the machine (ADR-0308), so stopping one turn
    * that way would stop every other one too.
    */
-  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
-    const preparing = this.#roomPreparing.get(sessionId);
-    if (preparing) preparing.retired = true;
-    const turn = this.activeTurns.get(sessionId);
-    if (turn) {
-      const operation = openCodeNativeTurns.get(turn);
-      if (operation) operation.retired = true;
-    }
-    if (!turn)
-      return preparing
-        ? { outcome: 'closed', runtime: this.type }
-        : { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
-    turn.controller.abort();
-    try {
-      await this.revokeConnectorTurn(turn, 'turn_cancelled');
-    } catch (err) {
-      // A rejection means durable persistence failed after the port's
-      // fail-closed in-process tombstone. The independent sidecar abort still
-      // has to run so Stop reaches the agent; terminal teardown retries the
-      // durable revoke because the rejected in-flight promise was cleared.
-      logger.warn(
-        '[OpenCodeRuntime] connector revocation persistence failed during interrupt; continuing with sidecar abort',
-        { sessionId, ...logError(err) }
-      );
-    }
-    if (turn.phase !== 'running') {
-      logger.debug('[OpenCodeRuntime] cancelled turn before sidecar trigger', {
-        sessionId,
-      });
-      return { outcome: 'closed', runtime: this.type };
-    }
-    const ack = await awaitAbortAck(async () => {
-      const client = await this.provider.getClient(turn.cwd);
-      const original = openCodeNativeTurns.get(turn);
-      if (
-        !original ||
-        client !== original.client ||
-        nativeMapGet.call(original.active, original.key) !== turn
-      )
-        return false;
-      return (
-        unwrap(await client.session.abort({ path: { id: turn.ocSessionId } }), 'session.abort') ===
-        true
-      );
-    });
-    // The tri-state is worth telling apart in the log: REFUSED means the
-    // sidecar answered and said no (a bug or a race, not a wedge); UNACKED
-    // means the bound itself fired, which is the wedge this whole path
-    // exists for.
-    switch (ack.kind) {
-      case 'settled':
-        if (ack.aborted) {
-          logger.debug('[OpenCodeRuntime] interrupted in-flight turn', { sessionId });
-          return { outcome: 'acked', runtime: this.type };
-        }
-        logger.warn('[OpenCodeRuntime] interrupt returned false', { sessionId });
-        return { outcome: 'unconfirmed', reason: 'runtime-declined', runtime: this.type };
-      case 'refused':
-        // The call itself blew up — the sidecar is down, or the network is. The
-        // turn is untouched and nothing DorkOS did ended it, which is `failed`
-        // rather than `unconfirmed`: this one reads as an error and asks the
-        // person to try again.
-        logger.warn('[OpenCodeRuntime] interrupt call failed', { sessionId });
-        return { outcome: 'failed', reason: 'delivery-failed', runtime: this.type };
-      case 'unacked':
-        logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
-        return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: this.type };
-    }
+  interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    return openCodeAccountTurnLifecycle.interruptQuery(this.#originalMethodOwner, sessionId);
   }
 
   /**
@@ -1980,23 +1049,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param turn - Active turn carrying the optional binding.
    * @param reason - First terminal reason observed for that binding.
    */
-  private async revokeConnectorTurn(
-    turn: ActiveTurn,
-    reason: RevokeConnectorTurnReason
-  ): Promise<void> {
-    if (!turn.connectorBinding || !this.connectorRuntimeTools) return;
-    if (turn.connectorRevocation) return turn.connectorRevocation;
-
-    const bindingId = turn.connectorBinding.bindingId;
-    const principals = this.connectorRuntimeTools.principals;
-    const revocation = Promise.resolve().then(() => principals.revoke(bindingId, reason));
-    turn.connectorRevocation = revocation;
-    try {
-      await revocation;
-    } catch (err) {
-      if (turn.connectorRevocation === revocation) turn.connectorRevocation = undefined;
-      throw err;
-    }
+  private revokeConnectorTurn(turn: ActiveTurn, reason: RevokeConnectorTurnReason): Promise<void> {
+    return openCodeAccountTurnLifecycle.revokeConnectorTurn(
+      this.#originalMethodOwner,
+      turn,
+      reason
+    );
   }
 
   // --- Session queries (storage) ---
@@ -2017,15 +1075,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * two itself: it holds the cwd whoever created each session used, which is
    * its own third spelling of the same folder.
    */
-  async listSessions(projectDir: string): Promise<Session[]> {
-    const listed = await this.mapper.listSessions(canonicalDirectory(projectDir));
-    const byId = new Map(listed.map((session) => [session.id, session]));
-    for (const tracked of this.registry.list(projectDir)) {
-      if (!byId.has(tracked.id)) byId.set(tracked.id, tracked);
-    }
-    const sessions = [...byId.values()];
-    for (const session of sessions) this.overlayTrackedSettings(session);
-    return sessions;
+  listSessions(projectDir: string): Promise<Session[]> {
+    return openCodeSessionQueryStorage.listSessions(this.#originalMethodOwner, projectDir);
   }
 
   /**
@@ -2037,17 +1088,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * which boots the sidecar: a bookmarked id must resolve after a restart
    * instead of 404ing until something else warms the sidecar (DOR-251).
    */
-  async findSession(sessionId: string): Promise<Session | null> {
-    return this.mapper.findSession(DEFAULT_CWD, sessionId);
+  findSession(sessionId: string): Promise<Session | null> {
+    return openCodeSessionQueryStorage.findSession(this.#originalMethodOwner, sessionId);
   }
 
-  async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
-    const sessions = await this.listSessions(projectDir);
-    const listed = sessions.find((session) => session.id === sessionId);
-    if (listed) return listed;
-    const session = await this.mapper.getSession(canonicalDirectory(projectDir), sessionId);
-    if (session) this.overlayTrackedSettings(session);
-    return session;
+  getSession(projectDir: string, sessionId: string): Promise<Session | null> {
+    return openCodeSessionQueryStorage.getSession(this.#originalMethodOwner, projectDir, sessionId);
   }
 
   /**
@@ -2059,33 +1105,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * its store cannot be read; a partial EventLog cannot stand in for its
    * transcript. Only an unbound draft may use the DorkOS-owned event stream.
    */
-  async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    try {
-      // The sidecar's store names the model that ran and never one DorkOS
-      // credits put in place of the session's (DOR-2636), so that notice is
-      // put back from the durable event record, as for Claude Code.
-      // Its store keeps no compaction row at all, so a summary the agent asked
-      // for (DOR-2732) is drawn back from the same record.
-      return overlayAgentCompactions(
-        sessionId,
-        overlayModelSubstitutions(
-          sessionId,
-          await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId)
-        )
-      );
-    } catch (err) {
-      if (
-        this.mapper.getOpenCodeSessionId(sessionId) !== undefined ||
-        isDerivedOpenCodeSessionId(sessionId)
-      ) {
-        throw new SessionDiscoveryUnavailableError(this.type);
-      }
-      logger.debug(
-        '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
-        logError(err)
-      );
-      return readLogBackedHistory(sessionId);
-    }
+  getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
+    return openCodeSessionQueryStorage.getMessageHistory(
+      this.#originalMethodOwner,
+      projectDir,
+      sessionId
+    );
   }
 
   /**
@@ -2096,9 +1121,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * pending interactions, and cursor come from the projector — the pattern
    * ADR-0263 prescribes for adapters that own a real history source.
    */
-  async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
-    return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
+  getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
+    return openCodeSessionQueryStorage.getSessionSnapshot(
+      this.#originalMethodOwner,
+      ctx,
+      sessionId
+    );
   }
 
   /**
@@ -2114,7 +1142,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
+    return openCodeSessionQueryStorage.subscribeSession(
+      this.#originalMethodOwner,
+      ctx,
+      sessionId,
       sinceCursor,
       signal
     );
@@ -2130,7 +1161,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * subsequent subscribe would mint refuses every cursor above 0 anyway.
    */
   streamGeneration(_ctx: SessionOpts, sessionId: string): string {
-    return streamGenerationOf(peekProjector(sessionId));
+    return openCodeSessionQueryStorage.streamGeneration(this.#originalMethodOwner, _ctx, sessionId);
   }
 
   /**
@@ -2144,7 +1175,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * from the projector via the session-list broadcaster.
    */
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
-    return this.registry.subscribe();
+    return openCodeSessionQueryStorage.subscribeSessionList(this.#originalMethodOwner, _ctx);
   }
 
   /**
@@ -2154,33 +1185,25 @@ export class OpenCodeRuntime implements AgentRuntime {
    * Todo shape `todo.updated` streams). Peek-only: a cold sidecar has no live
    * session whose tasks could be non-empty.
    */
-  async getSessionTasks(_projectDir: string, sessionId: string): Promise<TaskItem[]> {
-    const ocSessionId = this.mapper.getOpenCodeSessionId(sessionId);
-    const client = this.provider.peekClient();
-    if (!ocSessionId || !client) return [];
-    try {
-      const todos = unwrap(
-        await client.session.todo({ path: { id: ocSessionId } }),
-        'session.todo'
-      );
-      return mapOpenCodeTodos(todos);
-    } catch (err) {
-      logger.debug('[OpenCodeRuntime] todo read failed', logError(err));
-      return [];
-    }
+  getSessionTasks(_projectDir: string, sessionId: string): Promise<TaskItem[]> {
+    return openCodeSessionQueryStorage.getSessionTasks(
+      this.#originalMethodOwner,
+      _projectDir,
+      sessionId
+    );
   }
 
-  async getSessionETag(): Promise<string | null> {
-    return null;
+  getSessionETag(): Promise<string | null> {
+    return openCodeSessionQueryStorage.getSessionETag(this.#originalMethodOwner);
   }
 
-  async getLastMessageIds(): Promise<{ user: string; assistant: string } | null> {
-    return null;
+  getLastMessageIds(): Promise<{ user: string; assistant: string } | null> {
+    return openCodeSessionQueryStorage.getLastMessageIds(this.#originalMethodOwner);
   }
 
   /** No byte-addressable transcript exists — OpenCode's store is opaque (ADR-0308). */
-  async readFromOffset(): Promise<{ content: string; newOffset: number }> {
-    return { content: '', newOffset: 0 };
+  readFromOffset(): Promise<{ content: string; newOffset: number }> {
+    return openCodeSessionQueryStorage.readFromOffset(this.#originalMethodOwner);
   }
 
   // --- Session locking ---
@@ -2222,25 +1245,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * THIS project's `opencode.json` would be missing from the menu, and one
    * disabled here would still be offered.
    */
-  async getSupportedModels(): Promise<ModelOption[]> {
-    try {
-      const client = await this.provider.getClient(DEFAULT_CWD);
-      const listed = unwrap(
-        // Canonical, like every other directory-scoped read (DOR-695):
-        // `DORKOS_DEFAULT_CWD` is taken verbatim, and on macOS a `/tmp` or
-        // `/var` spelling reaches the sidecar as a directory it never stored.
-        await client.provider.list({ query: { directory: canonicalDirectory(DEFAULT_CWD) } }),
-        'provider.list'
-      );
-      const [installedOllamaTags, openRouterCatalog] = await Promise.all([
-        this.resolveInstalledOllamaTags(listed),
-        this.resolveOpenRouterCatalog(listed),
-      ]);
-      return projectModelOptions(listed, { installedOllamaTags, openRouterCatalog });
-    } catch (err) {
-      logger.warn('[OpenCodeRuntime] provider catalog unavailable', logError(err));
-      return [];
-    }
+  getSupportedModels(): Promise<ModelOption[]> {
+    return openCodeProviderDiscovery.getSupportedModels(this.#originalMethodOwner);
   }
 
   /**
@@ -2253,14 +1259,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * rather than emptying. A reachable Ollama returns its installed tag names
    * (possibly empty — honestly no local models installed yet).
    */
-  private async resolveInstalledOllamaTags(
-    payload: ProviderListResponse
-  ): Promise<string[] | null> {
-    const OLLAMA_PROVIDER_ID = 'ollama';
-    if (!projectedProviderIds(payload).has(OLLAMA_PROVIDER_ID)) return null;
-    const status = await detectOllama();
-    if (!status.running) return null;
-    return status.models.map((tag) => tag.name);
+  private resolveInstalledOllamaTags(payload: ProviderListResponse): Promise<string[] | null> {
+    return openCodeProviderDiscovery.resolveInstalledOllamaTags(this.#originalMethodOwner, payload);
   }
 
   /**
@@ -2278,12 +1278,10 @@ export class OpenCodeRuntime implements AgentRuntime {
    * their menu at all. `projectedProviderIds` asks the question that actually
    * matters: will any openrouter model be in the list this projection returns?
    */
-  private async resolveOpenRouterCatalog(
+  private resolveOpenRouterCatalog(
     payload: ProviderListResponse
   ): Promise<OpenRouterCatalog | null> {
-    const OPENROUTER_PROVIDER_ID = 'openrouter';
-    if (!projectedProviderIds(payload).has(OPENROUTER_PROVIDER_ID)) return null;
-    return fetchOpenRouterCatalog();
+    return openCodeProviderDiscovery.resolveOpenRouterCatalog(this.#originalMethodOwner, payload);
   }
 
   /**
@@ -2296,12 +1294,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * directly), so there is no DorkOS provider to switch.
    */
   getConnectedProvider(): string | null {
-    return getConnectedOpenCodeProvider();
+    return openCodeProviderDiscovery.getConnectedProvider(this.#originalMethodOwner);
   }
 
-  /** OpenCode agents are prompt-scoped, not a DorkOS-dispatchable subagent registry. */
-  async getSupportedSubagents(): Promise<SubagentInfo[]> {
-    return [];
+  /** List Main's dispatchable named agents through the original runtime owner. */
+  getSupportedSubagents(): Promise<SubagentInfo[]> {
+    return openCodeProviderDiscovery.getSupportedSubagents(this.#originalMethodOwner);
   }
 
   /**
@@ -2318,15 +1316,15 @@ export class OpenCodeRuntime implements AgentRuntime {
     return { ...OPENCODE_CAPABILITIES, mediaOutput: 'attachments' };
   }
 
-  async checkDependencies(): Promise<DependencyCheck[]> {
-    return checkOpenCodeDependencies();
+  checkDependencies(): Promise<DependencyCheck[]> {
+    return openCodeProviderDiscovery.checkDependencies(this.#originalMethodOwner);
   }
 
   // --- Commands ---
 
   /** OpenCode exposes no DorkOS-invocable slash commands. */
-  async getCommands(): Promise<CommandRegistry> {
-    return { commands: [], lastScanned: new Date().toISOString() };
+  getCommands(): Promise<CommandRegistry> {
+    return openCodeProviderDiscovery.getCommands(this.#originalMethodOwner);
   }
 
   // --- MCP (read-only status + managed injection, delegated to OpenCodeMcpManager) ---
@@ -2342,7 +1340,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * populate a read-only roster).
    */
   getMcpStatus(cwd: string): McpServerEntry[] | null {
-    return this.mcp.getStatus(cwd);
+    return openCodeProviderDiscovery.getMcpStatus(this.#originalMethodOwner, cwd);
   }
 
   /**
@@ -2370,8 +1368,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * key used by MCP reconciliation.
    * @returns Whether the tools are reachable from a turn there.
    */
-  async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
-    return this.mcp.dorkosApplied(canonicalDirectory(session.cwd));
+  carriesRoomTools(session: { cwd: string }): Promise<boolean> {
+    return openCodeProviderDiscovery.carriesRoomTools(this.#originalMethodOwner, session);
   }
 
   // --- Lifecycle ---
@@ -2439,20 +1437,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * to two OpenCode sessions.
    */
   private resolveOpenCodeSession(sessionId: string, cwd: string, title?: string): Promise<string> {
-    const existing = this.mapper.getOpenCodeSessionId(sessionId);
-    if (existing !== undefined) return Promise.resolve(existing);
-    const inflight = this.binding.get(sessionId);
-    if (inflight) return inflight;
-    const creating = this.mapper
-      .ensureSession(sessionId, {
-        cwd: canonicalDirectory(cwd),
-        ...(title !== undefined ? { title } : {}),
-      })
-      .finally(() => {
-        if (this.binding.get(sessionId) === creating) this.binding.delete(sessionId);
-      });
-    this.binding.set(sessionId, creating);
-    return creating;
+    return openCodeSessionQueryStorage.resolveOpenCodeSession(
+      this.#originalMethodOwner,
+      sessionId,
+      cwd,
+      title
+    );
   }
 
   /**
@@ -2462,15 +1452,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * event). Read once via `session.get` and cached; failure is loud — a turn
    * without a trustworthy demux key must not run.
    */
-  private async resolveSessionDirectory(
-    client: OpencodeClient,
-    ocSessionId: string
-  ): Promise<string> {
-    const cached = this.directoryByOcId.get(ocSessionId);
-    if (cached !== undefined) return cached;
-    const session = unwrap(await client.session.get({ path: { id: ocSessionId } }), 'session.get');
-    this.directoryByOcId.set(ocSessionId, session.directory);
-    return session.directory;
+  private resolveSessionDirectory(client: OpencodeClient, ocSessionId: string): Promise<string> {
+    return openCodeSessionQueryStorage.resolveSessionDirectory(
+      this.#originalMethodOwner,
+      client,
+      ocSessionId
+    );
   }
 
   /**
@@ -2479,48 +1466,6 @@ export class OpenCodeRuntime implements AgentRuntime {
    * tracked value (kept current by `updateSession`) wins.
    */
   private overlayTrackedSettings(session: Session): void {
-    const tracked = this.registry.get(session.id);
-    if (!tracked) return;
-    session.permissionMode = tracked.permissionMode;
-    if (tracked.model !== undefined) session.model = tracked.model;
-    if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
+    return openCodeSessionQueryStorage.overlayTrackedSettings(this.#originalMethodOwner, session);
   }
-}
-
-/**
- * The credits model id a session's OpenCode selection names: the id after the
- * credits provider's prefix, or the selection as stored when it names another
- * provider (which credits never serve), or `undefined` for none.
- *
- * @param selected - The session's model setting (`provider/model`), if any.
- */
-function creditsModelIdOf(selected: string | undefined): string | undefined {
-  const prefix = `${OPENCODE_CREDITS_PROVIDER_ID}/`;
-  return selected?.startsWith(prefix) ? selected.slice(prefix.length) : selected;
-}
-
-/**
- * The OpenCode selection (`provider/model`) for one credits model id.
- *
- * @param id - A credits model id.
- */
-function creditsSelection(id: string): string {
-  return `${OPENCODE_CREDITS_PROVIDER_ID}/${id}`;
-}
-
-/**
- * The `{providerID, modelID}` a credits turn sends: the session's model when it
- * is one of the credits models, else the default one.
- *
- * @param selected - The session's model setting.
- * @param plan - The credits plan the sidecar runs on.
- * @throws {CreditsUnavailableError} When the plan has no model at all.
- */
-function creditsPromptModel(
-  selected: string | undefined,
-  plan: OpenCodeSidecarPlan
-): { providerID: string; modelID: string } {
-  const modelID = creditsModelFor(selected, plan.models);
-  if (modelID === null) throw new CreditsUnavailableError('unreachable', OPENCODE_LABEL);
-  return { providerID: OPENCODE_CREDITS_PROVIDER_ID, modelID };
 }

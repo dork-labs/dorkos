@@ -76,17 +76,16 @@ export default defineConfig({
     //   in the package, so a stale dist renders yesterday's rule — and the
     //   negative assertions (no "Advanced" heading for a manifest with no setup
     //   steps) stay green while the shipped rule regresses.
-    // - `permission-semantics` backs the consent-gate drift tests: the four
-    //   surfaces that must open the same dialog for the same mode —
-    //   `chat/__tests__/ChatStatusSection-autonomy-door.test.tsx`,
-    //   `binding/ui/__tests__/BindingAdvancedSection.test.tsx`,
-    //   `tasks/__tests__/CreateTaskDialog.test.tsx` and the scope note's own
-    //   suite — all decide by `needsConsentRitual`, whose whole job is to say
+    // - `permission-semantics` backs the unattended-door drift tests: the
+    //   surfaces that decide by the same rule —
+    //   `binding/ui/__tests__/BindingAdvancedSection.test.tsx` and the scope
+    //   note's own suite — both use `actsWithoutAsking`, whose whole job is to say
     //   that a mode nobody thought about (a runtime that never asks at the
-    //   MIDDLE stop) still needs consent. Same family as the rest: a rule whose
+    //   MIDDLE stop) still acts without asking. Same family as the rest: a rule whose
     //   source text is the subject. Measured: narrowing the predicate back to
     //   `isAutonomyStop` in `src/` with a stale dist reddened 0 of those tests —
-    //   they read yesterday's rule and passed — and 6 with this entry.
+    //   they read yesterday's rule and passed — and 6 with this entry, when a
+    //   task-form gate still shared the rule.
     //
     // Scoped to these six on purpose — see the same note in
     // `apps/server/vitest.config.ts` for what widening to all 43 subpaths cost.
@@ -142,6 +141,16 @@ export default defineConfig({
   },
   root: '.',
   publicDir: 'public',
+  // **Each browser-suite dev server gets its own pre-bundle cache** (DOR-2487).
+  // The suite runs two Vite servers from this one package; sharing
+  // `node_modules/.vite` meant a runtime re-optimize on one handed the other's
+  // pages chunks from two bundle versions, two copies of React, and "Invalid
+  // hook call" (how #2217's build race became a queue-wide red). The two legs
+  // in `apps/e2e/playwright.config.ts` always run on different ports, so the
+  // port names the folder.
+  ...(process.env.DORKOS_E2E_NO_HMR === 'true' && {
+    cacheDir: `node_modules/.vite-e2e-${process.env.VITE_PORT || 4241}`,
+  }),
   optimizeDeps: {
     // Pin streamdown into the initial dep-optimization pass. It renders code
     // blocks through a lazily-imported chunk (its syntax-highlighted body); if
@@ -162,6 +171,18 @@ export default defineConfig({
   server: {
     port: Number(process.env.VITE_PORT) || 4241,
     allowedHosts: ['.ngrok-free.app'],
+    // **The dialogs fetched on first open are compiled at startup anyway**
+    // (DOR-2901). They left the first download, which also took them out of
+    // what the dev server compiles when the page loads, so their first open in
+    // dev (and in the browser suite, which runs this server) waited on a cold
+    // compile of their whole subtree. Warming them keeps that first open as
+    // quick as it was. Keep this list beside `lazyDialog`'s call sites.
+    warmup: {
+      clientFiles: [
+        './src/layers/features/settings/ui/SettingsDialog.tsx',
+        './src/layers/widgets/app-layout/model/wrappers/TaskDialogWrapper.tsx',
+      ],
+    },
     ...(process.env.TUNNEL_ENABLED === 'true' && { hmr: { clientPort: 443 } }),
     // **The browser suite gets a dev server that never hot-replaces anything**
     // (DOR-1412). Set by both Vite legs in `apps/e2e/playwright.config.ts`, and

@@ -194,6 +194,9 @@ describe('ExtensionManager — server lifecycle', () => {
         'idem-ext',
         'proxy-ext',
         'shutdown-ext',
+        'fetch-ext',
+        'fetch-only',
+        'bad-fetch',
         'router-ext',
         'auto-srv',
         'fail-srv',
@@ -305,14 +308,15 @@ describe('ExtensionManager — server lifecycle', () => {
       });
 
       await manager.initialize(null);
-      mockReleaseListeners.mockClear();
+      mockDispose.mockClear();
 
       const result = await manager.initializeServer('throw-srv');
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('register failed');
-      // An account listener or advisor it added before throwing does not outlive it.
-      expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+      // An account listener, advisor or schedule it added before throwing does
+      // not outlive it: disposing the context releases all three.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
 
     it('returns ok:false when module does not export a function', async () => {
@@ -351,14 +355,14 @@ describe('ExtensionManager — server lifecycle', () => {
 
       // `initialize` already started it once.
       await manager.initialize(null);
-      const first = manager.getServerRouter('reinit-ext');
+      const first = manager.getServerHandler('reinit-ext');
       expect(first).not.toBeNull();
 
       // The extension's server.ts changed, so the running instance is stale.
       mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash-v2' });
       await manager.initializeServer('reinit-ext');
 
-      expect(manager.getServerRouter('reinit-ext')).not.toBe(first);
+      expect(manager.getServerHandler('reinit-ext')).not.toBe(first);
       // The scheduled cleanup from the first init should have been called
       expect(mockScheduledCleanup).toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
@@ -384,14 +388,14 @@ describe('ExtensionManager — server lifecycle', () => {
         mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
 
         await manager.initialize(null);
-        const router = manager.getServerRouter('idem-ext');
+        const router = manager.getServerHandler('idem-ext');
         expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
 
         // What every page load asks for.
         const result = await manager.initializeServer('idem-ext');
 
         expect(result).toEqual({ ok: true });
-        expect(manager.getServerRouter('idem-ext')).toBe(router);
+        expect(manager.getServerHandler('idem-ext')).toBe(router);
         expect(mockCreateDataProviderContext).toHaveBeenCalledTimes(1);
         expect(mockScheduledCleanup).not.toHaveBeenCalled();
         expect(logger.info).not.toHaveBeenCalledWith(
@@ -414,12 +418,12 @@ describe('ExtensionManager — server lifecycle', () => {
         mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
 
         await manager.initialize(null);
-        const router = manager.getServerRouter('proxy-ext');
+        const router = manager.getServerHandler('proxy-ext');
         expect(router).not.toBeNull();
 
         await manager.initializeServer('proxy-ext');
 
-        expect(manager.getServerRouter('proxy-ext')).toBe(router);
+        expect(manager.getServerHandler('proxy-ext')).toBe(router);
         expect(logger.info).not.toHaveBeenCalledWith(
           expect.stringContaining('Server shutdown for proxy-ext')
         );
@@ -452,7 +456,7 @@ describe('ExtensionManager — server lifecycle', () => {
         mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
 
         await manager.initialize(null);
-        const router = manager.getServerRouter('stale-srv');
+        const router = manager.getServerHandler('stale-srv');
         expect(router).not.toBeNull();
 
         // Somebody saved a typo into server.ts.
@@ -468,7 +472,7 @@ describe('ExtensionManager — server lifecycle', () => {
 
         expect(result).toEqual({ ok: false, error: 'Server Compilation failed for stale-srv' });
         // The working version is still mounted rather than torn down.
-        expect(manager.getServerRouter('stale-srv')).toBe(router);
+        expect(manager.getServerHandler('stale-srv')).toBe(router);
         expect(mockScheduledCleanup).not.toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledWith(
           expect.stringContaining('the version already running keeps serving')
@@ -503,7 +507,7 @@ describe('ExtensionManager — server lifecycle', () => {
         // And when the typo is fixed, the next attempt takes over and clears it.
         mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'fixedhash' });
         expect(await manager.initializeServer('stale-srv')).toEqual({ ok: true });
-        expect(manager.getServerRouter('stale-srv')).not.toBe(router);
+        expect(manager.getServerHandler('stale-srv')).not.toBe(router);
         expect(manager.listPublic()[0]).toMatchObject({ id: 'stale-srv', status: 'compiled' });
         expect(manager.listPublic()[0].serverError).toBeUndefined();
       });
@@ -524,12 +528,12 @@ describe('ExtensionManager — server lifecycle', () => {
         mockCompileServer.mockResolvedValue({ code: makeCjsModule(), sourceHash: 'srvhash' });
 
         await manager.initialize(null);
-        const router = manager.getServerRouter('reload-ext');
+        const router = manager.getServerHandler('reload-ext');
 
         // `reload_extensions --id` means "run this again", even byte-for-byte.
         await manager.reloadExtension('reload-ext');
 
-        expect(manager.getServerRouter('reload-ext')).not.toBe(router);
+        expect(manager.getServerHandler('reload-ext')).not.toBe(router);
         expect(mockScheduledCleanup).toHaveBeenCalled();
         // Its account listeners and advisor go with the old instance.
         expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
@@ -556,13 +560,111 @@ describe('ExtensionManager — server lifecycle', () => {
       await manager.initialize(null);
       await manager.initializeServer('shutdown-ext');
 
-      expect(manager.getServerRouter('shutdown-ext')).not.toBeNull();
+      expect(manager.getServerHandler('shutdown-ext')).not.toBeNull();
 
       await manager.shutdownServer('shutdown-ext');
 
-      expect(manager.getServerRouter('shutdown-ext')).toBeNull();
+      expect(manager.getServerHandler('shutdown-ext')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
       expect(mockReleaseListeners).toHaveBeenCalledTimes(1);
+      // DOR-2462: the cleanups list is a copy taken when `register()` returned.
+      // Fails if the context is not disposed too, so a timer the extension
+      // scheduled later, or schedules after this, keeps running.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves a fetch handler register() returns, and runs its cleanup on shutdown', async () => {
+      const record = makeRecord('fetch-ext', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fetch-ext/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register() {
+          return {
+            fetch: () => new Response('ok'),
+            cleanup() { globalThis.__fetchExtCleaned = true; },
+          };
+        };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+      expect(await manager.initializeServer('fetch-ext')).toEqual({ ok: true });
+      expect(manager.getServerHandler('fetch-ext')).not.toBeNull();
+
+      await manager.shutdownServer('fetch-ext');
+
+      expect((globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned).toBe(true);
+      delete (globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned;
+    });
+
+    it('serves a server entry that exports only a fetch handler', async () => {
+      const record = makeRecord('fetch-only', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/fetch-only/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `exports.default = { fetch: () => new Response('ok') };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+
+      expect(await manager.initializeServer('fetch-only')).toEqual({ ok: true });
+      expect(manager.getServerHandler('fetch-only')).not.toBeNull();
+    });
+
+    it('refuses a register() that returns a fetch that is not a function', async () => {
+      const record = makeRecord('bad-fetch', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/bad-fetch/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register() { return { fetch: 'nope' }; };`,
+        sourceHash: 'srvhash',
+      });
+
+      await manager.initialize(null);
+      const result = await manager.initializeServer('bad-fetch');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/fetch/);
+      expect(manager.getServerHandler('bad-fetch')).toBeNull();
+    });
+
+    it('stops what a refused register() scheduled, and keeps it from starting more', async () => {
+      const record = makeRecord('bad-fetch', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/bad-fetch/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({
+        code: `module.exports = function register(_router, ctx) {
+          ctx.schedule(5, async () => {});
+          return { cleanup: 'nope' };
+        };`,
+        sourceHash: 'srvhash',
+      });
+      await manager.initialize(null);
+      mockDispose.mockClear();
+
+      const result = await manager.initializeServer('bad-fetch');
+
+      expect(result.ok).toBe(false);
+      // Disposing cancels its schedules and makes a later `ctx.schedule` inert.
+      expect(mockDispose).toHaveBeenCalledTimes(1);
+      expect(manager.getServerHandler('bad-fetch')).toBeNull();
     });
 
     it('is a no-op for extensions without an active server', async () => {
@@ -573,9 +675,9 @@ describe('ExtensionManager — server lifecycle', () => {
     });
   });
 
-  // === getServerRouter ===
+  // === getServerHandler ===
 
-  describe('getServerRouter', () => {
+  describe('getServerHandler', () => {
     it('returns router for an active server extension', async () => {
       const record = makeRecord('router-ext', {
         status: 'compiled',
@@ -592,7 +694,7 @@ describe('ExtensionManager — server lifecycle', () => {
       await manager.initialize(null);
       await manager.initializeServer('router-ext');
 
-      const router = manager.getServerRouter('router-ext');
+      const router = manager.getServerHandler('router-ext');
 
       expect(router).not.toBeNull();
     });
@@ -600,7 +702,7 @@ describe('ExtensionManager — server lifecycle', () => {
     it('returns null for extensions without an active server', async () => {
       await manager.initialize(null);
 
-      const router = manager.getServerRouter('nonexistent');
+      const router = manager.getServerHandler('nonexistent');
 
       expect(router).toBeNull();
     });
@@ -627,7 +729,7 @@ describe('ExtensionManager — server lifecycle', () => {
       await manager.enable('auto-srv');
 
       expect(mockCompileServer).toHaveBeenCalled();
-      expect(manager.getServerRouter('auto-srv')).not.toBeNull();
+      expect(manager.getServerHandler('auto-srv')).not.toBeNull();
     });
 
     it('still enables even if server init fails', async () => {
@@ -655,7 +757,7 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(result).not.toBeNull();
       expect(result!.extension.status).toBe('compiled');
       // But no server router should be active
-      expect(manager.getServerRouter('fail-srv')).toBeNull();
+      expect(manager.getServerHandler('fail-srv')).toBeNull();
     });
   });
 
@@ -675,11 +777,11 @@ describe('ExtensionManager — server lifecycle', () => {
 
       await manager.initialize(null);
       await manager.enable('dis-srv');
-      expect(manager.getServerRouter('dis-srv')).not.toBeNull();
+      expect(manager.getServerHandler('dis-srv')).not.toBeNull();
 
       await manager.disable('dis-srv');
 
-      expect(manager.getServerRouter('dis-srv')).toBeNull();
+      expect(manager.getServerHandler('dis-srv')).toBeNull();
       expect(mockScheduledCleanup).toHaveBeenCalled();
     });
   });
@@ -705,15 +807,18 @@ describe('ExtensionManager — server lifecycle', () => {
 
       // initialize compiles enabled extensions (disabled -> compiled) and inits server
       await manager.initialize(null);
-      expect(manager.getServerRouter('reload-srv')).not.toBeNull();
+      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
 
       // Reload should shut down and reinitialize
       await manager.reloadExtension('reload-srv');
 
       // Server router should still be available (reinitialized)
-      expect(manager.getServerRouter('reload-srv')).not.toBeNull();
+      expect(manager.getServerHandler('reload-srv')).not.toBeNull();
       // compileServer called twice: once during initialize, once during reload
       expect(mockCompileServer).toHaveBeenCalledTimes(2);
+      // The old instance's context is disposed, so its timers stop beside the
+      // new instance's (DOR-2462).
+      expect(mockDispose).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -746,9 +851,9 @@ describe('ExtensionManager — server lifecycle', () => {
       expect(mockCompileServer).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'startup-srv' })
       );
-      expect(manager.getServerRouter('startup-srv')).not.toBeNull();
+      expect(manager.getServerHandler('startup-srv')).not.toBeNull();
       // Client-only extension should not have server router
-      expect(manager.getServerRouter('startup-client')).toBeNull();
+      expect(manager.getServerHandler('startup-client')).toBeNull();
     });
 
     it('does not let one extension throwing during startup stop the rest from initializing', async () => {
@@ -787,13 +892,13 @@ describe('ExtensionManager — server lifecycle', () => {
       await manager.initialize('/my/project');
 
       // The extension after the throwing one still got initialized.
-      expect(manager.getServerRouter('startup-survives')).not.toBeNull();
+      expect(manager.getServerHandler('startup-survives')).not.toBeNull();
       // The failure is not silently swallowed — it is named and visible.
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('startup-throws'),
         expect.any(Error)
       );
-      expect(manager.getServerRouter('startup-throws')).toBeNull();
+      expect(manager.getServerHandler('startup-throws')).toBeNull();
     });
   });
 
@@ -827,7 +932,7 @@ describe('ExtensionManager — server lifecycle', () => {
 
       await timed.initialize('/my/project');
 
-      expect(timed.getServerRouter('hangs')).toBeNull();
+      expect(timed.getServerHandler('hangs')).toBeNull();
       expect(timed.get('hangs')?.serverError).toMatchObject({ code: 'server_start_timeout' });
       expect(timed.get('hangs')?.serverError?.message).toBe(
         'hangs took too long to start. Reload it to try again.'
@@ -836,7 +941,7 @@ describe('ExtensionManager — server lifecycle', () => {
       // registered released, and anything it tries later does nothing.
       expect(mockDispose).toHaveBeenCalledTimes(1);
       // The one after it still started, and the next scan is not held up.
-      expect(timed.getServerRouter('fine')).not.toBeNull();
+      expect(timed.getServerHandler('fine')).not.toBeNull();
       await expect(timed.reload()).resolves.toEqual(expect.any(Array));
 
       // Retrying does not stack instances: each attempt is disposed in turn,
@@ -844,7 +949,7 @@ describe('ExtensionManager — server lifecycle', () => {
       await timed.reloadExtension('hangs');
       await timed.reloadExtension('hangs');
       expect(mockDispose).toHaveBeenCalledTimes(3);
-      expect(timed.getServerRouter('hangs')).toBeNull();
+      expect(timed.getServerHandler('hangs')).toBeNull();
     });
   });
 });

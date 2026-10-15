@@ -101,6 +101,11 @@ test.describe('A document on a room’s canvas has its own discussion', () => {
     const name = `Planner${tag}`;
     const agent = await roomsApi.registerAgent(name, '🗺️', '#0891b2');
     const room = await roomsApi.createChannel(`thread-quiet-${tag}`, `Quiet ${tag}`, [agent]);
+    // No lead: a person's plain reply in a discussion thread is a person's
+    // message like any other, and a channel's lead answers it (DOR-2823). This
+    // case is about the discussion itself starting nobody's turn.
+    const cleared = await request.patch(`/api/rooms/${room.id}`, { data: { leadAuthorId: null } });
+    if (!cleared.ok()) throw new Error(`Could not clear the lead: ${await cleared.text()}`);
     const title = `The diff ${tag}`;
     await putOnCanvas(request, room.id, title);
 

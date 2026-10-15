@@ -132,11 +132,15 @@ describe('an agent you manage', () => {
       'About nav',
       'Runs on pick',
       'Personality pick',
+      'Reports to pick',
       'Folder copy',
       'Chats nav',
       'Schedules nav',
+      'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
+      'Activity nav',
       'Skills nav',
       'MCP servers nav',
       'Permissions nav',
@@ -148,6 +152,20 @@ describe('an agent you manage', () => {
       // learned are the same kind of thing to a person looking for them.
       'Memory nav',
     ]);
+  });
+
+  it('says who the agent reports to, and nothing while it is unknown', () => {
+    const rowOf = (ctx: Partial<ProfileRowsContext>) =>
+      build(MANAGED, ctx)
+        .flatMap((group) => group.rows)
+        .find((row) => row.id === 'reports-to');
+    expect(rowOf({ reportsTo: 'You (default)' })).toMatchObject({
+      kind: 'pick',
+      label: 'Reports to',
+      value: 'You (default)',
+      pick: 'reports-to',
+    });
+    expect(rowOf({})?.value).toBeNull();
   });
 
   it('names the three convention files by their files, in the toolkit', () => {
@@ -182,11 +200,69 @@ describe('an agent you manage', () => {
 
 describe('someone else’s agent', () => {
   it('shows only what a teammate should see, and none of it as a control', () => {
-    expect(shape(build(OTHERS_AGENT))).toEqual(['About text', 'Runs on text', 'Rooms nav']);
+    expect(shape(build(OTHERS_AGENT))).toEqual([
+      'About text',
+      'Runs on text',
+      'Commitments nav',
+      'Heartbeat nav',
+      'Rooms nav',
+    ]);
   });
 
   it('shows no lock icons — private is not the same as locked', () => {
     expect(flat(build(OTHERS_AGENT)).some((row) => row.kind === 'locked')).toBe(false);
+  });
+});
+
+describe('the Commitments row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'commitments')!;
+
+  it('says how many are open and how many are overdue', () => {
+    const drawn = row({ commitments: { open: 2, overdue: 1 } });
+    expect(drawn.value).toBe('2 open');
+    expect(drawn.meta).toBe('1 overdue');
+  });
+
+  it('says nothing about overdue when none are, and nothing at all while unknown', () => {
+    expect(row({ commitments: { open: 1, overdue: 0 } }).meta).toBeUndefined();
+    expect(row({ commitments: null }).value).toBeNull();
+  });
+});
+
+describe('the Heartbeat row', () => {
+  const row = (over: Partial<ProfileRowsContext>) =>
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'heartbeat')!;
+  const status = { enabled: true, wake: 'events' as const, skippedReason: null, nextBeatAt: null };
+
+  it('says how the agent wakes, and when a timed one next checks in', () => {
+    expect(row({ heartbeat: status }).value).toBe('When something happens');
+    expect(row({ heartbeat: status }).meta).toBeUndefined();
+    const timed = row({
+      heartbeat: {
+        ...status,
+        wake: 'timed',
+        nextBeatAt: new Date(Date.now() + 12 * 60_000 - 1_000).toISOString(),
+      },
+    });
+    expect(timed.value).toBe('Every 30 min in working hours');
+    expect(timed.meta).toBe('next in 12 min');
+  });
+
+  it('reads the next check from the moment it is handed, so a ticking caller moves it', () => {
+    const at = Date.parse('2026-10-12T10:30:00Z');
+    const heartbeat = { ...status, wake: 'timed' as const, nextBeatAt: new Date(at).toISOString() };
+    expect(row({ heartbeat, now: at - 20 * 60_000 }).meta).toBe('next in 20 min');
+    expect(row({ heartbeat, now: at - 10 * 60_000 }).meta).toBe('next in 10 min');
+    expect(row({ heartbeat, now: at }).meta).toBe('next any moment');
+  });
+
+  it('says off, off for everyone, and nothing while unknown', () => {
+    expect(
+      row({ heartbeat: { ...status, wake: 'off', skippedReason: 'Heartbeat off.' } }).value
+    ).toBe('Off');
+    expect(row({ heartbeat: { ...status, enabled: false } }).value).toBe('Off for everyone');
+    expect(row({ heartbeat: null }).value).toBeNull();
   });
 });
 
@@ -198,8 +274,11 @@ describe('DorkBot', () => {
       'Personality pick',
       'Chats nav',
       'Schedules nav',
+      'Commitments nav',
+      'Heartbeat nav',
       'Rooms nav',
       'Notifications nav',
+      'Activity nav',
       'Skills nav',
       'MCP servers nav',
       'Permissions nav',

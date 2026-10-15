@@ -3,13 +3,20 @@
  *
  * @module shared/model
  */
-export { TransportProvider, useTransport } from './TransportContext';
+export { TransportProvider, useOptionalTransport, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
 export {
   useAppTabsStore,
   useAppTabs,
   useActiveTabHistory,
+  openTabIn,
+  closeTabIn,
+  pinTabIn,
+  duplicateTabIn,
+  closeOtherTabsIn,
+  moveTabIn,
   type AppTab,
+  type AppTabsLayout,
 } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
@@ -32,7 +39,7 @@ export { useIsBelowDesktop } from './media/use-is-below-desktop';
 export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
-export { useDocumentTitle } from './use-document-title';
+export { useDocumentTitle, type DocumentTitleState } from './use-document-title';
 export { useElapsedTime } from './use-elapsed-time';
 export {
   useIdleDetector,
@@ -51,7 +58,8 @@ export {
   SPACES_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
-  readSpacesEnabled,
+  officialSpaceLink,
+  readAnySpaceReachable,
 } from './server-config/experiments';
 export {
   useAccountUsage,
@@ -102,6 +110,13 @@ export {
   type CreditsOfferProps,
   type CreditsOfferSlot,
 } from './credits-offer/credits-offer-slot';
+export {
+  LinkChipProvider,
+  useLinkChipSlot,
+  type LinkChipAnchorProps,
+  type LinkChipRenderProps,
+  type LinkChipSlot,
+} from './link-chip/link-chip-slot';
 export { useCommunityAuthority } from './use-community-authority';
 export {
   commitCommunityRouteEpoch,
@@ -152,6 +167,7 @@ export type {
   MessageGrouping,
   GroupPosition,
   MessageAuthor,
+  TransportErrorInfo,
 } from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
 export {
@@ -193,6 +209,7 @@ export {
   type StatusBarContribution,
   type TabMarker,
   useTabMarker,
+  usePageBadge,
   menuExtensionPages,
   useMenuExtensionPages,
   useExtensionPageAtPath,

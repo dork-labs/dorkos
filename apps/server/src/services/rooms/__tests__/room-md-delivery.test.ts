@@ -57,36 +57,38 @@ type TriggerCall = Parameters<
 const triggered: TriggerCall[] = [];
 let duringDispatch: () => Promise<void> = () => Promise.resolve();
 const observed: { controller: AbortController; joined: Promise<void>; text: string }[] = [];
-vi.mock('../../session/message-dispatcher.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../session/message-dispatcher.js')>();
-  const originalDispatch = original.dispatchOriginalRoomMessage;
-  return {
-    ...original,
-    dispatchOriginalRoomMessage: async (
-      request: Parameters<typeof originalDispatch>[0],
-      runner: Parameters<typeof originalDispatch>[1],
-      opts: TriggerCall
-    ) => {
-      triggered.push(opts);
-      const controller = new AbortController();
-      const capture = { controller, joined: Promise.resolve(), text: '' };
-      capture.joined = (async () => {
-        for await (const event of opts.projector.subscribe(
-          opts.projector.getCursor(),
-          controller.signal
-        )) {
-          if (event.type === 'text_delta') capture.text += event.text;
-          if (event.type === 'turn_end') break;
-        }
-      })();
-      // The owned observer remains joined by teardown even if dispatch refuses.
-      void capture.joined.catch(() => undefined);
-      observed.push(capture);
-      await duringDispatch();
-      return originalDispatch(request, runner, opts);
-    },
-  };
-});
+let stopDispatchObservation: (() => void) | undefined;
+function startDispatchObservation(): void {
+  const originalDispatch = messageDispatcher.dispatchOriginalRoomMessage;
+  const spy = vi
+    .spyOn(messageDispatcher, 'dispatchOriginalRoomMessage')
+    .mockImplementation(
+      async (
+        request: Parameters<typeof originalDispatch>[0],
+        runner: Parameters<typeof originalDispatch>[1],
+        opts: TriggerCall
+      ) => {
+        triggered.push(opts);
+        const controller = new AbortController();
+        const capture = { controller, joined: Promise.resolve(), text: '' };
+        capture.joined = (async () => {
+          for await (const event of opts.projector.subscribe(
+            opts.projector.getCursor(),
+            controller.signal
+          )) {
+            if (event.type === 'text_delta') capture.text += event.text;
+            if (event.type === 'turn_end') break;
+          }
+        })();
+        // The owned observer remains joined by teardown even if dispatch refuses.
+        void capture.joined.catch(() => undefined);
+        observed.push(capture);
+        await duringDispatch();
+        return originalDispatch(request, runner, opts);
+      }
+    );
+  stopDispatchObservation = () => spy.mockRestore();
+}
 
 const { query } = await import('@anthropic-ai/claude-agent-sdk');
 const { ClaudeCodeRuntime } = await import('../../runtimes/claude-code/claude-code-runtime.js');
@@ -96,7 +98,8 @@ const { wrapSdkQuery, sdkSimpleText } =
   await import('../../runtimes/claude-code/__tests__/sdk-scenarios.js');
 const configuration = await import('../../core/config-manager.js');
 const { runtimeRegistry } = await import('../../core/runtime-registry.js');
-const { isTurnInFlight } = await import('../../session/message-dispatcher.js');
+const messageDispatcher = await import('../../session/message-dispatcher.js');
+const { isTurnInFlight } = messageDispatcher;
 const { peekProjector } = await import('../../session/index.js');
 const { uiTurnFacts } = await import('../../session/browser-seat/ui-turn-facts.js');
 const { createOriginalNativeLaunchFixture } =
@@ -108,6 +111,7 @@ let target: Awaited<ReturnType<OriginalFixture['bootNativeAgent']>> | undefined;
 async function openNative(
   options: Parameters<typeof createOriginalNativeLaunchFixture>[0] = {}
 ): Promise<void> {
+  startDispatchObservation();
   original = await createOriginalNativeLaunchFixture({
     seed: false,
     publishRepoService: false,
@@ -197,6 +201,12 @@ async function closeNative(): Promise<void> {
   original = undefined;
   target = undefined;
   observed.length = 0;
+  try {
+    stopDispatchObservation?.();
+  } catch (cause) {
+    remember(cause);
+  }
+  stopDispatchObservation = undefined;
   if (failed) throw first;
 }
 

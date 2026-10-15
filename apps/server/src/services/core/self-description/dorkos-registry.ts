@@ -13,7 +13,7 @@
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
  * domain, `roomDeps` the rooms domain, `sessionCompactionDeps` the session
- * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, and the memory, `ui` and self-description
+ * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, `agentPauseDeps` the agent pause domain, and the memory, `ui` and self-description
  * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
@@ -39,10 +39,13 @@ import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
+import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
+import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -72,7 +75,9 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
+  if (deps.commitmentDeps) domains.push(commitmentsDomain);
   if (deps.auditDeps) domains.push(auditDomain);
+  if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
   // nothing else, and an agent that could not save what it learns is the defect
@@ -87,6 +92,9 @@ export function composeDorkOsCapabilityRegistry(
   // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
   // action it asks for through `deps.registry`, back-written below.
   domains.push(permissionsDomain);
+  // Unconditional too: `end_beat` needs no service handle, and outside a beat
+  // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
+  domains.push(heartbeatDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation, roomMergeConstruction);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -136,11 +144,14 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomsDomain,
     sessionDomain,
     chatDomain,
+    commitmentsDomain,
     auditDomain,
+    agentPauseDomain,
     memoryDomain,
     uiDomain,
     capabilitiesDomain,
     permissionsDomain,
+    heartbeatDomain,
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,
@@ -152,7 +163,9 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
+    commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
+    agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
   };
   return composeRegistry(domains, deps);
 }

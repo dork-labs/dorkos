@@ -113,7 +113,7 @@ export class ClaudeConnectorTurnContext {
   async #resolvePrincipal(): Promise<ServerPrincipalProof> {
     this.#assertCurrent();
     this.supervisor?.assertUsable();
-    this.opening ??= this.#openAndResolve();
+    this.opening ??= Promise.resolve().then(() => this.#openAndResolve());
     await this.opening;
     this.#assertCurrent();
     const binding = this.binding;
@@ -204,6 +204,7 @@ export class ClaudeConnectorTurnContext {
   }
 
   async #openAndResolve(): Promise<ServerPrincipalProof> {
+    this.#assertCurrent();
     const input = {
       runtime: 'claude-code' as const,
       canonicalSessionId: this.#fixedOptions.canonicalSessionId(),

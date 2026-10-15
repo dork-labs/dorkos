@@ -1,33 +1,52 @@
 /** Genuine acquired manifest close-reporting failure; SOURCE UNRUN. */
-import { expect, it, vi } from 'vitest';
+import { afterAll, expect, it, vi } from 'vitest';
 import nativeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 
-it('retains earliest manifest close UNKNOWN while positively draining the original Room peer', async () => {
-  // The production reader captures closeSync at module construction. Select the literal fault
-  // before fresh original modules load, without replacing the reader or its owner recognition.
-  vi.resetModules();
-  const actualClose = nativeFs.closeSync,
-    actualFstat = nativeFs.fstatSync;
-  let armed = false,
-    selected = false,
-    actualCloseSucceeded = false,
-    closeCalls = 0;
-  let inode: { dev: number; ino: number } | undefined;
-  const closeSpy = vi.spyOn(nativeFs, 'closeSync').mockImplementation((fd) => {
-    const row = actualFstat(fd);
-    if (armed && !selected && inode && row.dev === inode.dev && row.ino === inode.ino) {
-      selected = true;
-      closeCalls++;
-      actualClose(fd);
-      actualCloseSucceeded = true;
-      throw undefined;
-    }
+// The production reader captures closeSync at module construction. Select the literal fault
+// before fresh original modules load, without replacing the reader or its owner recognition.
+vi.resetModules();
+const actualClose = nativeFs.closeSync,
+  actualFstat = nativeFs.fstatSync;
+let armed = false,
+  selected = false,
+  actualCloseSucceeded = false,
+  closeCalls = 0;
+let inode: { dev: number; ino: number } | undefined;
+const closeSpy = vi.spyOn(nativeFs, 'closeSync').mockImplementation((fd) => {
+  const row = actualFstat(fd);
+  if (armed && !selected && inode && row.dev === inode.dev && row.ino === inode.ino) {
+    selected = true;
+    closeCalls++;
     actualClose(fd);
-  });
+    actualCloseSucceeded = true;
+    throw undefined;
+  }
+  actualClose(fd);
+});
+
+// Collection loads the real cold graph after the original close fault is installed.
+// The unchanged behavioral deadline starts only after those imports have completed.
+const originalFixtureModules = await (async () => {
+  try {
+    const fixtures = await import('../writes/__tests__/authority-fixtures.js');
+    const services = await import('../service.js');
+    const fileWrites = await import('../writes/installation-file-writes.js');
+    return { fixtures, services, fileWrites };
+  } catch (cause) {
+    closeSpy.mockRestore();
+    throw cause;
+  }
+})();
+// Also restore the exact global function if setup fails before the test's own finally.
+afterAll(() => {
+  closeSpy.mockRestore();
+});
+
+it('retains earliest manifest close UNKNOWN while positively draining the original Room peer', async () => {
   const root = await fs.realpath(
     await fs.mkdtemp(join(tmpdir(), 'original-token-manifest-close-'))
   );
@@ -51,15 +70,14 @@ it('retains earliest manifest close UNKNOWN while positively draining the origin
   let stopWriter:
     typeof import('../writes/installation-file-writes.js').stopInstallationFileWrites | undefined;
   try {
-    const { nativeRoomAuthorityFixture } =
-      await import('../writes/__tests__/authority-fixtures.js');
-    services = await import('../service.js');
+    const { nativeRoomAuthorityFixture } = originalFixtureModules.fixtures;
+    services = originalFixtureModules.services;
     const {
       issueServiceOriginalDocToken,
       currentRoomDueServicePort,
       readServiceOriginalTokenDrainData,
     } = services;
-    const { stopInstallationFileWrites } = await import('../writes/installation-file-writes.js');
+    const { stopInstallationFileWrites } = originalFixtureModules.fileWrites;
     stopWriter = stopInstallationFileWrites;
     h = await nativeRoomAuthorityFixture(root, 'codex', randomUUID(), randomUUID(), {
       checkboxFile: true,

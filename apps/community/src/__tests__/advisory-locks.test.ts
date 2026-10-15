@@ -23,7 +23,7 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
       'app.ts',
       'routes/host/owner-claims.ts',
       'routes/host/imports.ts',
-      'routes/host/host.ts',
+      'host/create-community.ts',
     ],
   },
   '77281504': { purpose: 'assigning handles', files: ['handles.ts'] },
@@ -31,6 +31,11 @@ const REGISTRY: Record<string, { purpose: string; files: string[] }> = {
   '77281506': {
     purpose: 'taking ownership through an owner replacement claim',
     files: ['owner-replacement/claim.ts'],
+  },
+  // The two-number form: the second number is the channel's hash, so it never meets a key above.
+  '77281507': {
+    purpose: 'queueing in order for one channel: shared by posts and reads, exclusive by changes',
+    files: ['data.ts'],
   },
 };
 

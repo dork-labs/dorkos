@@ -23,6 +23,12 @@ const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'operator.config_patch', title: 'Change settings', tier: 'act', area: null },
   { id: 'permissions.change', title: 'Change a permission', tier: 'act', area: 'permissions' },
   {
+    id: 'operator.update_agent_boundaries',
+    title: "Change an agent's safety boundaries",
+    tier: 'destructive',
+    area: 'safety',
+  },
+  {
     id: 'operator.update_agent_execution',
     title: 'Change what an agent runs on',
     tier: 'destructive',
@@ -51,8 +57,6 @@ export function createPermissionWorld(
     trustStop?: PermissionStop | null;
     /** Per-runtime stops, by runtime id. */
     runtimeStops?: Record<string, PermissionStop | null>;
-    /** Whether an acknowledgement of Full autonomy is on file. */
-    autonomyAcknowledged?: boolean;
     /** Make every agent write throw, as a read-only settings file would. */
     writeFails?: boolean;
     /** Whether the record of screened arrivals can be read. */
@@ -77,12 +81,6 @@ export function createPermissionWorld(
   } = {
     global: options.trustStop === undefined ? 'act' : options.trustStop,
     perRuntime: { ...(options.runtimeStops ?? {}) },
-  };
-  /** Whether the person acknowledged Full autonomy. */
-  const autonomy = {
-    acknowledgedAt: options.autonomyAcknowledged ? '2026-08-01T00:00:00.000Z' : null,
-  } as {
-    acknowledgedAt: string | null;
   };
   let clock = Date.parse('2026-09-01T00:00:00.000Z');
 
@@ -125,18 +123,13 @@ export function createPermissionWorld(
       get: () => structuredClone(config),
       set: (next) => Object.assign(config, structuredClone(next)),
       trustStops: () => structuredClone(stops),
-      setGlobalTrustStop: (stop, acknowledge) => {
+      setGlobalTrustStop: (stop) => {
         stops.global = stop;
-        if (acknowledge) autonomy.acknowledgedAt = new Date(clock).toISOString();
       },
       setRuntimeTrustStop: (runtime, stop) => {
         if (!['claude-code', 'codex', 'opencode'].includes(runtime)) return false;
         stops.perRuntime[runtime] = stop;
         return true;
-      },
-      hasAutonomyAck: () => autonomy.acknowledgedAt !== null,
-      recordAutonomyAck: () => {
-        autonomy.acknowledgedAt = new Date(clock).toISOString();
       },
     },
     agents: {
@@ -168,7 +161,6 @@ export function createPermissionWorld(
     service,
     config,
     stops,
-    autonomy,
     agents,
     events,
     activity,

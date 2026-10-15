@@ -123,7 +123,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { noopLogger } from '@dorkos/shared/logger';
 
-import { MCP_TOOL_TIERS } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../mcp-tools/mcp-tool-tiers.js';
 import { registerCapabilitiesResource } from '../mcp-resources/capabilities-resource.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';

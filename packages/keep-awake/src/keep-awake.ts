@@ -18,8 +18,12 @@
  *   pid, holders are killed through the handle that spawned them (SIGTERM, then
  *   SIGKILL after two seconds), and nothing is ever spawned through a shell.
  * - **No restart storms.** A holder that dies unexpectedly is restarted once;
- *   a second unexpected death within a minute marks keep-awake unsupported for
- *   the life of the process.
+ *   a second unexpected death within a minute, or a refusal as it starts, is a
+ *   `denied` failure. A denial is not permanent: while a hold is wanted it is
+ *   tried again on a backoff ({@link RETRY_BACKOFF_MS}), and turning the setting
+ *   off and on tries again at once. Only what the environment rules out (a
+ *   container, a missing tool, an operating system with no adapter) stays
+ *   unsupported for the life of the process.
  *
  * @module keep-awake/keep-awake
  */
@@ -36,9 +40,9 @@ import type {
 
 /** A snapshot of keep-awake, for status displays. */
 export interface KeepAwakeStatus {
-  /** Whether this computer can be held awake at all. */
+  /** Whether this computer can be held awake right now. */
   supported: boolean;
-  /** Why not, when `supported` is false. */
+  /** Why not, when `supported` is false. `denied` is temporary: it is retried. */
   reason?: UnsupportedReason;
   /** The mechanism in use, or that was tried. */
   mechanism: Mechanism;
@@ -79,7 +83,7 @@ export interface KeepAwake {
 export interface KeepAwakeOptions extends EnvironmentOptions {
   /** The process whose death must end the assertion. Defaults to `process.pid`. */
   watchPid?: number;
-  /** Delay between the last release and dropping the assertion. Default 30 000 ms. */
+  /** Delay between the last release and dropping the assertion. Default three minutes. */
   lingerMs?: number;
   /** caffeinate only: one holder's lifetime (`-t`). Default 300 s. */
   holderTtlSec?: number;
@@ -100,7 +104,19 @@ const RESTART_WINDOW_MS = 60_000;
 /** How long a holder gets to exit after SIGTERM before SIGKILL. */
 const KILL_GRACE_MS = 2_000;
 
-const DEFAULT_LINGER_MS = 30_000;
+/**
+ * How long the assertion outlives the last hold. Three minutes, not seconds: an
+ * agent's turns often come a minute or two apart (a reply, then the next one
+ * after a tool or a person answers), and a computer that may idle-sleep in
+ * every such gap stops the very work this exists to keep going.
+ */
+const DEFAULT_LINGER_MS = 3 * 60_000;
+/**
+ * The waits before trying a denied holder again, one per consecutive denial;
+ * the last repeats. A refusal is often passing (a policy prompt, a busy power
+ * daemon), so it is retried while a hold is wanted rather than believed forever.
+ */
+const RETRY_BACKOFF_MS: readonly number[] = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000];
 const DEFAULT_TTL_SEC = 300;
 const DEFAULT_RENEW_MS = 240_000;
 
@@ -156,6 +172,12 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
   let current: HolderRecord | null = null;
   let lingerTimer: ReturnType<typeof setTimeout> | null = null;
   let renewTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Consecutive denials; picks the next wait from {@link RETRY_BACKOFF_MS}. */
+  let denials = 0;
+  /** The pending retry after a denial, while one is scheduled. */
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The backoff ran out while nothing was wanted: the next hold tries at once. */
+  let retryDue = false;
   let lastUnexpectedExitAt: number | null = null;
   let disposed = false;
   let lastEmittedKey = '';
@@ -194,10 +216,30 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     lingerTimer = null;
   };
 
-  /** Record that holding is not possible here, warning once per reason. */
+  const clearRetry = (): void => {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    retryDue = false;
+  };
+
+  /** Forget a denial: the next attempt finds out afresh. Environment failures are kept. */
+  const clearDenial = (): void => {
+    clearRetry();
+    denials = 0;
+    if (reason !== 'denied') return;
+    supported = true;
+    reason = undefined;
+  };
+
+  /**
+   * Record that holding is not possible here, warning once per reason. A
+   * `denied` is temporary and schedules the next try; anything else is what the
+   * environment rules out and stays.
+   */
   const markUnsupported = (why: UnsupportedReason, detail?: string): void => {
     supported = false;
     reason = why;
+    if (why === 'denied') scheduleRetry();
     if (!warned.has(why)) {
       warned.add(why);
       logger.warn(
@@ -235,6 +277,40 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     }
     return record.endedPromise;
   };
+
+  /** Try a denied holder again after the next backoff step. */
+  function scheduleRetry(): void {
+    clearRetry();
+    const wait = RETRY_BACKOFF_MS[Math.min(denials, RETRY_BACKOFF_MS.length - 1)]!;
+    denials += 1;
+    retryTimer = setTimeout(onRetryDue, wait);
+    unref(retryTimer);
+  }
+
+  /** The backoff ran out: try now when a hold is wanted, else on the next hold. */
+  function onRetryDue(): void {
+    retryTimer = null;
+    try {
+      if (disposed || reason !== 'denied') return;
+      if (!enabled || holds.size === 0) {
+        retryDue = true;
+        return;
+      }
+      retryNow();
+    } catch (err) {
+      logger.warn(`[KeepAwake] could not try again: ${String(err)}`);
+    }
+  }
+
+  /** Clear the denial (keeping its count) and start a holder. */
+  function retryNow(): void {
+    retryDue = false;
+    supported = true;
+    reason = undefined;
+    logger.info('[KeepAwake] trying again to keep this computer awake');
+    startHolder();
+    notify();
+  }
 
   const shouldHold = (): boolean =>
     !disposed && enabled && supported && (holds.size > 0 || lingerTimer !== null);
@@ -290,6 +366,9 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     try {
       const previous = current;
       if (!previous || !shouldHold()) return;
+      // A holder that lived to be renewed worked: a later denial backs off from
+      // the first step again.
+      denials = 0;
       startHolder();
       void retire(previous);
       notify();
@@ -313,6 +392,16 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
         markUnsupported(errno === 'ENOENT' ? 'tool-missing' : 'denied', err.message);
       } else if (now - record.startedAt < EARLY_FAILURE_MS && code !== 0) {
         markUnsupported('denied', `exit code ${String(code)}`);
+      } else if (
+        code === 0 &&
+        record.command.renews &&
+        now - record.startedAt < (ttlSec * 1000) / 2
+      ) {
+        // caffeinate exits 0 at once when it cannot watch the pid it was given
+        // (`-w` on a pid it cannot see). The owner is our own live process, so
+        // this is not the `-t` running out, and respawning at once would only
+        // repeat it in a tight loop. It is a refusal: back off and say so.
+        markUnsupported('denied', 'caffeinate could not watch the process');
       } else if (code === 0 && record.command.renews) {
         // caffeinate's own `-t` ran out before renewal fired (the timer was
         // late, typically because the computer slept anyway). Not a failure.
@@ -333,7 +422,12 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
   const onLingerEnd = (): void => {
     lingerTimer = null;
     try {
-      if (holds.size === 0 && current) void retire(current);
+      if (holds.size === 0 && current) {
+        void retire(current);
+        // A holder that ran until it was no longer needed worked: a later
+        // denial starts the backoff from the beginning again.
+        denials = 0;
+      }
       notify();
     } catch (err) {
       logger.warn(`[KeepAwake] could not release: ${String(err)}`);
@@ -348,6 +442,7 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
       holds.set(token, holdReason);
       clearLinger();
       if (enabled && supported && !current) startHolder();
+      else if (enabled && retryDue && !current) retryNow();
       notify();
     } catch (err) {
       logger.warn(`[KeepAwake] could not open a hold: ${String(err)}`);
@@ -376,6 +471,9 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     try {
       if (disposed || next === enabled) return;
       enabled = next;
+      // Switching the setting off and on again is how a person asks for another
+      // try, so it re-arms a denied holder at once, with the backoff reset.
+      clearDenial();
       if (!next) {
         clearLinger();
         if (current) void retire(current);
@@ -400,6 +498,7 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
     disposed = true;
     clearLinger();
     clearRenew();
+    clearRetry();
     const holder = current;
     if (holder) await retire(holder);
     notify();

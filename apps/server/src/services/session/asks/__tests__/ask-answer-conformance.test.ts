@@ -44,7 +44,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import type { Request, Response } from 'express';
+import type { RequestFacts } from '../../../../http/request-facts.js';
 
 import { resolveDecisionAuthority } from '../../../core/approvals/index.js';
 import {
@@ -117,31 +117,27 @@ const CALLERS: ProbeCaller[] = [
   },
 ];
 
-/** A request carrying only the header either seam reads off it. */
-function requestFor(caller: ProbeCaller): Request {
+/** The request's facts, carrying only what either seam reads off them. */
+function factsFor(caller: ProbeCaller): Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> {
   return {
     headers: caller.agentPresented ? { [AGENT_IDENTITY_HEADER]: 'tok_probe' } : {},
-  } as unknown as Request;
-}
-
-/** A response carrying only what either seam reads off it. */
-function responseFor(caller: ProbeCaller): Response {
-  return { locals: caller.user ? { user: caller.user } : {} } as unknown as Response;
+    user: caller.user,
+    agentIdentity: undefined,
+  };
 }
 
 const SEAMS: AnswerSeam[] = [
   {
     name: 'the answer routes’ bar (requirePersonToAnswer’s two composed pieces)',
     allows: (caller) => {
-      const req = requestFor(caller);
-      const res = responseFor(caller);
+      const facts = factsFor(caller);
       const authority = resolveDecisionAuthority({
-        ...readCallerAuthority(req, res),
+        ...readCallerAuthority(facts),
         loginEnabled: () => caller.loginEnabled,
       });
       if (!authority.allowed) return false;
       return (
-        requireOperatorCookieUnderLogin(res, 'whether a tool runs', () => caller.loginEnabled) ===
+        requireOperatorCookieUnderLogin(facts, 'whether a tool runs', () => caller.loginEnabled) ===
         undefined
       );
     },
@@ -149,7 +145,7 @@ const SEAMS: AnswerSeam[] = [
   {
     name: 'the shared entitlement (askEntitlement)',
     allows: (caller) =>
-      askEntitlement(readCallerPrincipal(requestFor(caller), responseFor(caller)), {
+      askEntitlement(readCallerPrincipal(factsFor(caller)), {
         sessionId: 'sess_probe',
       }) === 'answer',
   },

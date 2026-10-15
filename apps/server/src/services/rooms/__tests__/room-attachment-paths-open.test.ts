@@ -71,6 +71,9 @@ describe('every path the agent is told about', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: [agentPath] },
       human
     );
+    // No lead: this case is about the files a turn is told about, and a lead
+    // would answer the unaddressed post (DOR-2823).
+    service.updateRoom(room.id, human, { leadAuthorId: null });
     // `mention-only` so the messages carrying files do NOT wake Ana: her read
     // cursor stays where it started, so those messages are still unread — and
     // therefore still in the context window — when the final `@ana` triggers

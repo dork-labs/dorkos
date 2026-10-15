@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import { Download } from 'lucide-react';
 import { CommandChip } from '@/layers/shared/ui/command-chip';
 import {
+  prepareInstallCopy,
   trackHeroDownload,
-  trackHeroInstallCopy,
   type DownloadPlacement,
   type InstallMethod,
 } from '@/lib/analytics';
@@ -39,10 +39,11 @@ export function DownloadButton({
 }
 
 /**
- * Copyable install command for the install page; reports copies to analytics.
+ * Copyable install command for the install page; reports copies to analytics
+ * and, where the command can carry one, adds a per-copy install ref.
  *
  * @param props - The shell command and which install method it represents.
  */
 export function InstallCommand({ command, method }: { command: string; method: InstallMethod }) {
-  return <CommandChip command={command} onCopied={() => trackHeroInstallCopy(method)} />;
+  return <CommandChip command={command} prepareCopy={() => prepareInstallCopy(command, method)} />;
 }

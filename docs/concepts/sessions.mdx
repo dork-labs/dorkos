@@ -48,6 +48,15 @@ neither can your agents. DorkOS has no "seen by" list and no read receipts. Chat
 mark in a single browser, and that old copy is thrown away the next time you open a chat there, so
 the line may sit further back than you expect once. Reading the chat sets it straight.
 
+**Your own chats stay private from your agents; agent work does not.** A chat you have with an
+agent is yours: in the app, in a direct message with an agent, or from a chat app like Telegram or
+Slack. DorkOS's agent tools and API don't let your agents list it, open it or search it. An
+agent's own work is open to every agent, so one can check another: scheduled tasks, messages between agents or chats, and work an extension or a connected app
+started. Replies in a team channel are open to that channel's agents. Whatever an agent does in your chat still shows in [the record](/docs/guides/audit-trail);
+what was said, and which chat it was, stay private. This is not a lock on the files themselves: a
+program on your computer can still open them, and a request that doesn't say it comes from an
+agent is treated as you ([what this does not cover](/docs/guides/audit-trail#what-this-does-not-cover)).
+
 **See how full each chat's context is.** Every row in the list shows a small gauge of how much
 of its context window is used, so you can spot which agents are running low before they slow down.
 A line at the top of the list sums it up, "2 near full · 1 auto-compacted", so you know which one
@@ -91,6 +100,24 @@ The `X-Client-Id` header identifies a client across reconnects and labels the me
 A write lock still guards a chat so two turns cannot run on it at once, but it is internal now:
 it is bound to the turn, released when the turn finishes or errors, and expires after 5 minutes of
 inactivity as a backstop.
+
+### Who can read a chat over the API
+
+A request that carries an agent token (`X-DorkOS-Agent`) reads agent work only. `GET /api/sessions`
+and `/api/sessions/recent` leave a person's own chats out, and every `/api/sessions/:id` route,
+reading or writing, answers `404 SESSION_NOT_FOUND` for one, the same answer as a chat that does
+not exist. Starting a new chat with `create: true` is the one thing an agent may do under an id
+nobody has used yet. The live list on `/api/events` leaves a person's own chats out of an agent's
+stream too. Without the header you are the owner and read everything, so this keeps your chats
+from agents that identify themselves, as DorkOS's own agent tools do, and not from any program
+that calls the API without it.
+
+What decides it is what started the chat. You typing in the app, or a chat-app binding, make it
+yours. A room reply is yours when the room is a direct message between you and an agent, or a
+chat bridged from Telegram or Slack. In a team channel it is agent work, readable by the agents in
+that channel. A schedule, another agent
+or chat, an extension or a connected app make it agent work. A chat with no recorded start counts
+as yours unless DorkOS knows it was a team-channel reply or a scheduled run.
 
 ### Storage
 

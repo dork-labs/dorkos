@@ -14,7 +14,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../../lib/logger.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 import type { AgentSession } from '../../agent-types.js';
-import { streamTurnWindow } from '../pump-turn-stream.js';
+import { streamTurnWindow } from '../warm-process/pump-turn-stream.js';
 import type { TurnWindow } from '../session-turn-windows.js';
 
 const SESSION_ID = 'sess-pump-stop';

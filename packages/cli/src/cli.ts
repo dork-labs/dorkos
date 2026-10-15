@@ -1,4 +1,3 @@
-import { parseArgs } from 'node:util';
 import os, { networkInterfaces } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,6 +20,8 @@ import {
   flushCliError,
 } from './lib/error-reporter.js';
 import { defaultDorkHome } from './lib/dork-home.js';
+import { parseCliArgs } from './parse-cli-args.js';
+import { recordInstallRef } from '@dorkos/shared/install-ref';
 
 // Early Node.js version guard — before any imports that could fail on older runtimes
 const nodeVersionIssue = checkNodeVersion();
@@ -469,55 +470,6 @@ if (
   process.exit(await runVersionDispatcher(__CLI_VERSION__, DORK_HOME, subArgs));
 }
 
-/**
- * Parse the top-level `dorkos` flags, reporting an unrecognised one as a
- * one-line message instead of a Node stack trace.
- *
- * The option table is passed inline so `parseArgs` can infer the exact result
- * shape from it: `values.port` is `string | undefined`, `values.tunnel` is
- * `boolean`, and so on. Returning that inferred value is what makes the
- * inference reachable. Destructuring into pre-declared `let`s (as this used to)
- * widened every flag back to `string | boolean | (string | boolean)[]` — the
- * shape `parseArgs` falls back to when it cannot see the options — so each read
- * downstream silently became a union nobody had narrowed.
- *
- * @returns The parsed flags and positional arguments.
- */
-function parseCliArgs() {
-  try {
-    return parseArgs({
-      options: {
-        port: { type: 'string', short: 'p' },
-        tunnel: { type: 'boolean', short: 't', default: false },
-        dir: { type: 'string', short: 'd' },
-        boundary: { type: 'string', short: 'b' },
-        tasks: { type: 'boolean' },
-        open: { type: 'boolean' },
-        'debug-trace': { type: 'boolean', default: false },
-        'log-level': { type: 'string', short: 'l' },
-        help: { type: 'boolean', short: 'h' },
-        version: { type: 'boolean', short: 'v' },
-        'post-install-check': { type: 'boolean', default: false },
-        yes: { type: 'boolean', short: 'y', default: false },
-      },
-      allowPositionals: true,
-      allowNegative: true,
-    });
-  } catch (err) {
-    if (
-      err instanceof TypeError &&
-      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-    ) {
-      const match = err.message.match(/Unknown option '([^']+)'/);
-      const option = match?.[1] ?? 'unknown';
-      console.error(`Unknown option: ${option}`);
-      console.error(`Run 'dorkos --help' for usage information.`);
-      process.exit(1);
-    }
-    throw err;
-  }
-}
-
 const { values, positionals } = parseCliArgs();
 if (positionals[0] && !knownCommands.has(positionals[0])) {
   console.error(`Unknown command: ${positionals[0]}`);
@@ -527,6 +479,12 @@ if (positionals[0] && !['cleanup', 'config', 'init'].includes(positionals[0])) {
   console.error(`Place the command before global options: ${positionals[0]}`);
   process.exit(1);
 }
+
+// A dorkos.ai install command can carry an anonymous install ref (DOR-2862).
+// Record it once, locally, before any early exit so `install.sh` can hand it
+// over with `--version`. Recording sends nothing: only the usage channel, once
+// a person has turned it on, ever reads it back (`services/core/install-funnel`).
+if (values.ref) recordInstallRef(DORK_HOME, values.ref);
 
 if (values.help) {
   console.log(`
@@ -543,8 +501,6 @@ Commands:
   config edit          Open in $EDITOR
   config path          Print config file location
   config validate      Check config validity
-  config acknowledge-autonomy
-                       Read what Full autonomy means, and confirm it
   init                 Interactive setup wizard
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package
@@ -591,6 +547,7 @@ Options:
       --debug-trace        Write a local trace file for bug reports (never sent anywhere)
   -l, --log-level <level>  Log level (fatal|error|warn|info|debug|trace)
       --post-install-check  Verify installation and exit
+      --ref <ref>          Install tag from dorkos.ai; kept on this computer (see dorkos.ai/telemetry)
   -h, --help             Show this help message
   -v, --version          Show version number
 
@@ -759,12 +716,10 @@ if (cliPort) {
 process.env.NODE_ENV = 'production';
 process.env.CLIENT_DIST_PATH = path.join(__dirname, '../client');
 
-// Tunnel: CLI flag > env var > config
-if (values.tunnel) {
-  process.env.TUNNEL_ENABLED = 'true';
-} else if (!process.env.TUNNEL_ENABLED && cfgMgr.getDot('tunnel.enabled')) {
-  process.env.TUNNEL_ENABLED = 'true';
-}
+// Tunnel: CLI flag > env var > config. The saved `tunnel.enabled` is NOT copied
+// into the environment: the server reads it itself, below a saved DorkOS remote
+// access choice, and an env var would wrongly outrank that (DOR-2086).
+if (values.tunnel) process.env.TUNNEL_ENABLED = 'true';
 
 // Tunnel config values as fallback (config < env)
 const tunnelAuthtoken = cfgMgr.getDot('tunnel.authtoken') as string | null;
@@ -780,11 +735,13 @@ if (tunnelDomain && !process.env.TUNNEL_DOMAIN) {
   process.env.TUNNEL_DOMAIN = tunnelDomain;
 }
 
-// Tasks scheduler: CLI flag > env var > config
+// Tasks scheduler: only an explicit `--tasks` / `--no-tasks` sets the variable.
+// The server reads `scheduler.enabled` itself and lets DORKOS_TASKS_ENABLED
+// overrule it only when the variable is present. Copying the setting into it
+// made every CLI install look env-locked, so the Scheduled runs switch in
+// Settings could never act (DOR-2516, the same bug DOR-2507 fixed for relay).
 if (values.tasks !== undefined) {
   process.env.DORKOS_TASKS_ENABLED = values.tasks ? 'true' : 'false';
-} else if (!process.env.DORKOS_TASKS_ENABLED && cfgMgr.getDot('scheduler.enabled')) {
-  process.env.DORKOS_TASKS_ENABLED = 'true';
 }
 
 // Debug tracing: CLI flag > env var (no config key — a purely local, explicit

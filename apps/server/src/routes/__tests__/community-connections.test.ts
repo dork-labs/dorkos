@@ -1,9 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { once } from 'node:events';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
@@ -23,6 +22,10 @@ vi.mock('../../services/rooms/index.js', () => ({
 vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: owner.id }),
 }));
+// The `/api` chain these routes run behind reads login and the host allowlist from config.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined) },
+}));
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
@@ -35,9 +38,11 @@ const attentionMock = vi.hoisted(() => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: attentionMock.adapter,
   getRemotePairingService: vi.fn(),
+  getRemoteWakePolicy: vi.fn(),
 }));
 
-import { createCommunityConnectionsRouter } from '../community-connections.js';
+import { createCommunityConnectionsRoutes } from '../community-connections.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import {
   RemoteCommunityRateLimitedError,
@@ -49,13 +54,17 @@ import {
 } from '../../services/communities/remote/pairing-service.js';
 import { RemoteConnectionAuthorizationError } from '../../services/communities/remote/connection-store.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
+import { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
+import { RemoteAnswerIn } from '../../services/communities/remote/wake/answer-in.js';
+import { AnswerInStore } from '../../services/communities/remote/wake/answer-in-store.js';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { z } from 'zod';
 import {
   CommunityAttentionCache,
   COMMUNITY_ATTENTION_BUDGET_MS,
 } from '../../services/communities/remote/community-attention-cache.js';
 
 let directory: string;
-let app: ReturnType<typeof express>;
 let server: Server;
 const ref = CommunityRefSchema.parse('remote_owner_a');
 const navigation = {
@@ -86,13 +95,15 @@ beforeAll(async () => {
     },
     'private-verifier'
   );
-  app = express();
-  app.use(express.json());
-  app.use(
-    '/api/community-connections',
-    createCommunityConnectionsRouter(new RemoteCommunityPairingService(store), navigation as never)
-  );
-  server = app.listen(0, '127.0.0.1');
+  server = createServer(
+    honoGroupListener({
+      path: '/api/community-connections',
+      routes: createCommunityConnectionsRoutes(
+        new RemoteCommunityPairingService(store),
+        navigation as never
+      ),
+    })
+  ).listen(0, '127.0.0.1');
   await once(server, 'listening');
 });
 afterAll(async () => {
@@ -112,13 +123,12 @@ describe('local connection route authority and public projection', () => {
     vi.spyOn(selectionService, 'start').mockRejectedValue(
       new RemoteCommunitySelectionRequiredError()
     );
-    const selectionApp = express();
-    selectionApp.use(express.json());
-    selectionApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(selectionService)
-    );
-    const selectionServer = selectionApp.listen(0, '127.0.0.1');
+    const selectionServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(selectionService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(selectionServer, 'listening');
     try {
       const response = await request(selectionServer)
@@ -140,10 +150,12 @@ describe('local connection route authority and public projection', () => {
     const busyDirectory = await mkdtemp(join(tmpdir(), 'busy-'));
     const busyService = new RemoteCommunityPairingService(new RemoteConnectionStore(busyDirectory));
     vi.spyOn(busyService, 'poll').mockRejectedValue(new RemotePairingBusyError());
-    const busyApp = express();
-    busyApp.use(express.json());
-    busyApp.use('/api/community-connections', createCommunityConnectionsRouter(busyService));
-    const busyServer = busyApp.listen(0, '127.0.0.1');
+    const busyServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(busyService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(busyServer, 'listening');
     try {
       const response = await request(busyServer)
@@ -166,10 +178,12 @@ describe('local connection route authority and public projection', () => {
       new RemoteConnectionStore(upgradeDirectory)
     );
     vi.spyOn(upgradeService, 'start').mockRejectedValue(new RemoteCommunityUpgradeRequiredError());
-    const upgradeApp = express();
-    upgradeApp.use(express.json());
-    upgradeApp.use('/api/community-connections', createCommunityConnectionsRouter(upgradeService));
-    const upgradeServer = upgradeApp.listen(0, '127.0.0.1');
+    const upgradeServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(upgradeService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(upgradeServer, 'listening');
     try {
       const response = await request(upgradeServer)
@@ -193,10 +207,12 @@ describe('local connection route authority and public projection', () => {
     const nameDirectory = await mkdtemp(join(tmpdir(), 'community-connections-name-'));
     const nameService = new RemoteCommunityPairingService(new RemoteConnectionStore(nameDirectory));
     vi.spyOn(nameService, 'start').mockRejectedValue(new RemoteCommunityNameNotFoundError());
-    const nameApp = express();
-    nameApp.use(express.json());
-    nameApp.use('/api/community-connections', createCommunityConnectionsRouter(nameService));
-    const nameServer = nameApp.listen(0, '127.0.0.1');
+    const nameServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(nameService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(nameServer, 'listening');
     try {
       const response = await request(nameServer)
@@ -223,10 +239,12 @@ describe('local connection route authority and public projection', () => {
     vi.spyOn(limitedService, 'start')
       .mockRejectedValueOnce(new RemoteCommunityRateLimitedError(17))
       .mockRejectedValueOnce(new RemoteCommunityRateLimitedError());
-    const limitedApp = express();
-    limitedApp.use(express.json());
-    limitedApp.use('/api/community-connections', createCommunityConnectionsRouter(limitedService));
-    const limitedServer = limitedApp.listen(0, '127.0.0.1');
+    const limitedServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(limitedService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(limitedServer, 'listening');
     try {
       const response = await request(limitedServer)
@@ -267,13 +285,12 @@ describe('local connection route authority and public projection', () => {
     const reservedService = new RemoteCommunityPairingService(
       new RemoteConnectionStore(reservedDirectory)
     );
-    const reservedApp = express();
-    reservedApp.use(express.json());
-    reservedApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(reservedService)
-    );
-    const reservedServer = reservedApp.listen(0, '127.0.0.1');
+    const reservedServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(reservedService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(reservedServer, 'listening');
     try {
       const response = await request(reservedServer)
@@ -347,9 +364,12 @@ describe('local connection route authority and public projection', () => {
     );
     const agents = [{ localAgentId: 'scout-local', displayName: 'Scout' }];
     const read = vi.spyOn(impactService, 'disconnectImpact').mockResolvedValue({ agents });
-    const impactApp = express();
-    impactApp.use('/api/community-connections', createCommunityConnectionsRouter(impactService));
-    const impactServer = impactApp.listen(0, '127.0.0.1');
+    const impactServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(impactService),
+      })
+    ).listen(0, '127.0.0.1');
     await once(impactServer, 'listening');
     const answered = await request(impactServer)
       .get(`/api/community-connections/${ref}/disconnect-impact`)
@@ -490,9 +510,12 @@ describe('owner-scoped attention projection', () => {
     const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
     vi.spyOn(service, 'list').mockResolvedValue(listed);
     vi.spyOn(service, 'status').mockResolvedValue(connection);
-    const testApp = express();
-    testApp.use('/api/community-connections', createCommunityConnectionsRouter(service));
-    const testServer = testApp.listen(0, '127.0.0.1');
+    const testServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(service),
+      })
+    ).listen(0, '127.0.0.1');
     await once(testServer, 'listening');
     try {
       return await request(testServer).get(path).set('x-test-author', 'author-a');
@@ -640,16 +663,16 @@ describe('attention within a budget, with last confirmed counts as the fallback'
       listed = listed.filter((item) => item.ref !== target);
       return { remoteRevoked: true, agentsNotRemoved: [] };
     });
-    const testApp = express();
-    testApp.use(
-      '/api/community-connections',
-      createCommunityConnectionsRouter(
-        service,
-        navigation as never,
-        new CommunityAttentionCache(budgetMs)
-      )
-    );
-    testServer = testApp.listen(0, '127.0.0.1');
+    testServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          service,
+          navigation as never,
+          new CommunityAttentionCache(budgetMs)
+        ),
+      })
+    ).listen(0, '127.0.0.1');
     await once(testServer, 'listening');
   }
 
@@ -960,5 +983,225 @@ describe('attention within a budget, with last confirmed counts as the fallback'
       unreadCount: 4,
       mentionCount: 1,
     });
+  });
+});
+
+// Spec `official-community-space` D9. Purpose: who may wake an agent in a space is the owner's
+// call alone. Each case fails if the route lets an agent's identity, another local person, or
+// a malformed body change it, or if the setting ever becomes a config key an agent's
+// `config_patch` could reach.
+describe('who may wake agents in a space is the owner’s call', () => {
+  let wakeDirectory: string;
+  let wakeServer: Server;
+  let policy: RemoteWakePolicy;
+  const wakeRef = CommunityRefSchema.parse('remote_wake_a');
+
+  beforeAll(async () => {
+    wakeDirectory = await mkdtemp(join(tmpdir(), 'community-wake-'));
+    const store = new RemoteConnectionStore(wakeDirectory);
+    await store.addPending(
+      {
+        ref: wakeRef,
+        ownerKey: 'author-a',
+        remoteCommunityId: 'remote-community',
+        label: 'Makers',
+        pinnedOrigin: 'https://community.example',
+        pairingId: 'pairing-wake',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'wake-verifier'
+    );
+    await store.complete(wakeRef, 'author-a', 'remote-owner', 'token', {
+      state: 'verified',
+      effective: { read: true, post: true, enrollAgent: true, stream: true },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-10-06T00:00:00.000Z',
+      },
+    });
+    policy = new RemoteWakePolicy(store);
+    wakeServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          new RemoteCommunityPairingService(store),
+          navigation as never,
+          undefined,
+          undefined,
+          undefined,
+          policy
+        ),
+      })
+    ).listen(0, '127.0.0.1');
+    await once(wakeServer, 'listening');
+  });
+  afterAll(async () => {
+    wakeServer.closeAllConnections();
+    await new Promise<void>((resolve) => wakeServer.close(() => resolve()));
+    await rm(wakeDirectory, { recursive: true, force: true });
+  });
+
+  const path = `/api/community-connections/${wakeRef}/wake-agents-from`;
+
+  it('lets the owner read and change it', async () => {
+    const before = await request(wakeServer).get(path).set('x-test-author', 'author-a');
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual({ wakeAgentsFrom: 'members' });
+
+    const changed = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ wakeAgentsFrom: 'me' });
+    expect(changed.status).toBe(200);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses an agent, and the setting stays where the owner put it', async () => {
+    await policy.set(wakeRef, 'author-a', 'me');
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-dorkos-agent', 'agent-token')
+      .send({ wakeAgentsFrom: 'members' });
+    expect(refused.status).toBe(403);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses anyone on this machine who is not the owner', async () => {
+    await policy.set(wakeRef, 'author-a', 'me');
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-b')
+      .send({ wakeAgentsFrom: 'members' });
+    expect(refused.status).toBe(403);
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+  });
+
+  it('refuses a value that is neither choice', async () => {
+    const refused = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ wakeAgentsFrom: 'everyone' });
+    expect(refused.status).toBe(400);
+  });
+
+  it('is no config key, so no agent’s config_patch can reach it', () => {
+    const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
+    expect(schema).not.toContain('wakeAgentsFrom');
+  });
+});
+
+// Spec `official-community-space` D11. Purpose: where any person's post wakes an agent without
+// a mention is the owner's call alone. Each case fails if the route lets an agent's identity,
+// another local person, or a malformed body change it, or if the setting ever becomes a config
+// key an agent's `config_patch` could reach.
+describe('where agents answer without a mention is the owner’s call', () => {
+  let answerDirectory: string;
+  let answerServer: Server;
+  let policy: RemoteWakePolicy;
+  const answerRef = CommunityRefSchema.parse('remote_answer_a');
+
+  beforeAll(async () => {
+    answerDirectory = await mkdtemp(join(tmpdir(), 'community-answer-in-'));
+    const store = new RemoteConnectionStore(answerDirectory);
+    await store.addPending(
+      {
+        ref: answerRef,
+        ownerKey: 'author-a',
+        remoteCommunityId: 'remote-community',
+        label: 'DorkOS',
+        pinnedOrigin: 'https://community.example',
+        pairingId: 'pairing-answer',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+      'answer-verifier'
+    );
+    await store.complete(answerRef, 'author-a', 'remote-owner', 'token', {
+      state: 'verified',
+      effective: { read: true, post: true, enrollAgent: true, stream: true },
+      lastKnown: {
+        lifecycle: 'active',
+        capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+        verifiedAt: '2026-10-06T00:00:00.000Z',
+      },
+    });
+    const answerIn = new RemoteAnswerIn(new AnswerInStore(answerDirectory, store), store);
+    policy = new RemoteWakePolicy(store, [], undefined, answerIn);
+    answerServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(
+          new RemoteCommunityPairingService(store),
+          navigation as never,
+          undefined,
+          undefined,
+          undefined,
+          policy
+        ),
+      })
+    ).listen(0, '127.0.0.1');
+    await once(answerServer, 'listening');
+  });
+  afterAll(async () => {
+    answerServer.closeAllConnections();
+    await new Promise<void>((resolve) => answerServer.close(() => resolve()));
+    await rm(answerDirectory, { recursive: true, force: true });
+  });
+
+  const path = `/api/community-connections/${answerRef}/answer-in`;
+
+  it('lets the owner read and change it, and the live answer follows at once', async () => {
+    const before = await request(answerServer).get(path).set('x-test-author', 'author-a');
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual({ answerIn: [] });
+
+    const changed = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: ['#Welcome', 'help'] });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toEqual({ answerIn: ['welcome', 'help'] });
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['welcome', 'help']);
+    expect(policy.answersIn(answerRef, 'author-a', 'help')).toBe(true);
+  });
+
+  it('refuses an agent, and the list stays where the owner put it', async () => {
+    await policy.setAnswerIn(answerRef, 'author-a', ['help']);
+    const refused = await request(answerServer)
+      .put(path)
+      .set('x-dorkos-agent', 'agent-token')
+      .send({ answerIn: ['help', 'general'] });
+    expect(refused.status).toBe(403);
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['help']);
+    const read = await request(answerServer).get(path).set('x-dorkos-agent', 'agent-token');
+    expect(read.status).toBe(403);
+  });
+
+  it('refuses anyone on this machine who is not the owner', async () => {
+    await policy.setAnswerIn(answerRef, 'author-a', ['help']);
+    const refused = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-b')
+      .send({ answerIn: ['general'] });
+    expect(refused.status).toBe(403);
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['help']);
+  });
+
+  it('refuses a list that is not channel names, and a connection that is not there', async () => {
+    const malformed = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: 'help' });
+    expect(malformed.status).toBe(400);
+    const missing = await request(answerServer)
+      .put('/api/community-connections/remote_missing/answer-in')
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: ['help'] });
+    expect(missing.status).toBe(404);
+  });
+
+  it('is no config key, so no agent’s config_patch can reach it', () => {
+    const schema = JSON.stringify(z.toJSONSchema(UserConfigSchema, { unrepresentable: 'any' }));
+    expect(schema).not.toContain('answerIn');
   });
 });

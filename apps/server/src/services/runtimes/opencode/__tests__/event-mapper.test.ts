@@ -13,6 +13,7 @@ import {
   type OpenCodeEventContext,
   type OpenCodeWireEvent,
 } from '../events/event-mapper.js';
+import { OpenCodeStreamLostError } from '../events/global-event-hub.js';
 import {
   COMPLETED_AT,
   CREATED_AT,
@@ -1404,6 +1405,18 @@ describe('mapOpenCodeTurn', () => {
       category: 'auth_error',
       details: vendorText,
     });
+  });
+
+  it('keeps the sign-in copy when a lost stream was really a dead sign-in (DOR-2717)', async () => {
+    // The plain "stopped responding" notice is for a lost sidecar only; a
+    // sign-in failure keeps the copy that says how to get back in.
+    const vendorText = 'AuthenticationError: 401 invalid x-api-key';
+    async function* crashing(): AsyncGenerator<OpenCodeWireEvent> {
+      yield statusEvent(OC, { type: 'busy' });
+      throw new OpenCodeStreamLostError(new Error(vendorText));
+    }
+    const events = await drain(crashing());
+    expect(events[0]!.data).toMatchObject({ category: 'auth_error', details: vendorText });
   });
 
   it('ends with a plain done when the subscription is aborted (AbortError)', async () => {

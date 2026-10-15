@@ -14,9 +14,10 @@ import { ClaudeConnectorTurnContext } from '../../connector-turn-context.js';
 import { createDorkOsToolServer } from '../index.js';
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { McpToolDeps } from '../types.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 
-vi.mock('../../../../../env.js', () => ({ env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined } }));
+vi.mock('../../../../../env.js', () => ({
+  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined, DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434' },
+}));
 vi.mock('../../../../../lib/version.js', () => ({
   SERVER_VERSION: '0.0.0-test',
   IS_DEV_BUILD: false,
@@ -74,7 +75,6 @@ async function connect(
   const deps: McpToolDeps = {
     defaultCwd: f.identity.agentPath,
     dorkHome: '/tmp/dor-2819',
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: async () => [],
     } as unknown as McpToolDeps['transcriptReader'],

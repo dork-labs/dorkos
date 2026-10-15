@@ -15,7 +15,7 @@ import {
  *
  * Every other spec in this suite loads the app from a Vite dev server, which
  * serves its own shell with NO `Content-Security-Policy` header. The shipped
- * policy (`SHELL_CSP` in `apps/server/src/app.ts`) goes out only with the built
+ * policy (`SHELL_CSP` in `apps/server/src/http/client-files.ts`) goes out only with the built
  * shell an `NODE_ENV=production` server serves — so until this file existed, a
  * directive that broke a real browser surface was invisible to the whole browser
  * suite and to CI. That is not hypothetical: DOR-560 shipped a `connect-src`

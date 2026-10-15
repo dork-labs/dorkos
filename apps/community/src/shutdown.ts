@@ -11,6 +11,8 @@ export interface StoppableResources {
   };
   /** The Postgres pool; `end` may only ever be called once. */
   pool: { end(): Promise<void> };
+  /** The live-notice listener's connection, closed after the last stream and before the pool. */
+  live?: { stop(): Promise<void> };
   /** Background sweeps to cancel before anything else closes. */
   timers?: ReadonlyArray<ReturnType<typeof setInterval>>;
   /** How long open connections get before they are cut. Defaults to {@link STOP_GRACE_MS}. */
@@ -34,6 +36,7 @@ export interface StoppableResources {
 export function createStop({
   server,
   pool,
+  live,
   timers = [],
   graceMs = STOP_GRACE_MS,
 }: StoppableResources): () => Promise<void> {
@@ -54,6 +57,7 @@ export function createStop({
       } catch (error) {
         closeError = error;
       }
+      await live?.stop().catch(() => undefined);
       await pool.end();
       if (closeError) throw closeError;
     })();

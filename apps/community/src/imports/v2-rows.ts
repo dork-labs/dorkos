@@ -3,6 +3,8 @@ import {
   CommunityExportAgentRowSchema,
   CommunityExportAttachmentRowSchema,
   CommunityExportAuditEventRowSchema,
+  CommunityExportBanRowSchema,
+  CommunityExportReportRowSchema,
   CommunityExportChannelMemberRowSchema,
   CommunityExportChannelRowSchema,
   CommunityExportEntryRowSchema,
@@ -35,6 +37,8 @@ export type V2Row = {
   auditEvents: z.infer<typeof CommunityExportAuditEventRowSchema>;
   entries: z.infer<typeof CommunityExportEntryRowSchema>;
   attachments: z.infer<typeof CommunityExportAttachmentRowSchema>;
+  bans: z.infer<typeof CommunityExportBanRowSchema>;
+  reports: z.infer<typeof CommunityExportReportRowSchema>;
 };
 
 const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
@@ -46,6 +50,8 @@ const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
   auditEvents: CommunityExportAuditEventRowSchema,
   entries: CommunityExportEntryRowSchema,
   attachments: CommunityExportAttachmentRowSchema,
+  bans: CommunityExportBanRowSchema,
+  reports: CommunityExportReportRowSchema,
 };
 
 /**
@@ -144,9 +150,29 @@ export class V2RowRules {
       case 'agentChannelMembers':
         this.notFuture((value as V2Row['channelMembers']).joined_at);
         return;
+      case 'bans': {
+        const ban = value as V2Row['bans'];
+        this.notFuture(ban.created_at, ban.lifted_at);
+        invalid(ban.lifted_at !== null && Date.parse(ban.lifted_at) < Date.parse(ban.created_at));
+        return;
+      }
+      case 'reports': {
+        const report = value as V2Row['reports'];
+        this.notFuture(report.created_at, report.resolved_at);
+        invalid((report.source === 'check') !== (report.check_name !== null));
+        invalid(report.source === 'check' && report.reporter_member_id !== null);
+        invalid((report.status === 'open') !== (report.resolved_at === null));
+        invalid((report.status === 'actioned') !== (report.action !== null));
+        return;
+      }
       case 'auditEvents': {
         const event = value as V2Row['auditEvents'];
         invalid(event.community_id !== this.manifest.community.id);
+        // A check's record belongs on a `decision.*` row about one message, as 0036 requires.
+        invalid(
+          event.decision !== undefined &&
+            (!event.action.startsWith('decision.') || event.subject_id === null)
+        );
         this.notFuture(event.created_at);
         return;
       }
@@ -211,6 +237,8 @@ export class V2Tally {
     auditEvents: 0,
     entries: 0,
     attachments: 0,
+    bans: 0,
+    reports: 0,
   };
   shortened = 0;
   attachmentBytes = 0;
@@ -246,7 +274,8 @@ export class V2Tally {
   /** After every row: each count matches the manifest, and there was exactly one owner. */
   finish(): void {
     for (const [key, count] of Object.entries(this.counts) as [V2Collection, number][])
-      invalid(count !== this.manifest.counts[key]);
+      // An archive from before bans existed lists none.
+      invalid(count !== (this.manifest.counts[key] ?? 0));
     invalid(this.owners !== 1);
   }
 }

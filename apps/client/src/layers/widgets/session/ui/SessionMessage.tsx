@@ -25,14 +25,19 @@
  *
  * @module widgets/session/ui/SessionMessage
  */
-import { useCallback, useId, useRef } from 'react';
+import { memo, useCallback, useId, useRef } from 'react';
 
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { Message, formatTime } from '@/layers/features/conversation';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
-import { MessageProvider, type InteractiveToolHandle } from '@/layers/features/chat';
+import {
+  ChatFromMark,
+  MessageProvider,
+  RoomPostMark,
+  type InteractiveToolHandle,
+} from '@/layers/features/chat';
 import { renderSessionBody } from './render-session-body';
 
 interface SessionMessageProps {
@@ -102,8 +107,45 @@ interface SessionMessageProps {
   feedPosition?: FeedPosition;
 }
 
-/** One message in a session transcript. */
-export function SessionMessage({
+/**
+ * Whether two sets of row props draw the same row (DOR-2895).
+ *
+ * Identity for everything except three small values the transcript rebuilds as
+ * fresh objects on every render (its grouping, author and feed position), which
+ * are compared by what they say. Handlers arrive stable from the transcript.
+ *
+ * @internal Exported for tests.
+ */
+export function sessionMessagePropsEqual(a: SessionMessageProps, b: SessionMessageProps): boolean {
+  for (const key of Object.keys({ ...a, ...b }) as (keyof SessionMessageProps)[]) {
+    if (key === 'grouping' || key === 'author' || key === 'feedPosition') continue;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return (
+    a.grouping.position === b.grouping.position &&
+    shallowEqual(a.author, b.author) &&
+    shallowEqual(a.feedPosition, b.feedPosition)
+  );
+}
+
+/** Same keys, same values, one level deep. */
+function shallowEqual<T extends object>(a: T | undefined, b: T | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a) as (keyof T)[];
+  return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+/**
+ * One message in a session's transcript.
+ *
+ * Memoized: while a reply streams, only the rows whose props changed (the
+ * streaming one, as a rule) re-render, rather than every visible row
+ * re-parsing its markdown on every word (DOR-2895).
+ */
+export const SessionMessage = memo(SessionMessageRow, sessionMessagePropsEqual);
+
+function SessionMessageRow({
   message,
   grouping,
   author,
@@ -140,8 +182,15 @@ export function SessionMessage({
   // result (often a wide ANSI table), so it takes the assistant's lighter
   // typography rather than reading as something the human typed (DOR-126).
   const isUserPrompt = isUser && message.messageType !== 'local_command_output';
+  // Words another chat sent: the author line says which chat (spec
+  // `spin-off-chats` §6), and they are not this person's to run elsewhere.
+  const fromChat = isUser ? message.chatMessages?.[0] : undefined;
+  // A room post this chat answered: the author line says which room (DOR-2113).
+  const fromRoom = isUser && fromChat === undefined ? message.roomMessage : undefined;
   const showRunWith =
     isUserPrompt &&
+    fromChat === undefined &&
+    (fromRoom === undefined || fromRoom.author?.you === true) &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
@@ -188,7 +237,21 @@ export function SessionMessage({
       >
         <Message.Gutter author={author} at={at} />
         <Message.Body>
-          <Message.Author id={headerId} author={author} at={at} />
+          <Message.Author
+            id={headerId}
+            author={author}
+            at={at}
+            {...(fromChat
+              ? {
+                  mark: <ChatFromMark stamp={fromChat} />,
+                  // The sender's name, the chat it came from and the time
+                  // wrap on a narrow screen rather than truncating to nothing.
+                  className: 'flex-wrap gap-y-0.5',
+                }
+              : fromRoom
+                ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
+                : {})}
+          />
           <Message.Content id={contentId}>
             {renderSessionBody(message, { rowId: message.id, isStreaming })}
           </Message.Content>

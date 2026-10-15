@@ -6,16 +6,29 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // What the gap fill saw when it ran: whether the first token had arrived yet.
-const order = vi.hoisted(() => ({ steps: [] as string[], tokenArrived: false }));
+const order = vi.hoisted(() => ({
+  steps: [] as string[],
+  tokenArrived: false,
+  filled: [] as string[],
+  firstRun: false,
+}));
 vi.mock('../credits-defaults.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../credits-defaults.js')>()),
   fillCreditsGaps: vi.fn(async () => {
     order.steps.push(order.tokenArrived ? 'fill after the token' : 'fill before the token');
-    return [];
+    return order.filled;
+  }),
+  recordFirstRunCreditsChoice: vi.fn(() => {
+    order.steps.push('record the first-run pick');
+    return order.firstRun;
   }),
 }));
 vi.mock('../../runtime-registry.js', () => ({
-  runtimeRegistry: { getNativeSessionCwd: vi.fn(() => null), listRuntimes: () => [] },
+  runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
+    getNativeSessionCwd: vi.fn(() => null),
+    listRuntimes: () => [],
+  },
 }));
 
 import { fillCreditsGapsOnNewLink } from '../credits-runtimes.js';
@@ -29,13 +42,26 @@ describe('filling the gaps on a new link', () => {
       order.tokenArrived = true;
       return true;
     });
-    expect(order.steps).toEqual(['fill after the token']);
+    expect(order.steps).toEqual(['fill after the token', 'record the first-run pick']);
   });
 
   it('still fills after a wait that gave up, on what is known then (Claude Code only)', async () => {
     order.steps = [];
     order.tokenArrived = false;
     await fillCreditsGapsOnNewLink('acct-1', async () => false);
-    expect(order.steps).toEqual(['fill before the token']);
+    expect(order.steps).toEqual(['fill before the token', 'record the first-run pick']);
+  });
+
+  it('records the first run’s DorkOS pick after the fill, and does not report it as DorkOS’s', async () => {
+    order.steps = [];
+    order.filled = ['claude-code', 'doe'];
+    order.firstRun = true;
+    expect(await fillCreditsGapsOnNewLink('acct-1', async () => true)).toEqual(['claude-code']);
+    order.firstRun = false;
+    expect(await fillCreditsGapsOnNewLink('acct-1', async () => true)).toEqual([
+      'claude-code',
+      'doe',
+    ]);
+    order.filled = [];
   });
 });

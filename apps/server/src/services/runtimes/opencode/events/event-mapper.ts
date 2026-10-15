@@ -58,6 +58,7 @@
  */
 import type { Event, GlobalEvent } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { RuntimeErrorCopy } from '@dorkos/shared/runtime-error-classification';
 import {
   mapPartDelta,
   mapPartSnapshot,
@@ -89,6 +90,7 @@ import {
   mapSubagentChildToolPart,
   subagentPromptTitle,
 } from './subagent-mapper.js';
+import { OpenCodeStreamLostError } from './global-event-hub.js';
 
 /**
  * Everything the wire can carry: the SDK union, minus the two permission
@@ -334,6 +336,29 @@ export function mapOpenCodeEvent(
 }
 
 /**
+ * What a person reads when the sidecar is lost mid-reply (DOR-2717). The
+ * sidecar restarts on its own, but the reply it was writing is gone and
+ * nothing wakes the chat later, so the notice says what to do next.
+ */
+export const OPENCODE_STREAM_LOST_MESSAGE =
+  'OpenCode stopped responding, so this reply ended early. Send your message again.';
+
+/**
+ * The error copy for a stream that threw. A lost sidecar gets the plain notice,
+ * with the stream's own words kept as details. A sign-in or model failure keeps
+ * its own copy, because that copy says how to fix it.
+ */
+function streamErrorCopy(err: unknown): RuntimeErrorCopy {
+  const copy = openCodeErrorCopy(err instanceof Error ? err.message : String(err), 'stream_error');
+  if (!(err instanceof OpenCodeStreamLostError) || copy.category !== 'execution_error') return copy;
+  return {
+    message: OPENCODE_STREAM_LOST_MESSAGE,
+    category: 'execution_error',
+    details: err.message,
+  };
+}
+
+/**
  * Map a whole demuxed per-session event stream, guaranteeing the conformance
  * invariant that exactly one terminal `done` ends the StreamEvent stream:
  *
@@ -341,8 +366,8 @@ export function mapOpenCodeEvent(
  *   closing any subagent the wire left open first ({@link closeOpenSubagents});
  * - an AbortError (subscription torn down mid-turn) ends the turn with a
  *   plain `done` — user-initiated, not an error;
- * - any other thrown error (e.g. the sidecar dying) becomes a typed `error`
- *   followed by `done`;
+ * - any other thrown error becomes a typed `error` followed by `done`; a lost
+ *   sidecar ({@link OpenCodeStreamLostError}) reads as a plain notice;
  * - a stream that ends without `session.idle` still gets its trailing `done`
  *   so consumers can key turn teardown on it.
  *
@@ -369,10 +394,7 @@ export async function* mapOpenCodeTurn(
     if (!isAbortError(err)) {
       yield {
         type: 'error',
-        data: {
-          ...openCodeErrorCopy(err instanceof Error ? err.message : String(err), 'stream_error'),
-          code: 'stream_error',
-        },
+        data: { ...streamErrorCopy(err), code: 'stream_error' },
       };
     }
   }

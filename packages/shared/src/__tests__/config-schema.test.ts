@@ -61,8 +61,9 @@ describe('UserConfigSchema', () => {
     expect(result).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,
@@ -88,10 +89,9 @@ describe('UserConfigSchema', () => {
         },
         statusBar: { pins: [] },
         composer: { richText: true },
+        panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
-        fullPowerDecidedAt: null,
-        fullPowerChoice: null,
+        trustNoticeSeenAt: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -113,6 +113,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -123,13 +124,11 @@ describe('UserConfigSchema', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
@@ -153,6 +152,9 @@ describe('UserConfigSchema', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {
@@ -164,6 +166,11 @@ describe('UserConfigSchema', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -213,8 +220,8 @@ describe('UserConfigSchema', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        defaultTrustStop: null,
-        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        defaultTrustStop: 'autonomy',
+        doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
@@ -249,9 +256,10 @@ describe('UserConfigSchema', () => {
       },
       auth: { enabled: false },
       permissions: {
-        preset: null,
+        preset: 'trusted',
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
+        trustedStoresAppliedAt: null,
       },
       cloud: {
         instanceToken: null,
@@ -259,6 +267,18 @@ describe('UserConfigSchema', () => {
         linkedAccountLabel: null,
         previousLinkProof: null,
         credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+        remote: {
+          mode: 'off',
+          enrolmentId: null,
+          consentVersion: null,
+          instanceId: null,
+          credentialRef: null,
+          credentialId: null,
+          fingerprint: null,
+          hosts: [],
+          edgeProofRef: null,
+          edgeProofHeader: null,
+        },
       },
       connectors: { rawMcpServers: [] },
       providers: {},
@@ -457,8 +477,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null, open: true },
+      computers: { enabled: false },
       browser: { enabled: false },
-      spaces: { enabled: false },
+      spaces: { enabled: false, official: { url: '' } },
       tunnel: {
         enabled: false,
         domain: null,
@@ -484,10 +505,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         },
         statusBar: { pins: [] },
         composer: { richText: true },
+        panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
-        autonomyAcknowledgedAt: null,
-        fullPowerDecidedAt: null,
-        fullPowerChoice: null,
+        trustNoticeSeenAt: null,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
       // every-turn chime ships OFF, which is the one that changed (DOR-1385).
@@ -509,6 +529,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
+      heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
       mesh: { scanRoots: [] },
       rooms: {
@@ -519,13 +540,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         maxAutomaticTurnsTotalPerHour: 5000,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         collectDebounceMs: 500,
         collectMaxEntries: 20,
         responseGate: 'routing',
-        maxPostsPerTurn: 3,
-        maxCanvasOpsPerTurn: 3,
         maxConcurrentTurnsPerAgent: 3,
         repo: {
           enabled: true,
@@ -549,6 +568,9 @@ describe('USER_CONFIG_DEFAULTS', () => {
         dismissedAt: null,
         completedAt: null,
         runtimeDefaultSetAt: null,
+        firstRunPath: null,
+        welcomeEntryId: null,
+        priorRuntime: null,
       },
       tours: { seen: [], declined: [] },
       profile: {
@@ -560,6 +582,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         displayNameSource: null,
         rolePromptDismissedAt: null,
         identityPromptDismissedAt: null,
+        // Not told yet: the app seeds the zone from the browser, and null hours
+        // read as Monday to Friday, 9 to 5 (spec `heartbeats` §3.5).
+        timezone: null,
+        workingHours: null,
+        away: null,
       },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -609,8 +636,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        defaultTrustStop: null,
-        doe: { enabled: true, inference: null, defaultTrustStop: null },
+        defaultTrustStop: 'autonomy',
+        doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
           defaultAccount: null,
@@ -645,9 +672,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       auth: { enabled: false },
       permissions: {
-        preset: null,
+        preset: 'trusted',
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
+        trustedStoresAppliedAt: null,
       },
       cloud: {
         instanceToken: null,
@@ -655,6 +683,18 @@ describe('USER_CONFIG_DEFAULTS', () => {
         linkedAccountLabel: null,
         previousLinkProof: null,
         credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+        remote: {
+          mode: 'off',
+          enrolmentId: null,
+          consentVersion: null,
+          instanceId: null,
+          credentialRef: null,
+          credentialId: null,
+          fingerprint: null,
+          hosts: [],
+          edgeProofRef: null,
+          edgeProofHeader: null,
+        },
       },
       connectors: { rawMcpServers: [] },
       providers: {},
@@ -817,18 +857,20 @@ describe('per-field and section-literal defaults agree', () => {
     ui: {},
     scheduler: {},
     keepAwake: {},
+    heartbeats: {},
     activity: {},
     runtimes: { claudeCode: {} },
   });
 
-  it('ui.fullPowerDecidedAt is null either way', () => {
-    expect(fromFactory.ui.fullPowerDecidedAt).toBeNull();
-    expect(fromFields.ui.fullPowerDecidedAt).toBeNull();
+  it('ui.trustNoticeSeenAt is null either way', () => {
+    expect(fromFactory.ui.trustNoticeSeenAt).toBeNull();
+    expect(fromFields.ui.trustNoticeSeenAt).toBeNull();
   });
 
-  it('ui.fullPowerChoice is null either way', () => {
-    expect(fromFactory.ui.fullPowerChoice).toBeNull();
-    expect(fromFields.ui.fullPowerChoice).toBeNull();
+  it('runtimes.defaultTrustStop is Full autonomy either way (ADR 261006-225605)', () => {
+    const fromEmpty = UserConfigSchema.parse({ version: 1, runtimes: {} });
+    expect(fromFactory.runtimes.defaultTrustStop).toBe('autonomy');
+    expect(fromEmpty.runtimes.defaultTrustStop).toBe('autonomy');
   });
 
   it('scheduler.maxConcurrentRuns is 4 either way', () => {
@@ -839,6 +881,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('keepAwake is on while agents work, and wake is off, either way', () => {
     expect(fromFactory.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
     expect(fromFields.keepAwake).toEqual({ whileAgentsWork: true, wakeForScheduledTasks: false });
+  });
+
+  it('heartbeats are on, and nobody has chosen credits for checks, either way', () => {
+    expect(fromFactory.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
+    expect(fromFields.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
   });
 
   it('activity keeps a year either way', () => {
@@ -880,38 +927,30 @@ describe('per-field and section-literal defaults agree', () => {
     ).toBe(false);
   });
 
-  it('accepts both answers at the power door and nothing else', () => {
+  it('drops the retired power-door answer, and takes an ISO timestamp for the notice', () => {
+    const ui = UserConfigSchema.parse({
+      version: 1,
+      ui: { fullPowerDecidedAt: '2026-08-22T10:00:00.000Z', fullPowerChoice: 'full' },
+    }).ui;
+    expect(ui).not.toHaveProperty('fullPowerDecidedAt');
+    expect(ui).not.toHaveProperty('fullPowerChoice');
     expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'supervised' } }).ui
-        .fullPowerChoice
-    ).toBe('supervised');
+      UserConfigSchema.parse({ version: 1, ui: { trustNoticeSeenAt: '2026-10-07T10:00:00.000Z' } })
+        .ui.trustNoticeSeenAt
+    ).toBe('2026-10-07T10:00:00.000Z');
     expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerChoice: 'full' } }).ui.fullPowerChoice
-    ).toBe('full');
-    expect(UserConfigSchema.safeParse({ version: 1, ui: { fullPowerChoice: 'yes' } }).success).toBe(
-      false
-    );
-  });
-
-  it('takes an ISO timestamp for the decision, and refuses a loose string', () => {
-    expect(
-      UserConfigSchema.parse({ version: 1, ui: { fullPowerDecidedAt: '2026-08-22T10:00:00.000Z' } })
-        .ui.fullPowerDecidedAt
-    ).toBe('2026-08-22T10:00:00.000Z');
-    expect(
-      UserConfigSchema.safeParse({ version: 1, ui: { fullPowerDecidedAt: 'yesterday' } }).success
+      UserConfigSchema.safeParse({ version: 1, ui: { trustNoticeSeenAt: 'yesterday' } }).success
     ).toBe(false);
   });
 
-  it('leaves every consent-gated default exactly where it was (invariant A1)', () => {
-    // The list a reviewer checks this diff against. Nothing in this program may
-    // move any of them; they are written by the door's accept, with a person
-    // looking at it.
-    expect(fromFactory.runtimes.defaultTrustStop).toBeNull();
+  it('leaves every per-runtime stop and the scan roots where they were', () => {
+    // The global stop moved to Full autonomy with ADR 261006-225605; each
+    // runtime's own stop stays `null`, so it follows the global one.
     expect(fromFactory.runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.codex.defaultTrustStop).toBeNull();
     expect(fromFactory.runtimes.opencode.defaultTrustStop).toBeNull();
-    expect(fromFactory.ui.autonomyAcknowledgedAt).toBeNull();
+    // The Full-autonomy acknowledgement is retired with its ritual (DOR-2739).
+    expect(fromFactory.ui).not.toHaveProperty('autonomyAcknowledgedAt');
     expect(fromFactory.mesh.scanRoots).toEqual([]);
   });
 });
@@ -1057,8 +1096,8 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      defaultTrustStop: null,
-      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      defaultTrustStop: 'autonomy',
+      doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
@@ -1098,8 +1137,8 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      defaultTrustStop: null,
-      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      defaultTrustStop: 'autonomy',
+      doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
         defaultAccount: null,
@@ -1250,9 +1289,10 @@ describe('UserConfigSchema runtimes.*.defaultModel / defaultEffort (spec executi
 });
 
 describe('UserConfigSchema defaultTrustStop (spec trust-dial, decision 6)', () => {
-  it('ships null everywhere, so every runtime keeps its own starting mode', () => {
+  it('ships Full autonomy globally and null per runtime, so every runtime follows it', () => {
+    // ADR 261006-225605: our own agents work without asking by default.
     const runtimes = UserConfigSchema.parse({ version: 1 }).runtimes;
-    expect(runtimes.defaultTrustStop).toBeNull();
+    expect(runtimes.defaultTrustStop).toBe('autonomy');
     expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
     expect(runtimes.codex.defaultTrustStop).toBeNull();
     expect(runtimes.opencode.defaultTrustStop).toBeNull();
@@ -2172,9 +2212,10 @@ describe('permissions section (spec agent-permissions D4)', () => {
   // feeds fresh installs, the other feeds a stored `permissions: {}` on upgrade.
   // They must agree, and this pins both.
   const EXPECTED = {
-    preset: null,
+    preset: 'trusted',
     defaults: { areas: {}, actions: {} },
     upgradeSweptVersion: null,
+    trustedStoresAppliedAt: null,
   };
 
   it('defaults the whole section from the object-literal default', () => {

@@ -51,7 +51,7 @@ import {
 import { RoomPanelDemo } from './rooms-showcase-helpers';
 
 /** The engaged window this page describes the `Engaged` rung with. */
-const WINDOW: EngagedWindow = { engagedWindowMinutes: 10, engagedWindowPosts: 5 };
+const WINDOW: EngagedWindow = { engagedWindowMinutes: 60, engagedWindowPosts: 15 };
 
 /** A wash of surface behind a demo that would otherwise sit on the dashed inset. */
 function Panel({ children }: { children: React.ReactNode }) {

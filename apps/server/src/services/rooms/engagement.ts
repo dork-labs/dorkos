@@ -37,6 +37,44 @@ export interface EngagementDeps {
   store: Pick<RoomStore, 'listRecentPostsByOthers'>;
 }
 
+/** What the conversation rule reads. One query, on the room log. */
+export interface ConversationDeps {
+  store: Pick<RoomStore, 'listRecentPostsInScope'>;
+}
+
+/**
+ * The window an AGENT's post is weighed against: the values that shipped
+ * before DOR-2823 raised the configured ones.
+ *
+ * The configured window is now the conversation a PERSON is having, and people
+ * expect an answer an hour later. Agents talking to each other are the traffic
+ * `meta/agent-etiquette.md` asks to stay quiet in speech, so their rule keeps
+ * the old bound rather than inheriting the longer one. Capped by the config in
+ * {@link agentPostWindow}, so turning the window off still turns it off.
+ */
+export const AGENT_POST_WINDOW: EngagedWindow = { minutes: 10, posts: 5 };
+
+/**
+ * The window an agent's post is weighed against: {@link AGENT_POST_WINDOW},
+ * never longer than the configured one.
+ *
+ * @param configured - The live `rooms.engagedWindow*` ceilings.
+ */
+export function agentPostWindow(configured: EngagedWindow): EngagedWindow {
+  return {
+    minutes: Math.min(configured.minutes, AGENT_POST_WINDOW.minutes),
+    posts: Math.min(configured.posts, AGENT_POST_WINDOW.posts),
+  };
+}
+
+/** Who a person's post is for by conversation, and how long that lasts. */
+export interface Conversation {
+  /** The agent members the person is talking to here. Usually one. */
+  partners: string[];
+  /** The window the anchor opens, in the same shape the engaged window uses. */
+  window: EngagementWindow;
+}
+
 /**
  * An open window, described the way a member of the room would describe it.
  *
@@ -132,4 +170,99 @@ export function engagementFor(
   // has to still leave the count under the ceiling: at the shipped `5`, a
   // just-delivered mention leaves room for four more before the fifth ends it.
   return { until: new Date(closes), postsLeft: posts - since - 1 };
+}
+
+/**
+ * Who a PERSON's post is for when it names nobody: the agent they are talking
+ * to in this scope (DOR-2823, room-participation spec §9.2).
+ *
+ * **Follow the conversation, not the clock.** Walk the scope newest first,
+ * starting at the post itself, and stop at the first post that says who the
+ * conversation is with:
+ *
+ * - a post by an agent member that takes part in conversations (`engaged` or
+ *   `always`) — the agent that spoke last is the one being answered, so an
+ *   agent's OWN posts anchor and extend the window;
+ * - a person's post that @mentioned agent members — the one they last named,
+ *   which is also how a person moves the conversation to somebody else.
+ *
+ * A person's post that names nobody says nothing about who, so the walk passes
+ * over it, and it counts toward the post ceiling. So does a post by an agent
+ * that only answers @mentions: it would not answer the person, so it must not
+ * capture their conversation from the agent that would.
+ *
+ * **A post that @mentions only people is addressed to them**, so it is nobody's
+ * conversation with an agent: `@kai lunch?` is not a question for whichever
+ * agent spoke last. The anchor must be inside the
+ * window on both halves: younger than `window.minutes`, and fewer than
+ * `window.posts` posts landed on top of it.
+ *
+ * Only for a person's post in a channel. An agent's post keeps the
+ * mention-anchored {@link engagementFor} rule: agents talking to each other is
+ * the traffic that must stay quiet.
+ *
+ * The post being weighed is index 0, so a post that @mentions agents is its own
+ * anchor — which is why the mentioned turn carries a window too, exactly as it
+ * did under the engaged window.
+ *
+ * Reads at most `window.posts` rows (plus a thread's root, when the page has
+ * room for it) on the same indexes as the engaged window, so it costs one
+ * bounded query per post, not one per member.
+ *
+ * @param deps - The room store.
+ * @param opts.roomId - The room.
+ * @param opts.threadRootEntryId - The post's thread, or `null` for the top level.
+ *   A thread's root is part of its scope.
+ * @param opts.isAgentMember - Whether an author id is an agent member of this
+ *   room. Only a person's mentions OF agent members anchor.
+ * @param opts.joinsConversations - Whether an agent member answers a person's
+ *   conversation (`engaged` or `always`). Only such an agent's posts anchor.
+ * @param opts.isPerson - Whether an author id is a person.
+ * @param opts.window - The configured ceilings.
+ * @param opts.now - The clock.
+ * @returns The partners and their window, or `null` when the post is not part
+ *   of a conversation with any agent here.
+ */
+export function conversationFor(
+  deps: ConversationDeps,
+  opts: {
+    roomId: string;
+    threadRootEntryId: string | null;
+    isAgentMember: (authorId: string) => boolean;
+    joinsConversations: (authorId: string) => boolean;
+    isPerson: (authorId: string) => boolean;
+    window: EngagedWindow;
+    now: Date;
+  }
+): Conversation | null {
+  const { minutes, posts } = opts.window;
+  if (minutes <= 0 || posts <= 0) return null;
+
+  const recent = deps.store.listRecentPostsInScope(opts.roomId, {
+    threadRootEntryId: opts.threadRootEntryId,
+    limit: posts,
+  });
+
+  const post = recent[0];
+  if (post && post.mentions.length > 0 && !post.mentions.some((id) => opts.isAgentMember(id))) {
+    return null;
+  }
+
+  for (let since = 0; since < recent.length; since++) {
+    const entry = recent[since]!;
+    let partners: string[] = [];
+    if (opts.isAgentMember(entry.authorId)) {
+      if (opts.joinsConversations(entry.authorId)) partners = [entry.authorId];
+    } else if (opts.isPerson(entry.authorId)) {
+      partners = [...new Set(entry.mentions.filter((id) => opts.isAgentMember(id)))];
+    }
+    if (partners.length === 0) continue;
+
+    const anchored = Date.parse(entry.createdAt);
+    if (Number.isNaN(anchored)) return null;
+    const closes = anchored + minutes * 60_000;
+    if (closes <= opts.now.getTime()) return null;
+    return { partners, window: { until: new Date(closes), postsLeft: posts - since - 1 } };
+  }
+  return null;
 }

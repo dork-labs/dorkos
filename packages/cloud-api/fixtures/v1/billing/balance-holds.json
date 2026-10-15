@@ -14,5 +14,6 @@
   "autoReload": {
     "enabled": false,
     "ceilingMicro": null
-  }
+  },
+  "paymentMethodOnFile": true
 }

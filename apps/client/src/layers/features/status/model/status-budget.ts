@@ -82,6 +82,10 @@ export interface BudgetedStatusLine {
  * fixture's right cluster bottomed out on its `min-w-10` floors 3px wider than
  * the row, and `connection` painted into the `⋯` — caught by
  * `status-line-fit.spec.ts` at the old floor, re-measured 2026-09-11.
+ *
+ * The floors still hold now that the model item shows only when pinned (ADR
+ * 261010-143211): they were measured with it in the line, and a pinned model is
+ * the same width it was then, so a resting line only has more room.
  */
 const TIER_FULL_MIN_PX = 648;
 const TIER_COMPACT_MIN_PX = 440;

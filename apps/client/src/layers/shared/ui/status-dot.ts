@@ -25,13 +25,15 @@
 export type IdentityStatus = 'idle' | 'working' | 'needs-you' | 'error';
 
 /**
- * Everything a dot can say — the identity states that draw one, plus `unseen`,
- * which only a row can carry.
+ * Everything a dot can say — the identity states that draw one, plus `unseen`
+ * and `paused`, which only a row can carry.
  *
  * `unseen` is not an identity state: it is a fact about a conversation you have
  * not looked at, so it belongs to a tab or a sidebar row and never to a face.
+ * `paused` is the same kind of fact: a chat that ran out of usage and is
+ * waiting for its reset (DOR-2820). It is grey, never red: nothing broke.
  */
-export type StatusSignal = Exclude<IdentityStatus, 'idle'> | 'unseen';
+export type StatusSignal = Exclude<IdentityStatus, 'idle'> | 'unseen' | 'paused';
 
 /**
  * The five tones every status colour in this app resolves to.
@@ -138,6 +140,7 @@ export const STATUS_DOT_COLOR: Record<StatusSignal, string> = {
   'needs-you': STATUS_TONE_DOT.warning,
   error: STATUS_TONE_DOT.error,
   unseen: STATUS_TONE_DOT.info,
+  paused: STATUS_TONE_DOT.neutral,
 };
 
 /**
@@ -169,6 +172,7 @@ export const STATUS_DOT_LABEL: Record<StatusSignal, string> = {
   'needs-you': 'needs you',
   error: 'error',
   unseen: 'unseen',
+  paused: 'paused',
 };
 
 /**

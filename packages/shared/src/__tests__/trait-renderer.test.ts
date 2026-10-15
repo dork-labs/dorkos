@@ -78,8 +78,8 @@ describe('trait-renderer', () => {
       };
       const result = renderTraits(extremeTraits);
       expect(result).toContain('**Verbosity** (Mime)');
-      expect(result).toContain('**Autonomy** (Rogue)');
-      expect(result).toContain('**Chaos** (YOLO)');
+      expect(result).toContain('**Autonomy** (Self-starter)');
+      expect(result).toContain('**Chaos** (Daredevil)');
       expect(result).toContain('**Creativity** (NPC)');
       expect(result).toContain('**Humor** (Class Clown)');
       expect(result).toContain('**Spice** (Corporate)');

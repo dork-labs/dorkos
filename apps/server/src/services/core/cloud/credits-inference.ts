@@ -78,8 +78,14 @@ import {
 
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
 const MIN_REFRESH_DELAY_MS = 30_000;
-/** After a failed refresh, try again this much later. */
+/** After a failed refresh, try again this much later, doubling each time. */
 const RETRY_DELAY_MS = 60_000;
+/**
+ * The longest wait between failed tries. A refusal that will not change on its
+ * own (an unknown instance, a 404) used to be asked again every minute for as
+ * long as the server ran (DOR-2903).
+ */
+const MAX_RETRY_DELAY_MS = 30 * 60_000;
 /** How long a launch waits for one mint before it refuses. */
 const CREDITS_LAUNCH_WAIT_MS = 8_000;
 
@@ -89,6 +95,10 @@ let attemptGeneration = 0;
 /** The one mint in flight, shared by every launch waiting on it. */
 let inflight: Promise<boolean> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+/** The wait before the next failed-mint retry; back to the start on a success or a new link. */
+let retryDelayMs = RETRY_DELAY_MS;
+/** The problem code the last mint under the current link was refused with, else `null`. */
+let mintRefusal: string | null = null;
 
 /** Injectable clock so the expiry check is testable without waiting. */
 let now: () => number = () => Date.now();
@@ -105,12 +115,14 @@ export function __setCreditsStateForTests(state: {
   now?: () => number;
   isCurrent?: () => boolean;
 }): void {
+  retryDelayMs = RETRY_DELAY_MS;
   minted =
     state.token === null
       ? null
       : { token: state.token, isCurrent: state.isCurrent ?? (() => true) };
   attemptGeneration += 1;
   inflight = null;
+  mintRefusal = null;
   now = state.now ?? (() => Date.now());
 }
 
@@ -143,6 +155,15 @@ function handoutable(): InferenceToken | null {
  */
 export function heldCreditsToken(): InferenceToken | null {
   return live();
+}
+
+/**
+ * The problem code the service refused the last mint under this link with
+ * (`entitlement_required` when the account cannot use credits), else `null`.
+ * Never waits and never mints; a later mint that succeeds clears it.
+ */
+export function creditsMintRefusal(): string | null {
+  return mintRefusal;
 }
 
 /**
@@ -203,11 +224,19 @@ export async function primeCreditsInferenceWithContext(
     });
     if (!context.isCurrent() || attempt !== attemptGeneration) return false;
     minted = { token, isCurrent: context.isCurrent };
+    mintRefusal = null;
     scheduleRefresh(token);
     return true;
   } catch (error) {
     const status =
       problemOf(error)?.status ?? (error instanceof CloudApiResponseError ? error.status : null);
+    // Only a definite answer replaces what is remembered: a mint that got no
+    // answer (offline, a timeout) says nothing about whether the account may
+    // use credits, so a real refusal stands through it.
+    const answered = problemOf(error)?.code;
+    if (answered && context.isCurrent() && attempt === attemptGeneration) {
+      mintRefusal = answered;
+    }
     if (
       context.isCurrent() &&
       attempt === attemptGeneration &&
@@ -238,31 +267,52 @@ function mintOnce(): Promise<boolean> {
 /** Arm the timer that mints the next token before this one expires. */
 function scheduleRefresh(token: InferenceToken, delayOverride?: number): void {
   if (!lifecycleRunning) return;
+  refreshesArmed += 1;
+  retryDelayMs = RETRY_DELAY_MS;
   if (refreshTimer) clearTimeout(refreshTimer);
   const due = Date.parse(token.expiresAt) - CREDITS_REFRESH_MARGIN_MS - now();
   const delay = delayOverride ?? Math.max(MIN_REFRESH_DELAY_MS, due);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      // Keep trying while the link stands: an outage at refresh time must not
-      // leave the next launch to find an expired token with nothing coming.
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
+    mintAndRetry();
   }, delay);
   refreshTimer.unref?.();
 }
 
-/** Try a mint again after {@link RETRY_DELAY_MS}. */
+/**
+ * Try a mint again later: {@link RETRY_DELAY_MS} at first, twice as long after
+ * each failure, at most {@link MAX_RETRY_DELAY_MS}.
+ */
 function retryLater(): void {
   if (!lifecycleRunning) return;
   if (refreshTimer) clearTimeout(refreshTimer);
+  const delay = retryDelayMs;
+  retryDelayMs = Math.min(retryDelayMs * 2, MAX_RETRY_DELAY_MS);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
-    void mintOnce().then((ok) => {
-      if (!ok && isCloudLinked() && minted === null) retryLater();
-    });
-  }, RETRY_DELAY_MS);
+    mintAndRetry();
+  }, delay);
   refreshTimer.unref?.();
+}
+
+/** How many refreshes a successful mint has armed; see {@link mintAndRetry}. */
+let refreshesArmed = 0;
+
+/**
+ * Mint, and if it fails, try again later while the link stands.
+ *
+ * Whether or not a token is still held. A refresh that got no answer (a 5xx, a
+ * timeout) keeps the held token, which then expires a few minutes later; with
+ * no mint queued, the next credits launch had to mint inline (DOR-2915).
+ *
+ * Unless another mint succeeded while this one was out: its refresh is armed,
+ * and a retry would replace it.
+ */
+function mintAndRetry(): void {
+  const armedBefore = refreshesArmed;
+  void mintOnce().then((ok) => {
+    if (!ok && isCloudLinked() && refreshesArmed === armedBefore) retryLater();
+  });
 }
 
 let lifecycleRunning = false;
@@ -279,7 +329,8 @@ let stopWatchingLink: (() => void) | null = null;
 export function startCreditsLifecycle(): () => void {
   if (creditsKilled() || lifecycleRunning) return stopCreditsLifecycle;
   lifecycleRunning = true;
-  if (isCloudLinked()) void mintOnce().then((ok) => !ok && isCloudLinked() && retryLater());
+  retryDelayMs = RETRY_DELAY_MS;
+  if (isCloudLinked()) mintAndRetry();
   let seenToken = readCloudInstanceToken();
   stopWatchingLink = configManager.onChange((change) => {
     if (!change.paths.some((path) => path === 'cloud' || path === 'cloud.instanceToken')) return;
@@ -288,10 +339,14 @@ export function startCreditsLifecycle(): () => void {
     const token = readCloudInstanceToken();
     if (token === seenToken) return;
     seenToken = token;
+    retryDelayMs = RETRY_DELAY_MS;
     if (isCloudLinked()) {
-      void mintOnce();
+      // A first mint on a new link that fails retries from the start of the
+      // waits, and replaces any long wait left over from the old link.
+      mintAndRetry();
     } else {
       minted = null;
+      mintRefusal = null;
       attemptGeneration += 1;
     }
   });

@@ -52,13 +52,11 @@ describe('a room turn that speaks only through the tool', () => {
    * Wire a channel around `scripted`, with Ana answering everything.
    *
    * @param scripted - The runner standing in for the turn machinery.
-   * @param maxPostsPerTurn - The per-turn post ceiling, when a test moves it.
    */
-  function open(scripted: ScriptedTurnRunner, maxPostsPerTurn?: number): void {
+  function open(scripted: ScriptedTurnRunner): void {
     ({ service, authors, store, runner, human } = createRoomHarness({
       agents,
       runner: scripted,
-      ...(maxPostsPerTurn !== undefined ? { maxPostsPerTurn } : {}),
     }));
     // Recorded at the broadcaster — the one seam every entry and every signal
     // passes through, so a presence frame is observable without a subscriber
@@ -255,36 +253,21 @@ describe('a room turn that speaks only through the tool', () => {
       expect(service.reactionsFor(room.id, seed.id)).toHaveLength(1);
     });
 
-    it('a reaction the hourly budget refused does NOT buy silence', async () => {
+    it('a refused reaction does NOT buy silence', async () => {
       // The refusal throws, so the mark is never set — which is the whole reason
-      // it is written after the reaction lands rather than before.
-      let seedId = '';
+      // it is written after the reaction lands rather than before. The refusal
+      // here is a message that does not exist.
       open(
         outcomeRunner((request) => {
           try {
-            service.toggleReaction(request.room.id, seedId, request.authorId, '✅');
+            service.toggleReaction(request.room.id, 'no-such-entry', request.authorId, '✅');
           } catch {
-            // The budget said no. Nothing reached anybody.
+            // Refused. Nothing reached anybody.
           }
           return { text: null };
         })
       );
-      // Spend Ana's whole hourly allowance BEFORE the turn runs, so the turn's
-      // reaction is the one that is refused rather than racing the fillers.
-      const filler = service.post(room.id, { authorId: human, text: 'nothing to see' });
-      for (let i = 0; i < 20; i += 1) {
-        service.toggleReaction(room.id, filler.id, ana, ['👀', '✅', '👍', '🎉', '🚀'][i % 5]!);
-        service.toggleReaction(
-          room.id,
-          filler.id,
-          ana,
-          ['👀', '✅', '👍', '🎉', '🚀'][i % 5]!,
-          false
-        );
-      }
-      await service.triggersIdle();
       const seed = service.post(room.id, { authorId: human, text: '@ana just ack this' });
-      seedId = seed.id;
       await service.triggersIdle();
 
       expect(service.reactionsFor(room.id, seed.id)).toHaveLength(0);
@@ -429,40 +412,9 @@ describe('a room turn that speaks only through the tool', () => {
     });
   });
 
-  describe('AC 14 — the per-turn post ceiling', () => {
-    it('refuses the fourth post at the shipped default', async () => {
-      let refused: RoomError | undefined;
-      open(
-        outcomeRunner((request) => {
-          for (let i = 0; i < 4; i += 1) {
-            try {
-              service.postFromTool(request.room.id, {
-                authorId: request.authorId,
-                text: `note ${i + 1}`,
-              });
-            } catch (err) {
-              refused = err as RoomError;
-            }
-          }
-          return { text: null };
-        })
-      );
-      await seedAndSettle();
-
-      expect(postsBy(ana)).toHaveLength(3);
-      expect(refused?.code).toBe('TOO_MANY_POSTS_THIS_TURN');
-      expect(refused?.message).toContain('Consolidate');
-    });
-
-    it('reads the CONFIGURED value, not a constant — 5 lets five through and refuses the sixth', async () => {
-      // **Both halves, because either one alone is satisfiable by a bug.** That
-      // five land proves the ceiling is not pinned at the default of 3; that the
-      // SIXTH is refused proves there is still a ceiling at all. A case that only
-      // counted the five would pass just as happily against a build that had
-      // stopped counting — which is the mutation most likely to be made here,
-      // since removing the check is how somebody "fixes" a refusal they did not
-      // expect.
-      let refusal: RoomError | undefined;
+  describe('no per-turn post count (DOR-2739)', () => {
+    it('lands every post one turn makes — the retired ceiling was three', async () => {
+      let refused: unknown;
       open(
         outcomeRunner((request) => {
           for (let i = 0; i < 6; i += 1) {
@@ -472,60 +424,16 @@ describe('a room turn that speaks only through the tool', () => {
                 text: `note ${i + 1}`,
               });
             } catch (err) {
-              refusal = err as RoomError;
+              refused = err;
             }
-          }
-          return { text: null };
-        }),
-        5
-      );
-      await seedAndSettle();
-
-      expect(postsBy(ana)).toHaveLength(5);
-      expect(refusal?.code).toBe('TOO_MANY_POSTS_THIS_TURN');
-      // The refusal names the configured number rather than the default, so an
-      // agent reading it is told the bound it actually hit.
-      expect(refusal?.message).toContain('5');
-    });
-
-    it('starts over on the next turn', async () => {
-      open(
-        outcomeRunner((request) => {
-          for (let i = 0; i < 3; i += 1) {
-            service.postFromTool(request.room.id, {
-              authorId: request.authorId,
-              text: `note ${i + 1}`,
-            });
           }
           return { text: null };
         })
       );
-      await seedAndSettle('@ana first');
-      await seedAndSettle('@ana second');
+      await seedAndSettle();
 
+      expect(refused).toBeUndefined();
       expect(postsBy(ana)).toHaveLength(6);
-    });
-
-    it('does not bound a post made with no turn behind it', () => {
-      // `postsThisTurn` is `undefined` rather than zero there, and the difference
-      // is deliberate: such a post already costs a turn against the cascade
-      // budget on its own, so there is no per-turn ceiling to apply.
-      open(
-        outcomeRunner(() => ({ text: null })),
-        1
-      );
-      const channel = service.createRoom(
-        { kind: 'channel', title: 'Ops', members: [], agentPaths: ['/agents/ana'] },
-        human
-      );
-      for (let i = 0; i < 4; i += 1) {
-        service.postFromTool(channel.id, { authorId: ana, text: `unbidden ${i}` });
-      }
-      expect(
-        service
-          .listEntries(channel.id, human, { limit: 50 })
-          .filter((entry) => entry.kind === 'post' && entry.authorId === ana)
-      ).toHaveLength(4);
     });
   });
 

@@ -152,25 +152,27 @@ describe('NotificationService.notify', () => {
 
   it('judges a waiting duplicate on its own when the first raise was refused', async () => {
     // A refused first raise stores no row, so the raise queued behind it has
-    // not been said yet: it must go out and be stored, not be reported as a
-    // duplicate of nothing.
-    const reserve = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
-    const deps = relayDeps();
-    const service = new NotificationService(store, { relay: () => deps });
-    const opts = { relay: { fromPrincipal: 'relay.system.tasks.notifier', reserve } };
+    // not been said yet: it must be stored, not be reported as a duplicate of
+    // nothing.
+    const service = new NotificationService(store);
+    const payload = { agentId: 'agent-1', agentName: 'Ana', message: 'hello' };
 
     const [first, second] = await Promise.all([
-      service.notify('run.completed', run('run-1', 'failed'), opts),
-      service.notify('run.completed', run('run-1', 'failed'), opts),
+      service.notify('agent.note', payload, {
+        delivered: {
+          ok: false,
+          reason: 'INITIATE_NOT_ALLOWED',
+          bindingId: 'binding-1',
+          adapterId: 'telegram-main',
+        },
+      }),
+      service.notify('agent.note', payload),
     ]);
 
     expect(first).toMatchObject({ notification: null, deduped: false });
-    expect(first.relay).toMatchObject({ ok: false, reason: 'RATE_LIMITED' });
     expect(second.deduped).toBe(false);
     expect(second.notification).not.toBeNull();
     expect(rowCount()).toBe(1);
-    expect(deps.relayCore!.publish).toHaveBeenCalledTimes(1);
-    expect(reserve).toHaveBeenCalledTimes(2);
     // Nothing is left holding the key once both have settled.
     expect((service as unknown as { inFlight: Map<string, unknown> }).inFlight.size).toBe(0);
   });
@@ -283,19 +285,6 @@ describe('NotificationService.notify', () => {
     expect(ledger).toHaveLength(1);
     expect(ledger[0].channel).toBe('telegram');
     expect(ledger[0].detail).toMatchObject({ surface: 'integration', chatId: 'chat-1' });
-  });
-
-  it('writes nothing at all for a note the hourly allowance refused', async () => {
-    const service = new NotificationService(store);
-    const result = await service.notify(
-      'agent.note',
-      { agentId: 'agent-1', agentName: 'Ana', message: 'hello' },
-      { delivered: { ok: false, reason: 'RATE_LIMITED' } }
-    );
-
-    expect(result.notification).toBeNull();
-    expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
-    expect(sentAs('notification')).toHaveLength(0);
   });
 
   it('writes nothing at all for a note the operator switched off', async () => {

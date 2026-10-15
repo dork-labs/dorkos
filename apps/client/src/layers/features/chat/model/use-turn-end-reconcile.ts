@@ -6,8 +6,9 @@
  * is captured once at connect time, so the completed assistant turn (and the
  * now-canonical user message) would vanish from the projection after the turn
  * settles. This hook detects the active session's streaming→settled transition
- * and reloads canonical history (`transport.getMessages`) into the stream
- * store's `messages`, then clears the optimistic user message — persisting the
+ * and reloads canonical history into the stream store's `messages` — only the
+ * part the turn added, joined onto what the store holds (DOR-2890, see
+ * `lib/turn-history`) — then clears the optimistic user message — persisting the
  * completed user+assistant turn as full-fidelity JSONL history.
  *
  * @module features/chat/model/use-turn-end-reconcile
@@ -22,6 +23,7 @@ import {
 } from '@/layers/entities/session';
 import { projectInProgressTurn } from './stream/project-session-turn';
 import { collectApprovalReceipts, applyApprovalReceipts } from '../lib/carry-approval-receipts';
+import { readTurnHistory } from '../lib/turn-history';
 
 interface UseTurnEndReconcileParams {
   sessionId: string | null;
@@ -151,9 +153,13 @@ export function useTurnEndReconcile({
       projectInProgressTurn(useSessionStreamStore.getState().getSession(reloadId).inProgressTurn)
     );
 
-    void transport
-      .getMessages(reloadId, selectedCwdRef.current ?? undefined)
-      .then((result) => {
+    void readTurnHistory(
+      transport,
+      reloadId,
+      selectedCwdRef.current ?? undefined,
+      () => useSessionStreamStore.getState().getSession(reloadId).messages
+    )
+      .then((history) => {
         // Guard against a session switch landing the reload on the wrong store
         // entry — only fold history into the session it was requested for.
         const store = useSessionStreamStore.getState();
@@ -172,7 +178,7 @@ export function useTurnEndReconcile({
           ...collectApprovalReceipts(fresh.messages.flatMap((m) => m.parts ?? [])),
           ...settledReceipts,
         ]);
-        store.setHistoryMessages(reloadId, applyApprovalReceipts(result.messages, carried), {
+        store.setHistoryMessages(reloadId, applyApprovalReceipts(history, carried), {
           preserveInProgressTurn: newTurnStreaming,
         });
         // …nor clear an optimistic message belonging to the newer send. Only

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
@@ -93,9 +93,10 @@ interface PermissionModeItemProps {
    *
    * The caller needs it because the offer above has TWO homes and only one may
    * speak at a time: inside this popover while it is open, and floating over the
-   * status strip once it is not. Entering Full autonomy opens a modal dialog
-   * whose focus grab closes this popover (observed in a browser, 2026-08-01), so
-   * the offer that follows would otherwise be drawn into an unmounted tree.
+   * status strip once it is not. Entering Full autonomy used to open a modal
+   * dialog whose focus grab closed this popover (observed in a browser,
+   * 2026-08-01); that dialog is retired (DOR-2739), but anything that closes the
+   * popover before the offer arrives would still draw it into an unmounted tree.
    */
   onOpenChange?: (open: boolean) => void;
 }
@@ -158,6 +159,25 @@ export function PermissionModeItem({
     setAvailable(interactive);
     return () => setAvailable(false);
   }, [interactive, setAvailable]);
+
+  // The line drops this item when the chat reaches the safe stop, sometimes
+  // with the picker still open. Close it on the way out: otherwise the caller's
+  // `pickerOpen` and the store's `open` stay true, and the "make it the default"
+  // offer that follows has nowhere to appear. A ref, so a caller passing a new
+  // callback each render cannot turn this into a close on every render. In dev,
+  // StrictMode's test unmount runs this once on mount too; `open` starts false,
+  // so that closes nothing.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  }, [onOpenChange]);
+  useEffect(
+    () => () => {
+      setOpen(false);
+      onOpenChangeRef.current?.(false);
+    },
+    [setOpen]
+  );
 
   // Hide the item entirely when the runtime does not support permission modes at
   // all (some runtimes have no notion of one).

@@ -1,13 +1,7 @@
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { execFileSync } from 'child_process';
-import {
-  ACKNOWLEDGE_AUTONOMY_COMMAND,
-  AUTONOMY_ACK_REQUIRED_CODE,
-  handleConfigAcknowledgeAutonomy,
-  USE_PERMISSIONS_API_CODE,
-  writeOrExplain,
-} from './config-write.js';
+import { USE_PERMISSIONS_API_CODE, writeOrExplain } from './config-write.js';
 import type { CliConfigWriter } from './config-write.js';
 
 /**
@@ -193,14 +187,10 @@ function patchForPath(key: string, value: unknown): Record<string, unknown> {
  *
  * It used to write the leaf straight into the file. That meant the one command
  * anything with a shell can run was the one write with no write policy, no
- * Full-autonomy consent door, no validation and no line in the log:
- * `dorkos config set runtimes.claudeCode.defaultTrustStop autonomy` left an
- * install starting every new session bypassed, with `ui.autonomyAcknowledgedAt`
- * still `null` \u2014 a state the cockpit's door exists to make unreachable \u2014
- * and nothing on disk saying it had happened.
+ * validation and no line in the log.
  *
  * It now goes through {@link CliConfigWriter.guarded}, which brings three things
- * with it besides the consent door. The whole config is validated before
+ * with it. The whole config is validated before
  * anything is written, so a value the schema refuses is reported instead of
  * stored (`server.port notanumber` used to land in the file and make the server
  * fall back to a default it never mentioned). A setting DorkOS does not have is
@@ -246,14 +236,6 @@ export async function handleConfigSet(
       // The same sentence the cockpit shows for the same refusal \u2014 a refusal
       // that reads differently in two places teaches people they are two rules.
       console.error(result.refusal.message);
-      // The cockpit's next step is a dialog it can open itself. A terminal has
-      // none, so the sentence alone is a dead end: name the command that is the
-      // terminal's version of that dialog.
-      if (result.refusal.code === AUTONOMY_ACK_REQUIRED_CODE) {
-        console.error(
-          `Run \`${ACKNOWLEDGE_AUTONOMY_COMMAND}\` to read what it means and confirm, then try again.`
-        );
-      }
       // The terminal's version of the Permissions page.
       if (result.refusal.code === USE_PERMISSIONS_API_CODE) {
         console.error('From a terminal, use `dorkos permissions` instead.');
@@ -300,7 +282,7 @@ export function handleConfigList(store: ConfigStore): void {
  * install carries, and a fresh install's value is the protective one by rule
  * (ADR 260727-181825) — a whole-config reset additionally keeps the protections
  * a person moved (`safe-defaults/protected-state.ts`). So there is no reset that
- * turns a gate off, licenses Full autonomy, or widens a bound, which is the
+ * turns a gate off or widens a bound, which is the
  * entire set of things the guarded step is there to catch.
  *
  * `contributing/configuration.md` lists it among the writers that still leave no
@@ -422,12 +404,9 @@ export async function handleConfigCommand(
     case 'validate':
       handleConfigValidate(store);
       break;
-    case 'acknowledge-autonomy':
-      await handleConfigAcknowledgeAutonomy(store, writer);
-      break;
     default:
       console.error(`Unknown config subcommand: ${subcommand}`);
-      console.error('Available: get, set, list, reset, edit, path, validate, acknowledge-autonomy');
+      console.error('Available: get, set, list, reset, edit, path, validate');
       process.exit(1);
   }
 }

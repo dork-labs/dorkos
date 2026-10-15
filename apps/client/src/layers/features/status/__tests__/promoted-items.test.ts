@@ -20,7 +20,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: null,
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: null,
     usageStale: false,
@@ -38,7 +38,7 @@ function allNodes(): Partial<Record<StatusBarItemKey, string>> {
 describe('selectPromotedItems', () => {
   it('returns only what promoted, in registry order', () => {
     const items = selectPromotedItems({ ctx: restingContext(), pins: [], nodes: allNodes() });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd']);
   });
 
   it('carries each item’s cluster, resolved severity, and node', () => {
@@ -50,7 +50,7 @@ describe('selectPromotedItems', () => {
     const context = items.find((i) => i.key === 'context')!;
     expect(context.cluster).toBe('right');
     expect(context.node).toBe('node:context');
-    expect(context.severity).toBeGreaterThan(items.find((i) => i.key === 'model')!.severity);
+    expect(context.severity).toBeGreaterThan(items.find((i) => i.key === 'cwd')!.severity);
   });
 
   it('skips an item with no node even when its rule fires', () => {
@@ -59,13 +59,13 @@ describe('selectPromotedItems', () => {
     const nodes = allNodes();
     delete nodes.cwd;
     const items = selectPromotedItems({ ctx: restingContext(), pins: [], nodes });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent']);
   });
 
   it('treats a null node the same as a missing one', () => {
     const items = selectPromotedItems({
       ctx: restingContext(),
-      pins: [],
+      pins: ['model'],
       nodes: { ...allNodes(), model: null },
     });
     expect(items.map((i) => i.key)).not.toContain('model');
@@ -79,20 +79,31 @@ describe('selectPromotedItems — pins', () => {
       pins: ['usage'],
       nodes: allNodes(),
     });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model', 'usage']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'usage']);
     expect(items.find((i) => i.key === 'usage')!.pinned).toBe(true);
   });
 
   it('includes an item that both promoted and is pinned exactly once', () => {
-    // `model` always promotes, so a pin on it changes nothing about its slot — but
+    // `cwd` always promotes, so a pin on it changes nothing about its slot — but
     // the flag still reports the pin, which is what raises its priority in a budget.
     const items = selectPromotedItems({
+      ctx: restingContext(),
+      pins: ['cwd'],
+      nodes: allNodes(),
+    });
+    expect(items.filter((i) => i.key === 'cwd')).toHaveLength(1);
+    expect(items.find((i) => i.key === 'cwd')!.pinned).toBe(true);
+  });
+
+  it('shows the model only when a person pins it (DorkOS picks it otherwise)', () => {
+    const unpinned = selectPromotedItems({ ctx: restingContext(), pins: [], nodes: allNodes() });
+    expect(unpinned.map((i) => i.key)).not.toContain('model');
+    const pinned = selectPromotedItems({
       ctx: restingContext(),
       pins: ['model'],
       nodes: allNodes(),
     });
-    expect(items.filter((i) => i.key === 'model')).toHaveLength(1);
-    expect(items.find((i) => i.key === 'model')!.pinned).toBe(true);
+    expect(pinned.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);
   });
 
   it('keeps a pinned item’s place in registry order rather than appending it', () => {
@@ -101,7 +112,7 @@ describe('selectPromotedItems — pins', () => {
       pins: ['git'],
       nodes: allNodes(),
     });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'git', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'git']);
   });
 
   it('refuses to honour a pin on a diagnostics row', () => {
@@ -110,7 +121,7 @@ describe('selectPromotedItems — pins', () => {
       pins: ['connection', 'subagents'],
       nodes: allNodes(),
     });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd']);
   });
 
   it('refuses to honour a pin on an item excluded from the line', () => {
@@ -119,7 +130,7 @@ describe('selectPromotedItems — pins', () => {
       pins: ['cache', 'sound'],
       nodes: allNodes(),
     });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd']);
   });
 
   it('ignores a pin for a key that no longer exists', () => {
@@ -129,7 +140,7 @@ describe('selectPromotedItems — pins', () => {
       pins: ['clients', 'sync'],
       nodes: allNodes(),
     });
-    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);
+    expect(items.map((i) => i.key)).toEqual(['agent', 'cwd']);
   });
 
   it('leaves a pinned item exposed to a width budget, not exempt from it', () => {
@@ -166,7 +177,7 @@ describe('selectPromotedItems — rigidity travels with the item', () => {
     expect(rigid.context).toBe(true);
     expect(rigid.usage).toBe(true);
     expect(rigid.permission).toBe(false);
-    expect(rigid.model).toBe(false);
+    expect(rigid.cwd).toBe(false);
   });
 });
 
@@ -177,7 +188,7 @@ describe('selectPromotedItems — a degraded session', () => {
         connectionState: 'reconnecting',
         contextPercent: 78,
         permissionMode: 'plan',
-        runtime: { isDefault: false, canSelect: false },
+        runtime: { type: 'codex', isDefault: false, canSelect: false },
         git: { dirty: true, onDefaultBranch: false },
         subagentsInFlight: 3,
         extensionItems: [],
@@ -192,7 +203,6 @@ describe('selectPromotedItems — a degraded session', () => {
       'cwd',
       'git',
       'runtime',
-      'model',
       'context',
       'usage',
       'permission',

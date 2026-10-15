@@ -18,6 +18,7 @@ import { getCoreTools } from './core-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
+import { isPersonOnlyMode } from '../turn-permission.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -51,6 +52,7 @@ import type {
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
 import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
 import { logger } from '../../../../lib/logger.js';
+import { readsCallerConnections } from '../../../connectors/runtime-capability-scope.js';
 
 // Re-export the individual handlers and handler factories, which the per-domain
 // tests import by name to exercise one handler without standing up a server.
@@ -76,15 +78,7 @@ export {
   createDeleteScheduleHandler,
   createGetRunHistoryHandler,
 } from './task-tools.js';
-export {
-  createRelaySendHandler,
-  createRelayInboxHandler,
-  createRelayListEndpointsHandler,
-  createRelayRegisterEndpointHandler,
-  createRelayQueryHandler,
-  createRelayDispatchHandler,
-  createRelayUnregisterEndpointHandler,
-} from './relay-tools.js';
+export { createRelayListEndpointsHandler } from './relay-tools.js';
 export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
   createRelayListAdaptersHandler,
@@ -176,12 +170,13 @@ export interface HandRegisteredInSessionOptions {
  *
  * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.).
  * @param options - Per-query session context.
- * @returns The gated tools, and the reach over their ungated definitions.
+ * @returns The gated tools, the reach over their ungated definitions, and the
+ *   session's eager-loading set, which the capability half reads too.
  */
 export function handRegisteredInSessionToolSet(
   deps: McpToolDeps,
   options: HandRegisteredInSessionOptions = {}
-): { tools: SdkMcpTool[]; reach: HandToolReach } {
+): { tools: SdkMcpTool[]; reach: HandToolReach; alwaysLoaded: ReadonlySet<string> } {
   const { session, sessionId, resolveContext, hold } = options;
   const identity = options.identity ?? resolveAgentHome(session?.cwd);
   // Resolve the caller's trusted Relay identity from the session's identity
@@ -189,16 +184,6 @@ export function handRegisteredInSessionToolSet(
   // `from`/namespace access rules key on.
   const relayIdentity = resolveSenderIdentity(deps, session?.cwd, identity);
   const identityPath = homeOf(identity);
-  // Which relay envelope THIS turn is answering, if the bus started it (DOR-791).
-  // The adapter that dispatched the turn bound it under the session key the turn
-  // runs under, which is the id handed to this factory; the SDK's canonical id is
-  // tried too, for the same first-turn rekey reason the DevTools resolution has.
-  // Read at CALL time, and read from the relay rather than from tool arguments —
-  // a budget the model may omit is one an accidental loop always omits.
-  const inboundBudgets = deps.relayCore?.inboundBudgets;
-  const resolveInboundBudget = inboundBudgets
-    ? () => inboundBudgets.get(sessionId, session?.sdkSessionId)
-    : undefined;
   // Who is proposing a schedule, for `tasks_create` (DOR-1394). Resolved at CALL
   // time for the same first-turn rekey reason as the DevTools id above, and it
   // reads the SAME two sources — an approval card that named a session the
@@ -238,7 +223,7 @@ export function handRegisteredInSessionToolSet(
   // must not drift. `relayIdentity.agentId` comes from the registry lookup
   // above, keyed on `session.cwd`, so the model cannot assert its way in here.
   const alwaysLoaded = alwaysLoadedToolsFor(
-    loadsAgentToAgentTools(relayIdentity.agentId !== undefined, deps.relayCore !== undefined)
+    loadsAgentToAgentTools(relayIdentity.agentId !== undefined)
   );
 
   const raw: SdkMcpTool[] = [
@@ -263,16 +248,24 @@ export function handRegisteredInSessionToolSet(
         runtime: 'claude-code',
         ...(callingSession ? { sessionId: callingSession } : {}),
         ...(running ? { permissionMode: running } : {}),
+        // Set to "Never ask" even where a stricter ceiling holds the turn to Plan.
+        ...(isPersonOnlyMode(session?.permissionMode) ? { neverAsks: true } : {}),
       };
     }),
     ...getTasksTools(deps, resolveTaskProvenance),
-    ...getRelayTools(deps, relayIdentity, resolveInboundBudget),
+    // The calling chat rides along so a note from a running beat is counted.
+    ...getRelayTools(deps, {
+      ...relayIdentity,
+      sessionId: () => session?.sdkSessionId || sessionId,
+    }),
     ...getAdapterTools(deps),
     ...getBindingTools(deps),
     ...getTraceTools(deps),
     ...getMeshTools(deps),
     ...getAgentTools(deps),
-    ...getExtensionTools(deps),
+    // The same provenance the task tools read: present in a session, so a
+    // Trusted install approves an extension our agent creates (ADR 261006-225605).
+    ...getExtensionTools(deps, resolveTaskProvenance),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each
@@ -289,6 +282,7 @@ export function handRegisteredInSessionToolSet(
       origin: 'session',
       ...(resolveRequestingSession ? { resolveRequestingSession } : {}),
     }),
+    alwaysLoaded,
   };
 }
 
@@ -304,7 +298,7 @@ export function handRegisteredInSessionToolSet(
  *
  * @param tools - Gated tool definitions.
  * @param alwaysLoaded - The eager-loading set for this session (see
- *   `tool-exposure.ts`: the standing five, plus the agent-to-agent six when the
+ *   `tool-exposure.ts`: the standing set, plus the agent-to-agent four when the
  *   session is itself a registered agent).
  * @returns The same tools, carrying their exposure metadata.
  */
@@ -399,7 +393,7 @@ export function createDorkOsToolServer(
   // …and WHERE that session lives, so a capability whose work outlives the
   // process (a sign-in the person finishes in a browser) can be resumed in the
   // right directory after a restart (DOR-981).
-  const resolveCapabilityContext = async (_capabilityId: string, signal?: AbortSignal) => {
+  const resolveCapabilityContext = async (capabilityId: string, signal?: AbortSignal) => {
     const base = await resolveContext();
     const invokingSessionId = session?.sdkSessionId || sessionId;
     const invocation = {
@@ -412,13 +406,24 @@ export function createDorkOsToolServer(
       handTools: hand.reach,
     };
     const connectorTurn = session?.connectorTurn;
-    // The principal identifies the calling turn, not a connector tool family.
-    // Each registered capability retains its own scope and authority checks.
     if (!connectorTurn) return invocation;
-    signal?.throwIfAborted();
-    const serverPrincipal = await connectorTurn.resolvePrincipal();
-    signal?.throwIfAborted();
-    return { ...invocation, serverPrincipal };
+    const originalDocPrincipalRequired = [
+      'ui.configure_doc_channel',
+      'ui.approve_doc_route',
+      'ui.patch_canvas_state',
+      'ui.send_canvas_event',
+    ].includes(capabilityId);
+    if (connectorTurn.isConnectorCapabilityId(capabilityId) || originalDocPrincipalRequired) {
+      signal?.throwIfAborted();
+      const serverPrincipal = await connectorTurn.resolvePrincipal();
+      signal?.throwIfAborted();
+      return { ...invocation, serverPrincipal };
+    }
+    // `connector_recommend` reads the caller's own granted connections to say
+    // what is already connected; without the principal it leaves that out.
+    if (!connectorTools || !readsCallerConnections(capabilityId)) return invocation;
+    const serverPrincipal = await connectorTurn.resolvePrincipal().catch(() => undefined);
+    return serverPrincipal ? { ...invocation, serverPrincipal } : invocation;
   };
   // The in-session hold seam (DOR-939): only with BOTH a live session (an event
   // queue to render the inline card into) and the approval primitive can a fresh
@@ -452,7 +457,15 @@ export function createDorkOsToolServer(
   });
   const listed = [
     ...hand.tools,
-    ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
+    // The same eager-loading set as the hand-registered half, so `chat_send`
+    // and `chat_read` load from turn 1 on an agent session like `mesh_list`.
+    ...capabilityMcpTools(
+      capabilityRegistry,
+      'in-session',
+      resolveCapabilityContext,
+      hold,
+      hand.alwaysLoaded
+    ),
   ].filter((tool) => !hiddenToolNames.has(tool.name));
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as

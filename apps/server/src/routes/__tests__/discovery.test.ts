@@ -19,10 +19,15 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import express from 'express';
-import { createDiscoveryRouter } from '../discovery.js';
+import { createDiscoveryRoutes } from '../discovery.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 
@@ -30,12 +35,9 @@ const fixtureTarget = swappableServer();
 const mockDiscover = vi.fn();
 const mockMeshCore = { discover: mockDiscover } as unknown as import('@dorkos/mesh').MeshCore;
 
-/** Create a minimal Express app with the discovery router mounted. */
+/** Serve the discovery routes behind the `/api` chain. */
 function createTestApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/discovery', createDiscoveryRouter(mockMeshCore));
-  return app;
+  return honoGroupListener({ path: '/api/discovery', routes: createDiscoveryRoutes(mockMeshCore) });
 }
 
 describe('Discovery Route', () => {

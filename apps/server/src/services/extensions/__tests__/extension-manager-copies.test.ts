@@ -41,7 +41,7 @@ vi.mock('../extension-server-lifecycle.js', () => ({
   ExtensionServerLifecycle: vi.fn().mockImplementation(function () {
     return {
       ...lifecycle,
-      getRouter: vi.fn(),
+      getHandler: vi.fn(),
       toolStatuses: vi.fn(),
       supervisedStatus: vi.fn(() => ({})),
       resetRestarts: vi.fn(),

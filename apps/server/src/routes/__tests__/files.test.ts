@@ -41,11 +41,37 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import fileRoutes from '../files.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
+
+/** Called with each JSON body the files routes answer, as they issue it. */
+let observeJson: ((method: string, path: string, body: unknown) => void) | undefined;
+/**
+ * The files routes behind the same chain, with each `c.json` call observed
+ * synchronously: the real response seam, where the Express version of this
+ * file spied on `res.json`. The original method still sends the real body.
+ */
+const observedServer = listeningServer(
+  honoGroupListener(
+    { path: '/api/files', routes: fileRoutes },
+    {
+      before: async (c, next) => {
+        const json = c.json;
+        c.json = ((body: unknown, ...rest: unknown[]) => {
+          observeJson?.(c.req.method, c.req.path, body);
+          return (json as (...args: unknown[]) => Response)(body, ...rest);
+        }) as typeof c.json;
+        await next();
+      },
+    }
+  )
+);
 
 describe('Files Routes', () => {
   beforeEach(() => {
@@ -91,6 +117,7 @@ describe('Files Routes', () => {
     });
     afterEach(async () => {
       vi.restoreAllMocks();
+      observeJson = undefined;
       await fs.rm(dir, { recursive: true, force: true });
     });
 
@@ -117,7 +144,6 @@ describe('Files Routes', () => {
 
     it('acknowledges a changed save only after the actual rename completes', async () => {
       const actualRename = fs.rename;
-      const actualJson = app.response.json;
       let reachedRename!: () => void;
       let releaseRename!: () => void;
       let completedRename!: () => void;
@@ -148,13 +174,10 @@ describe('Files Routes', () => {
       });
       // Observe the real response seam synchronously, not a race with the client's
       // network promise. The original JSON method still sends the real HTTP body.
-      vi.spyOn(app.response, 'json').mockImplementation(function (
-        this: typeof app.response,
-        body: unknown
-      ) {
+      observeJson = (method, requestPath, body) => {
         if (
-          this.req.method === 'PUT' &&
-          this.req.originalUrl === '/api/files/content' &&
+          method === 'PUT' &&
+          requestPath === '/api/files/content' &&
           typeof body === 'object' &&
           body !== null &&
           'ok' in body &&
@@ -163,10 +186,9 @@ describe('Files Routes', () => {
           successIssued = true;
           successBeforeReplacement = !replacementComplete;
         }
-        return actualJson.call(this, body);
-      });
+      };
       const next = 'acknowledged after replacement';
-      const response = request(testServer)
+      const response = request(observedServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: next, expectedHash: sha(original) })
         .then((res) => {

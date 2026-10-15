@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFile, writeFile, chmod, stat } from 'node:fs/promises';
-import { loadAdapterConfig, saveAdapterConfig, watchAdapterConfig } from '../adapter-config.js';
+import {
+  AdapterConfigWrites,
+  loadAdapterConfig,
+  saveAdapterConfig,
+  watchAdapterConfig,
+} from '../adapter-config.js';
 import { logger } from '../../../lib/logger.js';
 
 // Mock fs/promises
@@ -456,4 +461,26 @@ describe('persisted webhook namespace validation', () => {
       expect(saved.adapters.some((a: { id: string }) => a.id === 'valid')).toBe(true);
     }
   );
+});
+
+describe('AdapterConfigWrites — a hung save', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+  });
+
+  // The adapter queue waits on reloads, and reloads wait on saves, so a save
+  // that never finishes must not hold every later save and reload forever.
+  it('stops waiting after the bound, says so, and lets later saves and reloads run', async () => {
+    const writes = new AdapterConfigWrites(20);
+    void writes.track(() => new Promise<void>(() => {}));
+    const later = vi.fn(async () => undefined);
+    const apply = vi.fn();
+
+    await Promise.all([writes.track(later), writes.reloadInto(CONFIG_PATH, apply)]);
+
+    expect(later).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('has not finished'));
+  });
 });

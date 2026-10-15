@@ -23,12 +23,16 @@ import {
   type RelayCore,
   type RelayPublisher,
 } from '@dorkos/relay';
-import express from 'express';
 import { env } from '../env.js';
-import { errorHandler } from '../middleware/error-handler.js';
-import { createAdapterRouter } from '../routes/relay-adapters.js';
-import { createApp, finalizeApp } from '../app.js';
-import { createRelayRouter } from '../routes/relay.js';
+import { createRelayWebhookRoutes, relayWebhookBodyRule } from '../routes/relay-webhooks.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
+import { frontDoorListener } from '../http/front-door.js';
+import { composeFrontDoor } from '../http/hono-api.js';
+import { readJsonBody } from '../http/request-body.js';
+import type { Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoGroupListener } from '../http/__tests__/hono-group-listener.js';
+import type { HonoApiDeps } from '../http/hono-api.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { initConfigManager, configManager } from '../services/core/config-manager.js';
@@ -74,6 +78,19 @@ function signed(
   };
 }
 
+/** The Relay routes over the fixture publisher and manager, as the server hands them over. */
+function relayDeps(): HonoApiDeps {
+  return { relay: { relayCore: publisher as unknown as RelayCore, adapterManager: manager } };
+}
+
+/** The webhook receiver alone, behind the `/api` chain and its raw-bytes body rule. */
+function standaloneReceiver() {
+  return honoGroupListener(
+    { path: '/api/relay', routes: createRelayWebhookRoutes(manager) },
+    { bodyRules: [relayWebhookBodyRule] }
+  );
+}
+
 /** Send literal UTF-8 so application/json does not reserialize a Buffer wrapper. */
 function send(body = EXACT, headers = signed(body)) {
   return request(target.server)
@@ -113,17 +130,16 @@ beforeEach(async () => {
         : undefined,
   } as unknown as AdapterManager;
   admission = new MainRequestAdmission();
-  const app = createApp({ admission });
-  app.all('/api/relay/webhooks-neighbor', (req, res) =>
-    res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) })
-  );
-  app.put(URL, (req, res) => res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) }));
-  app.post('/api/ordinary-json-probe', (req, res) =>
-    res.json({ body: req.body, isBuffer: Buffer.isBuffer(req.body) })
-  );
-  app.use('/api/relay', createRelayRouter(publisher as unknown as RelayCore, manager));
-  finalizeApp(app);
-  target.mount(app);
+  const app = composeFrontDoor(admission, relayDeps());
+  // Probes beside the real routes: what the chain parsed for each path.
+  const echo = (c: Context<ApiEnv>) => {
+    const parsed = readJsonBody(c);
+    return c.json({ body: parsed, isBuffer: Buffer.isBuffer(parsed) });
+  };
+  app.all('/api/relay/webhooks-neighbor', echo);
+  app.put(URL, echo);
+  app.post('/api/ordinary-json-probe', echo);
+  target.mount(frontDoorListener(app));
 });
 
 afterEach(async () => {
@@ -250,12 +266,7 @@ describe('signed Relay JSON through the finalized application', () => {
   it.each(['full-app', 'standalone-receiver'] as const)(
     'accepts more than 100kb but below 1mb in %s',
     async (composition) => {
-      if (composition === 'standalone-receiver') {
-        const app = express();
-        app.use('/api/relay', createAdapterRouter(manager));
-        app.use(errorHandler);
-        target.mount(app);
-      }
+      if (composition === 'standalone-receiver') target.mount(standaloneReceiver());
       const padding = 'x'.repeat(200 * 1024);
       const body = Buffer.from(JSON.stringify({ padding }));
       expect(body.length).toBeGreaterThan(100 * 1024);
@@ -272,12 +283,7 @@ describe('signed Relay JSON through the finalized application', () => {
   it.each(['full-app', 'standalone-receiver'] as const)(
     'refuses more than 1mb before adapter verification in %s',
     async (composition) => {
-      if (composition === 'standalone-receiver') {
-        const app = express();
-        app.use('/api/relay', createAdapterRouter(manager));
-        app.use(errorHandler);
-        target.mount(app);
-      }
+      if (composition === 'standalone-receiver') target.mount(standaloneReceiver());
       const body = Buffer.from(JSON.stringify({ padding: 'x'.repeat(1024 * 1024) }));
       const headers = signed(body);
       const result = await send(body, headers);
@@ -380,10 +386,8 @@ describe('signed Relay JSON through the finalized application', () => {
       // The same listener/observer has a successful counterpart. Admission is
       // terminal, so build a fresh admitted app only for that control.
       if (gate === 'admission') {
-        const controlApp = createApp({ admission: new MainRequestAdmission() });
-        controlApp.use('/api/relay', createRelayRouter(publisher as unknown as RelayCore, manager));
-        finalizeApp(controlApp);
-        target.mount(controlApp);
+        const controlAdmission = new MainRequestAdmission();
+        target.mount(composedListener(controlAdmission, relayDeps()));
       }
       expect((await send(EXACT, headers)).status).toBe(200);
       expect(inbound).toHaveBeenCalledTimes(1);

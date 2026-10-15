@@ -106,3 +106,12 @@ export function useMessageContext(): MessageContextValue {
   if (!ctx) throw new Error('useMessageContext must be used within MessageProvider');
   return ctx;
 }
+
+/**
+ * The message context when there is one, else null — for a body part that a
+ * caller may also render on its own (a test, a showcase) and that only needs
+ * the context for something optional, like the chat a widget fence posts to.
+ */
+export function useOptionalMessageContext(): MessageContextValue | null {
+  return useContext(MessageCtx);
+}

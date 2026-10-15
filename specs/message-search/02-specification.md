@@ -398,6 +398,8 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 
 ### 7. The access model — visibility is a join, never a token
 
+> **Superseded in part by spec `audit-trail` §3.4 (DOR-2738, PR4).** Agents now search **agent work sessions** (room turns, scheduled runs, messages between agents or chats, extension and connector work), and still never a person's own chat (interactive or chat-binding sessions, or any session with no known origin). The route hands `searchForCaller` a session filter built from the same `canRead` rule every transcript read uses; a caller with no agent header is still the owner and reads every session. The "**none**" cell below and the "owner-only in v1" paragraph describe the access model before that change.
+
 | Caller                       | Rooms                                | Sessions (including bare-CLI) |
 | ---------------------------- | ------------------------------------ | ----------------------------- |
 | The operator, in the cockpit | all                                  | all                           |

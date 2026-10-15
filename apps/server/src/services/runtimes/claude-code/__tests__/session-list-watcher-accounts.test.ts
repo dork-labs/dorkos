@@ -60,6 +60,7 @@ const { watchers, mockChokidar } = vi.hoisted(() => {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 import { watchSessionList } from '../sessions/session-list-watcher.js';
+import { chokidarTreeWatcher } from '../sessions/transcripts/session-tree-watch.js';
 import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
@@ -124,7 +125,10 @@ describe('watchSessionList across Claude accounts', () => {
   }
 
   function start(): AsyncIterator<SessionListEvent> {
-    return watchSessionList(reader as TranscriptReader)[Symbol.asyncIterator]();
+    // chokidar is mocked here, so it is the watch these tests drive by hand.
+    return watchSessionList(reader as TranscriptReader, undefined, chokidarTreeWatcher)[
+      Symbol.asyncIterator
+    ]();
   }
 
   /** The watcher created for `root`, and one of its registered handlers. */

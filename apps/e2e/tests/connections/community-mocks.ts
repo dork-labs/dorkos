@@ -31,6 +31,8 @@ export interface CommunitySpec {
   seemsGoneSince?: string;
   /** The lifecycle this installation recorded, when not the ordinary `active` (DOR-2334). */
   lifecycle?: 'active' | 'taken_down' | 'deleted';
+  /** The official DorkOS space, as the local server marks it (spec `official-community-space` D4). */
+  official?: boolean;
 }
 
 function capabilities(on: boolean) {
@@ -67,6 +69,7 @@ function descriptor(community: CommunitySpec) {
             verifiedAt: '2026-09-23T12:00:00.000Z',
           },
     ...(community.seemsGoneSince ? { seemsGoneSince: community.seemsGoneSince } : {}),
+    ...(community.official ? { official: true } : {}),
   };
 }
 

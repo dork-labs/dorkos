@@ -21,7 +21,10 @@ import {
   StatusBarPrefsSchema,
   ComposerPrefsSchema,
   NotificationPrefsSchema,
+  RemoteAccessModeSchema,
 } from './config-schema.js';
+import { SavedPlacementSchema } from './mini-app-placement.js';
+import { PERMISSION_PRESETS } from './permissions/permission-ids.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -38,7 +41,7 @@ import type { PermissionStop } from './agent-runtime.js';
 import { AccountUsageSchema } from './account-usage.js';
 import { ProjectRefSchema } from './project-schemas.js';
 // A leaf module (zod only), so this value import forms no load-time cycle.
-import { ChatMessageStampSchema } from './chat-messages.js';
+import { ChatMessageStampSchema, RoomMessageStampSchema } from './chat-messages.js';
 
 extendZodWithOpenApiOnce();
 
@@ -916,20 +919,6 @@ export type StoredSessionSettingsResponse = z.infer<typeof StoredSessionSettings
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   title: z.string().min(1).max(200).optional(),
-  /**
-   * "The person asked for this, and they were told what it means." Required —
-   * as this flag or as the standing record in `ui.autonomyAcknowledgedAt` — on
-   * any request that moves an interactive session to a Full-autonomy mode, and
-   * ignored on every other request (spec `trust-dial`, decision 5).
-   *
-   * Deliberately NOT part of {@link SessionSettingsSchema}: it is a statement
-   * about this one request, not a setting. Nothing persists it, and the next
-   * PATCH has to say it again.
-   *
-   * It proves a ritual happened, not an identity. Any caller can send `true`;
-   * see `ui.autonomyAcknowledgedAt` for what this does and does not defend.
-   */
-  acknowledgedAutonomy: z.boolean().optional(),
   /**
    * The runtime the caller believes this session will run on — a HINT, never a
    * binding.
@@ -3688,10 +3677,67 @@ export const HistoryMessageSchema = z
      * and never from the text.
      */
     chatMessages: z.array(ChatMessageStampSchema).optional(),
+    /**
+     * The room post this user message carried into a room-attached chat
+     * (DOR-2113). The runtime records which entry; the server fills in the
+     * room and its author. The app draws the sender from here, never "You"
+     * unless the room says the person wrote it.
+     */
+    roomMessage: RoomMessageStampSchema.optional(),
   })
   .openapi('HistoryMessage');
 
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
+
+/**
+ * How many of a session's newest messages a hydration snapshot carries
+ * (DOR-2889). Older ones are read a page at a time, on request.
+ */
+export const HISTORY_WINDOW_LIMIT = 150;
+
+/** How many earlier messages one page of a session's history holds. */
+export const HISTORY_PAGE_LIMIT = 100;
+
+/**
+ * A history read: the whole history, or the part a {@link HistoryReadQuery}
+ * asked for.
+ *
+ * - `since` a message: `tail` is set when the server found that message, and
+ *   `messages` then starts at it and runs to the end, so the caller keeps what
+ *   it already holds before it and replaces the rest. When the server did not
+ *   find it, the answer is the whole history, without `tail` (DOR-2890).
+ * - `before` a message: the page directly older than it, with
+ *   `earlierMessages` (DOR-2889).
+ * - `newest`: the newest {@link HISTORY_WINDOW_LIMIT} messages, with
+ *   `earlierMessages` when older ones exist.
+ *
+ * So only a read that asked for nothing, or a `since` that missed, is whole.
+ */
+export const HistoryReadSchema = z
+  .object({
+    messages: z.array(HistoryMessageSchema),
+    tail: z.boolean().optional(),
+    /**
+     * How many messages precede the first one here, on a page (`before`) or the
+     * newest window (`newest`). Absent means none, or that this is a tail.
+     */
+    earlierMessages: z.number().int().nonnegative().optional(),
+  })
+  .openapi('HistoryRead');
+
+export type HistoryRead = z.infer<typeof HistoryReadSchema>;
+
+/**
+ * Which part of a history to read (see `Transport.getMessages`): a tail from a
+ * message (`since`), the page older than a message (`before`), or the newest
+ * window (`newest`). Each answers less than the whole history, except a
+ * `since` the server cannot find (see {@link HistoryReadSchema}).
+ */
+export interface HistoryReadQuery {
+  since?: string;
+  before?: string;
+  newest?: boolean;
+}
 
 // === Command Types ===
 
@@ -4273,10 +4319,160 @@ export const TunnelStatusSchema = z
     authEnabled: z.boolean(),
     tokenConfigured: z.boolean(),
     domain: z.string().nullable(),
+    /**
+     * Which kind of forwarding is running: `byo` (the person's own ngrok
+     * account), `managed` (DorkOS Cloud's credential), or `off`. Optional so a
+     * reader of an older server still parses; absent reads as `byo` when a
+     * tunnel is running, because that was the only kind there was.
+     */
+    mode: RemoteAccessModeSchema.optional(),
   })
   .openapi('TunnelStatus');
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
+
+// === Remote Access Report ===
+
+/**
+ * Where remote access stands, from the listener's side (DOR-2086). One value,
+ * and every surface that shows remote access reads it, so they cannot disagree.
+ *
+ * - `off` — nothing is forwarding, and nothing is meant to be.
+ * - `opening` — a start is in progress; not reachable yet.
+ * - `open` — forwarding is up and the address works.
+ * - `draining` — closing: no new requests are taken, and requests already
+ *   accepted are finishing before the listener closes.
+ * - `blocked` — something must be fixed before it can open (for example the
+ *   stored credential is missing, or login is required first). `reason` says
+ *   what.
+ * - `reconnecting` — the listener dropped and is coming back on its own.
+ * - `asleep` — managed mode is selected, this computer is enrolled, and Cloud
+ *   reports the tunnel closed. It describes the TUNNEL, never the computer: it
+ *   does not mean the computer is asleep, and nothing here can wake one.
+ */
+export const RemoteAccessStateSchema = z
+  .enum(['off', 'opening', 'open', 'draining', 'blocked', 'reconnecting', 'asleep'])
+  .openapi('RemoteAccessState');
+
+/** Where remote access stands. See {@link RemoteAccessStateSchema}. */
+export type RemoteAccessState = z.infer<typeof RemoteAccessStateSchema>;
+
+/**
+ * Whether managed remote access can be offered on this computer at all.
+ *
+ * - `hidden` — not offered: the feature is off here, the computer is not
+ *   linked, or Cloud does not offer it. No choice is shown.
+ * - `available` — offered: a person may choose it.
+ * - `unavailable` — offered in principle but not right now (for example Cloud
+ *   could not be reached); shown as unavailable rather than hidden.
+ *
+ * Never gates the person's own ngrok setup, which works in every case.
+ */
+export const RemoteAccessAvailabilitySchema = z
+  .enum(['hidden', 'available', 'unavailable'])
+  .openapi('RemoteAccessAvailability');
+
+/** Whether managed remote access can be offered. See {@link RemoteAccessAvailabilitySchema}. */
+export type RemoteAccessAvailability = z.infer<typeof RemoteAccessAvailabilitySchema>;
+
+/**
+ * Where this computer's managed enrolment stands.
+ *
+ * - `none` — no person has approved managed access for this computer.
+ * - `pending` — a person started setup here and Cloud is waiting for them to
+ *   approve it at `approveUrl` with `userCode`, before `expiresAt`.
+ * - `denied` — the last setup started here was declined on the approval page.
+ *   Nothing was enrolled; a person may start again.
+ * - `expired` — the last setup started here lapsed unanswered, or was replaced
+ *   or ended by Cloud. Nothing was enrolled; a person may start again.
+ * - `enrolled` — a person approved it. Enrolment is consent, not reachability:
+ *   whether the address works is `state`.
+ */
+export const RemoteAccessEnrolmentSchema = z
+  .discriminatedUnion('status', [
+    z.object({ status: z.literal('none') }),
+    z.object({
+      status: z.literal('pending'),
+      /** The short code the person confirms on the approval page. Not a secret. */
+      userCode: z.string().min(1),
+      /** The https page where the person approves. */
+      approveUrl: z.string().url(),
+      /** When the request stops being approvable (ISO 8601). */
+      expiresAt: z.string().datetime({ offset: true }),
+    }),
+    z.object({ status: z.literal('denied') }),
+    z.object({ status: z.literal('expired') }),
+    z.object({ status: z.literal('enrolled') }),
+  ])
+  .openapi('RemoteAccessEnrolment');
+
+/** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
+export type RemoteAccessEnrolment = z.infer<typeof RemoteAccessEnrolmentSchema>;
+
+/**
+ * The one server report every remote access surface reads — Settings, the
+ * Control Center row, the beacon and the command palette (DOR-2086).
+ *
+ * Carries no secret: no tunnel credential, edge proof, lease token or Cloud
+ * key ever rides it.
+ */
+export const RemoteAccessReportSchema = z
+  .object({
+    /** The mode the person selected. */
+    mode: RemoteAccessModeSchema,
+    /** Where it stands. See {@link RemoteAccessStateSchema}. */
+    state: RemoteAccessStateSchema,
+    /**
+     * The address. Present while it is usable (`open`), and while `asleep`,
+     * when it is the address this computer answers at once it is opened again
+     * (the closed page Cloud serves there is not this app). Absent in every
+     * other state, so a surface never offers an address that cannot work.
+     */
+    url: z.string().url().optional(),
+    /**
+     * Why it is `blocked`, or what is happening, in words a person can read.
+     * Safe to show: never a secret, a token or a supplier detail.
+     */
+    reason: z.string().optional(),
+    /**
+     * Whether Cloud keeps this computer's address open on its own. Only ever
+     * what Cloud reports; never derived from a plan on this side.
+     */
+    alwaysAvailable: z.boolean(),
+    /**
+     * True when Cloud's status could not be read just now, so the managed
+     * parts of this report are the last thing Cloud said, not a fresh answer.
+     * The local listener's state is always current.
+     */
+    cloudStale: z.boolean(),
+    /** Whether managed access can be offered. See {@link RemoteAccessAvailabilitySchema}. */
+    availability: RemoteAccessAvailabilitySchema,
+    /** Where the managed enrolment stands. See {@link RemoteAccessEnrolmentSchema}. */
+    enrolment: RemoteAccessEnrolmentSchema,
+    /**
+     * While `draining`: requests already running may finish until `until`,
+     * then whatever is left is cut. `deadline` says who set it: `cloud` when
+     * DorkOS Cloud named the deadline, `local` when it named none and this
+     * computer's bounded default applies. Absent in every other state, and
+     * while draining with no deadline named yet.
+     */
+    drain: z
+      .object({
+        until: z.string().datetime({ offset: true }),
+        deadline: z.enum(['cloud', 'local']),
+      })
+      .optional(),
+    /**
+     * Present, and `true`, only in managed mode when this computer's activity
+     * reports have kept failing to reach DorkOS Cloud. They are kept here and
+     * retried; nothing is lost. Carries no detail of why.
+     */
+    activityReportsDelayed: z.literal(true).optional(),
+  })
+  .openapi('RemoteAccessReport');
+
+/** The remote access report. See {@link RemoteAccessReportSchema}. */
+export type RemoteAccessReport = z.infer<typeof RemoteAccessReportSchema>;
 
 // === Health Response ===
 
@@ -4680,6 +4876,17 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when first-run setup decided the default runtime. Non-null means that decision is closed and is never made again.',
         }),
+        firstRunPath: z.enum(['dorkos', 'own', 'none']).nullable().openapi({
+          description:
+            'The first-run path the person picked: their DorkOS account, their own AI, or no account yet. Null until they pick.',
+        }),
+        welcomeEntryId: z.string().nullable().openapi({
+          description: "The #team entry DorkBot's first-run welcome was posted as, or null.",
+        }),
+        priorRuntime: z.string().nullable().openapi({
+          description:
+            'The default runtime before the first-run path was picked, kept so another pick can undo it.',
+        }),
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),
@@ -4710,6 +4917,26 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
         }),
+        timezone: z.string().nullable().optional().openapi({
+          description: "The person's IANA time zone, or null until the app has told the server one",
+        }),
+        workingHours: z
+          .object({
+            days: z.array(z.number().int()).openapi({ description: 'Working days, 0 = Sunday' }),
+            start: z.string().openapi({ description: 'Start of the working day, HH:MM' }),
+            end: z.string().openapi({ description: 'End of the working day, HH:MM' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'Working hours, or null for Monday to Friday, 09:00 to 17:00' }),
+        away: z
+          .object({
+            until: z.string().nullable().openapi({ description: 'ISO timestamp they are back' }),
+            note: z.string().optional().openapi({ description: 'A short note' }),
+          })
+          .nullable()
+          .optional()
+          .openapi({ description: 'That the person is away, or null' }),
       })
       .optional()
       .openapi({
@@ -4885,26 +5112,32 @@ export const ServerConfigSchema = z
         // defined in config-schema.ts; on the wire because `SessionComposer`
         // picks its field from it and Settings shows it back as a switch.
         composer: ComposerPrefsSchema,
-        autonomyAcknowledgedAt: z.string().nullable().openapi({
+        // Where each mini app's right-panel tab shows (spec
+        // `mini-app-placement`). Also defined in mini-app-placement.ts.
+        panelTabs: z.array(SavedPlacementSchema),
+        // Whether this person has seen the one-time "agents now work without
+        // asking" notice (ADR 261006-225605). On the wire because the app
+        // decides from it whether to show the notice at all.
+        trustNoticeSeenAt: z.string().nullable().openapi({
           description:
-            'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',
-        }),
-        // The two halves of the power-door answer (spec `full-power-defaults`,
-        // D1). On the wire because the cockpit decides from them whether to put
-        // the door up at all — a curated DTO that omitted them would leave the
-        // one-time modal unable to tell an unanswered install from an answered
-        // one, which is how a "shown once" moment becomes a nag.
-        fullPowerDecidedAt: z.string().nullable().openapi({
-          description:
-            'When this person answered the full-power door, either way (ISO 8601), or null when they have not been asked yet. Non-null means never ask again',
-        }),
-        fullPowerChoice: z.enum(['full', 'supervised']).nullable().openapi({
-          description:
-            "What they chose at the full-power door: 'full' or 'supervised', or null when they have not answered. Records the answer only — it grants nothing on its own",
+            'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),
+    officialSpace: z.object({ url: z.string() }).nullable().optional().openapi({
+      description:
+        'The official DorkOS space this install offers to join, even with the spaces experiment off (spec official-community-space D4). Null while no usable link is configured, which hides every official-space prompt',
+    }),
+    permissions: z
+      .object({
+        preset: z.enum(PERMISSION_PRESETS).nullable().openapi({
+          description:
+            "The permission preset every area starts from: 'trusted' or 'careful' ('balanced' and 'full' are older choices still read). null reads as 'trusted'",
+        }),
+      })
+      .optional()
+      .openapi({ description: 'The permission preset; the full picture is GET /api/permissions' }),
     experiments: z.array(ExperimentStateSchema).optional().openapi({
       description:
         'The staged opt-ins Settings → Experiments offers, already resolved, in the order to show them. An EMPTY array is a normal answer — it means every experiment has graduated or been withdrawn. A server that omits the block has no Experiments section at all',
@@ -5371,6 +5604,11 @@ export const TaskSchema = z
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
     nextRun: z.string().nullable().optional(),
+    /**
+     * When the schedule last started a run (ISO 8601), or null when it never
+     * has. Response-only; ABSENT from an older server.
+     */
+    lastRunAt: z.string().nullable().optional(),
     /**
      * The next few times this cron would fire. ISO 8601 UTC, soonest first.
      *
@@ -7000,10 +7238,12 @@ export const KeepAwakeStatusSchema = z
       description: 'The `keepAwake.whileAgentsWork` setting.',
     }),
     supported: z.boolean().openapi({
-      description: 'Whether this computer can be held awake at all.',
+      description:
+        'Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried.',
     }),
     reason: KeepAwakeUnsupportedReasonSchema.nullable().openapi({
-      description: 'Why not, when `supported` is false; null otherwise.',
+      description:
+        'Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.',
     }),
     asserted: z.boolean().openapi({
       description: 'Whether the operating system is being told to stay awake right now.',

@@ -17,14 +17,17 @@ import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
  *
  * @module services/session/launch/launch-session
  */
+import { noteNonBeatMessage } from '../../heartbeats/beat-turns.js';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
+  chatAgentOf,
   homeOf,
   isInsideRoomsDir,
   readHomeManifest,
@@ -40,12 +43,23 @@ import {
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
-import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
+import {
+  dispatchMessage,
+  onDispatchLifecycle,
+  type MessageDispatchResult,
+} from '../message-dispatcher.js';
+import {
+  forgetMessageOrigin,
+  holdTurnOriginFor,
+  messageDispatched,
+  messageTurnStarted,
+} from '../origin/outsider-turns.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
+import { agentPause } from '../../mesh/pause/agent-pause.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -96,6 +110,14 @@ export interface DispatchSessionMessageOpts {
    * dispatching. Passed straight through; see `DispatchMessageOpts.messageId`.
    */
   messageId?: string;
+  /**
+   * The loosest level this first turn may run at. Passed straight through;
+   * `MessageOpts.permissionCeiling` is the authority on what it means. Sent by
+   * `session_start` when the calling turn read an outsider's words, so the new
+   * session's turn is recorded as one that did (spec `trusted-by-default-flip`
+   * §4.7).
+   */
+  permissionCeiling?: TurnPermissionCeiling;
 }
 
 /**
@@ -134,6 +156,9 @@ export function isAgentLaunchCapFull(): boolean {
  * - `ACCOUNT_NOT_ALLOWED` — the account this new session would run on may not
  *   work in its folder's project, whoever picked it (`409
  *   account_not_allowed_here`, spec `flow-multiproject` §8.4).
+ * - `AGENT_PAUSED` — the agent this message is for is paused everywhere, so no
+ *   turn starts and nothing is queued (`409`, spec `audit-trail` PR5). The app
+ *   offers Resume; the message is not kept for later.
  */
 export interface SessionLaunchRefusal {
   /** Which check refused the launch. */
@@ -143,9 +168,12 @@ export interface SessionLaunchRefusal {
     | 'ROOM_SESSION_MOVED'
     | 'DESK_NOT_OWN'
     | 'LAUNCH_CAP_FULL'
-    | 'ACCOUNT_NOT_ALLOWED';
+    | 'ACCOUNT_NOT_ALLOWED'
+    | 'AGENT_PAUSED';
   /** The sentence a caller shows as-is. */
   message: string;
+  /** With `AGENT_PAUSED`: the paused agent's mesh id, so the app can resume it. */
+  agentId?: string;
   /** With `ACCOUNT_NOT_ALLOWED`: the refusal, with its project and account. */
   accountError?: AccountNotAllowedError;
 }
@@ -194,6 +222,12 @@ export async function resolveRuntimeTypeForNewSession(opts: {
   agentPath?: string;
   cwd?: string;
 }): Promise<string> {
+  const placement = runtimeRegistry.computerRuntimeForAgentPath(opts.agentPath ?? opts.cwd ?? '');
+  if (placement) {
+    if (opts.runtimeHint && opts.runtimeHint !== placement)
+      throw new Error('COMPUTER_RUNTIME_MISMATCH');
+    return placement;
+  }
   if (opts.runtimeHint) return opts.runtimeHint;
 
   // Look for an agent manifest in the home the agentPath or cwd resolves to;
@@ -241,6 +275,9 @@ export async function resolveRuntimeTypeForNewSession(opts: {
 export async function dispatchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
+  // A message that is not a beat's, into a chat a beat is running in, makes
+  // that turn somebody's own (spec `heartbeats` §7.2).
+  if (opts.origin.kind !== 'heartbeat') noteNonBeatMessage(opts.sessionId);
   if (!opts.countsTowardLaunchCap) return launchSessionMessage(opts);
   // Taken before any await, so two launches racing for the last slot cannot
   // both get it.
@@ -334,10 +371,31 @@ async function refusedLaunchAccount(opts: {
   }
 }
 
+/** Whether {@link followTurnStarts} subscribed yet. */
+let followingTurnStarts = false;
+
+/**
+ * Apply a message's held turn origin when its turn starts, and forget it when
+ * it leaves the queue without running (`session/origin/outsider-turns.ts`).
+ * Subscribed on the first launch rather than at import, so this module never
+ * reaches the dispatcher while the import graph is still loading.
+ */
+function followTurnStarts(): void {
+  if (followingTurnStarts) return;
+  followingTurnStarts = true;
+  onDispatchLifecycle((event) => {
+    if (event.phase === 'started') messageTurnStarted(event.sessionId, event.messageId);
+    else forgetMessageOrigin(event.messageId);
+  });
+}
+
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled, unattended } = opts;
+  followTurnStarts();
+  // Minted here when the caller did not, so who sent it can wait for its turn.
+  const messageId = opts.messageId ?? randomUUID();
   const {
     content,
     cwd,
@@ -469,6 +527,30 @@ async function launchSessionMessage(
     };
   }
 
+  // A chat whose folder belongs to no agent still runs as the agent it was
+  // started for, so its tools act as that agent and never as the person
+  // (DOR-2863). A room's own answer, when there is one, stands.
+  // A bound chat's agent is its record, never a later message's claim: a
+  // per-message `agentPath` names the owner only on the send that binds it.
+  const recordedAgent = existing?.bound ? await recordedAgentOf(sessionId) : verifiedAgentPath;
+  const forAgent = roomPlace.forAgent ?? chatAgentOf(recordedAgent, effectiveCwd ?? DEFAULT_CWD);
+
+  // **A paused agent starts no turn** (spec `audit-trail` PR5). Asked of the
+  // same folder and agent the turn itself would carry, the way the hold at the
+  // runtime seam asks, and before anything is bound or queued: a refused
+  // message is not kept to run later.
+  const paused = agentPause()?.pausedAgentOfTurn({
+    cwd: effectiveCwd,
+    ...(forAgent !== undefined ? { forAgent } : {}),
+  });
+  if (paused) {
+    agentPause()?.recordHeld(paused, {
+      via: origin.kind === 'interactive' ? 'message' : 'turn',
+      sessionId,
+    });
+    return { refused: 'AGENT_PAUSED', message: `${paused.name} is paused.`, agentId: paused.id };
+  }
+
   if (origin.kind === 'interactive') await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
@@ -516,11 +598,10 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  const isNewSession = await runtimeRegistry.persistSessionRuntime(
-    sessionId,
-    runtimeType,
-    origin,
-    verifiedAgentPath
+  // Who sent it counts from when its turn starts, not now: it may queue behind
+  // a turn somebody else started (`session/origin/outsider-turns.ts`).
+  const isNewSession = await holdTurnOriginFor(messageId, () =>
+    runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
@@ -602,7 +683,7 @@ async function launchSessionMessage(
       sessionId,
       clientId,
       content,
-      ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+      messageId,
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral
@@ -614,7 +695,7 @@ async function launchSessionMessage(
       // A room-bound session resumed here is its room's agent, standing at home
       // with the room's folders granted — never refreshed (§6.1): that is a
       // room turn's own launch step.
-      ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+      ...(forAgent !== undefined ? { forAgent } : {}),
       ...(roomPlace.additionalDirectories !== undefined
         ? { additionalDirectories: roomPlace.additionalDirectories }
         : {}),
@@ -622,6 +703,9 @@ async function launchSessionMessage(
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),
       ...(unattended ? { unattended: true } : {}),
+      ...(opts.permissionCeiling !== undefined
+        ? { permissionCeiling: opts.permissionCeiling }
+        : {}),
       projector,
       runtime,
       onError: (err) => {
@@ -640,6 +724,10 @@ async function launchSessionMessage(
     })
   );
 
+  messageDispatched(sessionId, messageId, {
+    accepted: result.accepted,
+    applied: result.outcome.applied,
+  });
   if (result.queued) {
     logger.info('[POST /messages] queued behind the running turn', {
       sessionId,
@@ -654,3 +742,22 @@ async function launchSessionMessage(
 
 /** @internal Exported for testing only. */
 export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };
+
+/**
+ * The agent recorded for a chat when it was first bound, or null when it has
+ * none or the record cannot be read. An unreadable record names no agent; it
+ * is never a reason to fail the turn, as in the cwd chain.
+ *
+ * @param sessionId - The chat.
+ */
+async function recordedAgentOf(sessionId: string): Promise<string | null> {
+  try {
+    return await runtimeRegistry.getSessionAgentPath(sessionId);
+  } catch (err) {
+    logger.debug('[launch] could not read the chat’s recorded agent', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}

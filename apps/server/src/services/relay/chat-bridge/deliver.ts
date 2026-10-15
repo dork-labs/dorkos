@@ -133,6 +133,9 @@ const DELIVERABLE_NOTICES: ReadonlySet<RoomNoticeCode> = new Set<RoomNoticeCode>
   // things done to the install, and the DM a notice is delivered to by default
   // is the operator's own (spec §6.2).
   'runtime_gone',
+  // A paused agent answers nobody, and a bridged chat is owed the sentence
+  // the room gets rather than silence (spec `audit-trail` PR5).
+  'agent_paused',
 ]);
 
 /**
@@ -545,6 +548,10 @@ export class ChatBridgeDelivery {
         return 'skipped';
       }
     } else if (entry.kind !== 'post') {
+      return 'skipped';
+    } else if (entry.body.greeting !== undefined) {
+      // A scripted greeting DorkOS wrote for an agent (DorkBot's first-run
+      // welcome) belongs to the app, never to a chat on another platform.
       return 'skipped';
     }
 

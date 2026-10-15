@@ -46,6 +46,8 @@ import type { AgentHealthStatus, AgentRuntime } from '@dorkos/shared/mesh-schema
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
+import { currentAuditActor } from '../audit/audit-context.js';
+import { auditTrail } from '../audit/audit-trail.js';
 import {
   authorOrigin,
   isExternalNaturalKey,
@@ -366,6 +368,14 @@ interface OperatorRowFacts {
    * why `undefined` and `null` mean different things.
    */
   nameSuggestedBy: string | null | undefined;
+  /**
+   * The owner's canonical account id — the id an agent's `reportsTo` names
+   * them by (spec `heartbeats` §4.1) — or `undefined` before the audit trail
+   * starts.
+   */
+  accountId: string | undefined;
+  /** Whether the person reading the roster is the owner. */
+  isViewer: boolean;
 }
 
 /**
@@ -409,6 +419,19 @@ function nameSuggestedBy(
   // agent-chosen string headed for a sentence DorkOS wrote, and this is the
   // boundary that hands it to a renderer.
   return source.agentName ? (sanitizeIdentity(source.agentName) ?? null) : null;
+}
+
+/**
+ * The owner's account id as the audit log keys them, and whether the person
+ * reading the roster (the request's audit scope) is that owner. An agent, or
+ * another signed-in person, is not; a request with no scope (a test, a script)
+ * is read as the owner at their own computer.
+ */
+function ownerIdentity(): { accountId: string | undefined; isViewer: boolean } {
+  const accountId = auditTrail()?.accounts.owner().accountId;
+  const actor = currentAuditActor()?.actor;
+  if (!actor) return { accountId, isViewer: true };
+  return { accountId, isViewer: actor.kind === 'person' && actor.accountId === accountId };
 }
 
 /**
@@ -463,6 +486,8 @@ function personRow(
       ...(isSelf && operator.nameSuggestedBy !== undefined
         ? { nameSuggestedBy: operator.nameSuggestedBy }
         : {}),
+      ...(isSelf && operator.accountId ? { accountId: operator.accountId } : {}),
+      ...(isSelf ? { isViewer: operator.isViewer } : {}),
       lastSeenAt: isSelf ? now : null,
       // Only for somebody on a platform outside this machine, because only such
       // a row can be claimed (DOR-1778) — a local person's row is either the
@@ -673,6 +698,7 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
     name: operator.displayName,
     email: operator.email,
     nameSuggestedBy: nameSuggestedBy(configNameSource, operator.nameRung),
+    ...ownerIdentity(),
   };
   const personRows = people.value.map((record) =>
     personRow(record, record.id === self?.id, operatorRowFacts, now, account?.id ?? null)

@@ -64,6 +64,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      computerRuntimeForAgentPath: () => undefined,
       getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
@@ -103,7 +104,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -118,8 +119,7 @@ import { resetMessageDispatcher } from '../../services/session/message-dispatche
 import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
 
 /**
  * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
@@ -128,7 +128,7 @@ finalizeApp(app);
  * same, so a pooled keep-alive socket for a reclaimed port could land on the
  * wrong server. See {@link listeningServer}.
  */
-const server = listeningServer(app);
+const server = listeningServer(composedListener(admission));
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 

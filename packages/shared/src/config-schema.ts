@@ -1,3 +1,4 @@
+import { RelaySettingsSchema } from './config-relay.js';
 /**
  * Persistent user-config schema. Zod is authoritative; `ConfigManager` bridges it
  * to `conf` via `z.toJSONSchema`.
@@ -17,6 +18,11 @@
  *
  * @module config-schema
  */
+import {
+  ActivityConfigSchema,
+  HeartbeatsConfigSchema,
+  KeepAwakeConfigSchema,
+} from './config-sections.js';
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
 // `HARNESS_IDS`, never `HarnessIdSchema`. This module is one of the five
@@ -40,6 +46,17 @@ import {
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+import { CredentialReferenceSchema } from './credential-reference.js';
+import * as remote from './remote-access-settings.js';
+import { CommunityNavigationRefSchema, SpacesSettingsSchema } from './spaces-settings.js';
+import { SavedPlacementSchema } from './mini-app-placement.js';
+import {
+  ApprovedPermissionSetSchema,
+  ExtensionApprovedSourceSchema,
+  ExtensionDismissedApprovalSchema,
+  ExtensionTrustedSourceSchema,
+} from './extension-config-schemas.js';
+import { ToursStateSchema } from './tours-state.js';
 // Plain id lists, never the named schemas in `permissions/permission-schemas.ts`:
 // the same SRC-alias reason as `HARNESS_IDS` above.
 import {
@@ -47,138 +64,15 @@ import {
   PERMISSION_PRESETS,
   PERMISSION_STATES,
 } from './permissions/permission-ids.js';
+export * from './credential-reference.js';
+export * from './remote-access-settings.js';
+export * from './extension-config-schemas.js';
+export * from './tours-state.js';
 export {
   RuntimeInheritedEnvNamesSchema,
   isReservedRuntimeEnvName,
   RUNTIME_RESERVED_ENV_NAMES,
 } from './runtime-environment-schema.js';
-
-const CommunityNavigationRefSchema = z
-  .string()
-  .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
-
-/**
- * Where a copy of an extension came from, when this machine can prove it (spec
- * `flow-multiproject` §9.1): the plugin that carries it, and the `owner/repo`
- * DorkOS's own installer recorded fetching that plugin from (lowercased, e.g.
- * `dork-labs/marketplace`). Never read from a file inside a project.
- */
-export const ExtensionOriginSchema = z.object({
-  /** The plugin folder that carries the extension. */
-  plugin: z.string().min(1),
-  /** The normalized `owner/repo` the plugin was installed from. */
-  source: z.string().min(1),
-});
-
-/** Where a copy of an extension provably came from. */
-export type ExtensionOrigin = z.infer<typeof ExtensionOriginSchema>;
-
-/**
- * One code source a person trusts (spec `flow-multiproject` §9.3): every
- * extension DorkOS installs from it runs without asking first. Only a person
- * can add one, once per source, and only a source DorkOS's installer proved.
- */
-export const ExtensionTrustedSourceSchema = z.object({
-  /** The normalized `owner/repo`, e.g. `dork-labs/marketplace`. */
-  source: z.string().min(1),
-  /** When the person trusted it. ISO 8601. */
-  trustedAt: z.string(),
-});
-
-/** One code source a person trusts. */
-export type ExtensionTrustedSource = z.infer<typeof ExtensionTrustedSourceSchema>;
-
-/**
- * The one copy of an extension a person approved to run code (DOR-2383).
- *
- * An approval is about code, and an id is only a name: two copies of an
- * extension can carry the same id, and the marketplace tools an agent may call
- * can install a second one. So an approval also records WHICH copy it was
- * given to, by where that copy lives. It is identity, not content: editing or
- * updating the approved copy keeps loading with nothing to click (DOR-504/506).
- * See `apps/server/src/services/extensions/extension-load-policy.ts`.
- */
-export const ExtensionApprovedSourceSchema = z.object({
-  /** Absolute path of the approved extension directory. */
-  path: z.string().min(1),
-  /**
-   * The installed marketplace plugin that carries this extension, when it came
-   * inside one; absent for an extension installed directly.
-   */
-  plugin: z.string().min(1).optional(),
-  /**
-   * Where the approved copy came from, when this machine can prove it (spec
-   * `flow-multiproject` §9.1): the carrying plugin and the `owner/repo` DorkOS's
-   * own installer recorded fetching it from. Present only when the approved
-   * copy had such a trusted origin. Another copy with the same trusted origin
-   * counts as approved too, so the same plugin installed into several projects
-   * asks once. A file inside a project can never supply this: it is read only
-   * from DorkOS's own install records.
-   */
-  origin: ExtensionOriginSchema.optional(),
-  /**
-   * For a copy whose plugin files changed after DorkOS installed it: the
-   * whole plugin folder's digest the person said yes to. Any further change
-   * asks again, because a path alone no longer says what is there.
-   */
-  digest: z.string().min(1).optional(),
-  /**
-   * The real path of the dev link this approval was given to (DOR-2696);
-   * absent for an installed copy. A dev link sits at its package's normal
-   * folder, so without this an approval of the installed copy would cover the
-   * link's files at the same path, and the other way round.
-   */
-  devLink: z.string().min(1).optional(),
-});
-
-/** The one copy of an extension a person approved to run code. */
-export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
-
-/**
- * The permission set a person approved for one extension (DOR-2686): where it
- * runs and, when it runs separately, what it may reach. Recorded at the
- * moment of approval from what the extension declared then, so a later
- * version that declares MORE (a new host, a new program, agent access, or a
- * move back inside DorkOS) waits for a person again, while one that declares
- * less keeps running. See
- * `apps/server/src/services/extensions/isolation/permission-coverage.ts`.
- */
-export const ApprovedPermissionSetSchema = z.object({
-  /** Where it was approved to run: `in-process` is full access, and covers everything. */
-  runtime: z.enum(['in-process', 'subprocess']),
-  /** The `allow.net` entries approved. */
-  net: z.array(z.string()),
-  /** The `allow.run` entries approved, by the name the manifest wrote. */
-  run: z.array(z.string()),
-  /** Whether agent access (`allow.agents`) was approved. */
-  agents: z.boolean(),
-});
-
-/** The permission set a person approved for one extension. */
-export type ApprovedPermissionSet = z.infer<typeof ApprovedPermissionSetSchema>;
-
-/**
- * A copy of an extension a person said "Not now" to (DOR-2517).
- *
- * Declining removes, disables and revokes nothing: the extension stays
- * installed, and Settings → Extensions can still turn it on. This only stops
- * the Activity inbox asking about the same copy again. It asks again when the
- * path, the carrying plugin or the version changes, because then it is a
- * different thing to decide about.
- */
-export const ExtensionDismissedApprovalSchema = z.object({
-  /** Absolute path of the extension directory the person declined. */
-  path: z.string().min(1),
-  /** The installed marketplace plugin that carries it, when it came inside one. */
-  plugin: z.string().min(1).optional(),
-  /** The manifest version the person declined. */
-  version: z.string().min(1),
-  /** When they said "Not now". ISO 8601. */
-  dismissedAt: z.string(),
-});
-
-/** A copy of an extension a person said "Not now" to. */
-export type ExtensionDismissedApproval = z.infer<typeof ExtensionDismissedApprovalSchema>;
 
 /** One canonical route inside the local DorkOS installation. */
 export const CommunityInstallationPathSchema = z.enum([
@@ -344,41 +238,7 @@ export const MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS = { min: 1, max: 8 } as const
  */
 export const MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT = 3;
 
-/**
- * The bounds the relay turn ceiling must satisfy.
- *
- * Its own constant rather than a reuse of {@link ROOM_TURN_LIMIT_BOUNDS},
- * because that object's contract is "what a per-room override must satisfy" and
- * these two numbers have no per-room form. `null` — no limit — is expressed by
- * the schema's `.nullable()`, not by a sentinel inside this range, so `0` keeps
- * its literal meaning: start no turns at all.
- */
-export const RELAY_TURN_CEILING_BOUNDS = { min: 0, max: 100_000 } as const;
-
-/**
- * What the relay turn ceiling is before anybody changes it.
- *
- * Deliberately the same pair of numbers the rooms ceiling ships with
- * ({@link ROOM_TURN_LIMIT_DEFAULTS}): a person reasoning about "how much can my
- * agents spend on their own" should not have to hold two different allowances
- * in their head because the traffic took a different pipe. They are separate
- * wallets — a busy hour in rooms does not eat the message bus's allowance — and
- * that is the honest reading of two ceilings, not a doubling of one.
- *
- * Generous but real: 5,000 turns an hour is far more than any working install
- * runs, and an A2A peer pinned at the 60/min ingress cap reaches it in 83
- * minutes instead of never. The per-agent number bites much sooner, which is
- * the point — two agents told to "keep each other posted" trade turns as fast
- * as they finish them, and 1,000 is where that stops.
- *
- * The schema below builds its `.default()` calls from this object AND its
- * object-literal block default, so the shipped value has one definition and a
- * fresh install cannot disagree with an upgraded one.
- */
-export const RELAY_TURN_CEILING_DEFAULTS = {
-  maxAgentTurnsPerAgentPerHour: 1000,
-  maxAgentTurnsTotalPerHour: 5000,
-} as const;
+export { RELAY_TURN_CEILING_BOUNDS, RELAY_TURN_CEILING_DEFAULTS } from './config-relay.js';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
@@ -388,55 +248,6 @@ export const SENSITIVE_CONFIG_KEYS = [
   'cloud.instanceToken',
   'cloud.previousLinkProof',
 ] as const;
-
-/**
- * Credential-reference schemes recognized by the `CredentialProvider` port
- * (ADR-0315). A stored credential is always one of these references, never a
- * raw secret.
- */
-export const CREDENTIAL_SCHEMES = ['keychain', 'env', 'file'] as const;
-
-/** One of the recognized {@link CREDENTIAL_SCHEMES}. */
-export type CredentialScheme = (typeof CREDENTIAL_SCHEMES)[number];
-
-/**
- * A credential value stored in config is a REFERENCE, never plaintext:
- * `keychain:<id>` (OS keychain), `env:<VAR>` (process env), or `file:<name>`
- * (encrypted dork-home secret store). The value after the scheme must be
- * non-empty. This pattern is the schema-level guard that keeps raw secrets out
- * of `config.json` — a plaintext key (e.g. `sk-ant-...`) fails validation
- * (ADR-0315, decision: never persist plaintext).
- */
-export const CREDENTIAL_REF_PATTERN = /^(?:keychain|env|file):.+/;
-
-/**
- * Zod schema for a single credential reference value. Rejects anything that is
- * not a well-formed `keychain:`/`env:`/`file:` reference — the structural
- * guarantee that a raw secret can never be persisted as a provider value.
- */
-export const CredentialReferenceSchema = z
-  .string()
-  .regex(CREDENTIAL_REF_PATTERN, 'must be a keychain:/env:/file: reference, never a raw secret');
-
-/**
- * Split a credential reference into its `scheme` and `value`, or return `null`
- * when the string is not a well-formed reference (no colon, an unrecognized
- * scheme, or an empty value). The lone parser for the reference grammar — the
- * `CredentialProvider` port and the schema guard share this single definition.
- *
- * @param ref - The stored reference string (e.g. `env:OPENROUTER_API_KEY`).
- */
-export function parseCredentialReference(
-  ref: string
-): { scheme: CredentialScheme; value: string } | null {
-  const idx = ref.indexOf(':');
-  if (idx <= 0) return null;
-  const scheme = ref.slice(0, idx);
-  const value = ref.slice(idx + 1);
-  if (value.length === 0) return null;
-  if (!(CREDENTIAL_SCHEMES as readonly string[]).includes(scheme)) return null;
-  return { scheme: scheme as CredentialScheme, value };
-}
 
 /**
  * The guided onboarding steps a first-time user walks through, in flow order:
@@ -454,9 +265,9 @@ export function parseCredentialReference(
  * something new.
  *
  * **A step is flow progress, never consent.** `'power'` records that the person
- * reached and left the power stage; whether they actually answered the door is
- * {@link UserConfig.ui}`.fullPowerDecidedAt`, which the door itself writes. A
- * skipped stage completes no answer.
+ * reached and left the power stage; whether they saw what agents may do is
+ * {@link UserConfig.ui}`.trustNoticeSeenAt`, which the stage itself writes. A
+ * skipped stage records no answer.
  */
 export const ONBOARDING_STEPS = ['power', 'meet-dorkbot', 'profile', 'discovery'] as const;
 
@@ -494,27 +305,27 @@ export const OnboardingStateSchema = z.object({
    * where they change it.
    */
   runtimeDefaultSetAt: z.string().nullable().default(null),
+  /**
+   * Which first-run path the person picked on the Welcome screen (spec
+   * `one-minute-onboarding` §4.1): DorkOS's own account, their own AI, or no
+   * account yet. `null` until they pick. `'dorkos'` is what lets a NEW link
+   * record credits as the person's choice for the DorkOS runtime, and only
+   * while `completedAt` is still null.
+   */
+  firstRunPath: z.enum(['dorkos', 'own', 'none']).nullable().default(null),
+  /**
+   * The #team entry DorkBot's first-run welcome was posted as, so posting it is
+   * done once and the suggestion chips know which entry they sit under.
+   */
+  welcomeEntryId: z.string().nullable().default(null),
+  /**
+   * The default runtime as it was before the first-run route's first call, so
+   * choosing another path can put `runtimes.default` and DorkBot back first.
+   */
+  priorRuntime: z.string().nullable().default(null),
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
-
-/**
- * Persisted state for the DorkBot living tour (DOR-419). Tracks which tours the
- * user has already run (`seen`) and which they declined (`declined`) so an
- * occasion never re-offers a tour the user has finished or waved off. Ids are the
- * tour definition ids (`'tasks' | 'relay' | 'mesh' | 'general'`), stored as free
- * strings so adding a tour never needs a schema migration. Managed automatically
- * by the client; not user-editable.
- */
-export const ToursStateSchema = z.object({
-  seen: z.array(z.string()).default(() => []),
-  declined: z.array(z.string()).default(() => []),
-});
-
-export type ToursState = z.infer<typeof ToursStateSchema>;
-
-/** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
-export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
 
 /**
  * Where the stored {@link UserProfileSchema} `displayName` came from (DOR-1022).
@@ -548,6 +359,73 @@ export const DisplayNameSourceSchema = z.discriminatedUnion('kind', [
 
 /** Where the stored display name came from (see {@link DisplayNameSourceSchema}). */
 export type DisplayNameSource = z.infer<typeof DisplayNameSourceSchema>;
+
+/**
+ * Whether a string names a time zone this runtime knows.
+ *
+ * Asks `Intl` rather than a list, so it agrees with the formatter every
+ * working-hours computation uses (`@dorkos/shared/working-hours`): a zone `Intl`
+ * cannot format is a zone nothing can compute hours in. Lives here, not in
+ * `working-hours.ts`, so this module imports nothing with state (see the module
+ * doc).
+ *
+ * @param zone - A candidate IANA zone, e.g. `"Europe/Berlin"`.
+ */
+export function isValidTimeZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `HH:MM` on a 24-hour clock, 00:00 to 23:59. */
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * A person's working window (spec `heartbeats` §3.5): which days, and from when
+ * to when, read in their own `profile.timezone`.
+ *
+ * The day ends after it starts, always. A window that runs past midnight
+ * (22:00–06:00) is refused rather than guessed at: which day it belongs to is a
+ * question this shape cannot answer, and nobody has asked for it yet.
+ */
+export const WorkingHoursSchema = z
+  .object({
+    /** Working days, 0 = Sunday … 6 = Saturday. At least one, each once. */
+    days: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length, 'Each day can appear only once.'),
+    /** When the working day starts, `HH:MM`. */
+    start: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 09:00.'),
+    /** When it ends, `HH:MM`, after `start`. */
+    end: z.string().regex(CLOCK_PATTERN, 'Use a 24-hour time like 17:00.'),
+  })
+  .refine((hours) => hours.end > hours.start, {
+    message: 'The day has to end after it starts.',
+    path: ['end'],
+  });
+
+/** A person's working window (see {@link WorkingHoursSchema}). */
+export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
+
+/**
+ * That a person is away (spec `heartbeats` §3.5, canon P4): until when, and an
+ * optional note. `until: null` means away until they say otherwise.
+ */
+export const AwaySchema = z.object({
+  /** ISO timestamp they are back, or `null` for "until further notice". */
+  until: z.iso.datetime({ offset: true }).nullable(),
+  /** A short note, e.g. "On holiday". */
+  note: z.string().trim().min(1).max(200).optional(),
+});
+
+/** That a person is away (see {@link AwaySchema}). */
+export type Away = z.infer<typeof AwaySchema>;
 
 /**
  * What the user has told DorkOS about themselves (spec `user-profile-onboarding`).
@@ -606,6 +484,22 @@ export const UserProfileSchema = z.object({
    * the question was put. Nothing derives a handle when it is absent (DOR-604).
    */
   identityPromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * The person's IANA time zone (spec `heartbeats` §3.5), or `null` while the
+   * app has not told the server one. The app fills it from the browser the
+   * first time it opens after an upgrade, and never overwrites a set value, so
+   * a server in a container or on another host never decides it. Until then
+   * the server's own zone stands in.
+   */
+  timezone: z
+    .string()
+    .refine(isValidTimeZone, 'Use a time zone name like Europe/Berlin.')
+    .nullable()
+    .default(null),
+  /** When the person works, or `null` for Monday to Friday, 09:00 to 17:00. */
+  workingHours: WorkingHoursSchema.nullable().default(null),
+  /** That the person is away, or `null` when they are not (see {@link AwaySchema}). */
+  away: AwaySchema.nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -787,6 +681,9 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * single bodies, so folding one folds the zone; the id is the zone's own id, so
  * nothing has to translate.
  *
+ * `addons` is the Library section that lists the pages mini apps add (spec
+ * `mini-app-placement` Part 2). It holds a fold flag and nothing else.
+ *
  * **Widening this enum is a non-event, and that is by construction.** The
  * `dropUnknownSectionIds` preprocessor below strips any key a build does not
  * recognise, so a config written by a newer DorkOS loads on an older one — it
@@ -802,6 +699,7 @@ export const SidebarSectionIdSchema = z.enum([
   'channels',
   'dms',
   'agents',
+  'addons',
   'threads',
   'recents',
 ]);
@@ -1904,9 +1802,8 @@ const DefaultModelSchema = z.string().min(1).nullable().default(null);
 const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
 
 /**
- * How much a NEW session may do without asking, or `null` to let the runtime
- * decide — which is byte-for-byte the behavior before this field existed, and
- * the shipped default (spec `trust-dial`, decision 6).
+ * How much a NEW session may do without asking. `null` lets the runtime decide,
+ * which is byte-for-byte the behavior before these fields existed.
  *
  * **A stop, never a mode id.** `'ask' | 'act' | 'autonomy'` are the three
  * positions of the Trust Dial, and they mean the same thing on every runtime;
@@ -1923,11 +1820,11 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  * by the CLI); the two are pinned together by
  * `packages/shared/src/__tests__/config-schema.test.ts`.
  *
- * Writing `'autonomy'` into one of these leaves is consent-gated at the config
- * route — see `AUTONOMY_ACK_REQUIRED` — because it decides how every future
- * session starts, not just this one.
+ * This is `runtimes.<runtime>.defaultTrustStop`, one runtime's own answer. It
+ * ships `null`, which adds no answer of its own: the runtime follows the global
+ * stop, `runtimes.defaultTrustStop`, which ships `'autonomy'`.
  */
-const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
+const RuntimeTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
 /** The ways DorkOS can run Codex — see `runtimes.codex.transport`. */
 export const CODEX_TRANSPORTS = ['auto', 'app-server', 'exec'] as const;
@@ -2119,9 +2016,9 @@ export const ClaudeCodeSettingsSchema = z.object({
   defaultEffort: DefaultEffortSchema,
   /**
    * Trust stop a new claude-code session starts at, overriding
-   * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+   * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
    */
-  defaultTrustStop: DefaultTrustStopSchema,
+  defaultTrustStop: RuntimeTrustStopSchema,
   /**
    * Whether a Claude Code chat keeps its agent running between your
    * messages instead of starting it up again for each one. Ships `true`
@@ -2152,6 +2049,8 @@ export const ClaudeCodeSettingsSchema = z.object({
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
+  // Days of rotated logs kept, within 200 MB in all. It counted files until the
+  // log began rotating while the server runs, many files a day (DOR-2902).
   maxLogFiles: z.number().int().min(1).max(30).default(14),
 });
 
@@ -2242,11 +2141,11 @@ export const DoeRuntimeSettingsSchema = z
   .object({
     enabled: z.boolean().default(true),
     inference: DoeInferenceConfigSchema.nullable().default(null),
-    defaultTrustStop: DefaultTrustStopSchema,
+    /** Model new chats prefer on credits, when served; `null` = DorkOS picks. */
+    defaultModel: DefaultModelSchema,
+    defaultTrustStop: RuntimeTrustStopSchema,
   })
-  .default(() => ({ enabled: true, inference: null, defaultTrustStop: null }));
-/** Parsed DorkOS runtime settings. */
-export type DoeRuntimeSettings = z.infer<typeof DoeRuntimeSettingsSchema>;
+  .default(() => ({ enabled: true, inference: null, defaultModel: null, defaultTrustStop: null }));
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
@@ -2331,74 +2230,32 @@ export const UserConfigSchema = z.object({
       statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
       /** Person-scoped message-box preferences (DOR-948). */
       composer: ComposerPrefsSchema.default(() => ({ richText: true })),
+      /**
+       * Where each mini app's right-panel tab shows (spec `mini-app-placement`):
+       * one saved choice per tab, keyed by `tab` (`<extensionId>:<tabId>`). A
+       * tab with no entry follows its mini app's declared default, or shows
+       * everywhere. Shared by everyone using this DorkOS.
+       *
+       * A list rather than a record because `PATCH /api/config` replaces lists
+       * and deep-merges objects: with a record, removing one tab's choice
+       * ("Reset") could not be written at all.
+       */
+      panelTabs: z.array(SavedPlacementSchema).default(() => []),
       /** Owner-qualified Community order and remembered destinations; never draft content. */
       communityNavigation: CommunityNavigationPrefsSchema.default(() => ({
         version: 1 as const,
         owners: [],
       })),
       /**
-       * When this person last read what Full autonomy means and said "don't ask
-       * me again", as an ISO 8601 UTC string. `null` until they do, which is the
-       * shipped state (spec `trust-dial`, decision 5).
+       * When this person saw the one-time "agents now work without asking"
+       * notice, or answered the onboarding statement that replaces it, as an
+       * ISO 8601 string (ADR 261006-225605). `null` until then, and the notice
+       * shows while it is `null` on a Trusted install.
        *
-       * A timestamp rather than a boolean because the record is only worth
-       * keeping if it says WHEN: Settings shows the date back, and a person who
-       * cannot remember agreeing to anything can see the moment they did and
-       * clear it.
-       *
-       * ## This is a consent ritual, not a security boundary
-       *
-       * Read that sentence before building anything on this field. The server
-       * refuses to put an interactive session into Full autonomy unless the
-       * request carries an acknowledgement — either `acknowledgedAutonomy: true`
-       * on the PATCH, or this standing record. That closes the gap where a
-       * *client* could skip the dialog. It does NOT stop an API caller: anything
-       * that can reach the route can send `acknowledgedAutonomy: true` itself,
-       * and nothing here would know the difference. The boundary against agent
-       * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
-       * and this field is not it. Do not describe it as one.
-       *
-       * Lives under `ui` because it decides what a dialog does, not what any
-       * gate enforces: requiring login to dismiss a dialog would make the
-       * feature unreachable on the default login-off install. It is still
-       * `operator-only` to write, so an agent cannot forge a person's consent
-       * record.
+       * Gates a notice and nothing else: it grants no capability. Operator-only
+       * to write, so an agent cannot dismiss a notice meant for a person.
        */
-      autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
-      /**
-       * When this person answered the full-power door — **either way** (spec
-       * `full-power-defaults`, D1).
-       *
-       * The single "they have been asked" signal, read by both hosts of the same
-       * door: the onboarding power stage and the one-time modal existing users
-       * meet on the moments rail. Non-null means never ask again, whichever way
-       * they answered, because re-asking a question somebody already answered is
-       * the nagging this program exists to avoid.
-       *
-       * Distinct from {@link UserConfig.ui}`.autonomyAcknowledgedAt`, which is a
-       * standing acknowledgement the server's autonomy gate reads. This one is
-       * only about the door: an answer of "keep asking me first" sets this and
-       * leaves that one null. Nothing here grants a capability — it records that
-       * a question was put and answered.
-       *
-       * `operator-only` to write, for exactly the reason the acknowledgement
-       * above is: a consent record an agent can write is a consent record an
-       * agent can forge.
-       */
-      fullPowerDecidedAt: z.string().datetime().nullable().default(null),
-      /**
-       * What they chose at the door: `'full'` (unlock everything) or
-       * `'supervised'` (keep asking me first). `null` until they answer.
-       *
-       * Read rather than inferred, because the two answers lead somewhere
-       * different afterwards: `'full'` is what pre-selects `canInitiate` on a new
-       * adapter binding, and `'supervised'` is a first-class answer that changes
-       * nothing anywhere. Choosing `'supervised'` here and moving to full power
-       * later is a normal, supported path — the door itself never re-asks once
-       * {@link UserConfig.ui}`.fullPowerDecidedAt` is set, and the Control Center
-       * that will offer that second chance in one click arrives with task 2.2.
-       */
-      fullPowerChoice: z.enum(['full', 'supervised']).nullable().default(null),
+      trustNoticeSeenAt: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -2419,15 +2276,13 @@ export const UserConfigSchema = z.object({
       },
       statusBar: { pins: [] },
       composer: { richText: true },
+      panelTabs: [],
       communityNavigation: { version: 1 as const, owners: [] },
-      autonomyAcknowledgedAt: null,
-      // Both halves of the power-door answer. Declared here as well as per-field
-      // because `conf` merges top-level defaults SHALLOWLY: the per-field default
-      // is what a fresh install lands on, this literal is what an upgrade whose
-      // stored `ui` block predates the fields lands on, and a field declared in
-      // only one of the two is a silent disagreement between those paths.
-      fullPowerDecidedAt: null,
-      fullPowerChoice: null,
+      // Declared here as well as per-field because `conf` merges top-level
+      // defaults SHALLOWLY: the per-field default is what a fresh install lands
+      // on, this literal is what an install with no stored `ui` block lands on,
+      // and a field declared in only one of the two is a silent disagreement.
+      trustNoticeSeenAt: null,
     })),
   /**
    * How DorkOS gets your attention, and how hard it tries.
@@ -2449,53 +2304,9 @@ export const UserConfigSchema = z.object({
     maxLogSizeKb: 500,
     maxLogFiles: 14,
   })),
-  relay: z
-    .object({
-      enabled: z.boolean().default(true),
-      dataDir: z.string().nullable().default(null),
-      /**
-       * The most turns any ONE agent may be sent through agent messaging in an
-       * hour, counted whoever asked for them.
-       *
-       * Every way of making an agent answer over the message bus — another
-       * agent's `relay_send`, an outside system speaking A2A, a webhook posting
-       * back — ends at the same dispatch, and this counts them all there. It
-       * does not read who is calling, because in the shipped posture DorkOS
-       * cannot reliably tell a program on your machine from you.
-       *
-       * `null` means no limit. `0` stops agent messaging from starting turns
-       * at all.
-       */
-      maxAgentTurnsPerAgentPerHour: z
-        .number()
-        .int()
-        .min(RELAY_TURN_CEILING_BOUNDS.min)
-        .max(RELAY_TURN_CEILING_BOUNDS.max)
-        .nullable()
-        .default(RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour),
-      /**
-       * The most turns agent messaging may start on this DorkOS in an hour,
-       * across every agent.
-       *
-       * This is the ceiling on what agents messaging each other can cost you.
-       * The per-agent number above keeps one runaway pair from eating the whole
-       * allowance; this one is the allowance. `null` means no limit, `0` stops
-       * agent messaging from starting turns at all.
-       */
-      maxAgentTurnsTotalPerHour: z
-        .number()
-        .int()
-        .min(RELAY_TURN_CEILING_BOUNDS.min)
-        .max(RELAY_TURN_CEILING_BOUNDS.max)
-        .nullable()
-        .default(RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour),
-    })
-    .default(() => ({
-      enabled: true,
-      dataDir: null,
-      maxAgentTurnsPerAgentPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsPerAgentPerHour,
-      maxAgentTurnsTotalPerHour: RELAY_TURN_CEILING_DEFAULTS.maxAgentTurnsTotalPerHour,
-    })),
+  relay: RelaySettingsSchema,
+  /** Persistent local Linux computer opt-in. Setup begins only on a person's request. */
+  computers: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /** Shared browser opt-in. A stored choice does not establish mode readiness. */
   browser: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
   /**
@@ -2509,8 +2320,15 @@ export const UserConfigSchema = z.object({
    * turns this on in Settings → Experiments. This machine's own rooms and
    * #team are not spaces and never read it. Read on every request, so a change
    * takes effect at once.
+   *
+   * `official.url` is the one exception (spec `official-community-space` D4):
+   * the public link of the official DorkOS space. Its row shows, and it can be
+   * joined, even with the experiment off. `''` turns the exception off, which
+   * is the shipped default until that space exists. `DORKOS_OFFICIAL_SPACE_URL`
+   * overrides it. Only a person may change it: it decides which outside server
+   * this install talks to with spaces off.
    */
-  spaces: z.object({ enabled: z.boolean().default(false) }).default(() => ({ enabled: false })),
+  spaces: SpacesSettingsSchema,
   /**
    * Letting agents on other systems talk to the agents on this one.
    *
@@ -2552,43 +2370,12 @@ export const UserConfigSchema = z.object({
       maxConcurrentRuns: 4,
       retentionCount: 100,
     })),
-  /**
-   * Whether this computer may idle-sleep while agents work (spec `keep-awake`,
-   * DOR-2718). A whole top-level section on purpose: conf writes a new section
-   * into every stored config on its own, so neither field needs a migration.
-   * Both defaults are declared twice, here and in the section literal below,
-   * and the two must agree.
-   */
-  keepAwake: z
-    .object({
-      /** Hold the computer awake while any agent works; release when idle. */
-      whileAgentsWork: z.boolean().default(true),
-      /**
-       * Wake the computer shortly before each approved scheduled run (needs
-       * one-time admin setup on macOS and Linux). Read by nothing yet: the wake
-       * half of the spec ships later, and Settings offers no switch for it
-       * until then. It ships in this section now so adding it later is not a
-       * nested-leaf migration.
-       */
-      wakeForScheduledTasks: z.boolean().default(false),
-    })
-    .default(() => ({ whileAgentsWork: true, wakeForScheduledTasks: false })),
-  /**
-   * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
-   * purpose, like `keepAwake`: conf writes a new section into every stored
-   * config on its own, so the field needs no migration. The default is declared
-   * twice, here and in the section literal below, and the two must agree.
-   */
-  activity: z
-    .object({
-      /**
-       * Days of Activity history to keep. `DORKOS_ACTIVITY_RETENTION_DAYS`
-       * overrides it when set. Permission changes are kept regardless, and the
-       * audit log keeps every action forever whatever this says.
-       */
-      retentionDays: z.number().int().min(1).max(3650).default(365),
-    })
-    .default(() => ({ retentionDays: 365 })),
+  /** Whether this computer may idle-sleep while agents work (`config-sections.ts`). */
+  keepAwake: KeepAwakeConfigSchema,
+  /** Whether agents wake on their own (`config-sections.ts`). */
+  heartbeats: HeartbeatsConfigSchema,
+  /** The Activity feed (`config-sections.ts`). */
+  activity: ActivityConfigSchema,
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),
@@ -2707,7 +2494,9 @@ export const UserConfigSchema = z.object({
       lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
       /**
        * How long an agent stays addressable after you talk to it, before it goes
-       * back to needing an @mention. Talking to it again starts the clock over.
+       * back to needing an @mention. The clock starts at whichever came last in
+       * that place: the agent's own message, or your @mention of it (DOR-2823).
+       * Talking to it again starts the clock over.
        *
        * This is the ceiling, not the setting: a room can hold an agent to a
        * shorter window, never a longer one. `0` means an agent is only ever
@@ -2717,20 +2506,25 @@ export const UserConfigSchema = z.object({
        * measurement — see `meta/agent-etiquette.md` §9. Nobody publishes a
        * defensible figure for how long a person expects to keep talking to
        * something without naming it again, so this one is ours, to be tuned by
-       * using the product.
+       * using the product. Raised from 10 to 60 by DOR-2823, after a person's
+       * replies kept arriving just after a long agent turn used the window up.
+       *
+       * Agents talking to each other are held to the old 10 minutes and 5
+       * messages whatever this says (`engagement.ts` `AGENT_POST_WINDOW`).
        */
-      engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+      engagedWindowMinutes: z.number().int().min(0).max(1440).default(60),
       /**
        * How many messages from other people can go by before an agent stops
-       * treating itself as part of the conversation. Talking to it again starts
-       * the count over.
+       * treating itself as part of the conversation. Counted, like the minutes,
+       * from whichever came last in that place: the agent's own message, or
+       * your @mention of it (DOR-2823). Raised from 5 to 15 by DOR-2823.
        *
        * The second half of the same window, and it ends on whichever runs out
        * first — a quiet ten minutes and a busy ten messages are both reasons to
        * stop assuming a question was meant for you. Also a ceiling, and also a
        * judgement rather than a measurement.
        */
-      engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+      engagedWindowPosts: z.number().int().min(0).max(100).default(15),
       /**
        * How long an agent waits for the room to stop talking before it answers,
        * in milliseconds.
@@ -2774,39 +2568,6 @@ export const UserConfigSchema = z.object({
        * answer.
        */
       responseGate: z.enum(['off', 'routing']).default('routing'),
-      /**
-       * How many messages one agent may post into a room inside a single turn.
-       *
-       * Three is room for "on it", the answer, and a correction — and a refusal
-       * for the tenth, so one turn cannot serialise an essay across nine bubbles.
-       * It counts only what an agent posts through the tool while a turn of its
-       * own is running here; nothing you write is ever counted.
-       *
-       * Posting is the only voice an agent has in a room, which is what makes
-       * this a bound worth having. Like every number in this area, it is a
-       * judgement rather than a measurement — see `meta/agent-etiquette.md` §9.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — for the reason above.
-       */
-      maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
-      /**
-       * How many times one agent may change a room's shared canvas inside a
-       * single turn — opening a document, updating one, closing one.
-       *
-       * Three is the same judgement `maxPostsPerTurn` above makes, for the same
-       * reason: room for the thing you meant to show, a second thing beside it,
-       * and a correction — and a refusal after that, so one turn cannot bury the
-       * table under a dozen tabs nobody asked for. The refusal reaches the agent
-       * in the tool result, so it can put the rest in one change next turn.
-       *
-       * Nothing you do yourself is counted; this bounds agents only.
-       *
-       * Every declaration of this value has to agree — here and in the `rooms`
-       * section literal below — because `conf` merges top-level defaults
-       * shallowly.
-       */
-      maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
       /**
        * How many conversations one agent may work in at the same time.
        *
@@ -2919,20 +2680,14 @@ export const UserConfigSchema = z.object({
       maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
-      engagedWindowMinutes: 10,
-      engagedWindowPosts: 5,
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing' as const,
-      // How much one agent may say in one room turn. Two declarations carry
-      // this value — the per-field one above and this — and both have to agree
-      // or the shallow defaults-merge lands somebody on the other value.
-      maxPostsPerTurn: 3,
-      // How many canvas changes one agent may make in one turn, same judgement
-      // and same both-sites rule as the line above it.
-      maxCanvasOpsPerTurn: 3,
-      // How many conversations one agent may work in at once, same both-sites
-      // rule as the lines above it.
+      // How many conversations one agent may work in at once. Two declarations
+      // carry this value — the per-field one above and this — and both have to
+      // agree or the shallow defaults-merge lands somebody on the other value.
       maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,
@@ -3006,14 +2761,9 @@ export const UserConfigSchema = z.object({
       maxPosts: 3,
       offersEnabled: true,
     })),
-  onboarding: OnboardingStateSchema.default(() => ({
-    completedSteps: [],
-    skippedSteps: [],
-    startedAt: null,
-    dismissedAt: null,
-    completedAt: null,
-    runtimeDefaultSetAt: null,
-  })),
+  // Parsed from the section's own schema rather than restated as a literal, so
+  // a field added above can never be missing from a fresh install's section.
+  onboarding: OnboardingStateSchema.default(() => OnboardingStateSchema.parse({})),
   tours: ToursStateSchema.default(() => ({ seen: [], declined: [] })),
   /** Who the user is, in their own words. Local-only — see {@link UserProfileSchema}. */
   profile: UserProfileSchema.default(() => ({
@@ -3023,6 +2773,9 @@ export const UserConfigSchema = z.object({
     displayNameSource: null,
     rolePromptDismissedAt: null,
     identityPromptDismissedAt: null,
+    timezone: null,
+    workingHours: null,
+    away: null,
   })),
   uploads: z
     .object({
@@ -3458,10 +3211,11 @@ export const UserConfigSchema = z.object({
       default: z.string().default('claude-code'),
       /**
        * How much a new session may do without asking, on every runtime that has
-       * no answer of its own. See {@link DefaultTrustStopSchema}; a
+       * no answer of its own. Ships `'autonomy'` (ADR 261006-225605): our own
+       * agents work without asking, and every action is recorded. A
        * `runtimes.<runtime>.defaultTrustStop` beats this one.
        */
-      defaultTrustStop: DefaultTrustStopSchema,
+      defaultTrustStop: RuntimeTrustStopSchema.unwrap().default('autonomy'),
       // The rename heal runs BEFORE this object is parsed, so a config still
       // spelling the default `activeAccount` parses with the operator's choice
       // in the new key. What settles the FILE is a write that names `runtimes`,
@@ -3511,9 +3265,9 @@ export const UserConfigSchema = z.object({
           defaultModel: DefaultModelSchema,
           /**
            * Trust stop a new OpenCode session starts at, overriding
-           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
            */
-          defaultTrustStop: DefaultTrustStopSchema,
+          defaultTrustStop: RuntimeTrustStopSchema,
         })
         .default(() => ({
           enabled: true,
@@ -3542,9 +3296,9 @@ export const UserConfigSchema = z.object({
           defaultEffort: DefaultEffortSchema,
           /**
            * Trust stop a new codex session starts at, overriding
-           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           * `runtimes.defaultTrustStop`. See {@link RuntimeTrustStopSchema}.
            */
-          defaultTrustStop: DefaultTrustStopSchema,
+          defaultTrustStop: RuntimeTrustStopSchema,
           /**
            * How DorkOS runs Codex (ADR 261005-113107). `auto` follows DorkOS's
            * own default, resolved in one place (`resolveCodexTransport`), so a
@@ -3568,8 +3322,8 @@ export const UserConfigSchema = z.object({
     .default(() => ({
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       default: 'claude-code',
-      defaultTrustStop: null,
-      doe: { enabled: true, inference: null, defaultTrustStop: null },
+      defaultTrustStop: 'autonomy' as const,
+      doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -3627,8 +3381,13 @@ export const UserConfigSchema = z.object({
    */
   permissions: z
     .object({
-      /** The preset every area starts from. `null` = not chosen yet ("Unchanged"). */
-      preset: z.enum(PERMISSION_PRESETS).nullable().default(null),
+      /**
+       * The preset every area starts from. Ships `'trusted'` (ADR
+       * 261006-225605): our own agents work without asking, and every action is
+       * recorded. `'careful'` turns asking back on. `null` is still readable and
+       * means the same as `'trusted'`; the `'0.115.0'` migration leaves none.
+       */
+      preset: z.enum(PERMISSION_PRESETS).nullable().default('trusted'),
       /** The changes a person made on top of the preset ("Full power, 2 changes"). */
       defaults: z
         .object({
@@ -3643,11 +3402,20 @@ export const UserConfigSchema = z.object({
        * means never. Machine-managed: the boot sweep stamps it.
        */
       upgradeSweptVersion: z.string().nullable().default(null),
+      /**
+       * When the Trusted defaults were applied to the stores outside this file
+       * (the open mesh rule, and later the connected apps), as an ISO 8601
+       * string; `null` means not yet. Machine-managed: the boot steps that do
+       * that work stamp it once (`services/mesh/seed-open-mesh.ts`), so a
+       * person who later narrows one of those stores keeps their choice.
+       */
+      trustedStoresAppliedAt: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
-      preset: null,
+      preset: 'trusted' as const,
       defaults: { areas: {}, actions: {} },
       upgradeSweptVersion: null,
+      trustedStoresAppliedAt: null,
     })),
   cloud: z
     .object({
@@ -3687,6 +3455,12 @@ export const UserConfigSchema = z.object({
         agents: [],
         linkedTo: null,
       })),
+      /**
+       * Managed remote access: the selected mode, the enrolment a person
+       * approved, and references to the stored credential (DOR-2086). See
+       * {@link RemoteAccessSettingsSchema}.
+       */
+      remote: remote.RemoteAccessSettingsSchema.default(remote.defaultRemoteAccessSettings),
     })
     .default(() => ({
       instanceToken: null,
@@ -3694,6 +3468,7 @@ export const UserConfigSchema = z.object({
       linkedAccountLabel: null,
       previousLinkProof: null,
       credits: { defaults: {}, offer: 'none' as const, agents: [], linkedTo: null },
+      remote: remote.defaultRemoteAccessSettings(),
     })),
   /**
    * Connector gateway settings (connector-completion spec). `rawMcpServers`

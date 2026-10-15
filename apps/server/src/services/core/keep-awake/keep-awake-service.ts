@@ -7,8 +7,13 @@
  * beside each so status can say what the work is:
  *
  * - **turn** — every agent turn, opened by the registry wrapper
- *   (`hold-during-turn.ts`) whoever started it. A turn sent with `roomTurn` is a
- *   room reply; every other turn is a chat.
+ *   (`hold-during-turn.ts`) whoever started it, including a turn the agent
+ *   starts on its own when a helper reports back. A turn sent with `roomTurn` is
+ *   a room reply; every other turn is a chat. A turn that ends while the agent
+ *   still holds background work stays held until that work is done: the reply
+ *   is not the end of the work. A working helper holds for as long as the
+ *   runtime says it works (the runtime caps that); anything else (a background
+ *   shell, a timer) holds for at most {@link BACKGROUND_ONLY_CEILING_MS}.
  * - **task** — a task run, opened by the scheduler around the whole run, so
  *   placement and provisioning are covered before any turn starts.
  *
@@ -60,10 +65,22 @@ export interface TurnDescriptor {
   /** Whether it is a room reply (`opts.roomTurn` was set). */
   room: boolean;
   /**
+   * The agent started this turn on its own, so nothing says whether it is a
+   * room reply. It takes the label of the session's turn still held for its
+   * background work, which is the work it is reporting on.
+   */
+  selfStarted?: boolean;
+  /**
    * Whether the runtime says a helper (a background subagent) is still working
    * in this session. Asked only by the idle ceiling.
    */
   isHelperWorking?: () => boolean;
+  /**
+   * Whether the agent still holds background work that may continue after the
+   * turn ends (`AgentRuntime.holdsBackgroundWork`). Asked when the turn ends and
+   * on every sweep after; absent reads as "no".
+   */
+  holdsBackgroundWork?: () => boolean;
 }
 
 /** The `keepAwake` config section, as far as this service reads it. */
@@ -85,7 +102,18 @@ export interface KeepAwakeStartDeps {
 
 /** A turn idle this long, with no helper working, is released by the sweep. */
 export const TURN_IDLE_CEILING_MS = 2 * 60 * 60 * 1000;
-/** How often the idle ceiling is checked. */
+/**
+ * How long a turn is held after it ends for background work that is not a
+ * working helper: a server left in a background shell, a wake-up timer. Such
+ * work can run for hours without the agent needing the computer, so it keeps
+ * the computer up only long enough to cover a short job.
+ */
+export const BACKGROUND_ONLY_CEILING_MS = 20 * 60 * 1000;
+/**
+ * How often the sweep runs: the idle ceiling, and the check that lets go of a
+ * turn whose background work has finished. A minute late is well inside the
+ * package's linger, so the computer never sleeps early because of it.
+ */
 const SWEEP_EVERY_MS = 60_000;
 /** At most one status broadcast per this many milliseconds. */
 const BROADCAST_COALESCE_MS = 500;
@@ -96,6 +124,12 @@ interface TurnRecord {
   room: boolean;
   lastActivityAt: number;
   isHelperWorking?: () => boolean;
+  holdsBackgroundWork?: () => boolean;
+  /**
+   * The turn's stream has ended but its background work has not. Kept held
+   * until the sweep sees the work done; `lastActivityAt` is the turn's end.
+   */
+  background: boolean;
   hold: Hold | null;
   released: boolean;
   /**
@@ -118,6 +152,15 @@ type WorkRecord = TurnRecord | TaskRecord;
 
 const NO_OP_TURN: TurnAwakeHold = { touch: () => {}, release: () => {} };
 const NO_OP_TASK: TaskAwakeHold = { attachSession: () => {}, release: () => {} };
+
+/** Ask a runtime probe; a missing probe, or one that throws, reads as "no". */
+function probe(question: (() => boolean) | undefined): boolean {
+  try {
+    return question?.() === true;
+  } catch {
+    return false;
+  }
+}
 
 /** The package hold reason for a record. */
 function holdReason(record: WorkRecord): string {
@@ -207,9 +250,11 @@ export class KeepAwakeService {
       const record: TurnRecord = {
         kind: 'turn',
         sessionId: turn.sessionId,
-        room: turn.room,
+        room: turn.room || (turn.selfStarted === true && this.backgroundIsRoom(turn.sessionId)),
         lastActivityAt: Date.now(),
         ...(turn.isHelperWorking ? { isHelperWorking: turn.isHelperWorking } : {}),
+        ...(turn.holdsBackgroundWork ? { holdsBackgroundWork: turn.holdsBackgroundWork } : {}),
+        background: false,
         hold: null,
         released: false,
         swept: false,
@@ -225,6 +270,24 @@ export class KeepAwakeService {
         },
         release: () => {
           record.swept = false;
+          if (record.released || record.background) return;
+          if (probe(record.holdsBackgroundWork)) {
+            // The reply ended, the work did not: keep holding until the sweep
+            // sees the background work finish. One such hold per session: a
+            // newer one replaces the older, which stands for the same work.
+            for (const other of [...this.records]) {
+              if (
+                other.kind === 'turn' &&
+                other.background &&
+                other.sessionId === record.sessionId
+              ) {
+                this.close(other);
+              }
+            }
+            record.background = true;
+            record.lastActivityAt = Date.now();
+            return;
+          }
           this.close(record);
         },
       };
@@ -281,10 +344,18 @@ export class KeepAwakeService {
       tasks += 1;
       if (record.sessionId) taskSessions.add(record.sessionId);
     }
+    // A turn held only for its background work (one per session) does not
+    // count beside a live turn on the same session: the turn the agent starts
+    // when its helper reports back is that same work, not a second piece of it.
+    const liveSessions = new Set<string>();
+    for (const record of this.records) {
+      if (record.kind === 'turn' && !record.background) liveSessions.add(record.sessionId);
+    }
     let chats = 0;
     let rooms = 0;
     for (const record of this.records) {
       if (record.kind !== 'turn' || taskSessions.has(record.sessionId)) continue;
+      if (record.background && liveSessions.has(record.sessionId)) continue;
       if (record.room) rooms += 1;
       else chats += 1;
     }
@@ -299,32 +370,51 @@ export class KeepAwakeService {
   }
 
   /**
-   * Release every turn that has produced nothing for {@link TURN_IDLE_CEILING_MS}
-   * while no helper works in its session. This bounds the one leak the wrapper
-   * cannot see: a consumer that abandons a stream without ending it. A release
-   * here is a bug report, not a feature, so it is logged as a warning. A
-   * released turn that turns out to be alive (it produces another event) is
-   * held again, and its eventual end releases it once.
+   * Let go of turns whose work is over or presumed lost:
+   *
+   * - A turn held for background work after it ended is released once the
+   *   runtime says that work is done, or {@link BACKGROUND_ONLY_CEILING_MS}
+   *   after the turn ended while no helper is working (only a shell or a timer
+   *   is left). A working helper keeps it held; the runtime caps how long a
+   *   helper counts as working.
+   * - Every live turn that has produced nothing for {@link TURN_IDLE_CEILING_MS}
+   *   while no helper works in its session is released. This bounds the one
+   *   leak the wrapper cannot see: a consumer that abandons a stream without
+   *   ending it. That release is a bug report, not a feature, so it is logged
+   *   as a warning. A released turn that turns out to be alive (it produces
+   *   another event) is held again, and its eventual end releases it once.
    *
    * @param now - The current time; a test seam.
    */
   sweepIdleTurns(now: number = Date.now()): void {
     for (const record of [...this.records]) {
       if (record.kind !== 'turn') continue;
-      if (now - record.lastActivityAt < TURN_IDLE_CEILING_MS) continue;
-      let helperWorking: boolean;
-      try {
-        helperWorking = record.isHelperWorking?.() === true;
-      } catch {
-        helperWorking = false;
+      if (record.background) {
+        const done = !probe(record.holdsBackgroundWork);
+        const onlyIdleWork =
+          !probe(record.isHelperWorking) &&
+          now - record.lastActivityAt >= BACKGROUND_ONLY_CEILING_MS;
+        if (done || onlyIdleWork) this.close(record);
+        continue;
       }
-      if (helperWorking) continue;
+      if (now - record.lastActivityAt < TURN_IDLE_CEILING_MS) continue;
+      if (probe(record.isHelperWorking)) continue;
       logger.warn('[KeepAwake] released a turn that produced nothing for two hours', {
         sessionId: record.sessionId,
       });
       this.close(record);
       record.swept = true;
     }
+  }
+
+  /** Whether the session's turn held for background work is a room reply. */
+  private backgroundIsRoom(sessionId: string): boolean {
+    for (const record of this.records) {
+      if (record.kind === 'turn' && record.background && record.sessionId === sessionId) {
+        return record.room;
+      }
+    }
+    return false;
   }
 
   private readEnabled(): boolean {

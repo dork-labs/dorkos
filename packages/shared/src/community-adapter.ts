@@ -45,6 +45,14 @@ import { z } from 'zod';
 import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import { SignalTypeSchema, type SignalType } from './relay-envelope-schemas.js';
 import { AuthorKindSchema, RoomKindSchema, RoomPresenceStateSchema } from './room-schemas.js';
+import type {
+  CommunityRules,
+  CommunityStanding,
+  ReportCommunityEntryInput,
+} from './community-conduct.js';
+
+// A member's standing, the rules, their name and reports live in their own module.
+export * from './community-conduct.js';
 
 // ---------------------------------------------------------------------------
 // 1. Addressing and identity
@@ -263,6 +271,14 @@ export const CommunityCapabilitiesSchema = z.object({
   agentActing: z.boolean(),
   /** Can this adapter upload and download bounded message attachments? */
   attachments: z.boolean(),
+  /**
+   * Can the connected person read their standing (a mute, a room's slow mode, the rules), accept
+   * the rules, and choose their own name in this community? A backend with no moderation:
+   * `false`.
+   */
+  conduct: z.boolean(),
+  /** Can the connected person report someone else's message to the community's moderators? */
+  reports: z.boolean(),
 
   // --- 3. Membership -------------------------------------------------------
   /**
@@ -397,6 +413,8 @@ export const COMMUNITY_GATED_CAPABILITIES = [
   'responseMode',
   'signals',
   'attachments',
+  'conduct',
+  'reports',
 ] as const;
 /** One capability that gates a method. See {@link COMMUNITY_GATED_CAPABILITIES}. */
 export type CommunityGatedCapability =
@@ -1435,6 +1453,49 @@ export interface CommunityAdapter {
    * @param input - What the invite should admit to.
    */
   createInvite(input: CreateCommunityInviteInput): Promise<CommunityInvite>;
+
+  // --- Conduct -------------------------------------------------------------
+  //
+  // Each of these is the connected person's own act, so none takes an acting
+  // member: no caller of this port can accept the rules, rename, or report as
+  // an agent, or as anybody but the person this adapter's credential names.
+
+  /**
+   * Whether the connected person may post in one room right now: their mute,
+   * the room's slow mode, and the rules they accepted. Gated on `conduct`.
+   *
+   * @param roomId - The room whose slow mode to read.
+   */
+  getStanding(roomId: string): Promise<CommunityStanding>;
+
+  /**
+   * Accept the community's rules as they stand in exactly this version. Gated
+   * on `conduct`. A version that is not the current one is refused, never
+   * stretched to cover rules the person has not read.
+   *
+   * @param version - The version the person read.
+   */
+  acceptRules(version: number): Promise<CommunityRules>;
+
+  /**
+   * Change the connected person's own name in this community. Gated on
+   * `conduct`. A name the community reserves, or one of its agents' names, is
+   * refused.
+   *
+   * @param displayName - The new name.
+   */
+  setDisplayName(displayName: string): Promise<CommunityMember>;
+
+  /**
+   * Report someone else's message to the community's moderators. Gated on
+   * `reports`. Reporting the same message twice is a quiet success; the
+   * reporter is never told what the moderators did.
+   *
+   * @param roomId - The room the message is in.
+   * @param entryId - The message.
+   * @param input - Why, and an optional note only moderators read.
+   */
+  reportEntry(roomId: string, entryId: string, input: ReportCommunityEntryInput): Promise<void>;
 
   // --- Ephemeral -----------------------------------------------------------
 

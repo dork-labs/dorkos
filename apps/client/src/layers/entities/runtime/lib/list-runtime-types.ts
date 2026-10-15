@@ -17,13 +17,17 @@ import { PRIMARY_RUNTIME_TYPES } from '../config/runtime-descriptors';
  * product's own order, and anything else is appended in registration order — so
  * a recheck that flips one runtime's state never reshuffles the list under
  * somebody's cursor. `test-mode` is left out: it is the e2e harness runtime, not
- * something a person connects.
+ * something a person connects. `computer-local` belongs to a retained computer
+ * placement and cannot be selected as a general runtime.
  *
  * @param registeredTypes - Runtime types the capability map reports.
  */
 export function listRuntimeTypes(registeredTypes: readonly string[]): string[] {
   const extras = registeredTypes.filter(
-    (type) => !(PRIMARY_RUNTIME_TYPES as readonly string[]).includes(type) && type !== 'test-mode'
+    (type) =>
+      !(PRIMARY_RUNTIME_TYPES as readonly string[]).includes(type) &&
+      type !== 'test-mode' &&
+      type !== 'computer-local'
   );
   return [...PRIMARY_RUNTIME_TYPES, ...extras];
 }

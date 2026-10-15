@@ -1,11 +1,11 @@
 /**
  * One HTTP listener per owning test scope, bound once and never rebound.
  *
- * Handed a non-listening Express app, supertest opens a fresh ephemeral
+ * Handed a callable app that is not listening, supertest opens a fresh ephemeral
  * listener per REQUEST (`if (!addr) this._server = app.listen(0)`) and closes
  * it in the response callback. Under parallel workers that creates avoidable
  * listener teardown and ephemeral-port churn. Aggregate runs have observed
- * requests fail before Express logs them (`socket hang up` and HTTP parse
+ * requests fail before the server logs them (`socket hang up` and HTTP parse
  * errors), plus a registration request receive an impossible 404 from an app
  * that mounts the route which returns 201. Focused reruns pass. Those
  * observations locate the problem at the transport-fixture boundary; they do
@@ -19,6 +19,7 @@
  */
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { once } from 'node:events';
+import { getRequestListener } from '@hono/node-server';
 import { beforeAll, afterAll } from 'vitest';
 
 /**
@@ -30,9 +31,7 @@ import { beforeAll, afterAll } from 'vitest';
  * constant:
  *
  * ```ts
- * const app = createApp();
- * finalizeApp(app);
- * const server = listeningServer(app);
+ * const server = listeningServer(composedListener(new MainRequestAdmission()));
  *
  * it('...', async () => {
  *   const res = await request(server).get('/api/health');
@@ -112,4 +111,30 @@ export function swappableServer(): SwappableServer {
       return server;
     },
   };
+}
+
+/** Anything with a Hono-style `fetch`: a `Hono` app, or the server's front door. */
+export interface FetchApp {
+  /** The app's fetch handler, as `@hono/node-server` calls it. */
+  fetch: Parameters<typeof getRequestListener>[0];
+}
+
+/**
+ * Turn a Hono app into a Node request listener, so {@link listeningServer},
+ * {@link swappableServer} and `collectDurableEvents` serve it as they serve any
+ * Node request listener:
+ *
+ * ```ts
+ * const server = listeningServer(honoListener(app));
+ * ```
+ *
+ * It keeps the platform's own `Request` and `Response` globals, as the server's
+ * front door does (`apps/server/src/http/front-door.ts`), so a test sees the
+ * same objects production code does.
+ *
+ * @param app - The Hono app to serve.
+ * @returns A Node request listener for that app.
+ */
+export function honoListener(app: FetchApp): RequestListener {
+  return getRequestListener(app.fetch, { overrideGlobalObjects: false });
 }

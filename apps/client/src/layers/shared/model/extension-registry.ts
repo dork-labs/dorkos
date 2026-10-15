@@ -4,7 +4,12 @@ import { devtools } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
-import type { ExtensionPageProps, StatusBarSlotContext } from '@dorkos/extension-api';
+import type { MiniAppPlacement } from '@dorkos/shared/mini-app-placement';
+import type {
+  ExtensionPageBadge,
+  ExtensionPageProps,
+  StatusBarSlotContext,
+} from '@dorkos/extension-api';
 import {
   hasPageParams,
   matchExtensionPage,
@@ -245,6 +250,17 @@ export interface RightPanelContribution extends BaseContribution {
    */
   headerActions?: ComponentType;
   /**
+   * The mini app that added this tab. Present only on tabs a mini app added
+   * through `registerComponent('right-panel', …)`; built-in tabs never set it.
+   * Its presence is what makes placement rules (`ui.panelTabs`) apply.
+   */
+  extensionId?: string;
+  /**
+   * The mini app's own default for where this tab shows (its `showIn`), or
+   * null when it declared none. A saved choice in `ui.panelTabs` replaces it.
+   */
+  declaredPlacement?: MiniAppPlacement | null;
+  /**
    * `transport`, `agentId`, `cwd`, `explicitAgentPath`, and
    * `isRemoteCommunityRoom` are optional so unit
    * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)
@@ -283,11 +299,11 @@ export interface ExtensionPageContribution extends BaseContribution {
   path: string;
   /** The page itself. */
   component: ComponentType<ExtensionPageProps>;
-  /** Title for the page bar, tab, palette and phone menu. */
+  /** Title for the page bar, tab, palette and the sidebar's Add-ons section. */
   title: string;
-  /** Icon for the page bar, tab, palette and phone menu. */
+  /** Icon for the page bar, tab, palette and the sidebar's Add-ons section. */
   icon?: ComponentType<{ className?: string }>;
-  /** Whether it is listed in the palette and the phone "Add-ons" menu. Param paths never are. */
+  /** Whether it is listed in the palette and the sidebar's Add-ons section. Param paths never are. */
   menu: boolean;
 }
 
@@ -358,6 +374,16 @@ interface ExtensionRegistryState {
   setTabMarker: (contributionId: string, marker: TabMarker | null) => void;
   /** Clear every mark an extension set, when it deactivates. */
   clearTabMarkers: (extensionId: string) => void;
+  /**
+   * What extension pages report for their own tabs, keyed by the page's
+   * contribution id (`<extensionId>:<path>`). Absent means no badge. Checked
+   * before it gets here (`api.setPageBadge`).
+   */
+  pageBadges: Readonly<Record<string, ExtensionPageBadge>>;
+  /** Set a page's badge, or clear it with `null`. */
+  setPageBadge: (contributionId: string, badge: ExtensionPageBadge | null) => void;
+  /** Clear every badge an extension set, when it deactivates. */
+  clearPageBadges: (extensionId: string) => void;
 }
 
 /** Initial state factory -- every slot starts empty. */
@@ -435,6 +461,29 @@ export const useExtensionRegistry = create<ExtensionRegistryState>()(
         if (kept.length === Object.keys(get().tabMarkers).length) return;
         set({ tabMarkers: Object.fromEntries(kept) }, undefined, `tabMarkers/clear/${extensionId}`);
       },
+
+      pageBadges: {},
+
+      setPageBadge: (contributionId, badge) => {
+        if (badge === null && !(contributionId in get().pageBadges)) return;
+        set(
+          (state) => {
+            const next = { ...state.pageBadges };
+            if (badge === null) delete next[contributionId];
+            else next[contributionId] = badge;
+            return { pageBadges: next };
+          },
+          undefined,
+          `pageBadge/${contributionId}`
+        );
+      },
+
+      clearPageBadges: (extensionId) => {
+        const prefix = `${extensionId}${EXTENSION_ID_SEPARATOR}`;
+        const kept = Object.entries(get().pageBadges).filter(([id]) => !id.startsWith(prefix));
+        if (kept.length === Object.keys(get().pageBadges).length) return;
+        set({ pageBadges: Object.fromEntries(kept) }, undefined, `pageBadges/clear/${extensionId}`);
+      },
     }),
     { name: 'extension-registry' }
   )
@@ -471,7 +520,18 @@ export function useTabMarker(contributionId: string): TabMarker | null {
 }
 
 /**
- * The extension pages the command palette and the phone "Add-ons" menu list:
+ * The badge an extension page reports for its own tab, or `null`.
+ *
+ * @param contributionId - The page's contribution id, or `null` for none.
+ */
+export function usePageBadge(contributionId: string | null): ExtensionPageBadge | null {
+  return useExtensionRegistry((state) =>
+    contributionId === null ? null : (state.pageBadges[contributionId] ?? null)
+  );
+}
+
+/**
+ * The extension pages the command palette and the sidebar's Add-ons section list:
  * every page that asked to be listed and has no `:param` in its path (a page
  * that needs a value cannot be opened from a menu), by title.
  *

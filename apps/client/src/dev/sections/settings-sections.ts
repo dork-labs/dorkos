@@ -32,6 +32,13 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'runtime-cards-dorkos-picks-the-model',
+    title: 'Runtime cards: DorkOS picks the model',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['dorkos', 'doe', 'model', 'credits', 'chosen by dorkos', 'catalog', 'automatic'],
+  },
+  {
     id: 'runtime-cards-opened',
     title: 'Runtime cards: opened',
     page: 'settings',
@@ -242,7 +249,7 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'disclosure',
     ],
   },
-  // Remote access — the Control Center row and the top-bar beacon, on one model.
+  // Remote access — the Control Center row, Settings and the top-bar beacon, on one model.
   {
     id: 'remote-access',
     title: 'Remote Access',
@@ -260,6 +267,9 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'link',
       'reconnecting',
       'control center',
+      'managed',
+      'dorkos setup',
+      'approval code',
     ],
   },
   // Keep awake — the top-bar cup and the Sleep card, on one status.

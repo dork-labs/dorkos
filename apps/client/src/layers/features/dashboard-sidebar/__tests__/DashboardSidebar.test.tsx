@@ -17,7 +17,12 @@ import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
-import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
+import {
+  createInitialSlots,
+  TransportProvider,
+  useAgentCreationStore,
+  useExtensionRegistry,
+} from '@/layers/shared/model';
 import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { ALL_CLEAR_BEAT_MS } from '../model/use-all-clear-beat';
@@ -128,6 +133,8 @@ let mockPathname = '/';
  * nothing at all.
  */
 const mockRouterNavigate = vi.fn();
+/** Every `onBeforeNavigate` listener the sidebar subscribed, to fire by hand. */
+const beforeNavigateListeners = new Set<() => void>();
 /**
  * The panel's boot phase, settled by default so these cases are about what they
  * are named after rather than about the gate. One case turns it off, because
@@ -152,6 +159,10 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     navigate: mockRouterNavigate,
+    subscribe: (_event: 'onBeforeNavigate', listener: () => void) => {
+      beforeNavigateListeners.add(listener);
+      return () => beforeNavigateListeners.delete(listener);
+    },
     state: {
       get location() {
         return mockLocation;
@@ -390,6 +401,8 @@ vi.mock('@/layers/entities/mesh', () => ({
         .filter((a) => !mockUnmappedPaths().includes(a.projectPath))
         .map((a) => [a.projectPath, a.id])
     ),
+  // Nothing is paused in these rooms (spec `audit-trail` PR5).
+  useAgentPauses: () => ({ data: { pauses: [] } }),
 }));
 
 vi.mock('@/layers/entities/agent', async () => ({
@@ -473,8 +486,19 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // against a stub that cannot be wrong.
   useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useStartNewSession,
+  // Real: it is where the open chat's agent comes from (DOR-2845), and it is a
+  // plain store with nothing to stub.
+  useSessionRouteContext: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useSessionRouteContext,
+  // Real too, for the same reason: the row an agent click lights while its
+  // lookup is out (DOR-2891).
+  markPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .markPendingSessionTarget,
+  usePendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .usePendingSessionTarget,
+  clearPendingSessionTarget: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .clearPendingSessionTarget,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
-  useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
   useAgentAttentionMap: (paths: string[], broken?: string[]) => mockAttentionMap(paths, broken),
@@ -860,6 +884,136 @@ describe('DashboardSidebar', () => {
       expect(sectionHeading('Agents').closest('[data-slot="sidebar-group"]')).not.toContainElement(
         screen.getByRole('heading', { name: /Clients/, level: 3 })
       );
+    });
+  });
+
+  // ── Add-ons: the pages mini apps add (spec `mini-app-placement` Part 2) ──
+
+  describe('Add-ons — the pages mini apps add', () => {
+    /** Register one page the way `api.registerPage` does. */
+    function registerPage(
+      extensionId: string,
+      path: string,
+      title: string,
+      options: { menu?: boolean; icon?: unknown } = {}
+    ) {
+      useExtensionRegistry.getState().register('pages', {
+        id: `${extensionId}:${path}`,
+        extensionId,
+        path,
+        component: () => null,
+        title,
+        menu: options.menu ?? true,
+        icon: options.icon as never,
+      });
+    }
+
+    /** One Add-ons row's button, by the page's title. */
+    function addOnRow(title: string): HTMLElement {
+      const section = sectionHeading('Add-ons').closest('[data-slot="sidebar-group"]');
+      expect(section, 'the Add-ons header is not inside a section').not.toBeNull();
+      return within(section as HTMLElement).getByRole('button', { name: title });
+    }
+
+    beforeEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
+    afterEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
+
+    it('is absent when no mini app added a page', async () => {
+      mockRooms.mockReturnValue([channel('r1', 'general')]);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+      expect(libraryHeadings()).not.toContain('Add-ons');
+    });
+
+    it('lists every listed page after Agents, by its own title', async () => {
+      registerPage('social-queue', '', 'Social Queue');
+      registerPage('flow', '', 'Flow');
+      // Neither of these can be opened from a list: one asked not to be, the
+      // other needs a value no menu can fill in.
+      registerPage('flow', 'debug', 'Debug', { menu: false });
+      registerPage('flow', 'p/:name', 'Project');
+      renderWithProviders(<DashboardSidebar />);
+
+      await waitFor(() => expect(libraryHeadings()).toContain('Add-ons'));
+      expect(libraryHeadings().slice(-2)).toEqual(['Agents', 'Add-ons']);
+      // The header's own toggle, then one row per page, sorted by title.
+      const section = sectionHeading('Add-ons').closest('[data-slot="sidebar-group"]');
+      expect(
+        within(section as HTMLElement)
+          .getAllByRole('button')
+          .map((el) => el.textContent?.trim())
+      ).toEqual(['Add-ons', 'Flow', 'Social Queue']);
+    });
+
+    it('opens a page when its row is pressed', async () => {
+      registerPage('flow', 'settings', 'Flow settings');
+      renderWithProviders(<DashboardSidebar />);
+
+      await userEvent.click(await waitFor(() => addOnRow('Flow settings')));
+      expect(mockRouterNavigate).toHaveBeenCalledWith({ href: '/x/flow/settings' });
+    });
+
+    it('marks the page you are on, and only that one', async () => {
+      // Deep inside the settings page: the deepest listed page that holds the
+      // address is the one that is open, so the extension's home stays dark and
+      // `aria-current` stays unique.
+      registerPage('flow', '', 'Flow');
+      registerPage('flow', 'settings', 'Flow settings');
+      mockPathname = '/x/flow/settings/accounts';
+      mockLocation = { pathname: mockPathname, search: {} };
+      renderWithProviders(<DashboardSidebar />);
+
+      const current = await waitFor(() => addOnRow('Flow settings'));
+      expect(current).toHaveAttribute('aria-current', 'page');
+      expect(addOnRow('Flow')).not.toHaveAttribute('aria-current');
+    });
+
+    it('marks an extension’s home for any page of it no closer row lists', async () => {
+      registerPage('flow', '', 'Flow');
+      mockPathname = '/x/flow/p/dorkos';
+      mockLocation = { pathname: mockPathname, search: {} };
+      renderWithProviders(<DashboardSidebar />);
+
+      expect(await waitFor(() => addOnRow('Flow'))).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('tells two pages with one title apart by their extension', async () => {
+      registerPage('flow', 'settings', 'Settings');
+      registerPage('social-queue', 'settings', 'Settings');
+      renderWithProviders(<DashboardSidebar />);
+
+      await waitFor(() => expect(libraryHeadings()).toContain('Add-ons'));
+      const section = sectionHeading('Add-ons').closest('[data-slot="sidebar-group"]');
+      const names = within(section as HTMLElement)
+        .getAllByRole('button')
+        .slice(1)
+        .map((el) => el.textContent?.trim());
+      expect(names).toHaveLength(2);
+      expect(names[0]).toMatch(/^flow.*Settings$/);
+      expect(names[1]).toMatch(/^social-queue.*Settings$/);
+    });
+
+    it('keeps the row when a page’s icon cannot be drawn', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      registerPage('flow', '', 'Flow', { icon: { name: 'flow' } });
+      registerPage('broken', '', 'Broken', {
+        icon: () => {
+          throw new Error('boom');
+        },
+      });
+      renderWithProviders(<DashboardSidebar />);
+
+      expect(await waitFor(() => addOnRow('Flow'))).toBeInTheDocument();
+      expect(addOnRow('Broken')).toBeInTheDocument();
+    });
+
+    it('folds under its own stored id', async () => {
+      registerPage('flow', '', 'Flow');
+      renderWithProviders(<DashboardSidebar />);
+
+      await waitFor(() => expect(libraryHeadings()).toContain('Add-ons'));
+      fireEvent.click(sectionToggle('Add-ons'));
+      expect(lastPrefsWrite().sections?.addons?.collapsed).toBe(true);
     });
   });
 
@@ -1255,6 +1409,29 @@ describe('DashboardSidebar', () => {
           search: { dir: undefined, session: 's9' },
         })
       );
+    });
+
+    it('lights the pressed agent at once, while its chat is still being looked up (DOR-2891)', async () => {
+      mockPathname = '/session';
+      mockLocation = { pathname: '/session', search: { session: 's1', dir: '/projects/alpha' } };
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page'));
+      // The server never answers: before, nothing on screen moved until it did.
+      mockTransport.listSessions.mockImplementation(() => new Promise(() => {}));
+      fireEvent.click(agentRowButton('beta'));
+      await waitFor(() => expect(agentRowButton('beta')).toHaveAttribute('aria-current', 'page'));
+      expect(agentRowButton('alpha')).not.toHaveAttribute('aria-current');
+      // Tint only: Today still holds the chat that is actually open.
+      expect(
+        within(todayZone()!)
+          .getAllByRole('button')
+          .some((row) => row.getAttribute('title')?.includes('alpha'))
+      ).toBe(true);
+      // Any navigation hands the answer back to the router, so a lookup that
+      // was overtaken cannot keep the row lit.
+      act(() => beforeNavigateListeners.forEach((listener) => listener()));
+      await waitFor(() => expect(agentRowButton('beta')).not.toHaveAttribute('aria-current'));
+      expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     });
 
     it('migrates legacy localStorage pins into server config, once', async () => {

@@ -33,9 +33,9 @@
  *
  * A chat-originated session now takes that write too — the binding subsystem
  * records which runtime owns it the moment it is created (DOR-1614) — but a
- * relay turn can still reach a session that has no row at all: a direct
- * agent-to-agent `relay_send` addresses a mesh agent, not a session anybody
- * created here. Merging per key is what makes both kinds yield what the other
+ * relay turn can still reach a session that has no row at all: a message
+ * addressed straight to a mesh agent (A2A, an external MCP publish) names no
+ * session anybody created here. Merging per key is what makes both kinds yield what the other
  * surfaces already yield.
  *
  * The permission mode is in neither half. The relay resolves its own from the
@@ -118,8 +118,8 @@ export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver
  * named, when that id is registered for the turn's runtime AND the account
  * advisor allows the pick (spec `claude-account-fleet` D6, DOR-2384).
  *
- * **Who may set it.** Any sender can put `account` in a payload: an agent's
- * `relay_send`, an external MCP caller, a chat bridge. None of them is trusted
+ * **Who may set it.** Any sender can put `account` in a payload: an A2A peer,
+ * an external MCP caller, a chat bridge. None of them is trusted
  * to spend on an account by saying so. Every request is checked as a `relay`
  * caller, which needs a registered advisor, so with no advisor (Flow not set
  * up) no relay message can move a conversation off the default ladder at all.

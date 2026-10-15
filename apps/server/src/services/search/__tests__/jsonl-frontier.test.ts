@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -594,5 +594,63 @@ describe('M1 — `\\n` is the only line terminator', () => {
         }
       })
     ).toEqual([]);
+  });
+});
+
+describe('M1 — a large file is written in pieces (DOR-2904)', () => {
+  /** `count` short user lines; about 7,000 fit in one 1 MiB read chunk. */
+  function many(count: number): string[] {
+    return Array.from({ length: count }, (_, i) => saidLine(`message ${i} ${'x'.repeat(80)}`));
+  }
+
+  /** Every indexed ordinal for one session, in order. */
+  function ordinals(originKey: string): number[] {
+    return db
+      .select({ ordinal: messages.ordinal })
+      .from(messages)
+      .where(eq(messages.originKey, originKey))
+      .orderBy(messages.ordinal)
+      .all()
+      .map((row) => row.ordinal);
+  }
+
+  it('commits a first read of a big file in several transactions, every message once', async () => {
+    await writeTranscript('big', many(20_000));
+    const transaction = vi.spyOn(db, 'transaction');
+
+    const first = await sweep();
+
+    expect(first.indexed).toBe(20_000);
+    expect(transaction.mock.calls.length).toBeGreaterThan(2);
+    expect(ordinals('big')).toEqual(Array.from({ length: 20_000 }, (_, i) => i));
+    expect((await sweep()).indexed).toBe(0);
+  });
+
+  it('resumes after a read cut short between pieces, without losing or repeating a message', async () => {
+    await writeTranscript('big', many(20_000));
+    const real = source;
+    let failing = true;
+    source = {
+      ...real,
+      project: (lines, ctx) => {
+        if (failing && ctx.firstOrdinal >= 12_000) throw new Error('the server stopped');
+        return real.project(lines, ctx);
+      },
+    };
+
+    const cut = await sweep();
+    const committed = ordinals('big');
+    // Some pieces landed before the failure, and nothing after it; the sweep
+    // says how many.
+    expect(committed.length).toBeGreaterThan(0);
+    expect(cut.indexed).toBe(committed.length);
+    expect(committed.length).toBeLessThan(20_000);
+    expect(frontier('big')?.byteOffset).toBeGreaterThan(0);
+
+    failing = false;
+    await sweep();
+
+    expect(ordinals('big')).toEqual(Array.from({ length: 20_000 }, (_, i) => i));
+    expect(indexedBodies('big').at(-1)).toContain('message 19999');
   });
 });

@@ -1,0 +1,107 @@
+---
+title: Work That Runs After a Reply
+description: What an agent can leave running after it replies, and what happens to it, for Claude Code, Codex, and OpenCode
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Work That Runs After a Reply
+
+An agent can start something and reply before it finishes: a long command, a helper agent, a reminder for later. Whether you hear back depends on the runtime (the coding agent behind the chat). This page lists what each one keeps, and what happens when the reply ends, when DorkOS restarts, and when the chat gets new settings. The DorkOS runtime finishes all its work inside its reply, so it is not listed.
+
+| What happens                       | Claude Code                                  | Codex                                    | OpenCode                |
+| ---------------------------------- | -------------------------------------------- | ---------------------------------------- | ----------------------- |
+| Work finishes after the reply      | The chat hears back                          | A command wakes the chat                 | Nothing reports back    |
+| DorkOS restarts while work runs    | The work stops, and the chat gets a note     | The work stops                           | The work stops          |
+| You change a setting while it runs | Your message waits, or you choose Switch now | The work keeps going; applies next reply | Applies from next reply |
+
+<Callout>
+  For anything that has to run later or on a schedule, whatever the runtime, use
+  [Tasks](/docs/guides/task-scheduler). A task runs whether or not a chat is open.
+</Callout>
+
+## Claude Code
+
+### What can keep running
+
+- A command the agent started in the background.
+- A helper: another agent it started to do part of the job.
+- A Monitor: a watch on a command's output.
+- A reminder it set for itself inside the chat: a wake-up, a repeating prompt, or `/loop`.
+
+### When the reply ends
+
+DorkOS keeps the agent open while any of that is still going. When the work finishes, or a reminder comes due, the agent gets the result as a new turn in the same chat. You see it like any other reply.
+
+DorkOS keeps an agent open this way for up to four hours, counting only time the computer is awake. With nothing running, DorkOS closes an idle agent after five minutes and opens it again on your next message.
+
+### When DorkOS restarts
+
+The agent closes, and its background work stops with it. When DorkOS is back, the chat gets one short note as its next turn. The note tells the agent the work stopped, so it can start it again or tell you.
+
+### When you change a setting
+
+Some changes need a fresh start of the agent: its folder, its instructions, its effort, its account, or its plugins. If the agent has work running when you send a message like that, the message waits in the queue. The queue says what it is waiting for.
+
+- It sends on its own when the work ends, after the agent has had its turn with the result.
+- Choose **Switch now** to send it at once. The running work stops.
+- After four hours it sends anyway.
+
+### Known limits
+
+- **Reminders saved to disk.** Claude Code can save a reminder to a file so it survives a restart. That reminder only runs while the chat's agent is open, and DorkOS closes idle agents. So it can go quiet without a word. Use Tasks instead. Agents that can use Tasks are told this.
+- **Hooks that run in the background.** A Claude Code hook can be set to run without making the agent wait. It sends DorkOS no signal at all. It keeps running only while the agent is open, which can be as little as five minutes after the reply. If it finishes later, nothing wakes the chat.
+
+## Codex
+
+### What can keep running
+
+A command the agent started in the background. Codex can also start helpers, but DorkOS does not promise yet that a helper reports back.
+
+### When the reply ends
+
+The command keeps running. When it finishes, the chat picks up again on its own: Codex reads the result and carries on. Several commands that finish close together wake the chat once.
+
+- The chat wakes only after a reply that ended normally. If you stopped the reply, the chat shows the result and waits for you.
+- A command that never ends, like a dev server, never wakes the chat.
+- After three pickups in a row with no message from you, the chat waits for you.
+- In a room, a finished command shows in the chat, and the room carries on at its next turn.
+
+You can stop a command from the task bar above the chat box. DorkOS stops one that is still running four hours after its reply, without waking the chat.
+
+### When DorkOS restarts
+
+DorkOS stops every background command when it shuts down. Unlike Claude Code, the chat gets no note about it. The chat's history stays.
+
+### When you change a setting
+
+A command already running keeps going. The change applies from the next reply, and a pickup uses the chat's settings as they are when it starts. Nothing waits, and there is no Switch now.
+
+### The older way to run Codex
+
+If you set `runtimes.codex.transport` to `exec`, every reply runs in its own copy of the Codex program, and that copy ends when the reply does. Nothing keeps running after a reply.
+
+## OpenCode
+
+### What can keep running
+
+Nothing that reports back. DorkOS runs one small OpenCode server for all your OpenCode chats. A reply ends when OpenCode says the chat is idle. Anything still running after that does not reach the chat.
+
+### If OpenCode stops in the middle of a reply
+
+DorkOS starts OpenCode again on its own. The reply it was writing is gone, and nothing wakes the chat later. The chat says so:
+
+> OpenCode stopped responding, so this reply ended early. Send your message again.
+
+### When DorkOS restarts
+
+DorkOS stops the OpenCode server when it shuts down, and anything still running in it stops too. DorkOS starts it again the first time a chat needs it. The chat's history stays.
+
+### When you change a setting
+
+The change applies from the next reply. Nothing waits, and there is no Switch now.
+
+## Next Steps
+
+- [Runtimes](/docs/guides/runtimes): choose between Claude Code, Codex, and OpenCode.
+- [Tasks](/docs/guides/task-scheduler): run an agent on a schedule.

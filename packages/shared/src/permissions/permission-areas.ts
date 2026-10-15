@@ -101,7 +101,9 @@ export const PERMISSION_AREAS: readonly PermissionArea[] = Object.freeze([
     id: 'permissions',
     label: 'Permissions',
     description: 'Change what any agent is allowed to do',
-    floor: true,
+    // Not a floor since ADR 261006-225605: an agent may change permissions
+    // like a person may, and the audit trail records every change.
+    floor: false,
     kind: 'state',
   },
   {

@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEventSubscription } from '@/layers/shared/model';
 import { TASKS_KEY } from './use-tasks';
+import { TASK_RUNS_KEY } from './use-task-runs';
 
 /**
- * Keep the Tasks list fresh across clients and tabs.
+ * Keep the Tasks list, and the runs that hang off it, fresh across clients and tabs.
  *
  * The server broadcasts `tasks_changed` on the unified `/api/events` stream
  * whenever a schedule is created, updated or deleted through the routes or the
@@ -26,4 +27,12 @@ export function useTasksSync(): void {
   useEventSubscription('tasks_changed', () => {
     void queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
   });
+  // A run recorded failed, or a finished run's report growing late (DOR-2717):
+  // the always-mounted Schedules tab reads the newest runs and polls them only
+  // slowly while nothing runs, so it hears about these here (DOR-2820).
+  const refreshRuns = () => {
+    void queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
+  };
+  useEventSubscription('task_run_failed', refreshRuns);
+  useEventSubscription('task_run_updated', refreshRuns);
 }

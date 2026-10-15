@@ -45,6 +45,8 @@ import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
 import { stagePackageContents } from '../marketplace/lib/stage-package.js';
+import { creatorField } from '../heartbeats/reports-to.js';
+import { chooseHeartbeatTemplate, seedHeartbeatFile } from '../heartbeats/heartbeat-file.js';
 import { inspectTemplate, type TemplateGate } from './agent-templates/template-gate.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 
@@ -517,6 +519,10 @@ export async function createAgentWorkspace(
       conventions,
       registeredAt: new Date().toISOString(),
       registeredBy: 'dorkos-ui',
+      // Who is creating it: the person at the app, or the agent calling
+      // `create_agent` (spec `heartbeats` §4.1). Written once, here, and never
+      // by an update. With no `reportsTo`, the agent reports to this account.
+      ...creatorField(),
       personaEnabled: true,
       isSystem: false,
       // Managed MCP servers are added post-creation through the gated `mcp.*`
@@ -562,6 +568,19 @@ export async function createAgentWorkspace(
       CONVENTION_FILES.memory,
       defaultMemoryTemplate()
     );
+
+    // Scaffold HEARTBEAT.md from the agent's type (spec `heartbeats` §2): the
+    // template it names, else `lead` on Doe, else no file (events only, so a
+    // timed beat never spends a person's own plan unasked). Written only where
+    // absent, so a marketplace agent's own file is kept.
+    const heartbeatChoice = {
+      ...(opts.heartbeatTemplate ? { template: opts.heartbeatTemplate } : {}),
+      runtime: manifest.runtime,
+    };
+    if (chooseHeartbeatTemplate(heartbeatChoice)) {
+      await ledger.claimFile(path.join(dorkDir, CONVENTION_FILES.heartbeat));
+      await seedHeartbeatFile(resolvedPath, heartbeatChoice);
+    }
 
     // Scaffold cross-harness instruction files (canonical AGENTS.md + per-harness
     // pointers) for every agent, not just DorkBot. Write-if-absent (ADR-0302), so a

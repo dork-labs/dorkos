@@ -26,7 +26,6 @@
  * @module routes/__tests__/config-dto-fallbacks
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
@@ -52,16 +51,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 describe('GET /api/config falls back to the schema, not to a retyped literal', () => {
-  let app: express.Application;
-
   beforeEach(async () => {
     vi.resetModules();
     const { default: configRouter } = await import('../config.js');
-    app = express();
-    app.use(express.json());
-    app.use('/api/config', configRouter);
-
-    fixtureTarget.mount(app);
+    const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
+    fixtureTarget.mount(honoGroupListener({ path: '/api/config', routes: configRouter }));
   });
 
   it('reports the schema scheduler defaults, including the raised concurrency', () => {

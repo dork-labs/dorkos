@@ -52,6 +52,7 @@ export async function prepareOriginalNativeRefreshStory(
       mentions: targets.map((target) => target.authorId),
     });
     phase('ask-observe-start');
+    const observeStartedAt = process.hrtime.bigint();
     // Observe the real projected starts, never mint a launch/context from the wait.
     for (let i = 0; i < 1000; i++) {
       if (
@@ -63,6 +64,21 @@ export async function prepareOriginalNativeRefreshStory(
       )
         break;
       await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    for (const [index, target] of targets.entries()) {
+      // Bounded DATA only: no identity/path/content, no new wait or alternative launch.
+      if (phaseRows++ < 64) {
+        try {
+          console.info('ORIGINAL_REFRESH_STORY_ASK_OBSERVATION', {
+            targetOrdinal: index + 1,
+            turnStartDelta: starts(target.sessionId) - before[index]!,
+            prepared: Boolean(owning.readPreparedContext(target.sessionId)),
+            elapsedMs: Number(process.hrtime.bigint() - observeStartedAt) / 1_000_000,
+          });
+        } catch {
+          // Diagnostic output cannot replace the original guard's first refusal.
+        }
+      }
     }
     for (const [index, target] of targets.entries()) {
       assert.equal(starts(target.sessionId), before[index]! + 1);

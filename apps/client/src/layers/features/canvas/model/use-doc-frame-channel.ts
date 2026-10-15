@@ -1,5 +1,13 @@
 /** Mount the original replay-issued frame port across one real iframe navigation. */
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { useTransport } from '@/layers/shared/model';
 import {
   FrameLifetimeController,
@@ -10,6 +18,8 @@ import { useDocChannel } from './use-doc-channel';
 import type { NativeFrameAdmission } from './doc-channel-view';
 
 export interface DocFrameMountParams {
+  /** Host browser mounts a genuinely fresh blank node before original source assignment. */
+  freshPhysicalFrame?: boolean;
   iframeRef: RefObject<HTMLIFrameElement | null>;
   documentId: string;
   logicalUrl: string;
@@ -19,6 +29,7 @@ export interface DocFrameMountParams {
   previewOrigin: string | null;
 }
 type LoadCapture = {
+  element: HTMLIFrameElement;
   key: string;
   frame: Window;
   admission: NativeFrameAdmission;
@@ -31,6 +42,15 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
   const [controller] = useState(() => new FrameLifetimeController());
   const [navigation, setNavigation] = useState<{ key: string; transport: object } | null>(null);
   const [blankLoaded, setBlankLoaded] = useState<{ key: string; frame: Window } | null>(null);
+  const consumedMountElements = useRef(new WeakSet<HTMLIFrameElement>());
+  const [preparationFailure, setPreparationFailure] = useState<{ cause: unknown } | null>(null);
+  const pendingPreparation = useRef<{ live: boolean } | null>(null);
+  const freshMount = useRef<{
+    element: HTMLIFrameElement;
+    frame: Window;
+    key: string;
+    transport: object;
+  } | null>(null);
   const frontier = useRef({
     phase: 'before-navigation',
     messages: 0,
@@ -49,6 +69,11 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
       JSON.stringify({
         ...frontier.current,
         readCurrent: current.current.doc.channel.current?.('read') === true,
+        blankKeyMatches: blankLoaded?.key === current.current.key,
+        blankFrameMatches:
+          blankLoaded?.frame === current.current.params.iframeRef.current?.contentWindow,
+        replayObserved: current.current.doc.replayObserved === true,
+        frameAdmissionPresent: !!current.current.doc.frameAdmission,
       })
     );
   };
@@ -70,8 +95,27 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
     params.logicalUrl,
     params.resolvedSource,
     params.reloadNonce,
+    ...(params.freshPhysicalFrame ? [params.bridgeEligibility, params.previewOrigin] : []),
   ]);
   const eligible = !!params.resolvedSource && !!params.bridgeEligibility;
+  // This key is only React mount mechanics, never a channel credential or DOM attribute.
+  const physicalMountKey = useMemo(() => crypto.randomUUID(), [key, transport]);
+  const noteFrameMounted = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      if (
+        !params.freshPhysicalFrame ||
+        !element ||
+        !element.isConnected ||
+        element !== params.iframeRef.current ||
+        consumedMountElements.current.has(element)
+      )
+        return;
+      consumedMountElements.current.add(element);
+      const frame = element.contentWindow;
+      if (frame) freshMount.current = { element, frame, key, transport };
+    },
+    [params.freshPhysicalFrame, params.iframeRef, key, transport]
+  );
   const current = useRef({ params, doc, key, transport, eligible });
   const close = () => {
     const old = handshake.current;
@@ -82,6 +126,8 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
     if (old) recordFrontier('closed-original-handshake');
   };
   const retire = () => {
+    if (pendingPreparation.current) pendingPreparation.current.live = false;
+    pendingPreparation.current = null;
     if (load.current) frontier.current.retiredPending++;
     load.current = null;
     loaded.current = null;
@@ -185,30 +231,57 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
     current.current = { params, doc, key, transport, eligible };
   });
   // One original physical navigation. A later same-URL replay cannot relabel its load.
-  useLayoutEffect(() => {
-    const frame = params.iframeRef.current?.contentWindow;
-    if (!eligible || !frame || (navigation?.key === key && navigation.transport === transport))
+  const prepareNavigation = () => {
+    const element = params.iframeRef.current;
+    const frame = element?.contentWindow;
+    if (
+      !eligible ||
+      !element ||
+      !frame ||
+      (navigation?.key === key && navigation.transport === transport)
+    )
       return;
-    // Chromium's initial empty document can already be complete without firing
-    // a load event. Observe only this host-readable blank document; it cannot
-    // complete or attach the subsequently captured original Doc load.
-    if (blankLoaded?.key !== key || blankLoaded.frame !== frame) {
-      const iframe = params.iframeRef.current;
-      try {
-        const blank = iframe?.contentDocument;
-        if (
-          iframe?.getAttribute('src') === 'about:blank' &&
-          blank?.URL === 'about:blank' &&
-          blank.readyState === 'complete' &&
-          iframe.contentWindow === frame
-        )
-          setBlankLoaded({ key, frame });
-      } catch {
-        // Opaque blank frames retain the original browser load-event path.
+    if (params.freshPhysicalFrame) {
+      // Initial blank insertion fires synchronously, before ref registration.
+      // The private fresh node supplies only unloaded host context: no synthetic
+      // blank-loaded witness or Doc authority. Capture precedes the sole real src assignment.
+      const mount = freshMount.current;
+      if (
+        !mount ||
+        mount.element !== element ||
+        mount.frame !== frame ||
+        mount.key !== key ||
+        mount.transport !== transport
+      ) {
+        recordFrontier('original-fresh-mount-refused');
+        return;
       }
+    } else {
+      // Chromium's initial empty document can already be complete without firing
+      // a load event. Observe only this host-readable blank document; it cannot
+      // complete or attach the subsequently captured original Doc load.
+      if (blankLoaded?.key !== key || blankLoaded.frame !== frame) {
+        recordFrontier('awaiting-original-blank-load');
+        const iframe = params.iframeRef.current;
+        try {
+          const blank = iframe?.contentDocument;
+          if (
+            iframe?.getAttribute('src') === 'about:blank' &&
+            blank?.URL === 'about:blank' &&
+            blank.readyState === 'complete' &&
+            iframe.contentWindow === frame
+          )
+            setBlankLoaded({ key, frame });
+        } catch {
+          // Opaque blank frames retain the original browser load-event path.
+        }
+        return;
+      }
+    }
+    if (!doc.replayObserved) {
+      recordFrontier('awaiting-original-replay');
       return;
     }
-    if (!doc.replayObserved) return;
     if (!doc.channel.current?.('read') || !doc.frameAdmission) {
       // Legacy/refused replay still displays the page with its SDK offline.
       recordFrontier('replay-display-without-original-read');
@@ -227,10 +300,33 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
       transportOwner: transport,
       publisherEpoch: epoch.current,
     });
-    if (!observation) return;
+    if (!observation) {
+      recordFrontier('original-host-observation-refused');
+      return;
+    }
     const prepared = doc.frameAdmission.prepareFrameLoad(controller, observation);
-    if (!prepared) return;
+    if (!prepared) {
+      recordFrontier('original-load-preparation-refused');
+      return;
+    }
+    if (
+      params.freshPhysicalFrame &&
+      (current.current.key !== key ||
+        current.current.transport !== transport ||
+        current.current.doc.frameAdmission !== doc.frameAdmission ||
+        !current.current.doc.channel.current?.('read') ||
+        current.current.params.iframeRef.current !== element ||
+        element.contentWindow !== frame ||
+        controller.getCurrent() !== observation)
+    ) {
+      // Preparation may synchronously notify retirement/replacement subscribers.
+      // Never install their retired capture or assign its real source afterwards.
+      recordFrontier('original-fresh-preparation-retired');
+      methods.current.retire();
+      return;
+    }
     load.current = {
+      element,
       key,
       frame,
       admission: doc.frameAdmission,
@@ -239,6 +335,32 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
     frontier.current.prepared++;
     recordFrontier('prepared-original-load');
     setNavigation({ key, transport });
+  };
+  useLayoutEffect(() => {
+    if (!params.freshPhysicalFrame) prepareNavigation();
+  });
+  useEffect(() => {
+    if (!params.freshPhysicalFrame) return;
+    // Layout retirement and StrictMode's synchronous cleanup finish before the
+    // live microtask prepares this still-blank node and assigns its sole real src.
+    // Cleanup/revocation cancels private work; no timer, retry or synthetic load.
+    const token = { live: true };
+    pendingPreparation.current = token;
+    queueMicrotask(() => {
+      if (!token.live || pendingPreparation.current !== token) return;
+      try {
+        prepareNavigation();
+      } catch (cause) {
+        // Preserve the actual preparation failure for the original React boundary.
+        setPreparationFailure({ cause });
+      } finally {
+        if (pendingPreparation.current === token) pendingPreparation.current = null;
+      }
+    });
+    return () => {
+      token.live = false;
+      if (pendingPreparation.current === token) pendingPreparation.current = null;
+    };
   });
   useLayoutEffect(() => {
     const admission = doc.frameAdmission;
@@ -292,8 +414,11 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
       if (iframe !== own.params.iframeRef.current) return false;
       // The initial blank frame isn't the host load captured before navigation.
       if (iframe.getAttribute('src') === 'about:blank') {
-        const frame = iframe.contentWindow;
-        if (frame) setBlankLoaded({ key: own.key, frame });
+        // Fresh-node mode never uses a blank event as a load or authority witness.
+        if (!own.params.freshPhysicalFrame) {
+          const frame = iframe.contentWindow;
+          if (frame) setBlankLoaded({ key: own.key, frame });
+        }
         return false;
       }
       // A queued initial blank load can arrive after React assigned the real
@@ -311,6 +436,7 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
       load.current = null;
       if (
         !captured ||
+        captured.element !== iframe ||
         captured.key !== own.key ||
         captured.frame !== iframe.contentWindow ||
         captured.admission !== own.doc.frameAdmission
@@ -340,7 +466,10 @@ export function useDocFrameChannel(params: DocFrameMountParams) {
     [controller]
   );
   const noteFrameRetired = useCallback(() => methods.current.retire(), []);
+  if (preparationFailure) throw preparationFailure.cause;
   return {
+    physicalMountKey,
+    noteFrameMounted,
     noteFrameLoaded,
     noteFrameRetired,
     navigationSource:

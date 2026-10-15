@@ -175,6 +175,49 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves).toEqual({});
   });
 
+  it('carries every way a person asked agents to ask first, and nothing Trusted already gives', () => {
+    // A wipe lands on Trusted (DOR-2739), so Careful, an Ask or Act stop and
+    // an Ask or Blocked change all have to survive it. Allowed, Full autonomy
+    // and the Trusted preset are the fresh values and carry nothing.
+    const salvaged = salvageProtectedState(
+      {
+        permissions: {
+          preset: 'careful',
+          defaults: {
+            areas: { rooms: 'ask', tasks: 'allowed', reach: 'blocked' },
+            actions: { 'tasks.delete': 'ask', 'mesh.unregister': 'allowed' },
+          },
+        },
+        runtimes: {
+          defaultTrustStop: 'act',
+          claudeCode: { defaultTrustStop: 'ask' },
+          codex: { defaultTrustStop: 'autonomy' },
+          opencode: { defaultTrustStop: null },
+        },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({
+      'permissions.preset': 'careful',
+      'permissions.defaults.areas': { rooms: 'ask', reach: 'blocked' },
+      'permissions.defaults.actions': { 'tasks.delete': 'ask' },
+      'runtimes.defaultTrustStop': 'act',
+      'runtimes.claudeCode.defaultTrustStop': 'ask',
+    });
+    expect(salvaged.dropped).toEqual([]);
+  });
+
+  it('carries nothing from a Trusted install', () => {
+    const salvaged = salvageProtectedState(
+      {
+        permissions: { preset: 'trusted', defaults: { areas: { rooms: 'allowed' }, actions: {} } },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({});
+  });
+
   it('carries a login gate that was switched on', () => {
     const salvaged = salvageProtectedState({ auth: { enabled: true } }, fresh);
     expect(salvaged.leaves['auth.enabled']).toBe(true);
@@ -346,13 +389,11 @@ describe('applyProtectedState', () => {
       maxAutomaticTurnsTotalPerHour: 5000,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
-      engagedWindowMinutes: 10,
-      engagedWindowPosts: 5,
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
       collectDebounceMs: 500,
       collectMaxEntries: 20,
       responseGate: 'routing',
-      maxPostsPerTurn: 3,
-      maxCanvasOpsPerTurn: 3,
       maxConcurrentTurnsPerAgent: 3,
       repo: {
         enabled: true,
@@ -488,6 +529,43 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(manager.validate()).toEqual({ valid: true });
     // A second boot reads the recovered file cleanly rather than looping.
     expect(new ConfigManager(dir).get('telemetry').install).toBe(false);
+  });
+
+  it('keeps a Careful install Careful across recovery (DOR-2739)', () => {
+    // The wipe lands on Trusted now, so without the carryover this install
+    // would come back working without asking.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'careful',
+        defaults: { areas: { rooms: 'ask' }, actions: { 'tasks.delete': 'ask' } },
+        upgradeSweptVersion: null,
+      },
+      runtimes: { defaultTrustStop: 'ask' },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').preset).toBe('careful');
+    expect(manager.get('permissions').defaults).toEqual({
+      areas: { rooms: 'ask' },
+      actions: { 'tasks.delete': 'ask' },
+    });
+    expect(manager.get('runtimes').defaultTrustStop).toBe('ask');
+    expect(manager.validate()).toEqual({ valid: true });
+  });
+
+  it('keeps a Careful install with no stop of its own asking across recovery (DOR-2739)', () => {
+    // "Keep asking me" left the stop at `null` (each runtime's own default,
+    // which asks). A wipe must not hand that install Full autonomy.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'careful',
+        defaults: { areas: {}, actions: {} },
+        upgradeSweptVersion: null,
+      },
+      runtimes: { defaultTrustStop: null },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').preset).toBe('careful');
+    expect(manager.get('runtimes').defaultTrustStop).toBe('ask');
   });
 
   it('keeps a login gate across recovery', () => {

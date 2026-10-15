@@ -27,20 +27,6 @@ import type {
   UpdateSessionRequest,
 } from '@dorkos/shared/types';
 
-/** Optional per-call reactions to a settings write. */
-export interface UpdateSessionHandlers {
-  /**
-   * Called when the write failed, after the optimistic state has been rolled
-   * back. Opt-in: a caller that does not pass one keeps today's behavior, where
-   * the failure is logged and the UI simply returns to what the server says.
-   *
-   * The one caller that needs it is the Trust Dial: a refused Full-autonomy
-   * change (`428 AUTONOMY_ACK_REQUIRED`) is not a fault to report but a question
-   * to ask, so it opens the confirmation dialog instead of a red toast.
-   */
-  onError?: (error: unknown) => void;
-}
-
 export interface SessionStatusData {
   /**
    * Any id the session's own runtime reports (DOR-851; `test-mode`'s ids sit
@@ -229,7 +215,7 @@ export function useSessionStatus(
   };
 
   const updateSession = useCallback(
-    async (opts: UpdateSessionRequest, handlers?: UpdateSessionHandlers) => {
+    async (opts: UpdateSessionRequest) => {
       // No-op when no session is active — the UI should only invoke this with a live session.
       if (!sessionId) return;
 
@@ -324,12 +310,6 @@ export function useSessionStatus(
         // flight, that value is still pending and must survive this rollback.
         console.error('[useSessionStatus] updateSession failed for session', sessionId, err);
         clearOverrides(sessionId, applied);
-        // Handed to the caller AFTER the rollback, so whatever it draws is drawn
-        // over settled state. Swallowed when nobody asked for it — the reason
-        // this is opt-in rather than a rethrow is that most callers here are
-        // fire-and-forget, and rethrowing would turn every dropped connection
-        // into an unhandled rejection.
-        handlers?.onError?.(err);
       }
     },
     [

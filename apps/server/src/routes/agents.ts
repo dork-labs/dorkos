@@ -21,7 +21,8 @@
  *
  * @module routes/agents
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import fs from 'fs/promises';
 import { z } from 'zod';
 import path from 'path';
@@ -37,6 +38,7 @@ import {
   CONVENTION_FILES,
 } from '@dorkos/shared/convention-files';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { seedHeartbeatFile } from '../services/heartbeats/heartbeat-file.js';
 import { defaultMemoryTemplate } from '@dorkos/memory';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
@@ -57,7 +59,10 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { configManager } from '../services/core/config-manager.js';
 import {
@@ -72,6 +77,7 @@ import {
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { DisclosedEffectsSchema } from '../services/marketplace/preview/disclosed-effects.js';
 import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
+import { templateFromTrustedSource } from '../services/core/agent-templates/trusted-template-source.js';
 import { type MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
 import {
   DisclosureChangedError,
@@ -79,6 +85,7 @@ import {
 } from '../services/marketplace/installer/errors.js';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { PackageNameSchema } from '@dorkos/marketplace';
+import { creatorField } from '../services/heartbeats/reports-to.js';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
@@ -88,7 +95,7 @@ interface MeshCoreLike {
 /**
  * What agent creation reads from services composed later in boot (DOR-2325).
  * Read lazily, per request: the marketplace's confirmation provider is built
- * after this router is mounted.
+ * after these routes are handed over.
  */
 export interface AgentCreationDeps {
   /** The provider that raises a card when an agent creates from a template. */
@@ -174,34 +181,47 @@ function landingDirectory(body: { name?: unknown; directory?: unknown }): string
   );
 }
 
+/** What the agent identity routes read. */
+export interface AgentsRouterDeps extends AgentCreationDeps {
+  /** The registry, for DB sync after writes; absent when the mesh did not start. */
+  meshCore?: MeshCoreLike;
+  /** Where a registration is recorded; absent in a test that does not watch it. */
+  activity?: ActivityService;
+}
+
+/** The path query parameter, as Express read it: a repeated key is an array. */
+function rawPathOf(c: Context<ApiEnv>): string {
+  return readQuery(c).path as string;
+}
+
 /**
- * Create the agents router for agent identity CRUD.
+ * Create the agent identity routes.
  *
- * @param meshCore - Optional MeshCore instance for DB sync after writes
- * @param deps - Services agent creation reads lazily (DOR-2325)
- * @returns Express Router with agent identity endpoints
+ * @param deps - The registry, the activity feed, and what creation reads lazily
+ * @returns The routes, to mount at `/api/agents`.
  */
-export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationDeps = {}): Router {
-  const router = Router();
+export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
+  const { meshCore, activity: activityService } = deps;
+  const router = new Hono<ApiEnv>();
 
   // GET /api/agents/current?path=/path/to/project
   // Returns the agent manifest for the home the given directory resolves to,
   // or null when no agent lives there. A worktree or managed checkout of an
   // agent's repo answers with the agent's HOME values, never the committed
   // `.dork/` copy it carries (spec `agent-home-desk` §3.2 row 9).
-  router.get('/current', async (req, res) => {
+  router.get('/current', async (c) => {
     try {
-      const rawPath = req.query.path as string;
+      const rawPath = rawPathOf(c);
       if (!rawPath) {
-        return res.status(400).json({ error: 'path query parameter required' });
+        return c.json({ error: 'path query parameter required' }, 400);
       }
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
       if (!agentPath) {
-        return res.json(null);
+        return c.json(null);
       }
       const manifest = await readHomeManifest(agentPath);
       if (!manifest) {
-        return res.json(null);
+        return c.json(null);
       }
 
       // Include convention file contents alongside manifest data
@@ -212,26 +232,26 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       // the direction a person notices last: the save appears to work and the
       // field comes back empty on the next load.
       const memoryContent = await readConventionFile(agentPath, CONVENTION_FILES.memory);
+      // Read for the Heartbeat page's editor, for the same round-trip reason.
+      const heartbeatContent = await readConventionFile(agentPath, CONVENTION_FILES.heartbeat);
 
-      return res.json({ ...manifest, soulContent, nopeContent, memoryContent });
+      return c.json({ ...manifest, soulContent, nopeContent, memoryContent, heartbeatContent });
     } catch (err) {
       if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, 403);
       }
       logger.error('[agents] GET /current failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
   // POST /api/agents/resolve
   // Batch resolve agents for multiple paths (avoids N+1 in DirectoryPicker)
-  router.post('/resolve', async (req, res) => {
+  router.post('/resolve', async (c) => {
     try {
-      const result = ResolveAgentsRequestSchema.safeParse(req.body);
+      const result = ResolveAgentsRequestSchema.safeParse(readJsonBody(c));
       if (!result.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
       }
       const agents: Record<string, AgentManifest | null> = {};
       await Promise.all(
@@ -244,22 +264,20 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
           }
         })
       );
-      return res.json({ agents });
+      return c.json({ agents });
     } catch (err) {
       logger.error('[agents] POST /resolve failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
   // POST /api/agents
   // Create a new agent (writes .dork/agent.json)
-  router.post('/', async (req, res) => {
+  router.post('/', async (c) => {
     try {
-      const result = CreateAgentRequestSchema.safeParse(req.body);
+      const result = CreateAgentRequestSchema.safeParse(readJsonBody(c));
       if (!result.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
       }
       const { path: rawAgentPath, name, displayName, description, runtime } = result.data;
       const agentPath = await validateBoundaryOrDorkHome(rawAgentPath);
@@ -267,9 +285,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       // Check if agent already exists
       const existing = await readManifest(agentPath);
       if (existing) {
-        return res
-          .status(409)
-          .json({ error: 'Agent already exists at this path', agent: existing });
+        return c.json({ error: 'Agent already exists at this path', agent: existing }, 409);
       }
 
       // The same identity gate the mesh register route and the `mesh_register`
@@ -279,7 +295,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       // route got that string as the immutable slug an `@handle` derives from.
       const identity = resolveNamedAgentIdentity({ name, displayName }, path.basename(agentPath));
       if (!identity.ok) {
-        return res.status(400).json({ error: identity.error, code: identity.code });
+        return c.json({ error: identity.error, code: identity.code }, 400);
       }
 
       const id = ulid();
@@ -297,6 +313,8 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
         behavior: { responseMode: 'always' },
         registeredAt: new Date().toISOString(),
         registeredBy: 'dorkos-ui',
+        // The account making this request (spec `heartbeats` §4.1).
+        ...creatorField(),
         personaEnabled: true,
         isSystem: false,
         mcpServers: [],
@@ -325,6 +343,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       if ((await readConventionFile(agentPath, CONVENTION_FILES.memory)) === null) {
         await writeConventionFile(agentPath, CONVENTION_FILES.memory, defaultMemoryTemplate());
       }
+      // HEARTBEAT.md by runtime (spec `heartbeats` §2), write-if-absent for the
+      // reason MEMORY.md is: a re-registered agent's own file is its own.
+      await seedHeartbeatFile(agentPath, { runtime: manifest.runtime });
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {
@@ -334,12 +355,11 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       }
 
       // Fire-and-forget activity event for agent registration
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
           // Ungated, so this genuinely varies: an agent that identified itself is
           // named, and the feed stops crediting the person with a machine's write.
-          ...readActivityActor(req, res),
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'agent',
           eventType: 'agent.registered',
           resourceType: 'agent',
@@ -364,13 +384,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
         origin: 'created',
       });
 
-      return res.status(201).json(manifest);
+      return c.json(manifest, 201);
     } catch (err) {
       if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, 403);
       }
       logger.error('[agents] POST / failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
@@ -383,35 +403,38 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
    * only: an agent installs a marketplace agent with `marketplace_install`,
    * which asks a person.
    */
-  const createFromPackage = async (req: Request, res: Response): Promise<Response> => {
-    if (req.body.template !== undefined) {
-      return res
-        .status(400)
-        .json({ error: 'Send a template or a package to create the agent from, not both.' });
+  const createFromPackage = async (
+    c: Context<ApiEnv>,
+    body: Record<string, unknown>
+  ): Promise<Response> => {
+    if (body.template !== undefined) {
+      return c.json(
+        { error: 'Send a template or a package to create the agent from, not both.' },
+        400
+      );
     }
-    if (!trustedCaller(readCallerAuthority(req, res))) {
-      return res.status(403).json({
-        code: 'operator_only',
-        error:
-          'Only a person creates an agent from a marketplace package here. An agent installs it ' +
-          'with marketplace_install, which asks a person first.',
-      });
+    if (!trustedCaller(readCallerAuthority(honoRequestFacts(c)))) {
+      return c.json(
+        {
+          code: 'operator_only',
+          error:
+            'Only a person creates an agent from a marketplace package here. An agent installs it ' +
+            'with marketplace_install, which asks a person first.',
+        },
+        403
+      );
     }
     const marketplace = deps.marketplace?.();
     if (!marketplace) {
-      return res.status(503).json({ error: 'The marketplace is not running on this server.' });
+      return c.json({ error: 'The marketplace is not running on this server.' }, 503);
     }
-    const pkg = PackageCreationSchema.safeParse(req.body.package);
-    const identity = PackageAgentIdentitySchema.safeParse(req.body);
+    const pkg = PackageCreationSchema.safeParse(body.package);
+    const identity = PackageAgentIdentitySchema.safeParse(body);
     if (!pkg.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(pkg.error) });
+      return c.json({ error: 'Validation failed', details: z.flattenError(pkg.error) }, 400);
     }
     if (!identity.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(identity.error) });
+      return c.json({ error: 'Validation failed', details: z.flattenError(identity.error) }, 400);
     }
     // One agent per package: it lives where marketplace agents live, so a
     // second one would replace the first.
@@ -421,10 +444,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       undefined
     );
     if (await pathExists(target)) {
-      return res.status(409).json({
-        code: 'COLLISION',
-        error: 'This agent is already on your team. Find it there, or remove it first.',
-      });
+      return c.json(
+        {
+          code: 'COLLISION',
+          error: 'This agent is already on your team. Find it there, or remove it first.',
+        },
+        409
+      );
     }
     try {
       const result = await marketplace.installer.install({
@@ -436,49 +462,52 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       });
       const manifest = await readManifest(result.installPath);
       if (!manifest) throw new Error('The agent was installed, but its manifest could not be read');
-      return res.status(201).json({ ...manifest, _path: result.installPath });
+      return c.json({ ...manifest, _path: result.installPath }, 201);
     } catch (err) {
       if (err instanceof DisclosureChangedError) {
-        return res.status(409).json({ code: 'disclosure_changed', error: err.message });
+        return c.json({ code: 'disclosure_changed', error: err.message }, 409);
       }
       if (err instanceof InvalidPackageError) {
-        return res.status(400).json({ error: err.message, errors: err.errors });
+        return c.json({ error: err.message, errors: err.errors }, 400);
       }
       throw err;
     }
   };
 
-  router.post('/create', async (req, res) => {
+  router.post('/create', async (c) => {
     try {
-      if (req.body?.package !== undefined) return await createFromPackage(req, res);
-      const decision = TemplateDecisionSchema.safeParse(req.body ?? {});
+      const body = readJsonBody(c) as Record<string, unknown> | undefined;
+      if (body?.package !== undefined) return await createFromPackage(c, body);
+      const decision = TemplateDecisionSchema.safeParse(body ?? {});
       if (!decision.success) {
-        return res
-          .status(400)
-          .json({ error: 'Validation failed', details: z.flattenError(decision.error) });
+        return c.json({ error: 'Validation failed', details: z.flattenError(decision.error) }, 400);
       }
       // A template is cloned into a staging folder and shown before it lands
       // (DOR-2325): a person is disclosed what it brings; anyone else gets a
-      // card. There is no ungated way to create from a template.
+      // card, unless it is a built-in template that brings nothing that runs
+      // on its own and the install is Trusted (spec `trusted-by-default-flip`
+      // §5.10). There is no ungated way to create from a template.
       let templateGate: TemplateGate | undefined;
-      if (req.body?.template !== undefined) {
-        const identity = getRequestAgentIdentity(res);
-        templateGate = trustedCaller(readCallerAuthority(req, res))
+      if (body?.template !== undefined) {
+        const facts = honoRequestFacts(c);
+        const identity = facts.agentIdentity;
+        templateGate = trustedCaller(readCallerAuthority(facts))
           ? personTemplateGate(decision.data.approvedTemplateHash)
           : cardTemplateGate({
               provider: deps.confirmationProvider?.(),
-              agentName: typeof req.body.name === 'string' ? req.body.name : '',
-              directory: landingDirectory(req.body),
+              agentName: typeof body.name === 'string' ? body.name : '',
+              directory: landingDirectory(body),
               ...(decision.data.confirmationToken && {
                 confirmationToken: decision.data.confirmationToken,
               }),
               ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+              trustedSource: await templateFromTrustedSource(body.template, identity),
             });
       }
       // `skipTemplateDownload` is the marketplace install's own switch: it skips
       // the existing-folder check and the template gate, which only the
       // installer's staged copy may do. Never taken from a request.
-      const { skipTemplateDownload: _internalOnly, ...options } = req.body ?? {};
+      const { skipTemplateDownload: _internalOnly, ...options } = body ?? {};
       // A new agent that will run on DorkOS credits names a model credits serve
       // (DOR-2636). Nobody has allowed it onto credits yet, so only credits as
       // the machine default can put it there.
@@ -490,7 +519,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
           model: options.model,
           accountNamedNow: false,
         });
-        if (refusal) return res.status(400).json({ error: refusal, code: 'UNSUPPORTED_MODEL' });
+        if (refusal) return c.json({ error: refusal, code: 'UNSUPPORTED_MODEL' }, 400);
       }
       const result = await createAgentWorkspace(
         options,
@@ -499,12 +528,11 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
       );
 
       // Fire-and-forget activity event for agent registration
-      const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
           // `dorkos agent create` is the busiest caller of this route and runs
           // inside spawned agent sessions, so read the caller rather than assume.
-          ...readActivityActor(req, res),
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'agent',
           eventType: 'agent.registered',
           resourceType: 'agent',
@@ -517,40 +545,47 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
 
       // (The agent-created seam already fired inside `createAgentWorkspace` —
       // no extra notify here.)
-      return res.status(201).json({
-        ...result.manifest,
-        _path: result.path,
-        ...(result.meta ? { _meta: result.meta } : {}),
-      });
+      return c.json(
+        {
+          ...result.manifest,
+          _path: result.path,
+          ...(result.meta ? { _meta: result.meta } : {}),
+        },
+        201
+      );
     } catch (err) {
       if (err instanceof TemplateNeedsReviewError) {
-        return res
-          .status(409)
-          .json({ error: err.message, code: err.code, template: templateOf(err.inspection) });
+        return c.json(
+          { error: err.message, code: err.code, template: templateOf(err.inspection) },
+          409
+        );
       }
       if (err instanceof TemplateApprovalPendingError) {
-        return res.status(202).json({
-          status: err.status,
-          confirmationToken: err.token,
-          message: err.message,
-          template: templateOf(err.inspection),
-          ...(err.reason ? { reason: err.reason } : {}),
-        });
+        return c.json(
+          {
+            status: err.status,
+            confirmationToken: err.token,
+            message: err.message,
+            template: templateOf(err.inspection),
+            ...(err.reason ? { reason: err.reason } : {}),
+          },
+          202
+        );
       }
       if (err instanceof TemplateDeclinedError) {
-        return res.status(403).json({ status: 'declined', error: err.message });
+        return c.json({ status: 'declined', error: err.message }, 403);
       }
       if (err instanceof AgentCreationError) {
         if (err.code === 'VALIDATION') {
-          return res.status(400).json({ error: 'Validation failed', details: err.message });
+          return c.json({ error: 'Validation failed', details: err.message }, 400);
         }
         if (err.code === 'BOUNDARY') {
-          return res.status(403).json({ error: err.message, code: 'OUTSIDE_BOUNDARY' });
+          return c.json({ error: err.message, code: 'OUTSIDE_BOUNDARY' }, 403);
         }
-        return res.status(err.statusCode).json({ error: err.message });
+        return c.json({ error: err.message }, err.statusCode as ContentfulStatusCode);
       }
       logger.error('[agents] POST /create failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
@@ -558,28 +593,28 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
   // Update agent fields by path
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
-  router.patch('/current', refuseAgentExecutionWrites, async (req, res) => {
+  router.patch('/current', refuseAgentExecutionWrites, async (c) => {
     try {
-      const rawPath = req.query.path as string;
+      const rawPath = rawPathOf(c);
       if (!rawPath) {
-        return res.status(400).json({ error: 'path query parameter required' });
+        return c.json({ error: 'path query parameter required' }, 400);
       }
       // Written to the home the path resolves to — the same one GET answered
       // from — so an editor opened on a worktree or checkout changes the agent,
       // never the branch's committed copy (spec `agent-home-desk` §3.2 row 9).
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
       if (!agentPath) {
-        return res.status(404).json({ error: 'No agent registered at this path' });
+        return c.json({ error: 'No agent registered at this path' }, 404);
       }
 
       // Manifest guards + write live in the shared agent-updater service so the
       // `update_agent` MCP tool enforces the exact same rules (ADR-0043 sync
       // included) without re-implementing them.
-      const updated = await updateAgentManifest({ agentPath, body: req.body, meshCore });
-      return res.json(updated);
+      const updated = await updateAgentManifest({ agentPath, body: readJsonBody(c), meshCore });
+      return c.json(updated);
     } catch (err) {
       if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, 403);
       }
       if (err instanceof AgentUpdateError) {
         switch (err.code) {
@@ -588,44 +623,45 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
           // on screen. A schema failure with nothing better to say still carries
           // "Validation failed", which is what the older tests pin.
           case 'VALIDATION':
-            return res.status(400).json({ error: err.message, details: err.details });
+            return c.json({ error: err.message, details: err.details }, 400);
           case 'NOT_FOUND':
-            return res.status(404).json({ error: err.message });
+            return c.json({ error: err.message }, 404);
           case 'SYSTEM_PROTECTED':
           case 'OPERATOR_ONLY':
-            return res.status(403).json({ error: err.message });
+            return c.json({ error: err.message }, 403);
           case 'UNSUPPORTED_MODEL':
-            return res.status(400).json({ error: err.message, code: err.code });
+          case 'REPORTS_TO_CYCLE':
+            return c.json({ error: err.message, code: err.code }, 400);
         }
       }
       logger.error('[agents] PATCH /current failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 
   // POST /api/agents/current/migrate-persona?path=/path/to/project
   // Migrates legacy persona field to SOUL.md convention file
-  router.post('/current/migrate-persona', async (req, res) => {
+  router.post('/current/migrate-persona', async (c) => {
     try {
-      const rawPath = req.query.path as string;
+      const rawPath = rawPathOf(c);
       if (!rawPath) {
-        return res.status(400).json({ error: 'path query parameter required' });
+        return c.json({ error: 'path query parameter required' }, 400);
       }
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
       const manifest = agentPath ? await readHomeManifest(agentPath) : null;
       if (!agentPath || !manifest) {
-        return res.status(404).json({ error: 'No agent registered at this path' });
+        return c.json({ error: 'No agent registered at this path' }, 404);
       }
 
       // Check if already migrated
       const existingSoul = await readConventionFile(agentPath, 'SOUL.md');
       if (existingSoul) {
-        return res.json({ migrated: false, reason: 'SOUL.md already exists' });
+        return c.json({ migrated: false, reason: 'SOUL.md already exists' });
       }
 
       const { persona } = manifest as { persona?: string };
       if (!persona) {
-        return res.json({ migrated: false, reason: 'No persona to migrate' });
+        return c.json({ migrated: false, reason: 'No persona to migrate' });
       }
 
       // Migrate persona text to SOUL.md custom prose
@@ -640,13 +676,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
         await writeConventionFile(agentPath, 'NOPE.md', defaultNopeTemplate());
       }
 
-      return res.json({ migrated: true });
+      return c.json({ migrated: true });
     } catch (err) {
       if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: err.message, code: err.code });
+        return c.json({ error: err.message, code: err.code }, 403);
       }
       logger.error('[agents] POST /current/migrate-persona failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 

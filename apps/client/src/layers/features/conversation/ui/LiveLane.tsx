@@ -234,6 +234,41 @@ export function LiveLane({
     />
   );
 
+  const line = offersPopover ? (
+    <ResponsivePopover open={peekIsOpen} onOpenChange={setPeekOpen}>
+      <ResponsivePopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={popoverLabel}
+          className={cn(
+            'focus-ring flex min-w-0 items-center rounded text-left',
+            // The hover step and its focus-visible twin, per the design
+            // system's parity rule — a mouse and a keyboard get the same
+            // affordance.
+            'hover:bg-accent/40 focus-visible:bg-accent/40'
+          )}
+        >
+          {content}
+        </button>
+      </ResponsivePopoverTrigger>
+      <ResponsivePopoverContent
+        side="top"
+        align="start"
+        // The composer keeps the caret for the PEEK, which is a
+        // readout. The Ask card is the opposite — a person opened it to
+        // answer something — so it takes focus, and its own `A`/`D` keys
+        // only work once it has.
+        onOpenAutoFocus={offersAsk ? undefined : (event) => event.preventDefault()}
+        className="w-88 p-0"
+      >
+        <ResponsivePopoverTitle>{popoverLabel}</ResponsivePopoverTitle>
+        {popoverBody}
+      </ResponsivePopoverContent>
+    </ResponsivePopover>
+  ) : (
+    content
+  );
+
   return (
     <div
       ref={laneRef}
@@ -261,55 +296,42 @@ export function LiveLane({
         {announcement}
       </span>
 
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
+      {reducedMotion ? (
+        // **No AnimatePresence at all with reduced motion, and that is a fix,
+        // not a shortcut.** The crossfade it would run is zero-length, and in a
+        // real browser a run of changes faster than a frame (a room whose agents
+        // take turns tens of milliseconds long) left `mode="wait"` holding an
+        // exit that never completed: the lane went on drawing "Sentinel and
+        // Forge are working on it" under `data-lane-state="empty"` for as long
+        // as anyone watched (DOR-2762). With nothing to animate there is
+        // nothing to wait for, so the line is simply what the state says. The
+        // key still remounts it per line, as the motion path does, so a new
+        // Ask card opens fresh and takes focus.
+        <div
           key={laneMotionKey(state)}
-          initial={reducedMotion ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={reducedMotion ? { opacity: 1 } : { opacity: 0 }}
-          transition={{ duration: reducedMotion ? 0 : LANE_CROSSFADE_S }}
-          // The quiet lane is hidden from assistive technology and holds nothing
-          // to press. The announcer above it stays live either way, which is why
-          // this sits on the content rather than on the lane.
           aria-hidden={empty ? 'true' : undefined}
           className="flex min-w-0 flex-1 items-center"
         >
-          {offersPopover ? (
-            <ResponsivePopover open={peekIsOpen} onOpenChange={setPeekOpen}>
-              <ResponsivePopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={popoverLabel}
-                  className={cn(
-                    'focus-ring flex min-w-0 items-center rounded text-left',
-                    // The hover step and its focus-visible twin, per the design
-                    // system's parity rule — a mouse and a keyboard get the same
-                    // affordance.
-                    'hover:bg-accent/40 focus-visible:bg-accent/40'
-                  )}
-                >
-                  {content}
-                </button>
-              </ResponsivePopoverTrigger>
-              <ResponsivePopoverContent
-                side="top"
-                align="start"
-                // The composer keeps the caret for the PEEK, which is a
-                // readout. The Ask card is the opposite — a person opened it to
-                // answer something — so it takes focus, and its own `A`/`D` keys
-                // only work once it has.
-                onOpenAutoFocus={offersAsk ? undefined : (event) => event.preventDefault()}
-                className="w-88 p-0"
-              >
-                <ResponsivePopoverTitle>{popoverLabel}</ResponsivePopoverTitle>
-                {popoverBody}
-              </ResponsivePopoverContent>
-            </ResponsivePopover>
-          ) : (
-            content
-          )}
-        </motion.div>
-      </AnimatePresence>
+          {line}
+        </div>
+      ) : (
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={laneMotionKey(state)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: LANE_CROSSFADE_S }}
+            // The quiet lane is hidden from assistive technology and holds nothing
+            // to press. The announcer above it stays live either way, which is why
+            // this sits on the content rather than on the lane.
+            aria-hidden={empty ? 'true' : undefined}
+            className="flex min-w-0 flex-1 items-center"
+          >
+            {line}
+          </motion.div>
+        </AnimatePresence>
+      )}
     </div>
   );
 }

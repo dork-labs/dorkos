@@ -1,3 +1,11 @@
+import { createIsolatedClaudeSessionCustody } from './custody/session-native-custody.js';
+import { selectReloadableSessions } from './custody/session-reload-selection.js';
+import {
+  isWaitingOnPerson,
+  sessionScopedMode,
+  isAdoptableMode,
+} from './session-decision-policy.js';
+export { isWaitingOnPerson } from './session-decision-policy.js';
 import { claudeInterruptReceipt as receipt } from '../connector-turn-context.js';
 /**
  * In-memory session store — lifecycle, lookup, and interactive flow management.
@@ -7,11 +15,7 @@ import { claudeInterruptReceipt as receipt } from '../connector-turn-context.js'
  *
  * @module services/runtimes/claude-code/session-store
  */
-import type {
-  PermissionUpdate,
-  PermissionUpdateDestination,
-  Query,
-} from '@anthropic-ai/claude-agent-sdk';
+import type { PermissionUpdate, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
   type PermissionMode,
   type Session,
@@ -26,13 +30,14 @@ import {
   type SessionUpdateResult,
   type ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { tightensDeclaredMode, needsConsentRitual } from '@dorkos/shared/permission-semantics';
-import { type AgentSession } from '../agent-types.js';
+import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
+import { gatePermissionMode } from '../turn-permission.js';
 import { type TranscriptReader } from './transcript-reader.js';
 import { type SessionLockManager } from '../../../session/session-lock.js';
 import {
@@ -43,89 +48,8 @@ import {
   type ControlAck,
 } from './bounded-control.js';
 
-/**
- * Is this session holding a prompt somebody could still come back and answer?
- *
- * The one bounded answer for the whole runtime: record eviction here, and the
- * dispatch refusal and warm reap in `persistent-dispatch.ts`, which used the
- * pending map's raw size and so would have refused messages into a session with
- * a STRANDED entry forever.
- *
- * The exemption's bound is the wait a prompt actually allows, measured from when
- * it was raised: the park ceiling, after which the runtime would have refused it
- * anyway (spec `ask-parks-on-timeout` §7, §8). So a stranded entry ages out on
- * exactly that clock.
- *
- * There is no shorter bound for an unattended run any more, and none is needed:
- * such a session never holds a pending entry at all, because its asks are
- * refused before one is made (`messaging/interactive-handlers.ts`, spec
- * `unattended-session-permission-prompts`). An empty map answers `false` here on
- * the first line of the loop.
- *
- * @param session - The session to weigh.
- * @param now - Server epoch ms.
- */
-export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
-  for (const pending of session.pendingInteractions.values()) {
-    // On the awake clock when the entry has one (DOR-2717): a laptop asleep
-    // overnight is not a person who never came back.
-    const waited =
-      pending.startedAwake !== undefined
-        ? performance.now() - pending.startedAwake
-        : now - pending.startedAt;
-    if (waited < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
-  }
-  return false;
-}
-
 /** This runtime's own mode descriptors — the only meaning any mode id has. */
 const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
-
-/**
- * The one permission-update scope DorkOS mirrors into its own session state.
- *
- * The SDK's other destinations name settings FILES — the operator's, the
- * project's, the machine-local override — and a mode written there outlives the
- * conversation the card was answered in. `'session'` is the only one whose
- * lifetime matches the row DorkOS keeps per session.
- */
-const SESSION_SCOPED: PermissionUpdateDestination = 'session';
-
-/**
- * The mode a batch of accepted permission suggestions leaves the session in, or
- * `undefined` when none of them touches the mode.
- *
- * Last one wins, for the same reason the SDK applies them in order: a batch that
- * names the mode twice ends at the second value, not the first.
- *
- * @param suggestions - The SDK permission updates being forwarded verbatim.
- */
-function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
-  let mode: PermissionMode | undefined;
-  for (const update of suggestions) {
-    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
-  }
-  return mode;
-}
-
-/**
- * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
- * an approval card.
- *
- * Two questions, both asked of the runtime's own declaration rather than of the
- * id's name. Does claude-code declare this mode at all — persisting an
- * undeclared id would make the settings overlay display a posture the runtime
- * never adopted (`PATCH /api/sessions/:id`, same check). And does it need the
- * consent ritual — `needsConsentRitual` is the single rule behind the route's
- * `428 AUTONOMY_ACK_REQUIRED` door, and a card that says "Always Allow" over one
- * Write is not a person agreeing to a session that never asks again.
- *
- * @param mode - The mode an accepted suggestion asks for.
- */
-function isAdoptableMode(mode: PermissionMode): boolean {
-  const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
-  return descriptor !== undefined && !needsConsentRitual(descriptor);
-}
 
 /**
  * How many times a started session with no known account looks for its
@@ -142,54 +66,10 @@ export const ACCOUNT_ROOT_PROBE_LIMIT = 3;
  * Tracks active sessions, handles the SDK session ID reverse index,
  * and provides session lifecycle, interactive flow, and health check operations.
  */
-const nativeMapValues = Map.prototype.values;
-const nativeMapGet = Map.prototype.get;
-const nativeSessionStores = new WeakMap<
-  object,
-  {
-    sessions: Map<string, AgentSession>;
-    index: Map<string, string>;
-    retired: WeakSet<AgentSession>;
-  }
->();
-/** Read only the genuine constructor's native session lifetime; no caller can register an entry. */
-export function isCurrentClaudeNativeSession(store: object, session: AgentSession): boolean {
-  const state = nativeSessionStores.get(store);
-  if (!state || state.retired.has(session)) return false;
-  const slot = Object.getOwnPropertyDescriptor(store, 'sessions');
-  if (!slot || !('value' in slot) || slot.value !== state.sessions) {
-    state.retired.add(session);
-    return false;
-  }
-  for (const current of nativeMapValues.call(state.sessions)) if (current === session) return true;
-  return false;
-}
-
-/** Callback-free same original session alias lookup; replaced public find/read methods are never consulted. */
-export function isOriginalClaudeSessionAlias(
-  store: object,
-  retiredId: string,
-  canonicalId: string
-): boolean {
-  const own = nativeSessionStores.get(store);
-  const sessions = Object.getOwnPropertyDescriptor(store, 'sessions');
-  const index = Object.getOwnPropertyDescriptor(store, 'sdkSessionIndex');
-  if (
-    !own ||
-    retiredId === canonicalId ||
-    sessions?.value !== own.sessions ||
-    index?.value !== own.index
-  )
-    return false;
-  const resolve = (id: string): AgentSession | undefined =>
-    nativeMapGet.call(own.sessions, id) ??
-    nativeMapGet.call(own.sessions, nativeMapGet.call(own.index, id));
-  const before = resolve(retiredId),
-    after = resolve(canonicalId);
-  if (!before || before !== after || own.retired.has(before)) return false;
-  const sdk = Object.getOwnPropertyDescriptor(before, 'sdkSessionId');
-  return !!sdk && 'value' in sdk && sdk.value === canonicalId;
-}
+// Private actual instance; no actual registry or registration function is exported.
+const { nativeSessionStores, isCurrentClaudeNativeSession, isOriginalClaudeSessionAlias } =
+  createIsolatedClaudeSessionCustody();
+export { isCurrentClaudeNativeSession, isOriginalClaudeSessionAlias };
 /** Own Claude session state and its original native session records. */
 export class SessionStore {
   private sessions = new Map<string, AgentSession>();
@@ -384,13 +264,7 @@ export class SessionStore {
    * cold re-fetch returns the stale init-time list (SDK `commands_changed` doc).
    */
   getReloadableSessions(): Array<{ sessionId: string; session: AgentSession }> {
-    const reloadable: Array<{ sessionId: string; session: AgentSession }> = [];
-    for (const [sessionId, session] of this.sessions) {
-      if (session.activeQuery ?? session.lastQuery) {
-        reloadable.push({ sessionId, session });
-      }
-    }
-    return reloadable;
+    return selectReloadableSessions(this.sessions);
   }
 
   // ---------------------------------------------------------------------------
@@ -700,16 +574,14 @@ export class SessionStore {
         // and made the best-effort catch below unreachable, since a dropped
         // write never rejects either. The clock is what makes the best-effort
         // contract true rather than merely written down.
+        // Only the SDK needs the narrow name (DOR-885): a mode id is whatever its
+        // runtime declared, and the session above keeps the id as asked, but a
+        // query can only be moved to a mode the SDK knows. Held to the ceilings
+        // the running turn and its background work carry (`warm-ceiling.ts`): a
+        // person loosening this chat mid-turn never loosens a stranger's turn.
+        const liveMode = narrowToClaudeCodeMode(gatePermissionMode(session), 'default');
         const ack = await awaitControlAck(
-          () =>
-            // Only the SDK needs the narrow name (DOR-885): a mode id is
-            // whatever its runtime declared, and the session above keeps the id
-            // as asked, but a query can only be moved to a mode the SDK knows.
-            query.setPermissionMode(
-              narrowToClaudeCodeMode(opts.permissionMode, 'default') as Parameters<
-                typeof query.setPermissionMode
-              >[0]
-            ),
+          () => query.setPermissionMode(liveMode as Parameters<typeof query.setPermissionMode>[0]),
           PERMISSION_MODE_ACK_TIMEOUT_MS
         );
         if (ack !== 'acked') {
@@ -822,13 +694,12 @@ export class SessionStore {
    * What DorkOS refuses is to make an unconsented escalation DURABLE.
    *
    * Which modes may be adopted is {@link isAdoptableMode}: declared by this
-   * runtime, and not one the consent ritual gates. Anything else is logged and
+   * runtime, and not one that acts without asking. Anything else is logged and
    * dropped, because writing it to the session row would carry it into every
    * later launch (`launch-resolver` reads `session.permissionMode` straight
-   * into `sdkOptions.permissionMode`) — past a door whose whole point is that
-   * it cannot be walked around by a client (`routes/sessions.ts`, `428
-   * AUTONOMY_ACK_REQUIRED`). Rules (`addRules` and friends) are not modes and
-   * are left to the SDK entirely.
+   * into `sdkOptions.permissionMode`), and a session that never asks again is
+   * chosen on the dial, not by answering one card. Rules (`addRules` and
+   * friends) are not modes and are left to the SDK entirely.
    *
    * Write-through is best-effort in the same spirit as {@link updateSession}:
    * the in-memory mode changes immediately (the launch resolver reads it), and

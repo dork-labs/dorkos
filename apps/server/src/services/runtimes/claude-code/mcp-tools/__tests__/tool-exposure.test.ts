@@ -33,7 +33,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 vi.mock('../../../../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
+  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined, DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434' },
 }));
 vi.mock('../../../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
 vi.mock('../../../../../lib/logger.js', () => ({
@@ -51,7 +51,6 @@ import {
   searchHintFrom,
 } from '../tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
@@ -92,7 +91,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 
@@ -293,6 +291,84 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
+  it('hands connector_recommend the turn principal so connected reads only this agent’s accounts', async () => {
+    const principal = runtimePrincipal('binding-a');
+    const access = vi.fn().mockResolvedValue({
+      connections: [{ connectionId: 'c', toolkit: 'gmail', label: 'Mail', status: 'active' }],
+    });
+    const registry = composeDorkOsCapabilityRegistry({
+      logger: noopLogger,
+      connectorDeps: {
+        registry: {
+          assertAvailable: vi.fn(),
+          providersForToolkit: async () => ({ providers: [], warnings: [] }),
+          listProviders: () => [],
+        } as never,
+        catalog: vi.fn(async () => ({ services: [], warnings: [] })) as never,
+      },
+      connectorExecutionDeps: {
+        authorization: { assertAvailable: vi.fn() } as never,
+        broker: {} as never,
+        access: { listRuntimeConnections: access } as never,
+      },
+    });
+    const call = async (
+      connectorTurn?: object,
+      connectorTools = true,
+      tool: { name: string; arguments: Record<string, unknown> } = {
+        name: 'connector_recommend',
+        arguments: { service: 'gmail' },
+      }
+    ) => {
+      const session = { cwd: '/agents/alpha', ...(connectorTurn && { connectorTurn }) };
+      const server = createDorkOsToolServer(
+        createAgentSessionDeps(),
+        session as unknown as NonNullable<Parameters<typeof createDorkOsToolServer>[1]>,
+        undefined,
+        undefined,
+        registry,
+        new Set(),
+        undefined,
+        connectorTools
+      );
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: 'connector-recommend-probe', version: '0.0.0' });
+      await Promise.all([
+        server.instance.connect(serverTransport),
+        client.connect(clientTransport),
+      ]);
+      const result = (await client.callTool(tool)) as { content: Array<{ text: string }> };
+      await Promise.all([client.close(), server.instance.close()]);
+      return JSON.parse(result.content[0]!.text) as { connected?: boolean };
+    };
+    const turn = (resolvePrincipal: () => Promise<unknown>) => ({
+      isConnectorCapabilityId: (id: string) =>
+        CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === id),
+      resolvePrincipal,
+    });
+
+    expect((await call(turn(async () => principal))).connected).toBe(true);
+    expect(access).toHaveBeenCalledWith(principal);
+    // No connector access this turn, connector tools not listed, or the turn
+    // could not be bound: the flag is left out, never guessed.
+    const unbound = vi.fn(async () => principal);
+    expect(await call()).not.toHaveProperty('connected');
+    expect(await call(turn(unbound), false)).not.toHaveProperty('connected');
+    expect(unbound).not.toHaveBeenCalled();
+    expect(
+      await call(
+        turn(async () => {
+          throw new Error('turn ended');
+        })
+      )
+    ).not.toHaveProperty('connected');
+    // Only the allowlisted reader gets the principal: an ordinary in-session
+    // tool on the same connector turn never opens or receives it.
+    const notForOthers = vi.fn(async () => principal);
+    await call(turn(notForOthers), true, { name: 'connector_list_toolkits', arguments: {} });
+    expect(notForOthers).not.toHaveBeenCalled();
+  });
+
   it('always-loads exactly the eleven a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
@@ -464,11 +540,38 @@ describe('in-session tool exposure', () => {
     // from the docs registry, which composes no extension. Extension tools are
     // guarded separately, against a contributed fixture, in
     // `extension-tools-every-list.test.ts`.
-    // Published Doc management/native task tools and upstream chat tools all remain deferred.
-    // Published126/115 plus chat_send, chat_read and chat_stop gives129/118.
-    expect(tools).toHaveLength(129);
-    expect(deferred).toHaveLength(118);
+    // 120 -> 121 for `audit_verify` (spec `audit-trail`), DEFERRED: checking
+    // the audit log is a deliberate step a turn can search for. Both counts
+    // move by the same one.
+    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
+    // `spin-off-chats` §1), all three DEFERRED on a plain session.
+    // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
+    // endpoint tools retire. Both counts move by the same amounts.
+    // 118 -> 121 for `commitment_add`, `commitment_update` and
+    // `commitments_list` (spec `heartbeats` §12), all three DEFERRED.
+    // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
+    // `transcript_read` (spec `audit-trail` PR4), all four DEFERRED like
+    // `audit_verify`: reviewing the record or another agent's work is a
+    // deliberate step a turn can search for. Both counts move by the same four.
+    // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
+    // (spec `audit-trail` PR5), DEFERRED: no prompt block names them, and an
+    // emergency stop is a deliberate step a turn can search for.
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8), DEFERRED: only a beat
+    // turn calls it, and the beat prompt names it so that turn can search.
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6), DEFERRED:
+    // reading an agent's heartbeat is a deliberate step a turn can search for.
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin are deferred, alongside end_beat.
+    // Eleven plain-session eager tools remain unchanged.
+    expect(tools).toHaveLength(135);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(135);
+    expect(tools.filter((tool) => tool._meta?.[ALWAYS_LOAD_META] === true)).toHaveLength(11);
+    expect(deferred).toHaveLength(124);
+    expect(tools.map((tool) => tool.name)).not.toContain('mcp_set_client');
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
       'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
@@ -480,6 +583,7 @@ describe('in-session tool exposure', () => {
       'issue_doc_token',
       'revoke_doc_token',
       'canvas_set_checkbox',
+      'heartbeat_status',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }
@@ -508,10 +612,12 @@ describe('in-session tool exposure', () => {
   });
 
   // DOR-1337 (F8). An agent asking another agent a question had to ToolSearch
-  // for `mesh_list` and the relay schemas first, inside its own timeout — the
-  // tester quoted the agent narrating exactly that. A session that IS an agent
-  // gets those six eagerly; nothing else does.
-  it('adds the six agent-to-agent tools for a session that is a registered agent', async () => {
+  // for `mesh_list` and the messaging schemas first, inside its own timeout —
+  // the tester quoted the agent narrating exactly that. A session that IS an
+  // agent gets those four eagerly; nothing else does. Two of them (`chat_send`,
+  // `chat_read`) are capability-projected, so this also pins that the
+  // capability half reads the session's set, not the standing one.
+  it('adds the four agent-to-agent tools for a session that is a registered agent', async () => {
     const tools = await advertisedTools({ cwd: '/agents/alpha' }, createAgentSessionDeps());
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -533,10 +639,8 @@ describe('in-session tool exposure', () => {
         'compact_my_session',
         'mesh_list',
         'mesh_inspect',
-        'relay_send',
-        'relay_send_async',
-        'relay_send_and_wait',
-        'relay_inbox',
+        'chat_send',
+        'chat_read',
       ].sort()
     );
     expect(eager).toEqual([...alwaysLoadedToolsFor(true)].sort());
@@ -549,7 +653,7 @@ describe('in-session tool exposure', () => {
   });
 
   it('leaves a plain session in the same directory family on the standing five', async () => {
-    // Same deps, a cwd Mesh does not recognise: the six stay deferred, which is
+    // Same deps, a cwd Mesh does not recognise: the four stay deferred, which is
     // the half that keeps eighty-odd schemas off most sessions' prompts.
     const tools = await advertisedTools({ cwd: '/tmp/just-a-project' }, createAgentSessionDeps());
     const eager = tools
@@ -559,9 +663,9 @@ describe('in-session tool exposure', () => {
     expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
   });
 
-  it('keeps the six deferred for an agent session with Relay switched off', async () => {
-    // No `relayCore` means no relay tool can do anything, so preloading their
-    // schemas would spend prompt on six tools that answer RELAY_DISABLED.
+  it('loads the four for an agent session with Relay switched off', async () => {
+    // The chat tools ride no bus (spec `spin-off-chats` §7), so Relay being off
+    // takes nothing away from an agent asking another one something.
     const deps = createAgentSessionDeps();
     delete (deps as { relayCore?: unknown }).relayCore;
     const tools = await advertisedTools({ cwd: '/agents/alpha' }, deps);
@@ -569,7 +673,7 @@ describe('in-session tool exposure', () => {
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
       .map((t) => t.name)
       .sort();
-    expect(eager).toEqual([...ALWAYS_LOADED_TOOLS].sort());
+    expect(eager).toEqual([...alwaysLoadedToolsFor(true)].sort());
   });
 
   it('hints the room verbs with their curated capability titles', async () => {
@@ -579,8 +683,8 @@ describe('in-session tool exposure', () => {
     const byName = new Map((await advertisedTools()).map((t) => [t.name, t]));
     expect(byName.get('react_to_room_entry')?._meta?.[SEARCH_HINT_META]).toBe('React to a message');
     expect(byName.get('post_to_room')?._meta?.[SEARCH_HINT_META]).toBe('Post to a room');
-    // Hand-registered: `relay_send`'s description opens with what it does.
-    expect(typeof byName.get('relay_send')?._meta?.[SEARCH_HINT_META]).toBe('string');
+    // Hand-registered: `relay_notify_user`'s description opens with what it does.
+    expect(typeof byName.get('relay_notify_user')?._meta?.[SEARCH_HINT_META]).toBe('string');
   });
 });
 
@@ -636,8 +740,8 @@ describe('searchHintFrom', () => {
     expect(hint?.endsWith('…')).toBe(true);
     expect(hint!.length).toBeLessThanOrEqual(120);
     // The cut lands after a whole word: dropping the ellipsis leaves words that
-    // are all intact. Cutting at the character count produced "…or o" for
-    // `relay_inbox`, which nothing can match on.
+    // are all intact. Cutting at the character count produced "…or o" for a
+    // long relay description, which nothing can match on.
     const words = hint!.slice(0, -1).split(' ');
     expect(words.every((word) => word === 'alpha' || word === 'beta')).toBe(true);
   });

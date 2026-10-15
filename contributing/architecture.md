@@ -8,7 +8,7 @@ For the current cross-system boundaries, use [the system architecture guide](sys
 
 Start with [the system architecture map](system-architecture.md) for deployment boundaries, protocols, replaceable interfaces, Community, Cloud, and marketplace delivery. This guide covers local implementation details.
 
-DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. The React client reaches Express through `HttpTransport`, with durable streams over WebSocket (ADR 260805-041016).
+DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. The React client reaches the Hono server through `HttpTransport`, with durable streams over WebSocket (ADR 260805-041016).
 
 The browser, phone web app, and desktop renderer share this path. The desktop shell manages its local server. Independent Community has its own browser and Hono service; it is not another Transport implementation for the local app.
 
@@ -156,7 +156,7 @@ Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessi
 
 ### HttpTransport (`apps/client/src/layers/shared/lib/transport/http-transport.ts`)
 
-Communicates with the Express server over HTTP, with the durable streams on WebSockets:
+Communicates with the Hono server over HTTP, with the durable streams on WebSockets:
 
 - Standard `fetch()` for CRUD operations
 - `postMessage` POSTs the trigger and parses the `202 { sessionId }` body
@@ -506,11 +506,11 @@ The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `rel
 
 `CanvasService` (`apps/server/src/services/canvas/`) owns the `canvas_documents` table and everything that is about the TABLE: dedupe by source key, the twelve-document LRU, the edit lock, `rev` ordering, and publishing. It is **its own service domain** because it serves two owners — a room's shared table under a `room:<id>` scope, and one person's session canvas under `session:<id>` — and a canvas that serves both is a rooms concern in neither direction. Leaving it under `services/rooms/` would have `services/session/` importing from `services/rooms/` to answer a question with nothing to do with rooms.
 
-`RoomCanvasService` (`apps/server/src/services/rooms/canvas/`) is the room FLAVOUR over it: membership, the archived-room refusal, the six-verb allow-list, the per-turn ceiling and the ledger. It still hangs off the room service (`getRoomService().canvas`) because the one line a turn writes about it is a room entry, and that class owns the single write path into a room's log.
+`RoomCanvasService` (`apps/server/src/services/rooms/canvas/`) is the room FLAVOUR over it: membership, the archived-room refusal, the six-verb allow-list and the ledger. It still hangs off the room service (`getRoomService().canvas`) because the one line a turn writes about it is a room entry, and that class owns the single write path into a room's log.
 
-A session's canvas is the same table under a `session:` scope (spec `canvas-agent-seat`), and the differences are decisions rather than omissions: no per-turn ceiling (an audience of one, who asked for the turn), and no ledger (a session's history is its transcript, which already records every `control_ui` call). A session's changes travel as a `canvas` SESSION event — seq'd, ingested through the projector every runtime feeds, and replayed from the ring, so unlike a room's frame it needs no whole-set resync. `HTTP /api/sessions/:id/canvas` is the person's door onto it and refuses any agent `PEOPLE_ONLY`; `control_ui` and `ui.read_canvas_document` are the agent's, and neither takes a session id it could point somewhere else.
+A session's canvas is the same table under a `session:` scope (spec `canvas-agent-seat`), and the differences are decisions rather than omissions: no ledger (a session's history is its transcript, which already records every `control_ui` call). A session's changes travel as a `canvas` SESSION event — seq'd, ingested through the projector every runtime feeds, and replayed from the ring, so unlike a room's frame it needs no whole-set resync. `HTTP /api/sessions/:id/canvas` is the person's door onto it and refuses any agent `PEOPLE_ONLY`; `control_ui` and `ui.read_canvas_document` are the agent's, and neither takes a session id it could point somewhere else.
 
-**`apply` is the single writer and the single enforcement point**, and it is synchronous. Everything that can say no lives in it: an archived room, an action that is not one of the six canvas verbs, a verb with nothing to act on, the per-turn ceiling (`rooms.maxCanvasOpsPerTurn`), and another member's live edit lock. Synchronous, because the claude-code `control_ui` handler answers the model on the same call stack — a ceiling enforced later would be refusing something the tool had already called a success.
+**`apply` is the single writer and the single enforcement point**, and it is synchronous. Everything that can say no lives in it: an archived room, an action that is not one of the six canvas verbs, a verb with nothing to act on, and another member's live edit lock. Synchronous, because the claude-code `control_ui` handler answers the model on the same call stack — a refusal enforced later would be refusing something the tool had already called a success. There is no per-turn count (ADR 261006-225605 retired `rooms.maxCanvasOpsPerTurn`).
 
 **Two callers reach it, and a stamp keeps them from doubling** (ADR `260911-200303`). The claude-code handler calls it itself and stamps the `ui_command` event it then pushes; the room turn's collector (`collectReply` in `room-turn-runner.ts`) calls it for every `ui_command` carrying NO stamp, which is how codex and the scripted test-mode runtime reach the same writer. The stamp survives `session-event-normalizer.ts`, which rebuilds that event field by field — without that one edit every claude-code operation applies twice. Where a room turn is happening travels as `MessageOpts.roomTurn`, routing metadata rather than prompt context, and claude-code assigns it unconditionally so a session that ran a room turn writes to no room on its next direct turn.
 
@@ -819,33 +819,34 @@ The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external 
 
 ### Key Modules
 
-| Module                    | Purpose                                                      |
-| ------------------------- | ------------------------------------------------------------ |
-| `agent-card-generator.ts` | Generates A2A Agent Cards from Mesh agent manifests          |
-| `schema-translator.ts`    | Translates between A2A protocol types and DorkOS Relay types |
-| `task-store.ts`           | SQLite-backed task state persistence for A2A task lifecycle  |
-| `dorkos-executor.ts`      | Bridges A2A task execution to Relay publish/subscribe        |
-| `express-handlers.ts`     | Express request handlers for the three A2A endpoints         |
+| Module                    | Purpose                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `agent-card-generator.ts` | Generates A2A Agent Cards from Mesh agent manifests                                                                     |
+| `schema-translator.ts`    | Translates between A2A protocol types and DorkOS Relay types                                                            |
+| `task-store.ts`           | SQLite-backed task state persistence for A2A task lifecycle                                                             |
+| `dorkos-executor.ts`      | Bridges A2A task execution to Relay publish/subscribe                                                                   |
+| `http-handlers.ts`        | Fetch-style handlers (web `Request` in, `Response` out) for the A2A endpoints, over the SDK's `JsonRpcTransportHandler` |
 
 ### Data Flow
 
 ```
 External A2A Client → POST /a2a (JSON-RPC)
-  → express-handlers → schema-translator → relayCore.publish() → Agent
+  → http-handlers → schema-translator → relayCore.publish() → Agent
 Agent response → Relay subscription → schema-translator → A2A TaskStatusUpdate → SSE to client
 ```
 
 ### Auth
 
-Guarded by `createMcpAuth({ surface: 'a2a' })` — the same credential acceptors the MCP endpoint uses (`MCP_API_KEY` override → per-user key or session → legacy compat key → the local token while login is off). The surfaces differ only in what happens when none matches. **Login off:** A2A leaves `GET` agent-card discovery open and `401`s every JSON-RPC `POST`, where `/mcp` applies its read-only tool carve-out instead. **Login on:** A2A `401`s both, card discovery included, and `/mcp` has no tokenless path either — but `sessionGate` covers only `/api/*` and `/mcp`, so it never runs on `/a2a` and the `MCP_API_KEY` override still reaches this surface.
+Guarded by `honoMcpAuth('a2a')` — the same credential acceptors the MCP endpoint uses (`MCP_API_KEY` override → per-user key or session → legacy compat key → the local token while login is off). The surfaces differ only in what happens when none matches. **Login off:** A2A leaves `GET` agent-card discovery open and `401`s every JSON-RPC `POST`, where `/mcp` applies its read-only tool carve-out instead. **Login on:** A2A `401`s both, card discovery included, and `/mcp` has no tokenless path either — but `sessionGate` covers only `/api/*` and `/mcp`, so it never runs on `/a2a` and the `MCP_API_KEY` override still reaches this surface.
 
 ### Server Integration
 
-Routes are mounted in `apps/server/src/routes/a2a.ts`:
+Routes are mounted on the Hono chain by `apps/server/src/routes/a2a.ts` (registered in `http/hono-api.ts` when A2A is on); the gateway itself imports no web framework:
 
 - `GET /.well-known/agent-card.json` — Fleet Agent Card (mounted at app root; the legacy `/.well-known/agent.json` path is kept as an alias)
 - `GET /a2a/agents/:id/card` — Per-agent Agent Card
-- `POST /a2a` — JSON-RPC 2.0 endpoint
+- `POST /a2a/agents/:id` — Per-agent JSON-RPC 2.0 endpoint (the `url` on each per-agent card)
+- `POST /a2a` — Fleet JSON-RPC 2.0 endpoint (needs `metadata.agentId`)
 
 ## Relay
 
@@ -1022,7 +1023,7 @@ Health is returned by `GET /api/mesh/agents/:id/health` and aggregated by `GET /
 
 ### Namespace Isolation and Topology
 
-`NamespaceResolver` derives a namespace string from an agent's workspace path (e.g., `/home/user/projects/api-service` → `projects.api-service`). Namespaces provide default isolation: agents in different namespaces cannot see each other unless an explicit cross-namespace rule grants access.
+`NamespaceResolver` derives a namespace string from an agent's workspace path (e.g., `/home/user/projects/api-service` → `projects.api-service`). Namespaces are the unit cross-namespace access rules grant or deny between. Since DOR-2739 (ADR `261006-225605`), `services/mesh/seed-open-mesh.ts` writes one such rule, `* → *`, once per install at boot, whatever the permission preset — so agents in different namespaces can see each other by default, and a person who removes that rule in Team → Access is back to needing an explicit rule per pair.
 
 `TopologyManager` stores cross-namespace access rules and applies per-agent visibility filtering when `getMeshTopology()` is called. `PUT /api/mesh/topology/access` creates or updates rules. The topology view is consumed by the `TopologyGraph` React Flow visualization in the client (`features/mesh/`).
 
@@ -1093,7 +1094,7 @@ that name must stay under `relay.system.`, because `POST /api/relay/messages`
 rejects exactly the principals `isConsentExemptPrincipal` covers, and that is
 what stops an HTTP caller asserting it.
 
-Agent-created schedules enter `pending_approval` state and require human approval before activation.
+A schedule one of our agents creates (an in-session `tasks_*` call, or `POST /api/tasks` with a verified agent token) is armed at once on a Trusted install and announced as `schedule.armed_by_agent` with Pause; on Careful, and from any caller the server cannot identify as ours, it enters `pending_approval` and waits for a person (ADR 261006-225605, `services/tasks/approvals/agent-trust.ts`). Schedules made from a file, a Shape or a package always park.
 
 ### Cascade Disable on Agent Unregister
 

@@ -1,22 +1,42 @@
 /** Caller classification and owner omission tests for connector management routes. */
-import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations } from '@dorkos/db';
 import { initAuth } from '../../services/core/auth/index.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
-import { createConnectorManagementRouter } from '../connector-management.js';
+import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
+import { createConnectorManagementRoutes } from '../connector-management.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 import { ApiError } from '../../../../../packages/cli/src/lib/api-client.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
+/**
+ * This server's own loopback origin: the chain's CORS lets it through, and the
+ * routes' injected trusted list does not name it, so the routes' own origin
+ * bar is the one that answers.
+ */
+const CORS_ONLY_ORIGIN = getStaticLocalOrigins().find((origin) =>
+  origin.startsWith('http://127.0.0.1')
+)!;
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting from a real config store: off, as on a fresh
+// install. The routes' own login lookup is injected per case.
+const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-connector-management-'));
+beforeAll(() => {
+  initConfigManager(configDir);
+});
+afterAll(() => {
+  fs.rmSync(configDir, { recursive: true, force: true });
+});
 
 describe('connector management routes', () => {
   const reviews = {
@@ -90,32 +110,33 @@ describe('connector management routes', () => {
       ownerUserId?: string;
     } = {}
   ) {
-    const app = express();
-    app.use(express.json());
-    app.use((_req, res, next) => {
-      if (options.user) res.locals.user = options.user;
-      next();
-    });
-    app.use(
-      '/api/connectors',
-      createConnectorManagementRouter({
-        registry: {
-          migrationHealth: () =>
-            options.migrationFailed
-              ? { status: 'migration_failed', error: 'connector migration failed' }
-              : { status: 'ready', migrated: false },
+    return honoGroupListener(
+      {
+        path: '/api/connectors',
+        routes: createConnectorManagementRoutes({
+          registry: {
+            migrationHealth: () =>
+              options.migrationFailed
+                ? { status: 'migration_failed', error: 'connector migration failed' }
+                : { status: 'ready', migrated: false },
+          },
+          reviews,
+          reconciliation,
+          agentRequests,
+          resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
+          loginEnabled: () => options.loginEnabled ?? false,
+          trustedOrigins: () => ['http://localhost:4242'],
+          verifyUser: async () => options.verifyUser ?? null,
+          isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
+        }),
+      },
+      {
+        before: async (c, next) => {
+          if (options.user) c.set('user', options.user);
+          await next();
         },
-        reviews,
-        reconciliation,
-        agentRequests,
-        resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
-        loginEnabled: () => options.loginEnabled ?? false,
-        trustedOrigins: () => ['http://localhost:4242'],
-        verifyUser: async () => options.verifyUser ?? null,
-        isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
-      })
+      }
     );
-    return app;
   }
 
   it('keeps agent service requests behind the owner boundary and forwards exact decisions', async () => {
@@ -556,8 +577,13 @@ describe('connector management routes', () => {
       .expect(401);
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/reviews')
-      .set('Origin', 'https://evil.example')
+      .set('Origin', CORS_ONLY_ORIGIN)
       .expect(403);
+    // A page on a foreign origin never reaches the route: the chain's CORS refuses it.
+    await request(fixtureTarget.mount(buildApp()))
+      .get('/api/connectors/reviews')
+      .set('Origin', 'https://evil.example')
+      .expect(500);
     expect(reviews.create).not.toHaveBeenCalled();
     expect(reviews.list).not.toHaveBeenCalled();
   });
@@ -590,7 +616,7 @@ describe('connector management routes', () => {
       {
         response: await request(app)
           .post('/api/connectors/reviews')
-          .set('Origin', 'https://evil.example')
+          .set('Origin', CORS_ONLY_ORIGIN)
           .send(reviewInput),
         code: 'connector_owner_origin_required',
         explanation: 'Open this account action from the DorkOS app.',
@@ -606,9 +632,7 @@ describe('connector management routes', () => {
         mirrorsMessage: true,
       },
       {
-        response: await request(app)
-          .get('/api/connectors/reviews')
-          .set('Origin', 'https://evil.example'),
+        response: await request(app).get('/api/connectors/reviews').set('Origin', CORS_ONLY_ORIGIN),
         code: 'connector_owner_origin_required',
         explanation: 'Open this account action from the DorkOS app.',
         mirrorsMessage: true,
@@ -721,11 +745,9 @@ describe('connector management routes', () => {
       const created = await auth.api.createApiKey({
         body: { userId: 'owner-user', name: 'connector-review' },
       });
-      const app = express();
-      app.use(express.json());
-      app.use(
-        '/api/connectors',
-        createConnectorManagementRouter({
+      const app = honoGroupListener({
+        path: '/api/connectors',
+        routes: createConnectorManagementRoutes({
           registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
           reviews,
           reconciliation,
@@ -733,8 +755,8 @@ describe('connector management routes', () => {
           resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
           loginEnabled: () => false,
           trustedOrigins: () => ['http://localhost:4242'],
-        })
-      );
+        }),
+      });
 
       await request(fixtureTarget.mount(app))
         .post('/api/connectors/reviews')

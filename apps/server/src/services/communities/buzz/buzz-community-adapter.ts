@@ -218,6 +218,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
       roomAdmin: false,
       agentActing: false,
       attachments: false,
+      conduct: false,
+      reports: false,
       roles: { supported: true, values: BUZZ_ROLES },
       admission: 'out-of-band',
       invite: 'none',
@@ -632,6 +634,26 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    */
   createInvite(): Promise<CommunityInvite> {
     return Promise.reject(new CommunityUnsupportedError(this.community, 'invite', 'createInvite'));
+  }
+
+  // --- Conduct ---------------------------------------------------------------
+  //
+  // Refused: `conduct` and `reports` are off. A read-only adapter reads a
+  // relay's rooms; it has no standing, rules, names or reports to offer.
+
+  getStanding(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'conduct', 'getStanding'));
+  }
+  acceptRules(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'conduct', 'acceptRules'));
+  }
+  setDisplayName(): Promise<never> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'conduct', 'setDisplayName')
+    );
+  }
+  reportEntry(): Promise<never> {
+    return Promise.reject(new CommunityUnsupportedError(this.community, 'reports', 'reportEntry'));
   }
 
   // --- Ephemeral -------------------------------------------------------------

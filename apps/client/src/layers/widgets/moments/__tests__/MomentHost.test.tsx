@@ -104,12 +104,12 @@ describe('MomentHost', () => {
   it('shows the highest-priority moment and never stacks', async () => {
     vi.mocked(useMoments).mockReturnValue([
       fakeMoment('telemetry', MOMENT_PRIORITY.low),
-      fakeMoment('full-power', MOMENT_PRIORITY.high),
+      fakeMoment('trust-notice', MOMENT_PRIORITY.high),
     ]);
 
     render(<MomentHost />);
 
-    expect(await screen.findByText('full-power body')).toBeInTheDocument();
+    expect(await screen.findByText('trust-notice body')).toBeInTheDocument();
     expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
@@ -138,10 +138,10 @@ describe('MomentHost', () => {
     expect(screen.queryByText('telemetry body')).not.toBeInTheDocument();
 
     // A second moment becomes eligible in the same page life. It must wait.
-    vi.mocked(useMoments).mockReturnValue([fakeMoment('full-power', MOMENT_PRIORITY.high)]);
+    vi.mocked(useMoments).mockReturnValue([fakeMoment('trust-notice', MOMENT_PRIORITY.high)]);
     rerender(<MomentHost />);
 
-    expect(screen.queryByText('full-power body')).not.toBeInTheDocument();
+    expect(screen.queryByText('trust-notice body')).not.toBeInTheDocument();
   });
 
   it('opens again on a fresh launch, because the latch is not persisted', async () => {

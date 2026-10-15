@@ -153,13 +153,7 @@ describe('connector authority across Mesh startup reconciliation', () => {
     const result = await mesh.reconcileOnStartup();
 
     expect(result.removed).toBe(1);
-    expect(
-      db.$client
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_legacy_agent_revocations'"
-        )
-        .get()
-    ).toBeUndefined();
+    expect(db.select().from(connectorLegacyAgentRevocations).all()).toEqual([]);
     expect(db.select().from(agentConnectionAttachments).all()).toMatchObject([
       { agentId: agentB.id },
     ]);
@@ -257,6 +251,8 @@ describe('connector authority across Mesh startup reconciliation', () => {
       { agentId: removed.id },
     ]);
     expect(db.$client.prepare('SELECT * FROM agent_connector_attachments').all()).toHaveLength(1);
+    const retainedLegacy = db.$client.prepare('SELECT * FROM agent_connector_attachments').all();
+    const retainedFence = db.select().from(connectorLegacyAgentRevocations).all();
 
     mesh.close();
     meshes.splice(meshes.indexOf(mesh), 1);
@@ -278,13 +274,9 @@ describe('connector authority across Mesh startup reconciliation', () => {
 
     expect(recoveredRegistry.migrationHealth()).toEqual({ status: 'ready', migrated: true });
     expect(db.select().from(agentConnectionAttachments).all()).toEqual([]);
-    expect(
-      db.$client
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_connector_attachments'"
-        )
-        .get()
-    ).toBeUndefined();
+    expect(db.$client.prepare('SELECT * FROM agent_connector_attachments').all()).toEqual(
+      retainedLegacy
+    );
     expect(
       db.$client
         .prepare(
@@ -304,15 +296,9 @@ describe('connector authority across Mesh startup reconciliation', () => {
         .get(removedSessionId)
     ).toEqual({ count: 0 });
 
-    // The migration consumes the marker after fencing the old attachment. New
-    // access can now be granted only through the canonical review workflow.
-    expect(
-      db.$client
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_legacy_agent_revocations'"
-        )
-        .get()
-    ).toBeUndefined();
+    // Completed migration retires legacy reads while preserving canonical schema
+    // and the durable fence. Retained consent must not revive canonical access.
+    expect(db.select().from(connectorLegacyAgentRevocations).all()).toEqual(retainedFence);
   });
 });
 

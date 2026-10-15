@@ -36,13 +36,13 @@ describe('discoverOverrides', () => {
   });
 
   it('discovers a still override with its provenance', async () => {
-    await fixture('cockpit', {
+    await fixture('team-room', {
       'still-light.png': 'x',
       'override.json': JSON.stringify({ reason: 'hand-tuned hero', capturedBy: 'design' }),
     });
     const found = await discoverOverrides(root);
     expect(found).toHaveLength(1);
-    expect(found[0]!.shot.id).toBe('cockpit');
+    expect(found[0]!.shot.id).toBe('team-room');
     expect(found[0]!.stillPath).toBeDefined();
     expect(found[0]!.loopPath).toBeUndefined();
     expect(found[0]!.meta.reason).toBe('hand-tuned hero');
@@ -55,7 +55,7 @@ describe('discoverOverrides', () => {
   });
 
   it('ignores a directory with no media files', async () => {
-    await fixture('cockpit', { 'override.json': '{}' });
+    await fixture('team-room', { 'override.json': '{}' });
     expect(await discoverOverrides(root)).toEqual([]);
   });
 
@@ -65,7 +65,7 @@ describe('discoverOverrides', () => {
   });
 
   it('rejects a loop override on a still-only shot', async () => {
-    await fixture('cockpit', { 'loop-dark.webm': 'x' });
+    await fixture('team-room', { 'loop-dark.webm': 'x' });
     await expect(discoverOverrides(root)).rejects.toThrow(/still-only shot/);
   });
 });
@@ -76,9 +76,9 @@ describe('autoSkippedShotIds', () => {
       'loop-dark.mov': 'x',
       'override.json': JSON.stringify({ skipAuto: true }),
     });
-    await fixture('cockpit', { 'still-light.png': 'x' });
+    await fixture('team-room', { 'still-light.png': 'x' });
     const skipped = await autoSkippedShotIds(root);
     expect(skipped.has('agent-discovery')).toBe(true);
-    expect(skipped.has('cockpit')).toBe(false);
+    expect(skipped.has('team-room')).toBe(false);
   });
 });

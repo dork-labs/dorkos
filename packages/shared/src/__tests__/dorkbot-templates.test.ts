@@ -3,11 +3,9 @@ import {
   DORKBOT_ONBOARDING_LINES,
   DORKBOT_TOUR_LINES,
   dorkbotClaudeMdTemplate,
-  dorkbotDiscoveryFoundLine,
-  dorkbotProfileSuggestionLine,
+  dorkbotWelcomeText,
   generateVoiceSample,
 } from '../dorkbot-templates.js';
-import { recommendForRoles } from '../profile-recommendations.js';
 import type { Traits } from '../mesh-schemas.js';
 
 function makeTraits(overrides: Partial<Traits> = {}): Traits {
@@ -29,50 +27,68 @@ describe('dorkbot-templates', () => {
       expect(result).toContain('# DorkBot');
       expect(result).toContain('DorkOS');
     });
+
+    it('describes running a business and building mini apps, never a retired line', () => {
+      const result = dorkbotClaudeMdTemplate();
+      expect(result).toContain('run their business');
+      expect(result).toContain('mini apps');
+      for (const retired of [
+        'operating system for autonomous AI agents',
+        'mission control',
+        'cockpit',
+        'open source',
+        'own computer',
+      ]) {
+        expect(result.toLowerCase()).not.toContain(retired);
+      }
+    });
+  });
+
+  describe('dorkbotWelcomeText', () => {
+    it('says each path’s welcome, with the name', () => {
+      expect(dorkbotWelcomeText('dorkos', 'Dorian')).toBe(
+        'Hi Dorian. Your agents run on DorkOS. Usage is in Settings.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
+      expect(dorkbotWelcomeText('own', 'Dorian')).toBe(
+        'Hi Dorian. Your agents are ready.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
+      expect(dorkbotWelcomeText('none', 'Dorian')).toBe(
+        'Hi Dorian. Agents need AI to reply. Connect DorkOS or your own.'
+      );
+    });
+
+    it('asks for an AI app sign-in on Own AI until one is ready', () => {
+      expect(dorkbotWelcomeText('own', 'Dorian', { aiReady: false })).toBe(
+        'Hi Dorian. Sign in to an AI app to start.'
+      );
+    });
+
+    it('falls back to "there", and reads no path as no AI', () => {
+      expect(dorkbotWelcomeText(null, null)).toBe(
+        'Hi there. Agents need AI to reply. Connect DorkOS or your own.'
+      );
+      expect(dorkbotWelcomeText('own', '   ')).toBe(
+        'Hi there. Your agents are ready.\n\n' +
+          'Want a first tool? Pick one below, or tell me what you need.'
+      );
+    });
   });
 
   describe('DORKBOT_ONBOARDING_LINES', () => {
-    it('provides two arrival lines and every scripted prompt', () => {
-      expect(DORKBOT_ONBOARDING_LINES.arrival).toHaveLength(2);
-      expect(DORKBOT_ONBOARDING_LINES.personalityPrompt).toContain('personality');
-      expect(DORKBOT_ONBOARDING_LINES.discoveryPrompt).toContain('look around');
-      expect(DORKBOT_ONBOARDING_LINES.handoffPrompt).toContain('building today');
-    });
-
     it('never uses an em dash (writing-for-humans)', () => {
       const allCopy = [
-        ...DORKBOT_ONBOARDING_LINES.arrival,
-        DORKBOT_ONBOARDING_LINES.wakingUp,
-        DORKBOT_ONBOARDING_LINES.composerSetupPlaceholder,
-        DORKBOT_ONBOARDING_LINES.personalityPrompt,
+        ...DORKBOT_ONBOARDING_LINES.identityCardPrompt,
+        DORKBOT_ONBOARDING_LINES.identityCardSaved,
         DORKBOT_ONBOARDING_LINES.saveError,
-        DORKBOT_ONBOARDING_LINES.personalitySkip,
-        ...DORKBOT_ONBOARDING_LINES.profilePrompt,
-        DORKBOT_ONBOARDING_LINES.profileSkip,
         DORKBOT_ONBOARDING_LINES.profileSaved,
         ...DORKBOT_ONBOARDING_LINES.profileCardPrompt,
-        DORKBOT_ONBOARDING_LINES.discoveryPrompt,
-        DORKBOT_ONBOARDING_LINES.scanning,
-        DORKBOT_ONBOARDING_LINES.discoveryZero,
-        DORKBOT_ONBOARDING_LINES.discoveryTimeout,
-        DORKBOT_ONBOARDING_LINES.discoveryDecline,
-        DORKBOT_ONBOARDING_LINES.handoffPrompt,
-        DORKBOT_ONBOARDING_LINES.composerHandoffPlaceholder,
-        dorkbotDiscoveryFoundLine(3),
-        dorkbotProfileSuggestionLine(recommendForRoles(['hiring'])),
         ...(['terse', 'balanced', 'warm', 'playful', 'bold', 'inventive'] as const).map(() =>
           generateVoiceSample(makeTraits())
         ),
       ].join(' ');
       expect(allCopy).not.toContain('—');
-    });
-
-    it('asks the role question and says the privacy fact in the same beat', () => {
-      expect(DORKBOT_ONBOARDING_LINES.profilePrompt).toHaveLength(2);
-      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[0]).toContain('what kind of work');
-      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[1]).toContain('stays on this machine');
-      expect(DORKBOT_ONBOARDING_LINES.profileSkip.length).toBeGreaterThan(0);
-      expect(DORKBOT_ONBOARDING_LINES.profileSaved.length).toBeGreaterThan(0);
     });
 
     // FB-11 / DOR-1972: the reporter answered this prompt with no idea where the
@@ -82,51 +98,6 @@ describe('dorkbot-templates', () => {
       expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt).toHaveLength(2);
       expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt[0]).toContain('What kind of work');
       expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt[1]).toContain('Stored on this machine');
-    });
-
-    it('points both prompts at the real place to change the answer (DOR-1972)', () => {
-      // The scripted chat beat has no way to render a real link, so its own
-      // text has to name the destination; the card can and does navigate for
-      // real (see `ProfilePromptCard.test.tsx`), so its template string stays
-      // free of a path it would only ever restate as dead text.
-      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[1]).toContain('Settings › Profile');
-    });
-  });
-
-  describe('dorkbotProfileSuggestionLine', () => {
-    it('speaks the authored hiring line from the spec', () => {
-      expect(dorkbotProfileSuggestionLine(recommendForRoles(['hiring']))).toBe(
-        'People who hire usually connect Gmail and Greenhouse, so their agents can work the inbox and the pipeline. You can set those up any time.'
-      );
-    });
-
-    it('returns the empty string for no recommendations (beat advances silently)', () => {
-      expect(dorkbotProfileSuggestionLine([])).toBe('');
-    });
-
-    it('names at most three services', () => {
-      const recs = recommendForRoles(['hiring', 'design', 'software-development']);
-      const line = dorkbotProfileSuggestionLine(recs);
-      const named = Object.values({
-        gmail: 'Gmail',
-        greenhouse: 'Greenhouse',
-        figma: 'Figma',
-        slack: 'Slack',
-        github: 'GitHub',
-        linear: 'Linear',
-      }).filter((name) => line.includes(name));
-      expect(named.length).toBeLessThanOrEqual(3);
-      expect(named.length).toBeGreaterThan(0);
-    });
-
-    it('never claims anything is set up or configured (demo-claim gate)', () => {
-      for (const roles of [['hiring'], ['design'], ['writing', 'sales']]) {
-        const line = dorkbotProfileSuggestionLine(recommendForRoles(roles)).toLowerCase();
-        expect(line).not.toContain('set up for you');
-        expect(line).not.toContain('configured');
-        expect(line).not.toContain('connections page');
-        expect(line.endsWith('any time.')).toBe(true);
-      }
     });
   });
 
@@ -151,16 +122,6 @@ describe('dorkbot-templates', () => {
         ...Object.values(DORKBOT_TOUR_LINES.mesh),
       ].join(' ');
       expect(allCopy).not.toContain('—');
-    });
-  });
-
-  describe('dorkbotDiscoveryFoundLine', () => {
-    it('spells out a single result as "one"', () => {
-      expect(dorkbotDiscoveryFoundLine(1)).toBe('Found one. Want them on your team?');
-    });
-
-    it('uses the numeral for multiple results', () => {
-      expect(dorkbotDiscoveryFoundLine(4)).toBe('Found 4. Want them on your team?');
     });
   });
 

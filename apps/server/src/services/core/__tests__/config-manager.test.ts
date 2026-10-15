@@ -6,6 +6,7 @@ import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   readClaudeAccountSettings,
+  defaultRemoteAccessSettings,
 } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
@@ -64,6 +65,10 @@ import {
   dropRetiredDorkosTools,
   seedDisplayNameSourceDefault,
   seedIdentityPromptDismissedDefault,
+  seedWorkingHoursDefaults,
+  seedDoeDefaultModel,
+  seedUiPanelTabs,
+  seedFirstRunOnboardingLeaves,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
@@ -73,6 +78,9 @@ import {
   seedCommunityNavigationPrefs,
   seedCloudCreditsChoices,
   seedCodexTransport,
+  raiseEngagedWindowDefaults,
+  seedCloudRemoteAccess,
+  seedSpacesOfficial,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -91,10 +99,12 @@ import { execSync } from 'child_process';
  * effortless-runtime-switching T1 credential fields + claude-code-accounts).
  */
 const RUNTIMES_DEFAULTS = {
-  doe: { enabled: true, inference: null, defaultTrustStop: null },
+  doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
   environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
   default: 'claude-code',
-  defaultTrustStop: null,
+  // Trusted by default (ADR 261006-225605): the global stop ships at Full
+  // autonomy, and each runtime's own stop ships `null` so it follows it.
+  defaultTrustStop: 'autonomy',
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -332,6 +342,47 @@ describe('ConfigManager', () => {
     };
     expect(onDisk.activity).toEqual({ retentionDays: 365 });
     expect(configManager.get('activity').retentionDays).toBe(365);
+  });
+
+  it('lands heartbeats.enabled on disk for a config written before it existed, with no migration', () => {
+    // Spec `heartbeats` §3.6: a whole new TOP-LEVEL section, like `keepAwake`,
+    // so there is no CONFIG_MIGRATIONS entry — conf writes the default section
+    // before any key runs. Pinned so that decision breaks loudly if conf ever
+    // stops doing it.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.105.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { heartbeats?: unknown };
+    expect(onDisk.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
+    expect(configManager.get('heartbeats').enabled).toBe(true);
+  });
+
+  it('reads a stored heartbeats section without triageOnCredits as not chosen', () => {
+    // Spec `heartbeats` §6.3: the leaf has no migration because its absence
+    // already says "nobody answered the offer". Pinned so a later default that
+    // is not `null` breaks here instead of spending credits nobody chose.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        heartbeats: { enabled: true },
+        __internal__: { migrations: { version: '0.105.0' } },
+      })
+    );
+
+    const configManager = initConfigManager(testDir);
+
+    expect(configManager.get('heartbeats').triageOnCredits ?? null).toBeNull();
   });
 
   it('lands memory.provider on disk for a config written before memory existed', () => {
@@ -575,6 +626,18 @@ describe('ConfigManager', () => {
       linkedAccountLabel: null,
       previousLinkProof: null,
       credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+      remote: {
+        mode: 'off',
+        enrolmentId: null,
+        consentVersion: null,
+        instanceId: null,
+        credentialRef: null,
+        credentialId: null,
+        fingerprint: null,
+        hosts: [],
+        edgeProofRef: null,
+        edgeProofHeader: null,
+      },
     });
   });
 
@@ -629,6 +692,9 @@ describe('ConfigManager', () => {
       displayNameSource: null,
       rolePromptDismissedAt: null,
       identityPromptDismissedAt: null,
+      timezone: null,
+      workingHours: null,
+      away: null,
     });
     // Existing user data survives the upgrade untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
@@ -646,6 +712,9 @@ describe('ConfigManager', () => {
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
       identityPromptDismissedAt: '2026-09-25T00:00:00.000Z',
+      timezone: 'Europe/Berlin',
+      workingHours: { days: [1, 2, 3, 4], start: '08:30', end: '16:00' },
+      away: { until: '2026-10-20T00:00:00.000Z', note: 'On holiday' },
     };
     fs.mkdirSync(testDir, { recursive: true });
     fs.writeFileSync(
@@ -1125,14 +1194,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     }
   });
 
-  it('seeds the ceiling that outlived the experiment when it is absent', () => {
-    // The surviving half of the removed `'0.72.0'`'s job. `maxPostsPerTurn` is a
-    // nested leaf, conf's defaults merge is shallow, and this is now the only
-    // body that writes it — so an install that never ran `'0.72.0'` gets it here
-    // or not at all.
+  it('seeds nothing for the ceiling now that it is retired (DOR-2739)', () => {
+    // The frozen body still names `maxPostsPerTurn`'s default, which no longer
+    // exists, so it writes no value; `'0.113.0'` deletes the leaf regardless.
     const store = createMockStore({ rooms: { maxAgentDepth: 12, toolOnlyReplies: true } });
     retireToolOnlyReplies(store);
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 12, maxPostsPerTurn: 3 });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody chose', () => {
@@ -1161,7 +1228,7 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real config file loses the leaf and gains the ceiling on disk (full conf path)', () => {
+  it('a real config file loses the leaf on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). Suppress the body and this goes red.
@@ -1197,9 +1264,9 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(3);
-      // The upgrade removes one leaf and adds one; it changes nothing the person
-      // had set.
+      // The ceiling it once seeded is retired (DOR-2739), so nothing is added.
+      expect('maxPostsPerTurn' in onDisk.rooms).toBe(false);
+      // It changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
@@ -1229,13 +1296,13 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
       );
 
       initConfigManager(dir);
-      expect(applyConfigPatch({ rooms: { maxPostsPerTurn: 2 } }).ok).toBe(true);
+      expect(applyConfigPatch({ rooms: { replyWaitMinutes: 25 } }).ok).toBe(true);
 
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
       expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(2);
+      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1243,17 +1310,12 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
 });
 
 describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
-  it('reserves the leaf on a `rooms` block that predates the room canvas', () => {
-    // What this catches: conf merges top-level defaults SHALLOWLY, so an
-    // upgrading install with a stored `rooms` block never inherits the new leaf
-    // on its own. Drop the body and it reads `undefined`.
-    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1 } });
+  it('reserves no value now that the leaf is retired (DOR-2739)', () => {
+    // The frozen body names a default that no longer exists, so the value it
+    // writes is empty; `'0.113.0'` deletes the leaf regardless.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12 } });
     seedRoomCanvasOps(store);
-    expect(store.data.rooms).toEqual({
-      maxAgentDepth: 12,
-      maxPostsPerTurn: 1,
-      maxCanvasOpsPerTurn: 3,
-    });
+    expect(JSON.parse(JSON.stringify(store.data.rooms))).toEqual({ maxAgentDepth: 12 });
   });
 
   it('never overwrites a ceiling somebody tightened (idempotent)', () => {
@@ -1274,7 +1336,7 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
     expect(store.data.rooms).toBeUndefined();
   });
 
-  it('a real pre-0.79.0 config file gains the leaf on disk (full conf path)', () => {
+  it('a real pre-0.79.0 config file runs it cleanly on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach: conf's
     // `store` getter re-reads and re-parses the file and hands back a copy Ajv
     // has already filled the default into, and that copy is discarded. Suppress
@@ -1311,10 +1373,10 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         rooms: Record<string, unknown>;
       };
-      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(3);
-      // The upgrade adds one leaf; it changes nothing the person had set.
+      // The retired leaf is never added (DOR-2739); nothing the person had set
+      // changes.
+      expect('maxCanvasOpsPerTurn' in onDisk.rooms).toBe(false);
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1491,6 +1553,293 @@ describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
       // The upgrade adds one leaf; everything the person had set is untouched.
       expect(onDisk.profile.displayName).toBe('Dorian');
       expect(onDisk.profile.rolePromptDismissedAt).toBe('2026-08-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedWorkingHoursDefaults migration (DOR-2788)', () => {
+  it('reserves the three hours leaves on a `profile` block that predates them', () => {
+    // conf's pre-migration merge is shallow, so a stored `profile` never gains a
+    // member on its own. Drop the body and these read `undefined`.
+    const store = createMockStore({ profile: { roles: ['Engineer'], displayName: 'Dorian' } });
+    seedWorkingHoursDefaults(store);
+    expect(store.data.profile).toEqual({
+      roles: ['Engineer'],
+      displayName: 'Dorian',
+      timezone: null,
+      workingHours: null,
+      away: null,
+    });
+  });
+
+  it('keeps a leaf a person already set and fills only the missing ones', () => {
+    const store = createMockStore({ profile: { timezone: 'Europe/Berlin' } });
+    seedWorkingHoursDefaults(store);
+    expect(store.data.profile).toEqual({
+      timezone: 'Europe/Berlin',
+      workingHours: null,
+      away: null,
+    });
+  });
+
+  it('leaves a profile that already has all three alone (idempotent, by identity)', () => {
+    const profile = { timezone: null, workingHours: null, away: null };
+    const store = createMockStore({ profile });
+    seedWorkingHoursDefaults(store);
+    expect(store.data.profile).toBe(profile);
+  });
+
+  it('does nothing when there is no `profile` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedWorkingHoursDefaults(store);
+    expect(store.data.profile).toBeUndefined();
+  });
+
+  it('a real pre-0.105.0 config file gains the leaves on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-working-hours-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          profile: {
+            roles: ['Engineer'],
+            tools: [],
+            displayName: 'Dorian',
+            displayNameSource: null,
+            rolePromptDismissedAt: null,
+            identityPromptDismissedAt: '2026-09-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.103.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.105.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        profile: Record<string, unknown>;
+      };
+      expect(onDisk.profile).toHaveProperty('timezone', null);
+      expect(onDisk.profile).toHaveProperty('workingHours', null);
+      expect(onDisk.profile).toHaveProperty('away', null);
+      // Everything the person had set is untouched.
+      expect(onDisk.profile.displayName).toBe('Dorian');
+      expect(onDisk.profile.identityPromptDismissedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedFirstRunOnboardingLeaves migration (DOR-2783)', () => {
+  it('reserves the three first-run leaves on an `onboarding` block that predates them', () => {
+    // conf's pre-migration merge is shallow, so a stored `onboarding` never gains
+    // a member on its own. Drop the body and these read `undefined`.
+    const store = createMockStore({
+      onboarding: { completedSteps: ['meet-dorkbot'], completedAt: '2026-07-01T00:00:00.000Z' },
+    });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      completedSteps: ['meet-dorkbot'],
+      completedAt: '2026-07-01T00:00:00.000Z',
+      firstRunPath: null,
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('keeps a leaf already set and fills only the missing ones', () => {
+    const store = createMockStore({ onboarding: { firstRunPath: 'own' } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toEqual({
+      firstRunPath: 'own',
+      welcomeEntryId: null,
+      priorRuntime: null,
+    });
+  });
+
+  it('leaves a block that already has all three alone (idempotent, by identity)', () => {
+    const onboarding = { firstRunPath: null, welcomeEntryId: null, priorRuntime: null };
+    const store = createMockStore({ onboarding });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBe(onboarding);
+  });
+
+  it('does nothing when there is no `onboarding` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedFirstRunOnboardingLeaves(store);
+    expect(store.data.onboarding).toBeUndefined();
+  });
+
+  it('a real pre-0.108.0 config file gains the leaves on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-first-run-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          onboarding: {
+            completedSteps: [],
+            skippedSteps: [],
+            startedAt: null,
+            dismissedAt: null,
+            completedAt: '2026-09-01T00:00:00.000Z',
+            runtimeDefaultSetAt: '2026-09-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.107.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.108.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        onboarding: Record<string, unknown>;
+      };
+      expect(onDisk.onboarding).toHaveProperty('firstRunPath', null);
+      expect(onDisk.onboarding).toHaveProperty('welcomeEntryId', null);
+      expect(onDisk.onboarding).toHaveProperty('priorRuntime', null);
+      // Everything the install already had is untouched.
+      expect(onDisk.onboarding.completedAt).toBe('2026-09-01T00:00:00.000Z');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedUiPanelTabs migration (DOR-2867)', () => {
+  it('reserves an empty list on a `ui` block that predates it', () => {
+    const store = createMockStore({ ui: { theme: 'dark', composer: { richText: true } } });
+    seedUiPanelTabs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: true }, panelTabs: [] });
+  });
+
+  it('keeps a saved placement, and writes nothing (idempotent)', () => {
+    const saved = [{ tab: 'social-queue:queue', show: { agents: ['a'], rooms: [], pages: [] } }];
+    const store = createMockStore({ ui: { panelTabs: saved } });
+    seedUiPanelTabs(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data.ui).toEqual({ panelTabs: saved });
+  });
+
+  it('a real pre-0.112.0 config file gains the leaf on disk (full conf path)', () => {
+    const dir = path.join(os.tmpdir(), 'test-dork-ui-panel-tabs-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const { panelTabs: _drop, ...uiWithout } = USER_CONFIG_DEFAULTS.ui;
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          ui: { ...uiWithout, theme: 'dark' },
+          __internal__: { migrations: { version: '0.111.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.112.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        ui: Record<string, unknown>;
+      };
+      expect(onDisk.ui).toHaveProperty('panelTabs', []);
+      expect(onDisk.ui.theme).toBe('dark');
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedDoeDefaultModel migration (DOR-2784)', () => {
+  it('reserves the leaf on a `runtimes.doe` block that predates it', () => {
+    const store = createMockStore({
+      'runtimes.doe': { enabled: true, inference: null, defaultTrustStop: null },
+    });
+    seedDoeDefaultModel(store);
+    expect(store.data['runtimes.doe']).toEqual({
+      enabled: true,
+      inference: null,
+      defaultModel: null,
+      defaultTrustStop: null,
+    });
+  });
+
+  it('keeps a model a person already picked, and writes nothing (idempotent)', () => {
+    const store = createMockStore({ 'runtimes.doe': { enabled: true, defaultModel: 'md-a' } });
+    seedDoeDefaultModel(store);
+    expect(store.writes).toEqual([]);
+    expect(store.data['runtimes.doe']).toEqual({ enabled: true, defaultModel: 'md-a' });
+  });
+
+  it('a real pre-0.109.0 config file gains the leaf on disk (full conf path)', () => {
+    const dir = path.join(os.tmpdir(), 'test-dork-doe-default-model-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          runtimes: {
+            ...USER_CONFIG_DEFAULTS.runtimes,
+            doe: { enabled: true, inference: null, defaultTrustStop: 'act' },
+          },
+          __internal__: { migrations: { version: '0.108.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.109.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: { doe: Record<string, unknown> };
+      };
+      expect(onDisk.runtimes.doe).toHaveProperty('defaultModel', null);
+      expect(onDisk.runtimes.doe.defaultTrustStop).toBe('act');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -2488,9 +2837,12 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   });
 });
 
+// A frozen merged body (0.66.0-era). The leaf it seeds is retired by the
+// 0.102.0 key (`config-autonomy-ack-retired-migration.test.ts`); these pin the
+// body itself, which may never change.
 describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5)', () => {
-  it('fresh install: nobody has acknowledged anything', () => {
-    expect(USER_CONFIG_DEFAULTS.ui.autonomyAcknowledgedAt).toBeNull();
+  it('fresh install: the retired leaf is not declared any more (DOR-2739)', () => {
+    expect(USER_CONFIG_DEFAULTS.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
   it('upgraded install: seeds null onto an existing ui block, preserving the rest', () => {
@@ -2506,13 +2858,9 @@ describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5
   });
 
   it('never hands out a consent nobody gave', () => {
-    // The direction that matters. An upgrade that seeded a timestamp would
-    // silence the door for every existing install, and nobody would have chosen
-    // that — so the seeded value is the one that keeps asking.
     const store = createMockStore({ ui: { theme: 'system' } });
     backfillAutonomyAcknowledgement(store);
-    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
-    expect(parsed.ui.autonomyAcknowledgedAt).toBeNull();
+    expect((store.data.ui as Record<string, unknown>).autonomyAcknowledgedAt).toBeNull();
   });
 
   it('is idempotent — never overwrites an acknowledgement already on file', () => {
@@ -3976,7 +4324,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(44);
+    expect(Object.keys(bodies)).toHaveLength(55);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -6417,5 +6765,265 @@ describe('seedCodexTransport migration (ADR 261005-113107)', () => {
     const store = createMockStore({ runtimes: { default: 'claude-code' } });
     seedCodexTransport(store);
     expect((store.data.runtimes as { codex?: unknown }).codex).toBeUndefined();
+  });
+});
+
+describe('raiseEngagedWindowDefaults migration (DOR-2823)', () => {
+  /** Run the real upgrade to `'0.103.0'` over a stored `rooms` block. */
+  function upgrade(rooms: Record<string, unknown>): { rooms: Record<string, unknown> } {
+    const dir = path.join(os.tmpdir(), 'test-dork-engaged-window-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, rooms, __internal__: { migrations: { version: '0.102.0' } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.103.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { rooms: Record<string, unknown> };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('raises a window still at the old shipped defaults', () => {
+    // READ THE FILE: `rooms` is a section a stored config already has, so the
+    // shallow default merge never reaches these leaves. Suppress the body and
+    // this goes red.
+    const onDisk = upgrade({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
+    expect(onDisk.rooms.engagedWindowMinutes).toBe(60);
+    expect(onDisk.rooms.engagedWindowPosts).toBe(15);
+  });
+
+  it('keeps numbers a person chose, including turning the window off', () => {
+    expect(upgrade({ engagedWindowMinutes: 60, engagedWindowPosts: 15 }).rooms).toMatchObject({
+      engagedWindowMinutes: 60,
+      engagedWindowPosts: 15,
+    });
+    expect(upgrade({ engagedWindowMinutes: 0, engagedWindowPosts: 3 }).rooms).toMatchObject({
+      engagedWindowMinutes: 0,
+      engagedWindowPosts: 3,
+    });
+  });
+
+  it('fills a window a stored rooms block never had', () => {
+    const onDisk = upgrade({ replyWaitMinutes: 10 });
+    expect(onDisk.rooms.engagedWindowMinutes).toBe(60);
+    expect(onDisk.rooms.engagedWindowPosts).toBe(15);
+    expect(onDisk.rooms.replyWaitMinutes).toBe(10);
+  });
+
+  it('is idempotent', () => {
+    // The mock store is flat, so the dotted keys the body reads are the keys.
+    const store = createMockStore({
+      rooms: {},
+      'rooms.engagedWindowMinutes': 10,
+      'rooms.engagedWindowPosts': 5,
+    });
+    raiseEngagedWindowDefaults(store);
+    raiseEngagedWindowDefaults(store);
+    expect(store.data).toMatchObject({
+      'rooms.engagedWindowMinutes': 60,
+      'rooms.engagedWindowPosts': 15,
+    });
+    expect(store.writes).toHaveLength(2);
+  });
+});
+
+describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
+  /** A BYO setup a person made by hand, with a token that must stay where it is. */
+  const BYO_TOKEN = '2abcBYOtokenNeverCopied_xyz0123456789';
+  const tunnel = {
+    enabled: true,
+    domain: 'mine.ngrok.app',
+    authtoken: BYO_TOKEN,
+    auth: 'me:secret-password',
+  };
+  const linkedCloud = {
+    instanceToken: 'dk_inst_linked',
+    instanceName: 'laptop',
+    linkedAccountLabel: null,
+    previousLinkProof: null,
+    credits: { defaults: {}, offer: 'none', agents: [], linkedTo: null },
+  };
+
+  /**
+   * Run the real upgrade to `'0.106.0'` over a file last written at `from`, and
+   * return the raw file text and its parse.
+   */
+  function upgrade(
+    stored: Record<string, unknown>,
+    from = '0.105.0'
+  ): { raw: string; onDisk: Record<string, unknown> } {
+    const dir = path.join(os.tmpdir(), 'test-dork-cloud-remote-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({ version: 1, ...stored, __internal__: { migrations: { version: from } } }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.106.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      const raw = fs.readFileSync(cfgPath, 'utf-8');
+      return { raw, onDisk: JSON.parse(raw) as Record<string, unknown> };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('seeds `byo` into a stored cloud block when the own tunnel is on', () => {
+    // READ THE FILE: `cloud` is a section every stored config has, so conf's
+    // shallow default merge never adds this leaf. Suppress the body and this
+    // goes red.
+    const { onDisk } = upgrade({ tunnel, cloud: linkedCloud });
+    const cloud = onDisk.cloud as Record<string, unknown>;
+    expect(cloud.remote).toEqual({
+      mode: 'byo',
+      enrolmentId: null,
+      consentVersion: null,
+      instanceId: null,
+      credentialRef: null,
+      credentialId: null,
+      fingerprint: null,
+      hosts: [],
+      edgeProofRef: null,
+      edgeProofHeader: null,
+    });
+    // The link survives untouched: an upgrade is never an unlink.
+    expect(cloud.instanceToken).toBe('dk_inst_linked');
+    expect(cloud.credits).toEqual(linkedCloud.credits);
+  });
+
+  it('seeds `off` when the tunnel is off or was never set up', () => {
+    const off = upgrade({ tunnel: { ...tunnel, enabled: false }, cloud: linkedCloud });
+    expect((off.onDisk.cloud as { remote: { mode: string } }).remote.mode).toBe('off');
+    const none = upgrade({ cloud: linkedCloud });
+    expect((none.onDisk.cloud as { remote: { mode: string } }).remote.mode).toBe('off');
+  });
+
+  it('writes the same record the schema defaults to, apart from the seeded mode', () => {
+    // The body spells its literal out so it stays frozen; this pins that the
+    // two agree today, so a fresh install and an upgraded one cannot differ.
+    const store = createMockStore({ cloud: { instanceToken: null } });
+    seedCloudRemoteAccess(store);
+    expect((store.data.cloud as { remote: unknown }).remote).toEqual(defaultRemoteAccessSettings());
+  });
+
+  it('leaves `tunnel` byte-for-byte unchanged and never copies the BYO token', () => {
+    const { raw, onDisk } = upgrade({ tunnel, cloud: linkedCloud });
+    expect(JSON.stringify(onDisk.tunnel)).toBe(JSON.stringify(tunnel));
+    // The token appears exactly once in the whole file: where the person put it.
+    expect(raw.split(BYO_TOKEN).length - 1).toBe(1);
+    const remote = (onDisk.cloud as { remote: Record<string, unknown> }).remote;
+    expect(JSON.stringify(remote)).not.toContain(BYO_TOKEN);
+    expect(remote.mode).toBe('byo');
+  });
+
+  it('keeps a managed record a newer build already wrote', () => {
+    const remote = {
+      mode: 'managed',
+      enrolmentId: 'enr_1',
+      consentVersion: '2026-10',
+      instanceId: 'inst_1',
+      credentialRef: 'file:remote-tunnel-cred_1',
+      credentialId: 'cred_1',
+      fingerprint: 'fp',
+      hosts: ['a.example.com'],
+      edgeProofRef: 'file:remote-edge-cred_1',
+      edgeProofHeader: 'x-dorkos-edge',
+    };
+    const { onDisk } = upgrade({ tunnel, cloud: { ...linkedCloud, remote } });
+    expect((onDisk.cloud as { remote: unknown }).remote).toEqual(remote);
+  });
+
+  it('is idempotent and skips a config with no cloud block', () => {
+    const store = createMockStore({ cloud: { instanceToken: null } });
+    seedCloudRemoteAccess(store);
+    const first = JSON.stringify(store.data.cloud);
+    seedCloudRemoteAccess(store);
+    expect(JSON.stringify(store.data.cloud)).toBe(first);
+
+    const empty = createMockStore({ tunnel });
+    seedCloudRemoteAccess(empty);
+    expect(empty.data.cloud).toBeUndefined();
+    expect(empty.data.tunnel).toBe(tunnel);
+  });
+});
+
+describe('seedSpacesOfficial migration (spec official-community-space D4)', () => {
+  /** Run the real upgrade to `'0.107.0'` over a file last written at 0.106.0. */
+  function upgrade(spaces: Record<string, unknown>): {
+    spaces: { enabled: unknown; official?: { url: unknown } };
+  } {
+    const dir = path.join(os.tmpdir(), 'test-dork-spaces-official-' + Date.now() + Math.random());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          spaces,
+          __internal__: { migrations: { version: '0.106.0' } },
+        }),
+        'utf-8'
+      );
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.107.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        spaces: { enabled: unknown; official?: { url: unknown } };
+      };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('writes an empty link into a stored spaces block that predates it', () => {
+    // READ THE FILE: `spaces` is a section a stored config already has, so
+    // conf's shallow default merge never adds this leaf. Suppress the body and
+    // this goes red.
+    const onDisk = upgrade({ enabled: true });
+    expect(onDisk.spaces.official).toEqual({ url: '' });
+    expect(onDisk.spaces.enabled).toBe(true);
+  });
+
+  it('keeps a link a person already set', () => {
+    const onDisk = upgrade({ enabled: false, official: { url: 'https://space.example/c/x' } });
+    expect(onDisk.spaces.official).toEqual({ url: 'https://space.example/c/x' });
+  });
+
+  it('is idempotent and skips a config with no spaces block', () => {
+    const store = createMockStore({ spaces: { enabled: false } });
+    seedSpacesOfficial(store);
+    seedSpacesOfficial(store);
+    expect(store.data.spaces).toEqual({ enabled: false, official: { url: '' } });
+    const none = createMockStore({ server: { port: 4242 } });
+    seedSpacesOfficial(none);
+    expect(none.data.spaces).toBeUndefined();
   });
 });

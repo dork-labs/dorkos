@@ -429,7 +429,13 @@ describe('CloudLinkManager lifecycle ownership', () => {
       }
       throw new Error('Unexpected request');
     });
-    const manager = new CloudLinkManager({ config, fetchImpl, heartbeatIntervalMs: 100 });
+    const manager = new CloudLinkManager({
+      config,
+      fetchImpl,
+      heartbeatIntervalMs: 100,
+      // The middle of the jitter range: exactly one interval.
+      random: () => 0.5,
+    });
     managers.push(manager);
 
     await manager.initOnStartup();

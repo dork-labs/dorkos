@@ -1,15 +1,21 @@
 /**
  * Discovery routes — SSE-streamed filesystem scanning for AI-configured projects.
  *
- * Delegates to `meshCore.discover()` (unified scanner) and streams results as SSE.
+ * Delegates to `meshCore.discover()` (unified scanner) and streams results as SSE,
+ * written to the raw Node response (`http/raw-node-stream.ts`) so each event
+ * leaves as it is found.
  *
  * @module routes/discovery
  */
-import { Router } from 'express';
+import type { ServerResponse } from 'node:http';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
-import { parseBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { readJsonBody } from '../http/request-body.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 
@@ -22,16 +28,18 @@ const ScanRequestSchema = z.object({
 });
 
 /**
- * Create the Discovery router with the SSE scan endpoint.
+ * Create the Discovery routes with the SSE scan endpoint.
  *
  * @param meshCore - MeshCore instance for delegating discovery scans
+ * @returns The routes, to mount at `/api/discovery`.
  */
-export function createDiscoveryRouter(meshCore: MeshCore): Router {
-  const router = Router();
+export function createDiscoveryRoutes(meshCore: MeshCore): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.post('/scan', async (req, res) => {
-    const data = parseBody(ScanRequestSchema, req.body, res);
-    if (!data) return;
+  router.post('/scan', async (c) => {
+    const parsed = ScanRequestSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const data = parsed.data;
 
     // Default to boundary (home dir) instead of DEFAULT_CWD
     const roots =
@@ -48,81 +56,94 @@ export function createDiscoveryRouter(meshCore: MeshCore): Router {
       const withinBoundary = await isWithinBoundary(root);
       if (!withinBoundary) {
         logger.warn('[Discovery] Root rejected — outside boundary', { root });
-        return res.status(403).json({ error: `Root path outside directory boundary` });
+        return c.json({ error: `Root path outside directory boundary` }, 403);
       }
     }
 
-    // Set up SSE stream
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-
-    const startMs = Date.now();
-    let candidateCount = 0;
-    let autoImportCount = 0;
-
-    try {
-      for await (const event of meshCore.discover(roots, {
-        maxDepth: data.maxDepth,
-        timeout: data.timeout,
-      })) {
-        if (res.writableEnded) break;
-
-        if (event.type === 'auto-import') {
-          // Surface auto-imported agents as 'existing-agent' events so onboarding
-          // can display them. The client doesn't need the full manifest — just
-          // enough to render a summary card.
-          autoImportCount++;
-          const { manifest, path: agentPath } = event.data;
-          const existing: ExistingAgent = {
-            path: agentPath,
-            name: manifest.name,
-            runtime: manifest.runtime,
-            description: manifest.description ?? '',
-          };
-          logger.debug('[Discovery] Auto-imported agent surfaced as existing-agent', {
-            path: agentPath,
-            name: manifest.name,
-          });
-          res.write(`event: existing-agent\n`);
-          res.write(`data: ${JSON.stringify(existing)}\n\n`);
-          continue;
-        }
-
-        if (event.type === 'candidate') {
-          candidateCount++;
-          logger.debug('[Discovery] Candidate found', {
-            path: event.data.path,
-            strategy: event.data.strategy,
-          });
-        }
-
-        res.write(`event: ${event.type}\n`);
-        res.write(`data: ${JSON.stringify(event.data)}\n\n`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Scan failed';
-      logger.error('[Discovery] Scan error', { error: message });
-      if (!res.writableEnded) {
-        res.write(`event: error\n`);
-        res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
-      }
-    } finally {
-      const elapsedMs = Date.now() - startMs;
-      logger.info('[Discovery] Scan complete', {
-        elapsedMs,
-        candidateCount,
-        autoImportCount,
-        roots,
-      });
-      if (!res.writableEnded) {
-        res.end();
-      }
-    }
+    return streamToNodeResponse(c, (res, { signal }) =>
+      streamScan(meshCore, res, signal, roots, data)
+    );
   });
 
   return router;
+}
+
+/** Write one scan to `res` as an event stream, and end it. */
+async function streamScan(
+  meshCore: MeshCore,
+  res: ServerResponse,
+  signal: AbortSignal,
+  roots: string[],
+  data: z.infer<typeof ScanRequestSchema>
+): Promise<void> {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const startMs = Date.now();
+  let candidateCount = 0;
+  let autoImportCount = 0;
+
+  try {
+    for await (const event of meshCore.discover(roots, {
+      maxDepth: data.maxDepth,
+      timeout: data.timeout,
+    })) {
+      // Nobody is reading any more: stop walking the disk for them.
+      if (res.writableEnded || signal.aborted) break;
+
+      if (event.type === 'auto-import') {
+        // Surface auto-imported agents as 'existing-agent' events so onboarding
+        // can display them. The client doesn't need the full manifest — just
+        // enough to render a summary card.
+        autoImportCount++;
+        const { manifest, path: agentPath } = event.data;
+        const existing: ExistingAgent = {
+          path: agentPath,
+          name: manifest.name,
+          runtime: manifest.runtime,
+          description: manifest.description ?? '',
+        };
+        logger.debug('[Discovery] Auto-imported agent surfaced as existing-agent', {
+          path: agentPath,
+          name: manifest.name,
+        });
+        res.write(`event: existing-agent\n`);
+        res.write(`data: ${JSON.stringify(existing)}\n\n`);
+        continue;
+      }
+
+      if (event.type === 'candidate') {
+        candidateCount++;
+        logger.debug('[Discovery] Candidate found', {
+          path: event.data.path,
+          strategy: event.data.strategy,
+        });
+      }
+
+      res.write(`event: ${event.type}\n`);
+      res.write(`data: ${JSON.stringify(event.data)}\n\n`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Scan failed';
+    logger.error('[Discovery] Scan error', { error: message });
+    if (!res.writableEnded) {
+      res.write(`event: error\n`);
+      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+    }
+  } finally {
+    const elapsedMs = Date.now() - startMs;
+    logger.info('[Discovery] Scan complete', {
+      elapsedMs,
+      candidateCount,
+      autoImportCount,
+      roots,
+    });
+    if (!res.writableEnded) {
+      res.end();
+    }
+  }
 }

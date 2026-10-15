@@ -43,6 +43,13 @@ export interface ModelRowProps {
   /** Report a pick. `null` means back to the runtime's choice. */
   onChange: (value: string | null) => void;
   /**
+   * What the "no default" option is called. `Automatic` by default; DorkOS's
+   * own engine says `Chosen by DorkOS`, because DorkOS picks there.
+   */
+  inheritLabel?: string;
+  /** The row's sentence, when the runtime's own reads wrong for it. */
+  description?: string;
+  /**
    * Freeze the control. Two callers, one meaning — there is nothing a pick could
    * do: a runtime that is not connected has no catalog to offer, and one that has
    * not said where its settings live has nowhere to keep the answer.
@@ -73,6 +80,8 @@ export function ModelRow({
   value,
   onChange,
   disabled,
+  inheritLabel = 'Automatic',
+  description,
 }: ModelRowProps) {
   const known = knownModelsFrom(models);
   const gone = value !== null && known !== undefined && !known.includes(value);
@@ -89,7 +98,13 @@ export function ModelRow({
   return (
     <SettingRow
       label="Model"
-      description={`Which ${runtimeLabel} model new chats start on. Automatic lets ${runtimeLabel} pick.`}
+      description={
+        description ??
+        `Which ${runtimeLabel} model new chats start on. Automatic lets ${runtimeLabel} pick.`
+      }
+      // Stacked, like the Effort row: side by side, a phone squeezes the
+      // sentence into a one-word column beside the menu.
+      orientation="vertical"
     >
       <div className="w-52 space-y-1.5">
         <Select
@@ -106,7 +121,7 @@ export function ModelRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Automatic</SelectItem>
+            <SelectItem value={INHERIT}>{inheritLabel}</SelectItem>
             {(models ?? []).map((model) => (
               <SelectItem key={model.value} value={model.value}>
                 {model.displayName}

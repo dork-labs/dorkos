@@ -144,7 +144,7 @@ describe('createConnectorRuntimeMcpServer', () => {
       expiresAt: '2026-09-07T14:00:00.000Z',
       status: 'awaiting_owner' as const,
     };
-    const create = vi.fn(async () => status);
+    const open = vi.fn(async () => ({ status, waitForOwner: true }));
     const waitForResolution = vi.fn(async () => ({ ...status, status: 'denied' as const }));
     const getForRuntime = vi.fn(async () => ({ ...status, status: 'denied' as const }));
     const capabilityRegistry = composeRegistry([connectorExecutionDomain], {
@@ -153,7 +153,7 @@ describe('createConnectorRuntimeMcpServer', () => {
         authorization: {} as never,
         broker: {} as never,
         access: {} as never,
-        requests: { create, waitForResolution, getForRuntime } as never,
+        requests: { open, waitForResolution, getForRuntime } as never,
       },
     });
     const server = createConnectorRuntimeMcpServer(capabilityRegistry, principal);
@@ -187,10 +187,7 @@ describe('createConnectorRuntimeMcpServer', () => {
       })
     );
     expect(result).toMatchObject({ requestId: 'request-a', status: 'denied' });
-    expect(create).toHaveBeenCalledWith(
-      principal,
-      expect.objectContaining({ serviceSlug: 'gmail' })
-    );
+    expect(open).toHaveBeenCalledWith(principal, expect.objectContaining({ serviceSlug: 'gmail' }));
     expect(waitForResolution).toHaveBeenCalledWith(principal, 'request-a', expect.anything());
 
     await client.callTool({

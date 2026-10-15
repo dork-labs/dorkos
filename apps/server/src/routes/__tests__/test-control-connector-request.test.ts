@@ -2,18 +2,29 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
-  testControlRouter,
+  createTestControlRoutes,
   type ConnectorRuntimeExecutionProbe,
   type ConnectorRuntimeRequestProbe,
+  type TestControlDeps,
 } from '../test-control.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
+
 const fixtureTarget = swappableServer();
+
+/** The test-control routes alone, behind the `/api` chain, reading `deps`. */
+function testControlApp(deps: TestControlDeps) {
+  return honoGroupListener({ path: '/api/test', routes: createTestControlRoutes(deps) });
+}
 const fixtureServer = fixtureTarget.server;
 const SESSION_ID = 'b53cc6d0-7b42-42d2-8d90-931573d92239';
 let agentPath: string;
@@ -27,11 +38,7 @@ describe('POST /api/test/connectors/execute-read', () => {
     const probe = vi.fn<ConnectorRuntimeExecutionProbe>().mockResolvedValue({
       content: [{ type: 'text', text: '{"result":{"status":"success"}}' }],
     });
-    const app = express();
-    app.use(express.json());
-    app.locals.connectorRuntimeExecutionProbe = probe;
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(testControlApp({ connectorExecutionProbe: () => probe }));
 
     const response = await request(fixtureServer)
       .post('/api/test/connectors/execute-read')
@@ -64,11 +71,9 @@ describe('POST /api/test/connectors/execute-read', () => {
 describe('POST /api/test/seed-agent', () => {
   it('registers a stable denied-access principal in its own bounded fixture slot', async () => {
     const syncFromDisk = vi.fn().mockResolvedValue('synced');
-    const app = express();
-    app.use(express.json());
-    app.locals.meshCore = { syncFromDisk };
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      testControlApp({ meshCore: () => ({ syncFromDisk, getByPath: () => undefined }) })
+    );
 
     const shared = await request(fixtureServer).post('/api/test/seed-agent').send({});
     const denied = await request(fixtureServer)
@@ -95,11 +100,9 @@ describe('POST /api/test/seed-agent', () => {
 
   it('seeds a fresh agent per instance, inside its slot, and refuses a path-shaped instance', async () => {
     const syncFromDisk = vi.fn().mockResolvedValue('synced');
-    const app = express();
-    app.use(express.json());
-    app.locals.meshCore = { syncFromDisk };
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      testControlApp({ meshCore: () => ({ syncFromDisk, getByPath: () => undefined }) })
+    );
 
     const base = await request(fixtureServer)
       .post('/api/test/seed-agent')
@@ -125,11 +128,9 @@ describe('POST /api/test/seed-agent', () => {
 
   it('refuses caller-defined fixture slots before writing or registering an agent', async () => {
     const syncFromDisk = vi.fn().mockResolvedValue('synced');
-    const app = express();
-    app.use(express.json());
-    app.locals.meshCore = { syncFromDisk };
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      testControlApp({ meshCore: () => ({ syncFromDisk, getByPath: () => undefined }) })
+    );
 
     const response = await request(fixtureServer)
       .post('/api/test/seed-agent')
@@ -149,11 +150,7 @@ describe('POST /api/test/connectors/request', () => {
     const probe = vi.fn<ConnectorRuntimeRequestProbe>().mockResolvedValue({
       content: [{ type: 'text', text: '{"status":"denied"}' }],
     });
-    const app = express();
-    app.use(express.json());
-    app.locals.connectorRuntimeRequestProbe = probe;
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(testControlApp({ connectorRequestProbe: () => probe }));
 
     const response = await request(fixtureServer)
       .post('/api/test/connectors/request')
@@ -185,11 +182,7 @@ describe('POST /api/test/connectors/request', () => {
 
   it('refuses malformed requests before entering the internal listener', async () => {
     const probe = vi.fn<ConnectorRuntimeRequestProbe>();
-    const app = express();
-    app.use(express.json());
-    app.locals.connectorRuntimeRequestProbe = probe;
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(testControlApp({ connectorRequestProbe: () => probe }));
 
     const response = await request(fixtureServer)
       .post('/api/test/connectors/request')
@@ -222,11 +215,7 @@ describe('POST /api/test/connectors/request', () => {
           );
         })
     );
-    const app = express();
-    app.use(express.json());
-    app.locals.connectorRuntimeRequestProbe = probe;
-    app.use('/api/test', testControlRouter);
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(testControlApp({ connectorRequestProbe: () => probe }));
 
     const browserRequest = request(fixtureServer)
       .post('/api/test/connectors/request')

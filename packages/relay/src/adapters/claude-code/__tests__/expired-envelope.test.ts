@@ -13,7 +13,7 @@
  * ## Not one wall-clock reading anywhere
  *
  * Every budget is dated from {@link EPOCH} and every handler is handed a fixed
- * clock, for the reason `inbound-turn-budgets.test.ts` states at length: a
+ * clock: a
  * deadline read off the wall clock counts the handler's own startup against the
  * message, so a fixture that is live by a millisecond when it is written is
  * expired by the time the code reads it — and then the test proves nothing about
@@ -298,6 +298,53 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
       expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
       // The property: it started, so it was bounded. Nothing that runs here may
       // run without a deadline.
+      expect(controller.signal.aborted).toBe(true);
+    });
+
+    it('spends the deadline on the clock it was handed, not on how long the turn took to start', async () => {
+      // DOR-1729, kept from the retired inbound-budget suite. The deadline is
+      // read after an AWAITED settings lookup, so a wall-clock read would count
+      // that startup against a five-millisecond fixture and refuse a turn this
+      // case is not about. With the clock injected the delay is irrelevant.
+      const controller = new AbortController();
+      const runtime: AgentRuntimeLike = {
+        ensureSession: vi.fn(),
+        sendMessage: vi.fn().mockImplementation(() =>
+          (async function* () {
+            await new Promise<void>((resolve) => {
+              if (controller.signal.aborted) resolve();
+              else controller.signal.addEventListener('abort', () => resolve(), { once: true });
+            });
+            yield { type: 'done', data: {} } as StreamEvent;
+          })()
+        ),
+        getSdkSessionId: vi.fn().mockReturnValue(undefined),
+        approveTool: vi.fn().mockReturnValue(true),
+        interruptQuery: vi.fn().mockResolvedValue(true),
+      };
+
+      await handleAgentMessage(
+        AGENT_SUBJECT,
+        agentEnvelope(5),
+        undefined,
+        now(),
+        {
+          agentManager: runtime,
+          traceStore: traceStore(),
+          turnController: controller,
+          // The real startup cost, in the place the real one is paid.
+          resolveExecutionSettings: async () => {
+            await new Promise((r) => setTimeout(r, 50));
+            return {};
+          },
+          now,
+          logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+        },
+        publisher()
+      );
+
+      // It started, and its own five-millisecond deadline stopped it.
+      expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
       expect(controller.signal.aborted).toBe(true);
     });
   });

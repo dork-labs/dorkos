@@ -64,15 +64,17 @@ test.describe('Private session routes @smoke', () => {
         response.request().method() === 'PATCH' &&
         response.url().includes(`/api/sessions/${draftId}`)
     );
-    await page
-      .locator('[aria-label="Permissions"]')
-      .getByRole('radio', { name: 'Ask first' })
-      .click();
+    const picker = page.locator('[aria-label="Permissions"]');
+    await picker.getByRole('radio', { name: 'Ask first' }).click();
     expect((await settingsSaved).ok()).toBe(true);
+    // Ask first is the stop that takes the chip off the line, so the picker
+    // has to stay open under the cursor and make the offer right there.
+    const offerText = 'Start every new chat in Ask first?';
+    await expect(picker.getByRole('status').filter({ hasText: offerText })).toBeVisible();
+    // Once the picker is shut, the offer moves above the status line.
     await page.keyboard.press('Escape');
-    const defaultOffer = page
-      .getByRole('status')
-      .filter({ hasText: 'Start every new chat in Ask first?' });
+    await expect(picker).toBeHidden();
+    const defaultOffer = page.getByRole('status').filter({ hasText: offerText });
     await expect(defaultOffer).toBeVisible();
     await defaultOffer.getByRole('button', { name: 'Dismiss', exact: true }).click();
     expect(new URL(page.url()).searchParams.has('draft')).toBe(true);

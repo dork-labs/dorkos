@@ -22,10 +22,12 @@ import {
   useOpenConnections,
   useSettingsDeepLink,
 } from '@/layers/shared/model';
+import { OfficialSpaceOfferCard } from '@/layers/entities/community';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { OperatorIdentityForm } from '@/layers/features/profile';
 import { useIdentityQuestion } from '../model/use-identity-prompt';
+import { useFirstRunSpaceOffer } from '../model/use-first-run-space-offer';
 
 /**
  * How long the name row's thanks line lingers before the row goes (ms) — the
@@ -73,6 +75,13 @@ type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
  * row follows and expands the shared role picker inline (spec
  * `user-profile-onboarding` §ProgressCard items). The "Connect a service"
  * row links to the Connections page (`/connections`).
+ *
+ * After a first run that set up an AI (either path), the one-time offer to join
+ * the official DorkOS space sits below the rows (spec `official-community-space`
+ * item 5, DOR-2873); while this card is held back, the sidebar's bottom slot
+ * offers it on its own. Either way it lands after the first run, never adding a
+ * step to it, and draws nothing without an official space, once joined, or
+ * after Not now.
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
@@ -84,6 +93,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const { roles, rolePromptDismissedAt, isLoading, saveRoles, dismissIdentityPrompt } =
     useProfile();
   const identityQuestion = useIdentityQuestion();
+  const offerOfficialSpace = useFirstRunSpaceOffer().due;
 
   const [identityPhase, setIdentityPhase] = useState<IdentityRowPhase>('closed');
   const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
@@ -237,6 +247,12 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
           </li>
         ))}
       </ul>
+
+      {/* After every row, personal setup included: the community comes next,
+          and an offer that arrives late never shifts a row under the pointer. */}
+      {offerOfficialSpace && (
+        <OfficialSpaceOfferCard compact className="border-border mt-2 border-t px-1.5 pt-2" />
+      )}
     </motion.div>
   );
 }

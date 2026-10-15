@@ -28,7 +28,7 @@ describe('shot registry', () => {
   });
 
   it('resolves shots by id and reports unknown ids as undefined', () => {
-    expect(getShot('cockpit')?.frame).toBe('desktop');
+    expect(getShot('team-room')?.frame).toBe('desktop');
     expect(getShot('mobile-chat')?.frame).toBe('mobile');
     expect(getShot('does-not-exist')).toBeUndefined();
   });
@@ -47,7 +47,7 @@ describe('shot registry', () => {
 
   describe('target dimensions', () => {
     it('desktop still is 2560×1600 (1280×800 @2x)', () => {
-      expect(shotTargetDimensions(getShot('cockpit')!, 'still')).toEqual({
+      expect(shotTargetDimensions(getShot('team-room')!, 'still')).toEqual({
         width: 2560,
         height: 1600,
       });
@@ -103,18 +103,17 @@ describe('shot registry', () => {
       }
     });
 
-    it('pins the session-list surfaces, the two global-state flips, and the accounts pair', () => {
+    it('pins the session-list surfaces, the remaining global-state flip, and the accounts pair', () => {
       // The density (multi-session, mobile-sessions) shots must ride one stack's
       // accumulated state; the accounts pair must ride one stack's single linear
-      // device flow; agent-discovery and full-power-door each flip a global
-      // setting every other shot in the stack needs left alone.
+      // device flow; trust-notice flips a global setting every other shot in
+      // the stack needs left alone.
       expect(SHARD_0_PINNED_SHOTS).toEqual([
         'multi-session',
         'mobile-sessions',
-        'agent-discovery',
         'accounts-pending',
         'accounts-linked',
-        'full-power-door',
+        'trust-notice',
       ]);
       for (const id of SHARD_0_PINNED_SHOTS) expect(getShot(id)).toBeDefined();
     });

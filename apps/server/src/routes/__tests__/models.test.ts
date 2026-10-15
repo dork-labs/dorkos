@@ -124,6 +124,7 @@ const ROWLESS_SESSION = '33333333-3333-4333-8333-333333333333';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => claudeRuntime),
     getDefaultType: vi.fn(() => 'claude-code'),
@@ -155,7 +156,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { __resetCreditsModelsForTests } from '../../services/core/cloud/credits-models.js';
 import fs from 'node:fs';
@@ -168,8 +169,9 @@ const CREDITS_STORE = nodePath.join(
   `credits-models-${process.pid}-${Math.random().toString(36).slice(2)}.json`
 );
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
 
 describe('Models Routes', () => {
   beforeEach(() => {
@@ -263,6 +265,39 @@ describe('Models Routes', () => {
         }
       }
     );
+
+    it('lets a runtime that picks its own credits model answer its menu, else the shared one', async () => {
+      const picked = [
+        { value: 'md_claude_pick', displayName: 'Pick', description: 'Chosen by DorkOS' },
+      ];
+      const autoCreditsModels = vi.fn(async (): Promise<unknown[] | null> => picked);
+      RUNTIMES.doe = {
+        type: 'doe',
+        getSupportedModels: async () => [],
+        getCapabilities: () => ({
+          type: 'doe',
+          credits: { protocol: 'anthropic-messages', scope: 'conversation' },
+        }),
+        sessionRunsOnCredits: async () => true,
+        autoCreditsModels,
+      } as (typeof RUNTIMES)[string];
+      try {
+        const own = await request(testServer).get('/api/models?runtime=doe&account=dorkos-credits');
+        expect(own.body.models).toEqual(picked);
+        expect(autoCreditsModels).toHaveBeenCalledWith(undefined);
+        expect(service.calls).toBe(0);
+        autoCreditsModels.mockResolvedValueOnce(null);
+        const shared = await request(testServer).get(
+          '/api/models?runtime=doe&account=dorkos-credits'
+        );
+        expect(shared.body.models.map((m: { value: string }) => m.value)).toEqual([
+          'md_claude_pick',
+        ]);
+        expect(shared.body.models[0].description).toBe('Recommended');
+      } finally {
+        delete RUNTIMES.doe;
+      }
+    });
 
     it('lists only what credits serve on the runtime’s protocol for a session on credits', async () => {
       ladder.accountId = 'dorkos-credits';

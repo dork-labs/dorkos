@@ -177,6 +177,8 @@ export type DoeEvent =
       scope: ContextScope;
       result?: ToolResult;
       progress?: string;
+      /** The tool's arguments, on `tool-start` only; the host's audit record reads its target. */
+      input?: unknown;
     }
   | { type: 'usage'; usage: ModelUsage; scope: ContextScope }
   | { type: 'retry'; attempt: number; scope: ContextScope }

@@ -162,6 +162,7 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
       github: false,
       oidc: { label: 'Example sign-in', mark: null },
       minimumAge: null,
+      allowedCountries: null,
       emailLinks: false,
     });
     expect(issuer.requests).toEqual([]);
@@ -631,6 +632,7 @@ describe('OpenID Connect discovery', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      allowedCountries: null,
       emailLinks: false,
     });
     const start = await app.request('/api/auth/sign-in/social', {

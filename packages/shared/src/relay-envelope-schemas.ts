@@ -315,8 +315,6 @@ export const InboxStatusFilterSchema = z
   .enum(['pending', 'delivered', 'failed', 'all'])
   .openapi('InboxStatusFilter');
 
-export type InboxStatusFilter = z.infer<typeof InboxStatusFilterSchema>;
-
 export const InboxQuerySchema = z
   .object({
     status: InboxStatusFilterSchema.default('pending').openapi({
@@ -722,7 +720,7 @@ export const AGENT_CANCEL_SUBJECT_PREFIX = 'relay.control.agent-cancel.';
  * Server-injected on publish and not reachable from a model, exactly like
  * {@link TASK_SCHEDULER_PRINCIPAL}: a handler that checks it knows the request
  * came from the A2A gateway acting on its caller's `tasks/cancel`, and not from
- * an agent with `relay_send` that guessed a reply subject.
+ * a publisher that guessed a reply subject.
  */
 export const A2A_GATEWAY_PRINCIPAL = 'relay.system.a2a.gateway';
 
@@ -758,22 +756,7 @@ export const RelayReceiptSchema = z
 
 export type RelayReceipt = z.infer<typeof RelayReceiptSchema>;
 
-// === Dispatch Progress ===
-
-/** Published by CCA to relay.inbox.dispatch.* on each progress event. */
-export const RelayProgressPayloadSchema = z
-  .object({
-    type: z.literal('progress'),
-    step: z.number().int().min(1).describe('Monotonically increasing step counter'),
-    step_type: z
-      .enum(['message', 'tool_result'])
-      .describe('message = assistant text block completed; tool_result = tool execution completed'),
-    text: z.string().describe('Text content of this progress step'),
-    done: z.literal(false),
-  })
-  .openapi('RelayProgressPayload');
-
-export type RelayProgressPayload = z.infer<typeof RelayProgressPayloadSchema>;
+// === Dispatch Result ===
 
 /**
  * Published by CCA to relay.inbox.dispatch.* as the final event.

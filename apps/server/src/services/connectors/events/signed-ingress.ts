@@ -1,10 +1,33 @@
-/** Exact raw-body webhook mount; signature authentication replaces only this endpoint's cookie gate. */
-import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+/**
+ * The signed webhook ingress, `POST /api/connectors/webhooks/:providerInstanceId`:
+ * the one connector route whose caller is an outside service, not a person or
+ * an agent. Its signature replaces the cookie gate for this endpoint only.
+ *
+ * Registered through the `/api` chain's `beforeBodyParsing` seam
+ * (`http/api-chain.ts`), after the host guard and before any body is parsed,
+ * the session gate, the request log and the audit fallback, which is where the
+ * Express chain used to mount it: the signature is checked over the exact
+ * bytes that arrived, and nothing about a refused event is logged or recorded
+ * as a person.
+ *
+ * The bytes are read by `body-parser`'s raw reader on the Node request, the
+ * reader `express.raw` is, so the ceiling, the early refusal of a declared
+ * length over it, a length that does not match, and an aborted upload all
+ * answer exactly as they did. Reading through `c.req.arrayBuffer()` would hold
+ * an unbounded chunked body in memory before any ceiling could apply.
+ *
+ * @module services/connectors/events/signed-ingress
+ */
+import type { IncomingMessage } from 'node:http';
+import bodyParser from 'body-parser';
+import type { Hono } from 'hono';
+import typeis from 'type-is';
 import { CONNECTOR_EVENT_MAX_RAW_BYTES } from '@dorkos/shared/connector-event-schemas';
 import type {
   ConnectorEventCapability,
   ConnectorVerifiedEvent,
 } from '@dorkos/shared/connector-events';
+import type { ApiEnv } from '../../../http/api-chain.js';
 
 /** Private application composition for signed ingress, independent of cloud linking. */
 export interface ConnectorSignedIngress {
@@ -17,85 +40,92 @@ export interface ConnectorSignedIngress {
   ): Promise<'accepted' | 'rejected' | 'unavailable'>;
 }
 
-/** Build the terminal raw endpoint before global parsing, logging and session authentication. */
-export function createConnectorSignedIngress(ingress: ConnectorSignedIngress): RequestHandler[] {
-  const validate: RequestHandler = (req, res, next) => {
+/** The Node request once the raw reader has run: `body` is the bytes, or unset. */
+type ReadRequest = IncomingMessage & { body?: unknown };
+
+const readRawBody = bodyParser.raw({
+  type: 'application/json',
+  limit: CONNECTOR_EVENT_MAX_RAW_BYTES,
+  inflate: false,
+});
+
+/**
+ * Read the raw body into `incoming.body`, or say why it could not be read.
+ *
+ * @returns `undefined` once read, else the refusal status and code.
+ */
+function readBody(
+  incoming: ReadRequest,
+  outgoing: Parameters<typeof readRawBody>[1]
+): Promise<{ status: 413 | 400; error: string } | undefined> {
+  return new Promise((resolve) => {
+    readRawBody(incoming, outgoing, (error?: unknown) => {
+      if (error === undefined || error === null) return resolve(undefined);
+      incoming.body = undefined;
+      const oversized =
+        typeof error === 'object' && 'type' in error && error.type === 'entity.too.large';
+      resolve(
+        oversized
+          ? { status: 413, error: 'EVENT_TOO_LARGE' }
+          : { status: 400, error: 'INVALID_EVENT_REQUEST' }
+      );
+    });
+  });
+}
+
+/**
+ * Register the terminal raw endpoint on the `/api` app, before global parsing,
+ * logging and session authentication. Call it from `beforeBodyParsing`.
+ *
+ * @param app - The Hono `/api` app, at its before-body point.
+ * @param ingress - The verifier lookup and the protected inbox.
+ */
+export function mountConnectorSignedIngress(
+  app: Hono<ApiEnv>,
+  ingress: ConnectorSignedIngress
+): void {
+  app.post('/api/connectors/webhooks/:providerInstanceId', async (c) => {
+    const incoming = c.env.incoming as ReadRequest;
+    const { headers } = incoming;
     if (
-      !req.is('application/json') ||
-      (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity')
+      !typeis(incoming, ['application/json']) ||
+      (headers['content-encoding'] && headers['content-encoding'] !== 'identity')
     ) {
-      res.status(415).json({ error: 'UNSUPPORTED_EVENT_ENCODING' });
-      return;
+      return c.json({ error: 'UNSUPPORTED_EVENT_ENCODING' }, 415);
     }
-    next();
-  };
-  const receive: RequestHandler = async (req, res) => {
-    const providerInstanceId = req.params.providerInstanceId;
-    if (
-      typeof providerInstanceId !== 'string' ||
-      providerInstanceId.length > 256 ||
-      !Buffer.isBuffer(req.body)
-    ) {
-      res.status(400).json({ error: 'INVALID_EVENT_REQUEST' });
-      return;
+    const unreadable = await readBody(incoming, c.env.outgoing);
+    if (unreadable) return c.json({ error: unreadable.error }, unreadable.status);
+
+    const providerInstanceId = c.req.param('providerInstanceId');
+    const rawBody = incoming.body;
+    if (providerInstanceId.length > 256 || !Buffer.isBuffer(rawBody)) {
+      return c.json({ error: 'INVALID_EVENT_REQUEST' }, 400);
     }
-    const id = req.headers['webhook-id'];
-    const timestamp = req.headers['webhook-timestamp'];
-    const signature = req.headers['webhook-signature'];
+    const id = headers['webhook-id'];
+    const timestamp = headers['webhook-timestamp'];
+    const signature = headers['webhook-signature'];
     if (typeof id !== 'string' || typeof timestamp !== 'string' || typeof signature !== 'string') {
-      res.status(401).json({ error: 'INVALID_EVENT_SIGNATURE' });
-      return;
+      return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
     }
     try {
       const verifier = ingress.verifier(providerInstanceId);
-      if (!verifier) {
-        res.status(503).json({ error: 'EVENTS_UNAVAILABLE' });
-        return;
-      }
+      if (!verifier) return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
       const verified = await verifier.verifyWebhook({
-        rawBody: req.body,
+        rawBody,
         webhookId: id,
         webhookTimestamp: timestamp,
         webhookSignature: signature,
       });
       // Drop the raw body before entering any later error or request handling.
-      req.body = undefined;
-      if (verified.status !== 'verified') {
-        res.status(401).json({ error: 'INVALID_EVENT_SIGNATURE' });
-        return;
-      }
+      incoming.body = undefined;
+      if (verified.status !== 'verified') return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
       const outcome = await ingress.accept(providerInstanceId, verified.event);
-      if (outcome === 'unavailable') {
-        res.status(503).json({ error: 'EVENTS_UNAVAILABLE' });
-        return;
-      }
-      if (outcome === 'rejected') {
-        res.status(403).json({ error: 'EVENT_BINDING_REJECTED' });
-        return;
-      }
-      res.status(202).json({ accepted: true });
+      if (outcome === 'unavailable') return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
+      if (outcome === 'rejected') return c.json({ error: 'EVENT_BINDING_REJECTED' }, 403);
+      return c.json({ accepted: true }, 202);
     } catch {
-      req.body = undefined;
-      res.status(503).json({ error: 'EVENTS_UNAVAILABLE' });
+      incoming.body = undefined;
+      return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
     }
-  };
-  const malformed: ErrorRequestHandler = (error: unknown, req, res, _next) => {
-    req.body = undefined;
-    const oversized =
-      typeof error === 'object' &&
-      error !== null &&
-      'type' in error &&
-      error.type === 'entity.too.large';
-    res
-      .status(oversized ? 413 : 400)
-      .json({ error: oversized ? 'EVENT_TOO_LARGE' : 'INVALID_EVENT_REQUEST' });
-  };
-  // Express supports error handlers in route stacks; the public return type is
-  // RequestHandler[] for app.post composition, so narrow only at this boundary.
-  return [
-    validate,
-    express.raw({ type: 'application/json', limit: CONNECTOR_EVENT_MAX_RAW_BYTES, inflate: false }),
-    receive,
-    malformed as unknown as RequestHandler,
-  ];
+  });
 }

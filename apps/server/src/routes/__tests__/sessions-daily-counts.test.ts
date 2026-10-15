@@ -5,7 +5,7 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * Integration tests for `GET /api/sessions/daily-counts` (DOR-1039): query
  * validation (days 1-31, default 7) and the `{ days, dailyCounts, warnings }`
  * envelope. Agent paths are resolved from a stub mesh registry on
- * `app.locals.meshCore`; sessions come from `FakeAgentRuntime`s.
+ * `sessionLocals.meshCore`; sessions come from `FakeAgentRuntime`s.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -45,13 +45,17 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+/** What the session routes read; the tests change it between requests. */
+const sessionLocals: Record<string, unknown> = {};
+const testServer = listeningServer(
+  composedListener(admission, { sessions: sessionLocals as SessionRouteDeps })
+);
 
 /** Local-midnight-ish ISO timestamp `daysAgo` days before now. */
 function daysBefore(daysAgo: number): string {
@@ -71,9 +75,9 @@ function makeSession(id: string, createdAt: string, cwd: string): Session {
   };
 }
 
-/** Stub the mesh registry the route reads off app.locals. */
+/** Stub the mesh registry the route reads off sessionLocals. */
 function setAgentPaths(paths: string[]): void {
-  app.locals.meshCore = {
+  sessionLocals.meshCore = {
     listWithPaths: () =>
       paths.map((projectPath) => ({ id: projectPath, name: 'agent', projectPath })),
   };
@@ -93,7 +97,7 @@ describe('GET /api/sessions/daily-counts', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-    delete app.locals.meshCore;
+    delete sessionLocals.meshCore;
   });
 
   it('counts sessions across every agent, seven days by default', async () => {

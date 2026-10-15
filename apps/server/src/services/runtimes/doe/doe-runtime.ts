@@ -7,7 +7,6 @@ import {
 import type {
   AgentRuntime,
   AgentRegistryPort,
-  RelayPort,
   ManagedMcpServerResolver,
   MessageOpts,
   CommandIntentOpts,
@@ -19,7 +18,9 @@ import type {
   ToolDecisionOptions,
   McpAppServerConnection,
   RuntimeCreditsProtocol,
+  LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
+import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   StreamEvent,
   ModelOption,
@@ -33,6 +34,7 @@ import { type DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { configManager } from '../../core/config-manager.js';
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
+import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { DoeInferenceConfigSchema } from '@dorkos/shared/config-schema';
 import { homeOf, resolveAgentHome, readHomeManifest } from '../../core/agent-identity/index.js';
@@ -49,12 +51,23 @@ import { type DoeHostOptions, type DoeHostAssembly } from './tools.js';
 import { renderDoeContextEntry } from './context.js';
 import { DOE_CREDITS_SUPPORT, inspectDoeInference } from './credentials.js';
 import { listDoeModels } from './models.js';
+import { AgentPausedError, agentPause } from '../../mesh/pause/agent-pause.js';
+import {
+  chooseDoeCreditsInference,
+  doeCreditsReady,
+  listDoeCreditsModels,
+  peekDoeCreditsPick,
+} from './auto-model.js';
 /** Host injection permits real offline fixtures without replacing the adapter's session behavior. */
 export interface DoeRuntimeOptions {
   directory?: string;
   defaultCwd?: string;
   inference?: () => DoeInferenceConfig | null;
   resolveModel?: (config: DoeInferenceConfig) => Promise<ModelDescriptor>;
+  /** How a chat on credits with nothing configured picks its model (DorkOS picks). */
+  chooseCreditsInference?: typeof chooseDoeCreditsInference;
+  /** The model new chats prefer on credits (`runtimes.doe.defaultModel`). */
+  defaultModel?: () => string | null;
   assembleHost?: (options: DoeHostOptions) => Promise<DoeHostAssembly>;
   engineFactory?: EngineFactory;
   interruptWaitMs?: number;
@@ -66,7 +79,6 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   private readonly status = new Map<string, McpServerEntry[]>();
   private readonly serverConfigs = new Map<string, ReadonlyMap<string, McpAppServerConnection>>();
   private mesh?: AgentRegistryPort;
-  private relay?: RelayPort;
   private managedMcp?: ManagedMcpServerResolver;
   private connectorTools?: ConnectorRuntimeTools;
   private settingsPort?: SessionSettingsPort;
@@ -148,11 +160,15 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
         settingsRevision: this.settingsRevision,
         settingsPort: this.settingsPort,
         mesh: this.mesh,
-        relay: this.relay,
         managedMcp: this.managedMcp,
         connectorTools: this.connectorTools,
         active: this.active,
         inference: () => this.inference(),
+        defaultModel: () =>
+          this.options.defaultModel
+            ? this.options.defaultModel()
+            : // `?.`: the config singleton is unset before boot; no preference then.
+              (configManager?.get('runtimes')?.doe?.defaultModel ?? null),
         connected: (host) => {
           this.status.set(cwd, [...host.mcpStatus]);
           this.serverConfigs.set(cwd, new Map(Object.entries(host.mcpServerConfigs)));
@@ -171,8 +187,22 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
       await this.waitTurn(turn);
     }
   }
-  /** Run the isolated engine Beat; the caller decides how structured raises are delivered. */
+  /**
+   * Run the isolated engine Beat; the caller decides how structured raises are delivered.
+   *
+   * A Beat is a model turn that never passes `sendMessage`, so the pause hold
+   * at the runtime seam cannot see it: it is refused here for a paused agent
+   * (spec `audit-trail` PR5), recorded like any held turn.
+   *
+   * @throws {AgentPausedError} When the session's agent is paused.
+   */
   async runBeat(id: string, request: BeatRequest, opts?: MessageOpts): Promise<BeatResult> {
+    const pauses = agentPause();
+    const paused = pauses?.pausedAgentOfSession(id, () => this.getSessionCwd(id), opts);
+    if (paused) {
+      pauses?.recordHeld(paused, { via: 'turn', sessionId: id, runtime: this.type });
+      throw new AgentPausedError(paused);
+    }
     let result: BeatResult | undefined;
     let failure: string | undefined;
     for await (const event of this.runTurn(id, undefined, opts, false, {
@@ -230,6 +260,16 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   async stopTask(): Promise<InterruptReceipt> {
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
+  /** End each picked turn in flight; no detached work outlives a turn here. */
+  async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
+    const ended: string[] = [];
+    for (const id of [...this.active.keys()]) {
+      if (!picksSession(belongs, { sessionId: id, cwd: this.getSessionCwd(id) })) continue;
+      const receipt = await this.interruptQuery(id).catch(() => undefined);
+      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed') ended.push(id);
+    }
+    return ended;
+  }
   /** Abort and observe owned cleanup; a deadline without completion is explicitly unconfirmed. */
   async interruptQuery(id: string): Promise<InterruptReceipt> {
     const turn = this.active.get(id);
@@ -263,10 +303,29 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   isTurnOpen(id: string): boolean {
     return this.active.has(id);
   }
-  /** Model discovery is pure configuration metadata, with no ambient auth or sidecar. */
+  /**
+   * Model discovery never fetches credentials or starts another runtime. An
+   * explicit or frozen inference lists its one model; with nothing configured
+   * on credits, the catalog's models DorkOS picks from.
+   */
   async getSupportedModels(sessionId?: string): Promise<ModelOption[]> {
     const frozen = sessionId ? this.sessions.get(sessionId)?.inference : undefined;
-    return listDoeModels(frozen ? DoeInferenceConfigSchema.parse(frozen) : this.inference());
+    if (frozen) return listDoeModels(DoeInferenceConfigSchema.parse(frozen));
+    const config = this.inference();
+    if (config) return listDoeModels(config);
+    const onCredits = sessionId
+      ? await this.sessionRunsOnCredits(sessionId)
+      : creditsIsDefaultFor(this.type);
+    return onCredits ? listDoeCreditsModels() : [];
+  }
+  /**
+   * The credits menu when DorkOS picks the model, or `null` when a chat has
+   * frozen one or a model is configured. The models route asks this before its
+   * shared single-format credits menu (structural, like `sessionRunsOnCredits`).
+   */
+  async autoCreditsModels(sessionId?: string): Promise<ModelOption[] | null> {
+    if (sessionId && this.sessions.get(sessionId)?.inference) return null;
+    return this.inference() ? null : listDoeCreditsModels();
   }
   /** The engine's builder is a tool, not a vendor-named subagent preset. */
   async getSupportedSubagents(): Promise<[]> {
@@ -278,7 +337,9 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   }
   /** Honest settings readiness without performing a paid authentication probe. */
   async checkDependencies(): Promise<DependencyCheck[]> {
-    const configured = inspectDoeInference(this.inference()).configured;
+    const config = this.inference();
+    // Nothing configured is ready while credits are in use and DorkOS can pick.
+    const configured = config ? inspectDoeInference(config).configured : doeCreditsReady();
     return [
       { name: 'DorkOS engine', description: 'Included with DorkOS.', status: 'satisfied' },
       {
@@ -306,10 +367,6 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   /** Install peer/identity lookups without exposing SDK types. */
   setMeshCore(mesh: AgentRegistryPort): void {
     this.mesh = mesh;
-  }
-  /** Install the existing relay availability port. */
-  setRelay(relay: RelayPort): void {
-    this.relay = relay;
   }
   /** Managed server configuration is read afresh for each turn. */
   setManagedMcpServerResolver(resolver: ManagedMcpServerResolver): void {
@@ -347,7 +404,9 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   /** Format discovery reads frozen session metadata, never credentials or a model request. */
   getCreditsProtocol(id?: string): RuntimeCreditsProtocol | undefined {
     const frozen = id ? this.sessions.get(id)?.inference : undefined;
-    return frozen ? DoeInferenceConfigSchema.parse(frozen).protocol : this.inference()?.protocol;
+    if (frozen) return DoeInferenceConfigSchema.parse(frozen).protocol;
+    const config = this.inference();
+    return config ? config.protocol : peekDoeCreditsPick()?.protocol;
   }
 
   /** The model gate reads the same frozen payer the next turn will use. */
@@ -355,9 +414,7 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
     const record = this.sessions.get(id);
     if (record?.inference)
       return DoeInferenceConfigSchema.parse(record.inference).source === 'dorkos-credits';
-    const config = this.inference();
-    if (!config) return false;
-    if (config.source === 'dorkos-credits') return true;
+    if (this.inference()?.source === 'dorkos-credits') return true;
     const bound = await runtimeRegistry.getSessionAgentPath(id).catch(() => null);
     const home = homeOf(
       resolveAgentHome(

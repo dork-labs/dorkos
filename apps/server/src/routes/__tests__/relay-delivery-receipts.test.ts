@@ -1,6 +1,6 @@
 /** Real Core/SQLite HTTP receipts; only delivery and explicit response faults are controlled. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import express from 'express';
+import type { MiddlewareHandler } from 'hono';
 import { mkdtempSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,10 +13,19 @@ import {
 } from '@dorkos/relay';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createRelayRouter } from '../relay.js';
-import { initAuth, readOwnerAccount, sessionGate } from '../../services/core/auth/index.js';
+import { relayRoutesListener } from './relay-routes-listener.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
+import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
+import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { initConfigManager, configManager } from '../../services/core/config-manager.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+
+// The real session gate, so one case can stand in for an identity it proved.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
+});
 
 const target = swappableServer();
 const SUBJECT = 'relay.agent.receipt-test';
@@ -25,7 +34,6 @@ const SECRET = 'private-error-payload-sentinel';
 let dir: string;
 let db: Db;
 let core: RelayCore;
-let app: express.Express;
 let registry: AdapterRegistryLike & { deliver: ReturnType<typeof vi.fn> };
 let resolveDelivery: (value: DeliveryResult | null) => void;
 let finished: Promise<void>[];
@@ -87,10 +95,6 @@ beforeEach(() => {
       return promise;
     });
   }
-  app = express();
-  app.use(express.json());
-  app.use(sessionGate);
-  target.mount(app);
 });
 
 afterEach(async () => {
@@ -105,8 +109,18 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function mount(manager?: AdapterManager) {
-  app.use('/api/relay', createRelayRouter(core, manager));
+/** Serve the Relay routes over the real Core, behind the real `/api` chain and session gate. */
+function mount(
+  manager?: AdapterManager,
+  activity?: ActivityService,
+  before?: MiddlewareHandler<ApiEnv>
+) {
+  target.mount(
+    relayRoutesListener(
+      { relayCore: core, ...(manager && { adapterManager: manager }), activity },
+      { before }
+    )
+  );
 }
 function send(extra: Record<string, unknown> = {}) {
   return request(target.server)
@@ -265,7 +279,7 @@ it('a second real Core observer is busy with zero loser effects', async () => {
     logger: noopLogger,
     adapterRegistry: registry,
   });
-  app.use('/api/relay', createRelayRouter(loser));
+  target.mount(relayRoutesListener({ relayCore: loser }));
   try {
     const response = await send();
     expect(response.status).toBe(503);
@@ -320,15 +334,16 @@ it('snapshot read outage after effects retains locator, without replay, and stat
   expect(registry.deliver).toHaveBeenCalledTimes(1);
 });
 
-it('one-shot Express serialization failure keeps the callback-owned locator and safe error', async () => {
+it('one-shot serialization failure keeps the callback-owned locator and safe error', async () => {
   let failed = false;
-  app.set('json replacer', (name: string, value: unknown) => {
-    if (name === 'statusUrl' && !failed) {
+  const stringify = JSON.stringify;
+  vi.spyOn(JSON, 'stringify').mockImplementation(((value: unknown, ...rest: never[]) => {
+    if (!failed && value && typeof value === 'object' && 'statusUrl' in value) {
       failed = true;
       throw new Error(SECRET);
     }
-    return value;
-  });
+    return stringify(value, ...rest);
+  }) as typeof JSON.stringify);
   mount();
   const response = await send();
   expect(failed).toBe(true);
@@ -340,24 +355,22 @@ it('one-shot Express serialization failure keeps the callback-owned locator and 
   expect(registry.deliver).toHaveBeenCalledTimes(1);
 });
 
-it('headers already sent prevent a second response or receipt rewrite', async () => {
-  let sends = 0;
-  app.use((_req, res, next) => {
-    const json = res.json.bind(res);
-    res.json = (body) => {
-      sends++;
-      if (body.statusUrl && body.receipt) {
-        res.type('json').end(JSON.stringify({ lost: true }));
-        throw new Error(SECRET);
-      }
-      return json(body);
-    };
-    next();
+it('a client gone before the answer gets no response and no receipt rewrite', async () => {
+  let handled!: () => void;
+  const settled = new Promise<void>((resolve) => (handled = resolve));
+  mount(undefined, undefined, async (c, next) => {
+    // The body is read; the client hangs up before the route answers.
+    c.env.outgoing.destroy();
+    await next();
+    handled();
   });
-  mount();
-  const response = await send();
-  expect(response.body).toEqual({ lost: true });
-  expect(sends).toBe(1);
+  const response = await send().then(
+    () => undefined,
+    (error: unknown) => error
+  );
+  await settled;
+  expect(response).toBeInstanceOf(Error);
+  expect(rows()).toHaveLength(1);
   expect(rows()[0].state).toBe('accepted');
   expect(registry.deliver).toHaveBeenCalledTimes(1);
 });
@@ -369,7 +382,6 @@ it.each(['throw', 'reject', 'lookup'] as const)(
       if (mode === 'throw') throw new Error(SECRET);
       return Promise.reject(new Error(SECRET));
     });
-    app.locals.activityService = { emit };
     const manager = {
       getRegistry: () => {
         if (mode === 'lookup') throw new Error(SECRET);
@@ -377,7 +389,7 @@ it.each(['throw', 'reject', 'lookup'] as const)(
       },
       resolveAdapterName: () => 'Fixture',
     } as unknown as AdapterManager;
-    mount(manager);
+    mount(manager, { emit } as unknown as ActivityService);
     const response = await send();
     expect(emit).toHaveBeenCalledTimes(mode === 'lookup' ? 0 : 1);
     expect(response.status).toBe(200);
@@ -496,13 +508,10 @@ it('off-to-on historic null owner is adopted only by verified install owner; off
 
 it('no install owner grants no historic ownership, even with a controlled verified identity', async () => {
   // Controlled identity seam proves fail-closed ownership; it is not a credential verification claim.
-  app = express();
-  app.use(express.json());
-  app.use((_req, res, next) => {
-    res.locals.user = { userId: 'absent-owner' };
-    next();
-  });
-  target.mount(app);
+  const absentOwner = { allowed: true, user: { userId: 'absent-owner', credential: 'cookie' } };
+  vi.mocked(decideSessionGate)
+    .mockResolvedValueOnce(absentOwner as never)
+    .mockResolvedValueOnce(absentOwner as never);
   mount();
   const post = await send();
   db.delete(user).run();

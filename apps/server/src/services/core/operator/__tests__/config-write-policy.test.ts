@@ -22,9 +22,9 @@ import {
   OPERATOR_ONLY_CONFIG_PATHS,
   OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
-  describeOperatorOnlyRefusal,
   operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+import { describeOperatorOnlyRefusal } from '../operator-only-refusal.js';
 
 /**
  * A patch that writes exactly one policy path, `[]` segments turned into a
@@ -80,6 +80,17 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',
+      'cloud.remote.consentVersion',
+      'cloud.remote.credentialId',
+      'cloud.remote.credentialRef',
+      'cloud.remote.edgeProofHeader',
+      'cloud.remote.edgeProofRef',
+      'cloud.remote.enrolmentId',
+      'cloud.remote.fingerprint',
+      'cloud.remote.hosts',
+      'cloud.remote.instanceId',
+      'cloud.remote.mode',
+      'computers.enabled',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
@@ -98,6 +109,10 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.global.askedAt',
       'harness.global.harnesses',
       'harness.refusedHooks',
+      // Whether agents wake on their own at all (spec `heartbeats` §3.6).
+      'heartbeats.enabled',
+      // Whether cheap checks spend DorkOS credits: the owner's money (spec `heartbeats` §6.3).
+      'heartbeats.triageOnCredits',
       // Whether this computer sleeps while agents work, and whether it may be
       // woken for a schedule: the person's battery and the person's machine
       // (spec `keep-awake`).
@@ -123,11 +138,21 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'notifications.sounds.allClear',
       'notifications.sounds.knock',
       'notifications.sounds.turnEnd',
+      // The first run (one-minute-onboarding §4.1): its DorkOS path is what a
+      // new link reads to record credits as the person's own pick, so it decides
+      // who pays; finished and dismissed close that door, so an agent may not
+      // reopen it; the undo target and the welcome's entry are the route's own.
+      'onboarding.completedAt',
+      'onboarding.dismissedAt',
+      'onboarding.firstRunPath',
+      'onboarding.priorRuntime',
+      'onboarding.welcomeEntryId',
       // What agents may do. The generic writers refuse these outright; this is
       // the second line (spec `agent-permissions` D10).
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.trustedStoresAppliedAt',
       'permissions.upgradeSweptVersion',
       // The record of WHO wrote the display name, not the name itself — which
       // stays agent-writable, because DorkBot saving "call me Dorian" is the
@@ -146,9 +171,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
-      'rooms.maxCanvasOpsPerTurn',
       'rooms.maxConcurrentTurnsPerAgent',
-      'rooms.maxPostsPerTurn',
       'rooms.maxTurnsPerAgentPerCascade',
       // A room's own files: whether they exist at all, and the bounds a merge
       // is measured against. `rooms.repo.mergeQueueWaitMs` is deliberately NOT
@@ -203,6 +226,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'scheduler.maxConcurrentRuns',
       'server.boundary',
       'spaces.enabled',
+      'spaces.official.url',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
       'telemetry.heartbeat',
@@ -215,14 +239,12 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.authtoken',
       'tunnel.domain',
       'tunnel.enabled',
-      'ui.autonomyAcknowledgedAt',
       // Whose saved navigation this is, and where the person's next "switch
       // back to this DorkOS" lands. An agent could otherwise steer that click.
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
       'ui.communityNavigation.owners[].ownerKey',
-      'ui.fullPowerChoice',
-      'ui.fullPowerDecidedAt',
+      'ui.trustNoticeSeenAt',
       // Three uploads.* leaves a person can tighten past the shipped default,
       // all carried by the wipe floor (DOR-1505 added `allowedTypes`).
       'uploads.allowedTypes',
@@ -260,6 +282,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'cloud.previousLinkProof',
+      'cloud.remote.credentialRef',
+      'cloud.remote.edgeProofRef',
       'runtimes.codex.credentialRef',
       'providers',
     ];

@@ -1038,11 +1038,11 @@ export const roomsThinkingStaysPrivateCase: EvalCase = {
 };
 
 /**
- * `rooms-answers-three-questions-in-one-message` — E8 as measured conduct, now
- * that the ceiling behind it is a mechanism.
+ * `rooms-answers-three-questions-in-one-message` — E8 as measured conduct, which
+ * is all that holds it: no per-turn post ceiling refuses anything any more
+ * (ADR 261006-225605).
  *
- * `rooms.maxPostsPerTurn` refuses a fourth post; it does not make three a good
- * idea. What a colleague does with three questions in one breath is answer them
+ * What a colleague does with three questions in one breath is answer them
  * once, and this is the only case that measures whether a model does.
  *
  * The oracle counts POSTS rather than judging prose, which is the honest thing

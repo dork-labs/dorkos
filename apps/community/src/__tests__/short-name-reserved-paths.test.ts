@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  COMMUNITY_HOST_GRANTABLE_SHORT_NAMES,
+  COMMUNITY_PATH_SHORT_NAMES,
   COMMUNITY_RESERVED_SHORT_NAMES,
   CommunityShortNameSchema,
 } from '@dorkos/shared/community-admin-wire';
@@ -58,6 +60,22 @@ describe('reserved short names', () => {
       expect.arrayContaining(['api', 'health', 'host', 'join', 'claim', 'pairing', 'c', 'assets'])
     );
     for (const path of paths) expect(COMMUNITY_RESERVED_SHORT_NAMES, path).toContain(path);
+    // A host operator may give a grantable name to a space, so none may be a path.
+    for (const path of paths)
+      expect(COMMUNITY_HOST_GRANTABLE_SHORT_NAMES, path).not.toContain(path);
+  });
+
+  it('splits the reserved names into paths and names a host operator may give out', () => {
+    // Purpose: fails if a grantable name is not reserved (so anyone could take it), or if the
+    // split loses or duplicates a reserved name.
+    for (const name of COMMUNITY_HOST_GRANTABLE_SHORT_NAMES)
+      expect(COMMUNITY_RESERVED_SHORT_NAMES, name).toContain(name);
+    expect([...COMMUNITY_PATH_SHORT_NAMES, ...COMMUNITY_HOST_GRANTABLE_SHORT_NAMES].sort()).toEqual(
+      [...COMMUNITY_RESERVED_SHORT_NAMES].sort()
+    );
+    expect(COMMUNITY_HOST_GRANTABLE_SHORT_NAMES).toEqual(
+      expect.arrayContaining(['dorkos', 'official'])
+    );
   });
 
   it('finds routes of every method and a mounted sub-app', () => {

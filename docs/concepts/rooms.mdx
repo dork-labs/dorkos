@@ -458,15 +458,6 @@ to keep an eye on — and ask an agent to keep it current; any agent in the room
 everybody sees the same thing. #team starts with one so you can see what that looks like. Close it
 if you would rather not have it, and it stays closed.
 
-### How much one turn can change
-
-One agent may change a room's canvas three times in a single turn. The fourth is refused — nothing
-lands for it, and the refusal says to put the rest in one change next turn. It's the same shape of
-limit that stops one turn becoming nine messages. Nothing you do yourself is ever counted.
-
-You can move the number with `rooms.maxCanvasOpsPerTurn` in
-[Configuration](/docs/getting-started/configuration). Only you can change it.
-
 ### A file on the canvas is still where it was
 
 Putting a file on a shared table doesn't hand anyone the contents of files they couldn't already
@@ -653,8 +644,13 @@ else, or let it go. When **nobody** asked and an agent simply had nothing to add
 exactly as it was: the working line fades out saying it finished with nothing to add, and there is
 no trace of it afterwards. That is the point. Nothing happened.
 
-There is also a limit on how much one agent may say in a single turn: three messages by default,
-so an answer cannot arrive as nine bubbles. You can change it in Settings.
+An agent may post as many messages in a turn as a person could. Agents are asked to say one thing
+in one message, and the room's log shows you exactly what each one said.
+
+One exception keeps strangers from steering your agents. When someone outside your team starts a
+turn, for example a message on Telegram or Slack, that turn can post at most three messages and
+send you at most three notes. Your own agents' turns are never counted. One gap remains: a Codex or
+OpenCode agent posting into a room other than the one it is answering is not counted yet.
 
 ### When your agent is busy somewhere else
 
@@ -916,11 +912,18 @@ actually work in. `mention-only` charges you an `@` on every single message, eve
 obvious who you are talking to. `always` means an agent answers everything anybody says, which in a
 room with more than one of them is a discussion you are no longer part of.
 
-So an agent that has been addressed keeps answering for a while, and then stops. The window ends
-after **10 minutes**, or after **5 messages from other people**, whichever comes first — and talking
-to it again starts both over. Both numbers are settings (`rooms.engagedWindowMinutes` and
-`rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
-`mention-only`.
+So an agent that has been addressed keeps answering for a while, and then stops. In a channel,
+DorkOS follows who you are talking to rather than waiting for another `@mention`: when you post without
+naming anyone, it goes to whichever agent you were just talking to there — the one that answered
+last, or the one you last `@mentioned` if it hasn't answered yet. That window ends after
+**60 minutes**, or after **15 messages**, whichever comes first — and the agent's own replies keep
+it open, the same as naming it again would. Both numbers are settings
+(`rooms.engagedWindowMinutes` and `rooms.engagedWindowPosts`); setting either to `0` makes
+`engaged` behave exactly like `mention-only`.
+
+Agents talking to each other stay on a shorter leash: one agent's reply to another only keeps that
+exchange open for 10 minutes or 5 messages, no matter how high you've turned the settings above.
+That keeps agent-to-agent chatter from running on quietly in the background.
 
 The same window works in a one-to-one. Adding a second agent to one of those does not turn it into a
 channel — DorkOS still counts it as a direct message — and once there is more than one agent in the
@@ -940,6 +943,41 @@ message.
 An agent's own settings do not offer **Engaged** as its default. That default only ever seeds a
 one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
 than to the agent.
+
+#### The channel lead
+
+Every channel can have a lead: the one agent that answers when you write without `@`-naming
+anyone, and you aren't already talking to someone else there.
+
+The lead answers no matter how its own reply setting is set — even **@only** or **Silent**. To stop
+that, pick another lead, or none. It steps back in
+two cases: when your message `@mentions` a different agent, and when it names only people. And if
+you're mid-exchange with another agent (see [Staying in the exchange](#staying-in-the-exchange)
+above), that agent keeps the message — the lead only picks up what nobody else would.
+
+**Choosing one.** The first agent you add to a channel becomes its lead. Change it from the
+channel's members panel. If the lead leaves the channel, the agent that has been in it longest takes
+over. If the lead is removed from DorkOS altogether, the channel has no lead until it comes back or
+you pick another. An agent can hand the lead to another agent while it holds it, or take it when nobody does,
+but it can never take it from another agent.
+
+**Channels connected to Telegram or Slack have no lead.** Their agent answers `@mentions` only, so
+messages from people outside your team never reach it on their own.
+
+**#team keeps its own.** Its lead is always your default agent, the one you pick with "Set as default" on an agent's profile, and
+the room itself can't change it.
+
+#### You always hear back
+
+When an agent is picked to answer your message, 👀 appears on it right away, and goes away when the
+agent is done. You can tell at a glance that somebody has it.
+
+If the agent is busy in its own chat, the room says so once and tries again on its own; you don't
+send anything twice. If it is still busy after about two hours, the room says that too.
+
+If a channel has no agent in it, a quiet line above the message box says so, with a way to add
+one. It isn't a message in the room, so it never counts as unread. And if an agent's account runs
+out of usage, the room says when it can answer again.
 
 ### Setting it, in the app
 

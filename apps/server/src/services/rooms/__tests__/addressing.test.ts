@@ -13,8 +13,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { RoomKind } from '@dorkos/shared/room-schemas';
+import type { AuthorKind, RoomKind } from '@dorkos/shared/room-schemas';
 import {
+  pickLead,
   respondsTo,
   selectTriggerTargets,
   standDownFallbackSeat,
@@ -236,18 +237,25 @@ describe('selectTriggerTargets — why each member was picked', () => {
   function reasonOf(
     roomKind: RoomKind,
     member: AddressingMember,
-    mentions: string[] = []
+    mentions: string[] = [],
+    authorKind: AuthorKind = 'human'
   ): TriggerReason | undefined {
     return selectTriggerTargets({
       roomKind,
-      authorKind: 'human',
+      authorKind,
       entry: { authorId: 'dorian', mentions },
       members: [member, person],
     })[0]?.reason;
   }
 
-  it('labels an engaged agent nobody named `window` — the only gatable reason', () => {
-    expect(reasonOf('channel', engaged)).toBe('window');
+  it('labels an engaged agent nobody named `window` on an agent’s post — the only gatable reason', () => {
+    expect(reasonOf('channel', engaged, [], 'agent')).toBe('window');
+  });
+
+  it('labels an engaged agent a PERSON is talking with `conversation`, which is never gated', () => {
+    // DOR-2823: a person in a channel is owed an answer, so their unaddressed
+    // follow-up is not ambient.
+    expect(reasonOf('channel', engaged)).toBe('conversation');
   });
 
   it('labels a mention `mention`, even when the window is also open', () => {
@@ -297,7 +305,7 @@ describe('selectTriggerTargets — why each member was picked', () => {
     expect(targets).toEqual([
       { authorId: 'ana', reason: 'mention' },
       { authorId: 'bo', reason: 'always' },
-      { authorId: 'cy', reason: 'window' },
+      { authorId: 'cy', reason: 'conversation' },
     ]);
   });
 });
@@ -524,5 +532,48 @@ describe('standDownFallbackSeat', () => {
       const silentSeat: AddressingMember = { ...seat, responseMode: 'silent' };
       expect(stand(['ace'], ['ace'], [silentSeat, nova, ace, human])).toEqual(['ace']);
     });
+  });
+});
+
+describe('pickLead — the channel lead (DOR-2823)', () => {
+  const lead: AddressingMember = {
+    authorId: 'ana',
+    kind: 'agent',
+    responseMode: 'silent',
+    isEngaged: false,
+  };
+  const other: AddressingMember = {
+    authorId: 'bo',
+    kind: 'agent',
+    responseMode: 'engaged',
+    isEngaged: false,
+  };
+  const kai: AddressingMember = {
+    authorId: 'kai',
+    kind: 'human',
+    responseMode: 'always',
+    isEngaged: false,
+  };
+  const members = [lead, other, kai];
+  const pick = (mentions: string[], authorId = 'dorian') =>
+    pickLead({ entry: { authorId, mentions }, leadAuthorId: 'ana', members });
+
+  it('takes a post that named nobody, whatever its own mode', () => {
+    expect(pick([])).toEqual({ authorId: 'ana', reason: 'lead' });
+  });
+  it('takes a post that named the lead itself', () => {
+    expect(pick(['ana'])).toEqual({ authorId: 'ana', reason: 'lead' });
+  });
+  it('steps back for a post that named another agent', () => {
+    expect(pick(['bo'])).toBeNull();
+  });
+  it('steps back for a post that named only people', () => {
+    expect(pick(['kai'])).toBeNull();
+  });
+  it('never answers its own post, or a room with no lead', () => {
+    expect(pick([], 'ana')).toBeNull();
+    expect(
+      pickLead({ entry: { authorId: 'dorian', mentions: [] }, leadAuthorId: null, members })
+    ).toBeNull();
   });
 });

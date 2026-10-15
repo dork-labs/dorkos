@@ -377,7 +377,7 @@ export const rooms = sqliteTable(
      * a member that is still on the roster and simply no longer answers. The
      * next reconcile moves it.
      */
-    fallbackSeatAuthorId: text('fallback_seat_author_id'),
+    leadAuthorId: text('fallback_seat_author_id'),
 
     /**
      * This room's own answer to "are automatic replies limited here at all",

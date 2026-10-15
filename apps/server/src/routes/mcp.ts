@@ -1,9 +1,36 @@
-import { Router } from 'express';
+/**
+ * The external MCP endpoint, `/mcp`: Streamable HTTP, stateless, on the Hono
+ * chain (DOR-2808, `plans/2026-10-express-to-hono.md` item 17).
+ *
+ * `/mcp` is not under `/api`, but it runs the same chain every moved route
+ * does (`http/api-chain.ts`): the body is parsed there once, the session gate
+ * covers `/mcp` when login is on, and the audit actor names the surface. Then
+ * its own gates, in this order, as Express ran them:
+ *
+ * 1. the browser `Origin` check (`middleware/mcp-origin.ts`), a JSON-RPC 403;
+ * 2. the on/off switch (`middleware/mcp-enabled.ts`), a JSON-RPC 503;
+ * 3. the fail-closed credential check (`middleware/mcp-auth.ts`), a JSON-RPC
+ *    401, which reads the parsed body for the tokenless read-only carve-out;
+ * 4. the rate limiter (`middleware/mcp-rate-limit.ts`), a JSON-RPC 429.
+ *
+ * The transport is the MCP SDK's web-standard one, handed the same parsed body
+ * the credential check read, so the request stream is read once.
+ * `http/__tests__/contract/mcp-groups.contract.test.ts` pins the answers.
+ *
+ * @module routes/mcp
+ */
+import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { honoMcpAuth } from '../middleware/mcp-auth.js';
+import { requireMcpEnabled } from '../middleware/mcp-enabled.js';
+import { validateMcpOrigin } from '../middleware/mcp-origin.js';
+import { buildMcpRateLimiter } from '../middleware/mcp-rate-limit.js';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
-import type { RequestUser } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -37,8 +64,49 @@ export interface McpCaller {
   userId?: string;
 }
 
+/** Builds a fresh MCP server per request, specialized to whoever is calling. */
+export type McpServerFactory = (caller: McpCaller) => McpServer | Promise<McpServer>;
+
+/** The answer to a GET or DELETE: there is no stream or session to reach. */
+const STATELESS_REFUSAL = {
+  jsonrpc: '2.0',
+  error: {
+    code: -32000,
+    message: 'Method not allowed. This server operates in stateless mode.',
+  },
+  id: null,
+} as const;
+
+/** The answer when the server or transport could not be built or failed. */
+const INTERNAL_ERROR = {
+  jsonrpc: '2.0',
+  error: { code: -32603, message: 'Internal error' },
+  id: null,
+} as const;
+
 /**
- * Create an Express router for the MCP Streamable HTTP endpoint.
+ * Create the `/mcp` routes: the endpoint's own gates, in order, in front of
+ * {@link createMcpEndpoint}. Mount at `/mcp` on the app `createApiApp` builds.
+ *
+ * The rate limiter is built here, once, from the config at that moment: a
+ * change to `mcp.rateLimit` takes effect after a restart.
+ *
+ * @param serverFactory - Creates a fresh McpServer instance per request,
+ *   specialized to whoever is calling.
+ * @returns The routes.
+ */
+export function createMcpRoutes(serverFactory: McpServerFactory): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
+  // On `/` only, so the front door claims `/mcp` and nothing below it.
+  router.use('/', validateMcpOrigin, requireMcpEnabled, honoMcpAuth('mcp'), buildMcpRateLimiter());
+  router.route('/', createMcpEndpoint(serverFactory));
+  return router;
+}
+
+/**
+ * Create the MCP Streamable HTTP endpoint itself, with no gates in front of it.
+ * It reads what the chain decided: the parsed body, the agent identity, and
+ * the person a credential proved.
  *
  * Handles POST requests with JSON-RPC bodies. GET and DELETE return 405
  * because this server operates in stateless mode (no session tracking).
@@ -60,74 +128,52 @@ export interface McpCaller {
  *
  * @param serverFactory - Creates a fresh McpServer instance per request,
  *   specialized to whoever is calling.
+ * @returns The endpoint's routes.
  */
-export function createMcpRouter(
-  serverFactory: (caller: McpCaller) => McpServer | Promise<McpServer>
-): Router {
-  const router = Router();
-
+export function createMcpEndpoint(serverFactory: McpServerFactory): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   // POST: JSON-RPC tool calls (primary endpoint)
-  router.post('/', async (req, res) => {
+  router.post('/', async (c) => {
     try {
-      const identity = getRequestAgentIdentity(res);
+      const identity = c.get('agentIdentity');
       // The wider question, asked from the raw header so a token that did not
       // resolve is still reported as a machine calling.
-      const agentIdentityPresented = presentsAgentIdentity(req, res);
-      // Filled by `createMcpAuth` on the login-on identity branch; absent on
-      // every tokenless path, which is exactly the fact downstream must keep.
-      const user = res.locals.user as RequestUser | undefined;
+      const agentIdentityPresented = presentsAgentIdentity(honoRequestFacts(c));
+      // Filled by the credential check on the identity branch, or by the
+      // session gate once login is on; absent on every tokenless path, which
+      // is exactly the fact downstream must keep.
+      const user = c.get('user');
       const server = await serverFactory({
         ...(identity ? { identity } : {}),
         ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
         ...(user ? { userId: user.userId } : {}),
       });
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless
       });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-
-      // Clean up per-request server+transport when the response closes.
-      // Removes internal Protocol event listeners (per SDK stateless example).
-      res.on('close', () => {
+      // Clean up the per-request server and transport when the response
+      // closes, which for a streamed answer is after its last event. Removes
+      // internal Protocol event listeners (per SDK stateless example).
+      c.env.outgoing.once('close', () => {
         transport.close().catch(() => {});
         server.close().catch(() => {});
       });
+      await server.connect(transport);
+      // The body the chain parsed, which the credential check classified. A
+      // body it did not parse (no JSON content type) is left on the request
+      // for the transport to read and refuse itself.
+      return await transport.handleRequest(c.req.raw, { parsedBody: readJsonBody(c) });
     } catch (err) {
       logger.error('[MCP] Request handling error', err);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
-      }
+      return c.json(INTERNAL_ERROR, 500);
     }
   });
 
   // GET: Server-initiated SSE stream — not needed in stateless mode
-  router.get('/', (_req, res) => {
-    res.status(405).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed. This server operates in stateless mode.',
-      },
-      id: null,
-    });
-  });
+  router.get('/', (c) => c.json(STATELESS_REFUSAL, 405));
 
   // DELETE: Session termination — not applicable in stateless mode
-  router.delete('/', (_req, res) => {
-    res.status(405).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed. This server operates in stateless mode.',
-      },
-      id: null,
-    });
-  });
+  router.delete('/', (c) => c.json(STATELESS_REFUSAL, 405));
 
   return router;
 }

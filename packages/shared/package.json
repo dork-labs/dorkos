@@ -53,6 +53,14 @@
       "types": "./src/transport-rooms.ts",
       "default": "./dist/transport-rooms.js"
     },
+    "./transport-heartbeats": {
+      "types": "./src/transport-heartbeats.ts",
+      "default": "./dist/transport-heartbeats.js"
+    },
+    "./transport-onboarding": {
+      "types": "./src/transport-onboarding.ts",
+      "default": "./dist/transport-onboarding.js"
+    },
     "./types": {
       "types": "./src/types.ts",
       "default": "./dist/types.js"
@@ -93,6 +101,10 @@
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
     },
+    "./working-hours": {
+      "types": "./src/working-hours.ts",
+      "default": "./dist/working-hours.js"
+    },
     "./profile-recommendations": {
       "types": "./src/profile-recommendations.ts",
       "default": "./dist/profile-recommendations.js"
@@ -112,6 +124,10 @@
     "./telemetry-events": {
       "types": "./src/telemetry-events.ts",
       "default": "./dist/telemetry-events.js"
+    },
+    "./install-ref": {
+      "types": "./src/install-ref.ts",
+      "default": "./dist/install-ref.js"
     },
     "./extension-id": {
       "types": "./src/extension-id.ts",
@@ -333,6 +349,10 @@
       "types": "./src/cloud-schemas.ts",
       "default": "./dist/cloud-schemas.js"
     },
+    "./onboarding-schemas": {
+      "types": "./src/onboarding-schemas.ts",
+      "default": "./dist/onboarding-schemas.js"
+    },
     "./session-stream": {
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
@@ -372,6 +392,10 @@
     "./smart-groups": {
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
+    },
+    "./mini-app-placement": {
+      "types": "./src/mini-app-placement.ts",
+      "default": "./dist/mini-app-placement.js"
     },
     "./canvas-source-key": {
       "types": "./src/canvas-source-key.ts",
@@ -484,6 +508,22 @@
     "./chat-messages": {
       "types": "./src/chat-messages.ts",
       "default": "./dist/chat-messages.js"
+    },
+    "./commitment-schemas": {
+      "types": "./src/commitment-schemas.ts",
+      "default": "./dist/commitment-schemas.js"
+    },
+    "./heartbeat-schemas": {
+      "types": "./src/heartbeat-schemas.ts",
+      "default": "./dist/heartbeat-schemas.js"
+    },
+    "./computer-schemas": {
+      "types": "./src/computer-schemas.ts",
+      "default": "./dist/computer-schemas.js"
+    },
+    "./transport-computers": {
+      "types": "./src/transport-computers.ts",
+      "default": "./dist/transport-computers.js"
     }
   },
   "scripts": {

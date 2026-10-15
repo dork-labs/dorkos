@@ -23,15 +23,19 @@
  *
  * @module routes/connector-providers
  */
-import { Router, type Request, type Response } from 'express';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { parseBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ConnectorProviderBootstrapper } from '../services/connectors/bootstrap.js';
 import type { CredentialStore } from '../services/core/credential-provider.js';
+import { migrationHealthGate } from './connector-owner-boundary.js';
 
-/** Constructor dependencies for {@link createConnectorProvidersRouter}. */
+/** Constructor dependencies for {@link createConnectorProvidersRoutes}. */
 export interface ConnectorProvidersRouterDeps {
   /** The provider lifecycle owner — validates types, reloads, reports status. */
   bootstrapper: ConnectorProviderBootstrapper;
@@ -52,91 +56,80 @@ const KEY_CHANGE_REFUSAL = {
 } as const;
 
 /**
- * Answer 403 unless the person who owns this install is asking. A saved key
- * decides which account every connection's calls go out on, so an agent never
- * writes one, and with login on neither does another signed-in account.
+ * The 403 for a key change, unless the person who owns this install is
+ * asking. A saved key decides which account every connection's calls go out
+ * on, so an agent never writes one, and with login on neither does another
+ * signed-in account.
  *
- * @returns `true` when the request was answered, so the caller must return.
+ * @returns The refusal, or `undefined` when the caller may change keys.
  */
-function refusedKeyChange(req: Request, res: Response): boolean {
-  const refusal = refuseUnlessAccountOwner(req, res);
-  if (refusal === undefined) return false;
-  res.status(403).json(KEY_CHANGE_REFUSAL[refusal]);
-  return true;
+function keyChangeRefusal(c: Context<ApiEnv>): Response | undefined {
+  const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
+  return refusal === undefined ? undefined : c.json(KEY_CHANGE_REFUSAL[refusal], 403);
 }
 
 /** Body for `PUT /:provider/credential`. */
 const CredentialBodySchema = z.object({ secret: z.string().min(1) });
 
 /**
- * Create the connector-providers router.
+ * Create the connector-providers routes.
  *
  * @param deps - Injected bootstrapper + credential store; see {@link ConnectorProvidersRouterDeps}.
- * @returns An Express router mounted at `/api/connectors/providers`.
+ * @returns The routes, mounted at `/api/connectors/providers`.
  */
-export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDeps): Router {
-  const router = Router();
+export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDeps): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
   const { bootstrapper, credentialStore } = deps;
 
-  router.use((_req, res, next) => {
-    const health = bootstrapper.migrationHealth();
-    if (health.status === 'migration_failed') {
-      res.status(503).json({ status: health.status, error: health.error });
-      return;
-    }
-    next();
-  });
+  router.use(migrationHealthGate(bootstrapper));
 
-  router.get('/', async (_req, res) => {
+  router.get('/', async (c) => {
     const [providers, appConnections] = await Promise.all([
       bootstrapper.listStatuses(),
       bootstrapper.appConnections(),
     ]);
-    res.json({ providers, appConnections });
+    return c.json({ providers, appConnections });
   });
 
-  router.put('/:provider/credential', async (req, res) => {
-    if (refusedKeyChange(req, res)) return;
-    const provider = req.params.provider;
+  router.put('/:provider/credential', async (c) => {
+    const refused = keyChangeRefusal(c);
+    if (refused) return refused;
+    const provider = c.req.param('provider');
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      res.status(400).json({
-        error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
-      });
-      return;
+      return c.json({ error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.' }, 400);
     }
-    // Express 5: req.body is undefined on an empty PUT — default to {} so the
-    // schema reports the missing `secret` as a validation error, not a crash.
-    const body = parseBody(CredentialBodySchema, req.body ?? {}, res);
-    if (!body) return;
+    // An empty PUT has no body — read it as {} so the schema reports the
+    // missing `secret` as a validation error, not a crash.
+    const parsed = CredentialBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
 
-    await credentialStore.put(credentialName, body.secret);
+    await credentialStore.put(credentialName, parsed.data.secret);
     try {
-      res.json(await bootstrapper.reload(provider));
+      return c.json(await bootstrapper.reload(provider));
     } catch {
       // A non-refusal factory error (a genuine bug). Generic on purpose: this
       // path must never echo anything derived from the stored secret.
       logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
-      res.status(500).json({
-        error: 'The key was saved, but DorkOS couldn’t start using it. Try again.',
-      });
+      return c.json(
+        { error: 'The key was saved, but DorkOS couldn’t start using it. Try again.' },
+        500
+      );
     }
   });
 
-  router.delete('/:provider/credential', async (req, res) => {
-    if (refusedKeyChange(req, res)) return;
-    const provider = req.params.provider;
+  router.delete('/:provider/credential', async (c) => {
+    const refused = keyChangeRefusal(c);
+    if (refused) return refused;
+    const provider = c.req.param('provider');
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      res.status(400).json({
-        error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
-      });
-      return;
+      return c.json({ error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.' }, 400);
     }
     // Idempotent: the store's delete is safe when the name is absent, and the
     // reload simply reports unconfigured — a missing key still answers 200.
     await credentialStore.delete(credentialName);
-    res.json(await bootstrapper.reload(provider));
+    return c.json(await bootstrapper.reload(provider));
   });
 
   return router;

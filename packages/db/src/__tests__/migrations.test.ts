@@ -224,7 +224,7 @@ describe('Database Migrations', () => {
       const history = db.$client.prepare('SELECT * FROM __drizzle_migrations ORDER BY id').all();
       const journal = JSON.parse(
         readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
-      ) as { entries: { idx: number; tag: string }[] };
+      ) as { entries: { idx: number; tag: string; when: number }[] };
       expect(history).toHaveLength(journal.entries.length);
       expect(history.slice(0, 148)).toEqual(publishedHistory);
       expect(db.$client.prepare('SELECT * FROM session_locations ORDER BY id').all()).toEqual(
@@ -233,17 +233,90 @@ describe('Database Migrations', () => {
       expect(
         db.$client.prepare('SELECT * FROM session_native_bindings ORDER BY session_id').all()
       ).toEqual(publishedBindings);
-      expect(journal.entries.slice(148).map((entry) => entry.idx)).toEqual([148, 149, 150]);
+      expect(journal.entries.slice(148).map(({ idx, tag, when }) => ({ idx, tag, when }))).toEqual([
+        {
+          idx: 148,
+          tag: '20261008170031_session_touches',
+          when: 1791478831717,
+        },
+        {
+          idx: 149,
+          tag: '20261009171311_chat_messages',
+          when: 1791565991417,
+        },
+        {
+          idx: 150,
+          tag: '20261009173712_started_by_report_back',
+          when: 1791567432144,
+        },
+        {
+          idx: 151,
+          tag: '20261010095454_agent_reports_to',
+          when: 1791626094991,
+        },
+        {
+          idx: 152,
+          tag: '20261010132742_commitments',
+          when: 1791638862326,
+        },
+        {
+          idx: 153,
+          tag: '20261010155953_channel_leads',
+          when: 1791647993524,
+        },
+        {
+          idx: 154,
+          tag: '20261010175157_agent_pauses',
+          when: 1791654717694,
+        },
+        {
+          idx: 155,
+          tag: '20261011000540_heartbeats',
+          when: 1791677140996,
+        },
+        {
+          idx: 156,
+          tag: '20261011031406_remote_command_journal',
+          when: 1791688446887,
+        },
+        {
+          idx: 157,
+          tag: '20261011052131_heartbeat_report_items',
+          when: 1791696091995,
+        },
+        {
+          idx: 158,
+          tag: '20261011063041_remote_event_refusals',
+          when: 1791700241252,
+        },
+        {
+          idx: 159,
+          tag: '20261011080030_heartbeat_outbox_delivered_at',
+          when: 1791705630799,
+        },
+        {
+          idx: 160,
+          tag: '20261011184508_tearful_killer_shrike',
+          when: 1791744308484,
+        },
+      ]);
       expect(db.$client.prepare('SELECT * FROM audit_events ORDER BY seq').all()).toEqual(
         publishedAudit
       );
-      // Fresh/main-only upgrades apply immutable Chat149 and the genuine consolidated Doc150 once.
-      for (const entry of journal.entries.slice(149, 151)) {
+      // The shipped Main148..159 prefix precedes canonical Doc160; each immutable
+      // SQL identity is recorded once at its authentic journal timestamp.
+      for (const entry of journal.entries.slice(148)) {
         const hash = createHash('sha256')
           .update(readFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`)))
           .digest('hex');
-        expect(history.filter((row) => (row as { hash: string }).hash === hash)).toHaveLength(1);
+        const appliedRows = history.filter((row) => (row as { hash: string }).hash === hash);
+        expect(appliedRows).toHaveLength(1);
+        expect(appliedRows[0]).toMatchObject({ hash, created_at: entry.when });
       }
+      expect(history.at(-1)).toMatchObject({
+        hash: '69956ae9c1dba6ca55938b0afa75c67d350a5bd13006aab73aad5812dc5c9ab2',
+        created_at: 1791744308484,
+      });
       const schema = db.$client
         .prepare('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
         .all();
@@ -303,6 +376,9 @@ describe('Database Migrations', () => {
       // mesh reconciler's rebuild-from-files cannot orphan them
       // (agent-trust spec §3.1, migration 0030).
       'agent_identity_tokens',
+      // Agents paused everywhere, current state only; history is audit rows
+      // (spec audit-trail PR5).
+      'agent_pauses',
       'agents',
       'apikey',
       // Approval records for capability invocations that need a person's
@@ -341,6 +417,8 @@ describe('Database Migrations', () => {
       'chat_messages',
       'chat_read_cursors',
       'codex_threads',
+      // What each agent promised, to whom and by when (spec heartbeats §12).
+      'commitments',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
       'community_entry_origins',
@@ -394,6 +472,13 @@ describe('Database Migrations', () => {
       // §7.2, migration 0131).
       'extension_decisions',
       'handle_tombstones',
+      // Heartbeats: each agent's beat facts, one row per beat, and what beats
+      // raised until it reaches its reader (spec heartbeats §11), and what
+      // waits for each agent's next report (§9.3).
+      'heartbeat_beats',
+      'heartbeat_outbox',
+      'heartbeat_report_items',
+      'heartbeat_state',
       // The project registry (spec flow-multiproject §6.1, migration 0129).
       'known_project_reporters',
       'known_projects',
@@ -438,6 +523,10 @@ describe('Database Migrations', () => {
       'relay_index',
       'relay_receipt_observer_owner',
       'relay_traces',
+      // Managed remote access (DOR-2086): every leased Cloud command, journaled
+      // before it acts, and the activity batches waiting to be reported.
+      'remote_command_journal',
+      'remote_event_outbox',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,
       // not yet posted" state (room-attachments spec, migration 0058).

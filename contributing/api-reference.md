@@ -28,12 +28,12 @@ Types in `packages/shared/src/types.ts` re-export from `schemas.ts`, so existing
 
 1. **Define schemas** in the appropriate `packages/shared/src/` file (`schemas.ts`, `relay-schemas.ts`, or `mesh-schemas.ts`) for request/response shapes
 2. **Register the path** in `apps/server/src/services/core/openapi-registry.ts` with tags, request schema, and response schemas
-3. **Add validation** in the route handler using `Schema.safeParse(req.body)`:
+3. **Add validation** in the route handler using `Schema.safeParse(readJsonBody(c))`:
 
 ```typescript
-const parsed = MyRequestSchema.safeParse(req.body);
+const parsed = MyRequestSchema.safeParse(readJsonBody(c));
 if (!parsed.success) {
-  return res.status(400).json({ error: 'Invalid request', details: parsed.error.format() });
+  return c.json({ error: 'Invalid request', details: parsed.error.format() }, 400);
 }
 const { field } = parsed.data;
 ```
@@ -431,7 +431,7 @@ Feature-flag guarded via `DORKOS_TASKS_ENABLED`. Router is mounted at `/api/task
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
-`POST /api/tasks` requires `reason` when the caller does not clear the agent bar (no session cookie, presenting an agent identity or an approval token) — the schedule is a proposal, not a self-arm, so it is parked at `status: 'pending_approval'` instead of created active, and a proposal with no `reason` is refused with `400`. The `tasks_create` MCP tool (both the in-session and external `/mcp` servers) requires `reason` unconditionally, since every call there is by construction an agent asking. A parked schedule's row carries `reason`, `proposedBySessionId`, and `proposedByAgentPath` (DOR-1394; `packages/db/src/schema/tasks.ts`); `GET`/`PATCH` responses additionally resolve `proposedByName` live from agent identity rather than storing it, and populate `nextRuns` (the next three occurrences, from `previewNextRuns`) only for `pending_approval` rows, since that is the only state the live scheduler cannot answer for itself.
+`POST /api/tasks` requires `reason` when the caller does not clear the agent bar (no session cookie, presenting an agent identity or an approval token), and one with no `reason` is refused with `400`. Such a schedule is clamped, and is armed at once only when the caller presented a verified agent token on a Trusted install (ADR 261006-225605); otherwise it is parked at `status: 'pending_approval'`. The `tasks_create` MCP tool (both the in-session and external `/mcp` servers) requires `reason` unconditionally, since every call there is by construction an agent asking; the in-session server arms on a Trusted install, the external one always parks. A parked schedule's row carries `reason`, `proposedBySessionId`, and `proposedByAgentPath` (DOR-1394; `packages/db/src/schema/tasks.ts`); `GET`/`PATCH` responses additionally resolve `proposedByName` live from agent identity rather than storing it, and populate `nextRuns` (the next three occurrences, from `previewNextRuns`) only for `pending_approval` rows, since that is the only state the live scheduler cannot answer for itself.
 
 ## Notifications (`routes/notifications.ts`) and Push (`routes/push.ts`)
 
@@ -468,7 +468,7 @@ Other relevant environment variables:
 
 | Variable               | Default              | Description                                                                                                                                                                                                                                                                               |
 | ---------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                                                                                                                                                                       |
+| `DORKOS_PORT`          | `4242` (dev: `6242`) | Server port                                                                                                                                                                                                                                                                               |
 | `DORKOS_CORS_ORIGIN`   | (unset)              | Comma-separated list of EXTRA origins, honoured by CORS, the MCP mounts, the WebSocket upgrade check, and Better Auth's CSRF allowlist. Additive (DOR-1711): entries join the per-request policy (loopback + live tunnel + same-origin), never replace it. `*` is ignored with a warning. |
 | `DORKOS_TASKS_ENABLED` | `true`               | `/api/tasks/*` routes (task definitions and runs)                                                                                                                                                                                                                                         |
 
@@ -611,7 +611,7 @@ Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit
 
 Undo one `permission.changed` event (spec `agent-permissions` D14): every key it moved goes back to its `before`, recorded as one new `permission.changed` with `surface: 'undo'` and `undoOf`. Person-only, like every write.
 
-**Request body:** `{ force?: boolean, acknowledgeAutonomy?: true }` (an empty body is a plain Undo).
+**Request body:** `{ force?: boolean }` (an empty body is a plain Undo).
 
 - A key whose value is no longer the recorded `after` is a conflict. A change to one target is refused whole (`409 UNDO_CONFLICT`, with `conflicts: PermissionUndoSkip[]`). A change that reached several targets sets back the ones that still match and reports the rest in `skipped`; it is refused only when none match. `force: true` sets everything back.
 - A preset switch (`presetSnapshot` on the event) goes back as one unit: the preset, the defaults it cleared, and the global stop.
@@ -622,18 +622,16 @@ Undo one `permission.changed` event (spec `agent-permissions` D14): every key it
 - `200` - `{ changes: PermissionChange[], skipped: PermissionUndoSkip[] }`
 - `404` - `UNKNOWN_EVENT`
 - `409` - `UNDO_CONFLICT` (with `conflicts`), or `NOT_UNDOABLE` for a request-card answer or a notice
-- `428` - `AUTONOMY_ACK_REQUIRED` when the Undo would put a Files & commands stop back on Full autonomy
 
 ### PUT /api/permissions/preset
 
-Choose a preset for everyone (`careful`, `balanced`, `full`). Moves the global Files & commands stop to the preset's (Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
+Choose a preset for everyone (`trusted`, `careful`, and the retired `balanced`/`full`, still accepted so an old install that chose one can still be read back). Moves the global Files & commands stop to the preset's (Trusted → `autonomy`, Careful → `ask`, Balanced → `act`, Full power → `autonomy`) and clears the changes made on top of the old preset; `applyToAgents` also removes those agents' own settings so they follow the new preset.
 
-**Request body:** `{ preset, applyToAgents?: string[], surface, acknowledgeAutonomy?: true }`. `acknowledgeAutonomy` records that the person read what Full autonomy means and said yes, in the same write as the preset — needed only when the preset moves Files & commands to Full autonomy and no acknowledgement is already on file.
+**Request body:** `{ preset, applyToAgents?: string[], surface }`.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: PermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED` when the preset would move Files & commands to Full autonomy and `acknowledgeAutonomy` was not sent and none is on file
 
 ### PATCH /api/permissions/defaults
 
@@ -653,14 +651,13 @@ One agent's resolved permissions, with where each area's state and its Files & c
 
 Change one agent's own areas, actions, or Files & commands stop.
 
-**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface, acknowledgeAutonomy?: true }`. `filesAndCommands: null` puts the agent back on the default. `acknowledgeAutonomy` is needed the same way it is on the preset route, when this write moves the agent's own stop to `autonomy`.
+**Request body:** `{ areas?: Record<string, state | null>, actions?: Record<string, state | null>, filesAndCommands?: stop | null, surface }`. `filesAndCommands: null` puts the agent back on the default.
 
 **Refuses `permissions`, `enabledToolGroups`, and `tierCeiling` on `PATCH /api/agents/current` and `PATCH /api/mesh/agents/:id`** — see those routes above; this is the only door in.
 
 **Responses:**
 
 - `200` - `{ changes: PermissionChange[], permissions: AgentPermissionsResponse }`
-- `428` - `AUTONOMY_ACK_REQUIRED`
 
 ## Relay Endpoints
 
@@ -1513,7 +1510,7 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `createMcpAuth({ surface: 'mcp' })` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
+`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
 
 ```
 Authorization: Bearer <token>
@@ -1538,11 +1535,11 @@ Requests to `/mcp` pass through this middleware chain in order:
 
 1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
 2. `requireMcpEnabled` — clean `503` when the MCP surface is switched off
-3. `createMcpAuth({ surface: 'mcp' })` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
+3. `honoMcpAuth('mcp')` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
 4. `mcpRateLimiter` — per-connection rate limiting
 5. `createMcpRouter(...)` — Streamable HTTP transport handler
 
-The app-wide `sessionGate` sits ahead of all five (mounted in `app.ts`), which is why it, not `createMcpAuth`, answers an uncredentialed request once login is on.
+The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
 
 ### Available Tools
 
@@ -1570,7 +1567,7 @@ Item templates (`{id}`/`{name}`) are not enumerated into `resources/list` — th
 
 Neither server pushes `notifications/resources/list_changed`: the external one is stateless (a fresh `McpServer` per request, see above) and so cannot outlive the response it was created for, and the in-session one registers a fixed set that never changes during a query. Both `initialize` responses accordingly advertise `resources: { listChanged: false }`, which `registerDorkOsResources` sets explicitly because the MCP SDK's `registerResource()` otherwise advertises `true` with no opt-out. Resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
 
-On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `requireMcpEnabled` → `createMcpAuth` → `mcpRateLimiter` → the MCP router), so a resource read is authorized by that one chain — there is no separate resource-level auth gate. The login-off carve-out does not reach it: `resources/read` requires a credential even though a read-only `tools/call` does not. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
+On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `requireMcpEnabled` → `honoMcpAuth` → `mcpRateLimiter` → the MCP router), so a resource read is authorized by that one chain — there is no separate resource-level auth gate. The login-off carve-out does not reach it: `resources/read` requires a credential even though a read-only `tools/call` does not. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
 
 ### Extension MCP Tools
 
@@ -1699,7 +1696,7 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 ### Authentication
 
-A2A rides the same middleware as `/mcp` — `createMcpAuth({ surface: 'a2a' })` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
+A2A rides the same middleware as `/mcp` — `honoMcpAuth('a2a')` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
 
 - **Login off:** an Agent Card `GET` passes tokenless — public discovery metadata, the `tools/list` analogue. Every JSON-RPC `POST` is `401` without a credential; **execution is always gated**, and has been since DOR-278 (`middleware/__tests__/mcp-auth.test.ts`).
 - **Login on:** both are `401` without a credential — card discovery closes too. Unlike `/mcp`, `/a2a` is not an `isGatedPath` prefix, so `sessionGate` never runs on it and the `MCP_API_KEY` override does reach this surface.

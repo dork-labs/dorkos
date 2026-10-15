@@ -5,7 +5,7 @@
  *
  * ## The gap this closes
  *
- * `relay_send` and `post_to_room` run without a card even in a prompting mode,
+ * `chat_send` and `post_to_room` run without a card even in a prompting mode,
  * so a turn a Telegram stranger started can post into a room. Before this, the
  * turn that post started on another agent ran at THAT agent's own level, and
  * nothing tied it to the poster's. Under a Full autonomy default that is a path
@@ -30,9 +30,18 @@
  *
  * @module services/core/turn-power/turn-levels
  */
-import type { AgentRuntime, MessageOpts, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  MessageOpts,
+  TurnPermissionBound,
+  TurnPermissionLevel,
+} from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { turnAgentOf } from '../agent-identity/agent-home.js';
+import { agentIsReadingOutsider, countWhileRunning } from './live-outsider-turns.js';
+import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import {
+  ceilingCarriesOutsider,
   levelOfMode,
   READ_ONLY_LEVEL,
   resolveCeilingLevel,
@@ -49,6 +58,11 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
+/** Where each marked turn stood, so a turn its agent starts later is counted against the same agent. */
+const outsiderPlaces = new Map<string, { cwd?: string; forAgent?: string }>();
+/** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
+const turnSerials = new Map<string, number>();
+let nextTurnSerial = 0;
 
 /** Set a key as the newest, dropping the oldest past the bound. */
 function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
@@ -68,6 +82,17 @@ function remember(map: Map<string, TurnPermissionLevel>, key: string, level: Tur
  */
 export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
   return turnLevels.get(sessionId);
+}
+
+/**
+ * Which turn a conversation is on: a number that changes each time a turn is
+ * sent on it, or `undefined` when this process sent none. Lets a count kept per
+ * turn tell one turn from the next without a hook of its own.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function turnSerialOf(sessionId: string): number | undefined {
+  return turnSerials.get(sessionId);
 }
 
 /**
@@ -95,6 +120,32 @@ export function postLevelFor(
 }
 
 /**
+ * The bound work a caller starts must carry because the caller's turn read an
+ * outsider's words, or `undefined` when it did not (spec
+ * `trusted-by-default-flip` §4.7). Read by `memory_write`, which stamps the
+ * note, and `session_start`, which sends it as the new session's ceiling.
+ *
+ * The caller's session answers when this process recorded a turn on it: its
+ * own level, which bounds no tighter than the turn already ran. A caller with
+ * no session, or one with no record, is read through its agent: while any of
+ * that agent's turns that read an outsider's words is running, the runtime
+ * default, the bound a stranger's own message carries.
+ *
+ * @param sessionId - The calling session, when the surface verified one.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function outsiderBoundOf(
+  sessionId: string | null | undefined,
+  agentPath: string | undefined
+): TurnPermissionBound | undefined {
+  const level = sessionId ? turnLevels.get(sessionId) : undefined;
+  if (level !== undefined) return level.outsider ? level : undefined;
+  return agentPath !== undefined && agentIsReadingOutsider(agentPath)
+    ? 'runtime-default'
+    : undefined;
+}
+
+/**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
  * cannot change it.
@@ -116,6 +167,8 @@ export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | und
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  const serial = turnSerials.get(from);
+  if (serial !== undefined && from !== to) turnSerials.set(to, serial);
 }
 
 /**
@@ -128,13 +181,33 @@ export function entryLevelOf(entryId: string): TurnPermissionLevel | undefined {
 }
 
 /**
- * The level one turn runs at, as well as this process can tell without asking
+ * The level one turn runs at, marked when the turn reads an outsider's words
+ * (spec `trusted-by-default-flip` §4.7): its ceiling carries them (a
+ * stranger's message, a sender DorkOS cannot vouch for, another turn that read
+ * them), or a room shows it a stranger's message it does not answer. The mark
+ * changes no power; it travels with the level to every turn this one's
+ * messages start, and onto every note it saves to memory.
+ */
+function levelForTurn(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): TurnPermissionLevel {
+  const level = powerForTurn(runtime, stored, opts);
+  const outsider =
+    opts?.roomTurn?.outsiderInView === true ||
+    (opts?.permissionCeiling !== undefined && ceilingCarriesOutsider(opts.permissionCeiling));
+  return outsider && !level.outsider ? { ...level, outsider: true } : level;
+}
+
+/**
+ * The power one turn runs at, as well as this process can tell without asking
  * the runtime: the stricter of the stored mode and a per-send mode, else the
  * runtime's default, then held to the turn's ceiling. Errs strict, because what
  * it feeds is a ceiling for somebody else: a runtime that cannot describe its
  * modes records {@link READ_ONLY_LEVEL}.
  */
-function levelForTurn(
+function powerForTurn(
   runtime: AgentRuntime,
   stored: string | null | undefined,
   opts: MessageOpts | undefined
@@ -153,7 +226,7 @@ function levelForTurn(
   const base =
     known.length > 0
       ? known.reduce(stricterLevel)
-      : resolveCeilingLevel(declared, 'runtime-default');
+      : (levelOfMode(declared, declared.default) ?? READ_ONLY_LEVEL);
   return opts?.permissionCeiling !== undefined
     ? stricterLevel(base, resolveCeilingLevel(declared, opts.permissionCeiling))
     : base;
@@ -168,10 +241,28 @@ export function captureTurnLevelOptions(opts: MessageOpts | undefined): Readonly
           asks: value.asks,
           reach: value.reach,
           ...(value.auto === true ? { auto: true as const } : {}),
+          ...(value.outsider === true ? { outsider: true as const } : {}),
         });
   const permissionMode = opts?.permissionMode;
   const ceiling = opts?.permissionCeiling;
+  const cwd = opts?.cwd;
+  const forAgent = opts?.forAgent;
+  const room = opts?.roomTurn;
+  const roomTurn =
+    room === undefined
+      ? undefined
+      : Object.freeze({
+          roomId: room.roomId,
+          authorId: room.authorId,
+          turnId: room.turnId,
+          ...(room.cwd !== undefined ? { cwd: room.cwd } : {}),
+          ...(room.agentPath !== undefined ? { agentPath: room.agentPath } : {}),
+          ...(room.outsiderInView === true ? { outsiderInView: true as const } : {}),
+        });
   return Object.freeze({
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
+    ...(roomTurn !== undefined ? { roomTurn } : {}),
     ...(permissionMode !== undefined ? { permissionMode } : {}),
     ...(ceiling !== undefined
       ? {
@@ -184,6 +275,18 @@ export function captureTurnLevelOptions(opts: MessageOpts | undefined): Readonly
         }
       : {}),
   });
+}
+
+/** Record one original turn under both names of its conversation. */
+function rememberTurnSerial(sessionId: string): void {
+  const serial = ++nextTurnSerial;
+  for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+    turnSerials.delete(id);
+    turnSerials.set(id, serial);
+  }
+  while (turnSerials.size > TURN_LEVEL_MEMORY) {
+    turnSerials.delete(turnSerials.keys().next().value!);
+  }
 }
 
 /**
@@ -202,10 +305,48 @@ export function recordRuntimeTurnLevel(
   sessionId: string,
   opts?: MessageOpts,
   beforeRecord?: () => void
-): void {
+): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
   beforeRecord?.();
   remember(turnLevels, sessionId, level);
+  rememberTurnSerial(sessionId);
+  return level;
+}
+
+/** Where a turn stands and whom it is for, for {@link countWhileRunning}. */
+function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | undefined) {
+  let cwd = opts?.cwd ?? opts?.roomTurn?.cwd;
+  try {
+    cwd ??= runtime.getSessionCwd?.(sessionId);
+  } catch {
+    // An unknown folder is counted under no agent, which marks more, not less.
+  }
+  return { cwd, forAgent: turnAgentOf(opts) };
+}
+
+/** Count the same captured native stream after its genuine registry custody checks. */
+export function countRecordedRuntimeTurnStream(
+  runtime: AgentRuntime,
+  sessionId: string,
+  opts: MessageOpts,
+  level: TurnPermissionLevel,
+  events: AsyncGenerator<StreamEvent>,
+  beforeUse: () => void
+): AsyncGenerator<StreamEvent> {
+  if (!level.outsider) {
+    beforeUse();
+    return events;
+  }
+  const place = placeOf(runtime, sessionId, opts);
+  const counted = countWhileRunning(place, events);
+  // Both runtime folder lookup and home resolution can reenter or retire selection.
+  beforeUse();
+  outsiderPlaces.delete(sessionId);
+  outsiderPlaces.set(sessionId, place);
+  if (outsiderPlaces.size > TURN_LEVEL_MEMORY) {
+    outsiderPlaces.delete(outsiderPlaces.keys().next().value!);
+  }
+  return counted;
 }
 
 /**
@@ -215,7 +356,9 @@ export function recordRuntimeTurnLevel(
  *
  * Synchronous on purpose, like the other decorators at that seam: it records
  * at the call and hands back the runtime's own generator untouched, so it adds
- * no step between a dispatch and the turn it starts.
+ * no step between a dispatch and the turn it starts. The one exception is a
+ * turn that read an outsider's words, whose stream is counted against its
+ * agent while it runs ({@link countWhileRunning}); that adds no step either.
  *
  * @param runtime - The runtime to wrap.
  * @param storedModeOf - Reads a session's stored permission mode; a failure
@@ -239,9 +382,40 @@ export function recordTurnLevels(
           } catch {
             stored = undefined;
           }
-          recordRuntimeTurnLevel(target, stored, sessionId, opts);
-          return target.sendMessage(sessionId, content, opts);
+          const level = levelForTurn(target, stored, opts);
+          remember(turnLevels, sessionId, level);
+          rememberTurnSerial(sessionId);
+          const events = target.sendMessage(sessionId, content, opts);
+          if (!level.outsider) return events;
+          // A caller that cannot name this session can still name its agent.
+          const place = placeOf(target, sessionId, opts);
+          outsiderPlaces.delete(sessionId);
+          outsiderPlaces.set(sessionId, place);
+          if (outsiderPlaces.size > TURN_LEVEL_MEMORY) {
+            outsiderPlaces.delete(outsiderPlaces.keys().next().value!);
+          }
+          return countWhileRunning(place, events);
         };
+      }
+      if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
+        // A turn the agent starts on its own (a Codex wake after background
+        // work) runs under the session's latest dispatched turn, so it is
+        // counted while it runs when that turn read an outsider's words: a
+        // caller with no session (Codex over the external server) is read
+        // through it.
+        const subscribe = target.onRuntimeTurn.bind(target);
+        return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
+          subscribe((sessionId, events) =>
+            listener(
+              sessionId,
+              turnLevels.get(sessionId)?.outsider
+                ? countWhileRunning(
+                    outsiderPlaces.get(sessionId) ?? placeOf(target, sessionId, undefined),
+                    events
+                  )
+                : events
+            )
+          );
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;

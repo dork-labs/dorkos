@@ -1,52 +1,53 @@
-/** Preserve pre-merge Doc databases across the immutable shipped Main148 migration. */
+const publishedMigrationOwners = new WeakMap<
+  object,
+  { db: Db; folder: string; rows: MigrationRow[] }
+>();
+const migrationOwnerGet = WeakMap.prototype.get;
+const migrationOwnerSet = WeakMap.prototype.set;
+const migrationOwnerDelete = WeakMap.prototype.delete;
+const migrationOwnerApply = Reflect.apply;
+/** Internal lookup has no issuer; only the original bridge reads and registers actual bookkeeping. */
+export function requirePublishedMigrationOwner(key: object): {
+  db: Db;
+  folder: string;
+  rows: MigrationRow[];
+} {
+  const context = migrationOwnerApply(migrationOwnerGet, publishedMigrationOwners, [key]) as
+    { db: Db; folder: string; rows: MigrationRow[] } | undefined;
+  if (!context) throw new Error('Original migration bookkeeping owner required');
+  return context;
+}
+/** Preserve exact published Doc histories across shipped Main migrations. */
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import type { Db } from './index.js';
-import { constructDatabase } from './database-construction.js';
-
-type MigrationEntry = {
-  idx: number;
-  version: string;
-  when: number;
-  tag: string;
-  breakpoints: boolean;
-};
-type MigrationRow = { rowIdentity: number; id: number | null; hash: string; created_at: number };
-const main = {
-  idx: 148,
-  version: '6',
-  when: 1791478831717,
-  tag: '20261008170031_session_touches',
-  breakpoints: true,
-  hash: '88183c88d16354ffb5472ed57e4b03e94c26b00e95bdcb22a605b3df3be995b2',
-} as const;
-const docs = [
-  {
-    oldWhen: 1791414422000,
-    when: 1791478832000,
-    tag: '20261008170032_doc_room_admissions',
-    hash: 'c156544a648a0d5dd48a5147f2488420d8460da5ea9e0c596afdd407486adc84',
-  },
-  {
-    oldWhen: 1791414423000,
-    when: 1791478833000,
-    tag: '20261008170033_doc_room_pending_sources',
-    hash: '934167d31e86442927414b4ef1790e60ddc3d1d7af51285b59411d135514fc49',
-  },
-  {
-    oldWhen: 1791414424000,
-    when: 1791478834000,
-    tag: '20261008170034_lowly_molecule_man',
-    hash: 'f85a83fc7fc5adc1764d1c10e089acdd3d0ea874139c5757bbff58ca77ed0825',
-  },
-] as const;
-
-function refuse(detail: string): never {
-  throw new Error(`Invalid legacy Doc migration history: ${detail}`);
-}
+import {
+  main,
+  docs,
+  consolidatedDoc,
+  reportBack,
+  agentReports,
+  commitments,
+  channelLeads,
+  agentPauses,
+  heartbeats,
+  remoteCommandJournal,
+  heartbeatReportItems,
+  remoteEventRefusals,
+  heartbeatOutboxDeliveredAt,
+  reviewedSql,
+  refuse,
+  type MigrationEntry,
+  type MigrationRow,
+} from './doc-migration-identities.js';
+import {
+  bridgePublishedRoomMigration,
+  bridgePreviousConsolidatedDoc,
+} from './doc-migration-published-room.js';
+import { verifyCanonicalSchema } from './doc-migration-schema.js';
 
 /**
  * Drizzle uses the newest timestamp as its migration watermark. Old Doc rows
@@ -70,6 +71,17 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
       'SELECT rowid AS rowIdentity, id, hash, created_at FROM __drizzle_migrations ORDER BY rowid'
     )
     .all() as MigrationRow[];
+  const publishedOwnerKey = {};
+  migrationOwnerApply(migrationOwnerSet, publishedMigrationOwners, [
+    publishedOwnerKey,
+    { db, folder, rows },
+  ]);
+  try {
+    if (bridgePreviousConsolidatedDoc(publishedOwnerKey)) return;
+    if (bridgePublishedRoomMigration(publishedOwnerKey)) return;
+  } finally {
+    migrationOwnerApply(migrationOwnerDelete, publishedMigrationOwners, [publishedOwnerKey]);
+  }
   const recorded = docs.map((doc) => rows.filter((row) => row.hash === doc.hash));
   let gap = false;
   for (const [i, matching] of recorded.entries()) {
@@ -139,15 +151,15 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     return bytes;
   });
   const chat = journal.entries[149];
-  const consolidated = journal.entries[150];
+  const consolidated = journal.entries[consolidatedDoc.idx];
   if (
     !chat ||
     chat.idx !== 149 ||
     chat.tag !== '20261009171311_chat_messages' ||
     !consolidated ||
-    consolidated.idx !== 150 ||
-    consolidated.tag !== '20261009202012_sleepy_killer_shrike' ||
-    journal.entries.length < 151
+    consolidated.idx !== consolidatedDoc.idx ||
+    consolidated.tag !== consolidatedDoc.tag ||
+    journal.entries.length <= consolidatedDoc.idx
   )
     refuse('current shipped Chat and regenerated Doc journal differs');
   const chatBytes = readFileSync(path.join(folder, `${chat.tag}.sql`));
@@ -157,20 +169,58 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
   if (
     chatHash !== '55b1201b98db390ccf33bb4069645f6c542ef20739f8bd1a2e4c1078275582fc' ||
     chat.when !== 1791565991417 ||
-    consolidated.when !== 1791577212201 ||
-    finalHash !== '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f'
+    consolidated.when !== consolidatedDoc.when ||
+    finalHash !== consolidatedDoc.hash
   )
     refuse('regenerated migration differs from reviewed SQL');
+  const shipped = [
+    reportBack,
+    agentReports,
+    commitments,
+    channelLeads,
+    agentPauses,
+    heartbeats,
+    remoteCommandJournal,
+    heartbeatReportItems,
+    remoteEventRefusals,
+    heartbeatOutboxDeliveredAt,
+  ];
+  const shippedSql = shipped.map((entry) => reviewedSql(folder, entry));
+  reviewedSql(folder, consolidatedDoc);
+  const reportRows = rows.filter((row) => row.hash === reportBack.hash);
+  const agentRows = rows.filter((row) => row.hash === agentReports.hash);
+  const shippedRows = shipped.map((entry) => rows.filter((row) => row.hash === entry.hash));
   const chatRows = rows.filter((row) => row.hash === chatHash);
   const finalRows = rows.filter((row) => row.hash === finalHash);
   for (const [matching, entry] of [
     [chatRows, chat],
+    [reportRows, reportBack],
+    [agentRows, agentReports],
+    [shippedRows[2]!, commitments],
+    [shippedRows[3]!, channelLeads],
+    [shippedRows[4]!, agentPauses],
+    [shippedRows[5]!, heartbeats],
+    [shippedRows[6]!, remoteCommandJournal],
+    [shippedRows[7]!, heartbeatReportItems],
+    [shippedRows[8]!, remoteEventRefusals],
+    [shippedRows[9]!, heartbeatOutboxDeliveredAt],
     [finalRows, consolidated],
   ] as const) {
     if (matching.length > 1 || (matching[0] && matching[0].created_at !== entry.when))
       refuse('current migration bookkeeping differs');
   }
-  const futureRows = journal.entries.slice(151).flatMap((entry) => {
+  let shippedGap = false;
+  let shippedIdentity = 0;
+  for (const matching of shippedRows) {
+    if (!matching.length) {
+      shippedGap = true;
+      continue;
+    }
+    if (shippedGap || matching[0]!.rowIdentity <= shippedIdentity)
+      refuse('shipped Main history is not an ordered contiguous prefix');
+    shippedIdentity = matching[0]!.rowIdentity;
+  }
+  const futureRows = journal.entries.slice(consolidatedDoc.idx + 1).flatMap((entry) => {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex');
@@ -189,15 +239,26 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
         !recorded.flat().includes(row) &&
         !mainRows.includes(row) &&
         !chatRows.includes(row) &&
+        !reportRows.includes(row) &&
+        !agentRows.includes(row) &&
+        !shippedRows.flat().includes(row) &&
         !finalRows.includes(row) &&
         !futureRows.includes(row)
     )
   )
     refuse('unexpected migration after the published prefix');
   if (finalRows.length) {
-    if (recorded.some((matching) => matching.length !== 1) || legacy.length || !chatRows.length)
+    if (
+      recorded.some((matching) => matching.length !== 1) ||
+      legacy.length ||
+      !chatRows.length ||
+      !reportRows.length ||
+      !agentRows.length ||
+      shippedRows.some((matching) => matching.length !== 1) ||
+      finalRows[0]!.rowIdentity <= shippedIdentity
+    )
       refuse('incomplete historical prefix claims consolidated migration');
-    // A durable completed150 permits ordinary future migrations; never replay Doc DDL.
+    // A durable accepted canonical completion permits ordinary future migrations; never replay Doc DDL.
     return;
   }
 
@@ -256,6 +317,7 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
   })();
   // The immutable shipped Chat migration follows the historical Doc timestamps.
   const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-chat149-'));
+  let chatFailure: { cause: unknown } | undefined;
   try {
     mkdirSync(path.join(temporary, 'meta'));
     writeFileSync(
@@ -268,124 +330,30 @@ export function bridgeLegacyDocMigrationHistory(db: Db, folder: string): void {
     );
     writeFileSync(path.join(temporary, `${chat.tag}.sql`), chatBytes);
     migrate(db, { migrationsFolder: temporary });
+  } catch (cause) {
+    chatFailure = { cause };
   } finally {
-    rmSync(temporary, { recursive: true, force: true });
+    try {
+      rmSync(temporary, { recursive: true, force: true });
+    } catch (cause) {
+      chatFailure ??= { cause };
+    }
   }
+  if (chatFailure) throw chatFailure.cause;
   // Original Doc DDL is already present; never replay consolidated CREATEs.
   // Only an exact final schema/FK match permits recording that covered step.
   sqlite.transaction(() => {
+    for (const [i, entry] of shipped.entries()) {
+      if (shippedRows[i]!.length) continue;
+      for (const statement of shippedSql[i]!.toString('utf8').split('--> statement-breakpoint'))
+        if (statement.trim()) sqlite.exec(statement);
+      sqlite
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        .run(entry.hash, entry.when);
+    }
     verifyCanonicalSchema(db, folder);
     sqlite
       .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
       .run(finalHash, consolidated.when);
   })();
-}
-
-/** Compare real PRAGMA structure and CHECK/index semantics against a fresh canonical migration. */
-function verifyCanonicalSchema(db: Db, folder: string): void {
-  const reference = constructDatabase(':memory:').db;
-  const temporary = mkdtempSync(path.join(os.tmpdir(), 'dorkos-doc-schema-'));
-  try {
-    const journal = JSON.parse(readFileSync(path.join(folder, 'meta/_journal.json'), 'utf8')) as {
-      version: string;
-      dialect: string;
-      entries: MigrationEntry[];
-    };
-    mkdirSync(path.join(temporary, 'meta'));
-    writeFileSync(
-      path.join(temporary, 'meta/_journal.json'),
-      JSON.stringify({
-        ...journal,
-        entries: journal.entries.slice(0, 151),
-      })
-    );
-    for (const entry of journal.entries.slice(0, 151))
-      writeFileSync(
-        path.join(temporary, `${entry.tag}.sql`),
-        readFileSync(path.join(folder, `${entry.tag}.sql`))
-      );
-    migrate(reference, { migrationsFolder: temporary });
-    const normalize = (sql: string) => sql.replace(/[`"\s]/g, '');
-    const tableNames = (value: Db) =>
-      value.$client
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='__drizzle_migrations' ORDER BY name"
-        )
-        .all()
-        .map((row) => (row as { name: string }).name);
-    const expected = tableNames(reference);
-    if (JSON.stringify(tableNames(db)) !== JSON.stringify(expected))
-      refuse('legacy table membership differs');
-    const stable = (rows: unknown[]) =>
-      JSON.stringify(
-        rows
-          .map((row) => {
-            const { id: _id, ...rest } = row as Record<string, unknown>;
-            return rest;
-          })
-          .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      );
-    for (const name of expected) {
-      const escaped = name.replaceAll("'", "''");
-      for (const pragma of ['table_xinfo', 'foreign_key_list']) {
-        const read = (value: Db) => value.$client.prepare(`PRAGMA ${pragma}('${escaped}')`).all();
-        if (stable(read(db)) !== stable(read(reference)))
-          refuse(`legacy ${name} ${pragma} differs`);
-      }
-      const readIndexes = (value: Db) =>
-        value.$client
-          .prepare(
-            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL ORDER BY name"
-          )
-          .all(name)
-          .map((row) => {
-            const index = row as { name: string; sql: string };
-            return { name: index.name, sql: normalize(index.sql) };
-          });
-      if (JSON.stringify(readIndexes(db)) !== JSON.stringify(readIndexes(reference)))
-        refuse(`legacy ${name} indexes differ`);
-      const checks = (value: Db) => {
-        const row = value.$client
-          .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
-          .get(name) as { sql: string };
-        const sql = row.sql;
-        const expressions: string[] = [];
-        // SQLite's own stored CREATE SQL; walk balanced CHECK expressions including quoted literals.
-        for (let at = 0; at < sql.length; at++) {
-          const match = /^CHECK\s*\(/i.exec(sql.slice(at));
-          if (!match) continue;
-          let end = at + match[0].length,
-            depth = 1,
-            quote = '';
-          const start = end;
-          for (; end < sql.length && depth; end++) {
-            const character = sql[end]!;
-            if (quote) {
-              if (character === quote) {
-                if (sql[end + 1] === quote) end++;
-                else quote = '';
-              }
-            } else if (character === "'" || character === '"' || character === '`')
-              quote = character;
-            else if (character === '(') depth++;
-            else if (character === ')') depth--;
-          }
-          if (depth) refuse('invalid stored CHECK expression');
-          expressions.push(normalize(sql.slice(start, end - 1)));
-          at = end - 1;
-        }
-        return expressions.sort();
-      };
-      if (JSON.stringify(checks(db)) !== JSON.stringify(checks(reference)))
-        refuse(`legacy ${name} checks differ`);
-    }
-    if (db.$client.prepare('PRAGMA foreign_key_check').all().length)
-      refuse('legacy foreign keys differ');
-  } finally {
-    try {
-      reference.$client.close();
-    } finally {
-      rmSync(temporary, { recursive: true, force: true });
-    }
-  }
 }

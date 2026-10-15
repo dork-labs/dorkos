@@ -195,6 +195,13 @@ export interface RoomContextMember extends RoomContextAuthor {
    * on an answer that is never coming.
    */
   responseMode?: ResponseMode;
+  /**
+   * An agent nobody at its directory answers for any more (DOR-2095), kept as a
+   * member only because a direct message is named by who is in it. Present only
+   * when true, the same rule the app's roster follows, so an agent does not wait
+   * on a reply that cannot come (DOR-2364).
+   */
+  retired?: true;
 }
 
 /** One room entry, flattened for the model. */
@@ -765,6 +772,13 @@ export interface RoomContextData {
     engagedPostsLeft: number | null;
     /** True when the triggering entry mentioned this agent by name. */
     addressedNow: boolean;
+    /**
+     * Why a person is owed an answer from this agent though the message did not
+     * name it (DOR-2823): `'conversation'` when the person is talking with this
+     * agent here, `'lead'` when nobody else is answering and this agent leads
+     * the channel. Absent otherwise. An owed turn is never offered silence.
+     */
+    answerOwed?: 'conversation' | 'lead';
   };
   /**
    * What is left to spend, on the precedent {@link RelayContextData} set with
@@ -1233,6 +1247,7 @@ export const RoomContextDataSchema = z.object({
     engagedUntil: z.string().nullable(),
     engagedPostsLeft: z.number().int().nullable(),
     addressedNow: z.boolean(),
+    answerOwed: z.enum(['conversation', 'lead']).optional(),
   }),
   budget: z.object({
     automaticRepliesLeftInThisRoomThisHour: z.number().int().nullable(),

@@ -31,10 +31,19 @@ export interface CommunityRefusal {
   code: string;
   /** Plain wording safe to show a person. */
   error: string;
+  /** Whole seconds until the person can try again, sent on as `Retry-After`. Slow mode only. */
+  retryAfterSeconds?: number;
 }
 
 /** The action being attempted, when it changes what a refusal means. */
-export type CommunityRefusalAction = 'enroll-agent';
+export type CommunityRefusalAction = 'enroll-agent' | 'rename' | 'accept-rules' | 'report';
+
+/** What a Community's `409 STATE_CONFLICT` means for a person's own conduct (DOR-2770). */
+const CONDUCT_CONFLICTS: Partial<Record<CommunityRefusalAction, string>> = {
+  rename: 'That name is taken in this space. Try another.',
+  'accept-rules': 'The rules changed. Read them again first.',
+  report: 'You can’t report this message.',
+};
 
 const NOT_FOUND: CommunityRefusal = {
   status: 404,
@@ -83,6 +92,25 @@ const LIMIT_MESSAGES: Partial<Record<string, string>> = {
   STORAGE_LIMIT_REACHED: 'This space is out of file space.',
 };
 
+/** A post the space's moderation holds, by the Community's code (DOR-2768). */
+const MODERATION_HOLDS: Partial<Record<string, CommunityRefusal>> = {
+  COMMUNITY_MUTED: {
+    status: 403,
+    code: 'COMMUNITY_MUTED',
+    error: 'You’re muted in this space for now.',
+  },
+  COMMUNITY_SLOW_MODE: {
+    status: 429,
+    code: 'COMMUNITY_SLOW_MODE',
+    error: 'This channel is in slow mode. Wait a moment, then post again.',
+  },
+  COMMUNITY_RULES_NOT_ACCEPTED: {
+    status: 403,
+    code: 'COMMUNITY_RULES_NOT_ACCEPTED',
+    error: 'Accept this space’s rules before you post.',
+  },
+};
+
 /**
  * Map a refused Community request to a local answer.
  *
@@ -123,6 +151,14 @@ export function communityRefusal(
   if (remoteCode === 'COMMUNITY_SUSPENDED')
     return { status: 423, code: 'COMMUNITY_SUSPENDED', error: 'This space is suspended.' };
   if (status < 400 || status >= 500) return null;
+  // The space's moderation holds this person's posts: say which hold, so they know what to do.
+  const held = remoteCode ? MODERATION_HOLDS[remoteCode] : undefined;
+  if (held && remoteCode === 'COMMUNITY_SLOW_MODE' && error.retryAfterSeconds)
+    return { ...held, retryAfterSeconds: error.retryAfterSeconds };
+  if (held) return held;
+  const conflict = action && status === 409 ? CONDUCT_CONFLICTS[action] : undefined;
+  if (conflict && remoteCode === 'STATE_CONFLICT')
+    return { status: 409, code: 'COMMUNITY_CONFLICT', error: conflict };
   switch (status) {
     case 401:
     case 403:

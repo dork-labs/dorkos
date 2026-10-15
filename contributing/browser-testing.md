@@ -46,7 +46,7 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 
 ```
 apps/e2e/
-├── playwright.config.ts      # Multi-server config (Vite + Express)
+├── playwright.config.ts      # Multi-server config (Vite + the Hono server)
 ├── manifest.json              # Test registry + run history (regenerable, gitignored — DOR-726)
 ├── manifest-curated.json      # Hand-curated relatedCode/explorationNotes (tracked)
 ├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
@@ -75,7 +75,7 @@ apps/e2e/
     ├── dashboard-sidebar/     # Roster groups and drag-and-drop
     ├── pulse/                 # Pulse panel tests
     ├── relay/                 # Relay "Connections" dialog + adapter wizard
-    ├── production/            # The built app served by Express, real CSP
+    ├── production/            # The built app served by the server, real CSP
     ├── rooms/                 # Channels, DMs, mentions, palette
     ├── settings/
     └── tasks/                 # Tasks Scheduler dialog
@@ -196,11 +196,11 @@ test.describe('Feature — Description @smoke', () => { ... });
 | `cd apps/e2e && PWDEBUG=1 npx playwright test <file>` | Debug mode                      |
 | `cd apps/e2e && npx playwright show-report`           | View HTML report                |
 
-The `webServer` config in `playwright.config.ts` auto-starts every leg the run needs — the Express and Vite servers, and (opt-in) the marketing site and production legs. No run adopts a server it did not start, so a busy port is a startup error naming that port rather than a silent attachment. `apps/e2e/README.md` has the port table and the isolated-run recipe.
+The `webServer` config in `playwright.config.ts` auto-starts every leg the run needs — the Hono and Vite servers, and (opt-in) the marketing site and production legs. No run adopts a server it did not start, so a busy port is a startup error naming that port rather than a silent attachment. `apps/e2e/README.md` has the port table and the isolated-run recipe.
 
 ### The production leg (`E2E_PROD`)
 
-Almost every spec loads the app from Vite, which serves its own shell with **no `Content-Security-Policy` header**. The shipped policy goes out only with the built shell an `NODE_ENV=production` Express server serves, so a directive that breaks a real browser surface used to be invisible to this entire suite (DOR-560 shipped one). `E2E_PROD=1` boots that leg — the built client, served the way production serves it — and the `chromium-production` project runs `tests/production/` against it. It is on by default in CI and off by default locally, because it has to build the client first.
+Almost every spec loads the app from Vite, which serves its own shell with **no `Content-Security-Policy` header**. The shipped policy goes out only with the built shell an `NODE_ENV=production` server serves, so a directive that breaks a real browser surface used to be invisible to this entire suite (DOR-560 shipped one). `E2E_PROD=1` boots that leg — the built client, served the way production serves it — and the `chromium-production` project runs `tests/production/` against it. It is on by default in CI and off by default locally, because it has to build the client first.
 
 Keep it a smoke subset: the shell booting, and the surfaces the policy can silently take away. Ordinary feature coverage belongs on the app leg. Never drive a turn there — that leg registers the real Claude Code runtime.
 
@@ -355,7 +355,7 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### How It Works
 
-1. Playwright starts a second Express server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243, env `DORKOS_MOCK_PORT`)
+1. Playwright starts a second server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243, env `DORKOS_MOCK_PORT`)
 2. A second Vite client on `MOCK_VITE_PORT` (default 4248, env `DORKOS_MOCK_VITE_PORT`) proxies `/api` to the mock server
 3. Tests configure scenarios via `POST /api/test/scenario` before each interaction
 4. The `chromium-mock` Playwright project targets the mock Vite client
@@ -367,13 +367,13 @@ Every row names the env var that MOVES the leg — the name you set, not the
 
 | Env var (default)                 | Service                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
-| `DORKOS_COCKPIT_PORT` (4245)      | App Express server                                                        |
+| `DORKOS_COCKPIT_PORT` (4245)      | App server                                                                |
 | `DORKOS_COCKPIT_VITE_PORT` (4244) | Vite client proxying to the app server                                    |
-| `DORKOS_MOCK_PORT` (4243)         | Test-mode Express server                                                  |
+| `DORKOS_MOCK_PORT` (4243)         | Test-mode server                                                          |
 | `DORKOS_MOCK_VITE_PORT` (4248)    | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
-| `DORKOS_PROD_PORT` (4246)         | Production Express server, serving the built client (opt-in, `E2E_PROD`)  |
+| `DORKOS_PROD_PORT` (4246)         | Production server, serving the built client (opt-in, `E2E_PROD`)          |
 
-Every Express leg runs against a throwaway `DORK_HOME` under `/tmp`, keyed by that
+Every server leg runs against a throwaway `DORK_HOME` under `/tmp`, keyed by that
 leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>`,
 `/tmp/dorkos-test-mode-<port>` and `/tmp/dorkos-production-<port>`. No run reads or writes the dev data directory
 (`apps/server/.temp/.dork`) or a real `~/.dork` (DOR-1223). The app leg reads
@@ -413,6 +413,30 @@ The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock 
 Both halves matter, and the second one used to be missing (DOR-1142). `GET /api/sessions/recent` and `/daily-counts` fan out over `meshCore.listWithPaths()`, so a directory the mesh has never heard of contributes no sessions however many it holds — which left every sidebar zone built from recent sessions (Today, Heads-up) structurally empty on the test-mode leg. **Do not hand-roll registration around it.** Three suites once carried their own `POST /api/mesh/agents` dance in `beforeEach`; all three are deleted. That route is also the wrong tool here — it seats the agent in `#team`, which is a cross-project side effect on a server another project also drives. (It no longer mints a second id over the manifest's own: since DOR-1019 it adopts a manifest already on disk rather than rewriting it.)
 
 The fixture's id is derived from its directory, so re-seeding in a per-test `beforeEach` is a true upsert rather than a new identity each time. Nothing needs unregistering between tests, and `POST /api/test/reset` deliberately leaves the mesh alone.
+
+### Test-Mode DorkOS Cloud
+
+Every test-mode server talks to an in-process fake of DorkOS Cloud instead of the real service (DOR-2783), so linking an account, minting a credits token and running a chat on DorkOS credits all work offline and charge nothing. `services/runtimes/test-mode/compose-test-cloud.ts` wires it, reached only through the gated dynamic import in `index.ts`; each fake also throws if built outside `DORKOS_TEST_RUNTIME`.
+
+| Piece                          | What it answers                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fake-cloud-link.ts`           | The device link. Its code (`DORK-2F7Q`) points at `GET /api/test/fake-cloud/approve?code=` on this server; opening that page approves the code on the next poll, and nothing else does. A flow that never opens it (the capture pipeline) sets `DORKOS_TEST_CLOUD_AUTO_APPROVE=true`, and the fake then approves after two polls.                  |
+| `fake-cloud-v1.ts`             | Every `/v1` call, through `setCloudV1Fetch` in `core/cloud/v1-client.ts`: session, free entitlements, a balance with `paymentMethodOnFile: true`, the inference token (serves `openaiChat` only) and its revoke, and a one-model catalog (`dorkos-test-model`). Each answer is parsed against `@dork-labs/cloud-api` first. Any other path throws. |
+| `fake-inference.ts`            | `GET /api/test/fake-inference/v1/models` and a streamed `POST …/v1/chat/completions` that always replies "Hi! I can build that for you." The fake token's endpoints point here.                                                                                                                                                                    |
+| `DORKOS_TEST_RUNTIME_DOE=true` | Also registers the DorkOS runtime (`doe`) beside `TestModeRuntime`. It runs only on DorkOS credits (the fake token): a turn on an own key or a local model is refused before anything is sent. Off by default, so existing suites see the same runtime set.                                                                                        |
+
+To drive it by hand, start a throwaway server on a free port and link from the app or with `curl`:
+
+```bash
+DORK_HOME=$(mktemp -d) NODE_ENV=development DORKOS_PORT=7342 DORKOS_HOST=127.0.0.1 \
+  DORKOS_BOUNDARY=$PWD DORKOS_TEST_RUNTIME=true DORKOS_TEST_RUNTIME_DOE=true \
+  node apps/server/node_modules/tsx/dist/cli.mjs apps/server/src/index.ts
+curl -X POST localhost:7342/api/cloud/link/start -H 'content-type: application/json' -d '{}'
+open 'http://127.0.0.1:7342/api/test/fake-cloud/approve?code=DORK-2F7Q'
+curl localhost:7342/api/cloud/credits   # "ready": true, doe "wired"
+```
+
+The reads a linked computer makes on its own are scripted too, as empty, schema-valid answers: usage, offers, organizations, a nudge and hosted communities (both a 404, so nothing renders), managed connections and their events. A fresh server linked from Settings › DorkOS account logs no Cloud errors. Any other path throws; add a route to the fake when a test needs one rather than letting it reach the network.
 
 ### Writing Mock Browser Tests
 

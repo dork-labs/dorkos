@@ -23,7 +23,7 @@
  * That would make this surface unavailable in exactly the situation it exists
  * for — a user's machine, mid-incident — because turning it on needs a restart,
  * and a restart destroys the in-memory state you wanted to read. So it is always
- * mounted, inheriting the app-wide `hostGuard` + `sessionGate` stack with no
+ * mounted, inheriting the `/api` chain's host guard and session gate with no
  * carve-out of its own: when local login is on, this needs the operator's
  * credential exactly like `/api/sessions` does.
  *
@@ -51,10 +51,12 @@
  *
  * @module routes/debug
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { configManager } from '../services/core/config-manager.js';
 import {
   DocChannelMetricsUnavailableError,
@@ -62,7 +64,9 @@ import {
 } from '../services/observability/doc-channel-metrics.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { canReadSession, readerOfRequest, SESSION_NOT_FOUND_BODY } from './audit-reader.js';
+import { readableSessionIds } from '../services/audit/session-visibility.js';
 import {
   recentDispatches,
   recentRefusals,
@@ -116,7 +120,23 @@ export interface DebugDeps {
   relayTraceStore?: TraceStore;
 }
 
-const router = Router();
+/**
+ * Drop the rows about a session this caller may not read (spec `audit-trail`
+ * §3.4), so a debug list never names a person's own chat to an agent. Rows
+ * about no session stay. The owner gets every row.
+ *
+ * @param caller - The request's facts, for the reader.
+ * @param rows - The rows to filter.
+ */
+function readableRows<T extends { sessionId?: string }>(caller: RequestFacts, rows: T[]): T[] {
+  const reader = readerOfRequest(caller);
+  if (reader.kind === 'owner') return rows;
+  const readable = readableSessionIds(
+    reader,
+    rows.flatMap((row) => (row.sessionId === undefined ? [] : [row.sessionId]))
+  );
+  return rows.filter((row) => row.sessionId === undefined || readable.has(row.sessionId));
+}
 
 /** How many buffered rows a request gets when it does not say. */
 const DEFAULT_LIMIT = 50;
@@ -137,178 +157,222 @@ function readLimit(raw: unknown): number {
   return Math.max(1, Math.min(parsed, DISPATCH_BUFFER_SIZE));
 }
 
-// GET /api/debug/dispatches — who is working right now, and what ran recently.
-router.get('/dispatches', (req, res) => {
-  // A room with no service wired (a bare unit-test app) reports no claims
-  // rather than failing the whole response: this endpoint is read during an
-  // incident, which is when a subsystem is most likely to be mid-crash.
-  let claims: unknown[] = [];
-  // Beside the claims, because the pair is the question: who is working, and who
-  // is waiting on somebody who is. A room with neither a claim nor an answer is
-  // otherwise indistinguishable from a room whose message was lost.
-  let holds: unknown[] = [];
-  try {
-    const rooms = getRoomService();
-    claims = rooms.listActiveClaims();
-    holds = rooms.listHolds();
-  } catch {
-    // No room service wired, or it is mid-crash. Whatever was gathered before
-    // the throw is kept and reported — so if `listActiveClaims()` returned and
-    // `listHolds()` threw, you get the real claims beside an empty `holds`,
-    // rather than both blanked (which is what the earlier `claims = []; holds =
-    // []` here did). That is deliberate for this endpoint: it is read during an
-    // incident, and half an answer beats none. It does mean an empty array is
-    // "nothing to report" and "could not be read" at once — acceptable for a
-    // debug view, and the reason nothing else should copy this shape.
-  }
-  res.json({ claims, holds, recent: recentDispatches(readLimit(req.query.limit)) });
-});
+/**
+ * Build the diagnostic reads.
+ *
+ * @param source - The live reads no module singleton reaches, read per request;
+ *   see {@link DebugDeps}. A part that is missing degrades its own read.
+ */
+export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-// GET /api/debug/refusals — every path that recently declined to do the obvious thing.
-router.get('/refusals', (req, res) => {
-  res.json({ refusals: recentRefusals(readLimit(req.query.limit)) });
-});
-
-// GET /api/debug/phantom-cancellations — how often the CLI cancelled its own
-// pending tool calls, split by which sender saw it (DOR-1087, DOR-1288). This is
-// the read spec `persistent-session-runtime` task 5.1 samples to compare the
-// flag-off and flag-on legs of its measurement.
-router.get('/phantom-cancellations', (req, res) => {
-  res.json(phantomCancellationStats(readLimit(req.query.limit)));
-});
-
-// GET /api/debug/auto-mode-stops — how often auto mode stopped the agent on a
-// DorkOS tool, beside how many host-context notes DorkOS attached in the same
-// window (spec `auto-mode-classifier-context`). Read with
-// `DORKOS_CLASSIFIER_CONTEXT` on and again with it off to measure whether the
-// notes removed any stops.
-router.get('/auto-mode-stops', (_req, res) => {
-  res.json(autoModeStopStats());
-});
-
-// GET /api/debug/projectors — the live projector registry.
-router.get('/projectors', (_req, res) => {
-  res.json({ projectors: listProjectorDebugCounters() });
-});
-
-// GET /api/debug/sessions/:id — one session's live spine.
-router.get('/sessions/:id', async (req, res) => {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-  const projector = peekProjector(sessionId);
-  // `resolveSessionRuntime`, not `getSessionRuntimeType`, for the second half it
-  // returns: an id nothing has bound resolves through the registry's legacy
-  // inference to `claude-code`, and a room placeholder is exactly such an id
-  // (DOR-1780). Reporting the guess as the runtime made this surface state as
-  // fact something no other surface would agree with. `bound: false` says the
-  // type is what this session WOULD get, not what it has.
-  const resolution = await runtimeRegistry
-    .resolveSessionRuntime(sessionId)
-    .catch(() => null as { type: string; bound: boolean } | null);
-  const runtime = resolution?.type ?? null;
-  const lock = runtimeRegistry.has(runtime ?? '')
-    ? (runtimeRegistry.get(runtime as string)?.getLockInfo(sessionId) ?? null)
-    : null;
-
-  // The `'record'`-mode rows a room-driven claude-code session writes (DOR-784)
-  // had NO reader until this line. Three rows a turn were being written to prove
-  // a turn had run at all, and the only way to see them was to open the
-  // database by hand — which is the shape of problem this whole surface exists
-  // to remove. Counts and the newest boundary only; the payloads carry text.
-  const store = getSessionEventStore();
-  const recorded = store?.readAll(sessionId) ?? [];
-  const byType: Record<string, number> = {};
-  for (const event of recorded) byType[event.type] = (byType[event.type] ?? 0) + 1;
-
-  res.json({
-    sessionId,
-    runtime,
-    // `false` when `runtime` above is the registry's inference rather than a
-    // recorded owner; `null` when the read itself failed.
-    runtimeBound: resolution?.bound ?? null,
-    ...(projector
-      ? projector.debugCounters()
-      : { lifecycle: null, seq: null, subscribers: null, waiters: null }),
-    projectorLive: projector !== undefined,
-    lockHeldBy: lock?.clientId ?? null,
-    lockAcquiredAt: lock ? new Date(lock.acquiredAt).toISOString() : null,
-    pendingInteractions: (projector?.getPendingInteractions() ?? []).map((pending) => ({
-      // The DTO carries the prompt itself — the tool's input, the questions.
-      // Only the shape of the wait crosses this boundary.
-      kind: pending.type,
-      toolName: 'toolName' in pending ? pending.toolName : undefined,
-      startedAt: new Date(pending.startedAt).toISOString(),
-      remainingMs: pending.remainingMs,
-    })),
-    durableEvents: { total: recorded.length, byType },
-  });
-});
-
-// GET /api/debug/rooms/:id/bindings — do this room's sessions still have their
-// conversations? Two answers, and the response says when they differ.
-router.get('/rooms/:id/bindings', async (req, res) => {
-  const roomId = req.params.id;
-  const deps = (req.app.locals.debugDeps ?? {}) as DebugDeps;
-  const bindings = (deps.roomSessions?.listRoomSessions() ?? []).filter(
-    (binding) => binding.roomId === roomId
-  );
-  // Every slug folder under every root, read ONCE for the whole request. Probing
-  // per binding meant `roots x bindings` directory reads, and a busy room with
-  // a dozen agents turned one debug read into hundreds of syscalls.
-  const slugDirs = listSlugDirs(deps.transcriptProjectRoots?.() ?? []);
-  const probe = deps.roomBindingTranscripts;
-
-  // Sequential for the reason the shared survey is: this walks a disk on behalf
-  // of a report somebody is reading mid-incident, and a burst of parallel reads
-  // on a room with a dozen agents buys nothing worth the load.
-  const rows: Array<{
-    authorId: string;
-    sessionId: string;
-    canonical: CanonicalVerdict;
-    anySlugSweepFound: boolean;
-    divergence: BindingDivergence;
-  }> = [];
-  for (const binding of bindings) {
-    // The raw incident read: is there a file named for this session id under
-    // ANY project slug? Kept because it is the question a person poking at a
-    // broken install actually types, and because it is the half that catches a
-    // transcript that exists somewhere the canonical probe will not look.
-    const anySlugSweepFound = transcriptExists(slugDirs, binding.sessionId);
-    // The canonical read: the same probe, on the same object, that the doctor
-    // and the boot sweep ask (DOR-805). Neither the verdict's `agentPath` nor
-    // its `error` is returned — both are free-form and this surface is not.
-    const canonical: CanonicalVerdict = probe
-      ? (await probeRoomBindingTranscript(binding, probe)).verdict
-      : 'unavailable';
-    rows.push({
-      authorId: binding.authorId,
-      sessionId: binding.sessionId,
-      canonical,
-      anySlugSweepFound,
-      divergence: divergenceOf(canonical, anySlugSweepFound),
+  // GET /api/debug/dispatches — who is working right now, and what ran recently.
+  router.get('/dispatches', (c) => {
+    // A room with no service wired (a bare unit-test app) reports no claims
+    // rather than failing the whole response: this endpoint is read during an
+    // incident, which is when a subsystem is most likely to be mid-crash.
+    let claims: unknown[] = [];
+    // Beside the claims, because the pair is the question: who is working, and who
+    // is waiting on somebody who is. A room with neither a claim nor an answer is
+    // otherwise indistinguishable from a room whose message was lost.
+    let holds: unknown[] = [];
+    try {
+      const rooms = getRoomService();
+      claims = rooms.listActiveClaims();
+      holds = rooms.listHolds();
+    } catch {
+      // No room service wired, or it is mid-crash. Whatever was gathered before
+      // the throw is kept and reported — so if `listActiveClaims()` returned and
+      // `listHolds()` threw, you get the real claims beside an empty `holds`,
+      // rather than both blanked (which is what the earlier `claims = []; holds =
+      // []` here did). That is deliberate for this endpoint: it is read during an
+      // incident, and half an answer beats none. It does mean an empty array is
+      // "nothing to report" and "could not be read" at once — acceptable for a
+      // debug view, and the reason nothing else should copy this shape.
+    }
+    return c.json({
+      claims,
+      holds,
+      recent: readableRows(honoRequestFacts(c), recentDispatches(readLimit(readQuery(c).limit))),
     });
-  }
-  res.json({ bindings: rows });
-});
+  });
 
-// GET /api/debug/relay/traces/:traceId — every hop of one dispatch across the bus.
-router.get('/relay/traces/:traceId', (req, res) => {
-  const traces = ((req.app.locals.debugDeps ?? {}) as DebugDeps).relayTraceStore;
-  if (!traces) return res.json({ spans: [], available: false });
-  const spans = traces.getTrace(req.params.traceId).map((span) => ({
-    messageId: span.messageId,
-    subject: span.subject,
-    status: span.status,
-    kind: span.kind,
-    sentAt: span.sentAt,
-    deliveredAt: span.deliveredAt,
-    // `errorMessage` is deliberately dropped: it is a free-form string from an
-    // adapter and can carry a URL, a path, or a provider's echo of the payload.
-    hasError: span.errorMessage !== null,
-  }));
-  res.json({ spans, available: true });
-});
+  // GET /api/debug/refusals — every path that recently declined to do the obvious thing.
+  router.get('/refusals', (c) =>
+    c.json({
+      refusals: readableRows(honoRequestFacts(c), recentRefusals(readLimit(readQuery(c).limit))),
+    })
+  );
+
+  // GET /api/debug/phantom-cancellations — how often the CLI cancelled its own
+  // pending tool calls, split by which sender saw it (DOR-1087, DOR-1288). This is
+  // the read spec `persistent-session-runtime` task 5.1 samples to compare the
+  // flag-off and flag-on legs of its measurement.
+  router.get('/phantom-cancellations', (c) =>
+    c.json(phantomCancellationStats(readLimit(readQuery(c).limit)))
+  );
+
+  // GET /api/debug/auto-mode-stops — how often auto mode stopped the agent on a
+  // DorkOS tool, beside how many host-context notes DorkOS attached in the same
+  // window (spec `auto-mode-classifier-context`). Read with
+  // `DORKOS_CLASSIFIER_CONTEXT` on and again with it off to measure whether the
+  // notes removed any stops.
+  router.get('/auto-mode-stops', (c) => c.json(autoModeStopStats()));
+
+  // GET /api/debug/projectors — the live projector registry.
+  router.get('/projectors', (c) =>
+    c.json({ projectors: readableRows(honoRequestFacts(c), listProjectorDebugCounters()) })
+  );
+
+  // GET /api/debug/sessions/:id — one session's live spine.
+  router.get('/sessions/:id', async (c) => {
+    const sessionId = parseSessionId(c.req.param('id'));
+    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    // The same read check as the session routes (spec `audit-trail` §3.4).
+    if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+
+    const projector = peekProjector(sessionId);
+    // `resolveSessionRuntime`, not `getSessionRuntimeType`, for the second half it
+    // returns: an id nothing has bound resolves through the registry's legacy
+    // inference to `claude-code`, and a room placeholder is exactly such an id
+    // (DOR-1780). Reporting the guess as the runtime made this surface state as
+    // fact something no other surface would agree with. `bound: false` says the
+    // type is what this session WOULD get, not what it has.
+    const resolution = await runtimeRegistry
+      .resolveSessionRuntime(sessionId)
+      .catch(() => null as { type: string; bound: boolean } | null);
+    const runtime = resolution?.type ?? null;
+    const lock = runtimeRegistry.has(runtime ?? '')
+      ? (runtimeRegistry.get(runtime as string)?.getLockInfo(sessionId) ?? null)
+      : null;
+
+    // The `'record'`-mode rows a room-driven claude-code session writes (DOR-784)
+    // had NO reader until this line. Three rows a turn were being written to prove
+    // a turn had run at all, and the only way to see them was to open the
+    // database by hand — which is the shape of problem this whole surface exists
+    // to remove. Counts and the newest boundary only; the payloads carry text.
+    const store = getSessionEventStore();
+    const recorded = store?.readAll(sessionId) ?? [];
+    const byType: Record<string, number> = {};
+    for (const event of recorded) byType[event.type] = (byType[event.type] ?? 0) + 1;
+
+    return c.json({
+      sessionId,
+      runtime,
+      // `false` when `runtime` above is the registry's inference rather than a
+      // recorded owner; `null` when the read itself failed.
+      runtimeBound: resolution?.bound ?? null,
+      ...(projector
+        ? projector.debugCounters()
+        : { lifecycle: null, seq: null, subscribers: null, waiters: null }),
+      projectorLive: projector !== undefined,
+      lockHeldBy: lock?.clientId ?? null,
+      lockAcquiredAt: lock ? new Date(lock.acquiredAt).toISOString() : null,
+      pendingInteractions: (projector?.getPendingInteractions() ?? []).map((pending) => ({
+        // The DTO carries the prompt itself — the tool's input, the questions.
+        // Only the shape of the wait crosses this boundary.
+        kind: pending.type,
+        toolName: 'toolName' in pending ? pending.toolName : undefined,
+        startedAt: new Date(pending.startedAt).toISOString(),
+        remainingMs: pending.remainingMs,
+      })),
+      durableEvents: { total: recorded.length, byType },
+    });
+  });
+
+  // GET /api/debug/rooms/:id/bindings — do this room's sessions still have their
+  // conversations? Two answers, and the response says when they differ.
+  router.get('/rooms/:id/bindings', async (c) => {
+    const roomId = c.req.param('id');
+    const deps = source() ?? {};
+    const bindings = (deps.roomSessions?.listRoomSessions() ?? []).filter(
+      (binding) => binding.roomId === roomId
+    );
+    // Every slug folder under every root, read ONCE for the whole request. Probing
+    // per binding meant `roots x bindings` directory reads, and a busy room with
+    // a dozen agents turned one debug read into hundreds of syscalls.
+    const slugDirs = listSlugDirs(deps.transcriptProjectRoots?.() ?? []);
+    const probe = deps.roomBindingTranscripts;
+
+    // Sequential for the reason the shared survey is: this walks a disk on behalf
+    // of a report somebody is reading mid-incident, and a burst of parallel reads
+    // on a room with a dozen agents buys nothing worth the load.
+    const rows: Array<{
+      authorId: string;
+      sessionId: string;
+      canonical: CanonicalVerdict;
+      anySlugSweepFound: boolean;
+      divergence: BindingDivergence;
+    }> = [];
+    for (const binding of bindings) {
+      // The raw incident read: is there a file named for this session id under
+      // ANY project slug? Kept because it is the question a person poking at a
+      // broken install actually types, and because it is the half that catches a
+      // transcript that exists somewhere the canonical probe will not look.
+      const anySlugSweepFound = transcriptExists(slugDirs, binding.sessionId);
+      // The canonical read: the same probe, on the same object, that the doctor
+      // and the boot sweep ask (DOR-805). Neither the verdict's `agentPath` nor
+      // its `error` is returned — both are free-form and this surface is not.
+      const canonical: CanonicalVerdict = probe
+        ? (await probeRoomBindingTranscript(binding, probe)).verdict
+        : 'unavailable';
+      rows.push({
+        authorId: binding.authorId,
+        sessionId: binding.sessionId,
+        canonical,
+        anySlugSweepFound,
+        divergence: divergenceOf(canonical, anySlugSweepFound),
+      });
+    }
+    return c.json({ bindings: rows });
+  });
+
+  // GET /api/debug/relay/traces/:traceId — every hop of one dispatch across the bus.
+  router.get('/relay/traces/:traceId', (c) => {
+    const traces = source()?.relayTraceStore;
+    if (!traces) return c.json({ spans: [], available: false });
+    const spans = traces.getTrace(c.req.param('traceId')).map((span) => ({
+      messageId: span.messageId,
+      subject: span.subject,
+      status: span.status,
+      kind: span.kind,
+      sentAt: span.sentAt,
+      deliveredAt: span.deliveredAt,
+      // `errorMessage` is deliberately dropped: it is a free-form string from an
+      // adapter and can carry a URL, a path, or a provider's echo of the payload.
+      hasError: span.errorMessage !== null,
+    }));
+    return c.json({ spans, available: true });
+  });
+
+  router.get('/doc-channels', (c) => {
+    try {
+      const caller = honoRequestFacts(c);
+      const user = caller.user;
+      const loginOn = configManager.get('auth')?.enabled === true;
+      const owner = loginOn ? readOwnerAccount() : null;
+      if (
+        !clearsTheAgentBar(caller) ||
+        (loginOn && (!owner || user?.credential !== 'cookie' || user.userId !== owner.id))
+      ) {
+        return c.json(
+          { code: 'DOC_METRICS_FORBIDDEN', error: 'Only the owner can read document metrics.' },
+          403
+        );
+      }
+      const metrics = source()?.docChannelMetrics;
+      if (!metrics) throw new DocChannelMetricsUnavailableError();
+      return c.json(metrics.readCommittedSnapshot());
+    } catch {
+      return c.json(
+        { code: 'DOC_CHANNEL_METRICS_UNAVAILABLE', error: 'Document metrics are not available.' },
+        503
+      );
+    }
+  });
+
+  return router;
+}
 
 /**
  * Every project-slug folder under every transcript root, resolved once.
@@ -442,31 +506,3 @@ function transcriptExists(slugDirs: readonly string[], sessionId: string): boole
   }
   return false;
 }
-
-router.get('/doc-channels', (req, res) => {
-  try {
-    const user = res.locals.user as RequestUser | undefined;
-    const loginOn = configManager.get('auth')?.enabled === true;
-    const owner = loginOn ? readOwnerAccount() : null;
-    if (
-      !clearsTheAgentBar(req, res) ||
-      (loginOn && (!owner || user?.credential !== 'cookie' || user.userId !== owner.id))
-    ) {
-      res.status(403).json({
-        code: 'DOC_METRICS_FORBIDDEN',
-        error: 'Only the owner can read document metrics.',
-      });
-      return;
-    }
-    const metrics = (req.app.locals.debugDeps as DebugDeps | undefined)?.docChannelMetrics;
-    if (!metrics) throw new DocChannelMetricsUnavailableError();
-    res.json(metrics.readCommittedSnapshot());
-  } catch {
-    res.status(503).json({
-      code: 'DOC_CHANNEL_METRICS_UNAVAILABLE',
-      error: 'Document metrics are not available.',
-    });
-  }
-});
-
-export default router;

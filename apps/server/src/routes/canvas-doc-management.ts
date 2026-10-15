@@ -1,5 +1,11 @@
+import { captureOriginalDocHttpActor } from '../services/canvas/doc-channel/http-composition.js';
 /** Scoped operator bridge to original capability dispatch; generic HTTP invocation remains untrusted. */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { readQuery } from '../http/request-query.js';
+import { readJsonBody } from '../http/request-body.js';
 import type { DocChannelHttp } from './canvas-doc-events.js';
 import {
   invokeOriginalCapabilityRegistry,
@@ -18,29 +24,31 @@ const operations = Object.freeze({
 });
 /** Capture the same installed HTTP actor and original registry; no body principal or trusted marker is accepted. */
 export function createCanvasDocManagementRouter(
-  registry: CapabilityRegistry,
-  http: DocChannelHttp
+  source: () => { registry?: CapabilityRegistry; http?: DocChannelHttp }
 ) {
-  const router = Router(),
-    resolveActor = http.actor;
-  router.post('/:id/manage/:operation', async (req, res) => {
-    res.set('Cache-Control', 'no-store');
+  const router = new Hono<ApiEnv>();
+  router.post('/:id/manage/:operation', async (c) => {
+    c.header('Cache-Control', 'no-store');
     try {
-      const id = req.params.id,
-        operation = req.params.operation;
+      const { registry, http } = source();
+      if (!registry || !http) throw new Error('Original document management is unavailable.');
+      const resolveActor = captureOriginalDocHttpActor(http);
+      const id = c.req.param('id'),
+        operation = c.req.param('operation');
       if (
         typeof id !== 'string' ||
         !id ||
         id.length > 200 ||
         typeof operation !== 'string' ||
         !Object.hasOwn(operations, operation) ||
-        Object.keys(req.query).length ||
-        (typeof req.headers.authorization === 'string' &&
-          /^Bearer dct_/iu.test(req.headers.authorization))
+        Object.keys(readQuery(c)).length ||
+        (typeof c.env.incoming.headers.authorization === 'string' &&
+          /^Bearer dct_/iu.test(c.env.incoming.headers.authorization))
       )
         throw new Error('Invalid operator document operation.');
-      const input = req.body;
-      const candidate = operation === 'issueToken' ? input?.request : input;
+      const input = readJsonBody(c) as Record<string, unknown> | undefined;
+      const candidate = (operation === 'issueToken' ? input?.request : input) as
+        Record<string, unknown> | undefined;
       if (
         !candidate ||
         typeof candidate !== 'object' ||
@@ -48,9 +56,9 @@ export function createCanvasDocManagementRouter(
         candidate.documentId !== id
       )
         throw new Error('Document operation scope differs.');
-      const actor = Reflect.apply(resolveActor, http, [req, res]);
+      const actor = Reflect.apply(resolveActor, http, [honoRequestFacts(c)]);
       if (actor.principal.claims.kind !== 'operator') throw new Error('Operator required.');
-      const header = req.headers['x-dorkos-approval'];
+      const header = c.env.incoming.headers['x-dorkos-approval'];
       if (header !== undefined && typeof header !== 'string')
         throw new Error('Invalid approval header.');
       const owner = actor.principal.claims.owner;
@@ -66,16 +74,18 @@ export function createCanvasDocManagementRouter(
           retryChannel: 'http-header',
         }
       );
-      res.json(result);
+      return c.json(result);
     } catch (error) {
       if (error instanceof CapabilityGateRefusal) {
-        res
-          .status(error.decision.outcome === 'approval_required' ? 202 : 403)
-          .json(error.decision.payload);
+        return c.json(
+          error.decision.payload,
+          error.decision.outcome === 'approval_required' ? 202 : 403
+        );
       } else if (error instanceof z.ZodError) {
-        res
-          .status(400)
-          .json({ code: 'INVALID_DOC_MANAGEMENT', error: 'The document operation is not valid.' });
+        return c.json(
+          { code: 'INVALID_DOC_MANAGEMENT', error: 'The document operation is not valid.' },
+          400
+        );
       } else {
         const status =
           typeof error === 'object' &&
@@ -86,10 +96,13 @@ export function createCanvasDocManagementRouter(
           error.status <= 499
             ? error.status
             : 403;
-        res.status(status).json({
-          code: 'DOC_MANAGEMENT_UNAVAILABLE',
-          error: 'The document operation is not available.',
-        });
+        return c.json(
+          {
+            code: 'DOC_MANAGEMENT_UNAVAILABLE',
+            error: 'The document operation is not available.',
+          },
+          status as ContentfulStatusCode
+        );
       }
     }
   });

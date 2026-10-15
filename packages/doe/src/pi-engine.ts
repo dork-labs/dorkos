@@ -414,6 +414,7 @@ export class PiEngine implements Engine {
               name: event.toolName,
               callId: event.toolCallId,
               scope: request.context.scope,
+              input: event.args,
             });
             break;
           case 'tool_execution_end':

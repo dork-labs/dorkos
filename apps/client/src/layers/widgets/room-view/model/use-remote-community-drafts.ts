@@ -10,6 +10,7 @@ import {
 } from '@/layers/entities/community';
 import type { ConversationAttachmentPort } from '@/layers/features/conversation';
 import type { PendingFile } from '@/layers/features/composer';
+import { isConductHold } from './use-remote-community-conduct';
 
 interface Delivery {
   address: string;
@@ -21,6 +22,17 @@ interface Delivery {
   parentEntryId?: string;
   files: PendingFile[];
   attachmentIds: string[];
+  /** When each of `attachmentIds` was first uploaded, by this device's clock. */
+  uploadedAt: number[];
+  /** When each file's current upload was first tried, kept across retries of its key. */
+  triedAt: number[];
+  /**
+   * Whether a post went out. Its key then names those exact files, so a retry must send them
+   * again, even if old: a post that landed answers with its entry, never a conflict.
+   */
+  posted: boolean;
+  /** Bumped when stale uploads are dropped, so their replacements get new upload keys. */
+  uploadRound: number;
   status: 'sending' | 'failed';
   error?: string;
   /** The composer it was sent from and exactly what was typed, to go back to if it can never send. */
@@ -37,6 +49,49 @@ const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
   'COMMUNITY_DELETED',
   'COMMUNITY_TAKEN_DOWN',
 ]);
+
+/**
+ * How long an uploaded file may still go with a message. A space refuses a file no message took
+ * within an hour of its upload, and removes it soon after, so an upload older than this is
+ * replaced by a new one rather than reused or retried into a refusal.
+ */
+const UPLOAD_REUSE_MS = 30 * 60_000;
+
+/**
+ * Files a held message already uploaded, by space, room and staged-file id, so sending it again
+ * attaches them instead of uploading them a second time (DOR-2835). Module-wide, so it outlives
+ * the composer while the draft (which lives in memory too) is held elsewhere.
+ */
+const uploadMemory = new Map<string, { attachmentId: string; at: number }>();
+
+function uploadKey(ref: string, roomId: string, fileId: string): string {
+  return JSON.stringify([ref, roomId, fileId]);
+}
+
+function uploadFresh(at: number): boolean {
+  return Date.now() - at < UPLOAD_REUSE_MS;
+}
+
+/** The upload a held message already made for this file, while it can still be reused. */
+function reusableUpload(key: string): { attachmentId: string; at: number } | undefined {
+  for (const [held, upload] of uploadMemory) if (!uploadFresh(upload.at)) uploadMemory.delete(held);
+  return uploadMemory.get(key);
+}
+
+/** The time an upload is first tried, which is never later than the space's own record of it. */
+function uploadClock(): number {
+  return Date.now();
+}
+
+/** Remember an upload stamped when it was first tried, so a reuse never looks younger than it is. */
+function rememberUpload(key: string, attachmentId: string, at: number): void {
+  uploadMemory.set(key, { attachmentId, at });
+}
+
+/** Drop a sent message's uploads: they belong to its post now, and none is sent again. */
+function forgetUploads(job: Delivery): void {
+  for (const staged of job.files) uploadMemory.delete(uploadKey(job.ref, job.roomId, staged.id));
+}
 
 /** Join the non-blank parts of a draft with a blank line, so no part leaves an empty one. */
 function joinDraft(parts: readonly string[]): string {
@@ -69,6 +124,11 @@ export interface RemoteCommunityDraftOptions {
   ownerKey: string;
   /** Route and access context that deliveries and errors are fenced to. */
   contextKey?: string;
+  /**
+   * Told when the space's moderation held a post (a mute, slow mode, rules not accepted). The
+   * message is back in its draft by then, so the person sends it again once the hold lifts.
+   */
+  onHold?: (cause: unknown) => void;
 }
 
 /** Staged files as the composer's attachment tray expects them. */
@@ -90,6 +150,7 @@ export function useRemoteCommunityDrafts({
   draft: draftAddress,
   ownerKey,
   contextKey = ownerKey,
+  onHold,
 }: RemoteCommunityDraftOptions) {
   const transport = useTransport();
   const address = JSON.stringify([ownerKey, ref, roomId, contextKey]);
@@ -142,12 +203,14 @@ export function useRemoteCommunityDrafts({
   const alive = useRef(true);
   const allowed = useRef(canSend);
   const receipt = useRef(onReceipt);
+  const held = useRef(onHold);
   useLayoutEffect(() => {
     authority.current = address;
     context.current = contextKey;
     allowed.current = canSend;
     receipt.current = onReceipt;
-  }, [address, canSend, contextKey, onReceipt]);
+    held.current = onHold;
+  }, [address, canSend, contextKey, onReceipt, onHold]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -163,8 +226,10 @@ export function useRemoteCommunityDrafts({
         job?.address === authority.current &&
         job.context === context.current &&
         jobs.current.delete(entry.originIdempotencyKey)
-      )
+      ) {
+        forgetUploads(job);
         changed = true;
+      }
     }
     if (changed) setDeliveries([...jobs.current.values()]);
   }, [entries]);
@@ -191,19 +256,38 @@ export function useRemoteCommunityDrafts({
     job.error = undefined;
     publish();
     try {
+      // An upload too old for the space to take is replaced, under new keys, not posted.
+      if (!job.posted && job.uploadedAt.some((at) => !uploadFresh(at))) {
+        job.attachmentIds = [];
+        job.uploadedAt = [];
+        job.triedAt = [];
+        job.uploadRound += 1;
+      }
       for (let i = job.attachmentIds.length; i < job.files.length; i++) {
         if (!allowed.current || !alive.current || job.address !== authority.current)
           throw new Error('Reconnect to this channel, then try again.');
+        const staged = job.files[i]!;
+        const fileKey = uploadKey(job.ref, job.roomId, staged.id);
+        const earlier = reusableUpload(fileKey);
+        if (earlier) {
+          job.attachmentIds.push(earlier.attachmentId);
+          job.uploadedAt.push(earlier.at);
+          continue;
+        }
+        const triedAt = (job.triedAt[i] ??= uploadClock());
         const attachment = await transport.uploadRemoteCommunityAttachment(
           job.ref,
           job.roomId,
-          job.files[i]!.file,
-          `${job.key}:file:${i}`
+          staged.file,
+          job.uploadRound ? `${job.key}:file:${i}:${job.uploadRound}` : `${job.key}:file:${i}`
         );
+        rememberUpload(fileKey, attachment.id, triedAt);
+        job.uploadedAt.push(triedAt);
         job.attachmentIds.push(attachment.id);
       }
       if (!allowed.current || !alive.current || job.address !== authority.current)
         throw new Error('Reconnect to this channel, then try again.');
+      job.posted = true;
       const entry = await transport.postRemoteCommunityEntry(job.ref, job.roomId, {
         text: job.text,
         parentEntryId: job.parentEntryId,
@@ -211,11 +295,18 @@ export function useRemoteCommunityDrafts({
         idempotencyKey: job.key,
       });
       jobs.current.delete(job.key);
+      forgetUploads(job);
       if (alive.current && job.address === authority.current && job.context === context.current)
         receipt.current(entry);
     } catch (cause) {
       if (isCommunityGone(cause) && returnToDraft(job)) {
         jobs.current.delete(job.key);
+        return;
+      }
+      // Held, not lost: it goes back to its draft, and the hold says when it can go.
+      if (isConductHold(cause) && returnToDraft(job)) {
+        jobs.current.delete(job.key);
+        if (alive.current && job.address === authority.current) held.current?.(cause);
         return;
       }
       job.status = 'failed';
@@ -227,10 +318,10 @@ export function useRemoteCommunityDrafts({
   }
 
   /**
-   * Put a message that can never send back into its composer's draft. Every message returned
-   * this way goes first, oldest sent first, and then whatever was typed since; once the person
-   * has changed that returned part, the next one simply goes in front. Refused (and so `false`)
-   * once its connection has ended, when nothing could read the draft back.
+   * Put a message that can never send, or that the space held, back into its composer's draft.
+   * Every message returned this way goes first, oldest sent first, then whatever was typed
+   * since; once the person has changed that returned part, the next one simply goes in front.
+   * Refused (and so `false`) once its connection has ended, when nothing could read it back.
    */
   function returnToDraft(job: Delivery): boolean {
     const { draft } = job.origin;
@@ -283,6 +374,10 @@ export function useRemoteCommunityDrafts({
       parentEntryId,
       files,
       attachmentIds: [],
+      uploadedAt: [],
+      triedAt: [],
+      posted: false,
+      uploadRound: 0,
       status: 'sending',
       origin: { draft: target, typed: held.text, seq: (sent.current += 1) },
     };

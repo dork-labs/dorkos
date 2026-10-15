@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import type { CanvasDocumentStore } from '../../canvas-document-store.js';
 import { canvasSourcePath } from '../../document-key.js';
 import { parseScope } from '../../scopes.js';
-import { DocChannelNotFoundError } from '../authorization.js';
+import { DocChannelNotFoundError } from '../authorization/authorization-data.js';
 import { DocRouteGrantError } from '../grant-policy.js';
 
 /** Read the actual current install owner, sharing the existing local-install/account policy. */

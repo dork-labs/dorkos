@@ -121,9 +121,26 @@ export interface TurnPermissionLevel {
   readonly reach: PermissionReach;
   /** True when the level IS Claude Code's Auto mode. */
   readonly auto?: true;
+  /**
+   * True when the turn this level was recorded from read words from outside
+   * the owner's circle: a stranger's message, one DorkOS cannot vouch for, or
+   * another agent's that carried such words on (spec `trusted-by-default-flip`
+   * §4.7). Not a power axis: no mode is admitted or refused by it, though the
+   * permission gate reads it so a destructive action or a permission change in
+   * such a turn still asks (DOR-2739). That errs toward asking: a room turn
+   * with a stranger's message merely in view asks too. It rides the
+   * level so every hop that already carries a level carries it too, and a note
+   * the turn saves to memory says so.
+   */
+  readonly outsider?: true;
 }
 
-/** One bound on a turn: a level, or the receiving runtime's own default. */
+/**
+ * One bound on a turn: a level, or the receiving runtime's own default.
+ * `'runtime-default'` is the bound for words DorkOS cannot vouch for (a
+ * stranger's, or a sender whose level is unknown), so a turn held to it is
+ * recorded as one that read an outsider's words.
+ */
 export type TurnPermissionBound = TurnPermissionLevel | 'runtime-default';
 
 /**
@@ -903,6 +920,33 @@ export interface RuntimeCreditsSupport {
  */
 export type SessionWarmth = 'cold' | 'warming' | 'warm' | 'running' | 'crashed';
 
+/** A session a runtime holds live, as {@link AgentRuntime.endSessionsWhere} offers it. */
+export interface LiveSessionRef {
+  /** The session, in the id the runtime holds it under. */
+  sessionId: string;
+  /** Where it runs, when the runtime knows. */
+  cwd: string | undefined;
+}
+
+/**
+ * Ask an {@link AgentRuntime.endSessionsWhere} picker about one session. A
+ * picker that throws passes the session over, so one bad answer never stops a
+ * runtime from ending the rest.
+ *
+ * @param belongs - The caller's picker
+ * @param session - The session to ask about
+ */
+export function picksSession(
+  belongs: (session: LiveSessionRef) => boolean,
+  session: LiveSessionRef
+): boolean {
+  try {
+    return belongs(session);
+  } catch {
+    return false;
+  }
+}
+
 /** Options for creating or resuming a session. */
 export interface SessionOpts extends SessionSettings {
   /**
@@ -1023,6 +1067,15 @@ export interface MessageOpts extends SessionSettings {
      * different claim from "level with the room" and must not collapse into it.
      */
     aheadOfMain?: number | null;
+    /**
+     * True when the room shows this turn a message from outside the owner's
+     * circle that it does not answer: a stranger's line in the recent window.
+     * It bounds no power (a stranger who spoke once in a shared room must not
+     * hold every later request there to asking), but the turn is recorded as
+     * one that read an outsider's words, so what it saves to memory or passes
+     * on says so (spec `trusted-by-default-flip` §4.7).
+     */
+    outsiderInView?: true;
   };
   /**
    * The home of the agent this turn is dispatched AS, when a server path names
@@ -1640,6 +1693,29 @@ export interface AgentRuntime {
   reapSession?(sessionId: string): Promise<void>;
 
   /**
+   * End every session this runtime holds live that `belongs` picks: stop its
+   * turn, stop the background work it started, and give back its process
+   * (spec `audit-trail` PR5, pausing an agent everywhere).
+   *
+   * Live means anything that could still act: a running turn, a warm process,
+   * a background helper or shell, a timer that would wake the agent. The
+   * runtime answers from its OWN records, not from anything the server
+   * tracked, because a warm process can open a turn nobody dispatched.
+   *
+   * Unlike {@link reapSession} this is not polite: it ends background work and
+   * an open approval with the process. The session record and its transcript
+   * stay; the next turn starts cold.
+   *
+   * MUST NOT throw. A session it could not end is left out of the answer, so
+   * the answer counts only what really stopped. A runtime with nothing live
+   * answers `[]`.
+   *
+   * @param belongs - Picks the sessions to end, by id and working directory
+   * @returns The ids of the sessions it ended
+   */
+  endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]>;
+
+  /**
    * Subscribe to turns the AGENT started, with nothing dispatched to it (spec
    * `warm-process-lifecycle` D6).
    *
@@ -1838,8 +1914,16 @@ export interface AgentRuntime {
   /** Get metadata for a single session, or null if not found. */
   getSession(projectDir: string, sessionId: string): Promise<Session | null>;
 
-  /** Read native session metadata by id without a caller-supplied directory. Never creates a session. */
-  findSession?(sessionId: string): Promise<Session | null>;
+  /**
+   * Read native session metadata by id without a caller-supplied directory.
+   * Never creates a session.
+   *
+   * @param sessionId - The runtime's own session id.
+   * @param options - `cwdHint` is a directory the caller believes the session
+   *   ran in. A runtime may search it first; the answer must still be the
+   *   directory the session records, never the hint itself.
+   */
+  findSession?(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null>;
 
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;

@@ -27,7 +27,6 @@
  * @module routes/__tests__/tasks-approval-power
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
@@ -54,6 +53,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefaultType: () => 'claude-code',
     // Codex is registered so the feed label has a SECOND vocabulary to be
@@ -73,12 +73,14 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import { writeManifest } from '@dorkos/mesh';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskFileSync } from '../../services/tasks/sync/task-file-sync.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
+import type { MeshCore } from '@dorkos/mesh';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -122,7 +124,6 @@ function createMockScheduler(): TaskSchedulerService {
 }
 
 describe('approving a proposed schedule can carry the operator’s trust stop', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let dorkHome: string;
@@ -143,24 +144,23 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     emit = vi.fn();
     meshProjectPath = null;
 
-    app = express();
-    app.use(express.json());
     const scheduler = createMockScheduler();
-    app.use(
-      '/api/tasks',
-      createTasksRouter(
-        store,
-        scheduler,
-        new TaskRegistrar({ store, scheduler }),
-        dorkHome,
-        {
-          getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
-        } as unknown as Parameters<typeof createTasksRouter>[4],
-        { emit } as unknown as ActivityService
-      )
-    );
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome,
+          meshCore: {
+            getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
+          } as unknown as MeshCore,
+          activity: { emit } as unknown as ActivityService,
+        }),
+      })
+    );
   });
 
   afterEach(() => {

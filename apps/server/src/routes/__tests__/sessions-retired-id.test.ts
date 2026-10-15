@@ -43,6 +43,7 @@ vi.mock('../../services/core/runtime-registry.js', async (importOriginal) => ({
     (await importOriginal<typeof import('../../services/core/runtime-registry.js')>())
       .runtimeRegistry,
     {
+      computerRuntimeForAgentPath: () => undefined,
       getNativeSessionCwd: vi.fn(() => null),
       getDefault: vi.fn(() => fakeRuntime),
       get: vi.fn(() => fakeRuntime),
@@ -81,7 +82,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -90,11 +91,10 @@ import {
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-finalizeApp(app);
+const admission = new MainRequestAdmission();
 
 /** One listener for the whole file — see {@link attachEventStream} (DOR-483). */
-const server = listeningServer(app);
+const server = listeningServer(composedListener(admission));
 
 /** The id the client sends the first message under, and keeps. */
 const REQUEST_ID = '00000000-0000-4000-8000-0000000012e2';

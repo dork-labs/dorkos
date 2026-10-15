@@ -91,7 +91,7 @@ export function captureCurrentIngestIntention(
 
 import { type DocEventCondition } from './current-operation-types.js';
 
-import { DocIngestRefusal } from '../ingest-types.js';
+import { DocIngestRefusal } from '../ingest-data/ingest-types.js';
 /** Strict immutable condition capture only; no scope or authority is registered. */
 export function captureCurrentDocCondition(raw: DocEventCondition): DocEventCondition {
   const value = captureCurrentDocConfiguration(raw);
@@ -429,8 +429,8 @@ export function buildCurrentRoomInputIntention(
 export function buildCurrentQueueBatchIntention(
   batch: DocBatchRow | undefined,
   event: DocEventRow,
-  access: import('../ingest-types.js').DocIngestAccess,
-  decision: import('../ingest-types.js').DocRouteDecision,
+  access: import('../ingest-data/ingest-types.js').DocIngestAccess,
+  decision: import('../ingest-data/ingest-types.js').DocRouteDecision,
   ids: string[],
   batchId: string,
   generation: string,

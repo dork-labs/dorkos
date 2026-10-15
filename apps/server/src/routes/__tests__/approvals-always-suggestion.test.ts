@@ -7,7 +7,6 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -26,7 +25,14 @@ import {
   listPermissionHistory,
   personWriter,
 } from '../../services/core/permissions/index.js';
-import { createApprovalsRouter } from '../approvals.js';
+import { createApprovalsRoutes } from '../approvals.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const AGENT_PATH = '/agents/dorkbot';
 
@@ -46,17 +52,12 @@ describe('the Always allow suggestion', () => {
       agents: [{ id: 'agent-dorkbot', name: 'dorkbot', projectPath: AGENT_PATH }],
     });
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    const built = express();
-    built.use(express.json());
-    built.use(
-      '/api/approvals',
-      createApprovalsRouter(approvals, {
-        activity,
-        permissions: world.service,
-        isLoginEnabled: () => false,
-      })
-    );
-    app = target.mount(built);
+    const routes = createApprovalsRoutes(approvals, {
+      activity,
+      permissions: world.service,
+      isLoginEnabled: () => false,
+    });
+    app = target.mount(honoGroupListener({ path: '/api/approvals', routes }));
   });
 
   afterEach(() => {
@@ -146,8 +147,6 @@ describe('the Always allow suggestion', () => {
         trustStops: () => ({ global: null, perRuntime: {} }),
         setGlobalTrustStop: () => {},
         setRuntimeTrustStop: () => false,
-        hasAutonomyAck: () => false,
-        recordAutonomyAck: () => {},
       },
       agents: {
         list: () => [],

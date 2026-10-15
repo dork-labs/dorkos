@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -13,8 +13,8 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 // mock reads it lazily through a getter.
 const holder = vi.hoisted(() => ({ dist: '' }));
 
-// finalizeApp's SPA branch is skipped under NODE_ENV=test, and the shell marker
-// lives inside it.
+// The client build is served only in production, and the shell marker lives
+// inside it.
 vi.mock('../env.js', async (importOriginal) => {
   const actual = (await importOriginal()) as { env: Record<string, unknown> };
   return {
@@ -28,7 +28,7 @@ vi.mock('../env.js', async (importOriginal) => {
   };
 });
 
-// Singletons with load or first-use side effects, mocked so importing app.js
+// Singletons with load or first-use side effects, mocked so building the server
 // never touches ~/.dork or a real runtime.
 vi.mock('../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (target: string) => target),
@@ -38,7 +38,9 @@ vi.mock('../lib/boundary.js', () => ({
   BoundaryError: class BoundaryError extends Error {},
 }));
 vi.mock('../services/core/runtime-registry.js', () => ({
+  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => ({ type: 'claude-code' })),
     getDefaultType: vi.fn(() => 'claude-code'),
@@ -57,8 +59,8 @@ vi.mock('../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import { createApp, finalizeApp } from '../app.js';
 import { logger } from '../lib/logger.js';
+import { composedListener } from '../http/__tests__/composed-listener.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -76,11 +78,9 @@ function markers(): string[] {
     .filter((line): line is string => line === SHELL_MARKER || line === API_MARKER);
 }
 
-/** A finished app: real API mounts, real SPA serving, nothing else. */
-function bootApp(): express.Express {
-  const app = createApp({ admission: new MainRequestAdmission() });
-  finalizeApp(app);
-  return app;
+/** A fresh server's routing: real API mounts, real client serving, nothing else. */
+function bootApp(): RequestListener {
+  return composedListener(new MainRequestAdmission());
 }
 
 /**
@@ -130,6 +130,14 @@ describe('first-client-contact markers', () => {
     const app = bootApp();
 
     await request(fixtureTarget.mount(app)).get('/agents/deep/route');
+
+    expect(markers()).toEqual([SHELL_MARKER]);
+  });
+
+  it('logs the shell marker for a HEAD on a deep link, which streams no body', async () => {
+    const app = bootApp();
+
+    await request(fixtureTarget.mount(app)).head('/agents/deep/route');
 
     expect(markers()).toEqual([SHELL_MARKER]);
   });

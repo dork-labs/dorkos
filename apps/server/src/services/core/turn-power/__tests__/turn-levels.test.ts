@@ -22,12 +22,14 @@ import {
   recordTurnLevels,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
-import { ceilingForEntries, ceilingForEntry } from '../../../rooms/room-trigger.js';
+import { ceilingForEntries, ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 
 const DEFAULT = { asks: 'always', reach: 'edit' };
 const ACCEPT_EDITS = { asks: 'when-risky', reach: 'edit' };
 const FULL = { asks: 'never', reach: 'everything' };
+/** Default, recorded from a turn that read an outsider's words (§4.7). */
+const DEFAULT_OUTSIDER = { ...DEFAULT, outsider: true };
 
 /** A runtime that answers every send with one `done`, wrapped the way the registry wraps it. */
 function wrapped(stored: Record<string, string | null>): AgentRuntime {
@@ -79,7 +81,7 @@ describe('the level a turn runs at', () => {
     await send(wrapped({ [s1]: 'bypassPermissions' }), s1, {
       permissionCeiling: 'runtime-default',
     });
-    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT);
+    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT_OUTSIDER);
   });
 
   it('is held to every bound of a list ceiling at once', async () => {
@@ -87,7 +89,7 @@ describe('the level a turn runs at', () => {
     await send(wrapped({ [s1]: 'bypassPermissions' }), s1, {
       permissionCeiling: [FULL as never, 'runtime-default'],
     });
-    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT);
+    expect(lastTurnLevelOf(s1)).toEqual(DEFAULT_OUTSIDER);
   });
 
   it('reads an unconfirmed Auto as Default, and nothing stored as the runtime default', async () => {
@@ -132,7 +134,7 @@ describe('the level a post is kept with', () => {
     noteEntryLevel(entry, postLevelFor([ana]));
     // A person then talks to the same conversation at its own level.
     await send(runtime, ana);
-    expect(entryLevelOf(entry)).toEqual(DEFAULT);
+    expect(entryLevelOf(entry)).toEqual(DEFAULT_OUTSIDER);
   });
 
   it('is the stricter of the calling session and the author’s turn in the room', async () => {
@@ -143,7 +145,7 @@ describe('the level a post is kept with', () => {
     const runtime = wrapped({ [inR1]: 'bypassPermissions', [inR2]: 'bypassPermissions' });
     await send(runtime, inR1, { permissionCeiling: 'runtime-default' });
     await send(runtime, inR2);
-    expect(postLevelFor([inR1, inR2])).toEqual(DEFAULT);
+    expect(postLevelFor([inR1, inR2])).toEqual(DEFAULT_OUTSIDER);
   });
 
   it('vouches for nothing when a session is unknown or none is named', async () => {
@@ -201,7 +203,7 @@ describe('the ceiling a room entry puts on the turn it starts', () => {
     await send(runtime, session, ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
     noteEntryLevel(entry, postLevelFor([session]));
     expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
-      permissionCeiling: DEFAULT,
+      permissionCeiling: DEFAULT_OUTSIDER,
     });
   });
 });

@@ -4,8 +4,8 @@
  *
  * @module routes/relay
  */
-import { Router } from 'express';
-import { z } from 'zod';
+import type { ServerResponse } from 'node:http';
+import { Hono } from 'hono';
 import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
@@ -22,16 +22,25 @@ import {
   SERVER_DESTINATION_REFUSAL,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { readQuery } from '../http/request-query.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readHomeManifest } from '../services/core/agent-identity/index.js';
-import { createAdapterRouter } from './relay-adapters.js';
+import { createAdapterRoutes } from './relay-adapters.js';
+import { createRelayWebhookRoutes } from './relay-webhooks.js';
 import { logger } from '../lib/logger.js';
-import { createReceiptStatusHandler, publishRelayMessage } from './relay-delivery-receipts.js';
+import {
+  createReceiptStatusHandler,
+  publishRelayMessage,
+  type RelayPublishDeps,
+} from './relay-delivery-receipts.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -172,28 +181,28 @@ export function buildConversations(
   });
 }
 
+/** What the Relay routes read. */
+export interface RelayRouteDeps extends RelayPublishDeps {
+  /** Delivery traces, behind the trace reads and a connection's events and chats. */
+  traceStore?: TraceStore;
+}
+
 /**
- * Create the Relay router with message, endpoint, and adapter management endpoints.
+ * The Relay routes, mounted at `/api/relay`: messages, endpoints, dead letters,
+ * metrics, traces and the event stream, plus the connection routes when an
+ * adapter manager is handed over.
  *
- * @param relayCore - The RelayCore instance for message bus operations
- * @param adapterManager - Optional adapter lifecycle manager for external channel adapters
- * @param traceStore - Optional trace store for message delivery tracking
+ * @param deps - The bus, and the optional adapter manager, traces and activity feed.
+ * @returns The routes.
  */
-export function createRelayRouter(
-  relayCore: RelayCore,
-  adapterManager?: AdapterManager,
-  traceStore?: TraceStore
-): Router {
-  const router = Router();
+export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
+  const { relayCore, adapterManager, traceStore } = deps;
+  const router = new Hono<ApiEnv>();
 
   // POST /messages — Send a message
-  router.post('/messages', async (req, res) => {
-    const result = SendMessageRequestSchema.safeParse(req.body);
-    if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-    }
+  router.post('/messages', async (c) => {
+    const result = SendMessageRequestSchema.safeParse(readJsonBody(c));
+    if (!result.success) return c.json(validationFailureBody(result.error), 400);
 
     // This route takes a client-supplied `from`. It must not let an untrusted
     // caller assert a principal the initiate-consent gate trusts as exempt
@@ -207,12 +216,15 @@ export function createRelayRouter(
     // (non-exempt) rather than skips — see `isServerOnlyPrincipal`'s doc for
     // why that principal must still be unassertable here.
     if (isServerOnlyPrincipal(result.data.from)) {
-      return res.status(403).json({
-        error:
-          `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
-          `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
-        code: 'RESERVED_SENDER',
-      });
+      return c.json(
+        {
+          error:
+            `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
+            `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
+          code: 'RESERVED_SENDER',
+        },
+        403
+      );
     }
 
     // DOR-2432: nothing on this route is a server publisher — the scheduler,
@@ -223,31 +235,29 @@ export function createRelayRouter(
       (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
     );
     if (refused !== undefined) {
-      return res.status(403).json({
-        error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
-        code: 'RESERVED_SUBJECT',
-      });
+      return c.json(
+        {
+          error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
+          code: 'RESERVED_SUBJECT',
+        },
+        403
+      );
     }
 
-    return publishRelayMessage(req, res, relayCore, adapterManager, result.data);
+    return publishRelayMessage(c, deps, result.data);
   });
 
   router.get('/messages/:messageId/status', createReceiptStatusHandler(relayCore));
 
   // GET /messages — List with filters and cursor pagination
-  router.get('/messages', (_req, res) => {
-    const result = MessageListQuerySchema.safeParse(_req.query);
-    if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-    }
-    const messages = relayCore.listMessages(result.data);
-    return res.json(messages);
+  router.get('/messages', (c) => {
+    const result = MessageListQuerySchema.safeParse(readQuery(c));
+    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    return c.json(relayCore.listMessages(result.data));
   });
 
   // GET /conversations — Grouped request/response exchanges with human labels
-  router.get('/conversations', async (_req, res) => {
+  router.get('/conversations', async (c) => {
     try {
       const messages = relayCore.listMessages({});
       const deadLetters = await relayCore.getDeadLetters();
@@ -272,34 +282,28 @@ export function createRelayRouter(
       const labelMap = await resolveSubjectLabels(allSubjects, resolverDeps);
 
       const conversations = buildConversations(messages.messages, deadLetters, labelMap);
-      return res.json({ conversations });
+      return c.json({ conversations });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to build conversations';
-      return res.status(500).json({ error: message });
+      return c.json({ error: message }, 500);
     }
   });
 
   // GET /messages/:id — Get single message with its full per-endpoint delivery
   // breakdown (all rows join on the envelope id after identity unification).
-  router.get('/messages/:id', (_req, res) => {
-    const message = relayCore.getMessageDetail(_req.params.id);
-    if (!message) return res.status(404).json({ error: 'Message not found' });
-    return res.json(message);
+  router.get('/messages/:id', (c) => {
+    const message = relayCore.getMessageDetail(c.req.param('id'));
+    if (!message) return c.json({ error: 'Message not found' }, 404);
+    return c.json(message);
   });
 
   // GET /endpoints — List registered endpoints
-  router.get('/endpoints', (_req, res) => {
-    return res.json(relayCore.listEndpoints());
-  });
+  router.get('/endpoints', (c) => c.json(relayCore.listEndpoints()));
 
   // POST /endpoints — Register an endpoint
-  router.post('/endpoints', async (req, res) => {
-    const result = EndpointRegistrationSchema.safeParse(req.body);
-    if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-    }
+  router.post('/endpoints', async (c) => {
+    const result = EndpointRegistrationSchema.safeParse(readJsonBody(c));
+    if (!result.success) return c.json(validationFailureBody(result.error), 400);
 
     // This route takes a client-supplied subject and, with login off by
     // default, is reachable by anything that can reach the port. A mailbox in a
@@ -309,65 +313,62 @@ export function createRelayRouter(
     // `isControlSubject`). The same list the agent tool surface enforces, asked
     // here too rather than trusted to a caller.
     if (isServerManagedSubject(result.data.subject)) {
-      return res.status(403).json({
-        error:
-          `Subject "${result.data.subject}" is in a namespace DorkOS manages and cannot be ` +
-          'registered here. Use a subject outside ' +
-          `${SERVER_MANAGED_PREFIXES.join(', ')}.`,
-      });
+      return c.json(
+        {
+          error:
+            `Subject "${result.data.subject}" is in a namespace DorkOS manages and cannot be ` +
+            'registered here. Use a subject outside ' +
+            `${SERVER_MANAGED_PREFIXES.join(', ')}.`,
+        },
+        403
+      );
     }
 
     try {
       const endpoint = await relayCore.registerEndpoint(result.data.subject);
-      return res.status(201).json(endpoint);
+      return c.json(endpoint, 201);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed';
-      return res.status(422).json({ error: message });
+      return c.json({ error: message }, 422);
     }
   });
 
-  // DELETE /endpoints/:subject — Unregister endpoint (regex matches dots in subjects)
-  router.delete(/^\/endpoints\/(.+)$/, async (req, res) => {
-    const removed = await relayCore.unregisterEndpoint(req.params[0]);
-    if (!removed) return res.status(404).json({ error: 'Endpoint not found' });
-    return res.json({ success: true });
-  });
-
-  // GET /endpoints/:subject/inbox — Read inbox (regex matches dots in subjects)
-  router.get(/^\/endpoints\/(.+)\/inbox$/, async (_req, res) => {
-    const result = InboxQuerySchema.safeParse(_req.query);
-    if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-    }
+  // GET /endpoints/:subject/inbox — Read inbox. The subject takes every
+  // remaining segment but the last, as dots and slashes alike may sit in it.
+  router.get('/endpoints/:subject{.+}/inbox', async (c) => {
+    const result = InboxQuerySchema.safeParse(readQuery(c));
+    if (!result.success) return c.json(validationFailureBody(result.error), 400);
     try {
-      const messages = await relayCore.readInbox(_req.params[0], result.data);
-      return res.json(messages);
+      const messages = await relayCore.readInbox(c.req.param('subject'), result.data);
+      return c.json(messages);
     } catch (err) {
       if ((err as Error & { code?: string })?.code === 'ENDPOINT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Endpoint not found' });
+        return c.json({ error: 'Endpoint not found' }, 404);
       }
       logger.error('[relay] GET /endpoints/:subject/inbox failed', { err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
+  });
+
+  // DELETE /endpoints/:subject — Unregister endpoint (the subject takes every
+  // remaining segment)
+  router.delete('/endpoints/:subject{.+}', async (c) => {
+    const removed = await relayCore.unregisterEndpoint(c.req.param('subject'));
+    if (!removed) return c.json({ error: 'Endpoint not found' }, 404);
+    return c.json({ success: true });
   });
 
   // GET /dead-letters — List dead-letter messages
-  router.get('/dead-letters', async (_req, res) => {
-    const result = DeadLetterQuerySchema.safeParse(_req.query);
-    if (!result.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
-    }
+  router.get('/dead-letters', async (c) => {
+    const result = DeadLetterQuerySchema.safeParse(readQuery(c));
+    if (!result.success) return c.json(validationFailureBody(result.error), 400);
     const { endpointHash } = result.data;
     const deadLetters = await relayCore.getDeadLetters(endpointHash ? { endpointHash } : undefined);
-    return res.json(deadLetters);
+    return c.json(deadLetters);
   });
 
   // GET /dead-letters/aggregated — Dead letters grouped by source + reason
-  router.get('/dead-letters/aggregated', async (_req, res) => {
+  router.get('/dead-letters/aggregated', async (c) => {
     const deadLetters = await relayCore.getDeadLetters();
 
     const groups = new Map<
@@ -402,14 +403,17 @@ export function createRelayRouter(
       }
     }
 
-    return res.json({ groups: [...groups.values()] });
+    return c.json({ groups: [...groups.values()] });
   });
 
   // DELETE /dead-letters — Remove dead letters matching a source + reason group
-  router.delete('/dead-letters', async (req, res) => {
-    const { source, reason } = (req.body ?? {}) as { source: string; reason: string };
+  router.delete('/dead-letters', async (c) => {
+    const { source, reason } = readJsonBody(c, { emptyAs: {} }) as {
+      source: string;
+      reason: string;
+    };
     if (!source || !reason) {
-      return res.status(400).json({ error: 'source and reason are required' });
+      return c.json({ error: 'source and reason are required' }, 400);
     }
     const deadLetters = await relayCore.getDeadLetters();
     const toRemove = deadLetters.filter(
@@ -418,100 +422,122 @@ export function createRelayRouter(
     for (const dl of toRemove) {
       await relayCore.removeDeadLetter(dl.endpointHash, dl.messageId);
     }
-    return res.json({ removed: toRemove.length });
+    return c.json({ removed: toRemove.length });
   });
 
   // GET /metrics — Relay system metrics (from RelayCore)
-  router.get('/metrics', (_req, res) => res.json(relayCore.getMetrics()));
+  router.get('/metrics', (c) => c.json(relayCore.getMetrics()));
 
   // GET /messages/:id/trace — Full trace for a message
-  router.get('/messages/:id/trace', (_req, res) => {
-    if (!traceStore) return res.status(404).json({ error: 'Tracing not available' });
-    const span = traceStore.getSpanByMessageId(_req.params.id);
-    if (!span) return res.status(404).json({ error: 'Trace not found' });
+  router.get('/messages/:id/trace', (c) => {
+    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    const span = traceStore.getSpanByMessageId(c.req.param('id'));
+    if (!span) return c.json({ error: 'Trace not found' }, 404);
     const spans = traceStore.getTrace(span.traceId);
-    return res.json({ traceId: span.traceId, spans });
+    return c.json({ traceId: span.traceId, spans });
   });
 
   // GET /trace/metrics — Aggregate delivery metrics from TraceStore
-  router.get('/trace/metrics', (_req, res) => {
-    if (!traceStore) return res.status(404).json({ error: 'Tracing not available' });
-    return res.json(traceStore.getMetrics());
+  router.get('/trace/metrics', (c) => {
+    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    return c.json(traceStore.getMetrics());
   });
 
   // GET /stream — SSE event stream with server-side subject filtering
-  router.get('/stream', (req, res) => {
+  router.get('/stream', (c) => {
     logger.warn('[DEPRECATED] GET /api/relay/stream — use GET /api/events instead');
-    const pattern = (req.query.subject as string) || 'relay.human.console.>';
+    const pattern = (readQuery(c).subject as string) || 'relay.human.console.>';
     if (!validateSubscriptionPattern(pattern)) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid subscription pattern', allowedPrefixes: ALLOWED_PREFIXES });
+      return c.json(
+        { error: 'Invalid subscription pattern', allowedPrefixes: ALLOWED_PREFIXES },
+        400
+      );
     }
-    initSSEStream(res);
-    res.write(`event: relay_connected\n`);
-    res.write(`data: ${JSON.stringify({ pattern, connectedAt: new Date().toISOString() })}\n\n`);
-
-    // Backpressure: skip events until the client drains its buffer
-    let paused = false;
-
-    const unsubMessages = relayCore.subscribe(pattern, (envelope) => {
-      if (res.writableEnded || paused) return;
-      try {
-        res.write(`id: ${envelope.id}\n`);
-        res.write(`event: relay_message\n`);
-        const canContinue = res.write(`data: ${JSON.stringify(envelope)}\n\n`);
-        if (!canContinue) {
-          paused = true;
-          res.once('drain', () => {
-            paused = false;
-          });
-        }
-      } catch {
-        // Write failure — cleaned up on close
-      }
-    });
-
-    const unsubSignals = relayCore.onSignal(pattern, (_subject, signal) => {
-      if (res.writableEnded || paused) return;
-      try {
-        const eventType = signal.type === 'backpressure' ? 'relay_backpressure' : 'relay_signal';
-        res.write(`event: ${eventType}\n`);
-        const canContinue = res.write(`data: ${JSON.stringify(signal)}\n\n`);
-        if (!canContinue) {
-          paused = true;
-          res.once('drain', () => {
-            paused = false;
-          });
-        }
-      } catch {
-        // Write failure — cleaned up on close
-      }
-    });
-
-    const keepalive = setInterval(() => {
-      if (res.writableEnded) {
-        clearInterval(keepalive);
-        return;
-      }
-      try {
-        res.write(`: keepalive\n\n`);
-      } catch {
-        clearInterval(keepalive);
-      }
-    }, 15_000);
-
-    req.on('close', () => {
-      clearInterval(keepalive);
-      unsubMessages();
-      unsubSignals();
-    });
+    return streamToNodeResponse(c, (res, { signal }) =>
+      streamRelayEvents(relayCore, pattern, res, signal)
+    );
   });
 
   // --- Adapter Management Routes ---
   if (adapterManager) {
-    router.use('/', createAdapterRouter(adapterManager, traceStore));
+    router.route('/', createAdapterRoutes({ adapterManager, traceStore, activity: deps.activity }));
+    router.route('/', createRelayWebhookRoutes(adapterManager));
   }
 
   return router;
+}
+
+/**
+ * Write relay messages and signals matching `pattern` as an event stream until
+ * the client leaves.
+ */
+function streamRelayEvents(
+  relayCore: RelayCore,
+  pattern: string,
+  res: ServerResponse,
+  signal: AbortSignal
+): Promise<void> {
+  initSSEStream(res);
+  res.write(`event: relay_connected\n`);
+  res.write(`data: ${JSON.stringify({ pattern, connectedAt: new Date().toISOString() })}\n\n`);
+
+  // Backpressure: skip events until the client drains its buffer
+  let paused = false;
+
+  const unsubMessages = relayCore.subscribe(pattern, (envelope) => {
+    if (res.writableEnded || paused) return;
+    try {
+      res.write(`id: ${envelope.id}\n`);
+      res.write(`event: relay_message\n`);
+      const canContinue = res.write(`data: ${JSON.stringify(envelope)}\n\n`);
+      if (!canContinue) {
+        paused = true;
+        res.once('drain', () => {
+          paused = false;
+        });
+      }
+    } catch {
+      // Write failure — cleaned up on close
+    }
+  });
+
+  const unsubSignals = relayCore.onSignal(pattern, (_subject, relaySignal) => {
+    if (res.writableEnded || paused) return;
+    try {
+      const eventType = relaySignal.type === 'backpressure' ? 'relay_backpressure' : 'relay_signal';
+      res.write(`event: ${eventType}\n`);
+      const canContinue = res.write(`data: ${JSON.stringify(relaySignal)}\n\n`);
+      if (!canContinue) {
+        paused = true;
+        res.once('drain', () => {
+          paused = false;
+        });
+      }
+    } catch {
+      // Write failure — cleaned up on close
+    }
+  });
+
+  const keepalive = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(keepalive);
+      return;
+    }
+    try {
+      res.write(`: keepalive\n\n`);
+    } catch {
+      clearInterval(keepalive);
+    }
+  }, 15_000);
+
+  return new Promise((resolve) => {
+    const stop = (): void => {
+      clearInterval(keepalive);
+      unsubMessages();
+      unsubSignals();
+      resolve();
+    };
+    if (signal.aborted) stop();
+    else signal.addEventListener('abort', stop, { once: true });
+  });
 }

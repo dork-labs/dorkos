@@ -1,3 +1,22 @@
+import {
+  serverSelected,
+  completedServerDependencies,
+  dependencyOutputSnapshot,
+  NATIVE_FILES,
+  nativeSelection,
+  validateNative,
+  validateIsolated,
+  mergeReports,
+} from './cold-shard-dependencies.ts';
+export {
+  serverSelected,
+  completedServerDependencies,
+  dependencyOutputSnapshot,
+  NATIVE_FILES,
+  nativeSelection,
+  validateNative,
+  mergeReports,
+} from './cold-shard-dependencies.ts';
 /** Keep real Room, cold-import and checkbox recovery files behind completed ordinary task work. */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -10,12 +29,6 @@ import {
   appendFileSync,
   copyFileSync,
   rmSync,
-  globSync,
-  lstatSync,
-  openSync,
-  readSync,
-  closeSync,
-  realpathSync,
 } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -27,282 +40,8 @@ export const ROOM_FILE =
 export const CHECKBOX_FILE =
   'src/services/canvas/doc-channel/writes/__tests__/checkbox-service.test.ts';
 const SERVER_TASK = '@dorkos/server#test';
-const COUNTERS = [
-  'numTotalTestSuites',
-  'numPassedTestSuites',
-  'numFailedTestSuites',
-  'numPendingTestSuites',
-  'numTotalTests',
-  'numPassedTests',
-  'numFailedTests',
-  'numPendingTests',
-  'numTodoTests',
-];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Runtime report schemas are checked before their fields are composed.
 type Json = Record<string, any>;
-
-/** Validate the original Turbo task census and identify an affected server test task. */
-export function serverSelected(summary: Json): boolean {
-  if (!Array.isArray(summary.tasks)) throw new Error('missing original turbo task selection');
-  if (
-    summary.tasks.some(
-      (task: Json) =>
-        !task ||
-        typeof task.task !== 'string' ||
-        !task.task ||
-        typeof task.taskId !== 'string' ||
-        !task.taskId.endsWith(`#${task.task}`)
-    ) ||
-    new Set(summary.tasks.map((task: Json) => task.taskId)).size !== summary.tasks.length
-  )
-    throw new Error('malformed or duplicate original turbo task selection');
-  return summary.tasks.some((task: Json) => task.task === 'test' && task.taskId === SERVER_TASK);
-}
-
-/** Prove successful transitive server prerequisites from the fresh ordinary Turbo summary. */
-export function completedServerDependencies(summary: Json, root?: string): Json[] | null {
-  try {
-    if (summary.turboVersion !== '2.10.13' || summary.version !== '1' || !serverSelected(summary))
-      return null;
-    const rows = new Map<string, Json>(
-      summary.tasks.map((task: Json): [string, Json] => [task.taskId, task])
-    );
-    const server = rows.get(SERVER_TASK);
-    if (
-      !server ||
-      server.directory !== 'apps/server' ||
-      !Array.isArray(server.dependencies) ||
-      !server.dependencies.length ||
-      !Array.isArray(server.resolvedTaskDefinition?.dependsOn) ||
-      !server.resolvedTaskDefinition.dependsOn.includes('^build')
-    )
-      return null;
-    const metadata = new Set<string>();
-    const virtualDirectories = new Set<string>();
-    let packages: Map<string, Json> | undefined;
-    let config: Json | undefined;
-    function virtual(id: string): Json {
-      if (!root) throw new Error('missing virtual prerequisite proof');
-      if (!packages) {
-        const workspace = readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
-        if (workspace.trim() !== "packages:\n  - 'apps/*'\n  - 'packages/*'")
-          throw new Error('unsupported workspace graph');
-        metadata.add('pnpm-workspace.yaml');
-        metadata.add('turbo.json');
-        config = JSON.parse(readFileSync(path.join(root, 'turbo.json'), 'utf8'));
-        packages = new Map();
-        for (const file of globSync(['apps/*/package.json', 'packages/*/package.json'], {
-          cwd: root,
-        })) {
-          const manifest = JSON.parse(readFileSync(path.join(root, file), 'utf8'));
-          if (typeof manifest.name !== 'string' || packages.has(manifest.name))
-            throw new Error('unproved workspace package identity');
-          metadata.add(file);
-          packages.set(manifest.name, { manifest, directory: path.dirname(file) });
-        }
-      }
-      const split = id.lastIndexOf('#');
-      const name = id.slice(0, split);
-      const taskName = id.slice(split + 1);
-      const pkg = packages.get(name);
-      if (
-        split < 1 ||
-        !pkg ||
-        !['build', 'generate:api-docs'].includes(taskName) ||
-        existsSync(path.join(root, pkg.directory, 'turbo.json')) ||
-        existsSync(path.join(root, pkg.directory, 'turbo.jsonc')) ||
-        config?.tasks?.[id] ||
-        Object.hasOwn(pkg.manifest.scripts ?? {}, taskName)
-      )
-        throw new Error('missing executable or overridden prerequisite');
-      virtualDirectories.add(pkg.directory);
-      const definition = config?.tasks?.[taskName];
-      if (
-        !definition ||
-        definition.persistent ||
-        definition.with ||
-        JSON.stringify(definition.dependsOn ?? []) !==
-          JSON.stringify(taskName === 'build' ? ['generate:api-docs', '^build'] : [])
-      )
-        throw new Error('unsupported virtual prerequisite definition');
-      const deps = taskName === 'build' ? [`${name}#generate:api-docs`] : [];
-      if (taskName === 'build') {
-        for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
-          for (const [dependency, version] of Object.entries(pkg.manifest[field] ?? {})) {
-            if (!packages.has(dependency)) {
-              if (typeof version === 'string' && version.startsWith('workspace:'))
-                throw new Error('unresolved workspace prerequisite');
-              continue;
-            }
-            if (
-              typeof version !== 'string' ||
-              !['workspace:*', 'workspace:^', 'workspace:~'].includes(version)
-            )
-              throw new Error('unsupported workspace dependency resolution');
-            deps.push(`${dependency}#build`);
-          }
-        }
-      }
-      return { taskId: id, dependencies: [...new Set(deps)], virtual: true };
-    }
-    const visited = new Set<string>();
-    const active = new Set<string>();
-    const dependencies: Json[] = [];
-    function visit(id: string): void {
-      if (active.has(id)) throw new Error('cyclic prerequisite graph');
-      if (visited.has(id)) return;
-      const task = rows.get(id) ?? virtual(id);
-      if (task.virtual) {
-        active.add(id);
-        for (const dependency of task.dependencies) visit(dependency);
-        active.delete(id);
-        visited.add(id);
-        return;
-      }
-      if (
-        !task ||
-        task.task === 'test' ||
-        typeof task.command !== 'string' ||
-        !task.command ||
-        !Array.isArray(task.dependencies) ||
-        task.dependencies.some((dep: unknown) => typeof dep !== 'string') ||
-        !Array.isArray(task.with) ||
-        task.with.length ||
-        task.execution?.exitCode !== 0 ||
-        task.execution.error ||
-        !Number.isFinite(task.execution.startTime) ||
-        !Number.isFinite(task.execution.endTime) ||
-        task.execution.endTime < task.execution.startTime ||
-        !['HIT', 'MISS'].includes(task.cache?.status) ||
-        typeof task.hash !== 'string' ||
-        !task.hash ||
-        !Array.isArray(task.expandedOutputs)
-      )
-        throw new Error('unproved prerequisite completion');
-      active.add(id);
-      for (const dependency of task.dependencies) visit(dependency);
-      active.delete(id);
-      visited.add(id);
-      dependencies.push(task);
-    }
-    for (const id of server.dependencies) {
-      if (typeof id !== 'string') return null;
-      visit(id);
-    }
-    if (metadata.size)
-      dependencies.push({
-        taskId: '$virtual-prerequisite-proof',
-        directory: '.',
-        outputs: [],
-        excludedOutputs: [],
-        expandedOutputs: [...metadata].sort(),
-        metadata: true,
-        virtualDirectories: [...virtualDirectories].sort(),
-      });
-    return dependencies.sort((a, b) => a.taskId.localeCompare(b.taskId));
-  } catch {
-    return null;
-  }
-}
-
-/** Snapshot only recorded prerequisite outputs, including declared-glob membership and full file bodies. */
-export function dependencyOutputSnapshot(root: string, tasks: Json[]): Json[] {
-  if (realpathSync(root) !== path.resolve(root)) throw new Error('unproved repository root');
-  const files = new Set<string>();
-  const safe = (value: unknown): string => {
-    if (
-      typeof value !== 'string' ||
-      !value ||
-      path.isAbsolute(value) ||
-      value.split(/[\\/]/).includes('..')
-    )
-      throw new Error('unsafe prerequisite output path');
-    return value;
-  };
-  for (const task of tasks) {
-    const directory = safe(task.directory);
-    const cwd = path.join(root, directory);
-    if (
-      realpathSync(cwd) !== path.resolve(root) &&
-      !realpathSync(cwd).startsWith(path.resolve(root) + path.sep)
-    )
-      throw new Error('external prerequisite directory');
-    if (lstatSync(cwd).isSymbolicLink() || !lstatSync(cwd).isDirectory())
-      throw new Error('unproved prerequisite output directory');
-    if (task.outputs !== null && !Array.isArray(task.outputs))
-      throw new Error('missing declared outputs');
-    if (task.excludedOutputs !== null && !Array.isArray(task.excludedOutputs))
-      throw new Error('missing excluded outputs');
-    if (
-      task.metadata &&
-      task.virtualDirectories.some(
-        (directory: string) =>
-          existsSync(path.join(root, directory, 'turbo.json')) ||
-          existsSync(path.join(root, directory, 'turbo.jsonc'))
-      )
-    )
-      throw new Error('changed virtual prerequisite configuration');
-    if (
-      task.metadata &&
-      JSON.stringify(
-        globSync(['apps/*/package.json', 'packages/*/package.json'], { cwd: root }).sort()
-      ) !==
-        JSON.stringify(
-          task.expandedOutputs.filter((file: string) => file.endsWith('/package.json')).sort()
-        )
-    )
-      throw new Error('changed workspace manifest membership');
-    const patterns = (task.outputs ?? []).map(safe);
-    const excluded = (task.excludedOutputs ?? []).map(safe);
-    const recorded = new Set<string>(task.expandedOutputs.map(safe));
-    if (recorded.size !== task.expandedOutputs.length)
-      throw new Error('duplicate recorded outputs');
-    for (const entry of globSync(patterns, { cwd, exclude: excluded })) {
-      const relative = path.join(directory, entry);
-      const info = lstatSync(path.join(root, relative));
-      if (info.isSymbolicLink()) throw new Error('symlink prerequisite output');
-      if (info.isFile() && !recorded.has(relative))
-        throw new Error('changed prerequisite output membership');
-    }
-    for (const entry of recorded) {
-      const relative = path.relative(cwd, path.join(root, entry));
-      if (relative.startsWith('..' + path.sep) || relative === '..' || path.isAbsolute(relative))
-        throw new Error('output outside prerequisite package');
-      files.add(entry);
-    }
-  }
-  return [...files].sort().map((relative) => {
-    const file = path.join(root, relative);
-    const info = lstatSync(file);
-    if (!realpathSync(file).startsWith(path.resolve(root) + path.sep))
-      throw new Error('external prerequisite output');
-    if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory()))
-      throw new Error('missing regular prerequisite output');
-    if (info.isDirectory())
-      return {
-        path: relative,
-        mode: info.mode & 0o777,
-        directory: true,
-        members: readdirSync(file).sort(),
-      };
-    const digest = createHash('sha256');
-    const buffer = Buffer.alloc(65536);
-    const fd = openSync(file, 'r');
-    try {
-      let count: number;
-      while ((count = readSync(fd, buffer, 0, buffer.length, null)) > 0)
-        digest.update(buffer.subarray(0, count));
-    } finally {
-      closeSync(fd);
-    }
-    return {
-      path: relative,
-      bytes: info.size,
-      mode: info.mode & 0o777,
-      sha256: digest.digest('hex'),
-    };
-  });
-}
 
 /** Reuse proved outputs for this isolated command only; otherwise retain its original dependency graph. */
 export function isolatedCommand(
@@ -326,12 +65,13 @@ export function isolatedCommand(
   return command;
 }
 
-/** Split the original eight-shard command into ordinary, Room, cold and checkbox phases without changing its flags. */
+/** Split the original eight-shard command into ordinary, Room, cold, checkbox and native phases without changing its flags. */
 export function commands(original: string[]): {
   ordinary: string[];
   room: string[];
   cold: string[];
   checkbox: string[];
+  native: string[];
   shard: number;
   reports: boolean;
 } {
@@ -353,7 +93,7 @@ export function commands(original: string[]): {
   const reports = flags.includes('--reporter=json');
   const ordinaryPrefix = original.slice(0, separator);
   if (!ordinaryPrefix.includes('--summarize')) ordinaryPrefix.push('--summarize');
-  function isolated(file: string, output: string): string[] {
+  function isolated(file: string | readonly string[], output: string): string[] {
     const phaseFlags = flags.map((arg) =>
       arg === '--outputFile.json=vitest-shard-report.json' ? `--outputFile.json=${output}` : arg
     );
@@ -371,7 +111,7 @@ export function commands(original: string[]): {
       '--filter=@dorkos/server',
       '--',
       ...phaseFlags,
-      file,
+      ...(typeof file === 'string' ? [file] : file),
     ];
   }
   return {
@@ -382,10 +122,16 @@ export function commands(original: string[]): {
       `--exclude=${ROOM_FILE}`,
       `--exclude=${COLD_FILE}`,
       `--exclude=${CHECKBOX_FILE}`,
+      ...NATIVE_FILES.map((file) => `--exclude=${file}`),
     ],
     room: isolated(ROOM_FILE, 'vitest-room-shard-report.json'),
     cold: isolated(COLD_FILE, 'vitest-cold-shard-report.json'),
     checkbox: isolated(CHECKBOX_FILE, 'vitest-checkbox-shard-report.json'),
+    native: [
+      ...isolated(NATIVE_FILES, 'vitest-native-shard-report.json'),
+      '--maxWorkers=1',
+      '--fileParallelism=false',
+    ],
     shard,
     reports,
   };
@@ -393,13 +139,14 @@ export function commands(original: string[]): {
 
 /** Await each selected phase and retain the first failure or unknown-selection refusal. */
 export async function bothPhases(
-  run: (phase: 'ordinary' | 'room' | 'cold' | 'checkbox') => Promise<number>,
+  run: (phase: 'ordinary' | 'room' | 'cold' | 'checkbox' | 'native') => Promise<number>,
   selected: () => boolean | null
 ): Promise<{
   ordinary: number;
   room: number | null;
   cold: number | null;
   checkbox: number | null;
+  native: number | null;
   exitCode: number;
 }> {
   // A failed ordinary task is a result, never a reason to skip any isolated phase.
@@ -408,103 +155,15 @@ export async function bothPhases(
   const room = selection === true ? await run('room') : null;
   const cold = selection === true ? await run('cold') : null;
   const checkbox = selection === true ? await run('checkbox') : null;
+  const native = selection === true ? await run('native') : null;
   return {
     ordinary,
     room,
     cold,
     checkbox,
-    exitCode: selection === null ? 86 : ordinary || room || cold || checkbox || 0,
+    native,
+    exitCode: selection === null ? 86 : ordinary || room || cold || checkbox || native || 0,
   };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Snapshot metadata is recursively type-checked; unknown unequal values fail closed.
-function combineMetadata(a: any, b: any): any {
-  if (typeof a === 'number' && typeof b === 'number') return a + b;
-  if (typeof a === 'boolean' && typeof b === 'boolean') return a || b;
-  if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b];
-  if (a && b && typeof a === 'object' && typeof b === 'object') {
-    if (Object.keys(a).sort().join('|') !== Object.keys(b).sort().join('|'))
-      throw new Error('phase metadata schema mismatch');
-    return Object.fromEntries(Object.keys(a).map((key) => [key, combineMetadata(a[key], b[key])]));
-  }
-  if (a === b) return a;
-  throw new Error('unmergeable phase metadata');
-}
-
-/** Merge disjoint native phase reports while retaining assertion results and shared metadata. */
-export function mergeReports(ordinary: Json, cold: Json): Json {
-  if (!Array.isArray(ordinary.testResults) || !Array.isArray(cold.testResults))
-    throw new Error('missing real phase test results');
-  const names = [...ordinary.testResults, ...cold.testResults].map((file: Json) => file.name);
-  if (names.some((name) => typeof name !== 'string') || new Set(names).size !== names.length)
-    throw new Error('duplicate phase file');
-  if (Object.keys(ordinary).sort().join('|') !== Object.keys(cold).sort().join('|'))
-    throw new Error('phase report schema mismatch');
-  const merged: Json = { ...ordinary };
-  for (const key of COUNTERS) {
-    if (
-      !Number.isInteger(ordinary[key]) ||
-      !Number.isInteger(cold[key]) ||
-      ordinary[key] < 0 ||
-      cold[key] < 0
-    )
-      throw new Error(`invalid ${key}`);
-    merged[key] = ordinary[key] + cold[key];
-  }
-  if (typeof ordinary.success !== 'boolean' || typeof cold.success !== 'boolean')
-    throw new Error('missing phase success status');
-  merged.success = ordinary.success && cold.success;
-  merged.startTime = Math.min(ordinary.startTime, cold.startTime);
-  merged.testResults = [...ordinary.testResults, ...cold.testResults];
-  merged.snapshot = combineMetadata(ordinary.snapshot, cold.snapshot);
-  if (
-    (ordinary.coverageMap && Object.keys(ordinary.coverageMap).length) ||
-    (cold.coverageMap && Object.keys(cold.coverageMap).length)
-  )
-    throw new Error('coverage needs its own supported merge; this workflow runs no coverage');
-  // Retain any other original JSON metadata exactly, rather than silently discarding it.
-  for (const key of Object.keys(ordinary)) {
-    if (
-      !COUNTERS.includes(key) &&
-      !['success', 'startTime', 'testResults', 'snapshot', 'coverageMap'].includes(key) &&
-      JSON.stringify(ordinary[key]) !== JSON.stringify(cold[key])
-    )
-      throw new Error(`unknown differing report field ${key}`);
-  }
-  return merged;
-}
-
-function validateIsolated(
-  report: Json,
-  shard: number,
-  expectedPath: string,
-  count: number,
-  label: string
-): void {
-  if (!Array.isArray(report.testResults)) throw new Error(`${label} phase did not write a report`);
-  const expected = shard === 1 ? [expectedPath] : [];
-  if (
-    JSON.stringify(report.testResults.map((file: Json) => file.name)) !== JSON.stringify(expected)
-  )
-    throw new Error(`${label} phase did not collect its exact singleton shard`);
-  const assertions = report.testResults.flatMap((file: Json) => file.assertionResults ?? []);
-  if (
-    assertions.length !== (shard === 1 ? count : 0) ||
-    assertions.some((assertion: Json) => !['passed', 'failed'].includes(assertion.status))
-  ) {
-    throw new Error(`${label} phase did not execute all original assertions`);
-  }
-  if (
-    report.numPendingTests !== 0 ||
-    report.numTodoTests !== 0 ||
-    report.numPassedTests !==
-      assertions.filter((assertion: Json) => assertion.status === 'passed').length ||
-    report.numFailedTests !==
-      assertions.filter((assertion: Json) => assertion.status === 'failed').length
-  )
-    throw new Error(`${label} phase assertion status accounting is inconsistent`);
-  if (report.numTotalTests !== (shard === 1 ? count : 0))
-    throw new Error(`${label} whole-file assertions changed or were not executed`);
 }
 
 /** Require all 33 cold assertions on the owner shard and none on the other seven shards. */
@@ -517,9 +176,9 @@ export function validateRoom(report: Json, shard: number, expectedPath: string):
   validateIsolated(report, shard, expectedPath, 1, 'Room');
 }
 
-/** Require all 56 checkbox assertions on the owner shard and none on the other seven shards. */
+/** Require all 57 checkbox assertions on the owner shard and none on the other seven shards. */
 export function validateCheckbox(report: Json, shard: number, expectedPath: string): void {
-  validateIsolated(report, shard, expectedPath, 56, 'checkbox');
+  validateIsolated(report, shard, expectedPath, 57, 'checkbox');
 }
 
 /** Run a child command and report its result only after the process has closed. */
@@ -565,7 +224,7 @@ async function main(original: string[]): Promise<number> {
       if (
         directory.isDirectory() &&
         `${category}/${directory.name}` !== 'apps/server' &&
-        [ROOM_FILE, COLD_FILE, CHECKBOX_FILE].some((file) =>
+        [ROOM_FILE, COLD_FILE, CHECKBOX_FILE, ...NATIVE_FILES].some((file) =>
           existsSync(path.join(root, category, directory.name, file))
         )
       )
@@ -578,9 +237,10 @@ async function main(original: string[]): Promise<number> {
   const roomReport = path.join(server, 'vitest-room-shard-report.json');
   const coldReport = path.join(server, 'vitest-cold-shard-report.json');
   const checkboxReport = path.join(server, 'vitest-checkbox-shard-report.json');
+  const nativeReport = path.join(server, 'vitest-native-shard-report.json');
   const evidence = path.join(root, '.turbo', `cold-phases-${plan.shard}`);
   mkdirSync(evidence, { recursive: true });
-  for (const file of [report, flake, roomReport, coldReport, checkboxReport])
+  for (const file of [report, flake, roomReport, coldReport, checkboxReport, nativeReport])
     rmSync(file, { force: true });
   let selected: boolean | null = null; // A missing selection proof never expands affected server work.
   let protocolFailure = false;
@@ -607,6 +267,21 @@ async function main(original: string[]): Promise<number> {
   }
   const result = await bothPhases(
     async (phase) => {
+      let selectedNative: string[] = [];
+      if (phase === 'native') {
+        try {
+          selectedNative = await nativeSelection(server, plan.shard);
+          save(path.join(evidence, 'native-selection.json'), {
+            shard: plan.shard,
+            selected: selectedNative,
+            wholeFamily: NATIVE_FILES,
+          });
+        } catch (error) {
+          console.error(error);
+          protocolFailure = true;
+          return 86;
+        }
+      }
       const before = summaries(root);
       const command =
         phase === 'ordinary'
@@ -649,7 +324,7 @@ async function main(original: string[]): Promise<number> {
             ordinaryFlake = JSON.parse(readFileSync(flake, 'utf8'));
             if (
               parsedOrdinaryReport.testResults.some((file: Json) =>
-                [ROOM_FILE, COLD_FILE, CHECKBOX_FILE].some(
+                [ROOM_FILE, COLD_FILE, CHECKBOX_FILE, ...NATIVE_FILES].some(
                   (isolated) => file.name === path.join(server, isolated)
                 )
               )
@@ -683,20 +358,28 @@ async function main(original: string[]): Promise<number> {
             }
           }
           const phaseReport =
-            phase === 'room' ? roomReport : phase === 'cold' ? coldReport : checkboxReport;
+            phase === 'room'
+              ? roomReport
+              : phase === 'cold'
+                ? coldReport
+                : phase === 'checkbox'
+                  ? checkboxReport
+                  : nativeReport;
           archive(phaseReport, `vitest-${phase}-phase.raw.json`);
           if (plan.reports) archive(flake, `vitest-${phase}-flake.raw.json`);
           const actual: Json = JSON.parse(readFileSync(phaseReport, 'utf8'));
           if (phase === 'room') validateRoom(actual, plan.shard, path.join(server, ROOM_FILE));
           else if (phase === 'cold') validateCold(actual, plan.shard, path.join(server, COLD_FILE));
-          else validateCheckbox(actual, plan.shard, path.join(server, CHECKBOX_FILE));
+          else if (phase === 'checkbox')
+            validateCheckbox(actual, plan.shard, path.join(server, CHECKBOX_FILE));
+          else validateNative(actual, selectedNative, server);
           if (phase === 'room') {
             roomReportBody = actual;
             if (plan.reports) roomFlake = JSON.parse(readFileSync(flake, 'utf8'));
           } else if (phase === 'cold') {
             coldReportBody = actual;
             if (plan.reports) coldFlake = JSON.parse(readFileSync(flake, 'utf8'));
-          } else if (plan.reports) {
+          } else if (phase === 'checkbox' && plan.reports) {
             const actualFlake: Json = JSON.parse(readFileSync(flake, 'utf8'));
             if (
               !ordinaryReport ||
@@ -727,13 +410,33 @@ async function main(original: string[]): Promise<number> {
                 ...actualFlake.flaky,
               ],
             });
+          } else if (phase === 'native' && plan.reports) {
+            const combined: Json = JSON.parse(readFileSync(report, 'utf8'));
+            const previousFlake: Json = JSON.parse(
+              readFileSync(path.join(server, 'vitest-combined-flake.raw.json'), 'utf8')
+            );
+            const actualFlake: Json = JSON.parse(readFileSync(flake, 'utf8'));
+            if (
+              previousFlake.cwd !== actualFlake.cwd ||
+              !Array.isArray(previousFlake.flaky) ||
+              !Array.isArray(actualFlake.flaky)
+            )
+              throw new Error('invalid or missing native phase flake metadata');
+            save(report, mergeReports(combined, actual));
+            save(flake, {
+              cwd: actualFlake.cwd,
+              flaky: [...previousFlake.flaky, ...actualFlake.flaky],
+            });
           }
         }
       } catch (error) {
         console.error(error);
         protocolFailure = true;
       }
-      if (phase === 'room' || phase === 'cold') rmSync(flake, { force: true });
+      if (phase === 'checkbox' && plan.reports && existsSync(flake))
+        archive(flake, 'vitest-combined-flake.raw.json');
+      if (phase === 'room' || phase === 'cold' || phase === 'checkbox')
+        rmSync(flake, { force: true });
       return code;
     },
     () => selected

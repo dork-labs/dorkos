@@ -146,7 +146,11 @@ export interface UpdateAgentArgs {
   conventions?: Record<string, unknown>;
   color?: string | null;
   icon?: string | null;
+  /** Who the agent reports to; `null` returns it to the default chain. */
+  reportsTo?: string | null;
   soulContent?: string;
+  /** HEARTBEAT.md, written whole (spec `heartbeats` §2). */
+  heartbeatContent?: string;
   /** Retired; present only so the updater can refuse it by name. */
   tierCeiling?: unknown;
   /** Present only so the handler can refuse it — see the guard in the handler. */

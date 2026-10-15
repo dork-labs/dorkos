@@ -1664,7 +1664,7 @@
           },
           "supported": {
             "type": "boolean",
-            "description": "Whether this computer can be held awake at all."
+            "description": "Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried."
           },
           "reason": {
             "$ref": "#/components/schemas/KeepAwakeUnsupportedReason"
@@ -1761,7 +1761,625 @@
           "platform",
           null
         ],
-        "description": "Why not, when `supported` is false; null otherwise."
+        "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
+      },
+      "ListCommitmentsResponse": {
+        "type": "object",
+        "properties": {
+          "commitments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Commitment"
+            }
+          }
+        },
+        "required": [
+          "commitments"
+        ]
+      },
+      "Commitment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "sourceSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRoomEntryId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "to",
+          "what",
+          "dueAt",
+          "state",
+          "overdue",
+          "sourceSessionId",
+          "sourceRoomEntryId",
+          "createdAt",
+          "closedAt",
+          "note"
+        ]
+      },
+      "CommitmentState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "kept",
+          "missed",
+          "dropped"
+        ]
+      },
+      "CommitmentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "CreateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "what"
+        ]
+      },
+      "UpdateCommitmentRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/CommitmentState"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "from": {
+            "$ref": "#/components/schemas/CommitmentState"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "HeartbeatStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "wake": {
+            "$ref": "#/components/schemas/HeartbeatWake"
+          },
+          "nextBeatAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skippedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastBeats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BeatSummary"
+            }
+          },
+          "held": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeldRaise"
+            }
+          },
+          "report": {
+            "$ref": "#/components/schemas/HeartbeatReportStatus"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HeartbeatChecks"
+          },
+          "measures": {
+            "$ref": "#/components/schemas/HeartbeatMeasures"
+          }
+        },
+        "required": [
+          "enabled",
+          "wake",
+          "nextBeatAt",
+          "skippedReason",
+          "fileError",
+          "lastBeats",
+          "held",
+          "report",
+          "checks",
+          "measures"
+        ]
+      },
+      "HeartbeatWake": {
+        "type": "string",
+        "enum": [
+          "timed",
+          "events",
+          "off"
+        ]
+      },
+      "BeatSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BeatKind"
+          },
+          "wake": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BeatOutcome"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "raises": {
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "endedAt",
+          "kind",
+          "wake",
+          "outcome",
+          "summary",
+          "raises",
+          "sessionId"
+        ]
+      },
+      "BeatKind": {
+        "type": "string",
+        "enum": [
+          "pulse",
+          "sweep",
+          "report"
+        ]
+      },
+      "BeatOutcome": {
+        "type": "string",
+        "enum": [
+          "quiet",
+          "queued",
+          "worked",
+          "no-end-beat",
+          "failed",
+          "refused",
+          "skipped"
+        ]
+      },
+      "HeldRaise": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "rung": {
+            "$ref": "#/components/schemas/HeartbeatRaiseRung"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliverAfter": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "to",
+          "rung",
+          "text",
+          "deliverAfter",
+          "createdAt"
+        ]
+      },
+      "HeartbeatRaiseRung": {
+        "type": "string",
+        "enum": [
+          "report",
+          "room",
+          "dm",
+          "note"
+        ]
+      },
+      "HeartbeatReportStatus": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/HeartbeatReport"
+          },
+          "to": {
+            "type": "string"
+          },
+          "nextReportAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cadence",
+          "to",
+          "nextReportAt",
+          "items"
+        ]
+      },
+      "HeartbeatReport": {
+        "type": "string",
+        "enum": [
+          "daily",
+          "weekly",
+          "off"
+        ]
+      },
+      "HeartbeatChecks": {
+        "type": "object",
+        "properties": {
+          "runsOn": {
+            "type": "string",
+            "enum": [
+              "credits",
+              "runtime"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "today": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "offer": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runsOn",
+          "runtime",
+          "today",
+          "tokens",
+          "offer"
+        ]
+      },
+      "HeartbeatMeasures": {
+        "type": "object",
+        "properties": {
+          "windowDays": {
+            "type": "integer"
+          },
+          "since": {
+            "type": "string"
+          },
+          "keptRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "usefulRaiseRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "interruptions": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "messages": {
+                "type": "integer"
+              },
+              "usefulOutcomes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "messages",
+              "usefulOutcomes",
+              "target",
+              "source"
+            ]
+          },
+          "surprises": {
+            "type": "object",
+            "properties": {
+              "measured": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "measured",
+              "source"
+            ]
+          },
+          "mutesAndPauses": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "pauses": {
+                "type": "integer"
+              },
+              "wakeOff": {
+                "type": "integer"
+              },
+              "mutes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "total",
+              "pauses",
+              "wakeOff",
+              "mutes",
+              "target",
+              "source"
+            ]
+          },
+          "supporting": {
+            "type": "object",
+            "properties": {
+              "beats": {
+                "type": "integer"
+              },
+              "quietBeats": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "commitmentsOnTime": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "noEndBeat": {
+                "type": "integer"
+              },
+              "triage": {
+                "type": "object",
+                "properties": {
+                  "checks": {
+                    "type": "integer"
+                  },
+                  "tokens": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "checks",
+                  "tokens"
+                ]
+              },
+              "turns": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "tokensPerTurn": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "count",
+                  "tokensPerTurn"
+                ]
+              },
+              "bypass": {
+                "type": "integer"
+              },
+              "held": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "beats",
+              "quietBeats",
+              "commitmentsOnTime",
+              "noEndBeat",
+              "triage",
+              "turns",
+              "bypass",
+              "held"
+            ]
+          }
+        },
+        "required": [
+          "windowDays",
+          "since",
+          "keptRate",
+          "usefulRaiseRate",
+          "interruptions",
+          "surprises",
+          "mutesAndPauses",
+          "supporting"
+        ]
+      },
+      "MeasureRate": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "part": {
+            "type": "integer"
+          },
+          "whole": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "part",
+          "whole",
+          "target",
+          "source"
+        ]
+      },
+      "TriageCreditsChoice": {
+        "type": "object",
+        "properties": {
+          "useCredits": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "useCredits"
+        ]
       },
       "HealthResponse": {
         "type": "object",
@@ -1825,6 +2443,14 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "byo",
+              "managed"
             ]
           }
         },
@@ -2590,6 +3216,27 @@
           "dailyCounts"
         ]
       },
+      "HistoryRead": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryMessage"
+            }
+          },
+          "tail": {
+            "type": "boolean"
+          },
+          "earlierMessages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
       "HistoryMessage": {
         "type": "object",
         "properties": {
@@ -2696,6 +3343,9 @@
             "items": {
               "$ref": "#/components/schemas/ChatMessageStamp"
             }
+          },
+          "roomMessage": {
+            "$ref": "#/components/schemas/RoomMessageStamp"
           }
         },
         "required": [
@@ -3899,6 +4549,71 @@
           "failed"
         ]
       },
+      "RoomMessageStamp": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "roomLabel": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/RoomMessageAuthor"
+          }
+        },
+        "required": [
+          "roomId",
+          "entryId"
+        ]
+      },
+      "RoomMessageAuthor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent",
+              "system"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "you": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "displayName",
+          "handle",
+          "you"
+        ]
+      },
       "SessionSnapshot": {
         "type": "object",
         "properties": {
@@ -3907,6 +4622,10 @@
             "items": {
               "$ref": "#/components/schemas/HistoryMessage"
             }
+          },
+          "earlierMessages": {
+            "type": "integer",
+            "minimum": 0
           },
           "inProgressTurn": {
             "type": [
@@ -5072,6 +5791,9 @@
                 "items": {
                   "$ref": "#/components/schemas/ChatMessageStamp"
                 }
+              },
+              "roomMessage": {
+                "$ref": "#/components/schemas/RoomMessageStamp"
               }
             },
             "required": [
@@ -7728,9 +8450,6 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "acknowledgedAutonomy": {
-            "type": "boolean"
-          },
           "runtime": {
             "type": "string"
           },
@@ -8823,6 +9542,12 @@
               "null"
             ]
           },
+          "lastRunAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "nextRuns": {
             "type": "array",
             "items": {
@@ -9695,6 +10420,16 @@
             "example": {
               "mode": "home"
             }
+          },
+          "reportsTo": {
+            "type": "string",
+            "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+            "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+            "example": "install:9f1c2d3e"
           }
         },
         "required": [
@@ -10108,6 +10843,16 @@
                 "example": {
                   "mode": "home"
                 }
+              },
+              "reportsTo": {
+                "type": "string",
+                "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+              },
+              "createdBy": {
+                "type": "string",
+                "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                "example": "install:9f1c2d3e"
               }
             }
           },
@@ -10215,6 +10960,13 @@
               "null"
             ],
             "minLength": 1
+          },
+          "reportsTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           }
         }
       },
@@ -10279,6 +11031,11 @@
             "properties": {
               "projectPath": {
                 "type": "string"
+              },
+              "effectiveRuntimeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
               },
               "healthStatus": {
                 "$ref": "#/components/schemas/AgentHealthStatus"
@@ -11906,6 +12663,7 @@
           "careful",
           "balanced",
           "full",
+          "trusted",
           null
         ]
       },
@@ -11942,6 +12700,7 @@
           "signed-in",
           "local-trust",
           "agent-request-approved",
+          "agent",
           "upgrade",
           "outside"
         ]
@@ -11998,17 +12757,7 @@
             ]
           },
           "presetStop": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PermissionStop"
-              },
-              {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            ]
+            "$ref": "#/components/schemas/PermissionStop"
           },
           "runtimes": {
             "type": "array",
@@ -12255,7 +13004,6 @@
           "default-action",
           "default-area",
           "preset",
-          "unchanged",
           "floor",
           "inactive",
           "always-asks"
@@ -12306,12 +13054,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -12631,6 +13373,14 @@
           "metadata",
           "undoable",
           "undone"
+        ]
+      },
+      "HeartbeatTemplateId": {
+        "type": "string",
+        "enum": [
+          "lead",
+          "doer",
+          "coder"
         ]
       },
       "UndoPermissionChangeResponse": {
@@ -12998,12 +13748,6 @@
         "properties": {
           "force": {
             "type": "boolean"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         }
       },
@@ -13182,12 +13926,6 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
-          },
-          "acknowledgeAutonomy": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
           }
         },
         "required": [
@@ -13365,12 +14103,12 @@
             ],
             "description": "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
           },
-          "fallbackSeatAuthorId": {
+          "leadAuthorId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The one member that answers a message somebody typed in this room without addressing anybody — #team's default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member's `always` mode, because a person may set any agent to \"Everything\" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
+            "description": "The channel's LEAD: the agent member that answers a person's message nobody else is answering — not @mentioned to anyone, and not part of a conversation with another agent (DOR-2823). It answers whatever its response mode, and steps back when the message @mentions another agent. #team's default agent is its lead. `null` when the room has none. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`."
           },
           "turnLimitsEnabled": {
             "type": [
@@ -13781,6 +14519,11 @@
             },
             "default": [],
             "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The DorkOS app knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
+          },
+          "leadAgentPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A channel's lead, as one of `agentPaths` (DOR-2823). Omitted, a channel's lead is the first agent in `agentPaths`. Refused with INVALID_LEAD on a direct message, or when it is not in `agentPaths`."
           }
         },
         "required": [
@@ -13835,6 +14578,14 @@
           },
           "archived": {
             "type": "boolean"
+          },
+          "leadAuthorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "Set or clear a channel's lead (DOR-2823): an agent member's author id, or `null` for none. Refused with INVALID_LEAD on a direct message, or for an id that is not an agent member of this room."
           },
           "deliverNotices": {
             "type": "boolean",
@@ -14051,6 +14802,13 @@
           "waitingKind": {
             "$ref": "#/components/schemas/RoomWaitingKind"
           },
+          "greeting": {
+            "type": "string",
+            "enum": [
+              "first-run"
+            ],
+            "description": "Set on an agent's scripted greeting DorkOS wrote for it, such as DorkBot's first-run welcome in #team. It woke nobody, and it stays in the app: a chat bridge never delivers it."
+          },
           "answersEntryId": {
             "type": "string",
             "description": "The entry this post answers, set on every agent-authored post the room writes for a turn. Chat posts in arrival order whatever a message is responding to, and an agent whose message waited behind work in another conversation answers out of order often rather than rarely — so the pointer is what a reader follows back to the question."
@@ -14116,6 +14874,7 @@
           "agent_unavailable",
           "agent_left",
           "runtime_gone",
+          "agent_paused",
           "agent_declined",
           "awaiting_approval",
           "halted",
@@ -16140,6 +16899,11 @@
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
           },
+          "effectiveRuntimeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "model": {
             "type": "string"
           },
@@ -16247,6 +17011,13 @@
               "null"
             ],
             "minLength": 1
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "isViewer": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -16545,6 +17316,7 @@
         "enum": [
           "ask.pending",
           "schedule.parked",
+          "schedule.armed_by_agent",
           "approval.pending",
           "session.error",
           "turn.completed",
@@ -16562,7 +17334,8 @@
           "credits.refused",
           "extension.approval",
           "extension.decision",
-          "community.owner-replacement"
+          "community.owner-replacement",
+          "heartbeat.credits-offer"
         ]
       },
       "NotificationTier": {
@@ -17031,6 +17804,476 @@
           "checked",
           "lastSeq",
           "lastHash"
+        ]
+      },
+      "AuditQueryResult": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "nextBeforeSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "onBehalfOf": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "schedule",
+                    "delegation",
+                    "room-turn",
+                    "extension",
+                    "bridge"
+                  ]
+                }
+              },
+              "required": [
+                "accountId",
+                "via"
+              ]
+            }
+          },
+          "credential": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "idHash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "idHash"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditSource"
+          },
+          "action": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AuditOperation"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AuditTarget"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/AuditOutcome"
+          },
+          "error": {
+            "type": "string"
+          },
+          "change": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditChange"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/AuditLinks"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AuditVisibility"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prevHash": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "id",
+          "at",
+          "spaceId",
+          "actor",
+          "source",
+          "action",
+          "operation",
+          "target",
+          "outcome",
+          "summary",
+          "visibility",
+          "prevHash",
+          "hash"
+        ]
+      },
+      "AuditActor": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditActorKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "kind",
+          "name"
+        ]
+      },
+      "AuditActorKind": {
+        "type": "string",
+        "enum": [
+          "person",
+          "agent",
+          "system",
+          "external"
+        ]
+      },
+      "AuditSource": {
+        "type": "object",
+        "properties": {
+          "surface": {
+            "$ref": "#/components/schemas/AuditSurface"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "taskRunId": {
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "userAgent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface"
+        ]
+      },
+      "AuditSurface": {
+        "type": "string",
+        "enum": [
+          "app",
+          "http",
+          "mcp",
+          "cli",
+          "relay",
+          "task",
+          "bridge",
+          "runtime-tool",
+          "system"
+        ]
+      },
+      "AuditOperation": {
+        "type": "string",
+        "enum": [
+          "create",
+          "modify",
+          "remove",
+          "access",
+          "execute",
+          "auth"
+        ]
+      },
+      "AuditTarget": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "containerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "AuditOutcome": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "failed",
+          "refused"
+        ]
+      },
+      "AuditChange": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "before": {},
+          "after": {},
+          "redacted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "AuditLinks": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "causedBy": {
+            "type": "string"
+          },
+          "connectorAttemptId": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditVisibility": {
+        "type": "string",
+        "enum": [
+          "space",
+          "participants",
+          "admins"
+        ]
+      },
+      "AuditGetResult": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AuditEvent"
+          },
+          "activity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "eventType": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "occurredAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "eventType",
+              "summary",
+              "occurredAt"
+            ]
+          },
+          "approval": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "capabilityTitle": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "granted",
+                  "denied"
+                ]
+              },
+              "decidedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "capabilityTitle",
+              "summary",
+              "state"
+            ]
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "readable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "readable"
+            ]
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "AgentPauseResult": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/AgentPause"
+          },
+          "stoppedTurns": {
+            "type": "integer"
+          },
+          "stoppedRuns": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "paused",
+          "changed"
+        ]
+      },
+      "AgentPause": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pausedBy": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "pausedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "pausedBy",
+          "pausedAt"
+        ]
+      },
+      "AgentPauseRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mesh id of the agent to pause or resume."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Why, in a sentence. Kept in the audit log with who did it."
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "AgentPauseList": {
+        "type": "object",
+        "properties": {
+          "pauses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPause"
+            }
+          }
+        },
+        "required": [
+          "pauses"
         ]
       },
       "ListExtensionDecisionsResponse": {
@@ -27719,6 +28962,3365 @@
         }
       }
     },
+    "/api/commitments": {
+      "get": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "What agents promised",
+        "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/CommitmentState"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The promises",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCommitmentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/commitments": {
+      "post": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Add a promise for an agent",
+        "description": "A person records something an agent promised. Agents record their own with `commitment_add`, so a caller presenting an agent identity is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new promise",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No agent has that id (`UNKNOWN_AGENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commitments/{id}": {
+      "patch": {
+        "tags": [
+          "Commitments"
+        ],
+        "summary": "Close a promise or move its date",
+        "description": "Mark a promise kept, missed or dropped. `state: \"open\"` moves an open promise to a new `dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommitmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The promise, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Commitment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Another agent made it, or the person is not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No promise has that id (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/heartbeat": {
+      "get": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "An agent's heartbeat",
+        "description": "How the agent wakes on its own, when its next timed beat is due, its last 50 beats from the record, the messages to people still held for their working hours, and its measures: whether its work on its own helped, each with its source and starting target.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "description": "How many days the measures cover. Defaults to 7."
+            },
+            "required": false,
+            "description": "How many days the measures cover. Defaults to 7.",
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The heartbeat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`days` is not a whole number from 1 to 90"
+          },
+          "404": {
+            "description": "No agent with that id"
+          }
+        }
+      }
+    },
+    "/api/heartbeats/triage-credits": {
+      "put": {
+        "tags": [
+          "Heartbeats"
+        ],
+        "summary": "Choose whether cheap checks run on DorkOS credits",
+        "description": "A person’s answer to the one-time offer: `true` is Use credits, `false` is Not now. Owner only, and never an agent. Nothing is spent while the answer is not `true`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageCreditsChoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer, stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageCreditsChoice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not an answer"
+          },
+          "403": {
+            "description": "Only the owner of this DorkOS can answer"
+          }
+        }
+      }
+    },
+    "/api/onboarding/first-run": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Record and set up the path picked on the Welcome screen",
+        "description": "Calls run one at a time. Checks the key and reads the service model list with it first, and writes nothing when the key is refused (by DorkOS, or a 401 or 403 from the service). Any other failed read keeps the key and starts on the service usual model (`modelListed: false`). Then undoes what an earlier pick set up (a credits record goes back to the own sign-in, the default runtime and DorkBot go back to what they were) and applies this one: DorkOS moves the default runtime and DorkBot to DorkOS, clears the model setup so DorkOS picks the model, and leaves credits to the new link; Own AI saves the key (or finds the local model) with the model DorkOS picked from the service's list and turns credits off for DorkOS; no account records the path only. This computer and its owner only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "enum": [
+                      "dorkos",
+                      "own",
+                      "none"
+                    ]
+                  },
+                  "choice": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "openai",
+                          "anthropic",
+                          "openrouter",
+                          "local",
+                          "custom",
+                          "agent-app"
+                        ]
+                      },
+                      "apiKey": {
+                        "type": "string"
+                      },
+                      "inference": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "For `custom`: source, provider, protocol, endpoint, model and limits"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "description": "For `own`: what was picked in the Own AI list"
+                  }
+                },
+                "required": [
+                  "path"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the pick set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "enum": [
+                        "dorkos",
+                        "own",
+                        "none"
+                      ]
+                    },
+                    "runtime": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "modelListed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "runtime"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not this computer, or not the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The first run is finished or dismissed (`onboarding_complete`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A model on this computer did not answer; nothing was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/onboarding/welcome": {
+      "post": {
+        "tags": [
+          "Onboarding"
+        ],
+        "summary": "Post DorkBot's first-run welcome into #team, once",
+        "description": "Posts the welcome as DorkBot without starting any agent turn or notification (and never to a chat bridge), keeps its entry id in `onboarding.welcomeEntryId`, and answers with it. A later call answers with the same entry while #team still holds it, and posts nothing.",
+        "responses": {
+          "200": {
+            "description": "The welcome entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "roomId": {
+                      "type": "string"
+                    },
+                    "entryId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "roomId",
+                    "entryId"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The first run finished or was dismissed without a welcome (`onboarding_complete`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "#team, or DorkBot in it, is not ready yet (`team_unavailable`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers": {
+      "get": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Read computer state",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "local"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "unsupported",
+                        "missing",
+                        "provisioning",
+                        "stopped",
+                        "starting",
+                        "ready",
+                        "stopping",
+                        "failed",
+                        "uncertain"
+                      ]
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtimeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "supported",
+                    "phase",
+                    "generation",
+                    "ready"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Create the computer",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "local"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "unsupported",
+                        "missing",
+                        "provisioning",
+                        "stopped",
+                        "starting",
+                        "ready",
+                        "stopping",
+                        "failed",
+                        "uncertain"
+                      ]
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtimeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "supported",
+                    "phase",
+                    "generation",
+                    "ready"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/start": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Start the retained computer",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "local"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "unsupported",
+                        "missing",
+                        "provisioning",
+                        "stopped",
+                        "starting",
+                        "ready",
+                        "stopping",
+                        "failed",
+                        "uncertain"
+                      ]
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtimeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "supported",
+                    "phase",
+                    "generation",
+                    "ready"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/stop": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Stop the computer",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "local"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "unsupported",
+                        "missing",
+                        "provisioning",
+                        "stopped",
+                        "starting",
+                        "ready",
+                        "stopping",
+                        "failed",
+                        "uncertain"
+                      ]
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtimeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "supported",
+                    "phase",
+                    "generation",
+                    "ready"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/sign-in": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Open vendor sign-in inside the computer",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "local"
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "unsupported",
+                        "missing",
+                        "provisioning",
+                        "stopped",
+                        "starting",
+                        "ready",
+                        "stopping",
+                        "failed",
+                        "uncertain"
+                      ]
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtimeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "supported",
+                    "phase",
+                    "generation",
+                    "ready"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/sessions": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Create a computer-bound chat",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "cwd": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "runtime": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "cwd",
+                    "runtime"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/frame": {
+      "get": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Read the actual desktop frame",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dataUrl": {
+                      "type": "string",
+                      "maxLength": 16777216,
+                      "pattern": "^data:image\\/png;base64,[A-Za-z0-9+/]+={0,2}$"
+                    },
+                    "width": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 8192
+                    },
+                    "height": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 8192
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "controlledByYou": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "dataUrl",
+                    "width",
+                    "height",
+                    "generation"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/control": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Take control after interrupting agent work",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "leaseId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "leaseId",
+                    "generation"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Return control and release held input",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "leaseId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "leaseId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/computers/input": {
+      "post": {
+        "tags": [
+          "Computers"
+        ],
+        "summary": "Send one leased desktop action",
+        "description": "Experimental local computer. Only the account owner may use this route. X-Client-Id identifies the admitted app window; it is required on reads and actions. Requests never accept guest endpoints, credentials or host paths. Control and input are bound to the app window and current generation. With login enabled, the existing login cookie is required. Errors expose a safe code, never private guest details. Stop can return cleanup-uncertain; that response does not confirm physical shutdown.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "X-Client-Id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "leaseId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "generation": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "pointer"
+                        ]
+                      },
+                      "x": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 8191
+                      },
+                      "y": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 8191
+                      },
+                      "button": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "move",
+                          "down",
+                          "up"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "leaseId",
+                      "generation",
+                      "kind",
+                      "x",
+                      "y",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "leaseId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "generation": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "key"
+                        ]
+                      },
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "down",
+                          "up"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "leaseId",
+                      "generation",
+                      "kind",
+                      "key",
+                      "action"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "leaseId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "generation": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "text"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "leaseId",
+                      "generation",
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Observed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, disabled experiment or unsupported host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the account owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Control lost or cleanup unconfirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Computer unavailable, not ready or setup failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "unsupported",
+                            "disabled",
+                            "setup-failed",
+                            "not-ready",
+                            "sign-in-required",
+                            "control-lost",
+                            "cleanup-uncertain",
+                            "unavailable"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "invalid-client",
+                            "invalid-input",
+                            "not-a-person",
+                            "not-the-owner"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -28018,7 +32620,7 @@
           "Sessions"
         ],
         "summary": "Update session settings",
-        "description": "Moving an interactive session to a permission mode that never stops to ask requires an acknowledgement. That means any mode the runtime declares at the `autonomy` stop, and any mode it declares with `asks: \"never\"` and a `reach` other than `\"read\"` — Codex files such a mode at the middle stop. Satisfy it with `acknowledgedAutonomy: true` on this request, or with the standing record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry the identical request (spec `trust-dial`, decision 5). This is a consent ritual for a person, not a boundary against a caller.\n\nThe chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
+        "description": "The chosen mode is always saved. When it could not also be delivered to a reply already in flight AND it was a tightening (the agent must now ask more, or may reach less far), the answer is `202` with `permissionModePendingUntilNextTurn: true` — saved, in force from the next reply, and NOT governing the reply already running. A loosening in the same position stays a plain `200`: it costs a few extra approval prompts for the rest of one turn and corrects itself.\n\nA session with no recorded runtime is answered with the inference reads fall back to, which can differ from the `runtime` hint you sent — so that answer carries `runtimeUnbound: true` and you can tell a guess from a binding. This is not only a brand-new session: the binding is written by an interactive session's first turn and by nothing else, so a scheduled or room-driven session can have run many turns and still have no owner. The field is absent once one is recorded, and it never appears as `false`.",
         "parameters": [
           {
             "schema": {
@@ -28079,16 +32681,6 @@
                 }
               }
             }
-          },
-          "428": {
-            "description": "A mode that never stops to ask was requested without an acknowledgement (`AUTONOMY_ACK_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -28119,6 +32711,39 @@
             "description": "The session's project directory (boundary-checked). Optional for a session the server can already place; required for a cold session it cannot.",
             "name": "cwd",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A message id. When the history holds it, only that message and the ones after it come back, with `tail: true`; otherwise the whole history (DOR-2890)."
+            },
+            "required": false,
+            "description": "A message id. When the history holds it, only that message and the ones after it come back, with `tail: true`; otherwise the whole history (DOR-2890).",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A message id. Answers the page of up to 100 messages directly older than it, with `earlierMessages` counting what remains before the page. An id no message has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889)."
+            },
+            "required": false,
+            "description": "A message id. Answers the page of up to 100 messages directly older than it, with `earlierMessages` counting what remains before the page. An id no message has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Answers only the newest 150 messages, as the stream snapshot carries them, with `earlierMessages` counting the rest (DOR-2889)."
+            },
+            "required": false,
+            "description": "Answers only the newest 150 messages, as the stream snapshot carries them, with `earlierMessages` counting the rest (DOR-2889).",
+            "name": "newest",
+            "in": "query"
           }
         ],
         "responses": {
@@ -28127,24 +32752,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "messages": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/HistoryMessage"
-                      }
-                    }
-                  },
-                  "required": [
-                    "messages"
-                  ]
+                  "$ref": "#/components/schemas/HistoryRead"
                 }
               }
             }
           },
           "404": {
-            "description": "Could not determine this session's working directory (SESSION_CWD_REQUIRED). Retry with an explicit `cwd`.",
+            "description": "Could not determine this session's working directory (SESSION_CWD_REQUIRED); retry with an explicit `cwd`. Or `before` names a message the history does not hold (HISTORY_CURSOR_UNKNOWN).",
             "content": {
               "application/json": {
                 "schema": {
@@ -28223,7 +32837,7 @@
             }
           },
           "409": {
-            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`); the body says what to do instead",
+            "description": "Refused before anything started, for where the turn would run (`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in this project (`account_not_allowed_here`, whose body also names `project` and `accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also names `agentId`); the body says what to do instead",
             "content": {
               "application/json": {
                 "schema": {
@@ -29420,6 +34034,9 @@
                           "items": {
                             "$ref": "#/components/schemas/ChatMessageStamp"
                           }
+                        },
+                        "roomMessage": {
+                          "$ref": "#/components/schemas/RoomMessageStamp"
                         }
                       },
                       "required": [
@@ -42162,6 +46779,10 @@
                       "type": "string",
                       "description": "Where the human goes to approve the link."
                     },
+                    "verificationUriComplete": {
+                      "type": "string",
+                      "description": "The approval page with the code already filled in, when the service sent one."
+                    },
                     "expiresAt": {
                       "type": "string",
                       "description": "ISO timestamp after which the code is dead."
@@ -42250,6 +46871,10 @@
                           "type": "string",
                           "description": "Where the human goes to approve the link."
                         },
+                        "verificationUriComplete": {
+                          "type": "string",
+                          "description": "The approval page with the code already filled in, when the service sent one."
+                        },
                         "expiresAt": {
                           "type": "string",
                           "description": "ISO timestamp after which the code is dead."
@@ -42328,6 +46953,10 @@
                         "verificationUri": {
                           "type": "string",
                           "description": "Where the human goes to approve the link."
+                        },
+                        "verificationUriComplete": {
+                          "type": "string",
+                          "description": "The approval page with the code already filled in, when the service sent one."
                         },
                         "expiresAt": {
                           "type": "string",
@@ -75670,6 +80299,9 @@
                     "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
                     "example": "high"
                   },
+                  "heartbeatTemplate": {
+                    "$ref": "#/components/schemas/HeartbeatTemplateId"
+                  },
                   "approvedTemplateHash": {
                     "type": "string"
                   },
@@ -76320,7 +80952,7 @@
           "Permissions"
         ],
         "summary": "Undo one permission change",
-        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
+        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area. Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
         "parameters": [
           {
             "schema": {
@@ -76397,16 +81029,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UndoConflictResponse"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -77302,7 +81924,7 @@
           "Rooms"
         ],
         "summary": "React to an entry, or take a reaction back",
-        "description": "Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{\"emoji\": \"👍\", \"on\": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry's new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, so what bounds a machine here is an hourly ceiling per room (`REACTION_RATE_LIMITED`, 429) rather than what kind of author it is, and the pill it leaves carries the AGENT's id. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent has no allowance to spend.",
+        "description": "Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{\"emoji\": \"👍\", \"on\": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry's new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **An agent may react too** — ADR 260814-195522 reverses etiquette E16b, and ADR 261006-225605 removes the hourly count it once had, so the pill it leaves carries the AGENT's id and nothing caps how many. A caller presenting an `X-DorkOS-Agent` token this machine cannot verify is refused with 401: a revoked agent cannot react.",
         "parameters": [
           {
             "schema": {
@@ -77375,16 +81997,6 @@
           },
           "409": {
             "description": "The room is archived",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "This agent has spent its hourly reaction allowance in this room (`REACTION_RATE_LIMITED`). People are never counted",
             "content": {
               "application/json": {
                 "schema": {
@@ -85060,7 +89672,7 @@
           "Mcp"
         ],
         "summary": "Import a discovered MCP server into DorkOS management",
-        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. Routed through the same approval gate as add, because the imported entry will run in the agent’s environment. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
+        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. It asks a person first only when the agent’s permissions say so: the entry already runs in the agent’s environment from the project’s own .mcp.json. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -85561,7 +90173,7 @@
           "Audit"
         ],
         "summary": "Check the audit log",
-        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. Optional fromSeq and limit check a stretch instead of the whole log.",
+        "description": "Check that the DorkOS audit log has not been edited: walk its hash chain and recompute every link. Returns ok, how many rows were checked, the last row and its hash, and — if the chain is broken — the first row that does not check out and why. One call checks at most 100,000 rows; when more remain, call again with fromSeq set to nextFromSeq and prevHash set to lastHash.",
         "parameters": [
           {
             "schema": {
@@ -85599,6 +90211,324 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditVerifyResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read the audit log",
+        "description": "Read the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as \"config.\" or \"runtime.tool_used\"), operation, sessionId, and a since/until time window. Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "actorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "targetId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the audit log result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/{id}": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one audit event",
+        "description": "Read one event from the DorkOS audit log by its id, with its links (the Activity row, the approval, the chat) so you can follow it to the transcript.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The event id (a ULID)."
+            },
+            "required": true,
+            "description": "The event id (a ULID).",
+            "name": "id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one audit event result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditGetResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit/accounts/{accountId}/timeline": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Read one account’s history",
+        "description": "Everything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters and paging as reading the whole log.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "required": false,
+            "name": "action",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AuditOperation"
+            },
+            "required": false,
+            "name": "operation",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "sessionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "required": false,
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": false,
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one account’s history result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/pause": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Pause an agent everywhere",
+        "description": "Stop an agent everywhere at once: its running turns end, its running scheduled runs stop, and nothing starts a new turn for it (messages, schedules, rooms, relay) until someone resumes it. Anyone may pause any agent, including DorkBot; it never waits for approval. Held work is not replayed later. Recorded with who did it and why. Pass the mesh id of the agent and, ideally, a reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pause an agent everywhere result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/resume": {
+      "post": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Resume a paused agent",
+        "description": "Lift a pause so the agent can work again. Anyone may resume an agent except the paused agent itself. Work it was held from is not replayed. Recorded with who did it and why.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resume a paused agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/pauses": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "summary": "List paused agents",
+        "description": "List every agent that is paused right now, with who paused it, when, and why.",
+        "responses": {
+          "200": {
+            "description": "List paused agents result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPauseList"
                 }
               }
             }

@@ -57,6 +57,9 @@ function openRoom(
     },
     harness.human
   );
+  // No lead: this case is about the ambient window, and a lead would answer the
+  // unaddressed post (DOR-2823).
+  harness.service.updateRoom(room.id, harness.human, { leadAuthorId: null });
   const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
   if (opts.withAna !== false) {
     harness.service.updateMembership(room.id, harness.human, ana, 'mention-only');
@@ -87,6 +90,9 @@ describe('the ambient window a room turn is shown', () => {
     for (let i = 1; i <= 40; i += 1) await say(harness, `m${i}`);
 
     harness.service.addMember(harness.roomId, harness.human, { agentPath: '/agents/ana' });
+    // The first agent into a channel with no lead becomes it; clear it again
+    // for the same reason as `openRoom` (DOR-2823).
+    harness.service.updateRoom(harness.roomId, harness.human, { leadAuthorId: null });
     harness.service.updateMembership(harness.roomId, harness.human, harness.ana, 'mention-only');
     expect(harness.store.getMember(harness.roomId, harness.ana)?.joinedSeq).toBe(40);
 

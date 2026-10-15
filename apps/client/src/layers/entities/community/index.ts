@@ -10,6 +10,18 @@ export {
   type CommunityContentAuthority,
 } from './model/use-community-connections';
 export { useCommunityConnectionsSync } from './model/use-community-connections-sync';
+export { isSpaceVisible, useSpaceVisible, type SpaceVisibleState } from './model/use-space-visible';
+export {
+  OFFICIAL_SPACE_OFFER_ID,
+  useOfficialSpaceOffer,
+  type OfficialSpaceOffer,
+} from './model/use-official-space-offer';
+export { useJoinSpaceRequest, type JoinSpaceRequestState } from './model/join-space-request';
+export {
+  OfficialSpaceOfferCard,
+  type OfficialSpaceOfferCardProps,
+} from './ui/OfficialSpaceOfferCard';
+export { OfficialSpaceUnreachableNotice } from './ui/OfficialSpaceUnreachableNotice';
 export {
   communityPageUrl,
   openOwnerNotice,

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb, runMigrations } from '../index';
+import { bridgeLegacyDocMigrationHistory } from '../doc-migration-history';
+import { previousConsolidatedDoc, consolidatedDoc } from '../doc-migration-identities';
 
 const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 type Entry = { idx: number; version: string; when: number; tag: string; breakpoints: boolean };
@@ -42,7 +44,11 @@ function migrationFolder(entries: Entry[]): string {
     copyFileSync(
       path.join(
         folder,
-        ...(historicalTags.includes(entry.tag) ? ['legacy-doc'] : []),
+        ...(historicalTags.includes(entry.tag) ||
+        entry.tag === '20261009202012_sleepy_killer_shrike' ||
+        entry.tag === '20261010100703_long_shocker'
+          ? ['legacy-doc']
+          : []),
         `${entry.tag}.sql`
       ),
       path.join(dir, `${entry.tag}.sql`)
@@ -142,7 +148,8 @@ function rows(db: ReturnType<typeof createDb>, hasDoc: boolean) {
 function verifyFinal(db: ReturnType<typeof createDb>) {
   const applied = history(db);
   const legacy = applied.some((row) => hashes.includes(row.hash));
-  expect(applied).toHaveLength(journal.entries.length + (legacy ? 3 : 0));
+  const published = applied.some((row) => row.hash === publishedRoom.hash);
+  expect(applied).toHaveLength(journal.entries.length + (legacy ? 3 : 0) + (published ? 1 : 0));
   for (const [i, hash] of hashes.entries()) {
     const matching = applied.filter((row) => row.hash === hash);
     expect(matching).toHaveLength(legacy ? 1 : 0);
@@ -153,7 +160,7 @@ function verifyFinal(db: ReturnType<typeof createDb>) {
     .update(readFileSync(path.join(folder, `${main.tag}.sql`)))
     .digest('hex');
   expect(applied.filter((row) => row.hash === mainHash)).toHaveLength(1);
-  for (const entry of journal.entries.slice(149, 151)) {
+  for (const entry of journal.entries.slice(149)) {
     const hash = createHash('sha256')
       .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
       .digest('hex');
@@ -344,4 +351,1187 @@ describe('Doc migration history across shipped session touches', () => {
       previous = snapshot.id;
     }
   });
+});
+
+const publishedRoom = {
+  idx: 150,
+  version: '6',
+  when: 1791577212201,
+  tag: '20261009202012_sleepy_killer_shrike',
+  breakpoints: true,
+  hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+};
+const reportBackHash = 'fff2ecc577b7f440a07aace5577ba21aa0e47817616155d41b6b4f15cee99361';
+
+/** Build the actual published c55 chain, not manually accepted history rows. */
+function publishedDatabase(source: Entry = publishedRoom) {
+  const db = createDb(':memory:');
+  migrate(db, {
+    migrationsFolder: migrationFolder([...journal.entries.slice(0, source.idx), source]),
+  });
+  seed(db, true);
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_grants
+    (grant_id, document_id, route_id, normalized_route, route_hash, declaration_hash,
+     approved_by, approval_evidence, limits, allowed_types, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-grant',
+      'preserved-document',
+      'preserved-route',
+      '{}',
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'operator',
+      '{}',
+      '{}',
+      '[]',
+      '2026-10-09T00:00:00Z'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_batches
+    (batch_id, document_id, scope, route_id, grant_id, grant_revision, generation,
+     input_event_ids, effective_payload, due_at, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-batch',
+      'preserved-document',
+      'workspace',
+      'preserved-route',
+      'preserved-grant',
+      1,
+      'generation',
+      '[]',
+      '{}',
+      '2026-10-09T00:00:00Z',
+      'turn_started',
+      '2026-10-09T00:00:00Z',
+      '2026-10-09T00:00:00Z'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_room_pending_sources
+    (document_id, batch_id, generation, source_json, source_hash, due_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-document',
+      'preserved-batch',
+      'generation',
+      '{"preserved":true}',
+      'c'.repeat(64),
+      '2026-10-09T00:00:00Z',
+      '2026-10-09T00:00:00Z'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO session_started_by
+    (session_id, kind, origin_extension_id, created_at) VALUES (?, ?, ?, ?)`
+    )
+    .run('preserved-start', 'extension', 'preserved-extension', '2026-10-09T00:00:00Z');
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_events
+    (document_id, event_id, doc_seq, direction, type, payload, envelope_hash, received_at, provenance)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-document',
+      'preserved-event',
+      1,
+      'upstream',
+      'task.changed',
+      '{"text":"preserved"}',
+      'd'.repeat(64),
+      '2026-10-09T00:00:00Z',
+      '{}'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO canvas_doc_deliveries
+    (document_id, event_id, route_id, batch_id, status, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-document',
+      'preserved-event',
+      'preserved-route',
+      'preserved-batch',
+      'turn_started',
+      '2026-10-09T00:00:00Z'
+    );
+  return db;
+}
+
+describe('published consolidated Room150 across shipped report_back150', () => {
+  it('preserves populated published c55 rows and history, installs report_back once, and restarts', () => {
+    const db = publishedDatabase();
+    try {
+      const before = history(db),
+        data = rows(db, true);
+      const pending = db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all();
+      const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+      const start = db.$client.prepare('SELECT * FROM session_started_by').get();
+      runMigrations(db);
+      expect(history(db).slice(0, before.length)).toEqual(before);
+      expect(rows(db, true)).toEqual(data);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
+        pending
+      );
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+      expect(db.$client.prepare('SELECT * FROM session_started_by').get()).toMatchObject(start!);
+      expect(db.$client.prepare('SELECT report_back FROM session_started_by').get()).toEqual({
+        report_back: 1,
+      });
+      expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([before[150]!]);
+      expect(history(db).filter((row) => row.hash === reportBackHash)).toHaveLength(1);
+      const canonicalRoom = history(db).find((row) => row.hash === publishedRoom.hash)!;
+      const report = history(db).find((row) => row.hash === reportBackHash)!;
+      expect(canonicalRoom.rowIdentity).toBe(before[150]!.rowIdentity);
+      expect(canonicalRoom.id).toBe(before[150]!.id);
+      expect(canonicalRoom.rowIdentity).toBeLessThan(report.rowIdentity);
+      verifyFinal(db);
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  it('rolls back shipped DDL and new history together if canonical160 recording fails, then resumes', () => {
+    const db = publishedDatabase();
+    try {
+      const final = journal.entries[160]!;
+      const finalHash = createHash('sha256')
+        .update(readFileSync(path.join(folder, `${final.tag}.sql`)))
+        .digest('hex');
+      db.$client.exec(`CREATE TRIGGER owned_report_back_abort
+        BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${finalHash}'
+        BEGIN SELECT RAISE(ABORT, 'owned-report-back-abort'); END;`);
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      expect(() => runMigrations(db)).toThrow(/owned-report-back-abort/);
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+      db.$client.exec('DROP TRIGGER owned_report_back_abort');
+      runMigrations(db);
+      expect(rows(db, true)).toEqual(data);
+      verifyFinal(db);
+    } finally {
+      db.$client.close();
+    }
+  });
+
+  for (const invalid of [
+    'wrong published stamp',
+    'unknown published hash',
+    'duplicate published row',
+    'unbacked canonical stamp',
+    'missing shipped prefix',
+    'unknown newer row',
+  ] as const) {
+    it(`refuses ${invalid} without changing data, schema, or history`, () => {
+      const db = publishedDatabase();
+      try {
+        if (invalid === 'wrong published stamp')
+          db.$client
+            .prepare('UPDATE __drizzle_migrations SET created_at = created_at + 1 WHERE hash = ?')
+            .run(publishedRoom.hash);
+        else if (invalid === 'unknown published hash')
+          db.$client
+            .prepare('UPDATE __drizzle_migrations SET hash = ? WHERE hash = ?')
+            .run('not-reviewed', publishedRoom.hash);
+        else if (invalid === 'unbacked canonical stamp')
+          db.$client
+            .prepare('UPDATE __drizzle_migrations SET created_at = ? WHERE hash = ?')
+            .run(journal.entries[160]!.when, publishedRoom.hash);
+        else if (invalid === 'duplicate published row')
+          db.$client
+            .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+            .run(publishedRoom.hash, publishedRoom.when);
+        else if (invalid === 'missing shipped prefix')
+          db.$client.prepare('DELETE FROM __drizzle_migrations WHERE rowid = 149').run();
+        else
+          db.$client
+            .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+            .run('unknown-newer', publishedRoom.when + 1);
+        const before = history(db),
+          beforeSchema = schema(db),
+          data = rows(db, true);
+        expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+        expect(history(db)).toEqual(before);
+        expect(schema(db)).toEqual(beforeSchema);
+        expect(rows(db, true)).toEqual(data);
+      } finally {
+        db.$client.close();
+      }
+    });
+  }
+});
+
+const publishedRoom151 = {
+  idx: 151,
+  version: '6',
+  when: 1791626823308,
+  tag: '20261010100703_long_shocker',
+  breakpoints: true,
+  hash: '44321f0c067d6ce35619f22ac071fcd08bdddd8dec4a7b099f8ce31998b1324f',
+};
+const agentReportsHash = 'a7f1de118e0678648345368108a441c4ff7d76cf8be40320eca8127b58c9fa04';
+
+/** Populate an agent before Main151's nullable columns exist. */
+function seedPublishedAgent(db: ReturnType<typeof createDb>) {
+  db.$client
+    .prepare(
+      `INSERT INTO agents
+    (id, name, runtime, project_path, registered_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'preserved-agent',
+      'preserved-name',
+      'claude-code',
+      '/preserved-agent',
+      '2026-10-09T00:00:00Z',
+      '2026-10-09T00:01:00Z'
+    );
+}
+
+/** Reproduce the shipped150-to151 bridge retaining its actual physical Room row. */
+function previouslyBridged151() {
+  const db = publishedDatabase();
+  const report = journal.entries[150]!;
+  for (const statement of readFileSync(path.join(folder, `${report.tag}.sql`), 'utf8').split(
+    '--> statement-breakpoint'
+  ))
+    if (statement.trim()) db.$client.exec(statement);
+  db.$client
+    .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+    .run(reportBackHash, report.when);
+  db.$client
+    .prepare('UPDATE __drizzle_migrations SET created_at = ? WHERE hash = ? AND created_at = ?')
+    .run(publishedRoom151.when, publishedRoom.hash, publishedRoom.when);
+  return db;
+}
+
+for (const variant of ['published150', 'fresh151', 'bridged151'] as const) {
+  const build = () =>
+    variant === 'published150'
+      ? publishedDatabase()
+      : variant === 'fresh151'
+        ? publishedDatabase(publishedRoom151)
+        : previouslyBridged151();
+  describe(`${variant} across shipped Main150 through156 and canonical Room160`, () => {
+    it('preserves populated data and original Room row identity, installs missing Main once and restarts', () => {
+      const db = build();
+      try {
+        seedPublishedAgent(db);
+        const before = history(db),
+          data = rows(db, true);
+        const agent = db.$client
+          .prepare('SELECT * FROM agents WHERE id=?')
+          .get('preserved-agent') as Record<string, unknown>;
+        const pending = db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all();
+        const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+        const original = before.find((row) => row.hash === publishedRoom.hash)!;
+        if (variant === 'bridged151')
+          expect(original.rowIdentity).toBeLessThan(
+            before.find((row) => row.hash === reportBackHash)!.rowIdentity
+          );
+        if (variant === 'fresh151')
+          expect(original.rowIdentity).toBeGreaterThan(
+            before.find((row) => row.hash === reportBackHash)!.rowIdentity
+          );
+        runMigrations(db);
+        expect(history(db).slice(0, before.length)).toEqual(before);
+        expect(rows(db, true)).toEqual(data);
+        expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
+          pending
+        );
+        expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+        expect(
+          db.$client.prepare('SELECT * FROM agents WHERE id=?').get('preserved-agent')
+        ).toEqual({
+          ...agent,
+          reports_to: null,
+          created_by: null,
+        });
+        expect(history(db).filter((row) => row.hash === publishedRoom.hash)).toEqual([original]);
+        expect(history(db).filter((row) => row.hash === reportBackHash)).toHaveLength(1);
+        expect(history(db).filter((row) => row.hash === agentReportsHash)).toHaveLength(1);
+        verifyFinal(db);
+        runMigrations(db);
+        verifyFinal(db);
+      } finally {
+        db.$client.close();
+      }
+    });
+
+    it('rolls back all missing shipped DDL and history if canonical160 recording aborts', () => {
+      const db = build();
+      try {
+        seedPublishedAgent(db);
+        const canonicalRoomHash = migrationHash(journal.entries[160]!);
+        db.$client.exec(`CREATE TRIGGER owned_room152_abort
+          BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalRoomHash}'
+          BEGIN SELECT RAISE(ABORT, 'owned-room152-abort'); END;`);
+        const before = history(db),
+          beforeSchema = schema(db),
+          data = rows(db, true);
+        const agents = db.$client.prepare('SELECT * FROM agents').all();
+        expect(() => runMigrations(db)).toThrow(/owned-room152-abort/);
+        expect(history(db)).toEqual(before);
+        expect(schema(db)).toEqual(beforeSchema);
+        expect(rows(db, true)).toEqual(data);
+        expect(db.$client.prepare('SELECT * FROM agents').all()).toEqual(agents);
+        db.$client.exec('DROP TRIGGER owned_room152_abort');
+        runMigrations(db);
+        verifyFinal(db);
+      } finally {
+        db.$client.close();
+      }
+    });
+
+    for (const invalid of [
+      'wrong-stamp',
+      'duplicate-other-Room-stamp',
+      'missing-Main150',
+      'unbacked-agent-columns',
+      'unknown-newer',
+    ] as const) {
+      if (variant === 'published150' && invalid === 'missing-Main150') continue;
+      it(`refuses ${invalid} before changing schema, data or history`, () => {
+        const db = build();
+        try {
+          seedPublishedAgent(db);
+          if (invalid === 'wrong-stamp')
+            db.$client
+              .prepare('UPDATE __drizzle_migrations SET created_at=created_at+1 WHERE hash=?')
+              .run(publishedRoom.hash);
+          else if (invalid === 'duplicate-other-Room-stamp')
+            db.$client
+              .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+              .run(
+                publishedRoom.hash,
+                variant === 'published150' ? publishedRoom151.when : publishedRoom.when
+              );
+          else if (invalid === 'missing-Main150')
+            db.$client.prepare('DELETE FROM __drizzle_migrations WHERE hash=?').run(reportBackHash);
+          else if (invalid === 'unbacked-agent-columns')
+            db.$client.exec(
+              'ALTER TABLE agents ADD reports_to text; ALTER TABLE agents ADD created_by text;'
+            );
+          else
+            db.$client
+              .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+              .run('unknown-room157', journal.entries[160]!.when + 1);
+          const before = history(db),
+            beforeSchema = schema(db),
+            data = rows(db, true),
+            agents = db.$client.prepare('SELECT * FROM agents').all();
+          expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+          expect(history(db)).toEqual(before);
+          expect(schema(db)).toEqual(beforeSchema);
+          expect(rows(db, true)).toEqual(data);
+          expect(db.$client.prepare('SELECT * FROM agents').all()).toEqual(agents);
+        } finally {
+          db.$client.close();
+        }
+      });
+    }
+  });
+}
+
+it('upgrades populated shipped Main151 preserving existing reports-to values', () => {
+  const db = createDb(':memory:');
+  try {
+    migrate(db, { migrationsFolder: migrationFolder(journal.entries.slice(0, 152)) });
+    seed(db, false);
+    seedPublishedAgent(db);
+    db.$client
+      .prepare('UPDATE agents SET reports_to=?, created_by=? WHERE id=?')
+      .run('preserved-manager', 'preserved-owner', 'preserved-agent');
+    const before = history(db),
+      agents = db.$client.prepare('SELECT * FROM agents').all(),
+      data = rows(db, false);
+    runMigrations(db);
+    expect(history(db).slice(0, before.length)).toEqual(before);
+    expect(db.$client.prepare('SELECT * FROM agents').all()).toEqual(agents);
+    expect(rows(db, false)).toEqual(data);
+    verifyFinal(db);
+  } finally {
+    db.$client.close();
+  }
+});
+
+it.each(['missing', 'changed'] as const)(
+  'refuses %s archived published151 SQL without any writes',
+  (invalid) => {
+    const db = publishedDatabase(publishedRoom151);
+    try {
+      const isolated = migrationFolder(journal.entries);
+      mkdirSync(path.join(isolated, 'legacy-doc'));
+      for (const tag of [...historicalTags, publishedRoom.tag, publishedRoom151.tag])
+        copyFileSync(
+          path.join(folder, 'legacy-doc', `${tag}.sql`),
+          path.join(isolated, 'legacy-doc', `${tag}.sql`)
+        );
+      if (invalid === 'missing')
+        rmSync(path.join(isolated, 'legacy-doc', `${publishedRoom151.tag}.sql`));
+      else
+        writeFileSync(
+          path.join(isolated, 'legacy-doc', `${publishedRoom151.tag}.sql`),
+          'forged archive'
+        );
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      expect(() => bridgeLegacyDocMigrationHistory(db, isolated)).toThrow();
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+/** Real future SQL is applied by the public migrator, not by a schema-only surrogate. */
+function futureMigrationFolder() {
+  const isolated = migrationFolder(journal.entries);
+  mkdirSync(path.join(isolated, 'legacy-doc'));
+  for (const tag of [...historicalTags, publishedRoom.tag, publishedRoom151.tag])
+    copyFileSync(
+      path.join(folder, 'legacy-doc', `${tag}.sql`),
+      path.join(isolated, 'legacy-doc', `${tag}.sql`)
+    );
+  const first: Entry = {
+    idx: journal.entries.length,
+    version: '6',
+    when: journal.entries[journal.entries.length - 1]!.when + 1,
+    tag: 'test_future_owned_table',
+    breakpoints: true,
+  };
+  const second: Entry = {
+    ...first,
+    idx: first.idx + 1,
+    when: first.when + 1,
+    tag: 'test_future_owned_column',
+  };
+  const firstSql = 'CREATE TABLE owned_future_restart (id text PRIMARY KEY NOT NULL, value text);';
+  const secondSql = 'ALTER TABLE owned_future_restart ADD extra text;';
+  writeFileSync(path.join(isolated, `${first.tag}.sql`), firstSql);
+  writeFileSync(path.join(isolated, `${second.tag}.sql`), secondSql);
+  writeFileSync(
+    path.join(isolated, 'meta/_journal.json'),
+    JSON.stringify({ ...journal, entries: [...journal.entries, first, second] })
+  );
+  return {
+    isolated,
+    first,
+    second,
+    firstHash: createHash('sha256').update(firstSql).digest('hex'),
+    secondHash: createHash('sha256').update(secondSql).digest('hex'),
+  };
+}
+
+it('restarts across exact applied future table and column migrations while pending later entries remain unapplied', () => {
+  const db = createDb(':memory:');
+  try {
+    runMigrations(db);
+    const { isolated, first, second } = futureMigrationFolder();
+    // The later journal prefix is pending: restart must compare only recorded160.
+    const initial = history(db),
+      initialSchema = schema(db);
+    bridgeLegacyDocMigrationHistory(db, isolated);
+    expect(history(db)).toEqual(initial);
+    expect(schema(db)).toEqual(initialSchema);
+    // Apply the first real future migration while second remains pending.
+    const fullJournal = readFileSync(path.join(isolated, 'meta/_journal.json'));
+    writeFileSync(
+      path.join(isolated, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: [...journal.entries, first] })
+    );
+    migrate(db, { migrationsFolder: isolated });
+    writeFileSync(path.join(isolated, 'meta/_journal.json'), fullJournal);
+    db.$client
+      .prepare('INSERT INTO owned_future_restart (id, value) VALUES (?, ?)')
+      .run('retained', 'first');
+    const firstHistory = history(db),
+      firstSchema = schema(db);
+    bridgeLegacyDocMigrationHistory(db, isolated);
+    expect(history(db)).toEqual(firstHistory);
+    expect(schema(db)).toEqual(firstSchema);
+    migrate(db, { migrationsFolder: isolated });
+    db.$client
+      .prepare('UPDATE owned_future_restart SET extra=? WHERE id=?')
+      .run('second', 'retained');
+    const finalHistory = history(db),
+      finalSchema = schema(db);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      bridgeLegacyDocMigrationHistory(db, isolated);
+      migrate(db, { migrationsFolder: isolated });
+      expect(history(db)).toEqual(finalHistory);
+      expect(schema(db)).toEqual(finalSchema);
+      expect(db.$client.prepare('SELECT * FROM owned_future_restart').all()).toEqual([
+        { id: 'retained', value: 'first', extra: 'second' },
+      ]);
+    }
+    expect(finalHistory.slice(-2).map((row) => row.created_at)).toEqual([first.when, second.when]);
+  } finally {
+    db.$client.close();
+  }
+});
+
+it.each(['gap', 'wrong-stamp', 'duplicate', 'unbacked-schema'] as const)(
+  'refuses %s future schema history without writes',
+  (invalid) => {
+    const db = createDb(':memory:');
+    try {
+      runMigrations(db);
+      const { isolated, firstHash, secondHash } = futureMigrationFolder();
+      migrate(db, { migrationsFolder: isolated });
+      if (invalid === 'gap')
+        db.$client.prepare('DELETE FROM __drizzle_migrations WHERE hash=?').run(firstHash);
+      else if (invalid === 'wrong-stamp')
+        db.$client
+          .prepare('UPDATE __drizzle_migrations SET created_at=created_at+1 WHERE hash=?')
+          .run(secondHash);
+      else if (invalid === 'duplicate')
+        db.$client
+          .prepare(
+            'INSERT INTO __drizzle_migrations (hash, created_at) SELECT hash, created_at FROM __drizzle_migrations WHERE hash=?'
+          )
+          .run(secondHash);
+      else db.$client.exec('ALTER TABLE owned_future_restart ADD forged text;');
+      const before = history(db),
+        beforeSchema = schema(db);
+      expect(() => bridgeLegacyDocMigrationHistory(db, isolated)).toThrow(
+        /legacy Doc migration history/i
+      );
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+const publishedRoom152 = {
+  idx: 152,
+  version: '6',
+  when: 1791639241501,
+  tag: '20261010133401_milky_jocasta',
+  breakpoints: true,
+  hash: publishedRoom.hash,
+};
+
+function migrationHash(entry: Entry): string {
+  return createHash('sha256')
+    .update(readFileSync(path.join(folder, `${entry.tag}.sql`)))
+    .digest('hex');
+}
+
+/** Rebuild only an empty fixture table from its genuine stored DDL and preserve its indexes. */
+function alterEmptyFixtureTable(
+  db: ReturnType<typeof createDb>,
+  table: 'room_doc_admissions',
+  change: (sql: string) => string
+) {
+  expect(db.$client.prepare(`SELECT count(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+  const original = db.$client
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+    .get(table) as { sql: string };
+  const indexes = db.$client
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL ORDER BY name"
+    )
+    .all(table) as { sql: string }[];
+  const replacement = change(original.sql);
+  expect(replacement).not.toBe(original.sql);
+  db.$client.pragma('foreign_keys = OFF');
+  try {
+    db.$client.transaction(() => {
+      db.$client.exec(`DROP TABLE ${table}`);
+      db.$client.exec(replacement);
+      for (const index of indexes) db.$client.exec(index.sql);
+    })();
+  } finally {
+    db.$client.pragma('foreign_keys = ON');
+  }
+  expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+}
+
+for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
+  describe(`published Room${source.idx} across all shipped Main steps and canonical160`, () => {
+    it('preserves every original ledger field and linked populated rows through ordered completion and restart', () => {
+      const db = publishedDatabase(source);
+      try {
+        seedPublishedAgent(db);
+        const before = history(db);
+        const tables = [
+          'canvas_doc_channels',
+          'canvas_doc_channel_tokens',
+          'canvas_doc_grants',
+          'canvas_doc_events',
+          'canvas_doc_batches',
+          'canvas_doc_deliveries',
+          'canvas_doc_room_pending_sources',
+        ];
+        const data = tables.map((table) => ({
+          table,
+          rows: db.$client.prepare(`SELECT * FROM ${table}`).all(),
+        }));
+        const original = before.find((row) => row.hash === source.hash)!;
+        expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+        runMigrations(db);
+        const complete = history(db);
+        expect(complete.slice(0, before.length)).toEqual(before);
+        expect(complete.filter((row) => row.hash === source.hash)).toEqual([original]);
+        for (const value of data)
+          expect(db.$client.prepare(`SELECT * FROM ${value.table}`).all()).toEqual(value.rows);
+        const shipped = journal.entries.slice(150, 160).map((entry) => {
+          const recorded = complete.filter((row) => row.hash === migrationHash(entry));
+          expect(recorded).toHaveLength(1);
+          expect(recorded[0]!.created_at).toBe(entry.when);
+          return recorded[0]!;
+        });
+        for (let index = 1; index < shipped.length; index++)
+          expect(shipped[index]!.rowIdentity).toBeGreaterThan(shipped[index - 1]!.rowIdentity);
+        const canonical = complete.filter(
+          (row) => row.hash === migrationHash(journal.entries[160]!)
+        );
+        expect(canonical).toHaveLength(1);
+        expect(canonical[0]!.created_at).toBe(1791744308484);
+        expect(canonical[0]!.rowIdentity).toBeGreaterThan(shipped[8]!.rowIdentity);
+        const finalSchema = schema(db);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          runMigrations(db);
+          expect(history(db)).toEqual(complete);
+          expect(schema(db)).toEqual(finalSchema);
+          for (const value of data)
+            expect(db.$client.prepare(`SELECT * FROM ${value.table}`).all()).toEqual(value.rows);
+        }
+        expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+        expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+        verifyFinal(db);
+      } finally {
+        db.$client.close();
+      }
+    });
+
+    it('refuses forged canonical160 completion before Main154 without any schema, history, or data writes', () => {
+      const db = publishedDatabase(source);
+      try {
+        db.$client
+          .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+          .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
+        const before = history(db),
+          beforeSchema = schema(db),
+          data = rows(db, true);
+        const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+        expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+        expect(history(db)).toEqual(before);
+        expect(schema(db)).toEqual(beforeSchema);
+        expect(rows(db, true)).toEqual(data);
+        expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+      } finally {
+        db.$client.close();
+      }
+    });
+  });
+}
+
+it.each(['quoted-check-space', 'crossed-composite-foreign-keys'] as const)(
+  'refuses genuine stored schema tampering %s before recording any Main completion',
+  (tamper) => {
+    const db = publishedDatabase(publishedRoom152);
+    try {
+      const beforeForeignKeys = db.$client
+        .prepare("PRAGMA foreign_key_list('room_doc_admissions')")
+        .all();
+      const flattenForeignKeys = (values: unknown[]) =>
+        values
+          .map((value) => {
+            const { id: _id, ...rest } = value as Record<string, unknown>;
+            return JSON.stringify(rest);
+          })
+          .sort();
+      const beforeColumns = db.$client.prepare("PRAGMA table_xinfo('room_doc_admissions')").all();
+      const beforeIndexes = db.$client
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='room_doc_admissions' ORDER BY name"
+        )
+        .all();
+      alterEmptyFixtureTable(db, 'room_doc_admissions', (sql) => {
+        if (tamper === 'quoted-check-space') return sql.replace("'claimed'", "'cl aimed'");
+        const first = 'FOREIGN KEY (`room_id`,`entry_id`)';
+        const second = 'FOREIGN KEY (`root_room_id`,`root_entry_id`)';
+        expect(sql).toContain(first);
+        expect(sql).toContain(second);
+        return sql
+          .replace(first, 'FOREIGN KEY (`room_id`,`root_entry_id`)')
+          .replace(second, 'FOREIGN KEY (`root_room_id`,`entry_id`)');
+      });
+      expect(db.$client.prepare("PRAGMA table_xinfo('room_doc_admissions')").all()).toEqual(
+        beforeColumns
+      );
+      expect(
+        db.$client
+          .prepare(
+            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='room_doc_admissions' ORDER BY name"
+          )
+          .all()
+      ).toEqual(beforeIndexes);
+      if (tamper === 'crossed-composite-foreign-keys') {
+        const crossed = db.$client.prepare("PRAGMA foreign_key_list('room_doc_admissions')").all();
+        expect(crossed).not.toEqual(beforeForeignKeys);
+        expect(flattenForeignKeys(crossed)).toEqual(flattenForeignKeys(beforeForeignKeys));
+      }
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      const pending = db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all();
+      expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_room_pending_sources').all()).toEqual(
+        pending
+      );
+      expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+it('rolls back all missing shipped Main steps and their history if canonical160 recording aborts for published152', () => {
+  const db = publishedDatabase(publishedRoom152);
+  try {
+    seedPublishedAgent(db);
+    const canonicalHash = migrationHash(journal.entries[160]!);
+    db.$client.exec(`CREATE TRIGGER owned_published152_completion_abort
+      BEFORE INSERT ON __drizzle_migrations WHEN NEW.hash = '${canonicalHash}'
+      BEGIN SELECT RAISE(ABORT, 'owned-published152-completion-abort'); END;`);
+    const before = history(db),
+      beforeSchema = schema(db),
+      data = rows(db, true);
+    const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+    const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+    const agents = db.$client.prepare('SELECT * FROM agents').all();
+    expect(() => runMigrations(db)).toThrow(/owned-published152-completion-abort/);
+    expect(history(db)).toEqual(before);
+    expect(schema(db)).toEqual(beforeSchema);
+    expect(rows(db, true)).toEqual(data);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+    expect(db.$client.prepare('SELECT * FROM agents').all()).toEqual(agents);
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    db.$client.exec('DROP TRIGGER owned_published152_completion_abort');
+    runMigrations(db);
+    expect(history(db).slice(0, before.length)).toEqual(before);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+    expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+    expect(rows(db, true)).toEqual(data);
+    verifyFinal(db);
+  } finally {
+    db.$client.close();
+  }
+});
+
+it.each([150, 151] as const)(
+  'refuses published152 missing authentic Main%s predecessor before any write',
+  (missing) => {
+    const db = publishedDatabase(publishedRoom152);
+    try {
+      const absentHash = migrationHash(journal.entries[missing]!);
+      expect(
+        db.$client.prepare('DELETE FROM __drizzle_migrations WHERE hash=?').run(absentHash).changes
+      ).toBe(1);
+      const before = history(db),
+        beforeSchema = schema(db),
+        data = rows(db, true);
+      const batches = db.$client.prepare('SELECT * FROM canvas_doc_batches').all();
+      const deliveries = db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all();
+      expect(() => runMigrations(db)).toThrow(/legacy Doc migration history/i);
+      expect(history(db)).toEqual(before);
+      expect(schema(db)).toEqual(beforeSchema);
+      expect(rows(db, true)).toEqual(data);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_batches').all()).toEqual(batches);
+      expect(db.$client.prepare('SELECT * FROM canvas_doc_deliveries').all()).toEqual(deliveries);
+      expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    } finally {
+      db.$client.close();
+    }
+  }
+);
+
+// Seed authenticated shipped Main155/156 rows in genuine migration fixtures.
+// These helpers preserve the durable rows across ordinary migrations and restart.
+function seedIncomingMainData(db: ReturnType<typeof createDb>, through: 155 | 156) {
+  const at = '2026-10-11T00:00:00.000Z';
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_beats
+    (id, agent_id, started_at, kind, wake, changes, raises, bypass, summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'kept-beat',
+      'kept-agent',
+      at,
+      'report',
+      '{"cause":"preserve"}',
+      '{"changed":true}',
+      3,
+      1,
+      'original beat'
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_outbox
+    (id, agent_id, beat_id, to_account, rung, text, key, urgent,
+      deliver_after, state, attempts, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'kept-heartbeat-outbox',
+      'kept-agent',
+      'kept-beat',
+      'kept-account',
+      'report',
+      'original report',
+      'kept-key',
+      1,
+      at,
+      'held',
+      2,
+      at
+    );
+  db.$client
+    .prepare(
+      `INSERT INTO heartbeat_state
+    (agent_id, last_beat_at, gathered_through, last_change_keys, wake_again,
+      consecutive_failures, beat_chat_id, frontmatter_hash, new_manager)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run('kept-agent', at, 'kept-entry', '["kept-key"]', 1, 2, 'kept-chat', 'kept-frontmatter', 1);
+  if (through === 156) {
+    db.$client
+      .prepare(
+        `INSERT INTO remote_command_journal
+      (command_id, lease_token, verb, instance_id, outcome, ack_state,
+        ack_attempts, received_at, settled_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'kept-command',
+        'kept-lease',
+        'rotate',
+        'kept-instance',
+        '{"ok":true}',
+        'unconfirmed',
+        3,
+        at,
+        at
+      );
+    db.$client
+      .prepare(
+        `INSERT INTO remote_event_outbox
+      (id, idempotency_key, instance_id, batch, attempts, created_at, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run('kept-remote-outbox', 'kept-idempotency', 'kept-instance', '[{"kept":true}]', 4, at, at);
+  }
+}
+
+function incomingMainData(db: ReturnType<typeof createDb>, through: 155 | 156) {
+  const tables = ['heartbeat_beats', 'heartbeat_outbox', 'heartbeat_state'];
+  if (through === 156) tables.push('remote_command_journal', 'remote_event_outbox');
+  return tables.map((table) => ({
+    table,
+    rows: db.$client.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+  }));
+}
+
+function expectIncomingMainDataPreserved(
+  db: ReturnType<typeof createDb>,
+  before: ReturnType<typeof incomingMainData>
+) {
+  for (const value of before) {
+    const after = db.$client.prepare(`SELECT * FROM ${value.table} ORDER BY rowid`).all() as Record<
+      string,
+      unknown
+    >[];
+    // Main158 adds refusals; compare every original key and cardinality without deleting new data.
+    expect(after).toHaveLength(value.rows.length);
+    expect(
+      after.map((row, index) =>
+        Object.fromEntries(Object.keys(value.rows[index] as object).map((key) => [key, row[key]]))
+      )
+    ).toEqual(value.rows);
+  }
+  expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  // Called only after accepted canonical completion includes all Main150..156.
+  if (before.some((value) => value.table === 'remote_event_outbox')) {
+    expect(() =>
+      db.$client
+        .prepare(
+          `INSERT INTO remote_event_outbox
+      (id, idempotency_key, instance_id, batch, created_at)
+      VALUES ('duplicate-outbox', 'kept-idempotency', 'kept-instance', '[]', 'later')`
+        )
+        .run()
+    ).toThrow(/UNIQUE constraint failed: remote_event_outbox.idempotency_key/);
+  }
+  expect(() =>
+    db.$client
+      .prepare(
+        `INSERT INTO remote_command_journal
+    (command_id, lease_token, verb, instance_id, received_at)
+    VALUES ('invalid-command', 'invalid-lease', 'invented-verb', 'kept-instance', 'later')`
+      )
+      .run()
+  ).toThrow(/CHECK constraint failed: remote_command_journal_verb/);
+  expect(() =>
+    db.$client
+      .prepare(
+        `INSERT INTO heartbeat_beats
+    (id, agent_id, started_at, kind, wake)
+    VALUES ('invalid-beat', 'kept-agent', 'later', 'invented-kind', '{}')`
+      )
+      .run()
+  ).toThrow(/CHECK constraint failed: heartbeat_beats_kind/);
+  expect(
+    db.$client
+      .prepare(
+        `SELECT name FROM sqlite_master
+    WHERE type='index' AND name IN
+      ('heartbeat_beats_agent_started_idx', 'heartbeat_outbox_due_idx',
+       'heartbeat_outbox_key_idx', 'remote_command_journal_ack_idx',
+       'remote_event_outbox_idempotency_key_unique', 'remote_event_outbox_created_idx')
+    ORDER BY name`
+      )
+      .all()
+  ).toHaveLength(6);
+}
+
+// Fixture-only construction, not a production bridge or an imported helper mirror.
+// Exact shipped SQL is independently pinned to Main7502; rows remain truthful.
+function completeReviewedMainFixturePrefix(
+  db: ReturnType<typeof createDb>,
+  through: 154 | 155 | 156 | 158
+) {
+  db.$client.transaction(() => {
+    for (const entry of journal.entries.slice(150, through + 1)) {
+      const hash = migrationHash(entry);
+      const recorded = history(db).filter((row) => row.hash === hash);
+      expect(recorded.length).toBeLessThanOrEqual(1);
+      if (recorded.length) {
+        expect(recorded[0]!.created_at).toBe(entry.when);
+        continue;
+      }
+      const sql = readFileSync(path.join(folder, `${entry.tag}.sql`), 'utf8');
+      for (const statement of sql.split('--> statement-breakpoint'))
+        if (statement.trim()) db.$client.exec(statement);
+      db.$client
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        .run(hash, entry.when);
+    }
+  })();
+  expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+}
+
+// Register genuine published-history cases against the accepted canonical identity.
+// Required existing helpers: publishedDatabase, migrationFolder, history, rows, schema,
+// migrationHash, seedPublishedAgent and the fixture helper in INCOMING-DATA-FIXTURE.
+// The registration below supplies the actual generated tuple and the reviewed FK-safe SQL hash;
+// adoption remains conditional on the source packet's actual SQL acceptance proof.
+function registerIncomingPrefixPreservationCases(acceptedCanonical: Entry & { hash: string }) {
+  const { hash: _canonicalHash, ...acceptedCanonicalWithoutHash } = acceptedCanonical;
+  const heartbeat = journal.entries[155]!;
+  const remote = journal.entries[156]!;
+  expect(heartbeat).toMatchObject({
+    idx: 155,
+    when: 1791677140996,
+    tag: '20261011000540_heartbeats',
+  });
+  expect(remote).toMatchObject({
+    idx: 156,
+    when: 1791688446887,
+    tag: '20261011031406_remote_command_journal',
+  });
+  expect(acceptedCanonical.idx).toBeGreaterThan(remote.idx);
+  expect(journal.entries[acceptedCanonical.idx]).toEqual(acceptedCanonicalWithoutHash);
+  // Journal tuple is derived from the accepted artifact, not a fabricated identity.
+  for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
+    for (const prefixEnd of [154, 155, 156] as const) {
+      it(`preserves published${source.idx} with authentic Main${prefixEnd} data and completes all ten Main steps`, () => {
+        const db = publishedDatabase(source);
+        try {
+          seedPublishedAgent(db);
+          // Fixture-only exact SQL installation: ordinary timestamp migrator would skip
+          // historical missing Main steps below a published Room timestamp.
+          completeReviewedMainFixturePrefix(db, prefixEnd);
+          if (prefixEnd === 155 || prefixEnd === 156) seedIncomingMainData(db, prefixEnd);
+          const durable =
+            prefixEnd === 155 || prefixEnd === 156 ? incomingMainData(db, prefixEnd) : [];
+          const before = history(db),
+            oldData = rows(db, true);
+          const legacy = before.find((row) => row.hash === source.hash)!;
+          runMigrations(db);
+          const complete = history(db);
+          expect(complete.slice(0, before.length)).toEqual(before);
+          expect(complete.filter((row) => row.hash === legacy.hash)).toEqual([legacy]);
+          expect(rows(db, true)).toEqual(oldData);
+          const seven = journal.entries.slice(150, 160).map((entry) => {
+            const matching = complete.filter((row) => row.hash === migrationHash(entry));
+            expect(matching).toHaveLength(1);
+            expect(matching[0]!.created_at).toBe(entry.when);
+            return matching[0]!;
+          });
+          for (let index = 1; index < seven.length; index++)
+            expect(seven[index]!.rowIdentity).toBeGreaterThan(seven[index - 1]!.rowIdentity);
+          const canonical = complete.filter((row) => row.hash === acceptedCanonical.hash);
+          expect(canonical).toHaveLength(1);
+          expect(canonical[0]!.created_at).toBe(acceptedCanonical.when);
+          expect(canonical[0]!.rowIdentity).toBeGreaterThan(seven[9]!.rowIdentity);
+          expectIncomingMainDataPreserved(db, durable);
+          const settledSchema = schema(db);
+          runMigrations(db);
+          runMigrations(db);
+          expect(history(db)).toEqual(complete);
+          expect(schema(db)).toEqual(settledSchema);
+          expect(rows(db, true)).toEqual(oldData);
+          expectIncomingMainDataPreserved(db, durable);
+        } finally {
+          db.$client.close();
+        }
+      });
+    }
+  }
+}
+
+registerIncomingPrefixPreservationCases({
+  idx: 160,
+  version: '6',
+  when: 1791744308484,
+  tag: '20261011184508_tearful_killer_shrike',
+  breakpoints: true,
+  hash: '69956ae9c1dba6ca55938b0afa75c67d350a5bd13006aab73aad5812dc5c9ab2',
+});
+
+it('refuses a forged canonical160 row when authentic Main156 is missing without any writes', () => {
+  const db = publishedDatabase(publishedRoom152);
+  try {
+    seedPublishedAgent(db);
+    completeReviewedMainFixturePrefix(db, 155);
+    seedIncomingMainData(db, 155);
+    db.$client
+      .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+      .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
+    const before = history(db),
+      beforeSchema = schema(db),
+      beforeRows = rows(db, true);
+    const durable = incomingMainData(db, 155);
+    expect(() => runMigrations(db)).toThrow();
+    expect(history(db)).toEqual(before);
+    expect(schema(db)).toEqual(beforeSchema);
+    expect(rows(db, true)).toEqual(beforeRows);
+    for (const value of durable)
+      expect(db.$client.prepare(`SELECT * FROM ${value.table} ORDER BY rowid`).all()).toEqual(
+        value.rows
+      );
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.$client.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  } finally {
+    db.$client.close();
+  }
+});
+
+for (const source of [publishedRoom, publishedRoom151, publishedRoom152]) {
+  it(`preserves published${source.idx} plus original consolidated157 before new160 without replay`, () => {
+    const db = publishedDatabase(source);
+    let failure: { cause: unknown } | undefined;
+    try {
+      seedPublishedAgent(db);
+      const originalSql = readFileSync(
+        path.join(folder, 'legacy-doc', `${previousConsolidatedDoc.tag}.sql`)
+      );
+      expect(createHash('sha256').update(originalSql).digest('hex')).toBe(
+        previousConsolidatedDoc.hash
+      );
+      // Reproduce the authentic original bridge's fixed missing-Main transaction and
+      // distinct historical completion. Room DDL was already installed by public migrate.
+      db.$client.transaction(() => {
+        completeReviewedMainFixturePrefix(db, 156);
+        db.$client
+          .prepare('INSERT INTO __drizzle_migrations(hash,created_at) VALUES (?,?)')
+          .run(previousConsolidatedDoc.hash, previousConsolidatedDoc.when);
+      })();
+      seedIncomingMainData(db, 156);
+      const before = history(db),
+        data = rows(db, true),
+        durable = incomingMainData(db, 156);
+      runMigrations(db);
+      const after = history(db),
+        finalSchema = schema(db);
+      expect(after.slice(0, before.length)).toEqual(before);
+      expect(after.at(-1)).toMatchObject({
+        hash: consolidatedDoc.hash,
+        created_at: consolidatedDoc.when,
+      });
+      expect(rows(db, true)).toEqual(data);
+      expectIncomingMainDataPreserved(db, durable);
+      for (let restart = 0; restart < 2; restart++) {
+        runMigrations(db);
+        expect(history(db)).toEqual(after);
+        expect(schema(db)).toEqual(finalSchema);
+        expect(rows(db, true)).toEqual(data);
+        expectIncomingMainDataPreserved(db, durable);
+      }
+    } catch (cause) {
+      failure = { cause };
+    } finally {
+      try {
+        db.$client.close();
+      } catch (cause) {
+        failure ??= { cause };
+      }
+    }
+    if (failure) throw failure.cause;
+  });
+}
+
+it('refuses canonical160 when authentic Main159 is missing without changing schema, history or data', () => {
+  const db = publishedDatabase(publishedRoom152);
+  try {
+    seedPublishedAgent(db);
+    completeReviewedMainFixturePrefix(db, 158);
+    seedIncomingMainData(db, 156);
+    db.$client
+      .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+      .run(migrationHash(journal.entries[160]!), journal.entries[160]!.when);
+    const before = history(db),
+      beforeSchema = schema(db),
+      beforeRows = rows(db, true);
+    const durable = incomingMainData(db, 156);
+    expect(() => runMigrations(db)).toThrow();
+    expect(history(db)).toEqual(before);
+    expect(schema(db)).toEqual(beforeSchema);
+    expect(rows(db, true)).toEqual(beforeRows);
+    expectIncomingMainDataPreserved(db, durable);
+    expect(db.$client.prepare("PRAGMA table_info('heartbeat_outbox')").all()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'delivered_at' })])
+    );
+  } finally {
+    db.$client.close();
+  }
 });

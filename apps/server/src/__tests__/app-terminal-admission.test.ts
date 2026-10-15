@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Agent, request as httpRequest, type IncomingMessage } from 'node:http';
@@ -39,14 +39,20 @@ vi.mock('../services/core/auth/index.js', async (original) => {
   const actual = await original<typeof import('../services/core/auth/index.js')>();
   return {
     ...actual,
-    getAuth: () => ({ api: { getSession: async () => null } }),
-    toNodeHandler: () => (_req: unknown, res: import('express').Response) => {
-      state.authDispatch();
-      res.status(401).json({ error: 'auth fixture refusal' });
-    },
+    getAuth: () => ({
+      api: { getSession: async () => null },
+      handler: async () => {
+        state.authDispatch();
+        return Response.json({ error: 'auth fixture refusal' }, { status: 401 });
+      },
+    }),
   };
 });
-import { createApp, finalizeApp } from '../app.js';
+import type { ServerResponse } from 'node:http';
+import { frontDoorListener } from '../http/front-door.js';
+import { composeFrontDoor } from '../http/hono-api.js';
+import { readJsonBody } from '../http/request-body.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { logger } from '../lib/logger.js';
 
@@ -70,8 +76,12 @@ function signed() {
   };
 }
 function boot(admission = new MainRequestAdmission()) {
-  const app = createApp({ admission, connectorEventIngress: { verifier: () => verifier, accept } });
-  target.mount(app);
+  // Routed as the running server routes, through the front door. A test adds
+  // its own routes to `app` before its first request.
+  const app = composeFrontDoor(admission, {
+    connectorEventIngress: { verifier: () => verifier, accept },
+  });
+  target.mount(frontDoorListener(app));
   return { admission, app };
 }
 function deferred<T>() {
@@ -118,7 +128,19 @@ function expectTerminal(response: {
 /** Census actual mounts in both composition files, including conditional/later mounts. */
 function mountPaths() {
   const paths = new Set<string>();
-  for (const filename of ['../app.ts', '../index.ts']) {
+  // Every file that mounts routes: the composition root and the startup
+  // modules split out of it (DOR-2821), and the Hono app with its groups, the
+  // signed connector webhook among them.
+  const startupModules = readdirSync(new URL('../startup/', import.meta.url))
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => `../startup/${name}`);
+  for (const filename of [
+    '../index.ts',
+    ...startupModules,
+    '../http/better-auth.ts',
+    '../http/hono-api.ts',
+    '../services/connectors/events/signed-ingress.ts',
+  ]) {
     const source = ts.createSourceFile(
       filename,
       readFileSync(new URL(filename, import.meta.url), 'utf8'),
@@ -130,8 +152,8 @@ function mountPaths() {
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === 'app' &&
-        ['use', 'get', 'post', 'all'].includes(node.expression.name.text) &&
+        ['app', 'early'].includes(node.expression.expression.text) &&
+        ['use', 'get', 'post', 'all', 'route'].includes(node.expression.name.text) &&
         node.arguments[0] &&
         ts.isStringLiteral(node.arguments[0])
       )
@@ -140,7 +162,7 @@ function mountPaths() {
     }
     visit(source);
   }
-  return [...paths].map((mount) => mount.replace(/:[A-Za-z]+|\*[A-Za-z]+/g, 'admission-fixture'));
+  return [...paths].map((mount) => mount.replace(/:[A-Za-z]+|\*[A-Za-z]*/g, 'admission-fixture'));
 }
 
 beforeAll(() => {
@@ -170,9 +192,9 @@ describe('main HTTP admission through the real app', () => {
     admission.close();
     const { app } = boot(admission);
     const handler = vi.fn();
-    app.get('/late-app', (_req, res) => {
+    app.get('/late-app', (c) => {
       handler();
-      res.end();
+      return c.body(null);
     });
     expectTerminal(await request(target.server).get('/late-app'));
     expectTerminal(await request(target.server).get('/api/health'));
@@ -184,9 +206,9 @@ describe('main HTTP admission through the real app', () => {
   it('refuses a later request on the same keep-alive socket and a later-mounted route', async () => {
     const { admission, app } = boot();
     const entered = vi.fn();
-    app.get('/admission-late', (_req, res) => {
+    app.get('/admission-late', (c) => {
       entered();
-      res.send('running');
+      return c.text('running');
     });
     const agent = new Agent({ keepAlive: true, maxSockets: 1 });
     try {
@@ -209,15 +231,14 @@ describe('main HTTP admission through the real app', () => {
   it('refuses every discovered mount, all methods, SPA /x and unknown paths before first contact or parsing', async () => {
     const { admission, app } = boot();
     const late = vi.fn();
-    app.use('/mcp', (_req, res) => {
+    app.all('/mcp', (c) => {
       late();
-      res.send('mcp');
+      return c.text('mcp');
     });
-    app.use('/a2a', (_req, res) => {
+    app.all('/a2a', (c) => {
       late();
-      res.send('a2a');
+      return c.text('a2a');
     });
-    finalizeApp(app);
     expect((await request(target.server).get('/mcp')).text).toBe('mcp');
     expect((await request(target.server).get('/a2a')).text).toBe('a2a');
     expect((await request(target.server).get('/x/fixture')).text).toContain('admission fixture');
@@ -228,13 +249,64 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/projects');
     expect(mounts).toContain('/api/auth/admission-fixture');
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
-    expect(mounts).toContain('/api/relay/webhooks/admission-fixture');
+    expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/canvas/token/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
-    expect(mounts).toHaveLength(71);
-    for (const mount of [...mounts, '/', '/x/fixture', '/unknown']) {
+    // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
+    // `heartbeats` §12).
+    expect(mounts).toContain('/api/commitments');
+    // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
+    // `http/client-files.ts`, and is asked for by hand below.
+    // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).
+    expect(mounts).toContain('/api/remote-access');
+    // 72 -> 70: the API docs are one `/api` mount on Hono (`routes/api-docs.ts`),
+    // so their two paths are asked for by hand below too.
+    // 70 -> 71: `/api/onboarding`, the first-run routes (spec `one-minute-onboarding` §4).
+    expect(mounts).toContain('/api/onboarding');
+    // 71 -> 70: the connector groups are one `/api/connectors` mount on Hono
+    // (`routes/connectors.ts`), so `/api/connectors/providers` is asked for by
+    // hand below.
+    expect(mounts).toContain('/api/connectors');
+    // 70 -> 71: the mock OAuth MCP server is one `/` mount on Hono
+    // (`http/hono-api.ts`), where it used to be a path-less Express `use`.
+    // 71 -> 68: the A2A gateway's two card paths and its `/a2a` mount join that
+    // same `/` mount on Hono (`routes/a2a.ts`, DOR-2809), so they are asked for
+    // by hand below.
+    expect(mounts).toContain('/');
+    // 68 -> 67: the signed Relay webhook is no longer its own Express parser
+    // mount; it is a route of the `/api/relay` group on Hono, whose raw bytes
+    // a body rule keeps (`routes/relay-webhooks.ts`), so it is asked for by
+    // hand below.
+    // 67 -> 69: the two space groups' gates are `use` mounts of their own on
+    // Hono (`/api/community-connections/*`, `/api/communities/*`), beside the
+    // groups' `route` mounts (DOR-2815).
+    expect(mounts).toContain('/api/communities/admission-fixture');
+    // 69 stays 69: the extension mounts move to Hono as `/api/extensions` and
+    // `/api/ext` (DOR-2810), two mounts as on Express.
+    expect(mounts).toContain('/api/ext');
+    // 69 -> 71: the last Express mounts move to Hono (DOR-2818): the Heartbeat
+    // page and the credits answer join the Hono app as two mounts of their own,
+    // and the terminal's `/api/terminal` stays one.
+    expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
+    expect(mounts).toContain('/api/heartbeats/triage-credits');
+    expect(mounts).toContain('/api/terminal');
+    // The pre-CORS document-token mount uses the same admitted early app.
+    expect(mounts).toHaveLength(72);
+    const byHand = [
+      '/',
+      '/x/fixture',
+      '/assets/fixture.js',
+      '/api/openapi.json',
+      '/api/docs',
+      '/api/connectors/providers',
+      '/.well-known/agent-card.json',
+      '/.well-known/agent.json',
+      '/a2a',
+      '/api/relay/webhooks/admission-fixture',
+    ];
+    for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(
         await request(target.server).get(mount).set('Origin', 'https://untrusted.example')
       );
@@ -265,9 +337,9 @@ describe('main HTTP admission through the real app', () => {
   it('preserves running security and blocks auth/webhook/parser effects once closed', async () => {
     const { admission, app } = boot();
     const ordinary = vi.fn();
-    app.post('/admission-json', (_req, res) => {
+    app.post('/admission-json', (c) => {
       ordinary();
-      res.json({ ok: true });
+      return c.json({ ok: true });
     });
     expect(
       (await request(target.server).post('/admission-json').send({ valid: true })).status
@@ -287,7 +359,9 @@ describe('main HTTP admission through the real app', () => {
           .set('content-type', 'application/json')
           .send('{invalid')
       ).status
-    ).toBe(400);
+      // The parser refuses it: the chain answers a body it cannot parse with
+      // the generic 500, as the server always has outside a route's own check.
+    ).toBe(500);
     expect(
       (
         await request(target.server)
@@ -322,9 +396,10 @@ describe('main HTTP admission through the real app', () => {
   it('preserves admission while an incomplete body is still being parsed', async () => {
     const { admission, app } = boot();
     const handled = vi.fn();
-    app.post('/admission-partial-body', (req, res) => {
-      handled(req.body);
-      res.json(req.body);
+    app.post('/admission-partial-body', (c) => {
+      const parsed = readJsonBody(c);
+      handled(parsed);
+      return c.json(parsed as object);
     });
     const dispatched = once(target.server, 'request');
     let send!: ReturnType<typeof httpRequest>;
@@ -363,19 +438,26 @@ describe('main HTTP admission through the real app', () => {
     const entered = deferred<void>();
     const release = deferred<void>();
     const handlers = vi.fn();
-    app.get('/admission-held', async (_req, res) => {
+    app.get('/admission-held', async (c) => {
       handlers();
       entered.resolve();
       await release.promise;
-      res.send('finished');
+      return c.text('finished');
     });
-    const stream = deferred<import('express').Response>();
-    app.get('/admission-sse', (_req, res) => {
-      handlers();
-      res.setHeader('content-type', 'text/event-stream');
-      res.flushHeaders();
-      stream.resolve(res);
-    });
+    const stream = deferred<ServerResponse>();
+    app.get('/admission-sse', (c) =>
+      streamToNodeResponse(
+        c,
+        (res) =>
+          new Promise<void>((resolve) => {
+            handlers();
+            res.setHeader('content-type', 'text/event-stream');
+            res.flushHeaders();
+            res.once('close', () => resolve());
+            stream.resolve(res);
+          })
+      )
+    );
     const held = rawGet('/admission-held');
     await entered.promise;
     const sse = await rawGet('/admission-sse');

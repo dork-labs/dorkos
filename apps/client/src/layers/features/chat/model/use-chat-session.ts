@@ -219,6 +219,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     sessionCwd,
     enableMessagePolling,
     isStreaming: status === 'streaming',
+    streamHydrated: streamState.streamReadyCursor !== null,
     setMessages,
   });
 

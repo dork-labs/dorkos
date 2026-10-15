@@ -20,7 +20,10 @@ import { createRequire } from 'node:module';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
-import { createProxyRouter } from './extension-proxy.js';
+import { createProxyHandler } from './http/extension-proxy.js';
+import { bridgeExpressRouter } from './http/express-bridge.js';
+import { createFetchHandler } from './http/fetch-handler.js';
+import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
@@ -34,6 +37,7 @@ import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
+import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
 import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
@@ -45,7 +49,7 @@ import {
   type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
-import { createIsolatedRouter } from './isolation/isolated-router.js';
+import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
 
@@ -148,9 +152,10 @@ export interface ServerLifecycleOptions {
 /**
  * Manages the lifecycle of server-side extensions: compile, load, route, and teardown.
  *
- * Each active extension gets an Express Router mounted at `/api/ext/{id}/*`.
- * Proxy-only extensions (no server.ts) get auto-generated proxy routes.
- * Extensions with server.ts get custom routes + optional proxy alongside.
+ * Each active extension gets one HTTP handler for `/api/ext/{id}/*`
+ * (`extension-http.ts`). Proxy-only extensions (no server.ts) get the proxy;
+ * extensions with server.ts get their router, through the Express bridge,
+ * with the proxy tried after it.
  */
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
@@ -341,20 +346,19 @@ export class ExtensionServerLifecycle {
     if (record.hasDataProxy && !record.hasServerEntry) {
       const sourceKey = buildSourceKey(record, null);
       if (active?.sourceKey === sourceKey) {
-        logger.debug(`[Extensions] Proxy router for ${id} is already running, unchanged`);
+        logger.debug(`[Extensions] Proxy for ${id} is already running, unchanged`);
         return { ok: true };
       }
 
       await this.stop(id);
-      const proxyRouter = createProxyRouter(id, record.manifest.dataProxy!, this.dorkHome);
       this.serverExtensions.set(id, {
         extensionId: id,
-        router: proxyRouter,
+        handler: createProxyHandler(id, record.manifest.dataProxy!, this.dorkHome),
         cleanup: null,
         scheduledCleanups: [],
         sourceKey,
       });
-      logger.info(`[Extensions] Proxy router mounted for ${id}`);
+      logger.info(`[Extensions] Proxy mounted for ${id}`);
       return { ok: true };
     }
 
@@ -429,9 +433,8 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
-      const mod = require(tempFile);
-      const registerFn = mod.default ?? mod;
-      if (typeof registerFn !== 'function') {
+      const registerFn = serverEntryRegister(require(tempFile));
+      if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
       }
 
@@ -449,9 +452,11 @@ export class ExtensionServerLifecycle {
           extensionName: record.manifest.name,
           toolChecks,
         });
-      // A register() that throws after adding an account listener or advisor
-      // must not leave it behind: this instance never becomes active.
-      registered = releaseListeners;
+      // A register() that throws, or returns something unusable, must leave
+      // nothing behind: its schedules are cancelled, its account listeners and
+      // advisor released, and a late `ctx` call starts nothing. This instance
+      // never becomes active.
+      registered = dispose;
       closeTools = () => tools.close();
 
       const outcome = await settleWithin(
@@ -461,12 +466,7 @@ export class ExtensionServerLifecycle {
       if (outcome.timedOut) {
         // It may still finish later. Whatever it hands back then is cleaned up
         // and never mounted: this instance is not active.
-        void outcome.late.then(
-          (late) => {
-            if (typeof late === 'function') (late as () => void)();
-          },
-          () => undefined
-        );
+        void outcome.late.then((late) => readRegisterResult(late).cleanup?.()).catch(() => null);
         // Cancel what it scheduled, release what it registered, and make
         // anything it still tries later a no-op: a retry then starts a fresh
         // instance, and nothing of this one keeps running beside it.
@@ -478,18 +478,18 @@ export class ExtensionServerLifecycle {
         logger.warn(`[Extensions] Server init timed out for ${id} after ${seconds}s`);
         return { ok: false, error: message };
       }
-      const result = outcome.value;
-      const cleanup = typeof result === 'function' ? result : null;
+      const { cleanup, fetch } = readRegisterResult(outcome.value);
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
       const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
-      // Mount proxy routes alongside custom routes for hybrid extensions
-      if (record.hasDataProxy && record.manifest.dataProxy) {
-        const proxyRouter = createProxyRouter(id, record.manifest.dataProxy, this.dorkHome);
-        router.use(proxyRouter);
-      }
+      // Its routes first; its proxy and its fetch handler get what they pass on.
+      const handler = firstAnswer(
+        bridgeExpressRouter(router),
+        this.proxyFor(id, record),
+        fetch && createFetchHandler(record.manifest.name, fetch)
+      );
 
       // Asked again now that register() has run: a turn-off or revoke that
       // arrived meanwhile wins, and this instance is released, not stored.
@@ -515,10 +515,14 @@ export class ExtensionServerLifecycle {
 
       this.serverExtensions.set(id, {
         extensionId: id,
-        router,
+        handler,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
         releaseListeners,
+        // The list above is a copy taken now. Disposing at stop also cancels a
+        // timer scheduled after `register()` returned, and makes a late
+        // `ctx.schedule` from this instance start nothing (DOR-2462).
+        disposeCtx: dispose,
         sourceKey,
         agentTools,
       });
@@ -742,13 +746,9 @@ export class ExtensionServerLifecycle {
     // bound was bound through the real ctx.tools.handle on the way: seal the
     // host's binding exactly as after an in-process register() (spec §8).
     const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
-    const proxyRouter =
-      record.hasDataProxy && record.manifest.dataProxy
-        ? createProxyRouter(id, record.manifest.dataProxy, this.dorkHome)
-        : null;
     this.serverExtensions.set(id, {
       extensionId: id,
-      router: createIsolatedRouter({ displayName: name, host, proxyRouter }),
+      handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),
       cleanup: null,
       scheduledCleanups: [],
       releaseListeners: built.releaseListeners,
@@ -906,13 +906,19 @@ export class ExtensionServerLifecycle {
   }
 
   /**
-   * Get the Express router for a server-side extension.
+   * Get the HTTP handler for a server-side extension.
    *
    * @param id - Extension identifier
-   * @returns The extension's router, or null if no server extension is active
+   * @returns The extension's handler, or null if no server extension is active
    */
-  getRouter(id: string): Router | null {
-    return this.serverExtensions.get(id)?.router ?? null;
+  getHandler(id: string): ExtensionHttpHandler | null {
+    return this.serverExtensions.get(id)?.handler ?? null;
+  }
+
+  /** A hybrid extension's `dataProxy`, or null when it declares none. */
+  private proxyFor(id: string, record: ExtensionRecord): ExtensionHttpHandler | null {
+    const config = record.hasDataProxy ? record.manifest.dataProxy : undefined;
+    return config ? createProxyHandler(id, config, this.dorkHome) : null;
   }
 }
 

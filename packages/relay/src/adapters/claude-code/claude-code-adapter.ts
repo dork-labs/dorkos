@@ -932,7 +932,6 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             // there to approve (DOR-1580).
             onRefusedAsk: this.deps.onRefusedAsk,
             runningTasks: this.runningTasks,
-            inboundBudgets: this.deps.inboundBudgets,
             logger: this.deps.logger,
           }
         );
@@ -967,8 +966,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             ...(this.isAgentScopedSubject(subject) && this.deps.bindSessionRuntime
               ? { bindSessionRuntime: this.deps.bindSessionRuntime }
               : {}),
+            ...(this.deps.noteTurnStart ? { noteTurnStart: this.deps.noteTurnStart } : {}),
             turnController,
-            inboundBudgets: this.deps.inboundBudgets,
             ...(this.deps.lateTurns
               ? { lateTurns: this.deps.lateTurns, lateFollowers: this.lateFollowers }
               : {}),

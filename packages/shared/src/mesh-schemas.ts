@@ -11,13 +11,20 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { AGENT_NAME_REGEX } from './validation.js';
 import { EFFORT_LEVELS } from './constants.js';
-import { SOUL_MAX_CHARS, NOPE_MAX_CHARS, MEMORY_MAX_CHARS } from './convention-files.js';
+import {
+  SOUL_MAX_CHARS,
+  NOPE_MAX_CHARS,
+  MEMORY_MAX_CHARS,
+  HEARTBEAT_MAX_CHARS,
+} from './convention-files.js';
+import { HeartbeatTemplateIdSchema } from './heartbeat-schemas.js';
 import { WorkspaceProviderTypeSchema } from './workspace.js';
 import {
   AgentPermissionsSchema,
   PERMISSION_AREA_IDS,
   type PermissionAreaId,
 } from './permissions/permission-schemas.js';
+import { AuditActorSchema } from './audit-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -519,6 +526,38 @@ export const AgentManifestSchema = z
     workspace: AgentWorkspaceBindingSchema.default({ mode: 'home' })
       .catch(UNREADABLE_BINDING_FALLBACK)
       .openapi(WORKSPACE_BINDING_OPENAPI),
+    // Who this agent reports to (spec `heartbeats` §4.1, canon P4): an account
+    // id, which is a mesh ULID for an agent and an account id for a person.
+    // Absent or `null` means "not set", and the default chain decides
+    // (`services/heartbeats/reports-to.ts`: whoever created it, then the owner).
+    //
+    // Optional rather than defaulted to `null` so every manifest literal and
+    // every file written before this field existed keeps its exact shape; the
+    // readers treat absent and `null` as the same answer. `.catch(null)` on the
+    // `model`/`effort` precedent above: a hand-edited value of the wrong type
+    // costs the agent its manager, never its place in the fleet. The
+    // `.openapi(...)` outside the `.catch()` is load-bearing for the generator.
+    reportsTo: z.string().min(1).nullable().optional().catch(null).openapi({
+      type: 'string',
+      description:
+        'Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.',
+      example: '01HZY8Q0V6S3W1A2B3C4D5E6F7',
+    }),
+    // The ACCOUNT that created this agent, written once at creation and never
+    // changed after (spec `heartbeats` §4.1). Not to be confused with
+    // `registeredBy`, which names the SURFACE that registered it
+    // (`'dorkos-ui'`, `'mcp-tool'`): this is who, that is how. An agent made by
+    // another agent carries that agent's mesh id, which is what lets the
+    // reports-to chain default to its creator (canon §9.2, rule 5).
+    //
+    // Machine-written: `UpdateAgentRequestSchema` does not pick it, so no PATCH
+    // can move it. Absent on every agent created before the field existed.
+    createdBy: z.string().min(1).nullable().optional().catch(null).openapi({
+      type: 'string',
+      description:
+        'Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.',
+      example: 'install:9f1c2d3e',
+    }),
   })
   .openapi('AgentManifest');
 
@@ -642,9 +681,12 @@ export const AgentManifestFileSchema = z.preprocess(
 // `UpdateAgentRequestSchema`'s `.pick()` allowlist, which omits it; the type
 // must say the same so a future caller cannot trust it as a legal write path
 // (ADR 260803-233420, guarantee 2).
+//
+// `createdBy` is excluded for the same reason: the server writes it once, at
+// creation, and nothing may move it after (spec `heartbeats` §4.1).
 export type AgentManifestUpdate = Omit<
   Partial<AgentManifest>,
-  'model' | 'effort' | 'account' | 'mcpServers'
+  'model' | 'effort' | 'account' | 'mcpServers' | 'createdBy'
 > & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
@@ -709,11 +751,87 @@ export const DenialRecordSchema = z
 
 export type DenialRecord = z.infer<typeof DenialRecordSchema>;
 
+// === Pausing an agent (spec `audit-trail` PR5) ===
+
+/**
+ * The code a turn, a message or a run is refused with while its agent is
+ * paused. The app reads it to offer Resume instead of Retry.
+ */
+export const AGENT_PAUSED_CODE = 'AGENT_PAUSED';
+
+/** The code an agent gets when it tries to lift its own pause. */
+export const CANNOT_RESUME_SELF_CODE = 'CANNOT_RESUME_SELF';
+
+/** The longest reason a pause or a resume keeps. */
+export const AGENT_PAUSE_REASON_MAX = 500;
+
+/** One paused agent: who paused it, when, and why. */
+export const AgentPauseSchema = z
+  .object({
+    /** The paused agent's mesh id. */
+    agentId: z.string().min(1),
+    /** Who paused it, by stable account id and the name they had then. */
+    pausedBy: AuditActorSchema,
+    /** When. ISO 8601 UTC. */
+    pausedAt: z.string(),
+    /** Why, when they said. */
+    reason: z.string().optional(),
+  })
+  .openapi('AgentPause');
+
+/** One paused agent. */
+export type AgentPause = z.infer<typeof AgentPauseSchema>;
+
+/** Every agent paused right now. */
+export const AgentPauseListSchema = z
+  .object({ pauses: z.array(AgentPauseSchema) })
+  .openapi('AgentPauseList');
+
+/** Every agent paused right now. */
+export type AgentPauseList = z.infer<typeof AgentPauseListSchema>;
+
+/** What pausing or resuming an agent takes. */
+export const AgentPauseRequestSchema = z
+  .object({
+    agentId: z.string().min(1).describe('The mesh id of the agent to pause or resume.'),
+    reason: z
+      .string()
+      .max(AGENT_PAUSE_REASON_MAX)
+      .optional()
+      .describe('Why, in a sentence. Kept in the audit log with who did it.'),
+  })
+  .openapi('AgentPauseRequest');
+
+/** What pausing or resuming an agent takes. */
+export type AgentPauseRequest = z.infer<typeof AgentPauseRequestSchema>;
+
+/** What pausing or resuming an agent answers. */
+export const AgentPauseResultSchema = z
+  .object({
+    /** The agent acted on. */
+    agentId: z.string(),
+    /** Whether it is paused now. */
+    paused: z.boolean(),
+    /** Whether this call changed anything (false when it already was so). */
+    changed: z.boolean(),
+    /** The pause now in force, when there is one. */
+    pause: AgentPauseSchema.optional(),
+    /** How many of its turns were stopped (pause only). */
+    stoppedTurns: z.number().int().optional(),
+    /** How many of its scheduled runs were stopped (pause only). */
+    stoppedRuns: z.number().int().optional(),
+  })
+  .openapi('AgentPauseResult');
+
+/** What pausing or resuming an agent answers. */
+export type AgentPauseResult = z.infer<typeof AgentPauseResultSchema>;
+
 // === Topology ===
 
 /** Agent manifest enriched with runtime health and relay context for topology views. */
 export const TopologyAgentSchema = AgentManifestSchema.extend({
   projectPath: z.string().optional(),
+  effectiveRuntimeId: z.string().min(1).max(128).optional(),
   healthStatus: AgentHealthStatusSchema.default('stale'),
   relayAdapters: z.array(z.string()).default([]),
   relaySubject: z.string().nullable().default(null),
@@ -848,6 +966,9 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   model: true,
   effort: true,
   account: true,
+  reportsTo: true,
+  // `createdBy` is deliberately NOT picked: it is written once, at creation,
+  // by the server (spec `heartbeats` §4.1). A PATCH naming it is stripped.
   // `permissions` is deliberately NOT picked: the generic agent PATCH can never
   // write a permission. The permission routes are the one way in, and the
   // retired `enabledToolGroups` and `tierCeiling` are refused by name.
@@ -867,6 +988,10 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // billing is operator-only, so the agent-reachable self-edit path refuses
     // this key outright — see `services/core/operator/agent-updater.ts`.
     account: z.string().min(1).nullable().optional(),
+    // Strict on the write surface, unlike the manifest's `.catch(null)`: a
+    // caller sending a bad value is told so. `null` clears it, back to the
+    // default chain. Cycles are refused server-side (`REPORTS_TO_CYCLE`).
+    reportsTo: z.string().min(1).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 
@@ -894,6 +1019,8 @@ export const UpdateAgentConventionsSchema = z
     soulContent: z.string().max(SOUL_MAX_CHARS).optional(),
     nopeContent: z.string().max(NOPE_MAX_CHARS).optional(),
     memoryContent: z.string().max(MEMORY_MAX_CHARS).optional(),
+    // HEARTBEAT.md (spec `heartbeats` §2): read by beats only, never injected.
+    heartbeatContent: z.string().max(HEARTBEAT_MAX_CHARS).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
   })
@@ -1004,6 +1131,13 @@ export const CreateAgentOptionsSchema = z
      * install flow after copying a package onto disk.
      */
     skipTemplateDownload: z.boolean().optional(),
+    /**
+     * Which `HEARTBEAT.md` template the agent starts with: its type (spec
+     * `heartbeats` §2). Omitted → chosen by runtime: a Doe agent gets `lead`,
+     * every other runtime gets no file and wakes on events only, because a
+     * timed beat on a person's own plan spends that plan.
+     */
+    heartbeatTemplate: HeartbeatTemplateIdSchema.optional(),
   })
   .openapi('CreateAgentOptions');
 

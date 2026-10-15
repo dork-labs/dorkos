@@ -23,6 +23,7 @@ import {
   UNOWNED_STREAM_GENERATION,
 } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { newestHistoryWindow } from '../../session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { stampEvent, stampHistory } from '../../session/chat-messages/chat-message-stamps.js';
 import type { DurableStreamSink } from './durable-stream-sink.js';
@@ -59,7 +60,7 @@ export interface SessionStreamPlan {
    * global stream both enforce that. This stream is the third door onto the
    * same detail, and one that defaulted to the operator would be an allow for
    * whatever opens it next. Both transports read the principal from the same
-   * `res.locals`-shaped facts.
+   * request facts.
    */
   principal: CallerPrincipal;
 }
@@ -159,10 +160,14 @@ export async function deliverSessionStream(
       // Same wire-boundary suppression as GET /:id/messages: the auto-first-turn
       // kickoff (M4) never leaves the server as a user message, whichever
       // runtime stored it. See @dorkos/shared/kickoff for the seam's scope.
-      snap.messages = filterKickoffHistory(snap.messages);
+      // Only the newest window of a long history rides the snapshot; older
+      // messages are read on request (DOR-2889). Windowed after the kickoff
+      // filter, so the count of what was left out is a count of real messages.
+      const newest = newestHistoryWindow(filterKickoffHistory(snap.messages));
+      if (newest.earlierMessages) snap.earlierMessages = newest.earlierMessages;
       // A message another chat sent carries its sender (spec `spin-off-chats`
       // §2), on the history and on the turn in progress alike.
-      snap.messages = stampHistory(chatIds, snap.messages);
+      snap.messages = stampHistory(chatIds, newest.messages);
       if (snap.inProgressTurn) {
         snap.inProgressTurn = snap.inProgressTurn.map((event) => stampEvent(chatIds, event));
       }

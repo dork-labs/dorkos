@@ -6,12 +6,12 @@ import { PresetPicker } from '@/layers/features/permissions';
 
 /**
  * The Control Center's power setting: the permission preset (spec
- * `agent-permissions`, task 3.8). Careful · Balanced · Full power, reading
- * "Full power, 2 changes" when the defaults differ from the preset.
+ * `agent-permissions`, task 3.8). Trusted · Careful, reading "Trusted, 2
+ * changes" when the defaults differ from the preset. The picker's headline is
+ * the install's trust posture, so the flyout needs no second line saying it.
  *
- * It is the same {@link PresetPicker} Settings shows, so the Full autonomy
- * consent step and the "agents set differently" question are the ones Settings
- * asks. The Control Center stays a summary: the per-area switches live in
+ * It is the same {@link PresetPicker} Settings shows, so the "agents set
+ * differently" question is the one Settings asks. The Control Center stays a summary: the per-area switches live in
  * Settings → Permissions, one tap away.
  */
 export function ControlCenterDial() {

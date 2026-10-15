@@ -11,7 +11,7 @@ import type {
 } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelStore } from '../store.js';
 import { DocChannelIngest } from '../ingest.js';
-import type { DocIngestAccess } from '../ingest-types.js';
+import type { DocIngestAccess } from '../ingest-data/ingest-types.js';
 import { envelopeIdentity } from '../envelope.js';
 import { admitBatchSlice, selectBatchSlice } from '../coalescer.js';
 import { docEventsPromptBytes, renderDocEvents } from '../prompt.js';

@@ -19,8 +19,11 @@ interface ConventionFileEditorProps {
   onChange: (content: string) => void;
   /** Called when the textarea loses focus (for debounce flush) */
   onBlur?: () => void;
-  /** Called when the enable toggle changes */
-  onToggle: (enabled: boolean) => void;
+  /**
+   * Called when the enable toggle changes. Omit it for a file with no toggle
+   * (HEARTBEAT.md, which is never injected), and the switch is not drawn.
+   */
+  onToggle?: (enabled: boolean) => void;
   /**
    * Let the editor take the height it is given instead of a fixed eight rows.
    *
@@ -60,7 +63,9 @@ export function ConventionFileEditor({
         {/* Header with toggle */}
         <Field orientation="horizontal" className="items-center justify-between">
           <FieldLabel className="text-sm font-medium">{title}</FieldLabel>
-          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`Toggle ${title}`} />
+          {onToggle && (
+            <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`Toggle ${title}`} />
+          )}
         </Field>
 
         {/* Disclaimer (NOPE.md) */}

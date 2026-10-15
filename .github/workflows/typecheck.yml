@@ -174,7 +174,7 @@ jobs:
       # queue build (the same 127 that killed a required check on 2026-07-29,
       # which is why "Prove the browser suite actually executed" carries a
       # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
-      # than 150 job minutes. Byte-identical in all eight canary jobs and
+      # than 150 job minutes. Byte-identical in every canary job and
       # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
       # extracts this very block and runs it.
       #
@@ -322,6 +322,22 @@ jobs:
           BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
         run: pnpm run check:boundary
 
+      # The 500-line ratchet (DOR-2822). `max-lines` is `warn`, and a warning
+      # fails nothing, so files over the limit kept growing. This holds them to
+      # scripts/max-lines/baseline.json: none may grow, no new file may pass 500,
+      # a shrink must lower its entry. Rides THIS job for the reason every gate
+      # above does: `typecheck` is required, unfiltered and reports on
+      # `merge_group`, so no new required check. `--base` refuses a baseline
+      # raised by hand; the base is the merge commit's first parent, fetched one
+      # level deep exactly as the ledger-coverage step below does, which works
+      # on `pull_request`, `merge_group` and the canary alike.
+      - name: File-size ratchet (DOR-2822)
+        if: ${{ !cancelled() }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          pnpm run check:max-lines -- --base "$base"
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a
@@ -407,10 +423,12 @@ jobs:
       # `!cancelled()` so an earlier gate's failure still reports every type
       # error in the same run, for the same reason the step below passes
       # `--continue`.
+      #
+      # The server's tsc needs about 4.4 GB, past Node's default heap of about
+      # 4 GB, so it ran out of memory on some pull requests and not others. The
+      # runner has 16 GB; the same ceiling the test job uses.
       - name: Typecheck every package that declares a typecheck script
         if: ${{ !cancelled() }}
-        # Server test-inclusive tsc exceeds Node's default ~4 GiB heap. The
-        # public Linux runner has 16 GB RAM; retain full scope and task scheduling.
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: pnpm exec turbo typecheck --continue

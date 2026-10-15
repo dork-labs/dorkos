@@ -137,20 +137,26 @@ export function generateServerTemplate(name: string, description: string): strin
 //   ctx.extensionDir                — Absolute path to this extension's directory
 //   ctx.filesDir                    — A folder only this extension writes to
 
+// Your API lives at /api/ext/${name}/. Serve it one of two ways:
+//   - Router: add Express routes to \`router\`, as below.
+//   - Fetch handler: return { fetch } from register(). It gets a web-standard
+//     Request and returns a Response, so a Hono app works as is (it runs on
+//     Node, so Bun- or Deno-only APIs are not there). See the commented example at the end of register().
+
 import type { Router } from 'express';
-import type { DataProviderContext } from '@dorkos/extension-api/server';
+import type { DataProviderContext, ServerExtensionRegisterResult } from '@dorkos/extension-api/server';
 
 /**
  * Register server-side routes and background tasks for ${titleName}.
  *
- * @param router - Scoped Express router mounted at /api/extensions/${name}/
+ * @param router - Express router mounted at /api/ext/${name}/
  * @param ctx - Isolated context with secrets, storage, scheduling, and SSE emission
- * @returns Optional cleanup function called on extension shutdown
+ * @returns A cleanup function called on shutdown, or { fetch, cleanup }
  */
-export default function register(router: Router, ctx: DataProviderContext): (() => void) | void {
+export default function register(router: Router, ctx: DataProviderContext): ServerExtensionRegisterResult {
   // --- Routes ---
 
-  // GET /api/extensions/${name}/data — Fetch cached data
+  // GET /api/ext/${name}/data — Fetch cached data
   router.get('/data', async (_req, res) => {
     const data = await ctx.storage.loadData();
     res.json({ data: data ?? [] });
@@ -180,6 +186,22 @@ export default function register(router: Router, ctx: DataProviderContext): (() 
   return () => {
     cancel();
   };
+
+  // --- Or serve the same API with a fetch handler ---
+  // Delete the router route above and return this instead. The request's path
+  // is the part after /api/ext/${name}, so GET /api/ext/${name}/data arrives as /data.
+  //
+  // return {
+  //   fetch: async (request) => {
+  //     const { pathname } = new URL(request.url);
+  //     if (request.method === 'GET' && pathname === '/data') {
+  //       const data = await ctx.storage.loadData();
+  //       return Response.json({ data: data ?? [] });
+  //     }
+  //     return Response.json({ error: 'Not found' }, { status: 404 });
+  //   },
+  //   cleanup: () => cancel(),
+  // };
 }
 `;
 }
@@ -257,8 +279,9 @@ function generateRightPanelTabTemplate(name: string, description: string): strin
 //
 // ExtensionAPI Quick Reference:
 //   api.registerComponent(slot, id, component, options?) — Register a React component in a UI slot
-//     right-panel options: { priority?, label?, icon? } — label names the tab, icon is its
-//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece)
+//     right-panel options: { priority?, label?, icon?, showIn? } — label names the tab, icon is its
+//     tab-strip glyph (a { className } component; omit it for the default puzzle-piece),
+//     showIn is where the tab shows by default ({ agents?, rooms?, pages? }; omit = everywhere)
 //   api.registerCommand(id, label, callback, options?)   — Register a command palette item
 //   api.notify(message, options?)                        — Show a toast notification
 //   api.loadData<T>() / api.saveData<T>(data)            — Persistent storage scoped to this extension
@@ -308,9 +331,12 @@ export function activate(api: ExtensionAPI): void {
   //   icon     — the tab-strip glyph; omit it and the strip shows a default puzzle-piece.
   //   priority — lower sorts earlier (leftward) in the tab strip.
   // The panel container owns the shared header (tab strip + close button), so this
-  // component only renders the tab body. Extension tabs can't scope themselves to a
-  // route or agent yet, so the tab stays available wherever the right panel shows —
-  // render a friendly empty state when there's nothing to show.
+  // component only renders the tab body.
+  //   showIn   — where the tab shows by default: { agents?, rooms?, pages? }, shown
+  //              wherever any matches. Pages: 'session' (every chat), 'channels' (every
+  //              channel), 'home', 'activity', 'tasks', 'team', or '*' for everywhere.
+  //              Omit it and the tab shows everywhere. A person can change it in
+  //              Settings → Extensions, or with "Hide here" in the panel.
   api.registerComponent('right-panel', '${name}-panel', ${pascalName}Panel, {
     priority: 50,
     label: '${titleName}',

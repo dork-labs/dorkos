@@ -1,8 +1,9 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
+import type { ApiEnv } from '../http/api-chain.js';
 import { keepAwakeService } from '../services/core/keep-awake/index.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * GET /api/keep-awake — whether DorkOS is keeping this computer awake right now,
@@ -13,8 +14,6 @@ const router = Router();
  * on the global event stream. The setting itself is written through
  * `PATCH /api/config`.
  */
-router.get('/', (_req, res) => {
-  res.json(keepAwakeService.status() satisfies KeepAwakeStatus);
-});
+router.get('/', (c) => c.json(keepAwakeService.status() satisfies KeepAwakeStatus));
 
 export default router;

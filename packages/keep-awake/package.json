@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke": "node -e \"process.platform==='darwin'||(console.error('keep-awake smoke: macOS only (it drives /usr/bin/caffeinate and pmset)'),process.exit(1))\" && DORKOS_KEEP_AWAKE_SMOKE=1 vitest run src/__tests__/caffeinate.smoke.test.ts --silent=false --reporter=verbose",
     "lint": "eslint ."
   },
   "devDependencies": {

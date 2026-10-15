@@ -55,7 +55,7 @@ import {
   type AdoptCandidate,
   type DirectoryOwnership,
   type SkillRoot,
-} from '@dorkos/harness';
+} from '@dorkos/harness/server-workspace';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';

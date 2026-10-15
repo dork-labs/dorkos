@@ -1,4 +1,3 @@
-import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -6,13 +5,26 @@ import { createDb, runMigrations, connectorProviderInstances, connections } from
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import type { ConnectorEventDefinition } from '@dorkos/shared/connector-event-schemas';
-import { createConnectorEventsRouter } from '../connector-events.js';
+import { createConnectorEventsRoutes } from '../connector-events.js';
+import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorSubscriptionService } from '../../services/connectors/events/subscription-service.js';
 import { ConnectorEventGrantService } from '../../services/connectors/events/grant-service.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected per case.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
+
 const owner = { kind: 'local_install', installationId: 'event-route-owner' } as const;
+/** This server's own loopback origin: trusted by CORS, absent from the route's injected list. */
+const CORS_ONLY_ORIGIN = getStaticLocalOrigins().find((origin) =>
+  origin.startsWith('http://127.0.0.1')
+)!;
 const now = '2026-09-07T12:00:00.000Z';
 const target = swappableServer();
 const disposers: Array<() => void> = [];
@@ -104,22 +116,21 @@ function fixture(options: { login?: boolean; denyDestination?: boolean } = {}) {
       endpoint: 'https://instance.example/api/connectors/webhooks/provider-a',
     })),
   };
-  const app = express();
-  app.use(express.json());
-  app.use(
-    '/api/connectors',
-    createConnectorEventsRouter({
-      store,
-      subscriptions,
-      grants,
-      managed,
-      settings,
-      resolveOwner: () => owner,
-      loginEnabled: () => options.login ?? false,
-      trustedOrigins: () => ['http://localhost:4241'],
+  target.mount(
+    honoGroupListener({
+      path: '/api/connectors',
+      routes: createConnectorEventsRoutes({
+        store,
+        subscriptions,
+        grants,
+        managed,
+        settings,
+        resolveOwner: () => owner,
+        loginEnabled: () => options.login ?? false,
+        trustedOrigins: () => ['http://localhost:4241'],
+      }),
     })
   );
-  target.mount(app);
   return {
     db,
     store,
@@ -225,12 +236,24 @@ describe('owner notification HTTP boundary', () => {
   it.each([
     { authorization: 'Bearer synthetic' },
     { 'x-dorkos-agent': 'agent-a' },
-    { origin: 'https://evil.example' },
+    // An origin the chain's CORS lets through (this server's own loopback
+    // origin) that the route's injected trusted list does not name, so the
+    // route's own origin bar is the one that answers.
+    { origin: CORS_ONLY_ORIGIN },
   ])('refuses machine or foreign-origin consent before discovery: %j', async (headers) => {
     const f = fixture();
     expect((await request(target.server).get(`${prefix}/definitions`).set(headers)).status).toBe(
       403
     );
+    expect(f.discover).not.toHaveBeenCalled();
+  });
+  it('refuses a page on a foreign origin at the chain, before discovery', async () => {
+    const f = fixture();
+    const res = await request(target.server)
+      .get(`${prefix}/definitions`)
+      .set('origin', 'https://evil.example');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('Origin https://evil.example not allowed by CORS');
     expect(f.discover).not.toHaveBeenCalled();
   });
   it('answers a DorkOS account refusal behind the definitions honestly, not as an outage', async () => {

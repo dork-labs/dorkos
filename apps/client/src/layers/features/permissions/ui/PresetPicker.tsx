@@ -6,15 +6,11 @@ import type {
   PermissionsResponse,
 } from '@dorkos/shared/permissions';
 import {
-  PERMISSION_PRESETS,
+  CHOOSABLE_PERMISSION_PRESETS,
   countAgentsFollowing,
   describeAffectedAgents,
 } from '@dorkos/shared/permissions';
-import {
-  isAutonomyAckRefusal,
-  usePermissions,
-  useSetPermission,
-} from '@/layers/entities/permissions';
+import { usePermissions, useSetPermission } from '@/layers/entities/permissions';
 import {
   Button,
   CANONICAL_TRUST_STOPS,
@@ -23,9 +19,7 @@ import {
   SegmentedControlItem,
   Skeleton,
 } from '@/layers/shared/ui';
-import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, PRESET_SUMMARY } from '../lib/permission-copy';
-import { useAutonomyConsent } from '../model/use-autonomy-consent';
 import { ApplyToOverridesDialog, type DifferingAgent } from './ApplyToOverridesDialog';
 import { PermissionWhy } from './PermissionWhy';
 
@@ -62,21 +56,29 @@ function differingAgents(overview: PermissionsResponse): DifferingAgent[] {
 }
 
 /**
- * Careful · Balanced · Full power: the one choice that sets every area and the
- * Files & commands stop at once (spec `agent-permissions` D5).
+ * The presets a person can pick, plus the stored one when it is a retired
+ * choice (Balanced or Full power), so an install on one still sees it selected.
+ */
+function shownPresets(stored: PermissionPreset): readonly PermissionPreset[] {
+  const choosable: readonly PermissionPreset[] = CHOOSABLE_PERMISSION_PRESETS;
+  return choosable.includes(stored) ? choosable : [...choosable, stored];
+}
+
+/**
+ * Trusted · Careful: the one choice that sets every area and the Files &
+ * commands stop at once (spec `agent-permissions` D5, ADR 261006-225605).
  *
- * Choosing Full power asks the person to confirm what Full autonomy means when
- * no acknowledgement is on file, and sends the yes with the preset. When some
- * agents have settings of their own, it asks which of them should follow the
- * new preset; nothing is pre-checked. With changes on top of the chosen preset,
- * "Reset to <preset>" takes them away.
+ * An install that never chose reads as Trusted, the table it resolves against.
+ * Every preset is written straight through. When some agents have settings of
+ * their own, it asks which of them should follow the new preset; nothing is
+ * pre-checked. With changes on top of the chosen preset, "Reset to <preset>"
+ * takes them away.
  *
  * @param props - See {@link PresetPickerProps}.
  */
 export function PresetPicker({ surface }: PresetPickerProps) {
   const overview = usePermissions();
   const write = useSetPermission({ kind: 'default' });
-  const consent = useAutonomyConsent();
   const [pending, setPending] = useState<PermissionPreset | null>(null);
   const differing = useMemo(
     () => (overview.data ? differingAgents(overview.data) : []),
@@ -87,13 +89,13 @@ export function PresetPicker({ surface }: PresetPickerProps) {
     return <p className="text-muted-foreground text-sm">Couldn’t read the permissions.</p>;
   }
   if (!overview.data) {
-    // The three choices are drawn while the permissions load, so a surface that
+    // The choices are drawn while the permissions load, so a surface that
     // places focus on open (the Control Center) lands it here rather than on
     // whatever comes after. Nothing can be chosen until the answer arrives.
     return (
       <div className="flex flex-col gap-3" data-testid="preset-picker" aria-busy="true">
         <SegmentedControl aria-label="Preset" className="w-full" value="" onValueChange={() => {}}>
-          {PERMISSION_PRESETS.map((preset) => (
+          {CHOOSABLE_PERMISSION_PRESETS.map((preset) => (
             <SegmentedControlItem key={preset} value={preset} aria-label={PRESET_LABEL[preset]}>
               <span className="truncate">{PRESET_LABEL[preset]}</span>
             </SegmentedControlItem>
@@ -104,32 +106,25 @@ export function PresetPicker({ surface }: PresetPickerProps) {
     );
   }
   const data = overview.data;
+  // Never chosen resolves as Trusted, so it reads as Trusted.
+  const current = data.preset ?? 'trusted';
   // What choosing a preset reaches, said before anything is chosen.
   const affected = countAgentsFollowing(data, { kind: 'preset' });
-  const preview = `${data.preset === null ? 'Choosing one' : 'Changing it'} ${describeAffectedAgents(affected)}`;
+  const preview = `Changing it ${describeAffectedAgents(affected)}`;
 
-  const send = (preset: PermissionPreset, applyToAgents?: string[]) => {
-    const once = (acknowledgeAutonomy?: true) =>
-      write.mutate(
-        {
-          kind: 'preset',
-          preset,
-          surface,
-          ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
-          ...(acknowledgeAutonomy ? { acknowledgeAutonomy } : {}),
-        },
-        {
-          onError: (err) => {
-            if (isAutonomyAckRefusal(err)) consent.ask(once);
-            else
-              toast.error(
-                err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'
-              );
-          },
-        }
-      );
-    consent.run(preset === 'full', once);
-  };
+  const send = (preset: PermissionPreset, applyToAgents?: string[]) =>
+    write.mutate(
+      {
+        kind: 'preset',
+        preset,
+        surface,
+        ...(applyToAgents && applyToAgents.length > 0 ? { applyToAgents } : {}),
+      },
+      {
+        onError: (err) =>
+          toast.error(err instanceof Error ? err.message : 'Couldn’t save that change. Try again.'),
+      }
+    );
 
   const choose = (preset: PermissionPreset) => {
     if (preset === data.preset && data.changeCount === 0) return;
@@ -142,54 +137,48 @@ export function PresetPicker({ surface }: PresetPickerProps) {
       <SegmentedControl
         aria-label="Preset"
         className="w-full"
-        value={data.preset ?? ''}
+        value={current}
         onValueChange={(next) => next && choose(next as PermissionPreset)}
         disabled={write.isPending}
       >
-        {PERMISSION_PRESETS.map((preset) => (
+        {shownPresets(current).map((preset) => (
           <SegmentedControlItem key={preset} value={preset} aria-label={PRESET_LABEL[preset]}>
             <span className="truncate">{PRESET_LABEL[preset]}</span>
           </SegmentedControlItem>
         ))}
       </SegmentedControl>
 
-      {data.preset === null ? (
-        <p className="text-muted-foreground text-sm" data-testid="permissions-preset">
-          Not chosen yet. Agents work as before. <span className="text-xs">{preview}.</span>
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:justify-between">
-          <div className="space-y-0.5">
-            <p className="text-sm" data-testid="permissions-preset">
-              <span className="font-medium">{presetHeadline(data.preset, data.changeCount)}</span>
-              <span className="text-muted-foreground"> · {PRESET_SUMMARY[data.preset]}</span>
-            </p>
-            <p className="text-muted-foreground text-xs" data-testid="permissions-preset-preview">
-              {preview} ·{' '}
-              <PermissionWhy
-                question={`Why is the preset set to ${PRESET_LABEL[data.preset]}?`}
-                sentence={`${PRESET_LABEL[data.preset]} is the preset every agent starts from.`}
-                {...(data.presetLastChange ? { lastChange: data.presetLastChange } : {})}
-              />
-            </p>
-          </div>
-          {data.changeCount > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="self-start"
-              disabled={write.isPending}
-              onClick={() => data.preset && choose(data.preset)}
-            >
-              Reset to {PRESET_LABEL[data.preset]}
-            </Button>
-          ) : null}
+      <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:justify-between">
+        <div className="space-y-0.5">
+          <p className="text-sm" data-testid="permissions-preset">
+            <span className="font-medium">{presetHeadline(current, data.changeCount)}</span>
+            <span className="text-muted-foreground"> · {PRESET_SUMMARY[current]}</span>
+          </p>
+          <p className="text-muted-foreground text-xs" data-testid="permissions-preset-preview">
+            {preview} ·{' '}
+            <PermissionWhy
+              question={`Why is the preset set to ${PRESET_LABEL[current]}?`}
+              sentence={`${PRESET_LABEL[current]} is the preset every agent starts from.`}
+              {...(data.presetLastChange ? { lastChange: data.presetLastChange } : {})}
+            />
+          </p>
         </div>
-      )}
+        {data.changeCount > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            disabled={write.isPending}
+            onClick={() => choose(current)}
+          >
+            Reset to {PRESET_LABEL[current]}
+          </Button>
+        ) : null}
+      </div>
 
-      {/* What Full power's Files & commands stop does NOT cover (DOR-2102):
-          someone with a standing acknowledgement meets no dialog here, so
-          without this line the correction never reaches them. */}
+      {/* What a Full autonomy Files & commands stop does NOT cover (DOR-2102):
+          no dialog stands in front of it, so this line is where the correction
+          reaches the person. */}
       <PermissionModeScopeNote
         descriptor={CANONICAL_TRUST_STOPS.find((mode) => mode.stop === data.filesAndCommands.stop)}
       />
@@ -211,14 +200,6 @@ export function PresetPicker({ surface }: PresetPickerProps) {
           setPending(null);
         }}
         pending={write.isPending}
-      />
-
-      <AutonomyConfirmDialog
-        descriptor={consent.descriptor}
-        canRemember={false}
-        consentNote="Every new session starts on Full power. DorkOS remembers you’ve read this."
-        onCancel={consent.cancel}
-        onConfirm={consent.confirm}
       />
     </div>
   );

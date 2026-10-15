@@ -4,6 +4,20 @@ import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
+import { resolveProposerName } from '../../../tasks/task-provenance.js';
+
+/**
+ * Which session is creating an extension, read at CALL time (the SDK rekeys a
+ * session mid-first-turn, as `TaskProvenanceResolver` explains).
+ *
+ * Present only on the in-session server, where the caller is one of our
+ * agents. Absent on the external `/mcp` server, whose caller cannot be told
+ * from an outsider, so nothing it creates is approved without a person.
+ */
+export type ExtensionCreatorResolver = () => {
+  /** The calling session's working directory, the key its agent's name resolves from. */
+  agentPath?: string;
+};
 
 /**
  * Full ExtensionAPI reference as markdown with TypeScript code blocks.
@@ -36,7 +50,8 @@ interface ExtensionAPI {
   // right-panel tab strip; defaults to the id). options.icon is the tab-strip glyph for
   // slots that render one (right-panel) — any { className } component; omit it and the
   // strip falls back to a default puzzle-piece. Not 'dialog': use registerDialog.
-  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }): () => void;
+  // showIn: where a right-panel tab shows (pages 'session', 'channels', '*'=all).
+  registerComponent(slot: ExtensionPointId, id: string, component: ComponentType, options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }>; showIn?: { agents?: string[]; rooms?: string[]; pages?: string[] } }): () => void;
   registerCommand(id: string, label: string, callback: () => void, options?: { icon?: string; shortcut?: string }): () => void;
   // Mounted only while open; draw your own frame, call onOpenChange(false) to close.
   registerDialog(id: string, component: ComponentType<{ onOpenChange: (open: boolean) => void }>): { open: () => void; close: () => void };
@@ -153,6 +168,7 @@ export function activate(api: ExtensionAPI) {
     label: 'My Panel',
     icon: MyTabIcon,
     priority: 50,
+    showIn: { pages: ['session'] },
   });
 }
 \`\`\`
@@ -333,7 +349,7 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       bundleReady: ext.bundleReady,
       hasServerEntry: ext.hasServerEntry,
       hasDataProxy: ext.hasDataProxy,
-      serverStatus: manager.getServerRouter(ext.id) ? ('active' as const) : ('inactive' as const),
+      serverStatus: manager.getServerHandler(ext.id) ? ('active' as const) : ('inactive' as const),
       ...(ext.manifest.description && { description: ext.manifest.description }),
       ...(ext.error && { error: ext.error }),
       // What it gives agents, and why a tool is not offered (DOR-2685).
@@ -453,9 +469,18 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
  * Handler factory for `create_extension` — scaffolds a new extension with
  * manifest, starter code, compiles, and enables it in one step.
  *
+ * On the in-session server the caller is one of our agents, so a Trusted
+ * install approves the new copy as it is created (ADR 261006-225605) and the
+ * approval is recorded in Activity as `extension.auto_approved`, naming the
+ * agent, the copy and the permissions it covers.
+ *
  * @param deps - Shared MCP tool dependencies
+ * @param resolveCreator - Who is creating it; absent on the external `/mcp` server.
  */
-export function createCreateExtensionHandler(deps: McpToolDeps) {
+export function createCreateExtensionHandler(
+  deps: McpToolDeps,
+  resolveCreator?: ExtensionCreatorResolver
+) {
   return async (args: {
     name: string;
     description?: string;
@@ -477,7 +502,24 @@ export function createCreateExtensionHandler(deps: McpToolDeps) {
         description: args.description,
         template,
         scope,
+        approveIfTrusted: resolveCreator !== undefined,
       });
+      if (result.autoApproved) {
+        const agentPath = resolveCreator?.().agentPath;
+        const name = (await resolveProposerName(agentPath)) ?? 'An agent';
+        await deps.activityService?.emit({
+          actorType: 'agent',
+          actorLabel: name,
+          ...(agentPath ? { actorId: agentPath } : {}),
+          category: 'config',
+          eventType: 'extension.auto_approved',
+          resourceType: 'extension',
+          resourceId: result.id,
+          resourceLabel: result.id,
+          summary: `${name} created extension ${result.id}, approved to run because agents are trusted`,
+          metadata: { path: result.path, permissions: result.autoApproved },
+        });
+      }
       return jsonContent(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Extension creation failed';
@@ -533,8 +575,13 @@ export function createTestExtensionHandler(deps: McpToolDeps) {
  * `services/core/mcp-server.ts`).
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param resolveCreator - Who is calling `create_extension`, on the in-session
+ *   server only; see {@link ExtensionCreatorResolver}.
  */
-export function extensionToolDefinitions(deps: McpToolDeps) {
+export function extensionToolDefinitions(
+  deps: McpToolDeps,
+  resolveCreator?: ExtensionCreatorResolver
+) {
   return [
     tool(
       'get_extension_api',
@@ -556,7 +603,8 @@ export function extensionToolDefinitions(deps: McpToolDeps) {
     ),
     tool(
       'create_extension',
-      'Scaffold a new DorkOS extension with manifest and starter code. Creates the directory, writes extension.json and index.ts, compiles, and enables the extension in one step.',
+      'Scaffold a new DorkOS extension with manifest and starter code. Creates the directory, writes extension.json and index.ts, compiles, and enables the extension in one step. ' +
+        'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs.',
       {
         name: z
           .string()
@@ -576,7 +624,7 @@ export function extensionToolDefinitions(deps: McpToolDeps) {
             'Install scope: global (~/.dork/extensions/) or local (.dork/extensions/ in CWD). Default: global'
           ),
       },
-      createCreateExtensionHandler(deps)
+      createCreateExtensionHandler(deps, resolveCreator)
     ),
     tool(
       'reload_extensions',
@@ -608,12 +656,13 @@ export function extensionToolDefinitions(deps: McpToolDeps) {
  * to drift. When `extensionManager` is present, returns all six tools.
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param resolveCreator - Who is calling `create_extension` in this session.
  */
-export function getExtensionTools(deps: McpToolDeps) {
+export function getExtensionTools(deps: McpToolDeps, resolveCreator?: ExtensionCreatorResolver) {
   if (!deps.extensionManager) {
     const [getExtensionApi] = extensionToolDefinitions(deps);
     return [getExtensionApi];
   }
 
-  return extensionToolDefinitions(deps);
+  return extensionToolDefinitions(deps, resolveCreator);
 }

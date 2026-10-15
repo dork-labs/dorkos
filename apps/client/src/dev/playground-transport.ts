@@ -1,11 +1,29 @@
 import type { Transport } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { RemoteAccessReport } from '@dorkos/shared/types';
 import {
   MOCK_ACCOUNT_USAGE,
   MOCK_CONTINUE_OPTIONS,
   MOCK_LIMIT_HISTORY,
 } from './showcases/account-mock-data';
+
+/**
+ * The remote access report the playground's "server" answers with (DOR-2086).
+ * `null`, the default, reads as "managed access not offered", exactly like the
+ * other methods' `null`. The Remote Access showcase poses a report here and
+ * invalidates the query, so the surfaces receive it the way the app does.
+ */
+let playgroundRemoteReport: RemoteAccessReport | null = null;
+
+/**
+ * Pose the report the playground's server answers with next.
+ *
+ * @param report - The report, or `null` for "managed access not offered".
+ */
+export function setPlaygroundRemoteReport(report: RemoteAccessReport | null): void {
+  playgroundRemoteReport = report;
+}
 
 /**
  * The one room `getRoom` answers for — everything the `AppTabStrip` showcase
@@ -279,6 +297,9 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'stopTunnel') {
         return async () => undefined;
       }
+      if (prop === 'getRemoteAccessReport') {
+        return async () => playgroundRemoteReport;
+      }
       // One named room, so the `AppTabStrip` showcase can demo a channel tab
       // reading "#general" the way the real header does — every other id
       // still falls through to the `null` default below, the honest answer
@@ -345,6 +366,11 @@ export function createPlaygroundTransport(): Transport {
         return async () => ({ project: null, allow: null, accounts: [] });
       }
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
+      // The DorkOS model form (the first run's "Other service" row) reads what
+      // is saved before it draws; nothing saved and no credits is the honest
+      // answer, and `null` is neither.
+      if (prop === 'getDoeInference') return async () => ({ inference: null, hasKey: false });
+      if (prop === 'getDoeCreditsModels') return async () => ({ endpoint: null, models: [] });
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

@@ -113,7 +113,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
     personaEnabled: true,
   }),
 }));
-vi.mock('../../../../lib/logger.js', () => ({
+vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
@@ -135,7 +135,6 @@ import {
   OPENCODE_DORKOS_TOOL_PREFIX,
 } from '../../../shared/dorkos-tool-names.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
-import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../../mcp-tools/types.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { RelayContextDeps } from '../context-builder.js';
@@ -178,7 +177,6 @@ function createFullDeps(): McpToolDeps {
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,
-    notifyBudget: new NotifyBudget(),
   };
 }
 
@@ -310,7 +308,7 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
   for (const block of shared) prose = prose.split(block).join('');
 
   const { mesh, relay } = dynamicBlockFixtures();
-  prose += `\n${await _buildPeerAgentsBlock(mesh)}`;
+  prose += `\n${await _buildPeerAgentsBlock(mesh, true)}`;
   prose += `\n${_buildRelayConnectionsBlock(relay)}`;
   return { prose, shared };
 }
@@ -320,8 +318,8 @@ async function claudeCodeProse(): Promise<{ prose: string; shared: string[] }> {
  * `mcp__dorkos__` prefix attached where it is present.
  *
  * Whole-token matching is what makes the check exact: a substring search for
- * `relay_send` would be satisfied by `mcp__dorkos__relay_send_and_wait` and miss a
- * bare `relay_send_and_wait` entirely.
+ * `mesh_list` would be satisfied by `mcp__dorkos__mesh_list_extra` and miss a
+ * bare `mesh_list_extra` entirely.
  */
 function identifierTokens(text: string): string[] {
   return text.match(/[a-z][a-z0-9_]*/g) ?? [];
@@ -487,10 +485,33 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // which it does not use), so it stays deferred and unprefixed.
     // Unchanged by extension tools (DOR-2685): the docs registry this reads
     // composes no extension. `extension-tools-every-list.test.ts` guards those.
-    // Advertise both the published Doc tools and upstream three chat capabilities.
-    // Published126 plus chat_send, chat_read and chat_stop gives129.
-    expect(advertised.size).toBe(129);
+    // 119 -> 120 for `compact_my_session` (DOR-2732): the `<context_warning>`
+    // note names it, with each runtime's prefix, so it is always loaded.
+    // 120 -> 121 for `audit_verify` (DOR-2738): no prompt block names it, so it
+    // stays deferred and unprefixed.
+    // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
+    // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
+    // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
+    // 118 -> 121 for the three commitment tools (spec `heartbeats` §12): no
+    // prompt block names them, so they stay deferred and unprefixed.
+    // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
+    // `transcript_read` (spec `audit-trail` PR4): no prompt block names them,
+    // so they stay deferred and unprefixed.
+    // 125 -> 128 for `pause_agent`, `resume_agent` and `list_paused_agents`
+    // (spec `audit-trail` PR5): no prompt block names them, so they stay
+    // deferred and unprefixed.
+    // 128 -> 129 for `end_beat` (spec `heartbeats` §8): only the beat prompt
+    // names it, as a searchable ending, so it stays deferred and unprefixed.
+    // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6): no prompt
+    // block names it, so it stays deferred and unprefixed.
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin remain searchable, alongside end_beat.
+    expect(advertised.size).toBe(135);
+    expect(advertised.has('mcp_set_client')).toBe(false);
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
       'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
@@ -502,6 +523,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'issue_doc_token',
       'revoke_doc_token',
       'canvas_set_checkbox',
+      'heartbeat_status',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);
@@ -580,7 +602,21 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
     // twice, once among the confirmation-gated mutations and once for its
     // signature, as it does every other mutation.
-    expect(prefixed.length).toBe(99);
+    //
+    // 99 -> 100 for durable timers (DOR-2717): `<tasks_tools>` names
+    // `tasks_create` once more, as the scheduler to use instead of a durable
+    // CronCreate job.
+    //
+    // 100 -> 85 for spin-off chats (spec `spin-off-chats` §7):
+    // `<relay_tools>`, which named the six retired relay tools over and over
+    // across its four workflows, became `<chat_tools>`, which teaches three
+    // chat tools and `session_start` once each where they are used.
+    //
+    // 85 -> 71 for plain sessions (DOR-2790): the chat tools refuse a chat that
+    // is not an agent's, so `<chat_tools>` and the mesh line on messaging a peer
+    // render for an agent session only, and this case walks the plain prompt.
+    // The agent-session case below guards the names in that half.
+    expect(prefixed.length).toBe(71);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -605,15 +641,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     ].sort();
     expect(unknown).toEqual([]);
 
-    // And it says the six are loaded, in full, so nothing spends a ToolSearch.
-    for (const name of [
-      'mesh_list',
-      'mesh_inspect',
-      'relay_send',
-      'relay_send_async',
-      'relay_send_and_wait',
-      'relay_inbox',
-    ]) {
+    // And it says the four are loaded, in full, so nothing spends a ToolSearch.
+    for (const name of ['mesh_list', 'mesh_inspect', 'chat_send', 'chat_read']) {
       expect(prompt).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
     }
   });
@@ -663,7 +692,16 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // from naming a tool that only claude-code exposes under that spelling.
     // `<agent_memory>` is absent by construction, like the three below: this
     // fixture's directory holds no `MEMORY.md`.
-    expect(tags).toEqual(['gen_ui', 'agent_identity', 'session_model', 'dorkos_context', 'env']);
+    // `<working_rules>` renders unconditionally beside it, and names no tool on
+    // purpose: "asking DorkOS for the access" is described, never spelled.
+    expect(tags).toEqual([
+      'gen_ui',
+      'agent_identity',
+      'session_model',
+      'working_rules',
+      'dorkos_context',
+      'env',
+    ]);
 
     for (const block of shared) {
       expect(
@@ -996,6 +1034,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
+      'working-on-a-heartbeat',
+      'working-with-spin-off-chats',
     ]);
 
     const offenders: string[] = [];

@@ -9,7 +9,6 @@ import {
 import type {
   AgentRuntime,
   AgentRegistryPort,
-  RelayPort,
   ManagedMcpServerResolver,
   MessageOpts,
   SessionSettingsPort,
@@ -17,6 +16,8 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
+import type { AuditActor } from '@dorkos/shared/audit-schemas';
+import { recordRuntimeToolCall, toolActorOf } from '../../audit/record-tool-use.js';
 import {
   homeOf,
   resolveAgentHome,
@@ -26,23 +27,36 @@ import {
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
-import {
-  connectorRuntimeHeaders,
-  type ConnectorRuntimeTools,
-  type ConnectorRuntimeMcpInjection,
-} from '../connector-tools.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openConnectorTurn } from '../connectors/open-connector-turn.js';
+import type { ConnectorRuntimeTools, ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { DOE_CAPABILITIES } from './runtime-constants.js';
 import { DoeEventQueue } from './event-queue.js';
 import { DoeApprovals } from './approvals.js';
 import { DoeTurnEvents, doeErrorEvent } from './turn.js';
 import { assembleDoeHost, type DoeHostAssembly } from './tools.js';
 import { resolveDoeInference, freezeDoeInference } from './credentials.js';
+import { chooseDoeCreditsInference } from './auto-model.js';
 import type { DoeRuntimeOptions } from './doe-runtime.js';
 import type { DoeSessionStore } from './session-store.js';
+/** What a chat with no AI to run on says (credits not chosen, nothing configured). */
+export const DOE_NOT_CONNECTED = 'Connect AI to use this agent.';
+/** The notice a chat gets when DorkOS's pick stands in for a model credits do not serve. */
+function substitutionNotice(
+  replaced: { from: string; fromName: string; toName: string },
+  to: string
+): StreamEvent {
+  return {
+    type: 'model_substituted',
+    data: {
+      from: replaced.from,
+      fromName: replaced.fromName,
+      to,
+      toName: replaced.toName,
+      reason: 'credits-not-covered',
+    },
+  };
+}
 export interface ActiveTurn {
   controller: AbortController;
   engine?: Doe;
@@ -61,11 +75,12 @@ export interface DoeTurnHostState {
   settingsRevision: Map<string, number>;
   settingsPort?: SessionSettingsPort;
   mesh?: AgentRegistryPort;
-  relay?: RelayPort;
   managedMcp?: ManagedMcpServerResolver;
   connectorTools?: ConnectorRuntimeTools;
   active: Map<string, ActiveTurn>;
   inference: () => DoeInferenceConfig | null;
+  /** The model new chats prefer on credits; `null` lets DorkOS pick. */
+  defaultModel: () => string | null;
   connected: (host: DoeHostAssembly) => void;
 }
 /** Execute one reserved turn; completion follows model, approval, MCP and bearer cleanup. */
@@ -112,27 +127,55 @@ export async function executeDoeTurn(
     turn.mode = mode;
     const record = hostState.sessions.get(id)!;
     const agentPath = homeOf(resolveAgentHome(cwd, turnAgentOf(opts)));
+    // The catalog id DorkOS froze, when it differs from what the chat named.
+    let substituted: string | undefined;
     if (!record.inference) {
-      const config = hostState.inference();
-      if (!config) throw new Error('Choose a model in DorkOS runtime settings.');
+      const configured = hostState.inference();
       const manifest = agentPath ? await readHomeManifest(agentPath) : null;
-      const frozen = freezeDoeInference({
-        config,
-        creditsChosen:
-          config.source === 'dorkos-credits' ||
-          agentRunsOnCredits(
-            hostState.runtime,
-            { id: manifest?.id, account: manifest?.account },
-            false
+      const creditsChosen =
+        configured?.source === 'dorkos-credits' ||
+        agentRunsOnCredits(
+          hostState.runtime,
+          { id: manifest?.id, account: manifest?.account },
+          false
+        );
+      const requested = opts?.model ?? persisted?.model ?? record.session.model;
+      let frozen: DoeInferenceConfig;
+      if (configured)
+        frozen = freezeDoeInference({ config: configured, creditsChosen, model: requested });
+      else if (!creditsChosen) throw new Error(DOE_NOT_CONNECTED);
+      else {
+        // Nothing configured on credits: DorkOS picks (ADR 261010-143211).
+        // Best first: the chat's own model, its agent's, then the preference.
+        const agentModel =
+          manifest?.model && (manifest.runtime ?? 'doe') === 'doe' ? manifest.model : undefined;
+        const candidates = [
+          ...new Set(
+            [requested, agentModel, hostState.defaultModel() ?? undefined].filter(
+              (model): model is string => typeof model === 'string' && model.length > 0
+            )
           ),
-        model: opts?.model ?? persisted?.model ?? record.session.model,
-      });
+        ];
+        const choice = await (
+          hostState.options.chooseCreditsInference ?? chooseDoeCreditsInference
+        )(candidates);
+        controller.signal.throwIfAborted();
+        frozen = choice.inference;
+        if (choice.replaced) queue.push(substitutionNotice(choice.replaced, frozen.model));
+        // The chat keeps the catalog's own id (a `[1m]` variant, an agent's or the
+        // preferred model), so every later turn names a model credits list.
+        if (frozen.model !== requested) {
+          substituted = frozen.model;
+          await hostState.runtime.updateSession(id, { model: frozen.model });
+        }
+      }
       record.inference = JSON.parse(JSON.stringify(frozen));
       hostState.sessions.setInference(id, record.inference!);
     }
     const config = DoeInferenceConfigSchema.parse(record.inference);
     turn.credits = config.source === 'dorkos-credits';
-    const modelChoice = opts?.model ?? persisted?.model ?? record.session.model ?? config.model;
+    const modelChoice =
+      substituted ?? opts?.model ?? persisted?.model ?? record.session.model ?? config.model;
     const model = await (hostState.options.resolveModel ?? resolveDoeInference)({
       ...config,
       model: modelChoice,
@@ -152,39 +195,44 @@ export async function executeDoeTurn(
       compact ? 'manual' : 'auto',
       () => hostState.sessions.models.costTotal(id)
     );
+    let helperActor: AuditActor | undefined;
+    mapper.onHelperTool = (call) => {
+      try {
+        const actor = (helperActor ??= toolActorOf('doe', { ...(opts ?? {}), cwd }));
+        if (!actor) return;
+        recordRuntimeToolCall(
+          {
+            runtime: 'doe',
+            sessionId: id,
+            toolCallId: call.callId,
+            name: call.name,
+            input: call.input,
+            actor,
+            helperId: call.helper,
+          },
+          call.failed ? 'failed' : 'ok'
+        );
+      } catch {
+        // Recording is never worth a turn.
+      }
+    };
     let connectorInjection: ConnectorRuntimeMcpInjection | null = null;
-    if (agentPath && hostState.mesh?.getByPath(agentPath) && hostState.connectorTools) {
-      binding = await hostState.connectorTools.principals.openTurn(
-        {
-          runtime: 'doe',
-          canonicalSessionId: id,
-          canonicalCwd: cwd,
-          agentPath,
-          signal: controller.signal,
-        },
-        { isCurrent: () => hostState.active.get(id) === turn }
-      );
-      supervisor = (
-        hostState.connectorTools.createLeaseSupervisor ??
-        ((options) => new ConnectorTurnLeaseSupervisor(options))
-      )({
-        principals: hostState.connectorTools.principals,
-        bindingId: binding.bindingId,
-        permit: binding.renewalPermit,
-        runtime: 'doe',
-        expiresAt: binding.expiresAt,
-        signal: controller.signal,
-        onLost: () => controller.abort(),
-      });
-      connectorInjection = {
-        url: hostState.connectorTools.listenerUrl,
-        agentToolsUrl: hostState.connectorTools.agentToolsUrl,
-        headers: connectorRuntimeHeaders({
-          bearer: binding.bearer,
-          runtime: 'doe',
-          canonicalCwd: cwd,
-        }),
-      };
+    const opened =
+      agentPath && hostState.mesh?.getByPath(agentPath) && hostState.connectorTools
+        ? await openConnectorTurn(hostState.connectorTools, {
+            runtime: 'doe',
+            sessionId: id,
+            agentPath,
+            cwd,
+            signal: controller.signal,
+            isCurrent: () => hostState.active.get(id) === turn,
+            onLost: () => controller.abort(),
+          })
+        : null;
+    if (opened) {
+      binding = opened.binding;
+      supervisor = opened.supervisor;
+      connectorInjection = opened.injection;
     }
     host = await (hostState.options.assembleHost ?? assembleDoeHost)({
       sessionId: id,
@@ -199,7 +247,6 @@ export async function executeDoeTurn(
       },
       connectorInjection,
       mesh: hostState.mesh,
-      relayWired: hostState.relay !== undefined,
       ...(mode === 'bypassPermissions'
         ? {
             builderExecutionPolicy: {

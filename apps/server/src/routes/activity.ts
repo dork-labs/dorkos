@@ -3,28 +3,31 @@
  *
  * @module routes/activity
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
-import { parseBody } from '../lib/route-utils.js';
+import { validationFailureBody } from '../lib/route-utils.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
 /**
- * Create the activity router with the list endpoint.
+ * The `/api/activity` routes: the list endpoint.
  *
  * @param activityService - ActivityService instance for querying events
+ * @returns The routes, for `app.route('/api/activity', …)`.
  */
-export function createActivityRouter(activityService: ActivityService): Router {
-  const router = Router();
+export function createActivityRoutes(activityService: ActivityService): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.get('/', async (req, res) => {
-    const query = parseBody(ListActivityQuerySchema, req.query, res);
-    if (!query) return;
+  router.get('/', async (c) => {
+    const query = ListActivityQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return c.json(validationFailureBody(query.error), 400);
 
     try {
-      const result = await activityService.list(query);
-      return res.json(result);
+      const result = await activityService.list(query.data);
+      return c.json(result);
     } catch (_err) {
-      return res.status(500).json({ error: 'Failed to fetch activity events' });
+      return c.json({ error: 'Failed to fetch activity events' }, 500);
     }
   });
 

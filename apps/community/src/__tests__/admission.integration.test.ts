@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
-import { sweepExpiredAdmissions } from '../routes/community/invites.js';
+import { sweepExpiredAdmissions } from '../admission/sweep.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
@@ -547,6 +547,7 @@ describe('signed admission over real HTTP and Postgres', () => {
       github: false,
       oidc: null,
       minimumAge: null,
+      allowedCountries: null,
       emailLinks: false,
     });
     // A host that sets no links (every self-hoster) answers three nulls, signed out, untenanted.

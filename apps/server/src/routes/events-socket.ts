@@ -14,9 +14,11 @@
  * @module routes/events-socket
  */
 import type { WebSocket } from 'ws';
+import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
+import { connectedFramePayload } from '../services/session/catalog/session-list-reset.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type {
   UpgradeAttempt,
@@ -77,10 +79,10 @@ export const globalEventsRoute: UpgradeRoute = {
         // fan-out only ever pushes, so nothing here drives a send loop.
         const socket = new DurableStreamSocket(ws);
         const client = fanOutClient(ws);
-        // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this reads
-        // the same principal an HTTP request would, with no second notion of
-        // who a caller is (`stream-upgrade-auth.ts`).
-        const principal = readCallerPrincipal({ headers }, { locals });
+        // `StreamUpgradeLocals` carries a request's identity fields precisely so
+        // this reads the same principal an HTTP request would, with no second
+        // notion of who a caller is (`stream-upgrade-auth.ts`).
+        const principal = readCallerPrincipal(upgradeCaller(headers, locals));
         const unsubscribe = eventFanOut.addClient(client, principal);
         socket.signal.addEventListener('abort', unsubscribe, { once: true });
         // The connect preamble: `connected`, then the fleet's current
@@ -88,7 +90,7 @@ export const globalEventsRoute: UpgradeRoute = {
         // blocked still learns about it (DOR-1136). Registration first and no
         // await in between, so a live transition cannot land ahead of the
         // snapshot it supersedes.
-        client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+        client.send(encodeBroadcast('connected', connectedFramePayload()));
         sendSessionStatusSnapshot(client, principal);
       },
     };

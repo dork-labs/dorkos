@@ -19,12 +19,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { editBaselineStore } from '../../services/diff/index.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
 const SESSION = 'sess-diff-1';
 
 describe('Diff routes — real boundary + symlink escapes', () => {

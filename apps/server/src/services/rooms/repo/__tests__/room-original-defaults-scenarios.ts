@@ -2,8 +2,10 @@
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import type { OriginalDefaultsScenario } from './room-original-native-defaults-control.js';
 const base = USER_CONFIG_DEFAULTS.runtimes;
+// Model/effort/history cases pin the original unset power fixture independently of the shipped preset.
+const noPower: UserConfig['runtimes'] = { ...base, defaultTrustStop: null };
 const model: UserConfig['runtimes'] = {
-  ...base,
+  ...noPower,
   claudeCode: { ...base.claudeCode, defaultModel: 'opus', defaultEffort: 'high' },
 };
 const stop = (value: 'ask' | 'act' | 'autonomy'): UserConfig['runtimes'] => ({
@@ -11,8 +13,9 @@ const stop = (value: 'ask' | 'act' | 'autonomy'): UserConfig['runtimes'] => ({
   defaultTrustStop: value,
 });
 export const originalClaudeDefaultsScenarios = {
-  'durable-claude-boundaries': { history: 'boundaries', expectedSettings: {} },
+  'durable-claude-boundaries': { runtimes: noPower, history: 'boundaries', expectedSettings: {} },
   'durable-claude-no-text': {
+    runtimes: noPower,
     history: 'no-text',
     providerFragments: ['Green', ' — ', 'nothing failed.'],
     expectedSettings: {},
@@ -23,18 +26,19 @@ export const originalClaudeDefaultsScenarios = {
     existing: { model: 'sonnet' },
     expectedSettings: {},
   },
-  'defaults-empty': { expectedSettings: {} },
+  'defaults-empty': { runtimes: noPower, expectedSettings: {} },
   'defaults-agent': {
     runtimes: model,
     manifest: { runtime: 'claude-code', model: 'sonnet', effort: 'low' },
     expectedSettings: { model: 'sonnet', effort: 'low' },
   },
   'defaults-missing-runtime': {
-    runtimes: { ...base, claudeCode: { ...base.claudeCode, defaultModel: 'opus' } },
+    runtimes: { ...noPower, claudeCode: { ...base.claudeCode, defaultModel: 'opus' } },
     manifest: { runtime: 'codex', model: 'gpt-5.3-codex' },
     expectedSettings: { model: 'opus' },
   },
   'defaults-registered-codex': {
+    runtimes: noPower,
     runtime: 'codex',
     manifest: { runtime: 'codex', model: 'gpt-5.3-codex' },
     expectedSettings: { model: 'gpt-5.3-codex' },
@@ -80,7 +84,8 @@ export const originalClaudeDefaultsScenarios = {
     expectedSettings: {},
     expectedMode: 'default',
   },
-  'power-omitted': { expectedSettings: {} },
+  // No stop at either tier: a fresh install now ships global Full autonomy.
+  'power-omitted': { runtimes: { ...base, defaultTrustStop: null }, expectedSettings: {} },
   'power-existing': {
     runtimes: stop('autonomy'),
     existing: { permissionMode: 'default' },
@@ -103,7 +108,7 @@ export const originalClaudeDefaultsScenarios = {
     external: true,
     priorFullTurn: true,
     expectedCeiling: 'runtime-default',
-    expectedLevel: { asks: 'always', reach: 'edit' },
+    expectedLevel: { asks: 'always', reach: 'edit', outsider: true },
     expectedSettings: {},
   },
   'power-agent-bound': {

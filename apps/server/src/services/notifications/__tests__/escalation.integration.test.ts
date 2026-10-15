@@ -11,7 +11,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
-import { SessionStateProjector } from '../../session/session-state-projector.js';
+import {
+  SessionStateProjector,
+  disposeProjector,
+  getOrCreateProjector,
+  rekeyProjector,
+} from '../../session/session-state-projector.js';
 import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { NotificationStore } from '../notification-store.js';
@@ -259,6 +264,45 @@ describe('a session that stops on an error', () => {
     await flush();
 
     expect(sendToAll).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * DOR-2136: an error that lands before the canonical id resolves is armed
+   * under the request id. The rekey must carry the episode to the new id, or the
+   * old timer is one nothing can ever resolve, and a second one is armed beside it.
+   */
+  describe('across the first-turn rekey', () => {
+    afterEach(() => disposeProjector('sess-canon'));
+
+    function erroredThenRekeyed(): SessionStateProjector {
+      const projector = getOrCreateProjector('sess-request');
+      projector.cwd = '/Users/dev/acme';
+      setLifecycle(projector, 'error');
+      rekeyProjector('sess-request', 'sess-canon');
+      return projector;
+    }
+
+    it('never pings once the error clears under the new id', async () => {
+      const projector = erroredThenRekeyed();
+      await vi.advanceTimersByTimeAsync(ONE_MINUTE);
+      setLifecycle(projector, 'idle');
+      await flush();
+      await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
+      await flush();
+
+      expect(sendToAll).not.toHaveBeenCalled();
+    });
+
+    it('pings once, under the new id, while the error stands', async () => {
+      erroredThenRekeyed();
+      await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
+      await flush();
+
+      expect(sendToAll).toHaveBeenCalledTimes(1);
+      expect(sendToAll.mock.calls[0][0]).toMatchObject({
+        deepLink: '/session?session=sess-canon',
+      });
+    });
   });
 
   it('a second episode answered in time still disarms', async () => {

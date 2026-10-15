@@ -24,7 +24,7 @@ import {
 import { CLI_INTERRUPT_SENTINEL } from '../../messaging/phantom-cancellation.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 import type { AgentSession } from '../../agent-types.js';
-import { streamTurnWindow } from '../pump-turn-stream.js';
+import { streamTurnWindow } from '../warm-process/pump-turn-stream.js';
 import type { TurnWindow } from '../session-turn-windows.js';
 
 // Inert mapper: the phantom path reads the RAW SDK message and yields its own

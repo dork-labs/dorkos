@@ -78,8 +78,10 @@ const TENANT_TABLES = [
   'agents',
   'attachments',
   'audit_events',
+  'bans',
   'bootstrap_grants',
   'channel_members',
+  'channel_post_clocks',
   'channels',
   'community_content_versions',
   'community_creation_receipts',
@@ -114,6 +116,8 @@ const TENANT_TABLES = [
   'pending_admissions',
   'read_cursors',
   'removed_file_blobs',
+  'reports',
+  'reserved_name_grants',
   'tenant_reconciliation',
 ];
 
@@ -812,6 +816,21 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       `isolation-${foreignReplacement}`,
     ]
   );
+  // A standing ban in B, written directly so B's member stays for the other probes.
+  const foreignBan = (
+    await pool.query<{ id: string }>(
+      'INSERT INTO bans(community_id,actor_member_id) VALUES($1,$2) RETURNING id',
+      [otherId, otherOwner]
+    )
+  ).rows[0].id;
+  // An open report in B, written directly, for the resolve probe (0034).
+  const foreignReport = (
+    await pool.query<{ id: string }>(
+      `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
+       VALUES($1,$2,$3,'spam') RETURNING id`,
+      [otherId, entry, otherPlainMember]
+    )
+  ).rows[0].id;
   // Community A's own public channel, for probes that pair it with a foreign id.
   const home = await jsonRequest(`${own}/channels`, 'POST', {
     name: 'Isolation home',
@@ -867,6 +886,8 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive: string;
     admission: string;
     replacement: string;
+    ban: string;
+    report: string;
   };
   const foreign: Ids = {
     channel,
@@ -883,6 +904,8 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive,
     admission: foreignAdmission,
     replacement: foreignReplacement,
+    ban: foreignBan,
+    report: foreignReport,
   };
   const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
@@ -903,6 +926,8 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     // Correctly signed, so it reaches the lookup, but matches no join attempt.
     admission: `community_admission=${signValue(randomToken(), 'a'.repeat(32))}`,
     replacement: randomUUID(),
+    ban: randomUUID(),
+    report: randomUUID(),
   };
   const { lifecycle_version: ownLifecycleVersion } = (
     await pool.query<{ lifecycle_version: number }>(
@@ -970,6 +995,28 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       call: (x) => ({ path: `/members/${x.member}/role`, body: { role: 'admin' } }),
     },
     { route: 'DELETE /members/:id', call: (x) => ({ path: `/members/${x.member}`, body: {} }) },
+    {
+      route: 'POST /members/:id/ban',
+      call: (x) => ({ path: `/members/${x.member}/ban`, body: {} }),
+    },
+    { route: 'DELETE /bans/:id', call: (x) => ({ path: `/bans/${x.ban}`, body: {} }) },
+    {
+      route: 'POST /members/:id/mute',
+      call: (x) => ({ path: `/members/${x.member}/mute`, body: { minutes: 5 } }),
+    },
+    { route: 'DELETE /members/:id/mute', call: (x) => ({ path: `/members/${x.member}/mute` }) },
+    {
+      route: 'GET /channels/:id/slow-mode',
+      call: (x) => ({ path: `/channels/${x.channel}/slow-mode` }),
+    },
+    {
+      route: 'POST /entries/:id/reports',
+      call: (x) => ({ path: `/entries/${x.entry}/reports`, body: { reason: 'spam' } }),
+    },
+    {
+      route: 'POST /reports/:id/resolve',
+      call: (x) => ({ path: `/reports/${x.report}/resolve`, body: { action: 'dismiss' } }),
+    },
     {
       route: 'POST /owner/transfer',
       call: (x) => ({
@@ -1172,6 +1219,20 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'POST /pairings/start': 'creates a new pairing; references nothing',
     'GET /takedowns': "lists the URL community's takedowns the caller may see",
     'GET /owner-replacement': "reads the URL community's open or completed replacement only",
+    'GET /bans': 'lists the URL community',
+    'GET /mutes': 'lists the URL community',
+    'GET /reports': 'lists the URL community',
+    'GET /me/standing': 'the caller only',
+    'PATCH /me': 'the caller renames themselves only',
+    'GET /rules': "reads the URL community's rules only",
+    'PUT /rules': "edits the URL community's rules only",
+    'POST /rules/accept': "the caller accepts the URL community's rules; takes only a version",
+    'GET /reserved-names': 'reads the URL community only',
+    'PUT /reserved-names': 'edits the URL community only',
+    'GET /channels/auto-join': 'lists the URL community',
+    'GET /open-admission': 'reads the URL community only',
+    'POST /open-admission/preflight': 'the URL community only; references nothing',
+    'POST /open-admission/join': 'admits the caller to the URL community only; no body',
   };
 
   const scoped = '/api/v1/communities/:communityId';
@@ -1242,7 +1303,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   });
   // The number of probes that take the channel id. Update it when you add or
   // remove a channel probe; it stops the public run from silently shrinking.
-  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(18);
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(19);
 
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;
@@ -1588,6 +1649,14 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
       })
     ).status
   ).toBe(201);
+  // A ban in each tenant: the deleted one's goes with it, the survivor's stays.
+  for (const id of [survivorId, communityId])
+    await pool.query(
+      `INSERT INTO bans(community_id,actor_member_id,reason)
+       SELECT $1,id,'Kept or deleted with its space' FROM members
+       WHERE community_id=$1 AND role='owner' AND active`,
+      [id]
+    );
   // Its tenant rows, its community row, and every account and session.
   const survivorManifest = () => isolationSnapshot([survivorId]);
   const survivorBefore = await survivorManifest();

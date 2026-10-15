@@ -99,6 +99,7 @@ const ROWLESS_SESSION = '33333333-3333-4333-8333-333333333333';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => mockRuntime),
     has: vi.fn((type: string) => type in RUNTIMES),
@@ -129,12 +130,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const testServer = listeningServer(app);
+const admission = new MainRequestAdmission();
+// Routed as the running server routes: the moved groups answer from Hono.
+const testServer = listeningServer(composedListener(admission));
 
 describe('Commands Routes', () => {
   beforeEach(() => {

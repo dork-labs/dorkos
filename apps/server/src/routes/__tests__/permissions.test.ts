@@ -4,19 +4,26 @@
  * holder of an approval token, and with login on so is a per-user API key. Only
  * a person changes what agents may do.
  */
-import { describe, it, expect } from 'vitest';
-import express from 'express';
+import { describe, it, expect, vi } from 'vitest';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
-import { createPermissionsRouter } from '../permissions.js';
+import { createPermissionsRoutes } from '../permissions.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   TWO_AGENTS,
   createPermissionWorld,
 } from '../../services/core/permissions/__tests__/permission-fixtures.js';
+
+// The routes are served through the `/api` chain, whose host guard and session
+// gate read the login setting: off, as on a fresh install. The routes' own
+// login lookup is injected per case.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
 
 const DORKBOT = {
   agentPath: '/agents/dorkbot',
@@ -27,7 +34,7 @@ const DORKBOT = {
 describe('permission routes', () => {
   const target = swappableServer();
 
-  /** An app around the real router over an in-memory world. */
+  /** The real routes behind the `/api` chain, over an in-memory world. */
   function build(
     options: {
       loginEnabled?: boolean;
@@ -36,20 +43,22 @@ describe('permission routes', () => {
     } = {}
   ): { app: Server; world: ReturnType<typeof createPermissionWorld> } {
     const world = createPermissionWorld({ preset: 'full', agents: TWO_AGENTS });
-    const built = express();
-    built.use(express.json());
-    built.use((_req, res, next) => {
-      if (options.agentIdentity) res.locals.agentIdentity = DORKBOT;
-      if (options.user) res.locals.user = options.user;
-      next();
-    });
-    built.use(
-      '/api',
-      createPermissionsRouter({
-        permissions: world.service,
-        activity: world.activity,
-        isLoginEnabled: () => options.loginEnabled === true,
-      })
+    const built = honoGroupListener(
+      {
+        path: '/api',
+        routes: createPermissionsRoutes({
+          permissions: world.service,
+          activity: world.activity,
+          isLoginEnabled: () => options.loginEnabled === true,
+        }),
+      },
+      {
+        before: async (c, next) => {
+          if (options.agentIdentity) c.set('agentIdentity', DORKBOT);
+          if (options.user) c.set('user', options.user);
+          await next();
+        },
+      }
     );
     return { app: target.mount(built), world };
   }
@@ -144,13 +153,24 @@ describe('permission routes', () => {
   });
 
   describe('what a write may say', () => {
-    it('refuses Allowed on a floor area with 400 FLOOR_NEVER_ALLOWED', async () => {
+    it.each(['safety', 'reach'])(
+      'refuses Allowed on %s with 400 FLOOR_NEVER_ALLOWED',
+      async (area) => {
+        const { app } = build();
+        const res = await request(app)
+          .patch('/api/permissions/defaults')
+          .send({ areas: { [area]: 'allowed' }, surface: 'settings' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('FLOOR_NEVER_ALLOWED');
+      }
+    );
+
+    it('accepts Allowed on Permissions, which is no longer a floor', async () => {
       const { app } = build();
       const res = await request(app)
         .patch('/api/permissions/defaults')
-        .send({ areas: { reach: 'allowed' }, surface: 'settings' });
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe('FLOOR_NEVER_ALLOWED');
+        .send({ areas: { permissions: 'allowed' }, surface: 'settings' });
+      expect(res.status).toBe(200);
     });
 
     it('refuses an unknown area and an unknown action with 400', async () => {

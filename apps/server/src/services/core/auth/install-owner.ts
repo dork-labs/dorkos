@@ -11,10 +11,10 @@ import { readOwnerAccount } from './index.js';
  * Whether a signed-in account is the one that owns this install
  * (`readOwnerAccount`, ADR 260727-184933 D6). The owner half of
  * `refuseUnlessAccountOwner` (`lib/caller-authority.ts`), on its own for a surface that runs its own
- * person bars first (`routes/connector-management.ts`), so the two cannot
+ * person bars first (`routes/connector-owner-boundary.ts`), so the two cannot
  * disagree about who the owner is.
  *
- * @param user - The account `sessionGate` resolved, if any.
+ * @param user - The account the session gate resolved, if any.
  * @returns False when nobody is signed in, or no owner account can be read:
  *   nobody can be shown to own the install then.
  */

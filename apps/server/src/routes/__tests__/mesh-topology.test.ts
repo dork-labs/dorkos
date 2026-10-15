@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE } from '@dorkos/shared/mesh-schemas';
-import { createMeshRouter, type MeshRouterDeps } from '../mesh.js';
+import { createMeshRoutes, type MeshRouterDeps } from '../mesh.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+
+// The `/api` chain reads config (login, the host allowlist); nothing is set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
 import type { MeshCore } from '@dorkos/mesh';
 
 const MOCK_MANIFEST = {
@@ -39,6 +44,7 @@ function createMockMeshCore() {
     unregister: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockReturnValue([]),
     listWithHealth: vi.fn().mockReturnValue([]),
+    listWithPaths: vi.fn().mockReturnValue([]),
     get: vi.fn().mockReturnValue(undefined),
     listDenied: vi.fn().mockReturnValue([]),
     update: vi.fn().mockReturnValue(undefined),
@@ -76,15 +82,12 @@ describe('Mesh topology routes', () => {
 
   beforeEach(() => {
     meshCore = createMockMeshCore();
-    const built = express();
-    built.use(express.json());
-    built.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-    built.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
+    app = target.mount(
+      honoGroupListener({
+        path: '/api/mesh',
+        routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore }),
+      })
     );
-    app = target.mount(built);
   });
 
   // --- GET /topology ---
@@ -359,10 +362,7 @@ describe('Topology enrichment — Tasks agent linking', () => {
       meshCore: meshCore as unknown as MeshCore,
       taskStore,
     };
-    const built = express();
-    built.use(express.json());
-    built.use('/api/mesh', createMeshRouter(deps));
-    app = target.mount(built);
+    app = target.mount(honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes(deps) }));
   }
 
   it('counts tasks linked to the agent by agentId', async () => {
@@ -540,10 +540,7 @@ describe('Topology enrichment — relayAdapters excludes sibling agent ULIDs', (
         ],
       },
     };
-    const built = express();
-    built.use(express.json());
-    built.use('/api/mesh', createMeshRouter(deps));
-    app = target.mount(built);
+    app = target.mount(honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes(deps) }));
   });
 
   function findAgent(

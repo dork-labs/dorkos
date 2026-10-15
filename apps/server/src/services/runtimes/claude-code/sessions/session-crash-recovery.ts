@@ -72,7 +72,7 @@ import { isOriginalClaudeRoomPumpDispatch } from './persistent-dispatch.js';
  * @module services/runtimes/claude-code/sessions/session-crash-recovery
  */
 import { logger } from '../../../../lib/logger.js';
-import type { PumpCrash, PumpDispatch, PumpState } from './session-pump-contract.js';
+import type { PumpCrash, PumpDispatch, PumpState } from './warm-process/session-pump-contract.js';
 import type { TurnWindow } from './session-turn-windows.js';
 
 /**

@@ -41,6 +41,7 @@ function renderControl(
     value?: ResponseRung;
     /** Omit to test a caller that does not want previews at all. */
     withPreview?: boolean;
+    isLead?: boolean;
   } = {}
 ) {
   viewport(opts.on ?? 'desktop');
@@ -54,6 +55,7 @@ function renderControl(
       onChange={onChange}
       onPreview={opts.withPreview === false ? undefined : onPreview}
       engagedWindow={WINDOW}
+      isLead={opts.isLead}
     />
   );
   return { ...utils, onChange, onPreview };
@@ -267,6 +269,19 @@ describe('ResponseModeControl', () => {
       expect(screen.getByText('Answers only when you @mention it.')).toBeInTheDocument();
       expect(screen.getByText('Answers every message in this room.')).toBeInTheDocument();
       expect(screen.getByText(/keeps answering for 10 minutes or 5 messages/)).toBeInTheDocument();
+    });
+
+    it('tells the lead its quiet rungs still answer what nobody else does', () => {
+      renderControl({ on: 'phone', value: 'silent', isLead: true });
+
+      expect(screen.queryByText('Never speaks here')).not.toBeInTheDocument();
+      expect(screen.queryByText('Answers only when you @mention it.')).not.toBeInTheDocument();
+      expect(
+        screen.getByText('Answers only what nobody else does, because it leads this channel.')
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('Answers @mentions, and anything nobody else answers.')
+      ).toBeInTheDocument();
     });
 
     it('describes each rung by its own line rather than by a shared one', () => {

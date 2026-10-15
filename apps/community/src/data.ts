@@ -3,19 +3,14 @@ import type { Context } from 'hono';
 import type { CommunityAuth } from './auth.js';
 import { hasRequestStart, writtenBeforeClearing } from './sign-in/request-start.js';
 import { ApiError } from './http.js';
-import {
-  bearerCredential,
-  hashSecret,
-  isHostApiKeyBearer,
-  readCookie,
-  verifyValue,
-} from './security.js';
-import type { CommunityConfig } from './config.js';
+import { bearerCredential, hashSecret, isHostApiKeyBearer } from './security.js';
 import {
   isReadOnlyLifecycle,
   resolveCommunityContext,
   type CommunityContext,
 } from './tenant-context.js';
+
+export { bootstrapGrant } from './host/bootstrap-grant.js';
 
 /** Live human identity derived from a session and member row. */
 export interface Member {
@@ -89,11 +84,12 @@ export function bearer(c: Context): string | null {
   return bearerCredential(header);
 }
 
-/** Options for the few removals a host hold still allows. */
+/** Options for the few acts a host hold still allows. */
 export interface HeldRemovalOption {
   /**
-   * Also allow a held community. Only for a removal (an agent, an invitation, a member leaving):
-   * a hold keeps credentials, so taking one away must stay possible while nothing may grow.
+   * Also allow a held community. Only for a removal (an agent, an invitation, a member leaving),
+   * since a hold keeps credentials and taking one away must stay possible while nothing may
+   * grow, or for a person accepting the rules, which changes nothing anyone else sees.
    */
   allowHeld?: boolean;
 }
@@ -153,52 +149,6 @@ export async function requireConnectionGrant(
   };
 }
 
-/**
- * Revoke the personal grant whose bearer made this request.
- *
- * This is how a local install disconnects itself: it holds only its own
- * bearer, never the person's browser session, so the bearer is the proof. It
- * works in every lifecycle a person can still revoke from (a suspended or
- * closing community must still let an install go) and does not require the
- * grant's scopes or a live membership, because ending access is always safe.
- * A bearer whose grant is already revoked succeeds again, so a retry after a
- * lost response is harmless; a bearer that matches no grant is refused.
- *
- * @param c - The request carrying the install's bearer.
- * @param pool - Database pool.
- */
-export async function revokeCallingConnectionGrant(c: Context, pool: Pool): Promise<void> {
-  const token = bearer(c);
-  if (!token) throw new ApiError(401, 'UNAUTHENTICATED', 'A connected local install is required.');
-  const tenant = await resolveCommunityContext(c, pool, {
-    allowSuspended: true,
-    allowDeletionPending: true,
-  });
-  const tokenHash = hashSecret(token);
-  await transaction(pool, async (client) => {
-    const revoked = await client.query<{ id: string; member_id: string }>(
-      `UPDATE connection_grants SET revoked_at=now()
-       WHERE token_hash=$1 AND community_id=$2 AND revoked_at IS NULL
-       RETURNING id,member_id`,
-      [tokenHash, tenant.communityId]
-    );
-    const grant = revoked.rows[0];
-    if (grant) {
-      await client.query(
-        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-        [tenant.communityId, grant.member_id, 'grant.revoke', grant.id]
-      );
-      return;
-    }
-    const known = await client.query(
-      'SELECT 1 FROM connection_grants WHERE token_hash=$1 AND community_id=$2',
-      [tokenHash, tenant.communityId]
-    );
-    if (!known.rowCount)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
-  });
-}
-
 /** Recheck a personal grant on the mutation connection after it waited on a channel lock. */
 export async function assertConnectionGrantCurrent(
   client: PoolClient,
@@ -222,8 +172,13 @@ export async function assertConnectionGrantCurrent(
   // The account row before the member row, the order a clean-out takes them: a caller that goes
   // on to `requireLiveRole` then finds "user" already checked, never locks it after members.
   await refuseIfClearedSinceStart(client, await memberUserId(client, memberId));
+  // FOR NO KEY UPDATE, not FOR UPDATE: it still queues this owner's own posts and every change
+  // to the row (a mute, a removal, accepting the rules), but not a mention of this owner in
+  // someone else's post. That mention's foreign key takes FOR KEY SHARE on this row while its
+  // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
+  // mention each other's owners.
   const owner = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [memberId, communityId]
   );
   if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
@@ -243,9 +198,13 @@ export async function requirePrincipal(
   auth: CommunityAuth,
   pool: Pool,
   scope: 'read' | 'post',
-  touch = true
+  touch = true,
+  options: HeldRemovalOption = {}
 ): Promise<Principal> {
   const token = bearer(c);
+  // A person's grant only: an agent never acts on a held community, and a browser session is
+  // checked by the route's own `requireLiveRole`.
+  const heldAllowed = (lifecycle: string) => options.allowHeld === true && lifecycle === 'held';
   if (!token) {
     const member = await requireMember(c, auth, pool);
     const tenant = await resolveCommunityContext(c, pool);
@@ -278,6 +237,7 @@ export async function requirePrincipal(
       throw new ApiError(403, 'FORBIDDEN', 'This connection cannot perform that action.');
     if (
       tenant.lifecycle !== 'active' &&
+      !heldAllowed(tenant.lifecycle) &&
       !archivedReadAllowed(tenant.lifecycle, scope, human.rows[0].scopes)
     )
       throw lifecycleError(tenant.lifecycle);
@@ -349,14 +309,19 @@ export async function assertPrincipalCurrentInTransaction(
   client: PoolClient,
   principal: Principal,
   scope: 'read' | 'post',
-  sessionId?: string
+  sessionId?: string,
+  options: HeldRemovalOption = {}
 ): Promise<void> {
   const lifecycleResult = await client.query<{ lifecycle: string }>(
     'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
     [principal.community_id]
   );
   const lifecycle = lifecycleResult.rows[0]?.lifecycle;
-  if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
+  if (
+    lifecycle !== 'active' &&
+    !(options.allowHeld && lifecycle === 'held' && principal.kind === 'human') &&
+    !(isReadOnlyLifecycle(lifecycle) && scope === 'read')
+  )
     throw lifecycleError(lifecycle ?? 'unavailable');
   if (principal.kind === 'agent') {
     const current = await client.query(
@@ -411,8 +376,13 @@ export async function lockPrincipalAuthority(
   if (lifecycle !== 'active' && !(isReadOnlyLifecycle(lifecycle) && scope === 'read'))
     throw lifecycleError(lifecycle ?? 'unavailable');
   await refuseIfClearedSinceStart(client, await memberUserId(client, principal.ownerMemberId));
+  // FOR NO KEY UPDATE, not FOR UPDATE: it still queues this owner's own posts and every change
+  // to the row (a mute, a removal, accepting the rules), but not a mention of this owner in
+  // someone else's post. That mention's foreign key takes FOR KEY SHARE on this row while its
+  // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
+  // mention each other's owners.
   const owner = await client.query(
-    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [principal.ownerMemberId, principal.community_id]
   );
   if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'The owner membership has ended.');
@@ -476,33 +446,31 @@ export async function requireSessionUser(
   return { id: session.user.id, name: session.user.name };
 }
 
-/** Assert the bootstrap cookie still maps to an unconsumed live row. */
-export async function bootstrapGrant(
-  c: Context,
-  client: PoolClient,
-  config: CommunityConfig
-): Promise<string> {
-  const token = verifyValue(
-    readCookie(c.req.header('cookie') ?? null, 'community_bootstrap'),
-    config.authSecret
-  );
-  if (!token) throw new ApiError(403, 'FORBIDDEN', 'The owner grant is missing or invalid.');
-  const result = await client.query<{ id: string }>(
-    `SELECT id FROM bootstrap_grants WHERE token_hash=$1 AND purpose='first_install'
-       AND community_id IS NULL AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`,
-    [hashSecret(token)]
-  );
-  if (!result.rows[0])
-    throw new ApiError(403, 'FORBIDDEN', 'The owner grant has expired or was used.');
-  return result.rows[0].id;
-}
+/**
+ * How a request holds its channel row until it commits.
+ *
+ * - `exclusive` (`FOR UPDATE`): for a change to the channel or who is in it (settings, archive,
+ *   history reset, joining, leaving, invitations). Nothing else holds the channel meanwhile.
+ * - `shared` (`FOR KEY SHARE`): for posts, uploads and reads. They run side by side, and each
+ *   still waits for an `exclusive` holder to commit, so it reads the channel, its archive state
+ *   and its membership as the last change left them. A post's message takes the channel's next
+ *   number as it commits, by an `UPDATE` of the row (migration 0037), which `FOR KEY SHARE`
+ *   allows. `FOR SHARE` would not: two posts would each hold it and wait on the other's update.
+ *
+ * Row locks are not first come, first served: a new `shared` request never queues behind an
+ * `exclusive` one already waiting, so in a busy channel a change could wait forever. Both modes
+ * therefore line up first on an advisory lock for the channel (shared or exclusive to match),
+ * whose queue is in order. The commit-time numbering needs only the row.
+ */
+export type ChannelLockMode = 'exclusive' | 'shared';
 
 /** Lock a channel before a post or membership change and hide unauthorized private rooms. */
 export async function lockChannel(
   client: PoolClient,
   channelId: string,
   member: Member | Principal,
-  scope: 'read' | 'post' = 'post'
+  scope: 'read' | 'post' = 'post',
+  mode: ChannelLockMode = 'exclusive'
 ) {
   if (scope === 'post') {
     await lockActiveCommunity(client, member.community_id);
@@ -523,10 +491,13 @@ export async function lockChannel(
     last_seq: string;
     epoch: number;
     created_at: Date;
-  }>(`SELECT c.* FROM channels c WHERE c.id=$1 AND c.community_id=$2 FOR UPDATE OF c`, [
-    channelId,
-    member.community_id,
-  ]);
+  }>(
+    // The advisory lock is taken before the row's, in the one statement (see ChannelLockMode).
+    mode === 'shared'
+      ? `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock_shared(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR KEY SHARE OF c`
+      : `SELECT c.* FROM channels c CROSS JOIN LATERAL (SELECT pg_advisory_xact_lock(77281507, hashtext($1::uuid::text))) queued WHERE c.id=$1::uuid AND c.community_id=$2 FOR UPDATE OF c`,
+    [channelId, member.community_id]
+  );
   const row = result.rows[0];
   if (!row) throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
   // Membership must be read in a new statement after any competing channel lock commits.
@@ -600,18 +571,29 @@ export function requireJoined(channel: { joined: boolean }): void {
   if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
 }
 
-/** Execute a transaction and release its pooled connection on every path. */
-export async function transaction<T>(
+/**
+ * Execute a transaction and release its pooled connection on every path.
+ *
+ * `commit`, when given, ends the transaction in place of a plain `COMMIT`, and what it returns is
+ * the result. It is for a value the commit itself decides, such as a new message's number
+ * (migration 0037): send `COMMIT` and the read of that value as one message. If it throws after
+ * the commit went through, the transaction stays committed; the caller's retry must find it.
+ */
+export async function transaction<T, R = T>(
   pool: Pool,
-  operation: (client: PoolClient) => Promise<T>
-): Promise<T> {
+  operation: (client: PoolClient) => Promise<T>,
+  commit?: (client: PoolClient, result: T) => Promise<R>
+): Promise<R> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const result = await operation(client);
+    if (commit) return await commit(client, result);
     await client.query('COMMIT');
-    return result;
+    // Without `commit`, R is T.
+    return result as unknown as R;
   } catch (error) {
+    // After a failed or finished COMMIT there is no transaction left, and this only warns.
     await client.query('ROLLBACK');
     throw error;
   } finally {

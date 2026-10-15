@@ -16,6 +16,15 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Task } from '@dorkos/shared/types';
 
 import { TaskStore } from '../../task-store.js';
+
+/** The install's preset, read through the mocked config. Careful unless a case says otherwise. */
+const posture = vi.hoisted(() => ({ preset: 'careful' as 'careful' | 'trusted' }));
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'permissions' ? { preset: posture.preset } : undefined),
+  },
+}));
+
 import {
   agentExecutionRecordPath,
   startAgentExecutionWatch,

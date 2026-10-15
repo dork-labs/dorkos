@@ -1,3 +1,4 @@
+import { readAcceptedPrivateSessionIds } from './receipt-session-reads.js';
 import { originalRelayReceiptNeedsNativeDispatch } from '../../canvas/doc-channel/delivery/relay-authority.js';
 /**
  * Durable acceptance and dispatch preflight for private session messages.
@@ -15,7 +16,6 @@ import {
   and,
   asc,
   eq,
-  gt,
   inArray,
   ne,
   sessionMessageAcceptanceReceipts,
@@ -583,25 +583,7 @@ export class PrivateSessionMessageAcceptanceService {
 
   /** List one stable keyset page of sessions with accepted messages awaiting dispatch. */
   listAcceptedSessionIds(limit = 100, afterSessionId?: string, excludeDocuments = false): string[] {
-    const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
-    return this.db
-      .selectDistinct({ sessionId: sessionMessageAcceptanceReceipts.sessionId })
-      .from(sessionMessageAcceptanceReceipts)
-      .where(
-        and(
-          eq(sessionMessageAcceptanceReceipts.state, 'accepted'),
-          excludeDocuments
-            ? ne(sessionMessageAcceptanceReceipts.sourceKind, 'document_event_batch')
-            : undefined,
-          afterSessionId
-            ? gt(sessionMessageAcceptanceReceipts.sessionId, afterSessionId)
-            : undefined
-        )
-      )
-      .orderBy(asc(sessionMessageAcceptanceReceipts.sessionId))
-      .limit(boundedLimit)
-      .all()
-      .map((row) => row.sessionId);
+    return readAcceptedPrivateSessionIds(this.db, limit, afterSessionId, excludeDocuments);
   }
 
   private requireReceipt(receiptId: string): SessionMessageAcceptanceReceipt {

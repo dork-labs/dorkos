@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../agent-types.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
-import type { PumpLaunchPlan } from '../pump-launch.js';
+import type { PumpLaunchPlan } from '../warm-process/pump-launch.js';
 
 function deferred() {
   let resolve!: () => void;
@@ -52,7 +52,7 @@ async function fixture() {
     return { query };
   });
   // A future eager import must fail this assertion rather than park module collection.
-  const { createPumpLauncher } = await import('../pump-launch.js');
+  const { createPumpLauncher } = await import('../warm-process/pump-launch.js');
   const { SessionPump } = await import('../session-pump.js');
   expect(factoryCalls).toBe(0);
   hold = true;

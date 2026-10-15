@@ -177,6 +177,16 @@ export const CONFIG_DISCLOSURE = {
   'ui.shapes.agentDefaults': 'expose',
   'ui.shapes.autoFollowAgent': 'expose',
   'ui.statusBar.pins': 'expose',
+  // Where each mini app's right-panel tab shows. Exposed so an agent can read a
+  // placement before it changes one. It names room ids, as `ui.sidebar.pinned`
+  // already does; nothing in it is secret.
+  'ui.panelTabs[].tab': 'expose',
+  'ui.panelTabs[].show.agents': 'expose',
+  'ui.panelTabs[].show.rooms': 'expose',
+  'ui.panelTabs[].show.pages': 'expose',
+  'ui.panelTabs[].hide.agents': 'expose',
+  'ui.panelTabs[].hide.rooms': 'expose',
+  'ui.panelTabs[].hide.pages': 'expose',
   'ui.composer.richText': 'expose',
   // Owner and tenant-qualified navigation history is local UI state. Withhold
   // the whole shape so a tokenless config read cannot enumerate private room IDs.
@@ -189,16 +199,9 @@ export const CONFIG_DISCLOSURE = {
   'ui.communityNavigation.owners[].destinations[].scrollAnchorEntryId': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.path': 'withhold',
   'ui.communityNavigation.owners[].installationDestination.search': 'withhold',
-  // A timestamp saying the person read what Full autonomy means. Names nothing
-  // and unlocks nothing on being read — an agent that learns the date is no
-  // closer to anything than one that does not.
-  'ui.autonomyAcknowledgedAt': 'expose',
-  // The power-door answer, for the same reason as the acknowledgement above: a
-  // date and the word `'full'` or `'supervised'` name nothing and unlock
-  // nothing on being read. An agent that knows the operator chose supervised
-  // learns something genuinely useful — that it should expect to be asked.
-  'ui.fullPowerDecidedAt': 'expose',
-  'ui.fullPowerChoice': 'expose',
+  // When the person saw the "agents now work without asking" notice: a date
+  // that names nothing and unlocks nothing on being read.
+  'ui.trustNoticeSeenAt': 'expose',
 
   // How loud DorkOS may be, and how long before it tries a louder channel. All
   // preferences: none of them names a credential, a host or a device, and an
@@ -221,8 +224,12 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
   'browser.enabled': 'expose',
+  'computers.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
+  // The official space's public link (spec `official-community-space` D4): a
+  // public address, never a credential, and the same for every install.
+  'spaces.official.url': 'expose',
   // Whether outside agents may reach the ones here over A2A. A plain boolean:
   // it names no credential and no host, and an agent that learns the gate is
   // shut is no closer to opening it — the write side is where that is decided.
@@ -237,6 +244,11 @@ export const CONFIG_DISCLOSURE = {
   // stays awake (spec `keep-awake`).
   'keepAwake.whileAgentsWork': 'expose',
   'keepAwake.wakeForScheduledTasks': 'expose',
+  // Whether agents wake on their own (spec `heartbeats` §3.6): a plain on/off.
+  'heartbeats.enabled': 'expose',
+  // Whether cheap checks may run on DorkOS credits (spec `heartbeats` §6.3): a
+  // plain yes, no or not answered, so an agent can say where its checks run.
+  'heartbeats.triageOnCredits': 'expose',
 
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
   'activity.retentionDays': 'expose',
@@ -261,14 +273,6 @@ export const CONFIG_DISCLOSURE = {
   'rooms.collectDebounceMs': 'expose',
   'rooms.collectMaxEntries': 'expose',
   'rooms.responseGate': 'expose',
-  // How much one agent may say in this person's own rooms. It names no
-  // credential and nowhere one lives, and an agent that can read it can say why
-  // its fourth post in one turn was refused.
-  'rooms.maxPostsPerTurn': 'expose',
-  // The same reasoning one line further: an agent that can read its canvas
-  // ceiling can say why its fourth change to the room's table was refused,
-  // instead of retrying into the same wall.
-  'rooms.maxCanvasOpsPerTurn': 'expose',
   // An agent that can read how many conversations it may work in at once can
   // say why a message is waiting for one of its other turns to finish.
   'rooms.maxConcurrentTurnsPerAgent': 'expose',
@@ -300,6 +304,9 @@ export const CONFIG_DISCLOSURE = {
   'onboarding.dismissedAt': 'expose',
   'onboarding.completedAt': 'expose',
   'onboarding.runtimeDefaultSetAt': 'expose',
+  'onboarding.firstRunPath': 'expose',
+  'onboarding.welcomeEntryId': 'expose',
+  'onboarding.priorRuntime': 'expose',
 
   'tours.seen': 'expose',
   'tours.declined': 'expose',
@@ -321,6 +328,15 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
   'profile.identityPromptDismissedAt': 'expose',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5). Exposed so
+  // an agent can say "she's off till Monday" and time what it sends; the same
+  // local-only profile, no secret in any of it.
+  'profile.timezone': 'expose',
+  'profile.workingHours.days': 'expose',
+  'profile.workingHours.start': 'expose',
+  'profile.workingHours.end': 'expose',
+  'profile.away.until': 'expose',
+  'profile.away.note': 'expose',
 
   'uploads.maxFileSize': 'expose',
   'uploads.maxFiles': 'expose',
@@ -463,6 +479,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.opencode.baseURL': 'expose',
   'runtimes.doe.enabled': 'expose',
   'runtimes.doe.defaultTrustStop': 'expose',
+  'runtimes.doe.defaultModel': 'expose',
   'runtimes.doe.inference.source': 'expose',
   'runtimes.doe.inference.provider': 'expose',
   'runtimes.doe.inference.protocol': 'expose',
@@ -493,6 +510,9 @@ export const CONFIG_DISCLOSURE = {
   // Machine bookkeeping: which server version the permission upgrade sweep last
   // ran for.
   'permissions.upgradeSweptVersion': 'expose',
+  // Machine bookkeeping: when the Trusted defaults outside config.json were
+  // applied, once per install.
+  'permissions.trustedStoresAppliedAt': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',
@@ -511,6 +531,24 @@ export const CONFIG_DISCLOSURE = {
   // belong to: spending policy and an account identity, withheld.
   'cloud.credits.agents': 'withhold',
   'cloud.credits.linkedTo': 'withhold',
+  // Managed remote access (DOR-2086). The selected mode is the same kind of
+  // fact as `tunnel.enabled` and is exposed for the same reason: an agent asked
+  // "can I reach this from my phone?" should be able to say which way is set up.
+  // Everything else is withheld. The two references point at stored secrets,
+  // so they become `credentialRefConfigured` / `edgeProofRefConfigured`; the
+  // enrolment, consent version, credential id and fingerprint identify an
+  // account-held consent and credential; the hosts are the public address and
+  // the edge header names where the edge's proof travels.
+  'cloud.remote.mode': 'expose',
+  'cloud.remote.enrolmentId': 'withhold',
+  'cloud.remote.consentVersion': 'withhold',
+  'cloud.remote.instanceId': 'withhold',
+  'cloud.remote.credentialRef': 'withhold',
+  'cloud.remote.credentialId': 'withhold',
+  'cloud.remote.fingerprint': 'withhold',
+  'cloud.remote.hosts': 'withhold',
+  'cloud.remote.edgeProofRef': 'withhold',
+  'cloud.remote.edgeProofHeader': 'withhold',
 
   // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
   // Withhold the complete URL rather than guessing which parts are credentials;
@@ -539,6 +577,8 @@ export const PRESENCE_FLAG_PATHS: readonly string[] = [
   'cloud.previousLinkProof',
   'runtimes.codex.credentialRef',
   'runtimes.doe.inference.credentialRef',
+  'cloud.remote.credentialRef',
+  'cloud.remote.edgeProofRef',
 ];
 
 /**

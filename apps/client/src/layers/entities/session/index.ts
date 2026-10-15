@@ -51,7 +51,7 @@ export { sessionKeys } from './api/query-keys';
 // What a conversation nobody has written to yet WILL run at — the display twin
 // of the server's seed, for the window in which no row exists to read (DOR-2103).
 export { useSessionStartMode } from './model/settings/use-session-start-mode';
-export { useSessionDetail } from './model/query/use-session-detail';
+export { useSessionDetail, useSessionRow } from './model/query/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only
 // legitimate reader of a pending change.
@@ -71,7 +71,6 @@ export {
   useSessionMessages,
   useSessionChatStatus,
   useHasConfirmedAuto,
-  useHasConfirmedAutonomy,
   useHasDismissedDefaultStopOffer,
   useReadOnlyHintProgress,
   useModeBeforePlan,
@@ -94,14 +93,22 @@ export {
   useSessionTriggerPending,
   useSessionInProgressTurn,
   useSessionQueue,
+  useChatActivityVersion,
   useSessionQueueOutcomes,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/stream/session-stream-store';
 export type { SessionStreamState } from './model/stream/session-stream-store';
 export {
+  useHistoryWindowStore,
+  useHistoryWindow,
+  EMPTY_HISTORY_WINDOW,
+} from './model/stream/history-window-store';
+export type { HistoryWindowState } from './model/stream/history-window-store';
+export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
+  useSessionListLimit,
   useSessionToolActivity,
   selectSessionActivity,
   useSessionContextReading,
@@ -115,11 +122,12 @@ export {
 export { useGlobalSessionStream } from './model/stream/use-global-session-stream';
 export { RECENT_SESSIONS_WINDOW, useRecentSessions } from './model/query/use-recent-sessions';
 
-export { useSessionBorderState } from './model/status/use-session-border-state';
+export { useSessionStatusSignals } from './model/status/use-session-status-signals';
 export type {
   SessionBorderKind,
   SessionBorderState,
-} from './model/status/use-session-border-state';
+  SessionStatusSignals,
+} from './model/status/use-session-status-signals';
 export { useAgentHottestStatus } from './model/status/use-agent-hottest-status';
 // Context-health merge resolver (list vs live, live wins) + its pure core.
 export {
@@ -163,6 +171,21 @@ export type { SessionOriginData } from './model/query/use-sessions';
 export {
   setSessionRouteContext,
   getSessionRouteContext,
+  clearSessionRouteContext,
   useSessionRouteContext,
   type SessionRouteContext,
 } from './model/navigation/session-route-context';
+export {
+  markPendingSessionTarget,
+  clearPendingSessionTarget,
+  usePendingSessionTarget,
+} from './model/navigation/pending-session-target';
+export { findCachedSessionRow, findListHoldingSession } from './lib/cached-session-row';
+export {
+  markSessionListsReset,
+  noteSessionListsResetStamp,
+  resetSessionListResetMarker,
+} from './lib/session-list-reset';
+export type { PlacedSession } from './lib/cached-session-row';
+export { sessionDetailQueryOptions } from './api/session-detail-query';
+export type { SessionDetailQueryDeps } from './api/session-detail-query';

@@ -329,7 +329,7 @@ describe('BindingAdvancedSection permissions', () => {
       expect(description?.textContent).toMatch(/pause to ask\.\sThis stop never pauses/);
       expect(alert).toHaveTextContent(/can’t pause to ask/);
       // The correction the strongest sentence has to arrive with (DOR-816).
-      expect(alert).toHaveTextContent(/DorkOS still asks before deleting a schedule/);
+      expect(alert).toHaveTextContent(/like deleting a schedule, follow your Permissions settings/);
     });
 
     it('applies it only once the person confirms', async () => {

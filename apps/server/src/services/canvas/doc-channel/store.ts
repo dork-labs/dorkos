@@ -1,13 +1,66 @@
+import {
+  DocChannelClosedError,
+  DocChannelStateConflictError,
+  type EventInput,
+  type DocChannelRow,
+  type DocEventRow,
+  type DocGrantRow,
+  type DocBatchRow,
+  type DocDeliveryRow,
+  type DocIdentityIntentRow,
+  type DocWriteIntentRow,
+  type OriginalDocStoreBindings,
+  type DocBatchLeaseInput,
+  type DocBatchTransitionInput,
+  type DocStateReplacementInput,
+  type DocPendingBatchUpdateInput,
+  type DocDeliveryUpdateInput,
+} from './storage/store-contracts.js';
+export {
+  DocChannelClosedError,
+  DocChannelStateConflictError,
+  type EventInput,
+  type DocChannelRow,
+  type DocEventRow,
+  type DocGrantRow,
+  type DocBatchRow,
+  type DocDeliveryRow,
+  type DocIdentityIntentRow,
+  type DocWriteIntentRow,
+} from './storage/store-contracts.js';
+import {
+  insertBatch,
+  acquireLease,
+  transitionBatch,
+  replaceState,
+  markClosed,
+  insertIdentityIntent,
+  insertWriteIntent,
+  updatePendingBatch,
+  updateDelivery,
+  transitionIdentityIntent,
+  transitionWriteIntent,
+  type OriginalStoreTransitionFacet,
+} from './store-data/store-transition-facet.js';
+const originalStoreTransitionFacets = new WeakMap<object, Readonly<OriginalStoreTransitionFacet>>();
+const storeFacetApply = Reflect.apply,
+  storeFacetGet = WeakMap.prototype.get,
+  storeFacetSet = WeakMap.prototype.set,
+  storeFacetFreeze = Object.freeze;
+/** Only the original constructor's inaccessible private key reaches the retained store. */
+export function readOriginalStoreTransitionFacet(
+  owner: object
+): Readonly<OriginalStoreTransitionFacet> {
+  const own = storeFacetApply(storeFacetGet, originalStoreTransitionFacets, [owner]) as
+    Readonly<OriginalStoreTransitionFacet> | undefined;
+  if (!own) throw new Error('Unknown original document store transition owner.');
+  return own;
+}
 import { consumeOriginalDocPresenceAppend } from './current/current-operation-engine.js';
 import {
   buildCurrentSequencePredicate,
-  buildCurrentBatchTransitionPredicate,
-  buildCurrentStatePredicate,
-  buildCurrentPendingBatchPredicate,
-  buildCurrentDeliveryTransitionPredicate,
   requireCurrentAppendBounds,
   buildCurrentEventInsertValues,
-  requireCurrentStateInput,
   buildCurrentAppendRow,
   buildCurrentInputRow,
 } from './current/current-operation-intentions.js';
@@ -35,8 +88,6 @@ import {
   inArray,
   eq,
   isNull,
-  lte,
-  or,
   sql,
   canvasDocChannels,
   canvasDocEvents,
@@ -82,27 +133,7 @@ import {
   type DocChannelAuthorization,
 } from './authorization.js';
 import { envelopeIdentity } from './envelope.js';
-export type EventInput = Omit<typeof canvasDocEvents.$inferInsert, 'docSeq'>;
-const storeBindings = new WeakMap<
-  DocChannelStore,
-  {
-    db: Db;
-    append: (input: EventInput, tx: DbTransaction) => DocEventRow;
-    relay: Readonly<Pick<DocChannelStore, 'transaction' | 'getBatch' | 'getEvent'>>;
-    downstream: Readonly<
-      Pick<
-        DocChannelStore,
-        'transaction' | 'getChannel' | 'getBatch' | 'getEvent' | 'listDeliveries' | 'appendEvent'
-      >
-    >;
-    grant: Readonly<
-      Pick<
-        DocChannelStore,
-        'transaction' | 'getChannel' | 'insertGrant' | 'getGrant' | 'revokeGrant'
-      >
-    >;
-  }
->();
+const storeBindings = new WeakMap<DocChannelStore, OriginalDocStoreBindings>();
 
 /** Constructor identity only; neither a public connection getter nor an overridable transaction probe. */
 export function requireDocChannelStoreDatabase(store: DocChannelStore, expected: Db): void {
@@ -119,41 +150,6 @@ export function appendConvertedCheckboxEvent(
   return binding.append(consumeCheckboxReservationAppend(store, tx), tx);
 }
 
-/** A stored channel, independent of the physical canvas document. */
-export type DocChannelRow = typeof canvasDocChannels.$inferSelect;
-/** One durable event, ordered within its document. */
-export type DocEventRow = typeof canvasDocEvents.$inferSelect;
-/** Stable route authority evidence. */
-export type DocGrantRow = typeof canvasDocGrants.$inferSelect;
-/** An immutable or pending delivery batch. */
-export type DocBatchRow = typeof canvasDocBatches.$inferSelect;
-/** One input's route outcome, retained after coalescing. */
-export type DocDeliveryRow = typeof canvasDocDeliveries.$inferSelect;
-/** Recoverable ownership movement evidence. */
-export type DocIdentityIntentRow = typeof canvasDocIdentityIntents.$inferSelect;
-/** Recoverable filesystem operation evidence. */
-export type DocWriteIntentRow = typeof canvasDocWriteIntents.$inferSelect;
-
-/** A mutation addressed a channel that no longer accepts writes. */
-export class DocChannelClosedError extends Error {
-  readonly code = 'DOC_CHANNEL_CLOSED';
-  /** Build a safe channel closure refusal. */
-  constructor(readonly documentId: string) {
-    super('The document channel is closed or absent.');
-    this.name = 'DocChannelClosedError';
-  }
-}
-
-/** A revision compare-and-set did not match current state. */
-export class DocChannelStateConflictError extends Error {
-  readonly code = 'DOC_CHANNEL_STATE_CONFLICT';
-  /** Build a safe optimistic concurrency refusal. */
-  constructor() {
-    super('The document state revision changed.');
-    this.name = 'DocChannelStateConflictError';
-  }
-}
-
 /** Transaction-capable document channel storage with no publication side effects. */
 const currentAppendIntentions = new WeakMap<
   DbTransaction,
@@ -162,6 +158,7 @@ const currentAppendIntentions = new WeakMap<
 
 /** Own document-channel storage and its constructor-captured operations. */
 export class DocChannelStore {
+  readonly #transitionFacetOwner = storeFacetFreeze({});
   /** Build a store over the production SQLite connection. */
   readonly #db: Db;
   constructor(db: Db) {
@@ -202,6 +199,16 @@ export class DocChannelStore {
           this.#revokeGrant(id, revision, time, tx),
       }),
     });
+    storeFacetApply(storeFacetSet, originalStoreTransitionFacets, [
+      this.#transitionFacetOwner,
+      storeFacetFreeze<OriginalStoreTransitionFacet>({
+        db,
+        transaction: <T>(work: (tx: DbTransaction) => T & SynchronousResult<T>): T =>
+          this.transaction<T>(work),
+        getBatch: (id, tx) => this.getBatch(id, tx),
+        appendEvent: (input, tx) => this.appendEvent(input, tx),
+      }),
+    ]);
   }
 
   /** Compose synchronous source mutations atomically; asynchronous callbacks roll back. */
@@ -380,14 +387,7 @@ export class DocChannelStore {
 
   /** Persist a pending or immutable batch; database slot indexes enforce exclusivity. */
   insertBatch(input: typeof canvasDocBatches.$inferInsert, tx?: DbTransaction): void {
-    assertRowJson(input);
-    (tx ?? this.#db)
-      .insert(canvasDocBatches)
-      .values({
-        ...input,
-        effectivePayload: input.effectivePayload === null ? sql`'null'` : input.effectivePayload,
-      })
-      .run();
+    return insertBatch(this.#transitionFacetOwner, input, tx);
   }
 
   /** Read one batch, retaining immutable generation and source correlation. */
@@ -396,41 +396,8 @@ export class DocChannelStore {
   }
 
   /** Acquire an expired/free lease exactly once for a known generation and state. */
-  acquireLease(
-    input: {
-      batchId: string;
-      generation: string;
-      status: DocBatchRow['status'];
-      now: string;
-      leaseUntil: string;
-    },
-    tx?: DbTransaction
-  ): DocBatchRow | undefined {
-    if (!tx) return this.transaction((current) => this.acquireLease(input, current));
-    if (input.leaseUntil <= input.now)
-      throw new RangeError('A lease must expire after acquisition.');
-    const batch = this.getBatch(input.batchId, tx);
-    if (!batch) return undefined;
-    if (
-      !Number.isSafeInteger(batch.attempt) ||
-      batch.attempt < 0 ||
-      batch.attempt >= Number.MAX_SAFE_INTEGER
-    )
-      throw new DocChannelCorruptionError('canvas_doc_batches', input.batchId);
-    const changed = tx
-      .update(canvasDocBatches)
-      .set({ leaseUntil: input.leaseUntil, attempt: batch.attempt + 1, updatedAt: input.now })
-      .where(
-        and(
-          eq(canvasDocBatches.batchId, input.batchId),
-          eq(canvasDocBatches.generation, input.generation),
-          eq(canvasDocBatches.status, input.status),
-          eq(canvasDocBatches.attempt, batch.attempt),
-          or(isNull(canvasDocBatches.leaseUntil), lte(canvasDocBatches.leaseUntil, input.now))
-        )
-      )
-      .run().changes;
-    return changed === 1 ? this.getBatch(input.batchId, tx) : undefined;
+  acquireLease(input: DocBatchLeaseInput, tx?: DbTransaction): DocBatchRow | undefined {
+    return acquireLease(this.#transitionFacetOwner, input, tx);
   }
 
   /** Mark one waiting generation in the same transaction as its durable warning event. */
@@ -449,24 +416,8 @@ export class DocChannelStore {
   }
 
   /** Change a batch only when the caller still owns its generation/attempt/state. */
-  transitionBatch(
-    input: {
-      batchId: string;
-      generation: string;
-      attempt: number;
-      expectedStatus: DocBatchRow['status'];
-      status: DocBatchRow['status'];
-      updatedAt: string;
-    },
-    tx?: DbTransaction
-  ): boolean {
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocBatches)
-        .set({ status: input.status, updatedAt: input.updatedAt })
-        .where(buildCurrentBatchTransitionPredicate(input))
-        .run().changes === 1
-    );
+  transitionBatch(input: DocBatchTransitionInput, tx?: DbTransaction): boolean {
+    return transitionBatch(this.#transitionFacetOwner, input, tx);
   }
 
   /** Persist an individual input outcome without deleting its event. */
@@ -484,29 +435,8 @@ export class DocChannelStore {
   }
 
   /** Atomically replace a validated state value, advance revision and append its event. */
-  replaceState(
-    input: {
-      documentId: string;
-      expectedStateRev: number;
-      state: DocChannelRow['state'];
-      event: Omit<typeof canvasDocEvents.$inferInsert, 'docSeq'>;
-    },
-    tx?: DbTransaction
-  ): DocEventRow {
-    if (!tx) return this.transaction((current) => this.replaceState(input, current));
-    requireCurrentStateInput(input);
-    requireDocEventUuidVacant(tx, input.documentId, input.event.eventId);
-    const changed = tx
-      .update(canvasDocChannels)
-      .set({
-        state: input.state,
-        stateRev: input.expectedStateRev + 1,
-        updatedAt: input.event.receivedAt,
-      })
-      .where(buildCurrentStatePredicate(input))
-      .run().changes;
-    if (changed !== 1) throw new DocChannelStateConflictError();
-    return this.appendEvent(input.event, tx);
+  replaceState(input: DocStateReplacementInput, tx?: DbTransaction): DocEventRow {
+    return replaceState(this.#transitionFacetOwner, input, tx);
   }
 
   /** Retain a closed channel; caller revokes/cancels related records in the same transaction. */
@@ -516,16 +446,7 @@ export class DocChannelStore {
     evidence: DocChannelRow['closureEvidence'],
     tx?: DbTransaction
   ): boolean {
-    assertJson(evidence);
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocChannels)
-        .set({ closedAt, closureEvidence: evidence, updatedAt: closedAt })
-        .where(
-          and(eq(canvasDocChannels.documentId, documentId), isNull(canvasDocChannels.closedAt))
-        )
-        .run().changes === 1
-    );
+    return markClosed(this.#transitionFacetOwner, documentId, closedAt, evidence, tx);
   }
 
   /** Store durable evidence for a canonical identity move. */
@@ -533,8 +454,7 @@ export class DocChannelStore {
     input: typeof canvasDocIdentityIntents.$inferInsert,
     tx?: DbTransaction
   ): void {
-    assertRowJson(input);
-    (tx ?? this.#db).insert(canvasDocIdentityIntents).values(input).run();
+    return insertIdentityIntent(this.#transitionFacetOwner, input, tx);
   }
 
   /** Read identity repair evidence without inventing a successful empty record. */
@@ -544,10 +464,7 @@ export class DocChannelStore {
 
   /** Store before/after evidence before a filesystem effect. */
   insertWriteIntent(input: typeof canvasDocWriteIntents.$inferInsert, tx?: DbTransaction): void {
-    if (!tx) return this.transaction((current) => this.insertWriteIntent(input, current));
-    assertRowJson(input);
-    requireDocEventUuidVacant(tx, input.documentId, input.eventId);
-    tx.insert(canvasDocWriteIntents).values(input).run();
+    return insertWriteIntent(this.#transitionFacetOwner, input, tx);
   }
 
   /** Read a write intent for crash reconciliation. */
@@ -558,53 +475,13 @@ export class DocChannelStore {
   }
 
   /** Update mergeable input only while this exact generation remains pending. */
-  updatePendingBatch(
-    input: {
-      batchId: string;
-      generation: string;
-      status: 'pending' | 'waiting';
-      inputEventIds: DocBatchRow['inputEventIds'];
-      effectivePayload: DocBatchRow['effectivePayload'];
-      updatedAt: string;
-    },
-    tx?: DbTransaction
-  ): boolean {
-    assertJson(input.inputEventIds);
-    assertJson(input.effectivePayload, 80 * 1024);
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocBatches)
-        .set({
-          inputEventIds: input.inputEventIds,
-          effectivePayload: input.effectivePayload === null ? sql`'null'` : input.effectivePayload,
-          updatedAt: input.updatedAt,
-        })
-        .where(buildCurrentPendingBatchPredicate(input))
-        .run().changes === 1
-    );
+  updatePendingBatch(input: DocPendingBatchUpdateInput, tx?: DbTransaction): boolean {
+    return updatePendingBatch(this.#transitionFacetOwner, input, tx);
   }
 
   /** Advance one delivery outcome only while its previous status still matches. */
-  updateDelivery(
-    input: {
-      documentId: string;
-      eventId: string;
-      routeId: string;
-      expectedStatus: DocDeliveryRow['status'];
-      changes: Partial<
-        Omit<typeof canvasDocDeliveries.$inferInsert, 'documentId' | 'eventId' | 'routeId'>
-      >;
-    },
-    tx?: DbTransaction
-  ): boolean {
-    assertRowJson(input.changes);
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocDeliveries)
-        .set(input.changes)
-        .where(buildCurrentDeliveryTransitionPredicate(input))
-        .run().changes === 1
-    );
+  updateDelivery(input: DocDeliveryUpdateInput, tx?: DbTransaction): boolean {
+    return updateDelivery(this.#transitionFacetOwner, input, tx);
   }
 
   /** Revoke an unchanged route revision without replacing its immutable approval evidence. */
@@ -635,17 +512,12 @@ export class DocChannelStore {
     changes: Pick<DocIdentityIntentRow, 'status' | 'updatedAt' | 'errorCode'>,
     tx?: DbTransaction
   ): boolean {
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocIdentityIntents)
-        .set(changes)
-        .where(
-          and(
-            eq(canvasDocIdentityIntents.intentId, intentId),
-            eq(canvasDocIdentityIntents.status, expectedStatus)
-          )
-        )
-        .run().changes === 1
+    return transitionIdentityIntent(
+      this.#transitionFacetOwner,
+      intentId,
+      expectedStatus,
+      changes,
+      tx
     );
   }
 
@@ -656,19 +528,7 @@ export class DocChannelStore {
     changes: Pick<DocWriteIntentRow, 'status' | 'updatedAt' | 'errorCode' | 'evidence'>,
     tx?: DbTransaction
   ): boolean {
-    assertJson(changes.evidence);
-    return (
-      (tx ?? this.#db)
-        .update(canvasDocWriteIntents)
-        .set(changes)
-        .where(
-          and(
-            eq(canvasDocWriteIntents.intentId, intentId),
-            eq(canvasDocWriteIntents.status, expectedStatus)
-          )
-        )
-        .run().changes === 1
-    );
+    return transitionWriteIntent(this.#transitionFacetOwner, intentId, expectedStatus, changes, tx);
   }
 }
 

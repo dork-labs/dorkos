@@ -24,6 +24,7 @@ import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useThreadUrlSync, type ThreadRoute } from '../model/use-thread-url-sync';
 import { ChannelComposer } from './ChannelComposer';
+import { NoAgentHint } from './NoAgentHint';
 import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
 import { RoomApprovalCards } from './RoomApprovalCards';
 import { RoomAgentRequests } from './RoomAgentRequests';
@@ -410,6 +411,13 @@ export function RoomSurface({
         unavailable={stream.unavailable}
         onRetry={stream.retry}
         onScrollToRow={scrollToRow}
+      />
+      {/* Why nothing will answer, in a channel with no agent in it — the app's
+          to say, not a line written into the room (DOR-2823). */}
+      <NoAgentHint
+        room={room}
+        hasEntries={entries.length > 0}
+        onAddAgents={() => openRoomPanel('add', room.id)}
       />
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an

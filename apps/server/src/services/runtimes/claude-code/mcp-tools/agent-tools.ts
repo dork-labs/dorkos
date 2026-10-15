@@ -5,6 +5,7 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { HEARTBEAT_TEMPLATE_IDS } from '@dorkos/shared/heartbeat-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { createAgentWorkspace, AgentCreationError } from '../../../core/agent-creator.js';
@@ -20,6 +21,7 @@ export function createCreateAgentHandler(deps: McpToolDeps) {
     directory?: string;
     description?: string;
     runtime?: string;
+    heartbeatTemplate?: 'lead' | 'doer' | 'coder';
   }) => {
     try {
       const result = await createAgentWorkspace(args, deps.meshCore);
@@ -53,6 +55,14 @@ export function getAgentTools(deps: McpToolDeps) {
         directory: z.string().optional().describe('Optional workspace directory path'),
         description: z.string().optional().describe('Optional agent description'),
         runtime: z.string().optional().describe('Agent runtime (default: claude-code)'),
+        heartbeatTemplate: z
+          .enum(HEARTBEAT_TEMPLATE_IDS)
+          .optional()
+          .describe(
+            'Which HEARTBEAT.md the agent starts with, by type: lead (timed beat, daily report), ' +
+              'doer (light timed beat), coder (wakes on events). Omitted: lead on the doe ' +
+              'runtime, otherwise none (wakes on events only).'
+          ),
       },
       createCreateAgentHandler(deps)
     ),

@@ -19,7 +19,8 @@ import {
   eq,
   type Db,
 } from '@dorkos/db';
-import { createApp, finalizeApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import type { HonoApiDeps } from '../../http/hono-api.js';
 import {
   createRoomSubsystem,
   setRoomService,
@@ -48,7 +49,8 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 const origin = `http://localhost:${env.DORKOS_PORT}`;
 let dir: string;
 let db: Db;
-let app: ReturnType<typeof createApp>;
+/** What the composed routes read; each test hands over its own document channel. */
+const deps: HonoApiDeps = {};
 const fixture = swappableServer();
 const server = fixture.server;
 let cookies: string[];
@@ -142,9 +144,8 @@ beforeEach(async () => {
   runMigrations(db);
   initAuth(db, dir);
   configManager.set('auth', { enabled: false });
-  app = createApp({ admission: new MainRequestAdmission() });
-  finalizeApp(app);
-  fixture.mount(app);
+  const admission = new MainRequestAdmission();
+  fixture.mount(composedListener(admission, deps));
   const signup = await request(server)
     .post('/api/auth/sign-up/email')
     .set('Origin', origin)
@@ -186,7 +187,7 @@ beforeEach(async () => {
     }
     if (failed) throw cause;
   };
-  app.locals.docChannelHttp = http;
+  deps.docChannel = http;
   project = fs.mkdtempSync(path.join(dir, 'source-'));
   fs.writeFileSync(path.join(project, 'tasks.md'), 'Tasks');
   sessionId = randomUUID();
@@ -496,7 +497,7 @@ describe('mounted document HTTP endpoints', () => {
     expect((await post(event())).status).toBe(403);
   });
   it('reports unavailable during startup without silently accepting input', async () => {
-    delete app.locals.docChannelHttp;
+    delete deps.docChannel;
     expect((await post(event())).status).toBe(503);
   });
   it('keeps login-on reads and writes behind the actual session gate', async () => {

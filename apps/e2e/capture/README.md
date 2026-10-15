@@ -9,7 +9,7 @@ with hand-captured media that wins.
 ## The shot registry
 
 `shots.ts` is the single source of truth. A **shot** is one logical surface (the
-cockpit, the topology graph, a streaming chat) with an `id`, a `kind`
+#team room, the topology graph, a streaming chat) with an `id`, a `kind`
 (`still` or `loop`), a `frame` (`desktop`/`mobile`), and its `consumers`
 (`marketing`, `docs`, `changelog`). The process phase writes a snapshot of the
 registry into `manifest.json` (`shots`), so the site and docs stay consistent
@@ -93,7 +93,7 @@ The safe parallel unit is a whole stack, so each shard gets its own:
 How a sharded record runs (`record.ts`):
 
 1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
-2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state), the **global-state flips** `agent-discovery` and `full-power-door` (driven **last** in their stack, in that order — one re-opens onboarding and one un-answers the power decision, and every other shot in the same stack needs onboarding dismissed and the power door settled; each shard's own `DORK_HOME` keeps both flips local), and the `accounts-pending`/`accounts-linked` pair (one linear device flow, so a round-robin split would break it).
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state), the **global-state flip** `trust-notice` (driven **last** in its stack — it marks the trust notice unseen, and every other shot in the same stack needs it seen; each shard's own `DORK_HOME` keeps the flip local), and the `accounts-pending`/`accounts-linked` pair (one linear device flow, so a round-robin split would break it).
 3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
 4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would. A failed sharded record removes its partial run dir instead of leaving a `run.json`-less husk in the library.
 
@@ -124,8 +124,7 @@ foreign server.
 **Default is `--shards 1`** (the unchanged serial path). How much sharding helps
 is bound by cores and by the per-shard boot+seed cost, which is paid on every
 shard: 2 shards is a solid win; beyond that, returns fall off once the fixed
-boot+seed overhead and the `agent-discovery` long pole dominate the critical
-path. Pick `N` to fit the box.
+boot+seed overhead dominates the critical path. Pick `N` to fit the box.
 
 ## Human overrides
 
@@ -230,24 +229,24 @@ the same webm + poster.
 
 ## What gets captured
 
-| Surface           | Stills | Loop | Notes                                             |
-| ----------------- | ------ | ---- | ------------------------------------------------- |
-| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster  |
-| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows  |
-| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces            |
-| `tasks`           | light  | —    | Schedules + expanded green run history            |
-| `marketplace`     | light  | —    | In-app browse grid                                |
-| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards            |
-| `tool-approval`   | light  | —    | Permission prompt awaiting the operator           |
-| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc    |
-| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor       |
-| `subagents`       | light  | dark | Three sub-agents running concurrently, settling   |
-| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live |
-| `personality`     | light  | dark | Personality radar morphing through presets        |
-| `agent-discovery` | light  | dark | Onboarding scan finding a mixed existing fleet    |
-| `mobile-sessions` | light  | —    | 390px Home panel: one agent working, one asking   |
-| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)         |
-| `mobile-approval` | light  | —    | 390px tool-approval prompt                        |
+| Surface           | Stills | Loop | Notes                                                   |
+| ----------------- | ------ | ---- | ------------------------------------------------------- |
+| `team-room`       | light  | —    | Home: #team, a person and three agents talking          |
+| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows        |
+| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces                  |
+| `tasks`           | light  | —    | Schedules + expanded green run history                  |
+| `marketplace`     | light  | —    | In-app browse grid                                      |
+| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards                  |
+| `tool-approval`   | light  | —    | Permission prompt awaiting the operator                 |
+| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc          |
+| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor             |
+| `subagents`       | light  | dark | Three sub-agents running concurrently, settling         |
+| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live       |
+| `personality`     | light  | dark | Personality radar morphing through presets              |
+| `agent-discovery` | light  | dark | The import dialog's scan finding a mixed existing fleet |
+| `mobile-sessions` | light  | —    | 390px Home panel: one agent working, one asking         |
+| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)               |
+| `mobile-approval` | light  | —    | 390px tool-approval prompt                              |
 
 Dark PNGs exist only as loop posters, extracted from the loop during
 post-processing (frame 0, or the settled pre-seam frame for
@@ -272,7 +271,7 @@ Nothing rendered depends on `Date.now()`.
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).
-- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus two desktop siblings kept out of line: `surfaces-desktop-power.ts` (Control Center, Settings → Room limits, the full-power door) and `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive).
+- `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives, plus desktop siblings kept out of line: `surfaces-desktop-team.ts` (the `team-room` conversation in #team, answered by real room turns), `surfaces-desktop-power.ts` (Control Center, Settings → Room limits, the trust notice), `surfaces-desktop-fleet.ts` (the four-agent `multi-session` drive), `surfaces-desktop-rooms.ts` (the `room-files` channel) and `surfaces-desktop-tasks.ts` (the `task-runtime-picker` form).
 - `optimize.ts` — the editing stage: PNG recompression + aspect-validated scaling (sharp), loop editing (ffmpeg-static: head-trim, end-seam crossfade, two-pass VP9, poster extraction), and the v2 manifest writer.
 - `overrides/` — committed human-override sources (see `overrides/README.md`).
 - `__tests__/` — unit tests for the registry, aspect validation, and override discovery (`pnpm --filter @dorkos/e2e test`).

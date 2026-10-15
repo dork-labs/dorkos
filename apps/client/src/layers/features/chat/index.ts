@@ -13,7 +13,7 @@
  */
 export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
-export { buildListRows, messageRowKey } from './lib/build-list-rows';
+export { buildListRows, createListRowsCache, messageRowKey } from './lib/build-list-rows';
 export type { ListRow } from './lib/build-list-rows';
 export { buildFileEntries } from './lib/build-file-entries';
 export { resolveTransportRetryText } from './lib/resolve-retry-text';
@@ -25,6 +25,16 @@ export type { SigninResumeClaim } from './model/signin-resume/use-signin-resume-
 export { ChatEmptyState } from './ui/ChatEmptyState';
 export { BirthCertificate } from './ui/BirthCertificate';
 export { StartedByLine, StartedPrompt } from './ui/StartedByLine';
+// Chats messaging chats (spec `spin-off-chats` §6): the received message's
+// author mark, the Sent card and the "Stopped by" line, and the reads behind them.
+export { ChatFromMark, ReceivedChatMessages } from './ui/messaging/ReceivedChatMessage';
+export { RoomPostMark } from './ui/messaging/RoomPostMark';
+export { SentChatCard } from './ui/messaging/SentChatCard';
+export { ChatStopLine } from './ui/messaging/ChatStopLine';
+export { useChatActivity } from './model/messaging/use-chat-activity';
+export { useEarlierMessages } from './model/stream/use-earlier-messages';
+export type { EarlierMessages } from './model/stream/use-earlier-messages';
+export { interleaveStopNotices, transcriptIdForChatMessage } from './lib/chat-messaging';
 export { CelebrationOverlay } from './ui/CelebrationOverlay';
 export { FirstLight } from './ui/FirstLight';
 export { TypingDots } from './ui/primitives';

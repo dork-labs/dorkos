@@ -221,7 +221,7 @@ export function ordinaryInsertedResult(result: import('better-sqlite3').RunResul
   return { state: 'inserted' as const, result };
 }
 
-export const sourceStrings = [
+export const sourceStrings = Object.freeze([
   'documentId',
   'batchId',
   'generation',
@@ -251,10 +251,14 @@ export const sourceStrings = [
   'targetRuntime',
   'targetAgentPath',
   'originalUpdatedAt',
-] as const;
-export const sourceNumbers = ['sourceAttempt', 'grantRevision'] as const;
-export const sourceNullable = ['manifestHash', 'originalError', 'originalLease'] as const;
-export const claimStrings = [
+] as const);
+export const sourceNumbers = Object.freeze(['sourceAttempt', 'grantRevision'] as const);
+export const sourceNullable = Object.freeze([
+  'manifestHash',
+  'originalError',
+  'originalLease',
+] as const);
+export const claimStrings = Object.freeze([
   'effectiveTargetSessionId',
   'barrierIso',
   'nowIso',
@@ -265,8 +269,8 @@ export const claimStrings = [
   'rootRoomId',
   'rootEntryId',
   'dispatchId',
-] as const;
-export const claimNumbers = [
+] as const);
+export const claimNumbers = Object.freeze([
   'atMs',
   'globalFloorMs',
   'documentFloorMs',
@@ -274,7 +278,7 @@ export const claimNumbers = [
   'entryDepth',
   'frozenCeiling',
   'expectedReadSeq',
-] as const;
+] as const);
 
 /** Data equality only. Genuine principal/installation provenance belongs to original F2. */
 export function assertRoomProducerData(data: RoomDocSourceData, original: Record<string, unknown>) {

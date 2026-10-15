@@ -3,6 +3,8 @@
  *
  * @module shared/lib/transport/session-methods
  */
+import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
+import type { HistoryReadQuery } from '@dorkos/shared/schemas';
 import type {
   Session,
   SessionListResponse,
@@ -10,7 +12,7 @@ import type {
   SessionUpdateResponse,
   SessionSettings,
   StoredSessionSettingsResponse,
-  HistoryMessage,
+  HistoryRead,
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
@@ -32,7 +34,6 @@ import type {
   SessionQueueResponse,
 } from '@dorkos/shared/schemas';
 import {
-  RecentSessionsResponseSchema,
   SessionDailyCountsResponseSchema,
   SendMessageResponseSchema,
   UpdateQueuedMessageResponseSchema,
@@ -43,7 +44,10 @@ import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
-import { parsePendingInteractionsResponse } from './tolerant-session-frames';
+import {
+  parsePendingInteractionsResponse,
+  parseRecentSessionsResponse,
+} from './tolerant-session-frames';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
@@ -77,7 +81,7 @@ export function createSessionMethods(
   baseUrl: string,
   getClientId: () => string,
   etagCache: Map<string, string>,
-  messageCache: Map<string, { messages: HistoryMessage[] }>
+  messageCache: Map<string, HistoryRead>
 ) {
   return {
     // ── Session CRUD ────────────────────────────────────────────────────────
@@ -94,7 +98,7 @@ export function createSessionMethods(
     ): Promise<RecentSessionsResponse> {
       const qs = buildQueryString({ limit, touchedSince });
       const data = await fetchJSON<unknown>(baseUrl, `/sessions/recent${qs}`);
-      return RecentSessionsResponseSchema.parse(data);
+      return parseRecentSessionsResponse(data);
     },
 
     async getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse> {
@@ -117,6 +121,10 @@ export function createSessionMethods(
     getSession(id: string, cwd?: string): Promise<Session> {
       const qs = buildQueryString({ cwd });
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`);
+    },
+
+    getChatActivity(sessionId: string): Promise<ChatActivityResponse> {
+      return fetchJSON<ChatActivityResponse>(baseUrl, `/sessions/${sessionId}/chat-messages`);
     },
 
     markSessionOpened(sessionId: string): Promise<void> {
@@ -193,12 +201,26 @@ export function createSessionMethods(
 
     // ── Message History (ETag caching) ────────────────────────────────────
 
-    async getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }> {
-      const qs = buildQueryString({ cwd });
+    async getMessages(
+      sessionId: string,
+      cwd?: string,
+      page?: HistoryReadQuery
+    ): Promise<HistoryRead> {
+      const qs = buildQueryString({
+        cwd,
+        since: page?.since,
+        before: page?.before,
+        newest: page?.newest ? '1' : undefined,
+      });
       const url = `/sessions/${sessionId}/messages${qs}`;
+      // The ETag names the whole transcript, so only a whole read may use it or
+      // fill the cache behind it: a tail (or any later page) answered 304 would
+      // come back as the cached WHOLE history, and a cached part would later
+      // stand in for one.
+      const whole = page === undefined;
 
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      const cachedEtag = etagCache.get(sessionId);
+      const cachedEtag = whole ? etagCache.get(sessionId) : undefined;
       if (cachedEtag) headers['If-None-Match'] = cachedEtag;
 
       const res = await fetch(`${baseUrl}${url}`, { headers, credentials: 'include' });
@@ -214,9 +236,9 @@ export function createSessionMethods(
         throw new Error(error.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as HistoryRead;
       const etag = res.headers.get('ETag');
-      if (etag) {
+      if (etag && whole) {
         etagCache.set(sessionId, etag);
         messageCache.set(sessionId, data);
       }
@@ -268,8 +290,22 @@ export function createSessionMethods(
         // before starting this session" is actionable; "HTTP 400" is a dead end
         // with a Retry button under it that can only fail the same way. The
         // status is the fallback for a body that carried no reason.
-        const body = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || `HTTP ${response.status}`);
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+        };
+        // The code and body ride along, as `fetchJSON`'s errors carry them: a
+        // refusal such as `AGENT_PAUSED` names what the app can offer instead
+        // of Retry (spec `audit-trail` PR5).
+        const failure = new Error(body.error || `HTTP ${response.status}`) as Error & {
+          code?: string;
+          status?: number;
+          body?: unknown;
+        };
+        failure.code = body.code;
+        failure.status = response.status;
+        failure.body = body;
+        throw failure;
       }
 
       // Trigger-only, accept-only contract: the turn (or the queue place) is

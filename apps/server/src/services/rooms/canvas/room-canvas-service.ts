@@ -1,4 +1,13 @@
-import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
+import type { RoomCanvasDeps, CanvasOpenOptions } from './room-canvas-contract.js';
+export type { RoomCanvasDeps, CanvasOpenOptions } from './room-canvas-contract.js';
+import {
+  canvasChangeSentence,
+  discussionOpenedSentence,
+  withTreeRelativeSource,
+  isWithin,
+  canonicalPath,
+} from './room-canvas-helpers.js';
+export { canvasChangeSentence, discussionOpenedSentence } from './room-canvas-helpers.js';
 /**
  * A room's shared canvas: every rule about who may change it, over the one
  * writer that changes it (spec `room-canvas` §3).
@@ -14,16 +23,13 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  *
  * {@link RoomCanvasService.apply} is still the single enforcement point for
  * everything an agent does in a room. Archived room, verb not on the allow-list,
- * no usable referent, over the per-turn ceiling, held by somebody else's edit
- * lock — all five refusals are decided on this path, and the last two are
+ * no usable referent, held by somebody else's edit lock — all four refusals are decided on this path, and the last two are
  * decided inside the writer it delegates to so no caller can reach around them.
  *
  * It is **synchronous**, and that is not a style choice. The claude-code
- * `control_ui` handler returns to the model on the same call stack, so a ceiling
- * enforced anywhere later would be refusing an operation the tool had already
- * reported as successful — a bound that answers after the fact is not a bound,
- * it is a silent drop. `rooms.maxPostsPerTurn` only works for the same reason:
- * `postFromTool` is the same synchronous call that answers the model.
+ * `control_ui` handler returns to the model on the same call stack, so a refusal
+ * decided anywhere later would be refusing an operation the tool had already
+ * reported as successful — a silent drop.
  *
  * ## Two callers, one ledger
  *
@@ -50,9 +56,7 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  *
  * @module server/services/rooms/canvas/room-canvas-service
  */
-import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -177,65 +181,11 @@ export const NOT_IN_A_ROOM_MESSAGE =
   'That only works in a one-on-one session, not in a room. Rooms share a canvas, not a whole ' +
   'window — put a document on the canvas instead.';
 
-/**
- * What an agent is told when it has spent its canvas changes for this turn.
- *
- * @param limit - The ceiling in force right now, read live from settings.
- * @returns The sentence the model reads.
- */
-export function tooManyCanvasOpsMessage(limit: number): string {
-  return (
-    `You have already changed the canvas ${limit} times in this conversation during this turn, ` +
-    `which is the limit. Put the rest in one update next turn.`
-  );
-}
-
-/** How a room's canvas reaches the rest of the server. */
-export interface RoomCanvasDeps {
-  /** The one writer, shared with every other scope. */
-  canvas: CanvasService;
-  /** Who may see a room, and who is in it. */
-  visibility: RoomVisibility;
-  /** The room's live stream — who is watching. */
-  broadcaster: RoomBroadcaster;
-  /** The per-turn ceiling, read PER CALL so a change in Settings binds the next operation. */
-  maxOpsPerTurn: () => number;
-  /**
-   * Write one turn's coalesced entry into the room's log.
-   *
-   * Handed in rather than reached for, so the single write path into a room
-   * stays {@link RoomService}'s — the same shape the merge service is given.
-   */
-  postCanvasEvent: (
-    roomId: string,
-    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string },
-    bind?: (tx: DbTransaction, entryId: string) => void
-  ) => { id: string } | void;
-  /** How a member is named in the sentence that entry carries. */
-  displayNameFor: (authorId: string) => string;
-  /** The room's shared checkout, or `null` when the room has no files of its own. */
-  roomRepoPath: (roomId: string) => string | null;
-  /** The clock, so a lock's TTL is testable without waiting 45 seconds. */
-  now?: () => number;
-}
-
-/** What `open` was given beyond the content itself. */
-export interface CanvasOpenOptions {
-  channel?: CanvasChannelDeclaration;
-  /** Pin it on creation. */
-  pinned?: boolean;
-  /** Where a file document's path was resolved, absolute. */
-  resolvedCwd?: string | null;
-  /** How that directory is described to a reader: `Ana's copy · 3 ahead of main`. */
-  sourceLabel?: string | null;
-}
-
 /** A room's shared canvas — the room's rules, over the one writer. */
 export class RoomCanvasService {
   private readonly canvas: CanvasService;
   private readonly visibility: RoomVisibility;
   private readonly broadcaster: RoomBroadcaster;
-  private readonly maxOpsPerTurn: () => number;
   private readonly postCanvasEvent: RoomCanvasDeps['postCanvasEvent'];
   private readonly displayNameFor: (authorId: string) => string;
   private readonly roomRepoPath: (roomId: string) => string | null;
@@ -264,16 +214,9 @@ export class RoomCanvasService {
    * operation is recognised, and {@link RoomCanvasService.record} posts its own
    * one-line entry on the spot instead of filing it.
    *
-   * **It carries the turn's spend, not just its clock.** The ceiling is a
-   * per-TURN budget, and a turn does not get a fresh one by ending: an agent
-   * that spent all three operations in-turn and then keeps working must be
-   * refused on its fourth exactly as it would have been on its fourth in-turn.
-   * Remembering only the instant would reset the count to zero the moment the
-   * line was posted, which is the ceiling deleting itself.
-   *
    * Bounded twice: by age and by count. Neither bound loses a row.
    */
-  private readonly closedTurns = new Map<string, { at: number; spent: number }>();
+  private readonly closedTurns = new Map<string, { at: number }>();
 
   /**
    * Who is looking at what, right now — room, then member, then the document
@@ -345,7 +288,6 @@ export class RoomCanvasService {
     this.canvas = deps.canvas;
     this.visibility = deps.visibility;
     this.broadcaster = deps.broadcaster;
-    this.maxOpsPerTurn = deps.maxOpsPerTurn;
     this.postCanvasEvent = deps.postCanvasEvent;
     this.displayNameFor = deps.displayNameFor;
     this.roomRepoPath = deps.roomRepoPath;
@@ -478,19 +420,6 @@ export class RoomCanvasService {
       // A room has NO shared active document by design, so the only default that
       // cannot edit somebody else's work is the author's own last one (§5.6).
       defaultTarget: 'author-last',
-      chargeCeiling: () => {
-        const limit = this.maxOpsPerTurn();
-        // **`>=`, never `< …` inverted.** The resolver reads the ceiling live
-        // from settings, and a host that has configured none answers
-        // `undefined` — where `spent >= undefined` is false (proceed, which is
-        // right) and `spent < undefined` is ALSO false (refuse, which is not).
-        // The conformance suite caught exactly that inversion: every room canvas
-        // command refused, with `undefined` printed in the sentence.
-        if (this.spentThisTurn(turnId) >= limit) {
-          return { code: 'TOO_MANY_CANVAS_OPS_THIS_TURN', reason: tooManyCanvasOpsMessage(limit) };
-        }
-        return null;
-      },
       record: (entry) => this.record(turnId, roomId, authorId, entry),
     });
   }
@@ -514,7 +443,7 @@ export class RoomCanvasService {
   finishTurn(turnId: string): void {
     const turn = this.ledger.get(turnId);
     this.ledger.delete(turnId);
-    this.markClosed(turnId, turn?.ops.length ?? 0);
+    this.markClosed(turnId);
     if (!turn || turn.ops.length === 0) return;
     this.postLine(turn.roomId, turn.authorId, turn.ops, turnId);
   }
@@ -596,7 +525,7 @@ export class RoomCanvasService {
     state.rooms.clear();
     // **Bumped whether or not anything was open.** The count is what makes the
     // next turn's id different from this one's; leaving it still would reuse an
-    // id `closedTurns` remembers the spend of.
+    // id `closedTurns` remembers as already closed.
     state.n += 1;
     state.at = this.now();
     this.expireTargetedTurns();
@@ -1239,10 +1168,6 @@ export class RoomCanvasService {
     // applied operation is named exactly once.
     const closed = this.closedTurns.get(turnId);
     if (closed !== undefined) {
-      // Charged before it is announced, so the turn's budget keeps shrinking
-      // while it keeps working. `apply` refused it already if there was nothing
-      // left, so anything reaching here is inside the ceiling.
-      closed.spent += 1;
       this.postLine(roomId, authorId, [entry], turnId);
       return;
     }
@@ -1299,13 +1224,9 @@ export class RoomCanvasService {
    * the one that holds when a machine is busy enough that ages alone would not
    * prune fast enough.
    */
-  private markClosed(turnId: string, spent: number): void {
+  private markClosed(turnId: string): void {
     const at = this.now();
-    // ADDED to whatever is already there, never assigned over it. `finishTurn`
-    // runs from a `finally` and a room turn can reach one more than once; an
-    // assignment would let the second, empty call hand the turn a fresh budget.
-    const already = this.closedTurns.get(turnId)?.spent ?? 0;
-    this.closedTurns.set(turnId, { at, spent: already + spent });
+    this.closedTurns.set(turnId, { at });
     for (const [id, record] of this.closedTurns) {
       if (at - record.at >= CLOSED_TURN_MEMORY_MS) this.closedTurns.delete(id);
     }
@@ -1355,139 +1276,4 @@ export class RoomCanvasService {
       });
     }
   }
-
-  /**
-   * How much of its ceiling one turn has already spent — what it applied while
-   * it was open, plus what it has applied since its line went out.
-   *
-   * The two halves have to be added rather than chosen between: the open ledger
-   * is emptied at `finishTurn`, so reading it alone says zero for every turn
-   * that has ended, and the ceiling would rearm itself the instant the line was
-   * posted.
-   *
-   * @param turnId - The room turn's dispatch id.
-   * @returns Operations charged to this turn so far.
-   */
-  private spentThisTurn(turnId: string): number {
-    return (this.closedTurns.get(turnId)?.spent ?? 0) + (this.ledger.get(turnId)?.ops.length ?? 0);
-  }
-}
-
-/**
- * The one line a person reads in the room's log for a whole turn's canvas work.
- *
- * Written for a person, not for a machine: the machine-readable half rides
- * `body.canvas` beside it. It names at most two documents and then counts the
- * rest, because a turn that opened six things should read as a sentence rather
- * than as a list.
- *
- * @param author - How the acting member is named.
- * @param ops - What the turn applied, oldest first.
- * @returns The sentence.
- */
-export function canvasChangeSentence(author: string, ops: readonly CanvasLedgerEntry[]): string {
-  const verbs = { opened: 'opened', updated: 'updated', closed: 'closed' } as const;
-  const named = ops.slice(0, 2).map((op) => `${verbs[op.change]} ${op.title}`);
-  const rest = ops.length - named.length;
-  const list = named.join(' and ');
-  return rest > 0
-    ? `${author} ${list}, and changed ${rest} more thing${rest === 1 ? '' : 's'} on the canvas.`
-    : `${author} ${list} on the canvas.`;
-}
-
-/**
- * The line the room reads when somebody starts a discussion about a document.
- *
- * Names the document by its own title, because that is what the person pressing
- * Discuss was looking at and what everybody else sees on the tab. The entry
- * heads the thread, so this sentence is the thing a reader clicks into.
- *
- * @param author - How the member who started it is named.
- * @param document - The document being discussed.
- * @returns The sentence.
- */
-export function discussionOpenedSentence(
-  author: string,
-  document: Pick<CanvasDocument, 'title' | 'contentType'>
-): string {
-  const what = document.title.trim().length > 0 ? document.title : document.contentType;
-  return `${author} started a discussion about ${what}.`;
-}
-
-/**
- * Whether one absolute directory sits inside another, or is it.
- *
- * A path comparison rather than a filesystem one, deliberately: it runs on every
- * open and must not touch the disk. The separator check is what stops
- * `/work/agent-two` reading as being inside `/work/agent`.
- *
- * @param child - The directory being tested.
- * @param parent - The directory it must be within.
- * @returns Whether `child` is `parent` or below it.
- */
-/**
- * Name a room file by its path inside the tree it came out of (spec
- * `agent-home-desk` §5.6).
- *
- * A room turn stands in its agent's home and names a file in its copy of the
- * room's files — or in the room's shared checkout — by its FULL path. Every
- * reader of a room file document takes the stored path as relative to the
- * document's tree: the review refuses an absolute one, the merge reads `main`
- * at it, and the document key is built from it, so the same file opened twice
- * must name itself the same way. Anything that is not one of those two trees,
- * or that does not sit inside it, is left exactly as the agent wrote it.
- *
- * @param command - The command as the turn sent it.
- * @param tree - Where {@link RoomCanvasService.resolveTree} placed its file.
- */
-function withTreeRelativeSource(command: UiCommand, tree: CanvasTreePlacement): UiCommand {
-  if (
-    tree.resolvedCwd === null ||
-    (tree.treeKind !== 'worktree' && tree.treeKind !== 'room-main')
-  ) {
-    return command;
-  }
-  const root = canonicalPath(tree.resolvedCwd);
-  const relative = (source: string): string | null => {
-    if (!path.isAbsolute(source)) return null;
-    const rel = path.relative(root, canonicalPath(source));
-    // Only a first SEGMENT of exactly `..` leaves the tree; `..notes.md` is a
-    // file inside it (the same rule `canvas-diff-review.ts` applies).
-    return rel === '' || rel.split(/[\\/]/)[0] === '..' || path.isAbsolute(rel) ? null : rel;
-  };
-  if ('sourcePath' in command && typeof command.sourcePath === 'string') {
-    const rel = relative(command.sourcePath);
-    return rel === null ? command : ({ ...command, sourcePath: rel } as UiCommand);
-  }
-  if ('content' in command && command.content && 'sourcePath' in command.content) {
-    const source = command.content.sourcePath;
-    const rel = typeof source === 'string' ? relative(source) : null;
-    return rel === null
-      ? command
-      : ({ ...command, content: { ...command.content, sourcePath: rel } } as UiCommand);
-  }
-  return command;
-}
-
-/**
- * A path's real spelling: the real path of its deepest existing ancestor with
- * the rest appended, so a file that does not exist yet still compares by the
- * folder it would land in.
- */
-function canonicalPath(p: string): string {
-  const resolved = path.resolve(p);
-  try {
-    return realpathSync.native(resolved);
-  } catch {
-    const parent = path.dirname(resolved);
-    return parent === resolved
-      ? resolved
-      : path.join(canonicalPath(parent), path.basename(resolved));
-  }
-}
-
-function isWithin(child: string, parent: string): boolean {
-  if (child === parent) return true;
-  const base = parent.endsWith('/') ? parent : `${parent}/`;
-  return child.startsWith(base);
 }

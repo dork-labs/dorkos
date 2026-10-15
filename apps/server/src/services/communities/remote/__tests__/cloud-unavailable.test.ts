@@ -31,7 +31,6 @@ import { createServer, type Server } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -173,9 +172,17 @@ vi.mock('../../../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
 }));
+// The spaces settings the production state reads (spec `official-community-space` D4): spaces
+// on, and no official space, as a person who turned spaces on and named none would have them.
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'spaces' ? { enabled: true, official: { url: '' } } : undefined),
+  },
+}));
 
-import { createCommunityConnectionsRouter } from '../../../../routes/community-connections.js';
-import { createRemoteCommunitiesRouter } from '../../../../routes/remote-communities.js';
+import { createCommunityConnectionsRoutes } from '../../../../routes/community-connections.js';
+import { createRemoteCommunitiesRoutes } from '../../../../routes/remote-communities.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import {
   getRemotePairingService,
   setRemoteCommunityDb,
@@ -305,15 +312,15 @@ beforeAll(async () => {
   const navigation = {
     get: async () => ({ ownerKey: 'owner-a', order: [], destinations: [] }),
   };
-  const routes = express();
-  routes.use(express.json());
-  routes.use(
-    '/api/community-connections',
-    createCommunityConnectionsRouter(getRemotePairingService(), navigation as never)
-  );
-  routes.use('/api/communities', createRemoteCommunitiesRouter());
+  const routes = honoGroupListener([
+    {
+      path: '/api/community-connections',
+      routes: createCommunityConnectionsRoutes(getRemotePairingService(), navigation as never),
+    },
+    { path: '/api/communities', routes: createRemoteCommunitiesRoutes() },
+  ]);
   // Supertest dials 127.0.0.1, so bind exactly that.
-  app = routes.listen(0, '127.0.0.1');
+  app = createServer(routes).listen(0, '127.0.0.1');
   await once(app, 'listening');
 });
 

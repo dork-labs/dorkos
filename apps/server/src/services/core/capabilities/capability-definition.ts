@@ -30,6 +30,7 @@
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type {
+  ActionConsent,
   CapabilitySource,
   CapabilityTier,
   CapabilitySurfaces,
@@ -135,6 +136,14 @@ export interface CapabilityDefinition<
    * parsed input.
    */
   areasForInput?: (input: unknown) => readonly PermissionAreaId[];
+  /**
+   * What a destructive action's consent is about, when it is more than the
+   * action itself. `'third-party-code'` marks an action that puts code someone
+   * else wrote where DorkOS will run it (`mcp.add`, `mcp.update`): an area-level
+   * Allowed on it still asks (ADR `261006-225605`). Absent, a destructive action
+   * runs, recorded, when its area resolves Allowed.
+   */
+  consent?: ActionConsent;
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
   /** Zod output contract; projected as JSON Schema in the catalog. */

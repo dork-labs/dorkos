@@ -189,6 +189,30 @@ export const CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
 });
 
 /**
+ * The same channel with a lead (DOR-2823): Mio Clicker PM answers whatever
+ * nobody else is answering, and its row wears the Lead badge.
+ */
+export const LEAD_CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-general-led',
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.code, MEMBER.kai],
+  leadAuthorId: MEMBER.pm.authorId,
+});
+
+/**
+ * #team, whose lead is the install's default agent — named in the panel, never
+ * offered as a choice there.
+ */
+export const TEAM_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-team',
+  slug: 'team',
+  title: 'Team',
+  topic: 'Everyone, every agent',
+  wellKnown: 'team',
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.code, MEMBER.kai],
+  leadAuthorId: MEMBER.pm.authorId,
+});
+
+/**
  * A channel whose topic is a paragraph, with a link and one 200-character word
  * in it — the case the panel used to cut off after a few words (DOR-2117). The
  * unbroken tokens are the hard part: they have no space to wrap at, so they
@@ -256,11 +280,11 @@ export const BRIDGED_CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
 /**
  * A server config carrying the two engaged-window ceilings.
  *
- * The `Engaged` rung quotes them — "10 minutes or 5 messages" — and
+ * The `Engaged` rung quotes them — "60 minutes or 15 messages" — and
  * says less rather than guessing when the config read has not landed, so a
  * showcase without this shows the sentence that has no numbers in it.
  */
 export const ROOMS_SERVER_CONFIG: ServerConfig = {
   ...MOCK_SERVER_CONFIG,
-  rooms: { engagedWindowMinutes: 10, engagedWindowPosts: 5 },
+  rooms: { engagedWindowMinutes: 60, engagedWindowPosts: 15 },
 };

@@ -37,7 +37,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -320,7 +319,21 @@ const registry = composeDorkOsCapabilityRegistry({
   // The audit domain serves `GET /api/audit/verify`, so the boot registry must
   // carry it for the docs/boot parity check (spec `audit-trail`).
   auditDeps: {
-    log: { verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }) },
+    log: {
+      verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }),
+      query: () => ({ events: [] }),
+      getWithLinks: () => undefined,
+      timeline: () => ({ events: [] }),
+    },
+  },
+  // The pause domain serves `/api/agents/{agentId}/pause|resume` and
+  // `/api/agents/pauses` (spec `audit-trail` PR5), so the boot registry carries it.
+  agentPauseDeps: {
+    pauses: {
+      pause: async () => ({ agentId: 'a', paused: true, changed: true }),
+      resume: () => ({ agentId: 'a', paused: false, changed: true }),
+      list: () => [],
+    },
   },
 });
 
@@ -342,10 +355,12 @@ const externalToolNames = Object.keys(
 const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version'];
 
 // ── Destructive-gate probes: the three real adapter paths ──────────────────
-const { createCapabilitiesInvokeRouter } =
+const { createCapabilitiesInvokeRoutes } =
   await import('../../../../routes/capabilities-invoke.js');
-const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
+const { honoGroupListener } = await import('../../../../http/__tests__/hono-group-listener.js');
+const { createApprovalsRoutes } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
+const { askFor } = await import('./permission-gate-fixtures.js');
 const { ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
@@ -370,6 +385,14 @@ const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
 const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
+// Under Trusted (ADR 261006-225605) the two destructive capabilities whose area
+// is Allowed and that run no third-party code (`marketplace.uninstall`,
+// `mcp.import`) run, recorded, with no card. These probes are about the card
+// reaching every adapter path, so a person has set those two to Ask; every
+// other capability resolves exactly as Trusted has it.
+// `trusted-destructive.test.ts` pins which destructive capabilities ask under
+// Trusted with nothing set.
+askFor(DESTRUCTIVE_ID, 'mcp.import');
 
 /** Read a plain payload back out of an MCP text-content result. */
 function unwrapText(result: { content: { type: string; text?: string }[] }): unknown {
@@ -392,21 +415,24 @@ async function probe(run: () => Promise<unknown>): Promise<AdapterProbeResult> {
 }
 
 /**
- * The invoke route with an identity on `res.locals` exactly where the real
- * `resolveAgentIdentity` middleware puts it — or with none at all, which is what
+ * The invoke route with an identity set exactly where the `/api` chain's
+ * identity step puts it — or with none at all, which is what
  * `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl look like from here.
  */
 function routeProbe(identity?: typeof PROBE_IDENTITY) {
   return () =>
     probe(async () => {
-      const app = express();
-      app.use(express.json());
-      app.use((_req, res, next) => {
-        if (identity) res.locals.agentIdentity = identity;
-        next();
-      });
-      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      requestTarget.mount(app);
+      requestTarget.mount(
+        honoGroupListener(
+          { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+          {
+            before: async (c, next) => {
+              if (identity) c.set('agentIdentity', identity);
+              await next();
+            },
+          }
+        )
+      );
       const res = await request(requestTarget.server)
         .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
         .send(DESTRUCTIVE_INPUT);
@@ -475,14 +501,15 @@ function externalProbe(identity?: typeof PROBE_IDENTITY) {
  * being switched on.
  */
 const requesterDecideProbe = async () => {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-  app.use(
-    '/api/approvals',
-    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
+  requestTarget.mount(
+    honoGroupListener([
+      { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+      {
+        path: '/api/approvals',
+        routes: createApprovalsRoutes(approvalService, { isLoginEnabled: () => false }),
+      },
+    ])
   );
-  requestTarget.mount(app);
 
   const asked = await request(requestTarget.server)
     .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
@@ -583,6 +610,11 @@ capabilityConformance(registry, {
       group: 'no-such-conformance-section',
       items: [{ kind: 'agent', path: SANDBOX_CWD }],
     },
+    // The audit reads need their required ids to parse; each then answers its
+    // own structured NOT_FOUND / TRANSCRIPT_PRIVATE from the stub log.
+    'audit.get': { id: 'no-such-conformance-event' },
+    'audit.account_timeline': { accountId: 'no-such-conformance-account' },
+    'audit.transcript_read': { sessionId: 'no-such-conformance-session' },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
@@ -604,6 +636,11 @@ capabilityConformance(registry, {
     // No identity in a conformance invocation, so the handler answers its own
     // `no-agent` refusal — wired and reachable, which is what this suite asks.
     'memory.write': { action: 'add', text: 'a conformance note' },
+    // The pause verbs reach the (stub) pause service with a parseable id.
+    'agent.pause': { agentId: 'conformance-agent' },
+    'agent.resume': { agentId: 'conformance-agent' },
+    // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
+    'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

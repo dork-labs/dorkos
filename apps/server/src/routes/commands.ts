@@ -1,12 +1,14 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { CommandsQuerySchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /**
  * GET /api/commands — list slash commands for the resolved runtime.
@@ -22,10 +24,10 @@ const router = Router();
  *    without session context (onboarding, first-run, command palette before any
  *    session is active).
  */
-router.get('/', async (req, res) => {
-  const parsed = CommandsQuerySchema.safeParse(req.query);
+router.get('/', async (c) => {
+  const parsed = CommandsQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
   }
   const refresh = parsed.data.refresh === 'true';
   const runtimeParam = parsed.data.runtime;
@@ -38,7 +40,7 @@ router.get('/', async (req, res) => {
     let runtime: AgentRuntime;
     if (runtimeParam !== undefined) {
       if (!runtimeRegistry.has(runtimeParam)) {
-        return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
+        return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
       }
       runtime = runtimeRegistry.get(runtimeParam);
     } else if (sessionId) {
@@ -48,13 +50,13 @@ router.get('/', async (req, res) => {
       runtime = runtimeRegistry.getDefault();
     }
     const commands = await runtime.getCommands(refresh, validatedCwd);
-    res.json(commands);
+    return c.json(commands);
   } catch (err) {
     if (err instanceof BoundaryError) {
-      return res.status(403).json({ error: err.message, code: err.code });
+      return c.json({ error: err.message, code: err.code }, 403);
     }
     logger.error('[commands] GET / failed', { err, cwd: parsed.data.cwd, sessionId });
-    return res.status(500).json({ error: 'Internal server error' });
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

@@ -77,7 +77,6 @@ import type { McpServerLaunch } from '../../runtimes/claude-code/messaging/messa
 import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';
 import { createDorkOsToolServer } from '../../runtimes/claude-code/mcp-tools/index.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import { NotifyBudget } from '../../relay/notify-budget.js';
 import { roomsDomain } from '../room-capabilities.js';
 import {
   agentLookupFor,
@@ -119,7 +118,6 @@ const agents = agentLookupFor({
 /** Deps for the in-session tool server — only the rooms verbs are driven. */
 function toolDeps(): McpToolDeps {
   return {
-    notifyBudget: new NotifyBudget(),
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
     } as unknown as McpToolDeps['transcriptReader'],
@@ -173,7 +171,7 @@ describe('a room turn, standing at home', () => {
   async function launch(
     cwd: string,
     forAgent: string | undefined,
-    options: { sessionHasNoCwd?: boolean } = {}
+    options: { sessionHasNoCwd?: boolean; chatFor?: string } = {}
   ): Promise<{ token: string | undefined; toolLaunch: McpServerLaunch; session: AgentSession }> {
     let toolLaunch: McpServerLaunch | undefined;
     // A room session: its own cwd is where it stands. Or, with
@@ -204,6 +202,8 @@ describe('a room turn, standing at home', () => {
       },
       messageOpts: {
         cwd,
+        // A chat an agent started, as the launch now names it (DOR-2863).
+        ...(options.chatFor !== undefined ? { forAgent: options.chatFor } : {}),
         ...(forAgent !== undefined
           ? { roomTurn: { roomId, authorId: 'unused', turnId: 'turn-1', cwd, agentPath: forAgent } }
           : {}),
@@ -333,16 +333,42 @@ describe('a room turn, standing at home', () => {
     expect(toolLaunch.identity).toEqual({ kind: 'none' });
   });
 
-  it('still posts as the operator from a plain cockpit session with login off, which is the control', async () => {
-    // The refusals above must not be a server that refuses everything: the only
-    // difference here is a directory that is nobody's working copy.
+  it('refuses a chat with no agent at all, with login off: a chat never posts as the person (DOR-2863)', async () => {
+    // This was the control, and it was the hole. A chat's words are the
+    // model's, so a chat that is nobody's may not write under the person's
+    // name: that is how a chat could forge the person's approval in a room.
     installState.loginEnabled = false;
+    const before = lastAuthor();
     const { token, session, toolLaunch } = await launch(PLAIN_DIR, undefined);
 
     expect(token).toBeUndefined();
-    const reply = await postFrom(session, toolLaunch, 'from the keyboard');
+    const reply = await postFrom(session, toolLaunch, 'approved, ship it');
 
-    expect(reply.posted).toBe(true);
-    expect(lastAuthor()).toBe(harness.human);
+    expect(reply.posted).toBeUndefined();
+    expect(reply.code).toBe('UNIDENTIFIED_CALLER');
+    expect(lastAuthor()).toBe(before);
+  });
+
+  describe.each([
+    ['ON', true],
+    ['OFF', false],
+    // The launch half (a chat's turns name its recorded agent) is
+    // `sessions-cwd-resolution.test.ts`; this is the half after it: given
+    // that, the room stores Ana, in a folder that names nobody.
+  ])('a chat Ana started, standing in a folder no agent owns (DOR-2863), login %s', (_l, on) => {
+    beforeEach(() => {
+      installState.loginEnabled = on;
+    });
+
+    it("posts as Ana, and the room stores Ana's id, never the person's", async () => {
+      const { token, session, toolLaunch } = await launch(PLAIN_DIR, undefined, { chatFor: ANA });
+
+      expect(token).toBeDefined();
+      const reply = await postFrom(session, toolLaunch, 'marketing plan, round 1');
+
+      expect(reply.posted).toBe(true);
+      expect(lastAuthor()).toBe(anaAuthor());
+      expect(lastAuthor()).not.toBe(harness.human);
+    });
   });
 });

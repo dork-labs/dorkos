@@ -1,12 +1,33 @@
 import { creditsCapabilitiesFor } from '../services/core/cloud/credits-protocols.js';
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { ModelOption } from '@dorkos/shared/types';
 import { creditsMenuFor } from '../services/core/cloud/credits-models.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { sessionRunsOnCredits } from '../services/core/cloud/credits-model-gate.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
+
+/**
+ * A runtime that picks its own credits model when nothing is configured
+ * (DorkOS, ADR 261010-143211). Structural, like `sessionRunsOnCredits`: `null`
+ * means the shared credits menu applies.
+ */
+interface PicksCreditsModel {
+  autoCreditsModels(sessionId?: string): Promise<ModelOption[] | null>;
+}
+
+/** Whether this runtime may answer its own credits menu. */
+function picksCreditsModel(runtime: unknown): runtime is PicksCreditsModel {
+  return (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    typeof (runtime as PicksCreditsModel).autoCreditsModels === 'function'
+  );
+}
 
 /** The one query value read as a string, or `undefined`. */
 function queryString(value: unknown): string | undefined {
@@ -34,19 +55,22 @@ function queryString(value: unknown): string | undefined {
  * the runtime's protocol, the service's recommended one first. When the
  * service cannot be read now, the last list it answered stands, each row
  * marked `creditsListOutOfDate`. A service that says nothing about protocols,
- * or no list ever read, leaves the runtime's own menu in place, as before. With no session and no `account`,
+ * or no list ever read, leaves the runtime's own menu in place, as before. A
+ * runtime that picks its own credits model with nothing configured (DorkOS)
+ * answers with its own list, its pick first. With no session and no `account`,
  * the answer is always the runtime's own catalog, the menu every sign-in shares.
  */
-router.get('/', async (req, res) => {
-  const runtimeParam = queryString(req.query.runtime);
-  const sessionId = queryString(req.query.sessionId);
-  const account = queryString(req.query.account);
-  const cwd = queryString(req.query.cwd);
+router.get('/', async (c) => {
+  const query = readQuery(c);
+  const runtimeParam = queryString(query.runtime);
+  const sessionId = queryString(query.sessionId);
+  const account = queryString(query.account);
+  const cwd = queryString(query.cwd);
 
   let runtime: AgentRuntime;
   if (runtimeParam !== undefined) {
     if (!runtimeRegistry.has(runtimeParam)) {
-      return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
+      return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
     }
     runtime = runtimeRegistry.get(runtimeParam);
   } else if (sessionId) {
@@ -60,13 +84,15 @@ router.get('/', async (req, res) => {
     ? await sessionRunsOnCredits(runtime, sessionId, { accountHint: account, cwd })
     : account === CREDITS_ACCOUNT_ID && runtime.getCapabilities().credits !== undefined;
   if (onCredits) {
+    const picked = picksCreditsModel(runtime) ? await runtime.autoCreditsModels(sessionId) : null;
+    if (picked) return c.json({ models: picked });
     const menu = await creditsMenuFor(creditsCapabilitiesFor(runtime, sessionId));
-    if (menu.kind === 'filtered') return res.json({ models: menu.models });
+    if (menu.kind === 'filtered') return c.json({ models: menu.models });
     // The service says nothing about protocols: the runtime's own menu, as before.
   }
 
   const models = await runtime.getSupportedModels(sessionId);
-  res.json({ models });
+  return c.json({ models });
 });
 
 export default router;

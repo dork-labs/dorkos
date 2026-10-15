@@ -106,6 +106,11 @@ describe('SessionHeader', () => {
     expect(screen.getByText('dork-os')).toBeInTheDocument();
   });
 
+  it('says "Chat", never "Session", when it knows neither agent nor directory (DOR-2845)', () => {
+    renderBar({ sessionTitle: 'Read the notes' });
+    expect(screen.getByTestId('session-agent-name')).toHaveTextContent('Chat');
+  });
+
   it('draws a generic mark rather than an empty face when there is no agent', () => {
     renderBar({ sessionDirectoryName: 'dork-os' });
     expect(screen.queryByText(VISUAL.emoji)).not.toBeInTheDocument();

@@ -144,6 +144,7 @@ export function registerOwnerReplacementLinkRoutes(
         tokenHash: hashSecret(token),
         claimant: { userId: user.id, name: user.name },
         oidcIssuer: config.oidc?.issuer ?? null,
+        authSecret: config.authSecret,
         now: now(),
       })
     ).catch((cause: unknown) => {

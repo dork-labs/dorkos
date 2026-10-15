@@ -148,6 +148,27 @@ DorkOS keeps your computer from falling asleep while agents work, then lets it s
   }}
 />
 
+### Heartbeats
+
+Whether your agents wake up on their own to check their work. Each agent's own `HEARTBEAT.md` says how it wakes; this switch turns it off for all of them at once.
+
+<TypeTable
+  type={{
+    'heartbeats.enabled': {
+      description:
+        'Let agents wake on their own, on a regular beat or when something happens. Off stops every beat at once.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'heartbeats.triageOnCredits': {
+      description:
+        'Whether quick checks run on DorkOS credits. Empty until you answer the offer on an agent’s Heartbeat page; nothing is spent until you say yes.',
+      type: 'boolean | null',
+      default: 'null',
+    },
+  }}
+/>
+
 ### Activity
 
 How long the Activity feed keeps its history. The record behind it keeps every action forever, whatever this says. See [The record](/docs/guides/audit-trail).
@@ -286,15 +307,15 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
     },
     'rooms.engagedWindowMinutes': {
       description:
-        'How long an agent keeps answering in a channel after you talk to it, before it goes back to needing an @mention. Talking to it again starts the clock over. Set it to 0 to require an @mention every time. Only you can change this.',
+        'How long your messages in a channel keep going to the agent you are talking to, before it needs an @mention again. The clock starts when the agent last answered you, or when you last @mentioned it — whichever happened more recently. Set it to 0 to require an @mention every time. Only you can change this.',
       type: 'integer (0--1440)',
-      default: '10',
+      default: '60',
     },
     'rooms.engagedWindowPosts': {
       description:
-        'How many messages from other people end that window, whichever runs out first. A quiet ten minutes and a busy ten messages are both reasons to stop assuming a question was meant for you. Only you can change this.',
+        'How many messages from other people end that window, whichever runs out first. A quiet hour and a busy fifteen messages are both reasons to stop assuming a question was meant for the agent. Only you can change this.',
       type: 'integer (0--100)',
-      default: '5',
+      default: '15',
     },
     'rooms.collectDebounceMs': {
       description:
@@ -313,18 +334,6 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
         "Whether an agent may skip a message that was plainly meant for somebody else instead of reading it properly first. 'routing' skips a message that named a different agent, and the replies in an exchange the agent is not part of. 'off' goes back to thinking about every overheard message. A skipped message is not lost — the agent still sees it as background next time it replies — and nothing that names the agent, or anything in a direct message, is ever skipped. Only you can change this.",
       type: "'off' | 'routing'",
       default: "'routing'",
-    },
-    'rooms.maxPostsPerTurn': {
-      description:
-        'How many messages one agent may post into a room during a single turn. Three is room for "on it", the answer, and a correction; the fourth is refused and the agent is told to say it in one message. Nothing you write is ever counted. Only you can change this.',
-      type: 'integer (1--10)',
-      default: '3',
-    },
-    'rooms.maxCanvasOpsPerTurn': {
-      description:
-        "How many times one agent may change a room's shared canvas during a single turn — putting a document on it, changing one, taking one off. Three is room for the thing it meant to show you, a second thing beside it, and a correction; the fourth is refused and the agent is told to put the rest in one change next turn. Nothing you do yourself is ever counted. Only you can change this.",
-      type: 'integer (1--10)',
-      default: '3',
     },
     'rooms.maxConcurrentTurnsPerAgent': {
       description:
@@ -599,6 +608,21 @@ DorkOS records only your **deviations** from each extension's default state, acr
 
 An extension absent from both lists uses its default: ships-on extensions stay on, ships-off extensions stay off. To turn a ships-on extension off, add its id to `disabled`; to turn a ships-off extension on, add its id to `enabled`.
 
+#### Where an extension's tab shows
+
+`ui.panelTabs` holds where each extension's right-panel tab shows, one entry per tab you changed. You change it from the panel (**Hide here**, **Show here**) or in **Settings → Extensions**, so there is rarely a reason to edit it by hand. A tab with no entry follows the extension's own default, or shows everywhere.
+
+<TypeTable
+  type={{
+    'ui.panelTabs': {
+      description:
+        'One entry per tab: `tab` is `<extension-id>:<tab-id>`, `show` lists the agents, rooms and pages it shows in, and `hide` lists where it is hidden even so. Agents can change it.',
+      type: 'object[]',
+      default: '[]',
+    },
+  }}
+/>
+
 #### Letting an extension run inside DorkOS
 
 An extension is code, in two places: some of it runs on your computer with the same reach DorkOS has, and the rest runs on the DorkOS page in your browser, signed in as you. Neither is a small thing to hand out, so DorkOS asks you about each extension once, and runs none of it until you answer.
@@ -615,7 +639,7 @@ Right after you turn on an extension, the inbox may ask once more: "Next time, t
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
-Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
+Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add an extension to that list could approve any code at all. DorkOS writes one entry itself: for an extension one of your agents builds with `create_extension`, unless you chose Careful. That entry names the new folder and the permissions it asks for today, so a copy from somewhere else, or a later version that asks for more, still waits for you. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,
@@ -640,9 +664,9 @@ Changing it applies to the next message you send in each chat — nothing you ha
 
 The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
 
-**And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
+**And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `autonomy`: a new chat edits files and runs commands without stopping to ask, and everything it does is recorded in Activity. Set it to `ask` if you want to approve each change first, or to `null` to let each runtime start where it used to, which is asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
-Choosing `autonomy` is the one that asks you first. DorkOS will not save it until you have read what Full autonomy means and confirmed it, and it writes down that you did — after that, every new chat starts with the approval prompts turned off, so agents act without stopping for your OK each time. They still ask when something genuinely needs your call, and still follow anything you have told them to check with you about. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, chat apps, and rooms have their own settings and their own, stricter rules.
+With `autonomy`, every new chat starts with the approval prompts turned off, so agents act without stopping for your OK each time. They still ask when something genuinely needs your call, and still follow anything you have told them to check with you about. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, chat apps, and rooms have their own settings and their own, stricter rules.
 
 <TypeTable
   type={{
@@ -654,9 +678,9 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.defaultTrustStop': {
       description:
-        'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". When null — how it ships — each runtime starts where it always did, which is asking first.',
+        'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". Ships as "autonomy": new chats work without stopping to ask. When null, each runtime starts where it always did, which is asking first. The Careful preset sets "ask".',
       type: '"ask" | "act" | "autonomy" | null',
-      default: 'null',
+      default: '"autonomy"',
     },
     'runtimes.claudeCode.defaultAccount': {
       description:
@@ -785,6 +809,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
       description:
         'How much a new OpenCode chat may do before it checks with you, overriding the setting above. Null follows the one above.',
       type: '"ask" | "act" | "autonomy" | null',
+      default: 'null',
+    },
+    'runtimes.doe.defaultModel': {
+      description:
+        'The model a new DorkOS chat on DorkOS credits starts on, when your credits cover it. When `null`, DorkOS picks. This never changes what pays for a chat.',
+      type: 'string | null',
       default: 'null',
     },
     'runtimes.codex.defaultModel': {
@@ -960,15 +990,15 @@ What your agents may do on their own, what waits for your yes, and what they can
 
 These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
 
-Choosing a preset (Careful, Balanced, or Full power) sets all twelve areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Careful to `ask`, Balanced to `act`, Full power to `autonomy`. Moving it to `autonomy` needs the same confirmation Full autonomy always needs; without it, the write is refused. Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
+Choosing a preset sets all twelve areas AND moves `runtimes.defaultTrustStop`, the global Files & commands stop: Trusted to `autonomy`, Careful to `ask`. (Balanced and Full power, from earlier versions, still read: Balanced moves it to `act`, Full power to `autonomy`.) Per-runtime stops (`runtimes.claudeCode.defaultTrustStop` and its siblings, documented under Runtimes above) are left alone by a preset and show up as changes on top of it.
 
 <TypeTable
   type={{
     'permissions.preset': {
       description:
-        'The starting point for every area: `careful`, `balanced` or `full`. `null` means you have not chosen yet, and agents work as they did before permissions existed.',
-      type: "'careful' | 'balanced' | 'full' | null",
-      default: 'null',
+        'The starting point for every area. `trusted`, how DorkOS ships: your agents work without asking, except for safety limits and reach and secrets, and everything they do is recorded in Activity. `careful`: agents ask first. `balanced` and `full` are older choices that still work. `null` reads as `trusted`.',
+      type: "'trusted' | 'careful' | 'balanced' | 'full' | null",
+      default: "'trusted'",
     },
     'permissions.defaults.areas': {
       description:
@@ -985,46 +1015,30 @@ Choosing a preset (Careful, Balanced, or Full power) sets all twelve areas AND m
   }}
 />
 
-DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
+DorkOS keeps two more values here; leave both alone. `permissions.upgradeSweptVersion` records which version last carried your old settings across on upgrade. `permissions.trustedStoresAppliedAt` records when DorkOS first let your agents message each other across projects. That happens once: if you turn it off in Team → Access, it stays off.
+
+If DorkOS ever has to replace a damaged config file with a fresh one, it keeps your Careful preset, the areas and actions you set to Ask or Blocked, and any Files & commands stop you set to Ask or Act. A fresh file would otherwise start you on Trusted.
 
 Each agent's own differences live in its `.dork/agent.json`, under `permissions` (`areas`, `actions`, and its own `filesAndCommands` stop).
 
 ### Full autonomy
 
-Turning a conversation up to Full autonomy asks you to confirm what that means first. The agent no longer stops for your approval before each action, so it is a setting you cannot notice in time to undo — which is why it asks twice. It still asks you when something genuinely needs your call, and still follows anything you have told it to check with you about; what changes is the approval prompt that used to halt each action, not the agent's judgment.
+At Full autonomy, a conversation's agent no longer stops for your approval before each action. It still asks you when something genuinely needs your call, and still follows anything you have told it to check with you about. What changes is the approval prompt that used to halt each action, not the agent's judgment. Choosing it is like choosing any other level: there is no extra confirmation.
 
-**So does any other setting that will not stop to ask.** Some agents cannot pause mid-turn to ask permission, so their middle setting ("Act") edits files and runs commands in your project without checking with you. DorkOS confirms before turning that on too, in the words of the setting you picked rather than borrowing the ones above. A read-only setting is left alone: it never asks because there is nothing to ask about.
+The same goes for any other setting that will not stop to ask. Some agents cannot pause mid-turn to ask permission, so their middle setting ("Act") edits files and runs commands in your project without checking with you.
 
-If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking you to confirm — one answer covers all of it. Settings → Login & security shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for a setting that won't stop for approval. **Resetting also turns off any Full-autonomy default for new chats** — that note is what let new chats start with the approval prompts off, so it goes when the note does. Nothing about a conversation you already have changes either way; only the confirmation comes back.
-
-You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; if you never chose one, it starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
-
-Reset takes effect everywhere within about half a minute. A browser tab you left open reads your settings from a copy it refreshes every 30 seconds, so a tab open at the moment you reset can still skip the dialog once before it catches up. Nothing is lost by that — it only means the confirmation returns a few seconds later on that tab than on the one you pressed Reset in.
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; that is Full autonomy unless you changed it. If you set it to `null`, a task starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
 
 <TypeTable
   type={{
-    'ui.autonomyAcknowledgedAt': {
+    'ui.trustNoticeSeenAt': {
       description:
-        'When you read what Full autonomy means and asked not to be shown it again. DorkOS writes this itself when you tick the box; Reset in Settings clears it back to null and turns off any Full-autonomy default for new chats.',
+        'When you saw the note that your agents now work without asking. DorkOS writes this itself, and once it is set the note does not come back.',
       type: 'string | null',
-      default: 'null',
-    },
-    'ui.fullPowerDecidedAt': {
-      description:
-        'When you answered the question about how much power your agents run with — whichever way you answered. DorkOS writes this itself, and once it is set you are never asked again.',
-      type: 'string | null',
-      default: 'null',
-    },
-    'ui.fullPowerChoice': {
-      description:
-        'What you chose: full power, or keep asking me first. Saying "keep asking me first" changes nothing anywhere, and you can move to full power later without being asked again.',
-      type: '"full" | "supervised" | null',
       default: 'null',
     },
   }}
 />
-
-This is a confirmation for you, not a lock against your agents. It makes sure a person cannot arrive in Full autonomy without having been told what it means. It is not a defence against a program on your machine calling the API directly — that is what local login is for.
 
 ### Cloud link
 
@@ -1079,12 +1093,69 @@ Linking this instance to a DorkOS account lets the account see and manage it. Ru
       type: "'none' | 'pending' | 'dismissed'",
       default: "'none'",
     },
+    'cloud.remote.mode': {
+      description:
+        'How this computer is reachable from your other devices: off, through your own ngrok account (byo), or through DorkOS (managed). Managed is not offered yet, so it stays off or byo. After the update that adds this setting, a computer whose own tunnel was already on starts as byo. Choosing a mode never changes your own ngrok settings.',
+      type: "'off' | 'byo' | 'managed'",
+      default: "'off'",
+    },
+    'cloud.remote.enrolmentId': {
+      description:
+        'Set only after you approve managed access for this computer, and cleared when you withdraw it. DorkOS writes this; do not edit it by hand.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.instanceId': {
+      description:
+        'Which link to your DorkOS account the approval belongs to. Unlinking clears it, so a new link always asks again. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.consentVersion': {
+      description: 'Which version of the managed access terms you agreed to. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.credentialRef': {
+      description:
+        'Where the managed access key is stored on this computer, encrypted. It names the stored key and never holds the key itself.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.credentialId': {
+      description: 'Which managed access key is in use. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.fingerprint': {
+      description:
+        'A short, safe-to-share summary of that key, for telling keys apart. Never the key.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.hosts': {
+      description:
+        'The web addresses this computer answers on with managed access. DorkOS writes this.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'cloud.remote.edgeProofRef': {
+      description:
+        'Where the secret that proves a request came through DorkOS is stored on this computer, encrypted. Never the secret itself.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.remote.edgeProofHeader': {
+      description: 'The name of the request header that carries that proof. DorkOS writes this.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 
 Set `DORKOS_CLOUD_CREDITS=0` to turn DorkOS credits off on a server. Anything set to run on credits then stops and says so, instead of running on another sign-in. The variable can only turn credits off, never on.
 
-Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
+Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). Credits, balance and plan calls follow it too. To send only those somewhere else, set `DORKOS_CLOUD_API_URL`. While linked, the instance checks in with the cloud on startup and every 15 minutes. If the account revokes the instance, the next check-in clears the local token and the instance is unlinked.
 
 Linking this computer again with the same DorkOS account can bring back the apps it connected through its earlier link, as long as that link was not removed from the account. If it was removed, or you link a different account or a different computer, connect those apps again.
 
@@ -1119,7 +1190,7 @@ Either way the limits below apply to both:
 
 ### Your profile
 
-Tell DorkBot what kind of work you do, and every agent on this machine knows who it works for. DorkBot asks once during setup. Your answer is saved here and shared only with your own agents. It is local-only; never included in any telemetry payload.
+Tell DorkBot what kind of work you do, and every agent on this machine knows who it works for. DorkBot asks once, with a card in the sidebar. Your answer is saved here and shared only with your own agents. It is local-only; never included in any telemetry payload.
 
 <TypeTable
   type={{
@@ -1157,6 +1228,24 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
       description:
         'When DorkBot asked what to call you and you answered or skipped it. Set automatically; you never edit it. DorkBot asks once, and only while your name or @handle is missing. Local-only; never included in any telemetry payload.',
       type: 'string | null',
+      default: 'null',
+    },
+    'profile.timezone': {
+      description:
+        'Your time zone, like "Europe/Berlin". The app fills it in from your browser the first time you open it, and never changes it after that. Until then, DorkOS uses the time zone of the computer it runs on. Change it in Settings › Profile › Your hours. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'profile.workingHours': {
+      description:
+        'The days and times you work, like `{ "days": [1, 2, 3, 4, 5], "start": "09:00", "end": "17:00" }`. Days are numbered from 0 (Sunday) to 6 (Saturday), and times use a 24-hour clock in your time zone. The day has to end after it starts. Empty means Monday to Friday, 9 to 5. Local-only; never included in any telemetry payload.',
+      type: 'object | null',
+      default: 'null',
+    },
+    'profile.away': {
+      description:
+        'That you are away, like `{ "until": "2026-10-20T00:00:00.000Z", "note": "On holiday" }`. An empty `until` means away until you say otherwise. Empty means you are here. DorkBot can set this when you tell it you are off. Local-only; never included in any telemetry payload.',
+      type: 'object | null',
       default: 'null',
     },
   }}
@@ -1261,7 +1350,15 @@ The choice applies to all users of this installation without sharing their profi
       type: 'boolean',
       default: 'false',
     },
+    'spaces.official.url': {
+      description:
+        'The link of one official space that shows even with Spaces off. Empty means none.',
+      type: 'string',
+      default: "''",
+    },
   }}
 />
 
 Settings → Advanced → Experiments lists **Spaces**, off by default. While it is off, nothing about spaces shows in the app, and the app refuses requests that reach a space. Your space connections stay saved, so turning it back on finds them where you left them. Your own channels and #team are not spaces and work the same either way. Agents can read this setting but cannot change it.
+
+`spaces.official.url` names one official space by its link: the space's own `/c/...` link, or its short address. A link to a whole server does not count. That one space shows in the switcher and can be joined even while Spaces is off. Every other space stays hidden, and so do starting and hosting spaces. It is empty by default, which means there is no official space and nothing changes. The `DORKOS_OFFICIAL_SPACE_URL` environment variable overrides it. Agents can read this setting but cannot change it.

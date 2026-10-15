@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, open, lstat, rename, unlink } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import type { Request, Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '@dorkos/db';
 import type { WriteFileRequest } from '@dorkos/shared/schemas';
 import { sha256 } from '../../../../lib/file-route-guards.js';
@@ -35,7 +35,11 @@ export type NormalFileSaveOutcome =
 
 const services = new WeakMap<
   object,
-  (req: Request, res: Response, input: WriteFileRequest) => Promise<NormalFileSaveOutcome>
+  (
+    req: IncomingMessage,
+    res: ServerResponse,
+    input: WriteFileRequest
+  ) => Promise<NormalFileSaveOutcome>
 >();
 /** Refuse a swapped app.locals shape; only the actual constructed finite facade is accepted. */
 export function requireNormalFileSaveService(value: unknown): NormalFileSaveService {
@@ -46,8 +50,8 @@ export function requireNormalFileSaveService(value: unknown): NormalFileSaveServ
 /** Route invocation uses captured native # execution, never a public saveHttp-shaped callback. */
 export function saveRecognizedNormalFileService(
   value: unknown,
-  req: Request,
-  res: Response,
+  req: IncomingMessage,
+  res: ServerResponse,
   input: WriteFileRequest
 ): Promise<NormalFileSaveOutcome> {
   const service = requireNormalFileSaveService(value);
@@ -66,10 +70,18 @@ export class NormalFileSaveService {
     this.#store = store;
     services.set(this, (req, res, input) => this.#save(req, res, input));
   }
-  #save(req: Request, res: Response, input: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  #save(
+    req: IncomingMessage,
+    res: ServerResponse,
+    input: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     return runInstallationFileSave(this.#owner, this.#db, this.#store, req, res, input);
   }
-  saveHttp(req: Request, res: Response, input: WriteFileRequest): Promise<NormalFileSaveOutcome> {
+  saveHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+    input: WriteFileRequest
+  ): Promise<NormalFileSaveOutcome> {
     return this.#save(req, res, input);
   }
 }

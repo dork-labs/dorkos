@@ -7,6 +7,11 @@
  * @module shared/model/chat-message-types
  */
 import type {
+  ChatMessageStamp,
+  ChatStopNotice,
+  RoomMessageStamp,
+} from '@dorkos/shared/chat-messages';
+import type {
   AlwaysAllowScope,
   QuestionItem,
   MessagePart,
@@ -28,6 +33,18 @@ export interface ChatMessage {
   compactMetadata?: CompactMetadata;
   commandName?: string;
   commandArgs?: string;
+  /**
+   * Messages another chat sent, when this user message carried them (spec
+   * `spin-off-chats` §2). Stamped by the server; the row draws the sender from
+   * here and never from the text.
+   */
+  chatMessages?: ChatMessageStamp[];
+  /**
+   * The room post this user message carried into a room-attached chat
+   * (DOR-2113). Filled in by the server; the row draws its author from here,
+   * never "You" unless the room says the person wrote it.
+   */
+  roomMessage?: RoomMessageStamp;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
   /**
@@ -37,6 +54,12 @@ export interface ChatMessage {
    * transcript entry — visibly not a turn — rather than a message bubble.
    */
   _stagedContext?: boolean;
+  /**
+   * @internal Client-only: this row is a "Stopped by <agent> · <chat>" line,
+   * placed in the transcript where another chat stopped this one (spec
+   * `spin-off-chats` §6). Never a message anybody wrote.
+   */
+  _chatStop?: ChatStopNotice;
 }
 
 /** Client-side view of a single hook execution attached to a tool call. */
@@ -156,6 +179,10 @@ export interface TransportErrorInfo {
   message: string;
   /** Whether the user can retry the same action. */
   retryable: boolean;
+  /** The server's refusal code, when it sent one (e.g. `AGENT_PAUSED`). */
+  code?: string;
+  /** With `AGENT_PAUSED`: the paused agent's id, so the app can offer Resume. */
+  agentId?: string;
 }
 
 export type ChatStatus = 'idle' | 'streaming' | 'error';

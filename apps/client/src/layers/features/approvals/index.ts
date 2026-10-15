@@ -39,4 +39,3 @@ export {
 // Composing this rather than re-deriving it is what keeps one agent the same
 // colour and the same badge on both cards.
 export { RequestingAgent } from './ui/RequestingAgent';
-export { AutonomyAcknowledgementRow } from './ui/AutonomyAcknowledgementRow';

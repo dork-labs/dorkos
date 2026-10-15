@@ -30,7 +30,6 @@
  *
  * @module middleware/audit-request-fallback
  */
-import type { NextFunction, Request, Response } from 'express';
 import type { AuditOperation, AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
@@ -98,17 +97,24 @@ function outcomeOf(status: number): AuditOutcome {
 }
 
 /**
- * Express middleware: record a mutating `/api` request nothing else recorded.
- * Mounted right after `auditActor`, whose scope it reads.
+ * The fallback row for one request, ready to write once its response has
+ * finished, or `undefined` when the request is not one the fallback records.
  *
- * @param req - The request.
- * @param res - The response.
- * @param next - The next handler.
+ * The chain (`http/api-chain.ts`) calls the returned function from the Node
+ * response's `finish` event with the status that went out.
+ *
+ * @param method - The request method.
+ * @param url - The request URL as sent (path and query).
+ * @param scope - The request's audit scope (`middleware/audit-actor.ts`).
+ * @returns A function taking the final status, or `undefined`.
  */
-export function auditRequestFallback(req: Request, res: Response, next: NextFunction): void {
-  const operation = MUTATING[req.method];
-  const scope = res.locals.auditScope as AuditActorContext | undefined;
-  const path = req.originalUrl.split('?')[0] ?? req.originalUrl;
+export function auditFallbackFor(
+  method: string,
+  url: string,
+  scope: AuditActorContext | undefined
+): ((status: number) => void) | undefined {
+  const operation = MUTATING[method];
+  const path = url.split('?')[0] ?? url;
   if (
     !operation ||
     !scope ||
@@ -116,9 +122,9 @@ export function auditRequestFallback(req: Request, res: Response, next: NextFunc
     CONVERSATION.some((re) => re.test(path)) ||
     NOT_ACTIONS.some((re) => re.test(path))
   ) {
-    return next();
+    return undefined;
   }
-  res.on('finish', () => {
+  return (status) => {
     if (scope.recorded) return;
     const route = routePatternOf(path);
     // The scope is passed explicitly: `finish` fires from the socket, outside
@@ -130,13 +136,12 @@ export function auditRequestFallback(req: Request, res: Response, next: NextFunc
         ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
       },
       ...(scope.credential ? { credential: scope.credential } : {}),
-      action: `http.${req.method.toLowerCase()}`,
+      action: `http.${method.toLowerCase()}`,
       operation,
-      target: { type: 'route', id: route, name: `${req.method} ${route}` },
-      outcome: outcomeOf(res.statusCode),
-      ...(res.statusCode >= 400 ? { error: `HTTP ${res.statusCode}` } : {}),
-      summary: `${req.method} ${route} (${res.statusCode})`,
+      target: { type: 'route', id: route, name: `${method} ${route}` },
+      outcome: outcomeOf(status),
+      ...(status >= 400 ? { error: `HTTP ${status}` } : {}),
+      summary: `${method} ${route} (${status})`,
     });
-  });
-  next();
+  };
 }

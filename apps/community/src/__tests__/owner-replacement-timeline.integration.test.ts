@@ -1107,8 +1107,9 @@ describe('requests are open on a host with mail', () => {
     expect(startup).toMatch(
       /const noticeComposers: NoticeComposers = \{\s*\.\.\.ownerReplacementComposers\(config\),\s*\.\.\.signInLinkComposers\(config\),\s*(?:\/\/[^\n]*\n\s*)?\.\.\.emailLinkComposers\(config\),\s*\};/u
     );
+    // `live` is the started live-stream hub, which only main.ts can stop on shutdown.
     expect(startup).toMatch(
-      /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*\}\)/u
+      /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*live,\s*\}\)/u
     );
     expect(startup).toMatch(
       /startMailDelivery\(\{\s*config,\s*pool,\s*composers: noticeComposers,\s*beforeEachTick: \(\) => resolveEmailLinkRequests\(pool, config\),\s*\}\)/u

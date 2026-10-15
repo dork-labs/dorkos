@@ -80,6 +80,7 @@ import {
   type ResolvedPermission,
 } from '@dorkos/shared/permissions';
 
+import { outsiderBoundOf } from '../turn-power/turn-levels.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
 import { logger } from '../../../lib/logger.js';
@@ -118,9 +119,15 @@ export interface PermissionListedAction {
   area: PermissionAreaId | null;
   /** The MCP tool name the action is listed under, when it has one. */
   toolName?: string;
+  /** It runs someone else's code, so an area-level Allowed still asks. */
+  consent?: GatedAction['consent'];
 }
 
-/** What an install is before anybody chose a preset: today's behaviour. */
+/**
+ * What the gate reads before boot wires the live config: an install that never
+ * chose a preset, which resolves as Trusted (ADR `261006-225605`). Boot wires
+ * the live config before any route or session can reach the gate.
+ */
 const UNCHOSEN: PermissionConfigInput = { preset: null, defaults: { areas: {}, actions: {} } };
 
 /**
@@ -170,8 +177,8 @@ let sources: PermissionGateSources = DEFAULT_SOURCES;
  * Wire the gate to the live config (and, in tests, a manifest reader). Called
  * once at boot beside `initCapabilityTierGate`.
  *
- * Until it runs, the config reads as "no preset chosen" (Unchanged), which is
- * exactly the behaviour before permissions existed, so nothing opens up.
+ * Until it runs, the config reads as "no preset chosen" (Trusted), and no
+ * agent's own settings are read.
  *
  * @param next - The sources to use; either half may be omitted to keep the default.
  */
@@ -196,7 +203,10 @@ export function permissionGateSources(): PermissionGateSources {
 }
 
 /** A gated action, with the area it declares. */
-export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForInput'> & {
+export type PermissionGatedAction = Pick<
+  GatedAction,
+  'id' | 'tier' | 'areasForInput' | 'consent'
+> & {
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
   /**
@@ -210,6 +220,17 @@ export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForI
    */
   source?: CapabilitySource;
 };
+
+/**
+ * Actions no permission setting can make ask or block: the emergency stop
+ * (spec `audit-trail` PR5). Pausing an agent, and lifting a pause, must work for
+ * anyone at once under every preset, so neither is decided in any area, even if
+ * a later edit gives one an area or a person writes an action-level entry for
+ * it. The tier still decides: both are `act`, which is allowed, except for an
+ * agent whose access was revoked (`enforceCapabilityTier`). Who may lift a
+ * pause is the pause service's rule (never the paused agent itself).
+ */
+export const NEVER_ASKS_ACTIONS: ReadonlySet<string> = new Set(['agent.pause', 'agent.resume']);
 
 /** How strict a state is: Blocked beats Ask beats Allowed. */
 const STATE_RANK: Record<ResolvedPermission['state'], number> = {
@@ -280,8 +301,15 @@ export async function resolveCallPermission(request: {
   identity?: AgentIdentity;
   /** The parsed input, so an action whose input reaches other areas is decided on it. */
   input?: unknown;
+  /** The calling session, when the surface verified one. */
+  sessionId?: string;
 }): Promise<CallPermission | null> {
   const { action, identity } = request;
+  // Read from the turn's own record, never from the model: the session's
+  // latest turn, or for a caller with no session, any running turn of its agent.
+  const strangerTurn = outsiderBoundOf(request.sessionId, identity?.agentPath) !== undefined;
+  // The emergency stop is decided by its tier alone, whatever it declares.
+  if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
   const areas = areasForCall(action, request.input);
   if (areas.length === 0) return null;
@@ -330,10 +358,22 @@ export async function resolveCallPermission(request: {
       area,
       // The action's own entries belong to its own area only.
       ...(index === 0 ? { actionId: action.id } : {}),
-      ...(index === 0 && (action.describeApprovalChange || isAlwaysAskingExtensionTool(action))
+      // An area the input reaches beyond the action's own is a setting only a
+      // person may change (`areasForInput`, used by `config_patch`), so it always
+      // asks, whatever the preset: Trusted allows Permissions for our agents'
+      // own changes, never for a person's settings.
+      ...((index === 0 && (action.describeApprovalChange || isAlwaysAskingExtensionTool(action))) ||
+      index > 0
         ? { alwaysAsks: true }
         : {}),
       tier: action.tier,
+      ...(action.consent ? { consent: action.consent } : {}),
+      // No identity: the defaults decide (spec D11), but a destructive action
+      // or a change to permissions still asks, because trust by default is for
+      // our own agents. A turn that read a stranger's words is held the same
+      // way: trust never extends to strangers.
+      ...(identity ? {} : { unidentified: true }),
+      ...(strangerTurn ? { strangerTurn: true } : {}),
       config,
       ...(agent ? { agent } : {}),
       ...(identity?.inactive ? { inactive: true } : {}),

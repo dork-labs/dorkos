@@ -1,6 +1,7 @@
 /**
- * The four things you can do to an agent you manage, and the confirmations two
- * of them need (spec `profile-unification` §1.2).
+ * The things you can do to an agent you manage, and the confirmations they
+ * need (spec `profile-unification` §1.2), plus pausing any agent everywhere
+ * (spec `audit-trail` PR5), which DorkBot allows too.
  *
  * Ported from the retired `AgentManagementMenu`, whose step machine and
  * wording this keeps: the same three confirmations, the same undo on
@@ -30,12 +31,13 @@ import {
   useDeleteAgentData,
   useDeniedAgents,
   useDenyAgent,
+  usePauseAgent,
   useRegisterAgent,
   useUnregisterAgent,
 } from '@/layers/entities/mesh';
 
 /** Which confirmation is open, or `null` for none. */
-export type ProfileAgentStep = 'block' | 'unregister' | 'delete' | null;
+export type ProfileAgentStep = 'pause' | 'block' | 'unregister' | 'delete' | null;
 
 export interface ProfileAgentActionsProps {
   /** The agent being acted on. */
@@ -81,6 +83,8 @@ export function ProfileAgentActions({
   onStepChange,
 }: ProfileAgentActionsProps) {
   const [typed, setTyped] = useState('');
+  const [reason, setReason] = useState('');
+  const pauseAgent = usePauseAgent();
   const unregisterAgent = useUnregisterAgent();
   const registerAgent = useRegisterAgent();
   const denyAgent = useDenyAgent();
@@ -94,6 +98,21 @@ export function ProfileAgentActions({
   function close() {
     onStepChange(null);
     setTyped('');
+    setReason('');
+  }
+
+  function pause() {
+    if (agentId === null) return;
+    const why = reason.trim();
+    pauseAgent.mutate(
+      { agentId, ...(why ? { reason: why } : {}) },
+      {
+        onSuccess: () => {
+          toast(`${name} paused`);
+          close();
+        },
+      }
+    );
   }
 
   function block() {
@@ -155,6 +174,43 @@ export function ProfileAgentActions({
   return (
     <ResponsiveDialog open={step !== null} onOpenChange={(open) => !open && close()}>
       <ResponsiveDialogContent className="min-h-0 sm:max-w-md">
+        {step === 'pause' && (
+          <>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Pause {name} everywhere?</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>Its work stops now. Nothing new starts until someone resumes it.</p>
+                  <p>Messages and runs it misses aren’t replayed later.</p>
+                </div>
+              </ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <ResponsiveDialogBody>
+              <div className="space-y-2">
+                <label htmlFor="profile-pause-reason" className="text-sm font-medium">
+                  Reason (optional)
+                </label>
+                <Input
+                  id="profile-pause-reason"
+                  data-testid="pause-reason-input"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  maxLength={500}
+                  autoComplete="off"
+                />
+              </div>
+            </ResponsiveDialogBody>
+            <ResponsiveDialogFooter>
+              <ResponsiveDialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </ResponsiveDialogClose>
+              <Button disabled={pauseAgent.isPending} onClick={pause}>
+                Pause agent
+              </Button>
+            </ResponsiveDialogFooter>
+          </>
+        )}
+
         {step === 'block' && (
           <>
             <ResponsiveDialogHeader>

@@ -33,6 +33,7 @@ import {
   AGENT,
   DEGRADED,
   DEGRADED_ON_DEFAULT,
+  DOE_AT_REST,
   DELEGATING,
   HEALTHY,
   ABSORBED_BY_CHIP,
@@ -198,7 +199,7 @@ export function StatusLineShowcases() {
         <ShowcaseDemo className="overflow-x-auto">
           <div className="space-y-5">
             {TIER_WIDTHS.map((width) => (
-              <BudgetedLine key={width} scenario={DEGRADED} width={width} />
+              <BudgetedLine key={width} scenario={DEGRADED} width={width} pins={['model']} />
             ))}
           </div>
         </ShowcaseDemo>
@@ -207,7 +208,7 @@ export function StatusLineShowcases() {
           The same tier floor, holding the longest permission label DorkOS ships
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={648} />
+          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={648} pins={['model']} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Delegating — twelve subagents, drawn as a whole number</ShowcaseLabel>
@@ -280,15 +281,15 @@ export function StatusLineShowcases() {
         </p>
         <p className="text-muted-foreground text-xs">
           The 648px rows are the <code>full</code> tier at its floor holding everything that can
-          promote — the tightest the widest tier ever gets. It used to be the tightest by more than
-          it admitted: the agent chip rendered ~22px past its own box and the context item ~39px
-          past its, each painting over the item beside it, because neither could shrink (DOR-461).
-          Both can now, so a width the budget over-promised degrades into an ellipsis. The row
-          itself was never able to report that — <code>scrollWidth ≤ clientWidth</code> holds on an{' '}
-          <code>overflow-hidden</code> row with shrinkable clusters whether the content fit or was
-          absorbed — so the guard is geometric instead:{' '}
-          <code>apps/e2e/tests/chat/status-line-fit.spec.ts</code> measures these rows and fails
-          when two items’ painted extents intersect.
+          promote, with the model pinned (it shows only when pinned) — the tightest the widest tier
+          ever gets. It used to be the tightest by more than it admitted: the agent chip rendered
+          ~22px past its own box and the context item ~39px past its, each painting over the item
+          beside it, because neither could shrink (DOR-461). Both can now, so a width the budget
+          over-promised degrades into an ellipsis. The row itself was never able to report that —{' '}
+          <code>scrollWidth ≤ clientWidth</code> holds on an <code>overflow-hidden</code> row with
+          shrinkable clusters whether the content fit or was absorbed — so the guard is geometric
+          instead: <code>apps/e2e/tests/chat/status-line-fit.spec.ts</code> measures these rows and
+          fails when two items’ painted extents intersect.
         </p>
         <p className="text-muted-foreground text-xs">
           The single row under the second heading is the same 648px carrying the longest permission
@@ -307,6 +308,14 @@ export function StatusLineShowcases() {
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={HEALTHY} width={648} />
           <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={648} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          A DorkOS chat at rest — DorkOS picks the model, so neither Model nor Runs on shows
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={DOE_AT_REST} width={648} />
+          <BudgetedLine scenario={DOE_AT_REST} width={648} pins={['model']} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>

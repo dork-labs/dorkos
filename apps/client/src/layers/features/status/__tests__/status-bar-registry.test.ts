@@ -26,7 +26,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     permissionMode: 'default',
     permissionDescriptor: null,
     plan: null,
-    runtime: { isDefault: true, canSelect: false },
+    runtime: { type: 'claude-code', isDefault: true, canSelect: false },
     account: null,
     usage: null,
     usageStale: false,
@@ -49,8 +49,16 @@ function severityOf(key: StatusBarItemKey, ctx: StatusPromotionContext): number 
 }
 
 describe('STATUS_BAR_REGISTRY — quiet by default', () => {
-  it('shows only identity, directory, and model on a resting session', () => {
-    expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd', 'model']);
+  it('shows only identity and directory on a resting session', () => {
+    expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd']);
+  });
+
+  it('keeps the model quiet on every runtime: DorkOS picks it, and a pin shows it', () => {
+    for (const type of ['claude-code', 'codex', 'opencode', 'doe']) {
+      const ctx = restingContext({ runtime: { type, isDefault: false, canSelect: true } });
+      expect(getStatusBarItem('model')!.promote(ctx)).toBe(false);
+    }
+    expect(isPinnable(getStatusBarItem('model')!)).toBe(true);
   });
 
   it('never lets cache into the line', () => {
@@ -101,8 +109,8 @@ describe('STATUS_BAR_REGISTRY — the account chip', () => {
 
   it.each(['ok', 'unknown'] as const)('ranks with runtime when it is %s', (chipState) => {
     for (const runtime of [
-      { isDefault: true, canSelect: false },
-      { isDefault: false, canSelect: false },
+      { type: 'claude-code', isDefault: true, canSelect: false },
+      { type: 'codex', isDefault: false, canSelect: false },
     ]) {
       const ctx = restingContext({ runtime, account: { chipState } });
       expect(severityOf('account', ctx)).toBe(severityOf('runtime', ctx));
@@ -158,20 +166,42 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     }
   );
 
+  // Picking Ask first used to drop the item, and its open popover, out from
+  // under the person, taking the "make it the default" offer with it.
+  it('keeps permissions on the line at the safe stop while the picker is open', () => {
+    expect(promotedKeys(restingContext())).not.toContain('permission');
+    expect(promotedKeys(restingContext({ permissionPickerOpen: true }))).toContain('permission');
+    expect(severityOf('permission', restingContext({ permissionPickerOpen: true }))).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'acceptEdits' }))
+    );
+  });
+
   it('promotes runtime when it is not the default', () => {
     expect(
-      promotedKeys(restingContext({ runtime: { isDefault: false, canSelect: false } }))
+      promotedKeys(
+        restingContext({ runtime: { type: 'codex', isDefault: false, canSelect: false } })
+      )
     ).toContain('runtime');
   });
 
   it('promotes runtime pre-launch, while it can still be chosen', () => {
     expect(
-      promotedKeys(restingContext({ runtime: { isDefault: true, canSelect: true } }))
+      promotedKeys(
+        restingContext({ runtime: { type: 'claude-code', isDefault: true, canSelect: true } })
+      )
     ).toContain('runtime');
   });
 
   it('keeps runtime quiet on a started session using the default', () => {
     expect(promotedKeys(restingContext())).not.toContain('runtime');
+  });
+
+  it('never promotes Runs on for a DorkOS chat, default or not, chosen or not', () => {
+    for (const isDefault of [true, false])
+      for (const canSelect of [true, false])
+        expect(
+          promotedKeys(restingContext({ runtime: { type: 'doe', isDefault, canSelect } }))
+        ).not.toContain('runtime');
   });
 
   it.each(['warning', 'exhausted'] as const)('promotes usage when it is %s', (state) => {
@@ -296,7 +326,10 @@ describe('STATUS_BAR_REGISTRY — severity ranking', () => {
       ['context', restingContext({ contextPercent: 74 })],
       ['permission', restingContext({ permissionMode: 'plan' })],
       ['subagents', restingContext({ subagentsInFlight: 2 })],
-      ['runtime', restingContext({ runtime: { isDefault: false, canSelect: false } })],
+      [
+        'runtime',
+        restingContext({ runtime: { type: 'codex', isDefault: false, canSelect: false } }),
+      ],
       ['git', restingContext({ git: { dirty: true, onDefaultBranch: true } })],
       ['model', restingContext()],
       ['cwd', restingContext()],
@@ -325,7 +358,10 @@ describe('STATUS_BAR_REGISTRY — severity ranking', () => {
     expect(subagents).toBeLessThan(elevated);
     // Still above the configuration facts — it is news, just never a problem.
     expect(subagents).toBeGreaterThan(
-      severityOf('runtime', restingContext({ runtime: { isDefault: false, canSelect: false } }))
+      severityOf(
+        'runtime',
+        restingContext({ runtime: { type: 'codex', isDefault: false, canSelect: false } })
+      )
     );
   });
 

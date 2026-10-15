@@ -662,7 +662,7 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 ## 10. HTTP API reference
 
-All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
+All endpoints mount under `/api/marketplace/*`, served from the Hono `/api` app. The routes factory is `createMarketplaceRoutes(deps)` in `apps/server/src/routes/marketplace.ts`, handed its deps by `startup/marketplace.ts` only when the marketplace starts. Every response is JSON.
 
 | Method | Path                          | Body                                                         | Response                                                                                                                                             |
 | ------ | ----------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

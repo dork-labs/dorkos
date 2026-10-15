@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createTasksRouter } from '../tasks.js';
+import { createTasksRoutes } from '../tasks.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import {
@@ -174,7 +174,6 @@ function wireEscalationService(): EscalationService {
 }
 
 describe('Tasks routes', () => {
-  let app: express.Application;
   let store: TaskStore;
   let scheduler: ReturnType<typeof createMockScheduler>;
   let db: Db;
@@ -183,20 +182,17 @@ describe('Tasks routes', () => {
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = createMockScheduler();
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
     );
-    // Error handler to surface errors instead of hanging
-    app.use(
-      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-        res.status(500).json({ error: err.message });
-      }
-    );
-
-    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -223,6 +219,18 @@ describe('Tasks routes', () => {
       expect(res.body).toHaveLength(1);
       expect(res.body[0].name).toBe('Test');
       expect(res.body[0].nextRun).toBe('2026-03-01T00:00:00.000Z');
+    });
+
+    it('says when each schedule last started a run, and null for one that never ran (DOR-2914)', async () => {
+      const ran = store.createTask(taskInput({ name: 'Ran', prompt: 'p', cron: '0 * * * *' }));
+      store.createTask(taskInput({ name: 'Never', prompt: 'p', cron: '0 * * * *' }));
+      const run = store.createRun(ran.id, 'scheduled');
+
+      const res = await request(fixtureServer).get('/api/tasks');
+
+      const byName = new Map(res.body.map((t: { name: string }) => [t.name, t]));
+      expect((byName.get('Ran') as { lastRunAt: string }).lastRunAt).toBe(run.startedAt);
+      expect((byName.get('Never') as { lastRunAt: null }).lastRunAt).toBeNull();
     });
 
     it('previews a parked schedule’s next runs, from its own cron and timezone (DOR-1394)', async () => {
@@ -784,7 +792,6 @@ describe('Tasks routes', () => {
  * much alive.
  */
 describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
-  let app: express.Application;
   let store: TaskStore;
   let db: Db;
   let relay: { publish: ReturnType<typeof vi.fn> };
@@ -814,14 +821,18 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
       },
       relay: relay as unknown as RelayCore,
     });
-    app = express();
-    app.use(express.json());
-    app.use(
-      '/api/tasks',
-      createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
-    );
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(
+      honoGroupListener({
+        path: '/api/tasks',
+        routes: createTasksRoutes({
+          store,
+          scheduler,
+          registrar: new TaskRegistrar({ store, scheduler }),
+          dorkHome: DORK_HOME,
+        }),
+      })
+    );
   });
 
   afterEach(() => {

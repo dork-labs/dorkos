@@ -43,7 +43,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../../../../core/mcp-tools/mcp-tool-tiers.js';
 import {
   resetAutoModeStops,
   autoModeStopStats,
@@ -311,7 +311,7 @@ describe('the PostToolUse hook', () => {
       // tool returned. Neither can reach the note, because the builder is never
       // handed either one.
       const result = (await call(
-        postToolUse(inSessionToolName('relay_send'), value, value)
+        postToolUse(inSessionToolName('relay_notify_user'), value, value)
       )) as Record<string, unknown>;
       const specific = result.hookSpecificOutput as Record<string, unknown>;
       expect(specific.classifierContext).toBe(PINNED.act);

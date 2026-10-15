@@ -5,7 +5,7 @@
  * (DOR-2549). Driven through the REAL attachment route and the real local file store.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createHash } from 'node:crypto';
@@ -127,9 +127,7 @@ describe('a Community removal drops the local files of a delivered post', () => 
       attachmentBytes: store,
       publishRevisions: (localRoomId, seqs) => service.publishEntryRevisions(localRoomId, seqs),
     });
-    const app = express();
-    app.use(express.json());
-    app.use('/api/rooms', roomsRouter);
+    const app = honoGroupListener({ path: '/api/rooms', routes: roomsRouter });
     fixtureTarget.mount(app);
   });
 

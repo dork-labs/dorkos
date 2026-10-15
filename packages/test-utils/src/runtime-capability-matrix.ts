@@ -704,7 +704,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
       'claude-code': {
         status: 'partial',
         reason:
-          'Helpers report back on a warm session; background shells, timers and hooks do not yet.',
+          'Helpers, shells and session timers report back on a warm session; async hooks and durable timers do not.',
         ticket: 'DOR-2717',
       },
       codex: {

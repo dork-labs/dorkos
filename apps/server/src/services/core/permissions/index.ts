@@ -8,7 +8,7 @@ import { isAlwaysAskingExtensionTool } from '../capabilities/extension-contribut
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 
-import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tools/mcp-tool-tiers.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
@@ -18,7 +18,6 @@ import { readAgentPermissionsFromManifest } from '../capabilities/permission-enf
 import { narrowArrivedPermissions, type NarrowingContext } from './arrival-narrowing.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 
-import { hasStandingAutonomyAck } from '../approvals/autonomy-consent.js';
 import {
   PermissionService,
   type PermissionActionInfo,
@@ -71,6 +70,7 @@ export function permissionActions(
     title: cap.title,
     tier: cap.tier,
     area: cap.area,
+    ...(cap.consent ? { consent: cap.consent } : {}),
     ...(cap.surfaces.mcp ? { toolName: cap.surfaces.mcp.toolName } : {}),
     ...(cap.describeApprovalChange || isAlwaysAskingExtensionTool(cap)
       ? { alwaysAsks: true as const }
@@ -84,6 +84,7 @@ export function permissionActions(
     title: tool.title,
     tier: tool.tier,
     area: tool.area,
+    ...(tool.consent ? { consent: tool.consent } : {}),
     toolName: id,
   }));
   return [...capabilities, ...tools];
@@ -103,6 +104,21 @@ export interface PermissionServiceWiring {
   observer: PermissionObserver;
   /** The agents whose folder's settings have not been screened yet. */
   arrivals: ArrivalRecord;
+}
+
+/**
+ * Every registered agent as the boot-time permission sweeps name it: id, name,
+ * display name and folder.
+ *
+ * @param mesh - The agent registry.
+ */
+export function permissionAgentRefs(mesh: Pick<MeshCore, 'listWithPaths'>): PermissionAgentRef[] {
+  return mesh.listWithPaths().map((a) => ({
+    id: a.id,
+    name: a.name,
+    ...(a.displayName ? { displayName: a.displayName } : {}),
+    projectPath: a.projectPath,
+  }));
 }
 
 /**
@@ -227,17 +243,12 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
   return new PermissionService({
     config: {
       get: () => wiring.config.get('permissions'),
-      set: (next) => wiring.config.set('permissions', next),
+      // Merged onto the stored section, so a field the service does not know
+      // (`trustedStoresAppliedAt`) is never dropped by its write.
+      set: (next) =>
+        wiring.config.set('permissions', { ...wiring.config.get('permissions'), ...next }),
       trustStops: () => readTrustStops(wiring.config),
-      setGlobalTrustStop: (stop, acknowledge) => {
-        // The acknowledgement lands before the stop, so no reader can catch
-        // Full autonomy without the consent that licenses it.
-        if (acknowledge) {
-          wiring.config.set('ui', {
-            ...wiring.config.get('ui'),
-            autonomyAcknowledgedAt: new Date().toISOString(),
-          });
-        }
+      setGlobalTrustStop: (stop) => {
         wiring.config.setDot('runtimes.defaultTrustStop', stop);
       },
       setRuntimeTrustStop: (runtime, stop) => {
@@ -246,12 +257,6 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
         wiring.config.setDot(path, stop);
         return true;
       },
-      hasAutonomyAck: hasStandingAutonomyAck,
-      recordAutonomyAck: () =>
-        wiring.config.set('ui', {
-          ...wiring.config.get('ui'),
-          autonomyAcknowledgedAt: new Date().toISOString(),
-        }),
     },
     agents: {
       list: (): PermissionAgentRef[] => {

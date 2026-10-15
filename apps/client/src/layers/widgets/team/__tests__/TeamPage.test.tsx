@@ -328,7 +328,11 @@ describe('TeamPage — grouping by manager', () => {
 
     await user.click(chip('Group by owner'));
 
-    const headings = screen.getAllByRole('heading', { level: 2 });
+    // The Commitments section below the roster has its own heading; only the
+    // owner clusters count here.
+    const headings = screen
+      .getAllByRole('heading', { level: 2 })
+      .filter((heading) => heading.textContent !== 'Commitments');
     expect(headings).toHaveLength(3);
     expect(within(headings[0]!).getByText('Dorian')).toBeInTheDocument();
     expect(within(headings[0]!).getByText('@dorian')).toBeInTheDocument();
@@ -498,5 +502,62 @@ describe('the query-restore pause (DOR-1419)', () => {
     // that the loading state above is read off `isRestoring`, not off a request
     // that happened to still be in flight.
     expect(transport.getTeamRoster).not.toHaveBeenCalled();
+  });
+});
+
+describe('TeamPage — commitments', () => {
+  /** Someone else's person, and the cartographer re-homed onto them. */
+  const priya: TeamMember = {
+    id: 'person-priya',
+    kind: 'human',
+    displayName: 'Priya',
+    handle: 'priya',
+    isSelf: false,
+    ownerId: null,
+    origin: 'local',
+    person: { role: null, lastSeenAt: null },
+  } as TeamMember;
+  const byId = (id: string) => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
+  const warden = byId('agent-warden');
+  const theirs: TeamMember = { ...byId('agent-cartographer'), ownerId: priya.id };
+
+  const commitment = (id: string, agentId: string, what: string) => ({
+    id,
+    agentId,
+    to: null,
+    what,
+    dueAt: null,
+    state: 'open' as const,
+    overdue: false,
+    sourceSessionId: null,
+    sourceRoomEntryId: null,
+    createdAt: '2026-10-10T09:00:00.000Z',
+    closedAt: null,
+    note: null,
+  });
+
+  it('offers controls on your own agents’ commitments only', async () => {
+    const members = [
+      ...MOCK_TEAM_ROSTER.filter((member) => member.id !== theirs.id),
+      priya,
+      theirs,
+    ];
+    renderPage(
+      { members },
+      {
+        listCommitments: vi.fn().mockResolvedValue({
+          commitments: [
+            commitment('mine', warden.agent!.manifestId, 'Warden promise'),
+            commitment('other', theirs.agent!.manifestId, 'Cartographer promise'),
+          ],
+        }),
+      }
+    );
+    await screen.findByText('Warden promise');
+    expect(screen.getByRole('button', { name: 'Mark kept: Warden promise' })).toBeInTheDocument();
+    expect(screen.getByText('Cartographer promise')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Mark kept: Cartographer promise' })
+    ).not.toBeInTheDocument();
   });
 });

@@ -118,6 +118,25 @@ export class AccountIds {
       : this.unidentified('Unidentified caller');
   }
 
+  /**
+   * An agent by its home folder, named as the team names it: its mesh id and
+   * its display name (else its name) from the `agents` table, which mirrors
+   * `.dork/agent.json`. A home the mesh does not know falls back to the path
+   * hash and the folder's name.
+   *
+   * @param home - The agent's home folder (an absolute path).
+   */
+  agentAtHome(home: string): AuditActor {
+    const row = this.deps.db
+      .select({ id: agents.id, name: agents.name, displayName: agents.displayName })
+      .from(agents)
+      .where(eq(agents.projectPath, home))
+      .get();
+    return row
+      ? { accountId: row.id, kind: 'agent', name: row.displayName || row.name }
+      : { accountId: this.agentAccountId(home), kind: 'agent', name: path.basename(home) };
+  }
+
   /** DorkOS itself, under the name a reader should see. */
   system(name = 'DorkOS'): AuditActor {
     return { accountId: SYSTEM_ACCOUNT_ID, kind: 'system', name };

@@ -12,6 +12,13 @@ export { useDenyAgent } from './model/use-mesh-deny';
 export { useUnregisterAgent } from './model/use-mesh-unregister';
 export { useDeleteAgentData } from './model/use-delete-agent-data';
 export { useClearDenial } from './model/use-clear-denial';
+export {
+  useAgentPauses,
+  useAgentPause,
+  usePauseAgent,
+  useResumeAgent,
+  AGENT_PAUSES_KEY,
+} from './model/use-agent-pauses';
 export { useUpdateAgent } from './model/use-mesh-update';
 export { useDeniedAgents } from './model/use-mesh-denied';
 export { useMeshStatus, MESH_STATUS_KEY } from './model/use-mesh-status';
@@ -27,5 +34,7 @@ export {
   OPEN_MESH_LABEL,
 } from './ui/OpenMeshSwitch';
 export type { OpenMeshRowProps } from './ui/OpenMeshSwitch';
+export { AgentPausedNotice } from './ui/AgentPausedNotice';
+export type { AgentPausedNoticeProps } from './ui/AgentPausedNotice';
 export { useMeshScanRoots } from './model/use-mesh-scan-roots';
 export { useAgentsSync, AGENT_IDENTITY_CACHES } from './model/use-agents-sync';

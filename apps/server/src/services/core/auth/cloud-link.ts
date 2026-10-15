@@ -37,8 +37,8 @@
  * @module services/core/auth/cloud-link
  */
 import { createHash } from 'node:crypto';
+import { defaultConfigPort, type CloudConfigPort } from './cloud-link-config.js';
 import type { ConnectorEventPageRequest } from '@dorkos/shared/connector-events';
-import { configManager } from '../config-manager.js';
 import type {
   ManagedConnectorAuthorityCommand,
   ManagedConnectorAuthorityCommandStatus,
@@ -64,10 +64,11 @@ import type {
   ManagedConnectorToolkitVersionRequest,
   ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
-import { logConfigWrite } from '../operator/config-write.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { env } from '../../../env.js';
-import { resolveDorkHome } from '../../../lib/dork-home.js';
+import {
+  scheduleJittered,
+  type JitteredSchedule,
+} from '../../../lib/lifecycle/jittered-schedule.js';
 import {
   buildInstanceDescriptor,
   linkProofForKey,
@@ -96,9 +97,11 @@ import {
   type FetchLike,
   type InstanceDescriptor,
 } from './cloud-link-client.js';
-import { resolveLinkTelemetryInstanceId } from './link-telemetry.js';
+import { resolveConfiguredLinkTelemetryInstanceId } from './link-telemetry-config.js';
+import { startLinkResultFrom } from './link-codes.js';
+import type { StartLinkResult } from '@dorkos/shared/cloud-schemas';
 
-/** How often a linked instance heartbeats the cloud. */
+/** How often, on average, a linked instance heartbeats the cloud (jittered: `lib/lifecycle/jittered-schedule.ts`). */
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
 /** Upper bound on a confirming heartbeat, which the refused call waits for. */
 const KEY_CHECK_TIMEOUT_MS = 10_000;
@@ -163,91 +166,9 @@ export interface CloudLinkSummary {
 }
 
 /** The `POST /api/cloud/link/start` shape (codes for the human to enter). */
-export interface StartLinkResult {
-  userCode: string;
-  verificationUri: string;
-  expiresAt: string;
-}
+export type { StartLinkResult };
 
-/** Config read/write seam over the `cloud.*` section, injectable for tests. */
-export interface CloudConfigPort {
-  getToken(): string | null;
-  getAccountLabel(): string | null;
-  /** The kept relink proof of the last dropped instance key, or `null` (also when absent). */
-  getPreviousLinkProof(): string | null;
-  /** Store a newly issued key. A new link consumes any kept relink proof (sets it `null`). */
-  save(link: { instanceToken: string; instanceName: string }): void;
-  setAccountLabel(label: string | null): void;
-  /**
-   * Drop the instance key, name and account label, keeping `previousLinkProof`
-   * so the next link can ask the cloud to continue this one.
-   */
-  clear(keep: { previousLinkProof: string | null }): void;
-}
-
-/** Default config port backed by the `configManager` singleton (resolved lazily). */
-function defaultConfigPort(): CloudConfigPort {
-  return {
-    getToken: () => configManager.get('cloud')?.instanceToken ?? null,
-    getAccountLabel: () => configManager.get('cloud')?.linkedAccountLabel ?? null,
-    // Configs written before the field existed carry no leaf at all; absence is `null`.
-    getPreviousLinkProof: () => configManager.get('cloud')?.previousLinkProof ?? null,
-    save: ({ instanceToken, instanceName }) => {
-      const current = configManager.get('cloud');
-      // `cloud.instanceToken` is registered in SENSITIVE_CONFIG_KEYS; the write
-      // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
-      // token value is never logged — `logConfigWrite` names paths only. The
-      // new link has consumed any kept relink proof, so it goes too.
-      configManager.set('cloud', {
-        ...current,
-        instanceToken,
-        instanceName,
-        previousLinkProof: null,
-      });
-      logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
-    },
-    setAccountLabel: (label) => {
-      // The heartbeat reports the owning account's label; persist it so
-      // `GET /api/cloud/status` and `dorkos cloud status` can show which account
-      // this instance is linked to. No-op write when unchanged.
-      const current = configManager.get('cloud');
-      if ((current?.linkedAccountLabel ?? null) === label) return;
-      configManager.set('cloud', { ...current, linkedAccountLabel: label });
-      logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
-    },
-    clear: ({ previousLinkProof }) => {
-      const current = configManager.get('cloud');
-      configManager.set('cloud', {
-        instanceToken: null,
-        instanceName: null,
-        linkedAccountLabel: null,
-        previousLinkProof,
-        // The person's credits choices outlive the link: a session set to
-        // credits is refused while unlinked, never moved, and a relink finds
-        // them as they were (ADR 261001-000811).
-        credits: current.credits,
-      });
-      logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
-    },
-  };
-}
-
-/**
- * Default telemetry-instance-id resolver backed by the live config + server env.
- * Returns the anonymous per-install id only when the operator opted into linking
- * analytics (`telemetry.linkAnalyticsToAccount`) and no env kill switch is set;
- * otherwise `undefined`, so the descriptor omits it.
- */
-function defaultResolveTelemetryInstanceId(): Promise<string | undefined> {
-  return resolveLinkTelemetryInstanceId({
-    linkAnalyticsToAccount: configManager.get('telemetry')?.linkAnalyticsToAccount ?? false,
-    dorkHome: resolveDorkHome(),
-    env: {
-      DO_NOT_TRACK: env.DO_NOT_TRACK,
-      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
-    },
-  });
-}
+export type { CloudConfigPort } from './cloud-link-config.js';
 
 /** Injectable clock/transport hooks (real implementations by default). */
 export interface CloudLinkManagerOptions {
@@ -256,10 +177,12 @@ export interface CloudLinkManagerOptions {
   now?: () => number;
   config?: CloudConfigPort;
   heartbeatIntervalMs?: number;
+  /** The heartbeat's jitter source, uniform in `[0, 1)`; `0.5` waits exactly the interval. */
+  random?: () => number;
   /**
    * Resolve the anonymous telemetry instance id to carry in the link descriptor
    * (the analytics-merge opt-in). Injectable so tests drive the opt-in without
-   * touching config or the env; defaults to {@link defaultResolveTelemetryInstanceId}.
+   * touching config or the env; defaults to {@link resolveConfiguredLinkTelemetryInstanceId}.
    */
   resolveTelemetryInstanceId?: () => Promise<string | undefined>;
   /** Persist a hosted authoritative receipt in the separate local mirror. */
@@ -293,7 +216,7 @@ export class CloudLinkManager {
   /** The code whose approval made the current link. */
   private approvedCode: string | undefined;
   private lastHeartbeatAt: string | undefined;
-  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  private heartbeatTimer: JitteredSchedule | undefined;
   private pollController: AbortController | undefined;
   private pollTask: Promise<void> | undefined;
   /** True once {@link stop} ran: nothing starts for a key saved afterwards. */
@@ -315,7 +238,7 @@ export class CloudLinkManager {
     this.now = options.now ?? Date.now;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
     this.resolveTelemetryInstanceId =
-      options.resolveTelemetryInstanceId ?? defaultResolveTelemetryInstanceId;
+      options.resolveTelemetryInstanceId ?? resolveConfiguredLinkTelemetryInstanceId;
     this.observeManagedReceipt = options.observeManagedReceipt;
     this.configPort = options.config;
   }
@@ -379,11 +302,7 @@ export class CloudLinkManager {
       throw new Error('Cloud link request was superseded');
     }
 
-    const result: StartLinkResult = {
-      userCode: codes.user_code,
-      verificationUri: codes.verification_uri,
-      expiresAt: new Date(this.now() + codes.expires_in * 1000).toISOString(),
-    };
+    const result = startLinkResultFrom(codes, this.now());
     this.pendingCodes = result;
     this.setState('pending');
     const controller = new AbortController();
@@ -1226,11 +1145,10 @@ export class CloudLinkManager {
   private startHeartbeatSchedule(): void {
     this.stopHeartbeatSchedule();
     if (this.stopped) return;
-    this.heartbeatTimer = setInterval(() => {
-      void this.heartbeatTick();
-    }, this.heartbeatIntervalMs);
-    // Don't keep the process alive on the heartbeat timer alone.
-    this.heartbeatTimer.unref?.();
+    // Jittered, never overlapping a tick still in flight, and never keeps the
+    // process alive on its own.
+    const beat = () => this.heartbeatTick();
+    this.heartbeatTimer = scheduleJittered(beat, this.heartbeatIntervalMs, this.options);
   }
 
   private async heartbeatTick(): Promise<void> {
@@ -1244,10 +1162,8 @@ export class CloudLinkManager {
   }
 
   private stopHeartbeatSchedule(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = undefined;
-    }
+    this.heartbeatTimer?.stop();
+    this.heartbeatTimer = undefined;
   }
 
   private cancelPoll(): void {

@@ -70,9 +70,7 @@ describe('outsider-origin sessions seed no power, even at the most permissive se
     // store: no door, no ritual, nothing left asking.
     configManager.set('ui', {
       ...configManager.get('ui'),
-      autonomyAcknowledgedAt: STAMP,
-      fullPowerDecidedAt: STAMP,
-      fullPowerChoice: 'full',
+      trustNoticeSeenAt: STAMP,
     });
     const runtimes = configManager.get('runtimes');
     configManager.set('runtimes', {

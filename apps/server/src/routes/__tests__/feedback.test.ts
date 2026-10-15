@@ -12,10 +12,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import express, { type Request, type Response, type NextFunction } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
 vi.mock('../../services/core/feedback-reporter.js', () => ({
   sendFeedback: vi.fn(),
   resolveFeedbackIdentity: vi.fn(),
@@ -42,7 +45,8 @@ import {
 } from '../../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../../lib/transcript-excerpt.js';
-import feedbackRouter, { feedbackJsonParser } from '../feedback.js';
+import feedbackRouter, { feedbackBodyRule } from '../feedback.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 
@@ -53,21 +57,21 @@ const mockListMyFeedback = vi.mocked(listMyFeedback);
 const mockGetTranscript = vi.mocked(getSessionTranscriptExcerpt);
 
 /**
- * Build the test app. `sessionUser`, when passed, simulates what `sessionGate`
- * would have attached to `res.locals.user` for an authenticated request — the
- * route never reads identity from anywhere else.
+ * Build the test app. `sessionUser`, when passed, simulates what the session
+ * gate would have set as `c.var.user` for an authenticated request — the route
+ * never reads identity from anywhere else.
  */
 function buildApp(sessionUser?: { userId: string; credential: 'cookie' | 'api-key' }) {
-  const app = express();
-  app.use(express.json());
-  if (sessionUser) {
-    app.use((_req: Request, res: Response, next: NextFunction) => {
-      res.locals.user = sessionUser;
-      next();
-    });
-  }
-  app.use('/api/feedback', feedbackRouter);
-  return app;
+  return honoGroupListener(
+    { path: '/api/feedback', routes: feedbackRouter },
+    {
+      bodyRules: [feedbackBodyRule],
+      before: async (c, next) => {
+        if (sessionUser) c.set('user', sessionUser);
+        await next();
+      },
+    }
+  );
 }
 
 describe('feedback route', () => {
@@ -546,11 +550,9 @@ describe('feedback route', () => {
 
   /**
    * The body-size ceiling, which is a WIRING claim rather than a route claim:
-   * `feedbackJsonParser` only raises the limit if `app.ts` mounts it BEFORE the
-   * app-wide `express.json`. body-parser skips a request whose body another
-   * parser already read, so the same middleware mounted behind the app-wide one
-   * is inert. Both orderings are exercised here, because the passing case alone
-   * would stay green if someone moved the mount and broke it.
+   * `feedbackBodyRule` only raises the limit if the chain is handed it, because
+   * the body is parsed before any route runs. Both are exercised here, because
+   * the passing case alone would stay green if someone dropped the rule.
    */
   describe('JSON body limit', () => {
     /** A submission bigger than the app-wide 1 MB limit, as a screenshot-bearing one is. */
@@ -562,25 +564,17 @@ describe('feedback route', () => {
       };
     }
 
-    /** Production's ordering: the scoped parser first, then the app-wide one. */
+    /** Production's wiring: the chain parses this group's bodies with its rule. */
     function appWithScopedParserFirst() {
-      const app = express();
-      app.use('/api/feedback', feedbackJsonParser);
-      app.use(express.json({ limit: '1mb' }));
-      app.use('/api/feedback', feedbackRouter);
-      return app;
+      return buildApp();
     }
 
-    /** The regression: scoped parser mounted behind the app-wide one. */
+    /** The regression: the chain is not handed the rule, so the app-wide limit applies. */
     function appWithScopedParserLast() {
-      const app = express();
-      app.use(express.json({ limit: '1mb' }));
-      app.use('/api/feedback', feedbackJsonParser);
-      app.use('/api/feedback', feedbackRouter);
-      return app;
+      return honoGroupListener({ path: '/api/feedback', routes: feedbackRouter });
     }
 
-    it('READS a body over 1 MB when the scoped parser is mounted first', async () => {
+    it('READS a body over 1 MB when the chain has the feedback rule', async () => {
       mockSend.mockResolvedValue({ ok: true });
       const body = oversizedSubmission();
       expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(1_048_576);
@@ -595,32 +589,27 @@ describe('feedback route', () => {
       expect(res.status).toBe(400);
     });
 
-    it('413s the same body when the scoped parser is mounted after the app-wide one', async () => {
+    it('413s the same body when the chain does not have the rule', async () => {
       mockSend.mockResolvedValue({ ok: true });
 
       const res = await request(fixtureTarget.mount(appWithScopedParserLast()))
         .post('/api/feedback')
         .send(oversizedSubmission());
 
-      // Never read: the app-wide 1 MB parser rejected it, and the scoped parser
-      // behind it never ran. This is the regression the ordering guards against.
+      // Never read: the app-wide 1 MB parser rejected it. This is the regression
+      // the wiring guards against.
       expect(res.status).toBe(413);
       expect(mockSend).not.toHaveBeenCalled();
     });
 
-    it('app.ts mounts the scoped parser BEFORE the app-wide one', async () => {
+    it('the server hands the chain the feedback rule', async () => {
       // Structural rather than behavioural on purpose: the two tests above prove
-      // the ORDERING RULE against real Express apps, but neither can see the one
-      // line in `app.ts` that has to obey it, and standing the whole production
-      // app up for one assertion costs a page of singleton mocks. This reds if
-      // someone moves the mount below `express.json`, which is the regression.
-      const source = await readFile(new URL('../../app.ts', import.meta.url), 'utf8');
-      const scoped = source.indexOf("app.use('/api/feedback', feedbackJsonParser)");
-      const appWide = source.indexOf("app.use(express.json({ limit: '1mb' }))");
-
-      expect(scoped).toBeGreaterThan(-1);
-      expect(appWide).toBeGreaterThan(-1);
-      expect(scoped).toBeLessThan(appWide);
+      // the rule against the real chain, but neither can see the one line in
+      // `http/hono-api.ts` that has to hand it over, and standing the whole
+      // production app up for one assertion costs a page of singleton mocks.
+      // This reds if someone drops the rule, which is the regression.
+      const source = await readFile(new URL('../../http/hono-api.ts', import.meta.url), 'utf8');
+      expect(source).toMatch(/bodyRules: \[feedbackBodyRule\b/);
     });
 
     it('accepts the largest schema-legal screenshot submission end to end', async () => {

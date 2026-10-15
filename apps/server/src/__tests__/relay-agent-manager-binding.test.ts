@@ -28,7 +28,7 @@
  *
  * ## Why a source guard
  *
- * The wiring lives in `start()` in `index.ts`, which boots the whole server:
+ * The wiring lives in `start()` in `index.ts` and the `startup/` modules it calls, which boot the whole server:
  * databases, mesh, relay, extensions, the HTTP listener. There is no seam to
  * construct just the AdapterManager deps, and inventing one purely to observe a
  * single object property would be a worse change than the one it verifies. What
@@ -46,6 +46,24 @@ import { fileURLToPath } from 'node:url';
 
 const INDEX_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
 const source = readFileSync(INDEX_PATH, 'utf-8');
+/** Runtime registration, which assigns `relayAgentRuntime`, moved here from `index.ts` (DOR-2821). */
+const RUNTIMES_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../startup/runtimes.ts'
+);
+const runtimesSource = readFileSync(RUNTIMES_PATH, 'utf-8');
+/** The adapter manager's construction and binding wiring, moved here from `index.ts` (DOR-2821). */
+const RELAY_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../startup/relay-adapters.ts'
+);
+const relaySource = readFileSync(RELAY_PATH, 'utf-8');
+/** The scheduler's construction, moved here from `index.ts` (DOR-2821). */
+const TASKS_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../startup/tasks.ts'
+);
+const tasksSource = readFileSync(TASKS_PATH, 'utf-8');
 
 /**
  * The dependency object literal passed to `new AdapterManager(...)`, from the
@@ -57,11 +75,14 @@ const source = readFileSync(INDEX_PATH, 'utf-8');
  * @returns The source text of the AdapterManager construction.
  */
 function adapterManagerConstruction(): string {
-  const start = source.indexOf('new AdapterManager(');
-  expect(start, 'AdapterManager is no longer constructed in index.ts').toBeGreaterThan(-1);
-  const end = source.indexOf('});', start);
+  const start = relaySource.indexOf('new AdapterManager(');
+  expect(
+    start,
+    'AdapterManager is no longer constructed in startup/relay-adapters.ts'
+  ).toBeGreaterThan(-1);
+  const end = relaySource.indexOf('});', start);
   expect(end, 'could not find the end of the AdapterManager construction').toBeGreaterThan(start);
-  return source.slice(start, end);
+  return relaySource.slice(start, end);
 }
 
 /**
@@ -75,13 +96,16 @@ function adapterManagerConstruction(): string {
  * @returns The source text of the TaskSchedulerService construction.
  */
 function schedulerConstruction(): string {
-  const start = source.indexOf('new TaskSchedulerService(');
-  expect(start, 'TaskSchedulerService is no longer constructed in index.ts').toBeGreaterThan(-1);
-  const end = source.indexOf('});', start);
+  const start = tasksSource.indexOf('new TaskSchedulerService(');
+  expect(
+    start,
+    'TaskSchedulerService is no longer constructed in startup/tasks.ts'
+  ).toBeGreaterThan(-1);
+  const end = tasksSource.indexOf('});', start);
   expect(end, 'could not find the end of the TaskSchedulerService construction').toBeGreaterThan(
     start
   );
-  return source.slice(start, end);
+  return tasksSource.slice(start, end);
 }
 
 describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
@@ -110,7 +134,14 @@ describe('the Tasks scheduler asks the relay which runtimes it holds', () => {
     // deliverable and every scheduled run it green-lit failed with "No receiver
     // for the scheduled run" (DOR-1636).
     const construction = schedulerConstruction();
-    expect(construction).toMatch(/adapterManager\?\.canRunTaskOnBus\(/);
+    // Read through `currentAdapterManager()`, a getter onto `index.ts`'s own
+    // variable, since the scheduler is built in `startup/tasks.ts` (DOR-2821).
+    expect(construction).toMatch(/currentAdapterManager\(\)\?\.canRunTaskOnBus\(/);
+    expect(
+      source,
+      'index.ts must hand Tasks a getter onto the live adapterManager, never the value it ' +
+        'holds at that line: Phase C resets it to undefined when its init throws.'
+    ).toMatch(/currentAdapterManager: \(\) => adapterManager\b/);
     expect(
       construction,
       'hasAgentRuntime is the map-only reading DOR-1636 removed; asking it again reinstates ' +
@@ -215,13 +246,13 @@ describe('the relay adapter binds every registered runtime, not the default one'
     // last-write-wins hazard that made ordering load-bearing is gone; what
     // matters is only which OBJECT each consumer names.
     expect(
-      source,
+      relaySource,
       'setRelayBindingContext must be called on the concrete claudeRuntime. A registry ' +
         'lookup here would hand it an AgentRuntime-shaped proxy that does not carry the ' +
         'ClaudeCodeRuntime-only method it calls.'
     ).toMatch(/claudeRuntime\.setRelayBindingContext\(/);
     expect(
-      source,
+      relaySource,
       'setRelayBindingContext must not be fed from the registry — that is the relay map’s ' +
         'job, not this one’s.'
     ).not.toMatch(/runtimeRegistry\.get\([^)]*\)\.setRelayBindingContext\(/);
@@ -247,14 +278,16 @@ describe('the relay adapter binds every registered runtime, not the default one'
   it('never casts a runtime into the adapter shape', () => {
     // The cast is what let the mismatch compile. Its absence is the reason the
     // typechecker now guards this instead of only this test.
-    expect(source).not.toMatch(/as unknown as (ClaudeCode)?AgentRuntimeLike/);
+    for (const text of [source, relaySource, runtimesSource]) {
+      expect(text).not.toMatch(/as unknown as (ClaudeCode)?AgentRuntimeLike/);
+    }
   });
 
   it('assigns relayAgentRuntime on both the test-mode and production paths', () => {
     // A binding assigned on only one path would skip AdapterManager init on the
     // other. The guard now logs an error there rather than passing in silence,
     // but this keeps the mistake from reaching that log at all.
-    const assignments = source.match(/^\s*relayAgentRuntime = /gm) ?? [];
+    const assignments = runtimesSource.match(/^\s*relayAgentRuntime = /gm) ?? [];
     expect(assignments).toHaveLength(2);
   });
 

@@ -239,6 +239,35 @@ export class AgentRegistry {
     // stays silent. See `AgentRegistryOptions.onIdentityChange`.
     const before = existingById ? this.identitySnapshot(agent.id) : undefined;
 
+    // What a re-registration writes over an existing row. When every column
+    // already holds it, the write is skipped (DOR-2900): the reconciler re-reads
+    // every agent's manifest every five minutes, and rewrote every row each time.
+    const changes = {
+      name: agent.name,
+      displayName: agent.displayName ?? null,
+      description: agent.description ?? '',
+      projectPath: agent.projectPath,
+      runtime: agent.runtime,
+      capabilities: JSON.stringify(agent.capabilities),
+      namespace: agent.namespace ?? 'default',
+      scanRoot: agent.scanRoot ?? '',
+      behaviorJson: JSON.stringify(agent.behavior),
+      persona: agent.persona ?? null,
+      personaEnabled: agent.personaEnabled ?? true,
+      isSystem: agent.isSystem ?? false,
+      color: agent.color ?? null,
+      icon: agent.icon ?? null,
+      model: agent.model ?? null,
+      effort: agent.effort ?? null,
+      account: agent.account ?? null,
+      reportsTo: agent.reportsTo ?? null,
+      createdBy: agent.createdBy ?? null,
+      updatedAt: now,
+      status: 'active' as const, // Re-registration clears unreachable
+    };
+    const { updatedAt: _stamp, ...compared } = changes;
+    if (existingById && !this.rowWouldChange(agent.id, compared)) return 'registered';
+
     this.db
       .insert(agents)
       .values({
@@ -261,33 +290,12 @@ export class AgentRegistry {
         model: agent.model ?? null,
         effort: agent.effort ?? null,
         account: agent.account ?? null,
+        reportsTo: agent.reportsTo ?? null,
+        createdBy: agent.createdBy ?? null,
         registeredAt: agent.registeredAt,
         updatedAt: now,
       })
-      .onConflictDoUpdate({
-        target: agents.id,
-        set: {
-          name: agent.name,
-          displayName: agent.displayName ?? null,
-          description: agent.description ?? '',
-          projectPath: agent.projectPath,
-          runtime: agent.runtime,
-          capabilities: JSON.stringify(agent.capabilities),
-          namespace: agent.namespace ?? 'default',
-          scanRoot: agent.scanRoot ?? '',
-          behaviorJson: JSON.stringify(agent.behavior),
-          persona: agent.persona ?? null,
-          personaEnabled: agent.personaEnabled ?? true,
-          isSystem: agent.isSystem ?? false,
-          color: agent.color ?? null,
-          icon: agent.icon ?? null,
-          model: agent.model ?? null,
-          effort: agent.effort ?? null,
-          account: agent.account ?? null,
-          updatedAt: now,
-          status: 'active', // Re-registration clears unreachable
-        },
-      })
+      .onConflictDoUpdate({ target: agents.id, set: changes })
       .run();
 
     if (this.identitySnapshot(agent.id) !== before) {
@@ -301,6 +309,19 @@ export class AgentRegistry {
     }
 
     return 'registered';
+  }
+
+  /**
+   * Whether writing `columns` over the stored row for `id` would change it.
+   *
+   * @param id - The agent's ULID.
+   * @param columns - Column values as {@link upsert} would write them.
+   */
+  private rowWouldChange(id: string, columns: Record<string, unknown>): boolean {
+    const row = this.db.select().from(agents).where(eq(agents.id, id)).get() as
+      Record<string, unknown> | undefined;
+    if (!row) return true;
+    return Object.entries(columns).some(([column, value]) => row[column] !== value);
   }
 
   /**
@@ -454,6 +475,8 @@ export class AgentRegistry {
         model: merged.model ?? null,
         effort: merged.effort ?? null,
         account: merged.account ?? null,
+        reportsTo: merged.reportsTo ?? null,
+        createdBy: merged.createdBy ?? null,
         updatedAt: now,
       })
       .where(eq(agents.id, id))
@@ -701,6 +724,10 @@ export class AgentRegistry {
       // preference" rather than travelling into the launch ladder as a
       // reference that always misses.
       account: row.account || undefined,
+      // Who it reports to and who created it (spec `heartbeats` §4.1). An empty
+      // string names nobody, so it reads as "not set" like `account` above.
+      reportsTo: row.reportsTo || undefined,
+      createdBy: row.createdBy || undefined,
       // `permissions` is not persisted in the DB schema, so this cache cannot
       // answer for it, and nothing may make an authorization decision from its
       // absence here: the capability gate reads `.dork/agent.json` directly

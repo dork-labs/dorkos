@@ -14,6 +14,10 @@
  *   guards).
  * - `agent permissions`    → `commands/permissions.ts` (one agent's
  *   permissions, through the permission routes).
+ * - `agent pause <id>`     → `POST /api/agents/:id/pause` (the `agent.pause`
+ *   capability: stop it everywhere at once).
+ * - `agent resume <id>`    → `POST /api/agents/:id/resume` (anyone but the
+ *   paused agent itself may lift a pause).
  *
  * Every verb accepts `--json` for raw machine output. Handlers return an exit
  * code rather than calling `process.exit` so `cli.ts` stays the single source of
@@ -40,6 +44,8 @@ Subcommands:
   create --name <slug> --path <dir> Create a new agent
   update --path <dir> [fields]      Edit an agent's self-editable fields
   permissions <agent> [set|reset]   See or change what one agent may do
+  pause <id> [--reason <text>]      Stop an agent everywhere until someone resumes it
+  resume <id> [--reason <text>]     Let a paused agent work again
 
 Options (all subcommands):
       --json   Print raw JSON instead of a table
@@ -66,7 +72,9 @@ Examples:
   dorkos agent show dorkbot
   dorkos agent show ~/projects/app
   dorkos agent create --name my-bot --path ~/projects/my-bot
-  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"`;
+  dorkos agent update --path ~/.dork/agents/dorkbot --display-name "Dork Bot"
+  dorkos agent pause 01J... --reason "Posting the same thing over and over"
+  dorkos agent resume 01J...`;
 
 /** A Mesh agent entry as returned by `GET /api/mesh/agents`. */
 interface MeshAgent {
@@ -439,6 +447,56 @@ export async function runAgentUpdate(args: AgentUpdateArgs): Promise<number> {
   }
 }
 
+/** What `POST /api/agents/:id/pause|resume` answers. */
+interface PauseResultBody {
+  agentId: string;
+  paused: boolean;
+  changed: boolean;
+  stoppedTurns?: number;
+  stoppedRuns?: number;
+}
+
+/**
+ * Implements `dorkos agent pause|resume <id>`.
+ *
+ * @param verb - Which one.
+ * @param agentId - The agent's Mesh id.
+ * @param reason - Why, kept in the audit log.
+ * @param json - When true, print the raw result as JSON.
+ * @returns The intended process exit code.
+ */
+export async function runAgentPause(
+  verb: 'pause' | 'resume',
+  agentId: string,
+  reason: string | undefined,
+  json: boolean
+): Promise<number> {
+  try {
+    const result = await apiCall<PauseResultBody>(
+      'POST',
+      `/api/agents/${encodeURIComponent(agentId)}/${verb}`,
+      reason ? { reason } : {}
+    );
+    if (json) {
+      printJson(result);
+      return 0;
+    }
+    if (verb === 'pause') {
+      console.log(
+        result.changed
+          ? `Paused ${agentId}. Stopped ${result.stoppedTurns ?? 0} turn(s) and ${result.stoppedRuns ?? 0} run(s).`
+          : `${agentId} was already paused.`
+      );
+    } else {
+      console.log(result.changed ? `Resumed ${agentId}.` : `${agentId} was not paused.`);
+    }
+    return 0;
+  } catch (err) {
+    printError(err);
+    return 1;
+  }
+}
+
 /**
  * Dispatch `dorkos agent <subcommand>`.
  *
@@ -483,6 +541,23 @@ export async function runAgentDispatcher(rawArgs: string[]): Promise<number> {
     }
     if (subcommand === 'update') {
       return await runAgentUpdate(parseAgentUpdateArgs(rawArgs.slice(1)));
+    }
+    if (subcommand === 'pause' || subcommand === 'resume') {
+      const { values, positionals } = parseArgs({
+        args: rawArgs.slice(1),
+        options: {
+          json: { type: 'boolean', default: false },
+          reason: { type: 'string' },
+        },
+        allowPositionals: true,
+        strict: true,
+      });
+      const agentId = positionals[0];
+      if (!agentId) {
+        console.error(`Error: missing required <id>.\nUsage: dorkos agent ${subcommand} <id>`);
+        return 1;
+      }
+      return await runAgentPause(subcommand, agentId, values.reason, jsonOf(values));
     }
     if (subcommand === 'permissions') {
       const { runAgentPermissions } = await import('./permissions.js');

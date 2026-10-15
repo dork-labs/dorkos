@@ -19,6 +19,7 @@ import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
 import { buildDoeContext } from './context.js';
+import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
 import { doeBuilderTool, type DoeBuilderLifecycle } from './builder.js';
 /** Facade-owned turn binding and explicit child execution/network policies. */
 export interface DoeHostOptions extends DoeBuilderLifecycle {
@@ -30,7 +31,6 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
   managedMcp?: ManagedMcpServerResolver;
   connectorInjection?: ConnectorRuntimeMcpInjection | null;
   mesh?: AgentRegistryPort;
-  relayWired?: boolean;
   builderExecutionPolicy?: ExecutionPolicy;
   onEvent?: (event: DoeEvent) => void;
   webFetchPolicy?: WebFetchOptions;
@@ -41,7 +41,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
   const resolution = resolveAgentHome(options.cwd, options.opts?.forAgent);
   if (resolution.kind === 'refused') throw new Error('This turn cannot act as that agent.');
   const agentPath = options.agentPath ?? homeOf(resolution);
-  const agentToAgent = !!(agentPath && options.mesh?.getByPath(agentPath) && options.relayWired);
+  const agentToAgent = loadsAgentToAgentTools(!!(agentPath && options.mesh?.getByPath(agentPath)));
   const mcp = await assembleDoeMcp({
     agentPath,
     connectorInjection: options.connectorInjection,

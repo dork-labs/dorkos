@@ -56,8 +56,8 @@
  *   exist anywhere in the shipped SDK or the claude binary — the comment is
  *   stale. The only stream-close kill is stdin EOF, and this turn's held prompt
  *   (`createHeldUserPrompt`, closed at the turn's `result`) keeps it disarmed all
- *   turn. Precedent in the same shape: `relay_send_and_wait` already blocks up to
- *   600s inside an SDK tool.
+ *   turn. Precedent in the same shape: the retired `relay_send_and_wait` blocked
+ *   up to 600s inside an SDK tool.
  *
  * The findings above are pinned to claude-agent-sdk 0.3.177 / claude 2.1.177.
  * Re-check them on a runtime upgrade rather than assuming they carried over.

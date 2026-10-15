@@ -10,10 +10,12 @@
  *
  * @module routes/session-touch-handler
  */
-import type { Request, Response } from 'express';
+import type { Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isPersonAtTheApp } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getSessionTouchStore, laterIso } from '../services/session/origin/session-touch-store.js';
 import type { ResolveTouches } from '../services/session/origin/touched-by-you-overlay.js';
@@ -23,28 +25,23 @@ import type { ResolveTouches } from '../services/session/origin/touched-by-you-o
  *
  * Recorded only for a person at the app (D4); any other caller gets the same
  * 204 and nothing changes, so the answer tells a script nothing about the
- * rule. Takes no body: Express 5 leaves `req.body` undefined on an empty POST,
- * and nothing here reads it.
+ * rule. Takes no body, and nothing here reads one.
  *
  * Saved under the chat's current id, exactly as `GET /:id` reads it: a link or
  * a tab can still hold an id the runtime has since retired, and a row under
  * that id is one no session list would ever match.
  *
- * @param req - Express request; `:id` is the chat
- * @param res - Express response
+ * @param c - The request context; `:id` is the chat
  */
-export async function sessionOpenedHandler(req: Request, res: Response): Promise<void> {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) {
-    sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-    return;
-  }
-  if (isPersonAtTheApp(req, res)) {
+export async function sessionOpenedHandler(c: Context<ApiEnv>): Promise<Response> {
+  const sessionId = parseSessionId(c.req.param('id'));
+  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (isPersonAtTheApp(honoRequestFacts(c))) {
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const currentId = runtime.getInternalSessionId(sessionId) ?? sessionId;
     getSessionTouchStore()?.recordOpened(currentId, new Date().toISOString());
   }
-  res.status(204).end();
+  return c.body(null, 204);
 }
 
 /**
@@ -55,12 +52,11 @@ export async function sessionOpenedHandler(req: Request, res: Response): Promise
  * message is already on its way, the 202 must still say so, and the cost is
  * only where the chat sorts.
  *
- * @param req - The messages request.
- * @param res - Its response, for the caller's identity.
+ * @param facts - The messages request's facts, for the caller's identity.
  * @param chatId - The chat's canonical id, as the dispatcher answered it.
  */
-export function recordWroteIfPerson(req: Request, res: Response, chatId: string): void {
-  if (!isPersonAtTheApp(req, res)) return;
+export function recordWroteIfPerson(facts: RequestFacts, chatId: string): void {
+  if (!isPersonAtTheApp(facts)) return;
   try {
     getSessionTouchStore()?.recordWrote(chatId, new Date().toISOString());
   } catch (err) {

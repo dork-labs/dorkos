@@ -40,6 +40,7 @@ import { TransportProvider, useAppStore, useTransport } from '@/layers/shared/mo
 import {
   useSessionDetail,
   useSessionChatStore,
+  sessionKeys,
   type SessionScopedCwd,
 } from '@/layers/entities/session';
 import { useTaskState } from '../model/use-task-state';
@@ -68,7 +69,7 @@ function createHarness() {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, wrapper };
+  return { transport, wrapper, queryClient };
 }
 
 beforeEach(() => {
@@ -95,6 +96,21 @@ describe('session-scoped queries and the working directory', () => {
     expect(transport.getSession).not.toHaveBeenCalledWith(SESSION_ID, '/unrelated/project');
   });
 
+  it('reads the detail once when a list naming its folder lands afterwards (DOR-2891)', async () => {
+    const { transport, wrapper, queryClient } = createHarness();
+    const { result, rerender } = renderHook(() => useSessionDetail(SESSION_ID), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    act(() => {
+      queryClient.setQueryData(sessionKeys.list('/agent'), [
+        { ...(result.current.data as object), id: SESSION_ID, cwd: '/agent' },
+      ]);
+    });
+    // Any later render (a status tick, a sibling's state) must not re-key it.
+    rerender();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(transport.getSession).toHaveBeenCalledTimes(1);
+  });
+
   it('the session’s tasks are requested once, without a directory nothing named', async () => {
     // No `?dir=` on the URL (no router in this harness), so the request goes out
     // with no directory and the server resolves the session's own. The thing
@@ -117,6 +133,26 @@ describe('session-scoped queries and the working directory', () => {
     expect(transport.getTasks).not.toHaveBeenCalledWith(SESSION_ID, CWD);
   });
 
+  it('does not read the history again when the live stream already holds it (DOR-2890)', async () => {
+    const { transport, wrapper } = createHarness();
+    renderHook(
+      () =>
+        useSessionHistory({
+          sessionId: SESSION_ID,
+          sid: SESSION_ID,
+          transport: useTransport(),
+          sessionCwd: { cwd: null },
+          enableMessagePolling: true,
+          isStreaming: false,
+          streamHydrated: true,
+          setMessages: () => {},
+        }),
+      { wrapper }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(transport.getMessages).not.toHaveBeenCalled();
+  });
+
   it('the message history goes out with no directory when nothing named one', async () => {
     const { transport, wrapper } = createHarness();
     function Probe({ sessionCwd }: { sessionCwd: SessionScopedCwd }) {
@@ -127,6 +163,7 @@ describe('session-scoped queries and the working directory', () => {
         sessionCwd,
         enableMessagePolling: false,
         isStreaming: false,
+        streamHydrated: false,
         setMessages: () => {},
       });
     }
@@ -136,6 +173,6 @@ describe('session-scoped queries and the working directory', () => {
     // never arrives for a session URL that omitted `&dir=`, which is the blank
     // "Start a conversation" the second window showed (DOR-1444).
     await waitFor(() => expect(transport.getMessages).toHaveBeenCalledTimes(1));
-    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined);
+    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined, { newest: true });
   });
 });

@@ -34,6 +34,7 @@ import type {
   LateFollowEnd,
   LateTurnSource,
   SessionRuntimeBinder,
+  TurnStartNote,
   TurnDeskCheck,
   TurnExecutionSettings,
 } from './types.js';
@@ -44,7 +45,6 @@ import {
 } from './publish.js';
 import { isCallerCancel } from './agent-cancel-handler.js';
 import { interruptTurn } from './interrupt.js';
-import type { InboundTurnBudgets } from '../../inbound-turn-budgets.js';
 import { describeError } from '../../lib/describe-error.js';
 // One answer to "has this message run out of time?", shared with the publish
 // gate, the scheduled-run handler and the capacity line so the four cannot
@@ -100,12 +100,8 @@ export interface AgentHandlerDeps {
    * session the cockpit binds.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
-  /**
-   * Where this turn records the envelope it is answering, so the agent's own
-   * `relay_send*` calls continue that budget instead of minting a fresh one
-   * (DOR-791). Absent means no threading — the pre-existing behaviour.
-   */
-  inboundBudgets?: InboundTurnBudgets;
+  /** Told before the turn starts — see {@link TurnStartNote}. */
+  noteTurnStart?: TurnStartNote;
   /**
    * This turn's clock, injectable so a test can pin the TTL boundary instead of
    * racing it (DOR-1729).
@@ -184,7 +180,10 @@ export function resolveAgentTurnIdentity(
   envelope: RelayEnvelope,
   store: AgentSessionStoreLike | undefined
 ): AgentTurnIdentity | null {
-  const agentId = extractAgentId(subject);
+  // `agentId` and `sessionId` alias the same subject slot here (see the ID
+  // glossary at the top of `claude-code-adapter.ts`); the shared helper reads
+  // both the legacy and the runtime-scoped shape.
+  const agentId = extractSessionIdFromSubject(subject);
   if (!agentId) return null;
   const payload =
     typeof envelope.payload === 'object' && envelope.payload !== null
@@ -656,21 +655,13 @@ export async function handleAgentMessage(
     },
     { once: true }
   );
-  // Tie this turn to the envelope that started it, for as long as it runs
-  // (DOR-791). Anything the agent sends with `relay_send*` while it runs
-  // continues THIS budget — decremented — instead of minting a fresh full one,
-  // which is what let two agents trade messages forever with a hop counter that
-  // reset every lap. Bound BEFORE `sendMessage`, because the tool server is
-  // built as the query starts, and not at all for a turn that never starts:
-  // there is nothing for a turn that will not run to inherit.
-  const releaseInboundBudget = stoppedBeforeStart
-    ? undefined
-    : deps.inboundBudgets?.bind(ccaSessionKey, envelope.budget);
-
   // New work on this session: a later turn from here on answers THIS message,
   // so whoever was still listening on behalf of an earlier one stops (DOR-2717).
   if (!stoppedBeforeStart) deps.lateFollowers?.get(sessionScope)?.();
 
+  // Before the turn runs, so whatever it calls already knows who started it.
+  // The host's note must not throw (`TurnStartNote`).
+  if (!stoppedBeforeStart) deps.noteTurnStart?.({ sessionId: ccaSessionKey, from: envelope.from });
   const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
   const eventStream = stoppedBeforeStart
     ? NO_EVENTS
@@ -787,32 +778,6 @@ export async function handleAgentMessage(
       sessionKey: ccaSessionKey,
     });
     if (timeout) clearTimeout(timeout);
-    // Released when the QUERY is over, which is not the same instant the
-    // iteration stops (DOR-791).
-    //
-    // A clean end and a thrown iterator both mean the query is done, so the
-    // binding goes. A STOPPED turn — its TTL, or a caller that cancelled — does
-    // not: the abort listener above asks the runtime to interrupt, but
-    // `interruptTurn` is bounded and best-effort by design ("this bound only
-    // decides how long we wait to learn the outcome"), so the turn may still be
-    // producing for a moment. A `relay_send` landing in that window and
-    // inheriting NOTHING would mint a FRESH full budget — hop zero, ten calls,
-    // another hour — which is the chain escaping on exactly the stop that was
-    // supposed to end it.
-    //
-    // So a stopped turn KEEPS its binding, exactly as it stood: a TTL death
-    // leaves an expired budget, which the publish gate refuses as `ttl_expired`,
-    // and a cancel leaves a live one, which is still the chain's own and still
-    // decrements. Nothing is leaked — one entry per session, replaced by that
-    // session's next inbound message, and bounded by the registry's LRU cap.
-    if (controller.signal.aborted) {
-      log.debug?.(
-        `[CCA] stopped turn: holding the inbound budget for ${ccaSessionKey} so a late send ` +
-          `cannot start a fresh chain on a turn that was told to end`
-      );
-    } else {
-      releaseInboundBudget?.();
-    }
     if (!streamedDone && envelope.replyTo && relay) {
       // On a crashed (thrown iterator) or TTL-aborted turn, emit an explicit
       // error signal BEFORE the synthesized done. Reply consumers (the A2A
@@ -1046,19 +1011,6 @@ async function resolveTurnSettings(
 function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
   const account = payload?.account;
   return typeof account === 'string' && account.length > 0 ? account : undefined;
-}
-
-/**
- * Extract agent ID from a `relay.agent.*` subject.
- *
- * Historically `agentId` and `sessionId` alias the same slot here (see the
- * ID glossary at the top of `claude-code-adapter.ts`). Delegates to the shared
- * {@link extractSessionIdFromSubject} helper so both the legacy shape
- * (`relay.agent.<sessionId>`) and the runtime-scoped shape
- * (`relay.agent.<runtimeType>.<sessionId>`) are handled consistently.
- */
-function extractAgentId(subject: string): string | null {
-  return extractSessionIdFromSubject(subject);
 }
 
 /**

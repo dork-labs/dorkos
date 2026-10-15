@@ -745,6 +745,29 @@ describe('DorkOS declared standing defaults', () => {
       describeExecutionDefaults({ doe: DOE_CAPABILITIES }, config).perRuntime[0]
     ).toMatchObject({ runtime: 'doe', model: 'local-model', trustStop: null });
   });
+
+  it('reads the DorkOS model preference like any other runtime default, and none means DorkOS picks', () => {
+    const config = runtimes({
+      doe: { ...USER_CONFIG_DEFAULTS.runtimes.doe, defaultModel: 'md-preferred' },
+    });
+    const options = {
+      runtimeType: 'doe',
+      configSection: 'doe',
+      runtimes: config,
+      supportsEffort: false,
+      permissionModes: DOE_CAPABILITIES.permissionModes.values,
+    };
+    expect(resolveSessionDefaults(options).model).toBe('md-preferred');
+    // The agent's own model outranks the preference.
+    expect(
+      resolveSessionDefaults({ ...options, agent: { runtime: 'doe', model: 'md-agent' } }).model
+    ).toBe('md-agent');
+    expect(describeExecutionDefaults({ doe: DOE_CAPABILITIES }, config).perRuntime[0]?.model).toBe(
+      'md-preferred'
+    );
+    config.doe.defaultModel = null;
+    expect(resolveSessionDefaults(options).model).toBeUndefined();
+  });
 });
 
 describe('resolveSessionDefaults — the trust stop', () => {
@@ -849,14 +872,24 @@ describe('resolveSessionDefaults — the trust stop', () => {
     ).toBe('acceptEdits');
   });
 
-  it('resolves nothing on a fresh install, so each runtime keeps its own default', () => {
+  it('resolves nothing when no stop is set, so each runtime keeps its own default', () => {
+    expect(
+      resolveForRuntime({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: null }),
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({});
+  });
+
+  it('resolves Full autonomy on a fresh install (ADR 261006-225605)', () => {
     expect(
       resolveForRuntime({
         runtimeType: 'claude-code',
         runtimes: runtimes(),
         permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
-      })
-    ).toEqual({});
+      }).permissionMode
+    ).toBe('bypassPermissions');
   });
 
   it('resolves nothing for a runtime that declares no mode at the configured stop', () => {
@@ -988,11 +1021,18 @@ describe('resolveUnattendedDefaultStop', () => {
     ).toBe('ask');
   });
 
-  it('answers null on a fresh install, with neither tier set', () => {
-    expect(resolveUnattendedDefaultStop({ runtimes: runtimes() })).toBeNull();
+  it('answers null with neither tier set', () => {
+    const unset = runtimes({ defaultTrustStop: null });
+    expect(resolveUnattendedDefaultStop({ runtimes: unset })).toBeNull();
+    expect(resolveUnattendedDefaultStop({ configSection: 'claudeCode', runtimes: unset })).toBe(
+      null
+    );
+  });
+
+  it('answers autonomy on a fresh install (ADR 261006-225605)', () => {
     expect(
       resolveUnattendedDefaultStop({ configSection: 'claudeCode', runtimes: runtimes() })
-    ).toBe(null);
+    ).toBe('autonomy');
   });
 
   it('answers null before the config manager has booted', () => {
@@ -1069,14 +1109,13 @@ describe('resolveUnattendedPermissionMode', () => {
     ).toBe('default');
   });
 
-  it('answers undefined on a fresh install, so the runtime decides', () => {
-    // The safety floor of the whole change: an operator who never answered the
-    // power door gets no mode from here, and every surface that asks keeps
-    // whatever it did before.
+  it('answers undefined when no stop is set, so the runtime decides', () => {
+    // With no stop at either tier, every surface that asks keeps whatever it
+    // did before. A fresh install now ships one (ADR 261006-225605).
     expect(
       resolveUnattendedPermissionMode({
         capabilities: CLAUDE_CODE_CAPABILITIES,
-        runtimes: runtimes(),
+        runtimes: runtimes({ defaultTrustStop: null }),
       })
     ).toBeUndefined();
   });

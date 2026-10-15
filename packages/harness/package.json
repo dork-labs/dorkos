@@ -16,6 +16,14 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./server-workspace": {
+      "types": "./src/server-workspace.ts",
+      "default": "./dist/server-workspace.js"
+    },
+    "./workspace-data": {
+      "types": "./src/workspace-data.ts",
+      "default": "./dist/workspace-data.js"
+    },
     "./manifest": {
       "types": "./src/manifest/schema.ts",
       "default": "./dist/manifest/schema.js"

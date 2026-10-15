@@ -2,7 +2,7 @@
  * How long one call to a DorkOS in-session MCP tool may run before the CLI
  * gives up on it (DOR-987, moved off the environment at SDK 0.3.248).
  *
- * THREE calls here legitimately run for minutes, and the ceiling has to clear
+ * TWO calls here legitimately run for minutes, and the ceiling has to clear
  * each or it truncates one of them:
  *
  * - A destructive capability that HOLDS, rendering an inline approval card and
@@ -10,12 +10,6 @@
  *   held call mid-wait and hands the model an ERROR where the poll payload used
  *   to be — strictly worse than the flow the hold replaced, and the one outcome
  *   that feature is written to avoid.
- * - `relay_send_and_wait`, which blocks inside the tool call while another agent
- *   works, for as long as its caller asked for up to
- *   {@link RELAY_SEND_AND_WAIT_MAX_MS}. Before this server had a timeout of its
- *   own it inherited the CLI's ~27.8h default and was effectively unbounded, so
- *   a ceiling derived from the hold alone would have been the first thing ever
- *   to cut a long relay wait short.
  * - An agent's access request (`connectors.request_connection`, which rides
  *   this server in Claude Code), held open for the person's answer for
  *   `CONNECTOR_REQUEST_LIVE_HOLD_MS`.
@@ -45,19 +39,6 @@ import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../session/session-state-p
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../connectors/runtime-capability-scope.js';
 
 /**
- * The longest wait `relay_send_and_wait` will accept, in milliseconds — ten
- * minutes, past which the tool's own description tells a caller to dispatch
- * asynchronously instead.
- *
- * Named here rather than left as a literal in the tool's Zod schema because it
- * is one of the two budgets {@link DORKOS_MCP_TOOL_TIMEOUT_MS} is derived from:
- * a bound that exists in one file and is enforced in another drifts silently,
- * and the drift shows up as a relay wait that dies just short of the maximum its
- * own schema advertises.
- */
-export const RELAY_SEND_AND_WAIT_MAX_MS = 600_000;
-
-/**
  * The per-call ceiling declared on the in-session `dorkos` MCP server: the
  * longest a legitimate DorkOS tool call can take, which is the largest of the
  * minutes-long budgets above plus the projector's grace.
@@ -66,8 +47,5 @@ export const RELAY_SEND_AND_WAIT_MAX_MS = 600_000;
  * ignored and the server would silently fall back to `MCP_TOOL_TIMEOUT`.
  */
 export const DORKOS_MCP_TOOL_TIMEOUT_MS =
-  Math.max(
-    CAPABILITY_APPROVAL_HOLD_CAP_MS,
-    RELAY_SEND_AND_WAIT_MAX_MS,
-    CONNECTOR_REQUEST_LIVE_HOLD_MS
-  ) + CAPABILITY_HOLD_PAUSE_GRACE_MS;
+  Math.max(CAPABILITY_APPROVAL_HOLD_CAP_MS, CONNECTOR_REQUEST_LIVE_HOLD_MS) +
+  CAPABILITY_HOLD_PAUSE_GRACE_MS;

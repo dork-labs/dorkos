@@ -54,7 +54,7 @@ export async function openArchive(bytes: Buffer): Promise<OpenedArchive> {
     files: contents,
     names: entries.map((entry) => entry.name),
     rows<T>(key: keyof CommunityExportManifestV2['files']) {
-      return manifest.files[key].flatMap((name) =>
+      return (manifest.files[key] ?? []).flatMap((name) =>
         contents
           .get(name)!
           .toString('utf8')

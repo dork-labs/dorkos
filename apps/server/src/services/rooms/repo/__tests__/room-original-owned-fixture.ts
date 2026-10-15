@@ -2,7 +2,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import express, { type Express } from 'express';
+import type { Hono, Handler } from 'hono';
+import type { ApiEnv } from '../../../../http/api-chain.js';
 import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import { expect } from 'vitest';
@@ -17,13 +18,7 @@ import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { initBoundary } from '../../../../lib/boundary.js';
 import { env } from '../../../../env.js';
 import { initConfigManager, configManager } from '../../../core/config-manager.js';
-import {
-  initAuth,
-  sessionGate,
-  toNodeHandler,
-  readOwnerAccount,
-  type Auth,
-} from '../../../core/auth/index.js';
+import { initAuth, readOwnerAccount, type Auth } from '../../../core/auth/index.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import {
   createRoomSubsystem,
@@ -51,9 +46,9 @@ import {
   stopInstallationFileWrites,
 } from '../../../canvas/doc-channel/writes/installation-file-writes.js';
 import { createDocChannelHttpComposition } from '../../../canvas/doc-channel/http-composition.js';
-import roomsRouter from '../../../../routes/rooms.js';
-import { errorHandler } from '../../../../middleware/error-handler.js';
-import { resolveAgentIdentity } from '../../../../middleware/agent-identity.js';
+import { composeFrontDoor, type HonoApiDeps } from '../../../../http/hono-api.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../../core/lifecycle/main-request-admission.js';
 import { silenceGitAutoMaintenance } from './fixture-git.js';
 import {
   withRecognizedInstallationRoomNamespace,
@@ -64,14 +59,15 @@ import {
   afterFailedWrite,
   type RoomWorktreeRefreshTarget,
   type RoomWorktreeRefreshDeps,
-} from '../room-worktree-refresh.js';
+} from '../worktree/room-worktree-refresh.js';
 
 /** Portable public fixture types retain the real constructors and shared native Db. */
 export interface OriginalOwnedRoomFixture {
   dir: string;
   db: Db;
   auth: Auth;
-  app: Express;
+  app: Hono<ApiEnv>;
+  installFileOpsHttpHandler(handler: Handler<ApiEnv>): void;
   server: Server;
   roomId: string;
   subsystem: RoomSubsystem;
@@ -125,6 +121,7 @@ export async function createOriginalOwnedRoomFixture(
   let capturedStop: (() => Promise<void>) | undefined;
   let capturedCheckboxStop: (() => Promise<void>) | undefined;
   let capturedDueStop: (() => Promise<void>) | undefined;
+  let capturedRoomIdle: (() => Promise<void>) | undefined;
   let native: ReturnType<typeof openServerDatabase> | undefined;
   let server: Server | undefined;
   let closePromise: Promise<void> | undefined;
@@ -212,6 +209,16 @@ export async function createOriginalOwnedRoomFixture(
           cause = error;
         }
       }
+      // The listener is closed and owning writers are stopped. Drain the real
+      // room collector and dispatcher before closing the Db their turns use.
+      try {
+        await capturedRoomIdle?.();
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          cause = error;
+        }
+      }
       if (failed) throw cause;
       try {
         if (db?.$client.open) db.$client.close();
@@ -242,10 +249,21 @@ export async function createOriginalOwnedRoomFixture(
     if (options.nativeDatabase) native = openServerDatabase(path.join(dir, 'fixture.sqlite'));
     db = native?.db ?? createDb(path.join(dir, 'fixture.sqlite'));
     runMigrations(db);
-    const auth = initAuth(db, dir),
-      app = express();
-    app.all('/api/auth/*splat', toNodeHandler(auth));
-    server = createServer(app);
+    const auth = initAuth(db, dir);
+    const admission = new MainRequestAdmission();
+    const deps: HonoApiDeps = {};
+    const app = composeFrontDoor(admission, deps);
+    let fileOpsHttpHandler: Handler<ApiEnv> | undefined;
+    // Register before the first real auth request; later fixture setup supplies only the handler.
+    app.post('/api/original-file-ops/:operationId', (c, next) =>
+      fileOpsHttpHandler ? fileOpsHttpHandler(c, next) : c.body(null, 404)
+    );
+    const installFileOpsHttpHandler = (handler: Handler<ApiEnv>): void => {
+      if (fileOpsHttpHandler || typeof handler !== 'function')
+        throw new Error('Original file-ops HTTP handler already installed or invalid.');
+      fileOpsHttpHandler = handler;
+    };
+    server = createServer(frontDoorListener(app));
     const listening = once(server, 'listening');
     server.listen(0, '127.0.0.1');
     await listening;
@@ -292,6 +310,7 @@ export async function createOriginalOwnedRoomFixture(
     // The default lookup reads actual native agent rows. A supplied scripted
     // Runner, member DTO, authorId or TestMode output never attests file rights.
     const subsystem = createRoomSubsystem({ db, turns: runner });
+    capturedRoomIdle = subsystem.service.triggersIdle.bind(subsystem.service);
     setRoomService(subsystem.service);
     const operator = resolveOperatorAuthor(subsystem.authors),
       member = subsystem.authors.human(memberId);
@@ -486,11 +505,7 @@ export async function createOriginalOwnedRoomFixture(
       body: { userId: memberId, name: 'genuine-member-control' },
     });
     configManager.set('auth', { ...configManager.get('auth'), enabled: true });
-    app.use(express.json({ limit: '1mb' }));
-    app.use(sessionGate);
-    app.use(resolveAgentIdentity);
-    app.use('/api/rooms', roomsRouter);
-    app.use(errorHandler);
+    deps.docChannel = http;
     if (options.seed !== false) {
       const enabled = await request(server!)
         .post(`/api/rooms/${room.id}/repo`)
@@ -503,6 +518,7 @@ export async function createOriginalOwnedRoomFixture(
       db,
       auth,
       app,
+      installFileOpsHttpHandler,
       server: server!,
       roomId: room.id,
       subsystem,

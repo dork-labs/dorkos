@@ -50,7 +50,7 @@ export function createNativeEmissionIntegrityControl(
   documentId: string,
   service: DocChannelService,
   caseName: NativeEmissionIntegrityCase
-): Readonly<{ read(): NativeEmissionIntegrityData; stop(): Promise<void> }> {
+): Readonly<{ start(): void; read(): NativeEmissionIntegrityData; stop(): Promise<void> }> {
   if (caseName !== 'none' && caseName !== 'select-builder' && caseName !== 'event-codec')
     throw new Error('Finite native integrity case required');
   let phase: NativeEmissionIntegrityData['phase'] = 'waiting';
@@ -246,21 +246,100 @@ export function createNativeEmissionIntegrityControl(
     }
     phase = 'restored';
   };
-  // Startup-selected observer owns its finite work independently of IPC reads.
-  const observer = (async () => {
-    if (caseName === 'none') return;
-    for (let attempts = 0; attempts < 1000 && !stopped; attempts++) {
-      if (observe().phase === 'restored') return;
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
-    if (!stopped && data().phase !== 'restored')
-      throw new Error('Native integrity observer frontier');
-  })();
-  // Install failure custody immediately; DATA never exposes or classifies the raw cause.
-  const settledObserver = observer.catch((cause) => {
-    observerFailed = true;
-    observerCause = cause;
-  });
+  let started = false;
+  let settledObserver: Promise<void> = Promise.resolve();
+  // Own the same finite observation only after the genuine installed input pair.
+  // No browser-supplied event IDs, callbacks or authority claims select this subject.
+  const start = () => {
+    if (started || stopped || caseName === 'none' || phase !== 'waiting')
+      throw new Error('Original native integrity observation cannot start');
+    const events = db
+      .select()
+      .from(canvasDocEvents)
+      .where(eq(canvasDocEvents.documentId, documentId))
+      .limit(65)
+      .all();
+    // Initial delivery statuses are genuine system events in this same durable log.
+    // They are not inputs; prior ACKs/replies and every other event still refuse.
+    const inputs = events.filter(
+      (row) => row.type === 'task.comment' && row.direction === 'upstream'
+    );
+    const deliveries = db
+      .select()
+      .from(canvasDocDeliveries)
+      .where(
+        and(
+          eq(canvasDocDeliveries.documentId, documentId),
+          eq(canvasDocDeliveries.routeId, 'consumer')
+        )
+      )
+      .limit(3)
+      .all();
+    if (
+      events.length > 64 ||
+      events.some(
+        (row) =>
+          !(
+            (row.type === 'task.comment' && row.direction === 'upstream') ||
+            (row.type === 'event.status' && row.direction === 'system')
+          )
+      ) ||
+      inputs.length !== 2 ||
+      deliveries.length !== 2 ||
+      new Set(deliveries.map((row) => row.eventId)).size !== 2 ||
+      !inputs.every((row) =>
+        deliveries.some(
+          (delivery) =>
+            delivery.eventId === row.eventId &&
+            ['pending', 'waiting'].includes(delivery.status) &&
+            typeof delivery.batchId === 'string' &&
+            delivery.turnId === null &&
+            delivery.ackOutcome === null &&
+            delivery.acknowledgedAt === null &&
+            delivery.acknowledgedBy === null &&
+            delivery.ackEvidence === null
+        )
+      )
+    )
+      throw new Error('Original installed two-input integrity frontier unavailable');
+    const batchIds = new Set(deliveries.map((row) => row.batchId));
+    const installedBatchId = deliveries[0]?.batchId;
+    if (typeof installedBatchId !== 'string')
+      throw new Error('Original installed batch ID unavailable');
+    const installedBatch = db
+      .select()
+      .from(canvasDocBatches)
+      .where(
+        and(
+          eq(canvasDocBatches.documentId, documentId),
+          eq(canvasDocBatches.batchId, installedBatchId)
+        )
+      )
+      .get();
+    if (
+      batchIds.size !== 1 ||
+      !installedBatch ||
+      installedBatch.routeId !== 'consumer' ||
+      !['pending', 'waiting'].includes(installedBatch.status) ||
+      installedBatch.inputEventIds.length !== 2 ||
+      !inputs.every((row) => installedBatch.inputEventIds.includes(row.eventId))
+    )
+      throw new Error('Original installed two-input batch unavailable');
+    started = true;
+    const observer = (async () => {
+      for (let attempts = 0; attempts < 1000 && !stopped; attempts++) {
+        if (observe().phase === 'restored') return;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+      if (!stopped && data().phase !== 'restored')
+        throw new Error('Native integrity observer frontier');
+    })();
+    // Install failure custody immediately; DATA never starts observation or arms faults.
+    settledObserver = observer.catch((cause) => {
+      observerFailed = true;
+      observerCause = cause;
+    });
+  };
   const stop = () => {
     if (retirement) return retirement;
     stopped = true;
@@ -294,5 +373,5 @@ export function createNativeEmissionIntegrityControl(
     })();
     return retirement;
   };
-  return Object.freeze({ read: data, stop });
+  return Object.freeze({ start, read: data, stop });
 }

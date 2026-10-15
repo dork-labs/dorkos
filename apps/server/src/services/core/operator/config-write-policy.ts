@@ -13,7 +13,7 @@
  * The approval gate that stops destructive work only means something in the
  * logged-in posture, because that is where deciding an approval requires an
  * authenticated person. With login off, the server cannot tell the person in the
- * cockpit from any process running as the same user, which the threat model
+ * app from any process running as the same user, which the threat model
  * documents and accepts. So `config_patch({ auth: { enabled: false } })` was an
  * ungated path, from inside the capability surface, to removing the precondition
  * that makes every destructive approval enforceable. The safety feature could
@@ -39,7 +39,7 @@
  *
  * The guard runs at the CAPABILITY HANDLER (`createConfigPatchHandler`), which is
  * the layer that knows an agent asked. It deliberately does NOT run inside
- * {@link applyConfigPatch}: the cockpit's own enable-login and disable-login flows
+ * {@link applyConfigPatch}: the app's own enable-login and disable-login flows
  * (`OwnerSetupHost.tsx`, `SecurityPanel.tsx`) reach that shared function through
  * `PATCH /api/config`, and guarding it there would break the legitimate human
  * path this whole feature exists to protect.
@@ -83,10 +83,9 @@
  *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
- * - **Whether a person is asked at all.** `permissions`, the four
- *   `defaultTrustStop` leaves, and `ui.autonomyAcknowledgedAt`: the switches that
- *   decide whether an approval card ever appears, and the record of the consent
- *   behind them.
+ * - **Whether a person is asked at all.** `permissions` and the four
+ *   `defaultTrustStop` leaves: the switches that decide whether an approval card
+ *   ever appears.
  *
  * ### The one group that is not security-shaped
  *
@@ -169,7 +168,7 @@
  * - `server.cwd` — a starting directory, and a path field the CLI DOES validate
  *   against the boundary (it falls back to the boundary root when the configured
  *   value sits outside). It picks a spot on ground the agent already has.
- * - `server.port`, `server.open` — moving or not-opening the cockpit is disruptive,
+ * - `server.port`, `server.open` — moving or not-opening the app is disruptive,
  *   not an escalation.
  * - `version` — a `z.literal(1)`, so the only value that validates is the one
  *   already stored.
@@ -206,6 +205,12 @@
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
 import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
+import {
+  CLOUD_REMOTE_CREDENTIAL_PATHS,
+  CLOUD_REMOTE_REACH_PATHS,
+  CLOUD_REMOTE_WRITE_POLICY,
+} from '../remote/remote-config-policy.js';
+import { ONBOARDING_CREDENTIAL_PATHS, ONBOARDING_WRITE_POLICY } from './onboarding-write-policy.js';
 
 /**
  * Whether an agent may write one config leaf through `config_patch`.
@@ -299,6 +304,16 @@ export const CONFIG_WRITE_POLICY = {
   'ui.shapes.agentDefaults': 'agent-writable',
   'ui.shapes.autoFollowAgent': 'agent-writable',
   'ui.statusBar.pins': 'agent-writable',
+  // Where each mini app's right-panel tab shows (spec `mini-app-placement`).
+  // A preference: a tab's placement grants the mini app nothing (its code
+  // already runs, or not, by the `extensions.*` approvals).
+  'ui.panelTabs[].tab': 'agent-writable',
+  'ui.panelTabs[].show.agents': 'agent-writable',
+  'ui.panelTabs[].show.rooms': 'agent-writable',
+  'ui.panelTabs[].show.pages': 'agent-writable',
+  'ui.panelTabs[].hide.agents': 'agent-writable',
+  'ui.panelTabs[].hide.rooms': 'agent-writable',
+  'ui.panelTabs[].hide.pages': 'agent-writable',
   'ui.composer.richText': 'agent-writable',
   // Preferences only: restoring a room always reauthorizes it server-side, so
   // changing an ID cannot widen access or disclose the remembered destination.
@@ -318,25 +333,12 @@ export const CONFIG_WRITE_POLICY = {
   // slot offers, exactly like `ui.sidebar.gettingStarted.retired` above; nothing
   // it gates is a security control.
   'ui.promos.dismissedIds': 'agent-writable',
-  // A record of what a PERSON read and agreed to. Writing it stops DorkOS ever
-  // explaining Full autonomy to them again, and an agent forging that record
-  // would be signing a consent form on somebody else's behalf. It is the only
-  // `ui.*` leaf that is not a preference.
-  //
-  // It buys the agent no new REACH — anything that can reach `PATCH
-  // /api/sessions/:id` can put `acknowledgedAutonomy: true` on the request and
-  // open the same door once. What this stops is the durable, silent version.
-  'ui.autonomyAcknowledgedAt': 'operator-only',
-  // The power-door answer, refused for exactly the reason above: these record
-  // that a PERSON was asked a consent question and what they said. An agent that
-  // could write them could close the door on a question nobody ever saw — and
-  // then, having recorded `'full'`, hand the binding form a pre-selected
-  // `canInitiate`. They grant nothing by themselves, which is why they are
-  // `no-risk` in the safe-defaults table; a consent record an agent can write is
-  // still a consent record an agent can forge, which is why they are refused
-  // here. The two verdicts answer different questions and are meant to differ.
-  'ui.fullPowerDecidedAt': 'operator-only',
-  'ui.fullPowerChoice': 'operator-only',
+  // When a PERSON saw the "agents now work without asking" notice. An agent
+  // that could write it could dismiss, unseen, the one notice that tells the
+  // person what agents may now do and how to turn asking back on. It grants
+  // nothing by itself, which is why it is `no-risk` in the safe-defaults table;
+  // a record of what a person was told is still not an agent's to forge.
+  'ui.trustNoticeSeenAt': 'operator-only',
 
   // Every way the operator finds out that something is waiting on them. An agent
   // that could write these could turn off the knock, stop the phone ever ringing
@@ -346,7 +348,7 @@ export const CONFIG_WRITE_POLICY = {
   // exactly the line this table draws.
   //
   // `browserPermissionPrimerDismissed` is refused for the sibling reason
-  // `ui.autonomyAcknowledgedAt` above is: it records that a PERSON answered a
+  // the power-door answer above is: it records that a PERSON answered a
   // question, and an agent writing it would be answering on their behalf —
   // permanently, since the card is asked once.
   'notifications.escalation.phoneAfterMinutes': 'operator-only',
@@ -372,10 +374,16 @@ export const CONFIG_WRITE_POLICY = {
   'relay.maxAgentTurnsTotalPerHour': 'operator-only',
 
   'browser.enabled': 'operator-only',
+  'computers.enabled': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
   'spaces.enabled': 'operator-only',
+  // Which space is official (spec `official-community-space` D4): the one
+  // outside server this install shows and talks to while spaces are off, and
+  // whose agents' wake default is narrowed. Choosing it widens who this
+  // instance reaches, so a person sets it, never an agent.
+  'spaces.official.url': 'operator-only',
   // Whether the external A2A surface mounts: an agent card describing the agents
   // here, plus a JSON-RPC address outside clients post work to. That is squarely
   // "who can reach this instance", which is why it sits with `tunnel.enabled` and
@@ -402,6 +410,14 @@ export const CONFIG_WRITE_POLICY = {
   // asked to keep it awake can say where the switch is.
   'keepAwake.whileAgentsWork': 'operator-only',
   'keepAwake.wakeForScheduledTasks': 'operator-only',
+
+  // Whether agents wake on their own (spec `heartbeats` §3.6). It decides
+  // whether an agent acts unbidden at all, which is the person's call; an agent
+  // asked to stop its beats can set its own HEARTBEAT.md to `wake: off`.
+  'heartbeats.enabled': 'operator-only',
+  // Whether cheap checks spend DorkOS credits (spec `heartbeats` §6.3). Only a
+  // person's **Use credits** may say yes: it spends the account owner's money.
+  'heartbeats.triageOnCredits': 'operator-only',
 
   // How long the Activity feed keeps the history people review (spec
   // `audit-trail` §3.5). Shortening it deletes rows a person may not have read
@@ -467,17 +483,8 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.collectDebounceMs': 'operator-only',
   'rooms.collectMaxEntries': 'operator-only',
   'rooms.responseGate': 'operator-only',
-  // How many messages one agent may post into a room in one turn. Operator-only
-  // for the plainest reason in this list: it is a bound on the agent itself, and
-  // an agent that could raise it is voting itself more of the room.
-  'rooms.maxPostsPerTurn': 'operator-only',
-  // How many times one agent may change a room's shared canvas in one turn.
-  // Operator-only for exactly the reason above it: it is a bound on the agent
-  // itself, and an agent that could raise it is voting itself more of the table
-  // everybody else in the room is looking at.
-  'rooms.maxCanvasOpsPerTurn': 'operator-only',
-  // How many conversations one agent may work in at once. Operator-only for the
-  // same reason as the two above: it is a bound on the agents themselves, and an
+  // How many conversations one agent may work in at once. Operator-only: it is
+  // a bound on the agents themselves, and an
   // agent that could raise it is voting itself more turns in a shared folder.
   'rooms.maxConcurrentTurnsPerAgent': 'operator-only',
 
@@ -526,15 +533,8 @@ export const CONFIG_WRITE_POLICY = {
   'welcomeBack.maxPosts': 'operator-only',
   'welcomeBack.offersEnabled': 'operator-only',
 
-  'onboarding.completedSteps': 'agent-writable',
-  'onboarding.skippedSteps': 'agent-writable',
-  'onboarding.startedAt': 'agent-writable',
-  'onboarding.dismissedAt': 'agent-writable',
-  'onboarding.completedAt': 'agent-writable',
-  // A timestamp saying the first-run flow already picked a default runtime. It
-  // grants nothing and guards nothing; an agent rewriting it can at most let
-  // first-run setup ask the question again on a machine that is past it.
-  'onboarding.runtimeDefaultSetAt': 'agent-writable',
+  // The first-run section, in its own module (`onboarding-write-policy.ts`).
+  ...ONBOARDING_WRITE_POLICY,
 
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',
@@ -549,6 +549,16 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
   'profile.identityPromptDismissedAt': 'agent-writable',
+  // A person's zone, hours and away note (spec `heartbeats` §3.5), on the same
+  // line as the rest of the profile: a person tells DorkBot "I'm off till
+  // Monday" and it sets `away`. Hours decide when a message to a person is
+  // delivered, never what an agent may do, so changing them widens nothing.
+  'profile.timezone': 'agent-writable',
+  'profile.workingHours.days': 'agent-writable',
+  'profile.workingHours.start': 'agent-writable',
+  'profile.workingHours.end': 'agent-writable',
+  'profile.away.until': 'agent-writable',
+  'profile.away.note': 'agent-writable',
 
   // The one leaf of the profile a person keeps, and the reason it is not a
   // contradiction of the line above (DOR-1022). `displayName` stays writable
@@ -706,15 +716,11 @@ export const CONFIG_WRITE_POLICY = {
   // agent can already ask for. It is DURABLE — nothing sweeps it, so it keeps
   // applying to sessions the person starts tomorrow — and it is SILENT, because a
   // new session simply opens already bypassed, with no dialog and nothing on
-  // screen saying a setting changed. `ui.autonomyAcknowledgedAt` is operator-only
-  // for the sibling reason (forging the consent record), and an agent that could
-  // write both would hold the whole door.
+  // screen saying a setting changed.
   //
   // The stops below autonomy are the same leaf and get the same verdict: this
   // table classifies paths, not values, and a per-value rule would mean an agent
   // could write `'ask'` today and nothing would notice the day the enum grew.
-  // The route enforces a second, value-shaped gate on top for `'autonomy'` (428
-  // `AUTONOMY_ACK_REQUIRED`), which is about consent rather than about who asks.
   'runtimes.defaultTrustStop': 'operator-only',
   'runtimes.claudeCode.defaultTrustStop': 'operator-only',
   'runtimes.codex.defaultTrustStop': 'operator-only',
@@ -726,7 +732,7 @@ export const CONFIG_WRITE_POLICY = {
   // different subscription — for the operator this feature was written for, a
   // different paying client. That is the credential axis this module holds, so an
   // agent must not be able to do it, and it never needs to: the person picks their
-  // client in the cockpit. The roster is guarded with it, because an account is
+  // client in the app. The roster is guarded with it, because an account is
   // only selectable once it is registered.
   'runtimes.claudeCode.defaultAccount': 'operator-only',
   'runtimes.claudeCode.accounts[].id': 'operator-only',
@@ -786,6 +792,7 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
   'runtimes.doe.enabled': 'agent-writable',
+  'runtimes.doe.defaultModel': 'agent-writable',
   'runtimes.doe.inference.source': 'operator-only',
   'runtimes.doe.inference.provider': 'operator-only',
   'runtimes.doe.inference.protocol': 'operator-only',
@@ -829,6 +836,10 @@ export const CONFIG_WRITE_POLICY = {
   'permissions.defaults.areas': 'operator-only',
   'permissions.defaults.actions': 'operator-only',
   'permissions.upgradeSweptVersion': 'operator-only',
+  // Machine-managed like the marker above: the boot steps that apply the
+  // Trusted defaults outside config.json stamp it once. An agent that cleared
+  // it would re-open the mesh a person had closed on the next boot.
+  'permissions.trustedStoresAppliedAt': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -846,6 +857,9 @@ export const CONFIG_WRITE_POLICY = {
   // writing this would allow itself to spend.
   'cloud.credits.agents': 'operator-only',
   'cloud.credits.linkedTo': 'operator-only',
+
+  // Managed remote access (DOR-2086); see `remote/remote-config-policy.ts`.
+  ...CLOUD_REMOTE_WRITE_POLICY,
 
   // A configured raw-MCP server becomes a tool endpoint sessions can attach —
   // an agent writing one grants itself a capability, which is exactly the line
@@ -962,9 +976,12 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'tunnel.domain',
       'tunnel.authtoken',
       'tunnel.auth',
+      ...CLOUD_REMOTE_REACH_PATHS,
       'mcp.enabled',
       'browser.enabled',
+      'computers.enabled',
       'spaces.enabled',
+      'spaces.official.url',
       'a2a.enabled',
       'mcp.apiKey',
       'mcp.rateLimit.enabled',
@@ -1012,6 +1029,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.credits.offer',
       'cloud.credits.agents',
       'cloud.credits.linkedTo',
+      ...CLOUD_REMOTE_CREDENTIAL_PATHS,
+      ...ONBOARDING_CREDENTIAL_PATHS,
+      'heartbeats.triageOnCredits',
       'runtimes.codex.credentialRef',
       'runtimes.environment.inherit.claudeCode',
       'runtimes.environment.inherit.codex',
@@ -1096,13 +1116,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.codex.defaultTrustStop',
       'runtimes.opencode.defaultTrustStop',
       'runtimes.doe.defaultTrustStop',
-      'ui.autonomyAcknowledgedAt',
-      // The power-door answer. Filed under `approvals` rather than a stake of
-      // its own because that is what the question was about: whether the person
-      // is asked before work happens. The record grants nothing by itself, but
-      // writing it is how the asking stops.
-      'ui.fullPowerDecidedAt',
-      'ui.fullPowerChoice',
+      // The notice that says agents work without asking. Filed here because
+      // that is what it tells the person about: whether they are asked first.
+      'ui.trustNoticeSeenAt',
       // What agents may do without asking. Refused on this route before this
       // table is read (see `USE_PERMISSIONS_API`); listed so the stake sentence
       // is right if that refusal is ever reached around.
@@ -1110,6 +1126,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.defaults.areas',
       'permissions.defaults.actions',
       'permissions.upgradeSweptVersion',
+      'permissions.trustedStoresAppliedAt',
     ],
   },
   {
@@ -1131,15 +1148,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.responseGate',
-      // How much one turn may say in a room (spec `tool-only-room-replies`).
-      // It decides how much your agents say on their own, which is this stake
-      // exactly.
-      'rooms.maxPostsPerTurn',
-      // And how much of the room's shared canvas one turn may rearrange. Same
-      // stake: how much your agents do on their own in front of everybody else.
-      'rooms.maxCanvasOpsPerTurn',
-      // And how many conversations one agent may work in at once: how much
-      // your agents do on their own at the same time, and how much that spends.
+      // How many conversations one agent may work in at once: how much your
+      // agents do on their own at the same time, and how much that spends.
       'rooms.maxConcurrentTurnsPerAgent',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
@@ -1147,6 +1157,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // The most literal member of this group: it is the one welcome-back
       // setting that decides whether a model turn runs at all (DOR-1046).
       'welcomeBack.offersEnabled',
+      // Whether agents wake on their own at all (spec `heartbeats` §3.6).
+      'heartbeats.enabled',
     ],
   },
   {
@@ -1210,6 +1222,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'ui.communityNavigation.owners[].ownerKey',
       'ui.communityNavigation.owners[].installationDestination.path',
       'ui.communityNavigation.owners[].installationDestination.search',
+      // Which #team entry the app shows as DorkBot's first-run welcome.
+      'onboarding.welcomeEntryId',
     ],
   },
   {
@@ -1240,21 +1254,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
  * @param patch - The raw patch a caller supplied.
  */
 export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
-  const areas = new Set<OperatorOnlyArea>(
-    findOperatorOnlyPaths(patch).map(
-      (path) =>
-        OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
-    )
-  );
-  return [...areas];
+  const areaOf = (path: string): OperatorOnlyArea =>
+    OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions';
+  return [...new Set(findOperatorOnlyPaths(patch).map(areaOf))];
 }
-
-/**
- * The clause for a refused path with no stake on file. Deliberately says only
- * what is certainly true, so an unclassified path can never be described as
- * something it is not. The drift guard keeps this out of normal use.
- */
-const OPERATOR_ONLY_FALLBACK_DESCRIPTION = 'Settings the person keeps for themselves';
 
 /** The machine-readable code every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
@@ -1272,41 +1275,4 @@ const OPERATOR_ONLY_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_CONFIG_PATHS);
  */
 export function findOperatorOnlyPaths(patch: unknown): string[] {
   return findGuardedPaths(patch, OPERATOR_ONLY_GUARDED);
-}
-
-/**
- * The refusal an agent reads. Names exactly what it may not change, says why in
- * one plain sentence, and tells it what to do instead, because this text lands in
- * a model's context and a model that is only told "no" will try again.
- *
- * The "why" is per stake, not one blanket claim: the paths are grouped by
- * {@link OPERATOR_ONLY_STAKES} and each group gets the sentence that is true of
- * it. A refusal that overstates what a setting does is a lie the model then
- * carries into the rest of the conversation (DOR-1044).
- *
- * @param paths - The offending policy paths, from {@link findOperatorOnlyPaths}.
- * @returns One paragraph written for the model.
- */
-export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
-  const remaining = new Set(paths);
-  const clauses: string[] = [];
-
-  for (const group of OPERATOR_ONLY_STAKES) {
-    const matched = paths.filter((path) => group.paths.includes(path));
-    if (matched.length === 0) continue;
-    for (const path of matched) remaining.delete(path);
-    clauses.push(`${group.description}: ${matched.join(', ')}.`);
-  }
-
-  if (remaining.size > 0) {
-    clauses.push(`${OPERATOR_ONLY_FALLBACK_DESCRIPTION}: ${[...remaining].join(', ')}.`);
-  }
-
-  return [
-    'DorkOS changed nothing.',
-    "These settings are the person's to choose, not yours.",
-    ...clauses,
-    'Ask the person to change them in DorkOS Settings.',
-    'If your patch also had ordinary settings in it, send those again on their own and they will go through.',
-  ].join(' ');
 }

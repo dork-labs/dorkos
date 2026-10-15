@@ -105,7 +105,7 @@ describe('switchAgentCwd', () => {
       queryClient: new QueryClient(),
       transport,
       currentLocation: () => ({ pathname: '/session', search: {} }),
-      navigate: () => order.push('navigate'),
+      navigate: () => void order.push('navigate'),
     });
 
     expect(order).toEqual([]); // nothing committed while the lookup is out

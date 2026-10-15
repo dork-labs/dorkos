@@ -121,6 +121,13 @@ describe('the launch options every Claude Code turn is given', () => {
     ).toBe('1');
   });
 
+  it("registers the hooks that record a helper agent's tool calls, on every tool", async () => {
+    const options = await captureSdkOptions();
+    const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(unmatched).toHaveLength(1);
+    expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
+  });
+
   it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {
     // Spec `auto-mode-classifier-context`. Nothing else can catch this: a hook
     // that was never registered produces no error, no log line and no failing
@@ -129,7 +136,9 @@ describe('the launch options every Claude Code turn is given', () => {
     // notices.
     const options = await captureSdkOptions();
 
-    const matchers = options.hooks?.PostToolUse ?? [];
+    // The audit record's helper-tool hook rides PostToolUse too (spec
+    // `audit-trail` PR3); the classifier hook is the one with a matcher.
+    const matchers = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher !== undefined);
     expect(matchers).toHaveLength(1);
     expect(
       matchers[0]?.matcher,

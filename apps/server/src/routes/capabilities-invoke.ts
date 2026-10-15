@@ -12,7 +12,7 @@
  * ## Auth posture
  *
  * The endpoint is mounted under `/api/*`, so it inherits the app-wide
- * {@link sessionGate}: when login is enabled it requires a session cookie or a
+ * session gate: when login is enabled it requires a session cookie or a
  * per-user API key, exactly like every other `/api/*` route (config, agents,
  * tasks). It deliberately does NOT use the external `/mcp` server's tokenless
  * read-only carve-out — a mutating capability (`operator.update_agent`,
@@ -46,7 +46,7 @@
  *
  * @module routes/capabilities-invoke
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
   EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
@@ -60,9 +60,12 @@ import {
   CapabilityGateRefusal,
   CapabilityToolError,
 } from '../services/core/capabilities/index.js';
-import { getRequestAgentIdentity, presentsAgentIdentity } from '../middleware/agent-identity.js';
-import type { RequestUser } from '../services/core/auth/index.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
+import { validationFailureBody } from '../lib/route-utils.js';
 
 /**
  * Build the capability-invoke router over a composed registry.
@@ -74,29 +77,30 @@ import { logger } from '../lib/logger.js';
  * schema before invoking.
  *
  * @param registry - The boot-composed capability registry to dispatch through.
- * @returns An Express router serving `POST /:id/invoke` (mounted at `/api/capabilities`).
+ * @returns The routes serving `POST /:id/invoke`, for `app.route('/api/capabilities', …)`.
  */
-export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Router {
-  const router = Router();
+export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Hono<ApiEnv> {
+  const router = new Hono<ApiEnv>();
 
-  router.post('/:id/invoke', async (req, res) => {
-    const { id } = req.params;
+  router.post('/:id/invoke', async (c) => {
+    const id = c.req.param('id');
 
     const capability = registry.get(id);
     if (!capability && isExtensionCapabilityId(id)) {
-      return res
-        .status(503)
-        .json({ error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE, code: EXTENSION_TOOL_UNAVAILABLE_CODE });
+      return c.json(
+        { error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE, code: EXTENSION_TOOL_UNAVAILABLE_CODE },
+        503
+      );
     }
     if (!capability) {
-      return res
-        .status(404)
-        .json({ error: `Unknown capability: ${id}`, code: 'UNKNOWN_CAPABILITY' });
+      return c.json({ error: `Unknown capability: ${id}`, code: 'UNKNOWN_CAPABILITY' }, 404);
     }
 
-    // Express 5 leaves `req.body` undefined on an empty POST; capabilities with
-    // an empty input schema (`config.get`, `check_update`) accept `{}`.
-    const input = req.body ?? {};
+    // A request with no body reads as none at all, as Express 5's `req.body`
+    // did; capabilities with an empty input schema (`config.get`,
+    // `check_update`) accept `{}`.
+    const input = readJsonBody(c, { emptyAs: {} });
+    const facts = honoRequestFacts(c);
 
     try {
       // Attribute the call when the caller presented a resolved agent token
@@ -104,15 +108,15 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       // runs unattributed — which does NOT make it ungated: the capability's tier
       // decides that, so dropping a credential can never widen what a caller
       // reaches (see `tier-enforcement.ts`).
-      const identity = getRequestAgentIdentity(res);
+      const identity = facts.agentIdentity;
       // The WIDER fact, stated separately: a token that did not resolve still
       // means a machine is calling. Without it, a handler that turns the caller
       // into a domain principal cannot tell a revoked agent from the person at
       // the keyboard — which is how `rooms.post` came to write as the operator
       // (DOR-1361, `room-capabilities.ts`'s `callerAuthor`). It changes no tier
       // decision; the tier still decides that on its own.
-      const agentIdentityPresented = presentsAgentIdentity(req, res);
-      const header = req.headers[APPROVAL_TOKEN_HEADER];
+      const agentIdentityPresented = presentsAgentIdentity(facts);
+      const header = facts.headers[APPROVAL_TOKEN_HEADER];
       const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
 
       // This route deliberately never mints a trusted marker, even for a
@@ -120,12 +124,12 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       // call`), and the product cost of gating it is one Allow click for a person
       // running a destructive capability from a shell, which is what spec
       // `agent-trust` §UX describes anyway.
-      // The signed-in person, when login is on and `sessionGate` verified one.
+      // The signed-in person, when login is on and the session gate verified one.
       // A capability that acts on somebody's own data needs to know WHICH
       // person, and "no agent token" is not the same fact as "the owner" —
       // reading it that way is how an invited user's key reached the owner's
       // rooms (see `CapabilityInvocationContext.userId`).
-      const user = res.locals.user as RequestUser | undefined;
+      const user = facts.user;
       const result = await registry.invoke(id, input, {
         ...(identity ? { identity } : {}),
         ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
@@ -133,17 +137,17 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
         ...(approvalToken ? { approvalToken } : {}),
         retryChannel: 'http-header',
       });
-      return res.json(result);
+      return c.json(result);
     } catch (err) {
       // 202: the request was recorded and is waiting on a person, so the caller
       // should come back. 403: refused, and no retry will change that.
       if (err instanceof CapabilityGateRefusal) {
         const status = err.decision.outcome === 'approval_required' ? 202 : 403;
-        return res.status(status).json(err.decision.payload);
+        return c.json(err.decision.payload, status);
       }
       // Input failed the capability's Zod input contract — a client error.
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ error: 'Validation failed', details: z.flattenError(err) });
+        return c.json(validationFailureBody(err), 400);
       }
       // The handler returned an `isError` result (e.g. agent not found, system
       // agent protected, invalid config patch). Surface its structured payload
@@ -151,12 +155,12 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       if (err instanceof CapabilityToolError) {
         const payload = err.payload;
         if (payload && typeof payload === 'object') {
-          return res.status(400).json(payload);
+          return c.json(payload, 400);
         }
-        return res.status(400).json({ error: String(payload) });
+        return c.json({ error: String(payload) }, 400);
       }
       logger.error('[capabilities] invoke failed', { id, err });
-      return res.status(500).json({ error: 'Internal server error' });
+      return c.json({ error: 'Internal server error' }, 500);
     }
   });
 

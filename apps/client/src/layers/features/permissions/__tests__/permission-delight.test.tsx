@@ -83,20 +83,20 @@ describe('the why line', () => {
     expect(
       stateWhy({ ...base, state: 'allowed', source: 'agent-action', agentName: 'DorkBot' })
     ).toBe('Allowed, set for this one action on DorkBot.');
-    expect(stateWhy({ ...base, state: 'blocked', source: 'unchanged' })).toBe(
-      'Blocked. No preset chosen yet, so it works as before.'
+    expect(stateWhy({ state: 'allowed', source: 'preset', preset: null })).toBe(
+      'Allowed, from the default (Trusted).'
     );
     expect(stateWhy({ ...base, state: 'blocked', source: 'inactive' })).toBe(
       'Blocked, because this agent’s access was turned off.'
     );
   });
 
-  it('says a locked area can never be Allowed, and a destructive action always asks', () => {
+  it("says a locked area can never be Allowed, and someone else's code always asks", () => {
     expect(stateWhy({ state: 'ask', source: 'floor', preset: 'full' })).toBe(
       'Ask. This area is locked, so it’s never Allowed.'
     );
     expect(stateWhy({ state: 'ask', source: 'preset', destructiveAsk: true, preset: 'full' })).toBe(
-      'Ask. Actions that can’t be undone ask unless you set them one by one.'
+      'Ask. Actions that run someone else’s code ask unless set one by one.'
     );
   });
 

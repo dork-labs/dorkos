@@ -24,38 +24,34 @@
  *
  * @module server/services/rooms/repo/room-repo-service
  */
-import { randomUUID } from 'node:crypto';
-import { constants, promises as fs, type Stats } from 'node:fs';
-import type { FileHandle } from 'node:fs/promises';
+
+import type {
+  RoomMainRepair,
+  RepairAction,
+  RoomMainRepairResult,
+  EnableRoomRepoResult,
+  RoomRepoServiceDeps,
+  RoomRepoOwningConstruction,
+} from './repository-service/room-repo-service-contracts.js';
+export type {
+  RoomMainRepair,
+  RepairAction,
+  RoomMainRepairResult,
+  EnableRoomRepoResult,
+  RoomRepoServiceDeps,
+  RoomRepoOwningConstruction,
+} from './repository-service/room-repo-service-contracts.js';
+import { promises as fs, type Stats } from 'node:fs';
+
 import path from 'node:path';
 import type { Room } from '@dorkos/shared/room-schemas';
-import { type RoomRepoCaps, type RoomRepoSidecar } from '@dorkos/shared/room-repo';
+import { type RoomRepoSidecar } from '@dorkos/shared/room-repo';
 import { RoomError } from '../data/room-errors.js';
 import { logger } from '../../../lib/logger.js';
-import {
-  readOwnedRoomRepoSource,
-  executeOriginalRoomRepoStoreRead,
-  executeOriginalRoomRepoStoreWrite,
-  executeOriginalRoomRepoStoreUpsert,
-  rollbackOriginalRoomRepoStoreWrite,
-  type RoomRepoStore,
-} from './room-repo-store.js';
+import { type RoomRepoStore } from './room-repo-store.js';
 import type { RoomRepoMutex } from './room-repo-mutex.js';
-import {
-  commitAll,
-  commitsAheadOfMain,
-  FALLBACK_OPERATOR_GIT_NAME,
-  GitUnavailableError,
-  hasUncommittedChanges,
-  initRepo,
-  OPERATOR_GIT_EMAIL,
-  pathsInHead,
-  restoreFromHead,
-  unstagePaths,
-  type StrayChange,
-} from './room-repo-git.js';
-import { readMainCheckoutState } from './room-main-checkout.js';
-import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
+import { commitsAheadOfMain, hasUncommittedChanges, type StrayChange } from './room-repo-git.js';
+
 import { RoomConventions } from './room-conventions.js';
 
 /**
@@ -77,158 +73,33 @@ export const ROOM_REPO_EXISTS_CODE = 'ROOM_REPO_EXISTS';
  */
 const STRAY_CHANGES_COMMIT_MESSAGE = 'Keep changes made outside DorkOS';
 
-/** What the operator asked to do about changes DorkOS did not make. */
-export type RoomMainRepair =
-  | { action: 'commit' }
-  | {
-      action: 'discard';
-      /**
-       * Exactly which files to throw away. Never empty, and every one of them
-       * must be a path the room is currently reporting as changed.
-       */
-      paths: string[];
-    };
-
 /** What a repair did, before the room's files are looked at again. */
-interface RepairAction {
-  /** Which action ran. */
-  action: RoomMainRepair['action'];
-  /** The commit that kept the changes, or `null` for a discard. */
-  commit: string | null;
-  /** How many paths it dealt with. */
-  paths: number;
-}
-
-/** What a repair did. */
-export interface RoomMainRepairResult extends RepairAction {
-  /**
-   * Whether the room's files are clean now.
-   *
-   * `false` after a discard that named some of the stray changes and not
-   * others, which is a legitimate thing to do — and the answer says so rather
-   * than letting a client assume merges have resumed.
-   */
-  clean: boolean;
-}
-
-/** What {@link RoomRepoService.enable} answers. */
-export interface EnableRoomRepoResult {
-  /** `false` when the room already had files and nothing was changed. */
-  created: boolean;
-  /** The binding — the one just made, or the one that was already there. */
-  repo: RoomRepoSidecar;
-}
-
-/** The seams {@link RoomRepoService} needs from the rest of the server. */
-export interface RoomRepoServiceDeps {
-  /** File-first store for the sidecar and its cache row. */
-  store: RoomRepoStore;
-  /**
-   * The per-room serialized queue every server-side write to a room's repo goes
-   * through — **the same instance the merge verb uses** (`room-repo-mutex.ts`).
-   *
-   * Required rather than optional, because what it protects is a check-then-act
-   * with an `await` in the middle: see {@link RoomRepoService.enable}. A wiring
-   * that forgot it would compile, pass every single-caller test, and lose a
-   * room's first commit the first time two callers arrived together.
-   */
-  mutex: RoomRepoMutex;
-  /**
-   * How long a caller may wait for the room's queue, in milliseconds
-   * (`config.rooms.repo.mergeQueueWaitMs`). Read per call.
-   */
-  queueWaitMs: () => number;
-  /**
-   * Whether rooms may have files at all (`config.rooms.repo.enabled`).
-   *
-   * Read per call, not captured: switching the feature back on has to bind the
-   * very next request, not the next server start — the same rule every other
-   * live config reader in the rooms domain follows.
-   */
-  enabled: () => boolean;
-  /**
-   * The room as this caller can see it, or `null` when they cannot see it at
-   * all. `RoomService.getRoom` in production.
-   */
-  getRoom: (roomId: string, viewerAuthorId: string) => Room | null;
-  /** Whether an author is the person who owns this install. */
-  isOwnerAuthor: (authorId: string) => boolean;
-  /**
-   * The name operator commits are authored under, or `null` when this install
-   * has no name for them yet.
-   */
-  operatorGitName: () => string | null;
-  /**
-   * The caps a NEW binding is created under, seeded from config.
-   *
-   * Read once at create and then stored on the sidecar, so a later config
-   * change cannot retroactively make an existing repo's contents illegal.
-   */
-  caps: () => RoomRepoCaps;
-  /**
-   * Put this room's brand-new `ROOM.md` on its canvas, pinned.
-   *
-   * Called once, after the seed commit, for the room that just got files — which
-   * is the one moment a `ROOM.md` starts existing. The notes everybody in the
-   * room shares are the one document that is worth a tab by default, and pinning
-   * it is what stops a busy room's twelve-document ceiling ever pushing it off.
-   *
-   * Required rather than optional, for the reason
-   * {@link RoomRepoServiceDeps.mutex} is: a wiring that forgot it would compile,
-   * pass every test in this file, and quietly give every new room's shared notes
-   * no place to be.
-   *
-   * It must not throw — it is called inside the repo's own queue, and a canvas
-   * that refused would unwind a repo that was successfully created.
-   */
-  pinRoomMd: (roomId: string, authorId: string) => void;
-  /**
-   * How many bytes of `ROOM.md` may ride a member agent's turn, read LIVE from
-   * `config.rooms.repo.maxRoomMdBytes`.
-   *
-   * Beside {@link RoomRepoServiceDeps.caps} rather than inside it, because the
-   * two answer different questions and must be free to disagree. `caps` is
-   * frozen onto a room's sidecar at create so a config change cannot make an
-   * existing repo's CONTENTS illegal. This one bounds what is SENT, which is a
-   * cost paid on every message — somebody who turns it down means the next turn.
-   */
-  maxRoomMdBytes: () => number;
-}
 
 import type { Db } from '@dorkos/db';
-import type { RoomStore } from '../room-store.js';
+
 import { requireRoomServiceFileWriteOwner, type RoomService } from '../room-service.js';
 import {
   requireInstallationFileWritesOwner,
   type InstallationFileWrites,
 } from '../../canvas/doc-channel/writes/installation-file-writes.js';
-import type { DocChannelStore } from '../../canvas/doc-channel/store.js';
+
 import {
   requireInstallationRoomWrites,
   readInstallationRoomFileWriteOwner,
-  withRecognizedInstallationRoomRepo,
-  readInstallationRoomRepoMutationContext,
   readInstallationRoomMutationRoots,
-  checkInstallationRoomMutationTarget,
   requireInstallationRoomMutationTarget,
-  type InstallationRoomWrites,
   type InstallationRoomMutationContext,
 } from '../../canvas/doc-channel/writes/installation-room-writes.js';
 import {
   captureDocHttpRoomRepoCaller,
   readDocHttpRoomRepoCaller,
-  checkDocHttpRoomRepoCaller,
 } from '../../canvas/doc-channel/http-composition.js';
 import { DocChannelNotFoundError } from '../../canvas/doc-channel/authorization.js';
+import {
+  executeEnable as originalRepoExecuteEnable,
+  executeRepair as originalRepoExecuteRepair,
+} from './repository-service/room-repo-service-operations.js';
 
-interface RoomRepoOwningConstruction {
-  readonly owner: InstallationFileWrites;
-  readonly writer: InstallationRoomWrites;
-  readonly db: Db;
-  readonly channels: DocChannelStore;
-  readonly rooms: RoomService;
-  readonly roomStore: RoomStore;
-}
 const originalRepoStoreOperations = new WeakMap<
   InstallationRoomMutationContext,
   {
@@ -362,8 +233,8 @@ export function executeRoomRepoRepair(
 /** Route captures only through the actual constructor-owned service and verified HTTP composition. */
 export function captureRoomRepoHttpOperation(
   service: RoomRepoService,
-  req: import('express').Request,
-  res: import('express').Response,
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
   roomId: string,
   operation: 'enable' | 'repair'
 ): Promise<object> {
@@ -379,8 +250,37 @@ export function captureRoomRepoHttpOperation(
   return captureDocHttpRoomRepoCaller(binding.owning.owner, service, req, res, roomId, operation);
 }
 
+import type { RoomRepoServiceView } from './repository-service/room-repo-service-method-contracts.js';
+const repoServiceFreeze = Object.freeze;
+const repoServiceGet = WeakMap.prototype.get;
+const repoServiceSet = WeakMap.prototype.set;
+const repoServiceApply = Reflect.apply;
+const originalRepoMethodViews = new WeakMap<object, RoomRepoServiceView>();
+/** Resolve only the actual root-private repo service operation view before any native effects. */
+export function readOriginalRoomRepoServiceView(owner: object): RoomRepoServiceView {
+  const view = repoServiceApply(repoServiceGet, originalRepoMethodViews, [owner]) as
+    RoomRepoServiceView | undefined;
+  if (!view) throw new DocChannelNotFoundError();
+  return view;
+}
+import {
+  enableUnderLock as originalRepoEnableUnderLock,
+  seedGuarded as originalRepoSeedGuarded,
+  repoIsInitialised as originalRepoRepoIsInitialised,
+} from './repository-service/room-repo-service-enable.js';
+import {
+  repairUnderLock as originalRepoRepairUnderLock,
+  keepStrayChanges as originalRepoKeepStrayChanges,
+  discardStrayChanges as originalRepoDiscardStrayChanges,
+} from './repository-service/room-repo-service-repair.js';
+import {
+  seedRepo as originalRepoSeedRepo,
+  unwindFailedEnable as originalRepoUnwindFailedEnable,
+} from './repository-service/room-repo-service-seed.js';
+
 /** Enabling, archiving and deleting a room's files. */
 export class RoomRepoService {
+  readonly #operationKey = repoServiceFreeze({});
   /**
    * The `ROOM.md` composer, built here because it needs exactly what this
    * service already holds: the store's paths, the feature flag, and the live
@@ -428,6 +328,46 @@ export class RoomRepoService {
       homeDir: (roomId) => deps.store.homeDir(roomId),
       maxRoomMdBytes: deps.maxRoomMdBytes,
     });
+
+    /** Capture the original private methods and state without exposing a writable registration seam. */
+    function createMethodView(owner: RoomRepoService): RoomRepoServiceView {
+      return repoServiceFreeze({
+        originalService: owner,
+        get deps() {
+          return owner.#deps;
+        },
+        get owning() {
+          return owner.#owning;
+        },
+        get acquiredSeedRepos() {
+          return owner.#acquiredSeedRepos;
+        },
+        requireEnabled: () => owner.#requireEnabled(),
+        operations: originalRepoStoreOperations,
+        sameRepoInode,
+        strayChangesCommitMessage: STRAY_CHANGES_COMMIT_MESSAGE,
+        enableUnderLock: (...args: Parameters<RoomRepoServiceView['enableUnderLock']>) =>
+          owner.#enableUnderLock(...args),
+        seedGuarded: (...args: Parameters<RoomRepoServiceView['seedGuarded']>) =>
+          owner.#seedGuarded(...args),
+        repoIsInitialised: (...args: Parameters<RoomRepoServiceView['repoIsInitialised']>) =>
+          owner.#repoIsInitialised(...args),
+        repairUnderLock: (...args: Parameters<RoomRepoServiceView['repairUnderLock']>) =>
+          owner.#repairUnderLock(...args),
+        keepStrayChanges: (...args: Parameters<RoomRepoServiceView['keepStrayChanges']>) =>
+          owner.#keepStrayChanges(...args),
+        discardStrayChanges: (...args: Parameters<RoomRepoServiceView['discardStrayChanges']>) =>
+          owner.#discardStrayChanges(...args),
+        seedRepo: (...args: Parameters<RoomRepoServiceView['seedRepo']>) =>
+          owner.#seedRepo(...args),
+        unwindFailedEnable: (...args: Parameters<RoomRepoServiceView['unwindFailedEnable']>) =>
+          owner.#unwindFailedEnable(...args),
+      });
+    }
+    repoServiceApply(repoServiceSet, originalRepoMethodViews, [
+      this.#operationKey,
+      createMethodView(this),
+    ]);
   }
 
   /**
@@ -508,36 +448,8 @@ export class RoomRepoService {
         'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
       );
   }
-  async #executeEnable(handle: object): Promise<EnableRoomRepoResult> {
-    const owning = this.#owning;
-    if (!owning) throw new DocChannelNotFoundError();
-    this.#requireEnabled();
-    const caller = readDocHttpRoomRepoCaller(owning.owner, this, handle, 'enable');
-    await checkDocHttpRoomRepoCaller(handle);
-    return withRecognizedInstallationRoomRepo(owning.writer, caller.roomId, async (scope) => {
-      const context = readInstallationRoomRepoMutationContext(
-        owning.writer,
-        caller.roomId,
-        scope,
-        this,
-        'enable',
-        handle
-      );
-      originalRepoStoreOperations.set(context, {
-        service: this,
-        handle,
-        owning,
-        store: this.#deps.store,
-        mutex: this.#deps.mutex,
-        roomId: caller.roomId,
-        operation: 'enable',
-      });
-      try {
-        return await this.#enableUnderLock(caller.roomId, caller.authorId, context);
-      } finally {
-        originalRepoStoreOperations.delete(context);
-      }
-    });
+  #executeEnable(handle: object): Promise<EnableRoomRepoResult> {
+    return originalRepoExecuteEnable(this.#operationKey, handle);
   }
 
   /**
@@ -548,92 +460,12 @@ export class RoomRepoService {
    * @param callerAuthorId - Who is asking.
    * @returns The binding, and whether this call is what made it.
    */
-  async #enableUnderLock(
+  #enableUnderLock(
     roomId: string,
     callerAuthorId: string,
     context: InstallationRoomMutationContext
   ): Promise<EnableRoomRepoResult> {
-    if (!this.#deps.enabled()) {
-      throw new RoomError(
-        'ROOM_REPOS_DISABLED',
-        'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
-      );
-    }
-
-    const room = this.#deps.getRoom(roomId, callerAuthorId);
-    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-
-    if (!this.#deps.isOwnerAuthor(callerAuthorId)) {
-      throw new RoomError('OPERATOR_ONLY', 'Only you can give a room files of its own');
-    }
-
-    const existing = await executeOriginalRoomRepoStoreRead(
-      this.#deps.store,
-      this.#owning!.db,
-      context,
-      roomId
-    );
-    if (existing) {
-      // Write the row back through on the way out: the one case where a caller
-      // is looking straight at a binding whose cache row may have been lost.
-      executeOriginalRoomRepoStoreUpsert(this.#deps.store, this.#owning!.db, context, existing);
-      // **A binding without a repo heals here rather than sticking.** The write
-      // order is sidecar-then-git, so a process killed between them leaves a
-      // room that reports having files and has none — and answering
-      // `created: false` forever would make that permanent, with no path back
-      // except deleting the sidecar by hand. Falling through to seed finishes
-      // the enable the interrupted call started.
-      if (await this.#repoIsInitialised(roomId, context)) {
-        requireInstallationRoomMutationTarget(
-          context,
-          readInstallationRoomMutationRoots(context).repoPath
-        );
-        this.#requireEnabled();
-        requireInstallationRoomMutationTarget(
-          context,
-          readInstallationRoomMutationRoots(context).repoPath
-        );
-        return { created: false, repo: existing };
-      }
-      logger.warn('[rooms] a room repo binding has no repo behind it; finishing the setup', {
-        roomId,
-      });
-      await this.#seedGuarded(roomId, room, callerAuthorId, context);
-      await checkInstallationRoomMutationTarget(
-        context,
-        readInstallationRoomMutationRoots(context).repoPath
-      );
-      this.#requireEnabled();
-      requireInstallationRoomMutationTarget(
-        context,
-        readInstallationRoomMutationRoots(context).repoPath
-      );
-      return { created: true, repo: existing };
-    }
-
-    const sidecar: RoomRepoSidecar = {
-      roomId,
-      mode: 'owned',
-      createdAt: new Date().toISOString(),
-      createdBy: callerAuthorId,
-      defaultBranch: 'main',
-      caps: this.#deps.caps(),
-      lastMergeSeq: null,
-    };
-
-    // The same acquired cleanup boundary includes sidecar publication/cache write,
-    // not only Git seeding. It remains inside the still-admitted private operation.
-    await this.#seedGuarded(roomId, room, callerAuthorId, context, sidecar);
-    await checkInstallationRoomMutationTarget(
-      context,
-      readInstallationRoomMutationRoots(context).repoPath
-    );
-    this.#requireEnabled();
-    requireInstallationRoomMutationTarget(
-      context,
-      readInstallationRoomMutationRoots(context).repoPath
-    );
-    return { created: true, repo: sidecar };
+    return originalRepoEnableUnderLock(this.#operationKey, roomId, callerAuthorId, context);
   }
 
   /**
@@ -649,53 +481,21 @@ export class RoomRepoService {
    * @throws {RoomError} `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no
    *   git, and otherwise whatever git failed with.
    */
-  async #seedGuarded(
+  #seedGuarded(
     roomId: string,
     room: Room,
     callerAuthorId: string,
     context: InstallationRoomMutationContext,
     publish?: RoomRepoSidecar
   ): Promise<void> {
-    try {
-      if (publish)
-        await executeOriginalRoomRepoStoreWrite(
-          this.#deps.store,
-          this.#owning!.db,
-          context,
-          publish
-        );
-      await this.#seedRepo(roomId, room, callerAuthorId, context);
-    } catch (err) {
-      // Attempt all acquired cleanup while preserving the first body failure, including undefined.
-      try {
-        await this.#unwindFailedEnable(roomId, context);
-      } catch {
-        /* original failure remains first */
-      }
-      if (err instanceof GitUnavailableError) {
-        throw new RoomError(
-          'ROOM_REPO_GIT_UNAVAILABLE',
-          'This computer doesn’t have git installed, and a room’s files are a git repository. Install git, then try again.'
-        );
-      }
-      throw err;
-    }
-    // **Outside the unwind, and guarded on its own.** The repo exists and the
-    // seed commit is made; a canvas that refused the tab is a missing tab, not a
-    // reason to tear a working repo back down. So this can never reach the
-    // `catch` above, and it can never fail the enable either.
-    try {
-      requireInstallationRoomMutationTarget(
-        context,
-        readInstallationRoomMutationRoots(context).repoPath
-      );
-      this.#deps.pinRoomMd(roomId, callerAuthorId);
-    } catch (err) {
-      logger.warn('[rooms] a new room’s notes did not reach its canvas', {
-        roomId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    return originalRepoSeedGuarded(
+      this.#operationKey,
+      roomId,
+      room,
+      callerAuthorId,
+      context,
+      publish
+    );
   }
 
   /**
@@ -707,33 +507,8 @@ export class RoomRepoService {
    *
    * @param roomId - The room.
    */
-  async #repoIsInitialised(
-    roomId: string,
-    context?: InstallationRoomMutationContext
-  ): Promise<boolean> {
-    const owning = this.#owning;
-    if (!owning) throw new DocChannelNotFoundError();
-    const source = readOwnedRoomRepoSource(this.#deps.store, owning.db, roomId);
-    const repo = context ? readInstallationRoomMutationRoots(context).repoPath : source.repo;
-    if (repo !== source.repo) throw new DocChannelNotFoundError();
-    const target = path.join(repo, '.git');
-    if (context) await checkInstallationRoomMutationTarget(context, target);
-    let present = false;
-    try {
-      await fs.lstat(target);
-      present = true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-    const current = readOwnedRoomRepoSource(this.#deps.store, owning.db, roomId);
-    if (
-      current.repo !== source.repo ||
-      current.root !== source.root ||
-      JSON.stringify(current.row) !== JSON.stringify(source.row)
-    )
-      throw new DocChannelNotFoundError();
-    if (context) await checkInstallationRoomMutationTarget(context, target);
-    return present;
+  #repoIsInitialised(roomId: string, context?: InstallationRoomMutationContext): Promise<boolean> {
+    return originalRepoRepoIsInitialised(this.#operationKey, roomId, context);
   }
 
   /**
@@ -788,60 +563,8 @@ export class RoomRepoService {
     throw new DocChannelNotFoundError();
   }
 
-  async #executeRepair(handle: object, repair: RoomMainRepair): Promise<RoomMainRepairResult> {
-    const owning = this.#owning;
-    if (!owning) throw new DocChannelNotFoundError();
-    const caller = readDocHttpRoomRepoCaller(owning.owner, this, handle, 'repair');
-    const roomId = caller.roomId,
-      callerAuthorId = caller.authorId;
-    await checkDocHttpRoomRepoCaller(handle);
-    if (!this.#deps.enabled()) {
-      throw new RoomError(
-        'ROOM_REPOS_DISABLED',
-        'Rooms cannot have files of their own on this install. Turn that back on in Settings first.'
-      );
-    }
-    // The room first, so a caller who cannot see it learns nothing else; then
-    // the operator gate — the same order `enable` takes.
-    if (!this.#deps.getRoom(roomId, callerAuthorId)) {
-      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-    }
-    if (!this.#deps.isOwnerAuthor(callerAuthorId)) {
-      throw new RoomError('OPERATOR_ONLY', 'Only you can decide what happens to those changes');
-    }
-    if (
-      readOwnedRoomRepoSource(this.#deps.store, owning.db, roomId).row === null ||
-      !(await this.#repoIsInitialised(roomId))
-    ) {
-      throw new RoomError('ROOM_HAS_NO_REPO', 'This room does not have files of its own.');
-    }
-
-    await checkDocHttpRoomRepoCaller(handle);
-    this.#requireEnabled();
-    return withRecognizedInstallationRoomRepo(owning.writer, roomId, async (scope) => {
-      const context = readInstallationRoomRepoMutationContext(
-        owning.writer,
-        roomId,
-        scope,
-        this,
-        'repair',
-        handle
-      );
-      originalRepoStoreOperations.set(context, {
-        service: this,
-        handle,
-        owning,
-        store: this.#deps.store,
-        mutex: this.#deps.mutex,
-        roomId,
-        operation: 'repair',
-      });
-      try {
-        return await this.#repairUnderLock(roomId, repair, context);
-      } finally {
-        originalRepoStoreOperations.delete(context);
-      }
-    });
+  #executeRepair(handle: object, repair: RoomMainRepair): Promise<RoomMainRepairResult> {
+    return originalRepoExecuteRepair(this.#operationKey, handle, repair);
   }
 
   /**
@@ -855,48 +578,12 @@ export class RoomRepoService {
    * @param repair - What the operator asked for.
    * @returns What it did.
    */
-  async #repairUnderLock(
+  #repairUnderLock(
     roomId: string,
     repair: RoomMainRepair,
     context: InstallationRoomMutationContext
   ): Promise<RoomMainRepairResult> {
-    const { repoPath: repoDir, homePath: ceiling } = readInstallationRoomMutationRoots(context);
-    try {
-      await checkInstallationRoomMutationTarget(context, repoDir);
-      const state = await readMainCheckoutState(repoDir, ceiling);
-      await checkInstallationRoomMutationTarget(context, repoDir);
-      if (state.branch !== 'main') {
-        throw new RoomError(
-          'MAIN_CHECKOUT_DIRTY',
-          `This room’s files are on ${state.branch ?? 'no branch'} rather than main, which only something outside DorkOS can have done. Put them back on main yourself — DorkOS will not move a branch it did not move, in case there is work on it.`
-        );
-      }
-
-      const result =
-        repair.action === 'commit'
-          ? await this.#keepStrayChanges(repoDir, ceiling, state.strays.length, context)
-          : await this.#discardStrayChanges(repoDir, ceiling, state.strays, repair.paths, context);
-
-      const after = await readMainCheckoutState(repoDir, ceiling);
-      await checkInstallationRoomMutationTarget(context, repoDir);
-      requireInstallationRoomMutationTarget(context, repoDir);
-      logger.info('[rooms] a room’s stray file changes were dealt with', {
-        roomId,
-        action: repair.action,
-        paths: result.paths,
-      });
-      this.#requireEnabled();
-      requireInstallationRoomMutationTarget(context, repoDir);
-      return { ...result, clean: after.strays.length === 0 };
-    } catch (err) {
-      if (err instanceof GitUnavailableError) {
-        throw new RoomError(
-          'ROOM_REPO_GIT_UNAVAILABLE',
-          'This computer doesn’t have git installed, and a room’s files are a git repository. Install git, then try again.'
-        );
-      }
-      throw err;
-    }
+    return originalRepoRepairUnderLock(this.#operationKey, roomId, repair, context);
   }
 
   /**
@@ -911,24 +598,13 @@ export class RoomRepoService {
    * @param strayCount - How many paths were waiting, for the answer.
    * @returns What was committed.
    */
-  async #keepStrayChanges(
+  #keepStrayChanges(
     repoDir: string,
     ceiling: string,
     strayCount: number,
     context: InstallationRoomMutationContext
   ): Promise<RepairAction> {
-    if (strayCount === 0) return { action: 'commit', commit: null, paths: 0 };
-    const commit = await commitAll(
-      repoDir,
-      STRAY_CHANGES_COMMIT_MESSAGE,
-      {
-        name: this.#deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
-        email: OPERATOR_GIT_EMAIL,
-      },
-      ceiling,
-      context
-    );
-    return { action: 'commit', commit, paths: strayCount };
+    return originalRepoKeepStrayChanges(this.#operationKey, repoDir, ceiling, strayCount, context);
   }
 
   /**
@@ -962,77 +638,21 @@ export class RoomRepoService {
    * @throws {RoomError} `ROOM_FILE_NOT_FOUND` naming the first path that is not
    *   one of the reported changes.
    */
-  async #discardStrayChanges(
+  #discardStrayChanges(
     repoDir: string,
     ceiling: string,
     strays: readonly StrayChange[],
     paths: readonly string[],
     context: InstallationRoomMutationContext
   ): Promise<RepairAction> {
-    const reported = new Map(strays.map((stray) => [stray.path, stray]));
-    for (const filePath of paths) {
-      if (!reported.has(filePath)) {
-        throw new RoomError(
-          'ROOM_FILE_NOT_FOUND',
-          `\`${filePath}\` is not one of the changes waiting in this room’s files. Look again — it may already have been dealt with.`
-        );
-      }
-    }
-
-    const wanted = [...new Set(paths)];
-    // The name a rename came FROM is restored with it. It was never offered as
-    // a stray of its own (it is not there to discard), and it is not counted as
-    // one either — the answer says how many changes the operator named.
-    const alsoRestore = wanted
-      .map((filePath) => reported.get(filePath)?.renamedFrom)
-      .filter((from): from is string => from !== undefined);
-    const inHead = await pathsInHead(repoDir, [...wanted, ...alsoRestore], ceiling);
-    const restore = [...new Set([...wanted, ...alsoRestore])].filter((filePath) =>
-      inHead.has(filePath)
+    return originalRepoDiscardStrayChanges(
+      this.#operationKey,
+      repoDir,
+      ceiling,
+      strays,
+      paths,
+      context
     );
-    const remove = wanted.filter((filePath) => !inHead.has(filePath));
-
-    await restoreFromHead(repoDir, restore, ceiling, context);
-    if (remove.length > 0) {
-      // The files first, then the index — see {@link unstagePaths} for why that
-      // order is what lets this run without a force flag.
-      for (const filePath of remove) {
-        const target = path.join(repoDir, filePath);
-        // Git's own output cannot climb out of the repo, and this is the line
-        // that says so rather than assuming it. `fs.rm` does not follow a
-        // symlink, so a link named here is unlinked and never followed.
-        if (target !== repoDir && !target.startsWith(`${repoDir}${path.sep}`)) continue;
-        await checkInstallationRoomMutationTarget(context, target);
-        let acquired: Stats | undefined;
-        try {
-          acquired = await fs.lstat(target);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-        }
-        if (!acquired) continue;
-        // An observed directory is never recursive file-removal custody.
-        if (acquired.isDirectory())
-          throw new RoomError(
-            'ROOM_FILE_NOT_FOUND',
-            'That change is a directory, not a file to discard.'
-          );
-        const parentPath = path.dirname(target),
-          parent = await fs.lstat(parentPath);
-        if (!parent.isDirectory() || parent.isSymbolicLink())
-          throw new Error('Room discard parent is not its actual directory.');
-        await checkInstallationRoomMutationTarget(context, target);
-        if (
-          !sameRepoInode(acquired, await fs.lstat(target)) ||
-          !sameRepoInode(parent, await fs.lstat(parentPath))
-        )
-          throw new Error('Room discard refuses a replaced file/parent.');
-        requireInstallationRoomMutationTarget(context, target);
-        await fs.unlink(target);
-        await checkInstallationRoomMutationTarget(context, repoDir);
-      }
-      await unstagePaths(repoDir, remove, ceiling, context);
-    }
-    return { action: 'discard', commit: null, paths: wanted.length };
   }
 
   /**
@@ -1184,178 +804,13 @@ export class RoomRepoService {
    * @param room - Its title and topic, for the seeded file.
    * @param callerAuthorId - Who asked, for the commit author fallback.
    */
-  async #seedRepo(
+  #seedRepo(
     roomId: string,
     room: Room,
     callerAuthorId: string,
     context: InstallationRoomMutationContext
   ): Promise<void> {
-    const roots = readInstallationRoomMutationRoots(context),
-      repoDir = roots.repoPath,
-      ceiling = roots.homePath;
-    const seed = seedRoomMd({ title: room.title, topic: room.topic });
-    const gitAuthor = {
-      name: this.#deps.operatorGitName() ?? FALLBACK_OPERATOR_GIT_NAME,
-      email: OPERATOR_GIT_EMAIL,
-    };
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    const home = await fs.lstat(ceiling);
-    if (!home.isDirectory() || home.isSymbolicLink())
-      throw new Error('Room seed home is not its actual directory.');
-    let previousRepo: Stats | undefined;
-    try {
-      previousRepo = await fs.lstat(repoDir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    if (!sameRepoInode(home, await fs.lstat(ceiling)))
-      throw new Error('Room seed home replaced before acquisition.');
-    requireInstallationRoomMutationTarget(context, repoDir);
-    if (!previousRepo) await fs.mkdir(repoDir);
-    const repo = await fs.lstat(repoDir);
-    if (
-      !repo.isDirectory() ||
-      repo.isSymbolicLink() ||
-      (previousRepo && !sameRepoInode(previousRepo, repo))
-    )
-      throw new Error('Room seed repository replaced before acquisition.');
-    if (!previousRepo)
-      this.#acquiredSeedRepos.set(context, {
-        roomId,
-        home: ceiling,
-        homeStat: home,
-        repo: repoDir,
-        repoStat: repo,
-      });
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    await initRepo(repoDir, ceiling, context);
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    if (
-      !sameRepoInode(home, await fs.lstat(ceiling)) ||
-      !sameRepoInode(repo, await fs.lstat(repoDir))
-    )
-      throw new Error('Room seed repository replaced during native initialization.');
-    const target = path.join(repoDir, ROOM_MD_FILENAME),
-      tmp = path.join(repoDir, `.${randomUUID()}.seed.tmp`);
-    let previousTarget: Stats | undefined;
-    try {
-      previousTarget = await fs.lstat(target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
-    if (previousTarget && (!previousTarget.isFile() || previousTarget.isSymbolicLink()))
-      throw new Error('Room seed destination is not its regular file.');
-    let handle: FileHandle | undefined, acquired: Stats | undefined;
-    let failed = false,
-      cause: unknown;
-    // Join this scope to its captured cleanup before returning or reporting failure.
-    const drainOriginalCleanup = async () => {
-      if (handle) {
-        try {
-          await handle.close();
-        } catch (error) {
-          if (!failed) {
-            failed = true;
-            cause = error;
-          }
-        }
-      }
-      if (acquired) {
-        try {
-          let current: Stats | undefined;
-          try {
-            current = await fs.lstat(tmp);
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-          }
-          if (current) {
-            if (
-              !sameRepoInode(acquired, current) ||
-              !sameRepoInode(repo, await fs.lstat(repoDir)) ||
-              !sameRepoInode(home, await fs.lstat(ceiling))
-            )
-              throw new Error('Room seed cleanup refuses a foreign file/parent.');
-            if (!readOriginalRoomRepoCleanupOperation(context, this.#deps.store, this.#owning!.db))
-              throw new Error('Room seed cleanup is retired.');
-            await fs.unlink(tmp);
-          }
-        } catch (error) {
-          if (!failed) {
-            failed = true;
-            cause = error;
-          }
-        }
-      }
-    };
-    try {
-      await checkInstallationRoomMutationTarget(context, tmp);
-      if (
-        !sameRepoInode(home, await fs.lstat(ceiling)) ||
-        !sameRepoInode(repo, await fs.lstat(repoDir))
-      )
-        throw new Error('Room seed acquisition lost its parent.');
-      requireInstallationRoomMutationTarget(context, tmp);
-      handle = await fs.open(
-        tmp,
-        constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW,
-        0o600
-      );
-      acquired = await handle.stat();
-      if (!acquired.isFile()) throw new Error('Room seed acquisition is not a regular file.');
-      await checkInstallationRoomMutationTarget(context, tmp);
-      await handle.writeFile(seed, 'utf8');
-      await checkInstallationRoomMutationTarget(context, tmp);
-      await handle.sync();
-      await checkInstallationRoomMutationTarget(context, target);
-      let currentTarget: Stats | undefined;
-      try {
-        currentTarget = await fs.lstat(target);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-      }
-      if (
-        (previousTarget === undefined) !== (currentTarget === undefined) ||
-        (previousTarget &&
-          currentTarget &&
-          (!currentTarget.isFile() ||
-            currentTarget.isSymbolicLink() ||
-            !sameRepoInode(previousTarget, currentTarget)))
-      )
-        throw new Error('Room seed destination replaced before publication.');
-      if (
-        !sameRepoInode(acquired, await handle.stat()) ||
-        !sameRepoInode(acquired, await fs.lstat(tmp)) ||
-        !sameRepoInode(repo, await fs.lstat(repoDir)) ||
-        !sameRepoInode(home, await fs.lstat(ceiling))
-      )
-        throw new Error('Room seed publication lost its acquired file/parent.');
-      requireInstallationRoomMutationTarget(context, target);
-      await fs.rename(tmp, target);
-      await checkInstallationRoomMutationTarget(context, target);
-      if (
-        !sameRepoInode(acquired, await fs.lstat(target)) ||
-        !sameRepoInode(repo, await fs.lstat(repoDir))
-      )
-        throw new Error('Room seed readback lost its acquired publication.');
-    } catch (error) {
-      failed = true;
-      cause = error;
-    } finally {
-      await drainOriginalCleanup();
-    }
-    if (failed) throw cause;
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    if (
-      !sameRepoInode(home, await fs.lstat(ceiling)) ||
-      !sameRepoInode(repo, await fs.lstat(repoDir))
-    )
-      throw new Error('Room seed commit lost its acquired parent.');
-    requireInstallationRoomMutationTarget(context, repoDir);
-    await commitAll(repoDir, ROOM_MD_SEED_COMMIT_MESSAGE, gitAuthor, ceiling, context);
-    await checkInstallationRoomMutationTarget(context, repoDir);
-    this.#acquiredSeedRepos.delete(context);
-    logger.info('[rooms] room repo created', { roomId, createdBy: callerAuthorId });
+    return originalRepoSeedRepo(this.#operationKey, roomId, room, callerAuthorId, context);
   }
 
   /**
@@ -1376,83 +831,8 @@ export class RoomRepoService {
    *
    * @param roomId - The room whose enable failed.
    */
-  async #unwindFailedEnable(
-    roomId: string,
-    context: InstallationRoomMutationContext
-  ): Promise<void> {
-    let failed = false,
-      cause: unknown;
-    try {
-      await rollbackOriginalRoomRepoStoreWrite(this.#deps.store, this.#owning!.db, context);
-    } catch (error) {
-      failed = true;
-      cause = error;
-    }
-    const acquired = this.#acquiredSeedRepos.get(context);
-    if (acquired) {
-      // Preserve a partial native repository as a quarantine. Recursive pathname deletion
-      // cannot prove ownership of every child written by Git or an external process.
-      const quarantine = `${acquired.repo}.failed-${randomUUID()}`;
-      let reservation: Stats | undefined,
-        published = false;
-      // Join this scope to its captured cleanup before returning or reporting failure.
-      const drainOriginalCleanup = async () => {
-        if (reservation && !published) {
-          try {
-            if (
-              !sameRepoInode(acquired.homeStat, await fs.lstat(acquired.home)) ||
-              !sameRepoInode(reservation, await fs.lstat(quarantine))
-            )
-              throw new Error('Room seed reservation cleanup refuses a foreign directory/parent.');
-            if (!readOriginalRoomRepoCleanupOperation(context, this.#deps.store, this.#owning!.db))
-              throw new Error('Room seed cleanup is retired.');
-            await fs.rmdir(quarantine);
-          } catch (error) {
-            if (!failed) {
-              failed = true;
-              cause = error;
-            }
-          }
-        }
-      };
-      try {
-        if (
-          !readOriginalRoomRepoCleanupOperation(context, this.#deps.store, this.#owning!.db) ||
-          acquired.roomId !== roomId
-        )
-          throw new Error('Room seed cleanup is foreign or retired.');
-        if (
-          !sameRepoInode(acquired.homeStat, await fs.lstat(acquired.home)) ||
-          !sameRepoInode(acquired.repoStat, await fs.lstat(acquired.repo))
-        )
-          throw new Error('Room seed cleanup refuses a foreign repository/parent.');
-        await fs.mkdir(quarantine);
-        reservation = await fs.lstat(quarantine);
-        if (!reservation.isDirectory() || reservation.isSymbolicLink())
-          throw new Error('Room seed quarantine is not its acquired reservation.');
-        if (
-          !sameRepoInode(acquired.homeStat, await fs.lstat(acquired.home)) ||
-          !sameRepoInode(acquired.repoStat, await fs.lstat(acquired.repo)) ||
-          !sameRepoInode(reservation, await fs.lstat(quarantine))
-        )
-          throw new Error('Room seed quarantine refuses observed replacement.');
-        if (!readOriginalRoomRepoCleanupOperation(context, this.#deps.store, this.#owning!.db))
-          throw new Error('Room seed cleanup retired before quarantine.');
-        await fs.rename(acquired.repo, quarantine);
-        published = true;
-        if (!sameRepoInode(acquired.repoStat, await fs.lstat(quarantine)))
-          throw new Error('Room seed quarantine lost its acquired repository.');
-      } catch (error) {
-        if (!failed) {
-          failed = true;
-          cause = error;
-        }
-      } finally {
-        await drainOriginalCleanup();
-      }
-      this.#acquiredSeedRepos.delete(context);
-    }
-    if (failed) throw cause;
+  #unwindFailedEnable(roomId: string, context: InstallationRoomMutationContext): Promise<void> {
+    return originalRepoUnwindFailedEnable(this.#operationKey, roomId, context);
   }
 }
 

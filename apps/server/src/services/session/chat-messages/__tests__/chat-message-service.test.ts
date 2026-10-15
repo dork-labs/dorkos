@@ -36,6 +36,12 @@ import {
   ChatMessageService,
   type ChatMessageServiceDeps,
 } from '../chat-message-service.js';
+import {
+  CHAT_TURN_LINGER_MS,
+  isChatStartedTurn,
+  resetChatStartedTurns,
+} from '../chat-started-turns.js';
+import { linkSessionId, resetSessionKeys } from '../../resolution/session-key-registry.js';
 
 const ANA = { sessionId: 'chat-a', agentPath: '/agents/ana' };
 const PERSON = 'window-a';
@@ -517,6 +523,32 @@ describe('send — steer', () => {
     expect(receipt.note).toMatch(/waits for the turn to end/);
   });
 
+  // Red when: the outsider check in `maySteer` is removed. A running turn
+  // cannot be marked as one that read an outsider's words, so a sender whose
+  // turn did waits for the next turn, which its ceiling marks (§4.7).
+  it('never steers an outsider’s words into a turn that has not read any', async () => {
+    levels.set(ANA.sessionId, { ...TIGHT, outsider: true });
+    levels.set('chat-b', TIGHT);
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(steerInto).not.toHaveBeenCalled();
+    expect(receipt.status).toBe('queued');
+    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual({
+      ...TIGHT,
+      outsider: true,
+    });
+  });
+
+  it('steers into a turn that has read an outsider’s words already', async () => {
+    levels.set(ANA.sessionId, { ...TIGHT, outsider: true });
+    levels.set('chat-b', { ...TIGHT, outsider: true });
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(receipt.status).toBe('steered');
+  });
+
   it('never steers into a turn looser than the sender: it waits, with a note', async () => {
     levels.set(ANA.sessionId, MIDDLE);
     levels.set('chat-b', LOOSE);
@@ -692,6 +724,48 @@ describe('the lifecycle of a sent message', () => {
     const { ids } = await queuedPair();
     lifecycle!({ phase: 'settled', messageId: 'someone-else', sessionId: 'chat-b', outcome: 'ok' });
     expect(ids.map((id) => store.get(id)!.status)).toEqual(['queued', 'queued']);
+  });
+
+  describe('whether the latest turn was one another chat started', () => {
+    beforeEach(() => resetChatStartedTurns());
+    afterEach(() => {
+      vi.useRealTimers();
+      resetSessionKeys();
+      resetChatStartedTurns();
+    });
+
+    it('is true from the start, lingers past the settle, then forgets', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      expect(isChatStartedTurn('chat-b')).toBe(true);
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      // The "finished" status change may land after the settle.
+      expect(isChatStartedTurn('chat-b')).toBe(true);
+      vi.advanceTimersByTime(CHAT_TURN_LINGER_MS + 1);
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+    });
+
+    it('forgets at once when a turn no chat message rides on starts (a person’s)', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      lifecycle!({ phase: 'started', messageId: 'person-typed', sessionId: 'chat-b' });
+      expect(isChatStartedTurn('chat-b')).toBe(false);
+    });
+
+    it('matches the chat under its canonical id after a rekey', async () => {
+      const { queueId } = await queuedPair();
+      vi.useFakeTimers();
+      lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+      linkSessionId('chat-b', 'chat-b-canonical');
+      expect(isChatStartedTurn('chat-b-canonical')).toBe(true);
+      lifecycle!({ phase: 'settled', messageId: queueId, sessionId: 'chat-b', outcome: 'ok' });
+      vi.advanceTimersByTime(CHAT_TURN_LINGER_MS + 1);
+      expect(isChatStartedTurn('chat-b-canonical')).toBe(false);
+    });
   });
 
   it('stops listening when the service stops', () => {

@@ -11,7 +11,7 @@ import {
 import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { DocDownstreamError } from '../downstream/service.js';
 import { toggleOriginalCheckboxWriter, type DocCheckboxWriteService } from './checkbox-service.js';
-import { isCheckboxAuthorityRefusal } from './authority-policy.js';
+import { isCheckboxAuthorityRefusal } from './authority/authority-policy.js';
 
 declare module '../../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {

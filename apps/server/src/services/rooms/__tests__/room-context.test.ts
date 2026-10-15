@@ -107,6 +107,9 @@ describe('the room context a trigger derives', () => {
       { kind: 'channel', title: 'Backend', topic: 'shipping v1', members: [], agentPaths },
       human
     );
+    // No lead: this case is about the context a turn derives, and a lead would
+    // answer the unaddressed post (DOR-2823).
+    service.updateRoom(room.id, human, { leadAuthorId: null });
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     bo = authors.resolveAgent('/agents/bo', 'Bo').id;
     cy = authors.resolveAgent('/agents/cy', 'Cy').id;
@@ -172,6 +175,23 @@ describe('the room context a trigger derives', () => {
       expect(contextFor(ana).members.find((member) => member.handle === 'You')?.responseMode).toBe(
         undefined
       );
+    });
+
+    it('marks an agent nobody answers for any more as retired (DOR-2364)', async () => {
+      // An agent whose directory no longer resolves stays a member of a direct
+      // message, drawn as retired in the app. Fails if the agent-facing roster
+      // lists it as an ordinary member the agent might wait on.
+      open({ agentPaths: ['/agents/ana'] });
+      const gone = authors.resolveAgent('/agents/gone', 'Gone').id;
+      service.addMember(room.id, human, { authorId: gone });
+      await say('is the build green?');
+
+      const members = contextFor(ana).members;
+      const row = members.find((member) => member.displayName === 'Gone');
+      expect(row).toMatchObject({ handle: null, isPerson: false, retired: true });
+      expect(members.find((member) => member.handle === 'ana')).not.toHaveProperty('retired');
+      const block = formatRoomContext(contextFor(ana), { nonce: FENCE_NONCE });
+      expect(block).toContain('Gone (agent, retired, will not reply, cannot be mentioned)');
     });
 
     it('still knows a member who left the room was a person', async () => {
@@ -318,7 +338,8 @@ describe('the room context a trigger derives', () => {
       await say('anyone?');
 
       const pending = contextFor(ana).pending;
-      const notices = pending.filter((entry) => entry.text.includes('was busy'));
+      // The runner-busy notice reads "is busy in its own chat" (DOR-2823).
+      const notices = pending.filter((entry) => entry.text.includes('is busy in its own chat'));
       expect(notices).toHaveLength(1);
       expect(notices[0].text).toContain('Bo');
       expect(pending.some((entry) => entry.text.includes('Ana'))).toBe(false);

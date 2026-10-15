@@ -55,9 +55,15 @@ import { logger } from '../../../lib/logger.js';
  *
  * 7 → 8 for `using-the-agent-browser` (DOR-2155), which teaches an agent to hand
  * a sign-in page back to the person instead of asking for a password.
+ *
+ * 8 → 9 for `working-with-spin-off-chats` (DOR-2790), which teaches an agent
+ * when to start a spin-off chat and how to brief, check on and message one.
+ *
+ * 9 → 10 for `working-on-a-heartbeat` (DOR-2788), which teaches an agent how
+ * to end a beat with `end_beat` and how loudly to say what it found.
  */
 const PACK_NAMES = OPERATING_SKILLS_PACK.map((skill) => skill.name).sort();
-const PACK_SIZE = 8;
+const PACK_SIZE = 10;
 
 let tmpRoot: string;
 

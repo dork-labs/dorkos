@@ -16,6 +16,7 @@
 import {
   PERMISSION_AREAS,
   PERMISSION_AREA_IDS,
+  getPermissionArea,
   isFloorArea,
   resolvePermission,
   type AgentPermissions,
@@ -40,6 +41,7 @@ import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 import {
   extensionDomainName,
+  type ActionConsent,
   type CapabilitySource,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
@@ -62,22 +64,19 @@ import {
   ARRIVAL_NOTE,
   ARRIVAL_WRITE_FAILED_NOTE,
   ARRIVAL_WRITER,
-  AUTONOMY_ACK_MESSAGE,
   EXTENSION_REMOVAL_WRITER,
   extensionRemovedNote,
   PermissionError,
   compact,
   isState,
+  keptOnPresetMove,
   ownState,
+  unchanged,
+  type PermissionPatch,
 } from './permission-values.js';
 import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
-export {
-  ARRIVAL_NOTE,
-  ARRIVAL_WRITE_FAILED_NOTE,
-  AUTONOMY_ACK_MESSAGE,
-  PermissionError,
-} from './permission-values.js';
+export { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE, PermissionError } from './permission-values.js';
 
 /** One action as the permission pages list it. */
 export interface PermissionActionInfo {
@@ -93,6 +92,8 @@ export interface PermissionActionInfo {
   toolName?: string;
   /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
   alwaysAsks?: true;
+  /** It runs someone else's code, so an area-level Allowed still asks. */
+  consent?: ActionConsent;
   /** The running extension it came from; absent on DorkOS's own actions (DOR-2685). */
   source?: CapabilitySource;
 }
@@ -130,21 +131,13 @@ export interface PermissionServiceDeps {
     set: (next: PermissionConfigInput & { upgradeSweptVersion: string | null }) => void;
     /** The stored Files & commands stops. */
     trustStops: () => StoredTrustStops;
-    /**
-     * Write the global Files & commands stop (`null` = not set), recording the
-     * person's acknowledgement of Full autonomy in the same write when
-     * `acknowledge`.
-     */
-    setGlobalTrustStop: (stop: PermissionStop | null, acknowledge: boolean) => void;
+    /** Write the global Files & commands stop (`null` = not set). */
+    setGlobalTrustStop: (stop: PermissionStop | null) => void;
     /**
      * Write one runtime's own Files & commands stop (`null` = not set). Returns
      * false for a runtime this build does not know, which writes nothing.
      */
     setRuntimeTrustStop: (runtime: string, stop: PermissionStop | null) => boolean;
-    /** Whether an acknowledgement of Full autonomy is on file. */
-    hasAutonomyAck: () => boolean;
-    /** Record the acknowledgement on its own (an agent's own stop set to Full autonomy). */
-    recordAutonomyAck: () => void;
   };
   /** The registered agents and the manifest write-through. */
   agents: {
@@ -166,31 +159,6 @@ export interface PermissionServiceDeps {
   arrivalsHealthy?: () => boolean;
   /** The Activity log, absent in a process with none. */
   activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
-}
-
-/** A per-key request: a state to set, or `null` to remove the change. */
-export type PermissionPatch = {
-  areas?: Record<string, PermissionState | null>;
-  actions?: Record<string, PermissionState | null>;
-  /** An agent's own Files & commands stop; `null` = back to the default. */
-  filesAndCommands?: PermissionStop | null;
-};
-
-/**
- * The patch with every action key dropped whose stored value is no longer the
- * expected one (see `setAgent`'s `expectActions`).
- */
-function unchanged(
-  stored: AgentPermissions,
-  patch: PermissionPatch,
-  expected: Record<string, PermissionState | null>
-): PermissionPatch {
-  const actions: Record<string, PermissionState | null> = {};
-  for (const [key, value] of Object.entries(patch.actions ?? {})) {
-    const current = (stored.actions as Record<string, unknown> | undefined)?.[key] ?? null;
-    if (!(key in expected) || current === expected[key]) actions[key] = value;
-  }
-  return { ...(patch.areas ? { areas: patch.areas } : {}), actions };
 }
 
 /** How far back the agent page looks for a change made outside DorkOS. */
@@ -250,7 +218,7 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          'Safety limits, Permissions, and Reach & secrets are never Allowed. Choose Ask or Blocked.'
+          'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.'
         );
       }
     }
@@ -271,7 +239,8 @@ export class PermissionService {
       if (state === 'allowed' && isFloorArea(action.area)) {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
-          `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+          `"${action.title}" is in ${getPermissionArea(action.area)?.label ?? action.area}, ` +
+            'which is never Allowed. Choose Ask or Blocked.'
         );
       }
       if (state === 'allowed' && action.alwaysAsks) {
@@ -552,27 +521,22 @@ export class PermissionService {
 
   /**
    * Choose a preset (spec `agent-permissions` D5). Clears the changes on top of
-   * the old one, and moves the global Files & commands stop to the preset's
+   * the old one, except that moving into Careful from another preset keeps
+   * every area and action a person set to Blocked: Careful is the way back to being asked, and it must
+   * never loosen anything on the way (DOR-2739). It also moves the global Files & commands stop to the preset's
    * (Careful: Ask first, Balanced: Act, Full power: Full autonomy). Per-runtime
    * stops are left alone and show as changes. `applyToAgents` removes every
    * setting those agents have of their own, so they follow the new preset.
    *
-   * All or nothing: a preset that moves the stop to Full autonomy with no
-   * acknowledgement on file, and none sent with it, is refused (428
-   * `AUTONOMY_ACK_REQUIRED`) before anything is written, preset included.
-   *
-   * @param input - The preset, the agents to bring along, where it came from,
-   *   and whether the person acknowledged Full autonomy in this request.
+   * @param input - The preset, the agents to bring along, and where it came from.
    * @param writer - Who is making the change.
    * @returns Every change the write made.
-   * @throws {PermissionError} `AUTONOMY_ACK_REQUIRED` (428).
    */
   async setPreset(
     input: {
       preset: PermissionPreset;
       applyToAgents?: string[];
       surface: PermissionSurface;
-      acknowledgeAutonomy?: boolean;
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -580,13 +544,11 @@ export class PermissionService {
       const actions = this.actionIndex();
       const selected = this.agentsById(input.applyToAgents ?? []);
       const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
-      const acknowledge = input.acknowledgeAutonomy === true;
-      if (presetStop === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
-      }
       const config = this.deps.config.get();
       const stops = this.deps.config.trustStops();
       const changes: PermissionChange[] = [];
+      // Moving into Careful keeps what a person Blocked; every other change goes.
+      const kept = keptOnPresetMove(input.preset, config.preset, config.defaults);
       if (config.preset !== input.preset) {
         changes.push({
           target: { kind: 'default' },
@@ -597,6 +559,7 @@ export class PermissionService {
       }
       for (const [area, state] of Object.entries(config.defaults.areas)) {
         if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
+        if (area in kept.areas) continue;
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'area', area: area as PermissionAreaId },
@@ -606,7 +569,7 @@ export class PermissionService {
       }
       for (const [id, state] of Object.entries(config.defaults.actions)) {
         const area = actions.get(id)?.area;
-        if (!area) continue;
+        if (!area || id in kept.actions) continue;
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'action', action: id, area },
@@ -614,7 +577,7 @@ export class PermissionService {
           after: null,
         });
       }
-      if (presetStop !== null && stops.global !== presetStop) {
+      if (stops.global !== presetStop) {
         changes.push({
           target: { kind: 'default' },
           key: { kind: 'files' },
@@ -630,17 +593,13 @@ export class PermissionService {
       };
       const moved =
         config.preset !== input.preset ||
-        Object.keys(config.defaults.areas).length > 0 ||
-        Object.keys(config.defaults.actions).length > 0;
+        Object.keys(config.defaults.areas).length > Object.keys(kept.areas).length ||
+        Object.keys(config.defaults.actions).length > Object.keys(kept.actions).length;
       if (moved) {
-        this.deps.config.set({
-          ...config,
-          preset: input.preset,
-          defaults: { areas: {}, actions: {} },
-        });
+        this.deps.config.set({ ...config, preset: input.preset, defaults: kept });
       }
-      if (presetStop !== null && (stops.global !== presetStop || acknowledge)) {
-        this.deps.config.setGlobalTrustStop(presetStop, acknowledge);
+      if (stops.global !== presetStop) {
+        this.deps.config.setGlobalTrustStop(presetStop);
       }
       await cleared.write();
       const all = [...changes, ...cleared.changes];
@@ -673,8 +632,6 @@ export class PermissionService {
        * How a reversal avoids undoing a write it did not make.
        */
       expectActions?: Record<string, PermissionState | null>;
-      /** The person acknowledged Full autonomy in this request. */
-      acknowledgeAutonomy?: boolean;
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -687,12 +644,6 @@ export class PermissionService {
           'INVALID_STOP',
           `"${String(files)}" is not a Files & commands stop.`
         );
-      }
-      // The same consent door the global stop has: an agent's own Full autonomy
-      // needs the acknowledgement on file, or sent with it (428 otherwise).
-      const acknowledge = input.acknowledgeAutonomy === true;
-      if (files === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
       }
       const [agent] = this.agentsById([agentId]);
       const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
@@ -710,7 +661,6 @@ export class PermissionService {
         nextFiles = files ?? undefined;
       }
       if (changes.length > 0) {
-        if (files === 'autonomy' && acknowledge) this.deps.config.recordAutonomyAck();
         const { filesAndCommands: _previous, ...rest } = stored;
         await this.deps.agents.writePermissions(
           agentId,
@@ -740,14 +690,14 @@ export class PermissionService {
    * `agent-permissions` D14). The rules live in `permission-undo.ts`.
    *
    * @param eventId - The `permission.changed` event to undo.
-   * @param input - `force`, and the Full autonomy acknowledgement when needed.
+   * @param input - `force` to set back keys that changed since.
    * @param writer - Who is undoing it.
    * @returns What the Undo changed, and what it left alone.
    * @throws {PermissionError} See {@link undoPermissionChange}.
    */
   async undo(
     eventId: string,
-    input: { force?: boolean; acknowledgeAutonomy?: boolean },
+    input: { force?: boolean },
     writer: PermissionWriter
   ): Promise<UndoPermissionChangeResponse> {
     return this.exclusive(async () => {
@@ -861,7 +811,7 @@ export class PermissionService {
     actionId: string,
     tier: CapabilityTier,
     agent?: AgentPermissions,
-    alwaysAsks?: true
+    action?: Pick<PermissionActionInfo, 'alwaysAsks' | 'consent'>
   ): ResolvedPermission {
     return resolvePermission({
       area,
@@ -869,7 +819,8 @@ export class PermissionService {
       tier,
       config,
       ...(agent ? { agent } : {}),
-      ...(alwaysAsks ? { alwaysAsks } : {}),
+      ...(action?.alwaysAsks ? { alwaysAsks: true } : {}),
+      ...(action?.consent ? { consent: action.consent } : {}),
     });
   }
 
@@ -901,14 +852,7 @@ export class PermissionService {
           actions: actions
             .filter((a) => a.area === id)
             .map((a): z.infer<typeof PermissionActionEntrySchema> => {
-              const actionResolved = this.resolveDefault(
-                config,
-                id,
-                a.id,
-                a.tier,
-                own,
-                a.alwaysAsks
-              );
+              const actionResolved = this.resolveDefault(config, id, a.id, a.tier, own, a);
               return withLastChange(
                 {
                   id: a.id,
@@ -1004,14 +948,11 @@ export class PermissionService {
     // "Custom" is never stored: it is the default changes, plus the global stop
     // when it is not the one the preset sets (an unset stop included: an install
     // whose preset came from an upgrade, or whose stop was cleared, does not
-    // start where its preset says), plus each per-runtime stop that differs.
-    // Undecided installs have no preset stop, so their stops are not changes to
-    // anything.
+    // start where its preset says), plus each per-runtime stop that differs. An
+    // undecided install counts against Trusted, the table it resolves against.
     const stopChanges =
-      presetStop === null
-        ? 0
-        : (stops.global !== presetStop ? 1 : 0) +
-          runtimeStops.filter((entry) => entry.stop !== presetStop).length;
+      (stops.global !== presetStop ? 1 : 0) +
+      runtimeStops.filter((entry) => entry.stop !== presetStop).length;
     const presetLastChange = lastChanges.get('default:preset');
     return {
       preset: config.preset,

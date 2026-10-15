@@ -3,8 +3,12 @@
  *
  * @module routes/tunnel
  */
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { TunnelStatus } from '@dorkos/shared/types';
+import type { ApiEnv } from '../http/api-chain.js';
+import { streamToNodeResponse } from '../http/raw-node-stream.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
@@ -24,34 +28,39 @@ import {
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 
-const router = Router();
+const router = new Hono<ApiEnv>();
 
 /** GET /api/tunnel/status — on-demand status check. */
-router.get('/status', (_req, res) => {
-  res.json(tunnelManager.status);
-});
+router.get('/status', (c) => c.json(tunnelManager.status));
 
-/** GET /api/tunnel/stream — SSE endpoint for real-time tunnel status events. */
-router.get('/stream', (req, res) => {
-  logger.warn('[DEPRECATED] GET /api/tunnel/stream — use GET /api/events instead');
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
+/**
+ * GET /api/tunnel/stream — SSE endpoint for real-time tunnel status events.
+ * Written straight to the Node response (`http/raw-node-stream.ts`), and held
+ * open until the client leaves.
+ */
+router.get('/stream', (c) =>
+  streamToNodeResponse(c, async (res, { signal }) => {
+    logger.warn('[DEPRECATED] GET /api/tunnel/stream — use GET /api/events instead');
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
 
-  // Send current status immediately on connection
-  res.write(`event: tunnel_status\ndata: ${JSON.stringify(tunnelManager.status)}\n\n`);
+    // Send current status immediately on connection
+    res.write(`event: tunnel_status\ndata: ${JSON.stringify(tunnelManager.status)}\n\n`);
 
-  const handler = (status: TunnelStatus) => {
-    res.write(`event: tunnel_status\ndata: ${JSON.stringify(status)}\n\n`);
-  };
+    const handler = (status: TunnelStatus) => {
+      res.write(`event: tunnel_status\ndata: ${JSON.stringify(status)}\n\n`);
+    };
 
-  tunnelManager.on('status_change', handler);
-  req.on('close', () => tunnelManager.off('status_change', handler));
-});
+    tunnelManager.on('status_change', handler);
+    if (!signal.aborted) await new Promise((resolve) => signal.addEventListener('abort', resolve));
+    tunnelManager.off('status_change', handler);
+  })
+);
 
-router.post('/start', async (req, res) => {
+router.post('/start', async (c) => {
   // Opening a tunnel publishes this machine, and `tunnel.enabled` is one of the
   // operator-only settings in `config-write-policy.ts` — which this route then
   // writes directly, bypassing the bars `PATCH /api/config` runs for exactly
@@ -72,17 +81,17 @@ router.post('/start', async (req, res) => {
   //
   // `/stop` runs neither bar, and that asymmetry is deliberate — see the comment
   // there. Stopping only ever narrows exposure.
-  const cookieRefusal = requireOperatorCookieUnderLogin(res, 'Remote Access');
+  const caller = honoRequestFacts(c);
+  const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'Remote Access');
   if (cookieRefusal) {
-    return res
-      .status(cookieRefusal.status)
-      .json({ error: cookieRefusal.error, code: cookieRefusal.code });
+    return c.json(
+      { error: cookieRefusal.error, code: cookieRefusal.code },
+      cookieRefusal.status as ContentfulStatusCode
+    );
   }
-  if (!trustedCaller(readCallerAuthority(req, res))) {
+  if (!trustedCaller(readCallerAuthority(caller))) {
     logger.warn('[Tunnel] Blocked start — an agent may not publish this machine');
-    return res
-      .status(403)
-      .json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE });
+    return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
 
   // Return 409 if a tunnel is already open. Asked of the manager rather than of
@@ -91,10 +100,7 @@ router.post('/start', async (req, res) => {
   // disconnect into `start()` throwing 'Tunnel is already running', answered as
   // a 500 (DOR-1738).
   if (tunnelManager.isRunning) {
-    return res.status(409).json({
-      error: 'Tunnel is already running',
-      url: tunnelManager.status.url,
-    });
+    return c.json({ error: 'Tunnel is already running', url: tunnelManager.status.url }, 409);
   }
 
   // Exposure guard (task 1.3): never open a public tunnel without a real login.
@@ -104,10 +110,10 @@ router.post('/start', async (req, res) => {
     logger.warn(
       '[Tunnel] Blocked start — exposing DorkOS requires a login (login disabled or no owner account)'
     );
-    return res.status(409).json({
-      error: EXPOSURE_REQUIRES_LOGIN_MESSAGE,
-      code: AUTH_REQUIRED_FOR_EXPOSURE,
-    });
+    return c.json(
+      { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
+      409
+    );
   }
 
   const tunnelConfig = configManager.get('tunnel');
@@ -120,7 +126,7 @@ router.post('/start', async (req, res) => {
   });
 
   if (!config.authtoken) {
-    return res.status(400).json({ error: 'No ngrok auth token configured' });
+    return c.json({ error: 'No ngrok auth token configured' }, 400);
   }
 
   try {
@@ -130,18 +136,18 @@ router.post('/start', async (req, res) => {
     configManager.set('tunnel', { ...tunnelConfig, enabled: true });
     logConfigWrite('the tunnel route', 'tunnel', tunnelConfig, configManager.get('tunnel'));
 
-    return res.json({ url: tunnelManager.status.url });
+    return c.json({ url: tunnelManager.status.url });
   } catch (err) {
     // Say what went wrong somewhere a person can read it. The 500 body carries
     // one sentence; whoever is debugging raised the log level for the stack, and
     // before DOR-1738 found nothing there at all (GitHub #1458).
     logger.error('[Tunnel] Failed to start', logError(err));
     const message = err instanceof Error ? err.message : 'Failed to start tunnel';
-    return res.status(500).json({ error: message });
+    return c.json({ error: message }, 500);
   }
 });
 
-router.post('/stop', async (_req, res) => {
+router.post('/stop', async (c) => {
   // DOR-574 revisited: an earlier version of this route gated `/stop` behind
   // `canExpose()`, mirroring `/start`. Adversarial review rejected that —
   // `canExpose()` answers "is login configured for exposure", not "is this
@@ -153,19 +159,23 @@ router.post('/stop', async (_req, res) => {
   // OFF, and a default install with a stale `tunnel.enabled: true` from a
   // prior session could never self-heal. Stopping a tunnel only ever narrows
   // exposure, so it must always succeed regardless of the login posture.
+  //
+  // It stops the person's OWN tunnel only. DorkOS managed remote access has its
+  // own close (DOR-2086), and never both are open at once, so this route never
+  // needs to reach managed access to keep that true.
   try {
-    await tunnelManager.stop();
+    await tunnelManager.stopOwnTunnel();
 
     // Persist disabled state
     const tunnelConfig = configManager.get('tunnel');
     configManager.set('tunnel', { ...tunnelConfig, enabled: false });
     logConfigWrite('the tunnel route', 'tunnel', tunnelConfig, configManager.get('tunnel'));
 
-    return res.json({ ok: true });
+    return c.json({ ok: true });
   } catch (err) {
     logger.error('[Tunnel] Failed to stop', logError(err));
     const message = err instanceof Error ? err.message : 'Failed to stop tunnel';
-    return res.status(500).json({ error: message });
+    return c.json({ error: message }, 500);
   }
 });
 

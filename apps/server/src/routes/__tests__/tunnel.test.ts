@@ -14,6 +14,8 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     start: vi.fn(),
     stop: vi.fn(),
+    stopOwnTunnel: vi.fn(),
+    closeManaged: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     isRunning: false,
@@ -60,10 +62,18 @@ vi.mock('../../services/core/auth/exposure-guard.js', () => ({
     'Exposing DorkOS requires a login. Create an owner account first.',
 }));
 
-import express from 'express';
+// The session gate lets every request through: with login off it is a
+// pass-through anyway, and the cases that turn login on present the identity it
+// would have proved (`appWithCaller` below) to reach the route's own bars.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
 import tunnelRouter from '../tunnel.js';
@@ -72,31 +82,34 @@ import { configManager } from '../../services/core/config-manager.js';
 import { canExpose } from '../../services/core/auth/exposure-guard.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const server = listeningServer(app);
+const admission = new MainRequestAdmission();
+const server = listeningServer(composedListener(admission));
 const callerTarget = swappableServer();
 
 /**
- * The tunnel router alone, behind a fixture that stands in for what
- * `sessionGate` resolves onto `res.locals.user`.
+ * The tunnel routes alone, behind the `/api` chain, with `before` standing in
+ * for what `sessionGate` resolves onto `c.var.user`.
  *
  * The full app's gate refuses an unauthenticated caller before the route sees
  * it, so the whole-app request cannot tell "the cookie bar refused this" from
  * "the gate refused this" — an assertion on that path would pass with the bar
- * removed. This mounts the router directly, the way `routes/__tests__/config.ts`
- * tests the identical pair of bars.
+ * removed. This serves the routes alone with the gate stubbed open (above), the
+ * way `routes/__tests__/config.ts` tests the identical pair of bars.
  *
  * @param user - The identity to present, or `undefined` for an anonymous caller.
  */
 function appWithCaller(user: RequestUser | undefined) {
-  const fixture = express();
-  fixture.use(express.json());
-  fixture.use((_req, res, next) => {
-    if (user) res.locals.user = user;
-    next();
-  });
-  fixture.use('/api/tunnel', tunnelRouter);
-  return callerTarget.mount(fixture);
+  return callerTarget.mount(
+    honoGroupListener(
+      { path: '/api/tunnel', routes: tunnelRouter },
+      {
+        before: async (c, next) => {
+          if (user) c.set('user', user);
+          await next();
+        },
+      }
+    )
+  );
 }
 
 /**
@@ -525,7 +538,7 @@ describe('Tunnel Route', () => {
       it('leaves /stop open to every caller (DOR-574)', async () => {
         // Stopping only ever narrows exposure, so it clears no bars — including
         // for a caller that names itself an agent.
-        vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+        vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
         setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
 
         const res = await request(server)
@@ -533,7 +546,7 @@ describe('Tunnel Route', () => {
           .set('x-dorkos-agent', 'agent-token-abc');
 
         expect(res.status).toBe(200);
-        expect(tunnelManager.stop).toHaveBeenCalled();
+        expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
       });
     });
   });
@@ -586,8 +599,20 @@ describe('Tunnel Route', () => {
   });
 
   describe('POST /api/tunnel/stop', () => {
+    it('stops only the own tunnel, never managed access (DOR-2086)', async () => {
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
+      setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
+
+      const res = await request(server).post('/api/tunnel/stop');
+
+      expect(res.status).toBe(200);
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
+      expect(tunnelManager.stop).not.toHaveBeenCalled();
+      expect(tunnelManager.closeManaged).not.toHaveBeenCalled();
+    });
+
     it('returns 200 with { ok: true } when stop succeeds', async () => {
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({
         enabled: true,
         domain: null,
@@ -599,11 +624,11 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(tunnelManager.stop).toHaveBeenCalled();
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
     });
 
     it('persists tunnel.enabled: false in config after successful stop', async () => {
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({
         enabled: true,
         domain: 'my.domain.io',
@@ -619,8 +644,8 @@ describe('Tunnel Route', () => {
       );
     });
 
-    it('returns 500 when tunnelManager.stop() throws', async () => {
-      vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
+    it('returns 500 when tunnelManager.stopOwnTunnel() throws', async () => {
+      vi.mocked(tunnelManager.stopOwnTunnel).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
       const res = await request(server).post('/api/tunnel/stop');
@@ -630,7 +655,7 @@ describe('Tunnel Route', () => {
     });
 
     it('writes the failure to the log (DOR-1738)', async () => {
-      vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
+      vi.mocked(tunnelManager.stopOwnTunnel).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
       await request(server).post('/api/tunnel/stop');
@@ -646,7 +671,7 @@ describe('Tunnel Route', () => {
       // mirroring /start. That gate stranded a running tunnel: start it while
       // exposable, disable login afterward, and /stop would 409 forever — the
       // one action that only ever narrows exposure must always succeed.
-      vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
+      vi.mocked(tunnelManager.stopOwnTunnel).mockResolvedValue(undefined);
       setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
       mockCanExpose.mockReturnValue(false);
 
@@ -654,7 +679,7 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(tunnelManager.stop).toHaveBeenCalled();
+      expect(tunnelManager.stopOwnTunnel).toHaveBeenCalled();
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
         expect.objectContaining({ enabled: false })

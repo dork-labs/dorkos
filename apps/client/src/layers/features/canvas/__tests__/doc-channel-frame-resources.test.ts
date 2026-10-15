@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DocChannelFrameResources } from '../model/doc-channel-frame-resources';
+import { DocChannelFrameResources } from '../model/doc-frame/doc-channel-frame-resources';
 
 describe('nonissuing frame invalidation tickets', () => {
   it('reserves before abort callbacks and never installs over a nested winner', () => {

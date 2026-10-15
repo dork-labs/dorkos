@@ -21,6 +21,7 @@ const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
 
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
@@ -74,6 +75,7 @@ vi.mock('../../../../session/message-dispatcher.js', () => ({
     queued: false,
     queuePosition: 0,
   })),
+  onDispatchLifecycle: vi.fn(() => () => undefined),
 }));
 
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';

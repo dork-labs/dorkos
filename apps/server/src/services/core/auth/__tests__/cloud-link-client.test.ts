@@ -44,12 +44,14 @@ function makeClock() {
 }
 
 /** A fetch that plays back a fixed sequence of `{ status, body }` responses. */
-function sequenceFetch(sequence: Array<{ status: number; body: unknown }>) {
+function sequenceFetch(
+  sequence: Array<{ status: number; body: unknown; headers?: Record<string, string> }>
+) {
   let i = 0;
   return vi.fn(async () => {
     const step = sequence[Math.min(i, sequence.length - 1)];
     i += 1;
-    return new Response(JSON.stringify(step.body), { status: step.status });
+    return new Response(JSON.stringify(step.body), { status: step.status, headers: step.headers });
   });
 }
 
@@ -286,6 +288,49 @@ describe('pollForToken', () => {
     expect(result).toEqual({ status: 'approved', accessToken: 'dork_inst_xyz' });
     // First wait 5s, then (after slow_down) 10s.
     expect(clock.recorded).toEqual([5000, 10000]);
+  });
+
+  it('backs off on a 429 like slow_down and still links (DOR-2496)', async () => {
+    // A rate limiter in front of the poll refused a compliant poller; the
+    // device code was still good, so the link must not end there.
+    const clock = makeClock();
+    const fetchImpl = sequenceFetch([
+      { status: 429, body: {} },
+      { status: 400, body: { error: 'authorization_pending' } },
+      { status: 200, body: { access_token: 'dork_inst_xyz' } },
+    ]);
+    const result = await pollForToken({
+      baseUrl: BASE,
+      deviceCode: 'dev-123',
+      interval: 5,
+      expiresIn: 1800,
+      fetchImpl,
+      sleep: clock.sleep,
+      now: clock.now,
+    });
+    expect(result).toEqual({ status: 'approved', accessToken: 'dork_inst_xyz' });
+    expect(clock.recorded).toEqual([5000, 10000, 10000]);
+  });
+
+  it('honours Retry-After on a 429, capped at the code expiry, then ends as expired', async () => {
+    const clock = makeClock();
+    const fetchImpl = sequenceFetch([
+      { status: 429, body: {}, headers: { 'retry-after': '30' } },
+      { status: 429, body: {}, headers: { 'x-retry-after': '9999' } },
+    ]);
+    const result = await pollForToken({
+      baseUrl: BASE,
+      deviceCode: 'dev-123',
+      interval: 5,
+      expiresIn: 60,
+      fetchImpl,
+      sleep: clock.sleep,
+      now: clock.now,
+    });
+    // 5s, then the 30s it asked for, then only the 25s left before expiry.
+    expect(clock.recorded).toEqual([5000, 30000, 25000]);
+    expect(result).toEqual({ status: 'expired' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('throws on an unrecognized token error rather than looping forever', async () => {

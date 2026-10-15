@@ -1,3 +1,5 @@
+import { replaceAgentHomeRegistry } from '../../../core/agent-identity/agent-home.js';
+import { agentIsReadingOutsider } from '../../../core/turn-power/live-outsider-turns.js';
 /** Genuine FILE constructor/approval context; native SDK assembly controls live in their confined runtime suites. */
 import { readServiceOriginalDocManagement } from '../service.js';
 import { describe, expect, it, vi } from 'vitest';
@@ -763,6 +765,27 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
   let runtime: TestModeRuntime | undefined;
   let raw: AsyncGenerator<import('@dorkos/shared/types').StreamEvent> | undefined;
   let observed: typeof raw;
+  const otherAgent = join(dir, 'other-agent');
+  let reenterObservation: (() => void) | undefined;
+  let reentryCause: unknown;
+  const homeRegistry = {
+    isRegisteredHome: (home: string) => {
+      const reenter = reenterObservation;
+      reenterObservation = undefined;
+      if (reenter) {
+        try {
+          reenter();
+        } catch (cause) {
+          reentryCause = cause;
+        }
+      }
+      return home === dir || home === otherAgent;
+    },
+    listRegisteredHomes: () => [dir, otherAgent],
+    managedWorkspaceOwner: () => null,
+    roomsDir: join(dir, 'rooms'),
+  };
+  let ownsHomeRegistry = false;
   const sessionId = randomUUID(),
     agentId = randomUUID(),
     holder = { on: () => {} };
@@ -788,19 +811,34 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     expect(readOriginalRegisteredRuntime(selected)).toBe(runtime);
     expect(runtime.acquireLock(sessionId, 'original-held-native', holder)).toBe(true);
     scenarioStore.setForSession(sessionId, 'simple-text');
+    await nativeFs.mkdir(otherAgent);
+    ownsHomeRegistry = replaceAgentHomeRegistry(undefined, homeRegistry);
+    expect(ownsHomeRegistry).toBe(true);
+    const turnOptions = { cwd: dir, forAgent: dir, permissionCeiling: 'runtime-default' as const };
     raw = sendTestModeOriginalLockedMessage(
       selected,
       sessionId,
       'actual local scenario',
-      { cwd: dir },
+      turnOptions,
       holder,
       sessionId
     );
     if (!raw) throw new Error('Genuine TestMode native constructor not recognized.');
     expect(readTestModeOriginalNativeStream(selected, raw)).toBeDefined();
     expect(readTestModeOriginalNativeStream({ ...selected }, raw)).toBeUndefined();
+    // Mutating caller DATA after construction cannot relocate the captured native turn.
+    turnOptions.cwd = otherAgent;
+    turnOptions.forAgent = otherAgent;
+    expect(agentIsReadingOutsider(dir)).toBe(false);
+    reenterObservation = () => {
+      observeOriginalRegisteredRuntimeStream(selected, sessionId, raw!);
+    };
     observed = observeOriginalRegisteredRuntimeStream(selected, sessionId, raw);
+    expect(reentryCause).toBeInstanceOf(Error);
+    expect((reentryCause as Error).message).toBe('Original native turn recording reentered.');
     expect((await observed.next()).done).toBe(false);
+    expect(agentIsReadingOutsider(dir)).toBe(true);
+    expect(agentIsReadingOutsider(otherAgent)).toBe(false);
     expect((await resolveTestModeOriginalNativeStreamPrincipal(selected, observed)).status).toBe(
       'resolved'
     );
@@ -808,6 +846,8 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     registry.register(new TestModeRuntime('claude-code', h.principals));
     expect(readOriginalRegisteredRuntime(selected)).toBeUndefined();
     await expect(observed.next()).rejects.toThrow('Original runtime selection retired');
+    expect(agentIsReadingOutsider(dir)).toBe(false);
+    expect(agentIsReadingOutsider(otherAgent)).toBe(false);
     expect(readTestModeOriginalNativeStream(runtime, raw)).toBeUndefined();
     expect(readTestModeOriginalScenarioEvidence(runtime, raw)).toMatchObject({
       scenarioStarts: 1,
@@ -821,6 +861,9 @@ it('keeps genuine registered TestMode native stream identity and retires a held 
     await cleanup(() => raw?.return(undefined));
     await cleanup(() => runtime?.releaseLock(sessionId, 'original-held-native'));
     await cleanup(() => scenarioStore.clearSession(sessionId));
+    await cleanup(() => {
+      if (ownsHomeRegistry) expect(replaceAgentHomeRegistry(homeRegistry, undefined)).toBe(true);
+    });
     await cleanup(() => h?.cleanup());
     await cleanup(() => nativeFs.rm(dir, { recursive: true, force: true }));
     serverEnv.DORKOS_TEST_RUNTIME = wasTestMode;
@@ -1317,7 +1360,7 @@ it('projects only freshly approved original Room routing and removes readiness a
 });
 
 import { SessionStateProjector } from '../../../session/session-state-projector.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 
 it.each(['pending-read', 'between-reads', 'replaced-selection'] as const)(
   'drains only original stopped terminal DATA with retired native authority: %s',
@@ -1459,3 +1502,100 @@ it.each(['pending-read', 'between-reads', 'replaced-selection'] as const)(
     if (failed) throw first;
   }
 );
+
+it('records tool audit events from the genuine already opened native stream without a second runtime entry', async () => {
+  const { initAuditTrail, resetAuditTrail } = await import('../../../audit/audit-trail.js');
+  const { AuditLog } = await import('../../../audit/audit-log.js');
+  const { AccountIds } = await import('../../../audit/account-ids.js');
+  const { resetRecordedToolCalls } = await import('../../../audit/record-tool-use.js');
+  const { auditEvents } = await import('@dorkos/db');
+  const dir = await nativeFs.realpath(
+    await nativeFs.mkdtemp(join(tmpdir(), 'native-stream-audit-'))
+  );
+  const prior = serverEnv.DORKOS_TEST_RUNTIME;
+  const sessionId = randomUUID(),
+    agentId = randomUUID(),
+    clientId = 'native-stream-audit';
+  const holder = { on: () => {} };
+  let h: Awaited<ReturnType<typeof nativeRoomAuthorityFixture>> | undefined;
+  let runtime: TestModeRuntime | undefined;
+  let raw: AsyncGenerator<import('@dorkos/shared/types').StreamEvent> | undefined;
+  let observed: typeof raw;
+  let failed = false,
+    first: unknown;
+  const cleanup = async (work: () => unknown | Promise<unknown>) => {
+    try {
+      await work();
+    } catch (cause) {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+  };
+  try {
+    serverEnv.DORKOS_TEST_RUNTIME = true;
+    h = await nativeRoomAuthorityFixture(dir, 'claude-code', sessionId, agentId);
+    resetRecordedToolCalls();
+    initAuditTrail({
+      log: new AuditLog(h.db),
+      accounts: new AccountIds({
+        db: h.db,
+        installId: 'native-stream-audit',
+        readOwnerAccount: () => null,
+      }),
+    });
+    runtime = new TestModeRuntime('claude-code', h.principals);
+    const registry = new RuntimeRegistry();
+    registry.setDb(h.db);
+    registry.register(runtime);
+    const selected = registry.get('claude-code');
+    expect(runtime.acquireLock(sessionId, clientId, holder)).toBe(true);
+    scenarioStore.setForSession(sessionId, 'tool-call');
+    raw = sendTestModeOriginalLockedMessage(
+      selected,
+      sessionId,
+      'actual tool scenario',
+      { cwd: dir },
+      holder,
+      sessionId
+    );
+    if (!raw) throw new Error('Genuine native tool stream unavailable.');
+    expect(readTestModeOriginalNativeStream({ ...selected }, raw)).toBeUndefined();
+    expect(() => observeOriginalRegisteredRuntimeStream({ ...selected }, sessionId, raw!)).toThrow(
+      'Current original registered native stream'
+    );
+    observed = observeOriginalRegisteredRuntimeStream(selected, sessionId, raw);
+    const firstEvent = await observed.next();
+    expect(firstEvent.done).toBe(false);
+    expect((await resolveTestModeOriginalNativeStreamPrincipal(selected, observed)).status).toBe(
+      'resolved'
+    );
+    for await (const _event of observed) {
+      /* drain the same original stream */
+    }
+    expect(readTestModeOriginalScenarioEvidence(runtime, raw)?.scenarioStarts).toBe(1);
+    expect(
+      h.db
+        .select()
+        .from(auditEvents)
+        .all()
+        .filter((row) => row.action === 'runtime.tool_used')
+        .map((row) => [row.action, row.targetId])
+    ).toEqual([['runtime.tool_used', 'echo hi']]);
+  } catch (cause) {
+    failed = true;
+    first = cause;
+  } finally {
+    await cleanup(() => observed?.return(undefined));
+    await cleanup(() => raw?.return(undefined));
+    await cleanup(() => runtime?.releaseLock(sessionId, clientId));
+    await cleanup(() => scenarioStore.clearSession(sessionId));
+    await cleanup(() => resetAuditTrail());
+    await cleanup(() => resetRecordedToolCalls());
+    await cleanup(() => h?.cleanup());
+    await cleanup(() => nativeFs.rm(dir, { recursive: true, force: true }));
+    serverEnv.DORKOS_TEST_RUNTIME = prior;
+  }
+  if (failed) throw first;
+});

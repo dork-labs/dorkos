@@ -9,9 +9,16 @@
  * written down here.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+
+// The session gate lets every request through: these cases are about the
+// routes' own bars, and each one sets the user the gate would have proved
+// (`before` below), as the Express version stubbed `res.locals.user`.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
 import hostedPageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/hosted-page.json' with { type: 'json' };
 import offersFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers.json' with { type: 'json' };
 import offersEmptyFixture from '@dork-labs/cloud-api/fixtures/v1/billing/offers-empty.json' with { type: 'json' };
@@ -36,12 +43,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-// Where this instance reaches its DorkOS account. A real https origin by
-// default; a test that needs a service on this machine says so.
+// Where this instance reaches its DorkOS account's `/v1` service. A real https
+// origin by default; a test that needs a service on this machine says so. The
+// device-link origin stays a different https address, so a page check that read
+// it instead of the `/v1` origin would fail the local-development case.
 const cloud = vi.hoisted(() => ({ baseUrl: 'https://account.example.invalid' }));
 vi.mock('../../services/core/auth/cloud-link-client.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/cloud-link-client.js')>()),
-  resolveCloudBaseUrl: () => cloud.baseUrl,
+  resolveCloudBaseUrl: () => 'https://site.example.invalid',
+}));
+vi.mock('../../services/core/cloud/cloud-api-origin.js', () => ({
+  resolveCloudApiBaseUrl: () => cloud.baseUrl,
 }));
 
 // The link flow itself is not under test here; only its accessor is imported.
@@ -62,18 +74,24 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 }));
 
 import cloudRouter from '../cloud.js';
+// After the route: the chain imports the auth module, which must load after
+// the mocks above have replaced who owns this install.
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 
-const app = express();
-app.use(express.json());
-app.use((_req, res, next) => {
-  if (signedInUser) res.locals.user = signedInUser;
-  next();
-});
-app.use('/api/cloud', cloudRouter);
-const server = listeningServer(app);
+const server = listeningServer(
+  honoGroupListener(
+    { path: '/api/cloud', routes: cloudRouter },
+    {
+      before: async (c, next) => {
+        if (signedInUser) c.set('user', signedInUser);
+        await next();
+      },
+    }
+  )
+);
 
 /** One request the fake account received. */
 interface Seen {

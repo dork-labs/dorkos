@@ -27,7 +27,7 @@ export function broadcastBindingsChanged(): void {
  * Broadcast a connection-state transition (connect/disconnect) of an enabled
  * adapter. Connected clients re-fetch the adapter list and catalog
  * (`['relay','adapters']`). Config-only edits, changes to disabled adapters,
- * and async in-adapter drops do not fire this — the client's 10s poll
+ * and async in-adapter drops do not fire this — the client's 30-second poll
  * backstops those.
  */
 export function broadcastAdaptersChanged(): void {

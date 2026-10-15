@@ -10,7 +10,7 @@ import {
 /**
  * The shot registry — the single source of truth for every piece of product
  * media the capture pipeline produces. A "shot" is one logical surface of the
- * DorkOS UI (the cockpit, the topology graph, a streaming chat) captured for a
+ * DorkOS UI (the #team room, the topology graph, a streaming chat) captured for a
  * downstream consumer. Marketing, docs, and changelogs all draw from this one
  * list, so a shot can be added for docs without ever appearing on the marketing
  * site, and vice-versa.
@@ -80,13 +80,7 @@ export interface Shot {
  */
 export const SHOTS: readonly Shot[] = [
   // --- Desktop stills (marketing; several also embed in the docs) ---
-  // `cockpit` keeps a word the product no longer says (DOR-1517 retired
-  // "cockpit" and "mission control" from all user-facing prose). The id is a
-  // purely internal key, and it names `cockpit-light.png` in the live
-  // `public/product/manifest.json` plus every archived per-version manifest
-  // back to v0.46.0. Renaming it would orphan that generated media, which no
-  // visitor ever sees a word of, so the key stays and the copy moved on.
-  { id: 'cockpit', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
+  { id: 'team-room', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'agents', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'tasks', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
   { id: 'marketplace', kind: 'still', frame: 'desktop', consumers: ['marketing', 'docs'] },
@@ -152,9 +146,9 @@ export const SHOTS: readonly Shot[] = [
   // The other two stay changelog-only: no `/features` card binds them and no
   // docs page embeds them.
   //
-  // The one-time full-power consent door, the modal that asks the power
-  // question once.
-  { id: 'full-power-door', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
+  // The one-time trust notice, the modal that says agents now work without
+  // asking.
+  { id: 'trust-notice', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
   // Settings → Room limits: the four reply-limit dials behind the Control Center's
   // "Limit automatic replies" switch.
   { id: 'settings-rooms', kind: 'still', frame: 'desktop', consumers: ['changelog'] },
@@ -224,34 +218,27 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
  *   same stack. Pinning both to shard 0 keeps that summary tied to one stack's
  *   state instead of letting it vary with shard placement. (No other shot reads
  *   the sidebar's zones: the remaining chat surfaces are single-session views,
- *   and the cockpit's recent activity comes from the seeded sessions present in
- *   every shard.)
- * - `agent-discovery` flips its stack's global onboarding state, which every
- *   other shot in the same stack needs left dismissed — it stays a singleton on
- *   shard 0, where the record phase drives it in the closing pair (discovery,
- *   then the door), after every shot that reads the dismissed state, and
- *   restores that state after. Each shard has its own `DORK_HOME`, so the flip
- *   is already isolated; pinning makes the placement deterministic for any N.
+ *   and `team-room` holds its own #team conversation in whichever stack drives
+ *   it.)
  * - `accounts-pending` and `accounts-linked` come from ONE linear device flow
  *   (link → pending → auto-flip → linked, capture-cloud-link-stub); a
  *   round-robin split would put them on different stacks and break the flow,
  *   so both ride shard 0 as a unit — the same single-stack rationale as the
  *   session-list shots above.
- * - `full-power-door` un-answers the stack's power decision so the one-time
- *   consent modal becomes eligible again — a global config flip every other shot
+ * - `trust-notice` marks the stack's trust notice unseen so the one-time
+ *   modal becomes eligible again — a global config flip every other shot
  *   in the same stack needs left settled, or the modal would focus-trap itself
- *   over their frames. Same shape as `agent-discovery`, and the second half of
- *   that closing pair: driven dead last of all, and restored afterwards. Each
+ *   over their frames. It is the only remaining global-state flip, so it stays
+ *   a shard-0 singleton, driven dead last of all and restored afterwards. Each
  *   shard has its own `DORK_HOME`, so the flip is already isolated; pinning
  *   makes the placement deterministic for any N.
  */
 export const SHARD_0_PINNED_SHOTS: readonly string[] = [
   'multi-session',
   'mobile-sessions',
-  'agent-discovery',
   'accounts-pending',
   'accounts-linked',
-  'full-power-door',
+  'trust-notice',
 ];
 
 /**

@@ -30,19 +30,19 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import express from 'express';
 import type { Server } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
-import { createApp } from '../../app.js';
-import runtimesRouter from '../runtimes.js';
+import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { createRuntimesRoutes } from '../runtimes.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/providers/provision.js';
 import { provisionCodex } from '../../services/runtimes/codex/provision.js';
 import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling/provision.js';
 import { provisionOllama } from '../../services/runtimes/opencode/providers/ollama-provision.js';
 
-const app = createApp({ admission: new MainRequestAdmission() });
-const server = listeningServer(app);
+const admission = new MainRequestAdmission();
+const server = listeningServer(composedListener(admission));
 const peerTarget = swappableServer();
 
 /**
@@ -194,23 +194,21 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
  * would have run a package install. The gate now also requires the TCP peer to be
  * loopback, which is the one signal a caller cannot write.
  *
- * These mount the router on a bare app behind a middleware that rewrites the
- * peer address, because supertest always connects from 127.0.0.1. The host guard
- * is not in this app on purpose: it is separately tested, and the point here is
- * that the ROUTE refuses even when the guard would have let the request through
- * (as it does on the Docker image, where the guard is disabled outright).
+ * These serve the routes behind the `/api` chain, with the peer address
+ * rewritten before the chain sees the request, because supertest always
+ * connects from 127.0.0.1. The requests name a loopback `Host`, which the host
+ * guard lets through: the point here is that the ROUTE refuses even when the
+ * guard would have let the request through (as it does on the Docker image,
+ * where the guard is disabled outright).
  */
 describe('TCP peer is required to be loopback', () => {
   /** Build an app whose requests appear to arrive from `peer`. */
   function appWithPeer(peer: string | undefined): Server {
-    const peerApp = express();
-    peerApp.use((req, _res, next) => {
+    const routes = honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() });
+    return peerTarget.mount((req, res) => {
       Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
-      next();
+      routes(req, res);
     });
-    peerApp.use(express.json());
-    peerApp.use('/api/runtimes', runtimesRouter);
-    return peerTarget.mount(peerApp);
   }
 
   beforeEach(() => {

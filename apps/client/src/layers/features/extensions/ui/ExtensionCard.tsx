@@ -18,6 +18,7 @@ import {
   permissionViewFromRecord,
   useAddedSinceSeen,
 } from '@/layers/entities/extension';
+import { PanelTabPlacementSection } from './PanelTabPlacementEditor';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -91,6 +92,7 @@ export function ExtensionCard({
     <Card
       data-slot="extension-card"
       data-testid={`extension-card-${extension.id}`}
+      data-section={extension.id}
       radius="lg"
       gap="none"
       className={cn(
@@ -149,6 +151,10 @@ export function ExtensionCard({
             gifts={agentGiftsFromRecord(extension)}
             data-testid={`extension-agent-gifts-${extension.id}`}
           />
+
+          {/* Where its right-panel tabs show (spec `mini-app-placement`).
+              Nothing while it adds no tab, or is not running. */}
+          {isEnabled && <PanelTabPlacementSection extensionId={extension.id} />}
 
           {/* Incompatible message */}
           {isIncompatible && manifest.minHostVersion && (

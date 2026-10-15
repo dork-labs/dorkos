@@ -1,6 +1,7 @@
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
-import express from 'express';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
@@ -11,11 +12,18 @@ import {
   ROOM_TURN_LIMIT_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 
-/** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
+/** No Better Auth instance is initialized; only the install owner is declared. */
 const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+// The gate already admits requests; the real route still enforces its own caller policy.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
+}));
+vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => owner.account,
+  hasAnyApiKey: () => false,
+  getAuth: () => undefined,
+  captureOriginalRequestAuthReader: () => undefined,
 }));
 
 // Mock tunnel-manager and agent-manager to avoid side effects
@@ -144,34 +152,67 @@ afterAll(() => {
   if (AMBIENT_A2A_ENABLED !== undefined) process.env.DORKOS_A2A_ENABLED = AMBIENT_A2A_ENABLED;
 });
 
-/** Mount the request-shaping middleware every config-route app needs. */
-function mountCallerFixture(app: express.Express): void {
+/**
+ * The config routes behind the `/api` chain, with the request-shaping step every
+ * config-route app needs: the user the session gate would have resolved, and
+ * the agent header a caller would have sent.
+ *
+ * The listener is imported here, after the test's `vi.resetModules()`, so the
+ * chain reads the same freshly initialised config as the routes.
+ */
+async function configApp(configRouter: Hono<ApiEnv>) {
+  const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
-  app.use((req, res, next) => {
-    if (signedInUser) res.locals.user = signedInUser;
-    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
-    next();
-  });
+  return honoGroupListener(
+    { path: '/api/config', routes: configRouter },
+    {
+      before: async (c, next) => {
+        if (signedInUser) c.set('user', signedInUser);
+        if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        await next();
+      },
+    }
+  );
 }
 
 describe('PATCH /api/config', () => {
   let tmpDir: string;
+  let firstHookObserved = false;
 
   beforeEach(async () => {
+    const observeColdHook = !firstHookObserved;
+    firstHookObserved = true;
+    const hookStarted = observeColdHook ? performance.now() : 0;
+    const phase = (name: string) => {
+      if (!observeColdHook) return;
+      try {
+        const data =
+          JSON.stringify({
+            tag: 'config-first-patch-hook-phase',
+            phase: name,
+            elapsedMs: Math.max(0, Math.round(performance.now() - hookStarted)),
+          }) + '\n';
+        if (Buffer.byteLength(data, 'utf8') <= 256) process.stderr.write(data);
+      } catch {
+        /* Observation must not replace the original hook result. */
+      }
+    };
+    phase('temp-dir');
     tmpDir = createTempDir();
     process.env.DORK_HOME = tmpDir;
 
     // Initialize config manager before importing routes
+    phase('config-manager-import');
     const { initConfigManager } = await import('../../services/core/config-manager.js');
+    phase('config-manager-init');
     initConfigManager(tmpDir);
 
+    phase('router-import');
     const configRouter = (await import('../config.js')).default;
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    phase('config-app');
+    target.mount(await configApp(configRouter));
+    phase('ready');
   });
 
   afterEach(() => {
@@ -837,6 +878,8 @@ describe('PATCH /api/config', () => {
         { cloud: { instanceToken: 'dork_inst_other' } },
         { cloud: { credits: { defaults: { 'claude-code': { runsOn: 'credits' } } } } },
         { cloud: { credits: { agents: ['agent-1'] } } },
+        // Cheap checks on credits spend the same account (spec `heartbeats` §6.3).
+        { heartbeats: { triageOnCredits: true } },
       ]) {
         const refused = await request(server).patch('/api/config').send(patch).expect(403);
         expect(refused.body.code).toBe('owner_only');
@@ -846,6 +889,7 @@ describe('PATCH /api/config', () => {
       }
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.getDot('cloud.instanceToken')).not.toBe('dork_inst_other');
+      expect(configManager.getDot('heartbeats.triageOnCredits')).not.toBe(true);
     });
 
     it('refuses the account settings when no owner account can be read', async () => {
@@ -1186,6 +1230,48 @@ describe('PATCH /api/config', () => {
       expect(response.body.config.providersConfigured).toEqual(['anthropic']);
       expect(response.body.config.runtimes.codex.credentialRefConfigured).toBe(true);
     });
+
+    it('carries nothing of the managed remote record but its mode and two booleans (DOR-2086)', async () => {
+      const { updateRemoteState } = await import('../../services/core/remote/remote-state.js');
+      updateRemoteState('test', {
+        mode: 'managed',
+        enrolmentId: 'enr_PLANTED',
+        consentVersion: 'consent_PLANTED',
+        instanceId: 'inst_PLANTED',
+        credentialId: 'cred_PLANTED',
+        fingerprint: 'fp_PLANTED',
+        credentialRef: 'file:remote-tunnel-cred_PLANTED',
+        edgeProofRef: 'file:remote-edge-cred_PLANTED',
+        edgeProofHeader: 'x-planted-edge',
+        hosts: ['planted.example.com'],
+      });
+
+      const patched = await request(server)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' } })
+        .expect(200);
+      const fetched = await request(server).get('/api/config').expect(200);
+
+      for (const body of [patched.body, fetched.body]) {
+        const serialized = JSON.stringify(body);
+        expect(serialized).not.toMatch(/PLANTED|planted/);
+      }
+      expect(patched.body.config.cloud.remote).toEqual({
+        mode: 'managed',
+        credentialRefConfigured: true,
+        edgeProofRefConfigured: true,
+      });
+    });
+
+    it('refuses a patch that names cloud.remote, and changes nothing', async () => {
+      const response = await request(server)
+        .patch('/api/config')
+        .send({ cloud: { remote: { mode: 'managed' } } });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('USE_REMOTE_ACCESS_API');
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.get('cloud').remote.mode).toBe('off');
+    });
   });
 });
 
@@ -1201,11 +1287,7 @@ describe('GET /api/config', () => {
 
     const configRouter = (await import('../config.js')).default;
     await registerDeclaringRuntimes();
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    target.mount(await configApp(configRouter));
   });
 
   afterEach(() => {
@@ -1255,7 +1337,8 @@ describe('GET /api/config', () => {
       const { executionDefaults } = res.body;
 
       expect(typeof executionDefaults.runtime).toBe('string');
-      expect(executionDefaults.trustStop).toBeNull();
+      // Trusted by default (ADR 261006-225605): a fresh install starts at Full autonomy.
+      expect(executionDefaults.trustStop).toBe('autonomy');
       expect(Array.isArray(executionDefaults.perRuntime)).toBe(true);
       for (const entry of executionDefaults.perRuntime) {
         expect(Object.keys(entry).sort()).toEqual([
@@ -1330,12 +1413,9 @@ describe('GET /api/config', () => {
       const { initConfigManager } = await import('../../services/core/config-manager.js');
       initConfigManager(legacyDir);
       const legacyRouter = (await import('../config.js')).default;
-      const legacyApp = express();
-      legacyApp.use(express.json());
-      mountCallerFixture(legacyApp);
-      legacyApp.use('/api/config', legacyRouter);
-
-      const res = await request(target.mount(legacyApp)).get('/api/config').expect(200);
+      const res = await request(target.mount(await configApp(legacyRouter)))
+        .get('/api/config')
+        .expect(200);
       expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
       // The values that file DID carry survive the load untouched.
       expect(res.body.onboarding.completedAt).toBe('2026-07-01T00:05:00.000Z');
@@ -1376,9 +1456,10 @@ describe('GET /api/config', () => {
     it('reports the shipped numbers when nobody has changed them', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
+      // The engaged window ships at an hour and 15 messages (DOR-2823).
       expect(res.body.rooms).toEqual({
-        engagedWindowMinutes: 10,
-        engagedWindowPosts: 5,
+        engagedWindowMinutes: 60,
+        engagedWindowPosts: 15,
         ...ROOM_TURN_LIMIT_DEFAULTS,
         maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       });
@@ -1602,11 +1683,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -1623,11 +1700,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -1654,11 +1727,7 @@ describe('GET /api/config', () => {
       initConfigManager(tmpDir);
       const configRouter = (await import('../config.js')).default;
       await registerDeclaringRuntimes();
-      const app = express();
-      app.use(express.json());
-      mountCallerFixture(app);
-      app.use('/api/config', configRouter);
-      target.mount(app);
+      target.mount(await configApp(configRouter));
 
       const res = await request(server).get('/api/config').expect(200);
 
@@ -1671,6 +1740,27 @@ describe('GET /api/config', () => {
   // shipped OFF and absent from this DTO is a flag nobody can reach without
   // hand-editing `~/.dork/config.json`, which is exactly what happened to
   // `runtimes.claudeCode.persistentSession`.
+  // Spec `official-community-space` D4: the app offers the official space only when a usable
+  // link is configured. Fails if the block is dropped, or passes an unusable link on.
+  describe('officialSpace', () => {
+    it('is null while no link is configured, and while the link is unusable', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('spaces', { enabled: false, official: { url: '' } });
+      expect((await request(server).get('/api/config').expect(200)).body.officialSpace).toBeNull();
+      configManager.set('spaces', { enabled: false, official: { url: 'http://plain.example' } });
+      expect((await request(server).get('/api/config').expect(200)).body.officialSpace).toBeNull();
+    });
+
+    it('carries a usable link', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const url = 'https://space.example/c/11111111-1111-4111-8111-111111111111';
+      configManager.set('spaces', { enabled: false, official: { url } });
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.officialSpace).toEqual({ url });
+      configManager.set('spaces', { enabled: false, official: { url: '' } });
+    });
+  });
+
   describe('experiments', () => {
     const ORIGINAL_A2A = process.env.DORKOS_A2A_ENABLED;
 
@@ -1982,85 +2072,48 @@ describe('GET /api/config', () => {
     expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
 
-  it('includes the standing Full-autonomy acknowledgement, unset by default', async () => {
+  it('carries no Full-autonomy acknowledgement any more (DOR-2739)', async () => {
     const res = await request(server).get('/api/config').expect(200);
 
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
+    expect(res.body.ui).not.toHaveProperty('autonomyAcknowledgedAt');
   });
 
-  it('records the standing acknowledgement, and reads it back on the next GET', async () => {
-    // The round trip the cockpit relies on: the dialog's "don't show this again"
-    // writes here, and every later autonomy PATCH is answered from this read.
-    const acknowledgedAt = '2026-08-01T09:30:00.000Z';
+  it('reports the trust notice unseen, and a Trusted preset, on a fresh install', async () => {
+    const res = await request(server).get('/api/config').expect(200);
+
+    expect(res.body.ui.trustNoticeSeenAt).toBeNull();
+    expect(res.body.ui).not.toHaveProperty('fullPowerDecidedAt');
+    expect(res.body.ui).not.toHaveProperty('fullPowerChoice');
+    expect(res.body.permissions).toEqual({ preset: 'trusted' });
+  });
+
+  it('records the trust notice as seen, and reads it back on the next GET', async () => {
+    // The round trip the notice relies on: it writes the stamp, and every
+    // later launch decides from this read whether to show it again.
+    const seenAt = '2026-10-07T11:15:00.000Z';
     await request(server)
       .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: acknowledgedAt } })
+      .send({ ui: { trustNoticeSeenAt: seenAt } })
       .expect(200);
 
     const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
+    expect(res.body.ui.trustNoticeSeenAt).toBe(seenAt);
   });
 
-  it('reports the power door unanswered on a fresh install', async () => {
-    const res = await request(server).get('/api/config').expect(200);
-
-    expect(res.body.ui.fullPowerDecidedAt).toBeNull();
-    expect(res.body.ui.fullPowerChoice).toBeNull();
-  });
-
-  it('records either answer at the power door, and reads it back on the next GET', async () => {
-    // The round trip the door relies on: it writes the answer and every later
-    // launch decides from this read whether to put the modal up again.
-    const decidedAt = '2026-08-22T11:15:00.000Z';
+  // The Full-autonomy acknowledgement is retired (ADR 261006-225605,
+  // DOR-2739): a Full autonomy default is a setting like any other.
+  it('takes Full autonomy as a default with nothing to acknowledge first', async () => {
     await request(server)
       .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: decidedAt, fullPowerChoice: 'supervised' } })
+      .send({ runtimes: { defaultTrustStop: 'autonomy', codex: { defaultTrustStop: 'autonomy' } } })
       .expect(200);
 
     const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.fullPowerDecidedAt).toBe(decidedAt);
-    expect(res.body.ui.fullPowerChoice).toBe('supervised');
-  });
-
-  it('recording the answer alone unlocks nothing (invariant A1)', async () => {
-    // "Supervised" is a first-class answer and changes nothing anywhere; and
-    // even `'full'` is only a record — the capabilities ride on the OTHER keys
-    // the door's accept sends in the same request, each through its own gate.
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { fullPowerDecidedAt: '2026-08-22T11:15:00.000Z', fullPowerChoice: 'full' } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(res.body.executionDefaults.trustStop).toBeNull();
-  });
-
-  it('refuses Full autonomy as a default until the person has acknowledged it', async () => {
-    // The set-time door (spec `trust-dial`, decision 6). Making autonomy the
-    // stop new sessions START at is a wider claim than putting one session
-    // there — durable, and a session born from it opens already bypassed with
-    // no dialog to show — so the asking happens at the moment of choosing.
-    const res = await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(428);
-
-    expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
-    expect(res.body.paths).toEqual(['runtimes.defaultTrustStop']);
-
-    // A refusal changes nothing.
-    const after = await request(server).get('/api/config').expect(200);
-    expect(after.body.executionDefaults.trustStop).toBeNull();
-  });
-
-  it('refuses a per-runtime autonomy default the same way, naming the leaf', async () => {
-    const res = await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
-      .expect(428);
-
-    expect(res.body.paths).toEqual(['runtimes.codex.defaultTrustStop']);
+    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
+    expect(
+      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
+        .trustStop
+    ).toBe('autonomy');
   });
 
   it('lets the gentler stops through with no ritual at all', async () => {
@@ -2079,151 +2132,6 @@ describe('GET /api/config', () => {
       ).trustStop
     ).toBe('ask');
   });
-
-  it('accepts autonomy when the acknowledgement rides the SAME patch', async () => {
-    // What the Settings dialog sends: the consent record and the new default in
-    // one write, so there is no window where the stop landed without the consent
-    // and no two-request ordering for a client to get wrong.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
-  });
-
-  it('accepts autonomy on a standing acknowledgement given earlier', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(200);
-  });
-
-  it('starts refusing again the moment the acknowledgement is cleared', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    await request(server)
-      .patch('/api/config')
-      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
-      .expect(428);
-  });
-
-  it('demotes a standing autonomy default when the acknowledgement is cleared', async () => {
-    // The record is that default's LICENCE (spec `trust-dial`, decision 6), so a
-    // Reset that left the default standing would keep birthing bypassed sessions
-    // with no consent on file — and the cockpit's first mode change for one of
-    // them would 428 against a door the person believed they had re-armed.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy', codex: { defaultTrustStop: 'autonomy' } },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(res.body.executionDefaults.trustStop).toBeNull();
-    expect(
-      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
-        .trustStop
-    ).toBeNull();
-  });
-
-  it('leaves the gentler standing defaults alone when the acknowledgement is cleared', async () => {
-    // Only the stop whose justification was the record goes. "Act" needed no
-    // acknowledgement, so a Reset has nothing to say about it.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'act', codex: { defaultTrustStop: 'ask' } },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('act');
-    expect(
-      res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
-        .trustStop
-    ).toBe('ask');
-  });
-
-  it('answers a patch that clears the record AND asks for autonomy with the clear', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    // Contradictory, and not argued with: the clear wins and the stop lands null.
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: null },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-    expect(res.body.executionDefaults.trustStop).toBeNull();
-  });
-
-  it('touches nothing when a patch says nothing about the acknowledgement', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({
-        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
-        runtimes: { defaultTrustStop: 'autonomy' },
-      })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ logging: { level: 'debug' } })
-      .expect(200);
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
-  });
-
-  it('lets Settings clear the acknowledgement, which brings the dialog back', async () => {
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
-      .expect(200);
-
-    await request(server)
-      .patch('/api/config')
-      .send({ ui: { autonomyAcknowledgedAt: null } });
-
-    const res = await request(server).get('/api/config').expect(200);
-    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
-  });
 });
 
 describe('PUT /api/config/agents/defaultAgent', () => {
@@ -2237,11 +2145,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    const app = express();
-    app.use(express.json());
-    mountCallerFixture(app);
-    app.use('/api/config', configRouter);
-    target.mount(app);
+    target.mount(await configApp(configRouter));
   });
 
   afterEach(() => {

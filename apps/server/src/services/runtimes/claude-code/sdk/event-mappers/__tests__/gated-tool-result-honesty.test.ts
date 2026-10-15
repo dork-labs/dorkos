@@ -4,7 +4,7 @@ import { mapSdkMessage } from '../../sdk-event-mapper.js';
 import { createToolState } from '../../../agent-types.js';
 import type { AgentSession, ToolState } from '../../../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { toRawSessionEvent } from '../../../../../session/session-event-normalizer.js';
+import { toRawSessionEvent } from '../../../../../session/projection/session-event-normalizer.js';
 
 /**
  * A gated tool call must never claim it finished before it ran (DOR-2011).

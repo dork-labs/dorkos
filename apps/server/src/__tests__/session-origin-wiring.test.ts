@@ -90,7 +90,7 @@ describe('the composition root wires the session-list stream to the origin looku
         'broadcaster. Without them every session_upserted goes out with no origin, and ' +
         'the palette Continue list and the sidebar rollups read a room turn as your own ' +
         'conversation (DOR-1141). Restore `sessionListBroadcaster.setOriginResolvers(' +
-        'sessionOriginResolvers(app.locals))` before the broadcaster is started.'
+        '{ ...origins })` before the broadcaster is started.'
     ).toBe(true);
   });
 
@@ -105,18 +105,18 @@ describe('the composition root wires the session-list stream to the origin looku
     ).toBeLessThan(start);
   });
 
-  it('sets every lookup on app.locals BEFORE handing them to the broadcaster', () => {
-    // `sessionOriginResolvers(app.locals)` copies what is there at that moment,
+  it('sets every lookup on the origins BEFORE handing them to the broadcaster', () => {
+    // `{ ...origins }` copies what is there at that moment,
     // so a lookup assigned after it reaches the routes and never the live
     // stream — a chat you touched would lose `lastTouchedByYouAt` on its next
     // upsert (spec your-activity-first D5).
     const wiring = lineOf(WIRING);
     for (const key of ['resolveRoomOrigins', 'resolveStartedBy', 'resolveTouches']) {
-      const assigned = lineOf(`app.locals.${key} =`);
-      expect(assigned, `app.locals.${key} is never assigned in index.ts`).toBeGreaterThan(-1);
+      const assigned = lineOf(`origins.${key} =`);
+      expect(assigned, `origins.${key} is never assigned in index.ts`).toBeGreaterThan(-1);
       expect(
         assigned,
-        `app.locals.${key} is set after the broadcaster takes its lookups`
+        `origins.${key} is set after the broadcaster takes its lookups`
       ).toBeLessThan(wiring);
     }
   });

@@ -104,6 +104,13 @@ export interface StatusPromotionContext {
    */
   permissionDescriptor: PermissionModeDescriptor | null;
   /**
+   * Whether the Permissions picker is open right now. An open picker keeps its
+   * item on the line whatever the mode: picking Ask first would otherwise drop
+   * the item, and its popover, out from under the person mid-choice, taking the
+   * "make it the default" offer with it. Absent reads as closed.
+   */
+  permissionPickerOpen?: boolean;
+  /**
    * The way of working this runtime offers and whether the session is in it, or
    * `null` when the runtime offers none (most of them) — the same rule every
    * other nullable field here follows: nothing to say, no slot.
@@ -183,6 +190,8 @@ export interface AccountPromotionState {
 
 /** The two things about a runtime that can make it news. */
 interface RuntimePromotionState {
+  /** The runtime type id, e.g. `'doe'`. */
+  type: string;
   /** Whether this is the server's default runtime. */
   isDefault: boolean;
   /** Whether the runtime can still be chosen (pre-first-message). */
@@ -397,9 +406,10 @@ function isElevatedPermissionMode(ctx: StatusPromotionContext): boolean {
 /**
  * Every status line item, in render order within its cluster.
  *
- * Promotion rules, per spec composer-status-redesign §4.1: `agent`, `model`, and
- * `cwd` always show (who you are talking to, what answers you get, what it can
- * touch); everything else stays silent until it has something to say.
+ * Promotion rules, per spec composer-status-redesign §4.1: `agent` and `cwd`
+ * always show (who you are talking to, what it can touch); everything else stays
+ * silent until it has something to say. `model` left that list when DorkOS
+ * started picking the model (ADR 261010-143211): it shows only when pinned.
  */
 export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
@@ -439,7 +449,12 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Cpu,
-    promote: (ctx) => ctx.runtime !== null && (!ctx.runtime.isDefault || ctx.runtime.canSelect),
+    // Never on DorkOS's own engine: it picks the model itself, and the Runs on
+    // choice is not news on the one-minute path (ADR 261010-143211).
+    promote: (ctx) =>
+      ctx.runtime !== null &&
+      ctx.runtime.type !== 'doe' &&
+      (!ctx.runtime.isDefault || ctx.runtime.canSelect),
     severity: runtimeSeverity,
   },
   {
@@ -484,7 +499,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     cluster: 'right',
     group: 'session',
     icon: Bot,
-    promote: () => true,
+    // Hidden by default on every runtime, existing installs too: a pin shows it.
+    promote: () => false,
     severity: () => SEVERITY.MODEL,
   },
   {
@@ -562,13 +578,20 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     // so the two never compete for one budget slot. Pinned in
     // `status-bar-registry.test.ts` ("plan mode reads QUIET here, on
     // purpose").
-    promote: (ctx) => isElevatedPermissionMode(ctx),
+    //
+    // An open picker holds the item, and its rank, until it closes: the person
+    // is pointing at it (see `permissionPickerOpen`). On a narrow, full line
+    // that rank can push a lower item off while the picker is open; keeping
+    // the popover under the cursor is worth it.
+    promote: (ctx) => isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true,
     severity: (ctx) => {
       const bypassed = ctx.permissionDescriptor
         ? isBypassSemantics(ctx.permissionDescriptor)
         : isBypassPermissionMode(ctx.permissionMode);
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
-      return isElevatedPermissionMode(ctx) ? SEVERITY.PERMISSION_ELEVATED : SEVERITY.QUIET;
+      return isElevatedPermissionMode(ctx) || ctx.permissionPickerOpen === true
+        ? SEVERITY.PERMISSION_ELEVATED
+        : SEVERITY.QUIET;
     },
   },
   {

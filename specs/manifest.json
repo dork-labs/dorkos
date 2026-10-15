@@ -2,6 +2,37 @@
   "version": 1,
   "specs": [
     {
+      "id": "261013-000229",
+      "slug": "server-merge",
+      "title": "One DorkOS server: merge the local server and the space server",
+      "created": "2026-10-12",
+      "status": "specified"
+    },
+    {
+      "id": "261012-205009",
+      "slug": "agent-computer-mvp",
+      "title": "Persistent local agent computer experiment",
+      "created": "2026-10-12",
+      "status": "specified",
+      "linearIssue": "DOR-2748"
+    },
+    {
+      "id": "261012-191847",
+      "slug": "mini-app-placement",
+      "title": "Mini-app placement rules and navigation to mini-app pages",
+      "created": "2026-10-12",
+      "status": "specified",
+      "linearIssue": "DOR-2866"
+    },
+    {
+      "id": "261009-220922",
+      "slug": "tab-identity-everywhere",
+      "title": "Tabs that say who or where and whether it needs you, on every page",
+      "created": "2026-10-09",
+      "status": "specified",
+      "linearIssue": "DOR-2820"
+    },
+    {
       "id": "261009-171114",
       "slug": "spin-off-chats",
       "title": "Spin-off chats: chats message each other, show who sent it, report back",
@@ -3658,6 +3689,22 @@
       "created": "2026-10-08",
       "status": "specified",
       "linearIssue": "DOR-2789"
+    },
+    {
+      "id": "261010-092116",
+      "slug": "heartbeats",
+      "title": "Heartbeats: proactive, persistent agents with reports-to, commitments and measures",
+      "created": "2026-10-10",
+      "status": "specified",
+      "linearIssue": "DOR-2788"
+    },
+    {
+      "id": "261010-143210",
+      "slug": "one-minute-onboarding",
+      "title": "One-minute onboarding and automatic model choice",
+      "created": "2026-10-10",
+      "status": "specified",
+      "linearIssue": "DOR-2783"
     }
   ]
 }

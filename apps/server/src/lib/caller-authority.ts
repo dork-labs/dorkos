@@ -1,5 +1,5 @@
 /**
- * Read, from one Express request, exactly the facts that decide WHO a caller is
+ * Read, from one request, exactly the facts that decide WHO a caller is
  * and WHERE it is calling from — the two questions several surfaces each have to
  * answer the same way, kept in one place so they cannot answer them differently.
  *
@@ -49,22 +49,27 @@
  * They live here for the same anti-divergence reason as the reader above —
  * several routes enforce them and they must not mean different things by it.
  *
+ * ## Every surface asks the same questions
+ *
+ * Every function here takes a request's {@link RequestFacts}
+ * (`http/request-facts.ts`): a route builds them with `honoRequestFacts`, and a
+ * WebSocket upgrade from what it resolved for itself, so each surface is judged
+ * by the same lines.
+ *
  * @module lib/caller-authority
  */
-import type { Request, Response } from 'express';
-
 import type {
   DecisionAuthorityRequest,
   LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
+import type { RequestFacts } from '../http/request-facts.js';
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -76,16 +81,16 @@ import { resolveDecisionAuthority } from '../services/core/approvals/decision-au
  * the module that owns the header because a second surface reads it now
  * (`routes/room-caller.ts`, for every room route) and the two must not diverge.
  *
- * @param req - The incoming request.
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The request's facts.
  * @returns What the caller presented, for `resolveDecisionAuthority`.
  */
-export function readCallerAuthority(req: Request, res: Response): DecisionAuthorityRequest {
-  const user = res.locals.user as RequestUser | undefined;
+export function readCallerAuthority(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+): DecisionAuthorityRequest {
   return {
-    agentIdentityPresented: presentsAgentIdentity(req, res),
-    approvalTokenPresented: req.headers[APPROVAL_TOKEN_HEADER] !== undefined,
-    ...(user ? { user } : {}),
+    agentIdentityPresented: presentsAgentIdentity(facts),
+    approvalTokenPresented: facts.headers[APPROVAL_TOKEN_HEADER] !== undefined,
+    ...(facts.user ? { user: facts.user } : {}),
   };
 }
 
@@ -106,7 +111,7 @@ export interface OperatorCookieRefusal {
 }
 
 /**
- * Read `auth.enabled` from the live user config, exactly as `sessionGate` does.
+ * Read `auth.enabled` from the live user config, exactly as the session gate does.
  *
  * No defensive branch for an unreadable config: `configManager` is a module
  * singleton that boot initializes long before any router mounts, and a genuine
@@ -131,7 +136,7 @@ function loginEnabledFromConfig(): boolean {
  * and inventing a weaker marker would assert a distinction DorkOS cannot make.
  *
  * Under login-on it also separates a person from a program holding one of their
- * per-user API keys, which `sessionGate` accepts as the same identity (DOR-474).
+ * per-user API keys, which the session gate accepts as the same identity (DOR-474).
  *
  * ## The login-off half is an allow, and that is the residual
  *
@@ -149,7 +154,7 @@ function loginEnabledFromConfig(): boolean {
  * This is a SERVER-side guarantee. The cockpit also hides and disables the
  * controls this refuses, but that is a courtesy; this is the guarantee.
  *
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param caller - The request's facts, for the session gate's resolved user.
  * @param subject - What the caller tried to change, as the refusal names it, so
  *   one bar can serve several surfaces without any of them inheriting another's
  *   wording. Reads as "Only a person signed in to DorkOS can change {subject}".
@@ -161,14 +166,13 @@ function loginEnabledFromConfig(): boolean {
  *   cookie. Otherwise the refusal to answer with.
  */
 export function requireOperatorCookieUnderLogin(
-  res: Response,
+  caller: Pick<RequestFacts, 'user'>,
   subject: string,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
   if (!(isLoginEnabled ?? loginEnabledFromConfig)()) return undefined;
 
-  const user = res.locals.user as RequestUser | undefined;
-  if (user?.credential === 'cookie') return undefined;
+  if (caller.user?.credential === 'cookie') return undefined;
 
   return {
     status: 403,
@@ -237,19 +241,28 @@ export function requireOperatorCookieUnderLogin(
  *
  * Unflagged — the default on a normal machine — both signals are still required.
  *
+ * A request admitted by the managed remote-access ingress is never local, under
+ * any flag: it is someone on another device by construction.
+ *
  * One residual remains and is inherent: a reverse proxy on this same host
  * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
  * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its
  * forwarded `Host` normally carries the public name and is refused, but an
  * operator who rewrites `Host` to `localhost` re-opens it.
  *
- * @param req - The incoming request, read for its TCP peer and raw `Host`.
+ * @param request - The request's facts, read for its TCP peer and raw `Host`.
  * @returns True when the request may reach an action reserved for this machine.
  */
-export function isLocalCaller(req: Request): boolean {
+export function isLocalCaller(
+  request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'managedIngress'>
+): boolean {
+  // Managed remote access arrives from the ngrok agent on loopback, so the
+  // socket half would pass; the ingress marks it so nothing it carries is ever
+  // taken for a person at this machine, whatever its `Host` says.
+  if (request.managedIngress) return false;
   return isLocalRequest({
-    peer: req.socket.remoteAddress,
-    hostHeader: req.headers.host,
+    peer: request.peerAddress,
+    hostHeader: request.headers.host,
     allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
   });
 }
@@ -266,7 +279,7 @@ export function isLocalCaller(req: Request): boolean {
  * ## Two bars, checked together (DOR-1569)
  *
  * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
- *   When login is on, `sessionGate` accepts a per-user API key as the same
+ *   When login is on, the session gate accepts a per-user API key as the same
  *   identity a browser cookie proves (DOR-474). An agent with shell access can
  *   read the operator's key off `~/.dork` and present it while dropping its
  *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
@@ -296,15 +309,16 @@ export function isLocalCaller(req: Request): boolean {
  * nobody looked at. This is the DOR-553 question ("should an agent holding the
  * operator's key schedule unattended work?"), answered for tasks: no.
  *
- * @param req - The incoming request.
- * @param res - The response, for `sessionGate`'s resolved user.
+ * @param facts - The request's facts.
  * @returns True only when a person is positively established — a session cookie
  *   under login-on, or the operator on the login-off local machine — with neither
  *   an agent identity nor an approval token presented.
  */
-export function clearsTheAgentBar(req: Request, res: Response): boolean {
-  if (requireOperatorCookieUnderLogin(res, 'this') !== undefined) return false;
-  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
+export function clearsTheAgentBar(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+): boolean {
+  if (requireOperatorCookieUnderLogin(facts, 'this') !== undefined) return false;
+  return resolveDecisionAuthority(readCallerAuthority(facts)).allowed;
 }
 
 /**
@@ -336,20 +350,18 @@ export type AccountOwnerRefusal = 'not-a-person' | 'not-the-owner';
  *   account to compare, so the person bar alone decides, with the DOR-505
  *   residual {@link requireOperatorCookieUnderLogin} names.
  *
- * @param req - The incoming request.
- * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param facts - The request's facts.
  * @returns `undefined` when the caller may act, otherwise why not.
  */
 export function refuseUnlessAccountOwner(
-  req: Request,
-  res: Response
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
 ): AccountOwnerRefusal | undefined {
-  if (!clearsTheAgentBar(req, res)) return 'not-a-person';
+  if (!clearsTheAgentBar(facts)) return 'not-a-person';
   if (!loginEnabledFromConfig()) return undefined;
   // Login is on, so the agent bar above has already required a browser
   // session. An install with no owner account to compare against is refused:
   // nobody can be shown to own it.
-  return isInstallOwner(res.locals.user as RequestUser | undefined) ? undefined : 'not-the-owner';
+  return isInstallOwner(facts.user) ? undefined : 'not-the-owner';
 }
 
 /**
@@ -374,18 +386,16 @@ export function refuseUnlessAccountOwner(
  * app. That costs only ordering — a chat floats into Today — never power, which
  * is why a marker is enough here when it is not for {@link clearsTheAgentBar}.
  *
- * @param req - The incoming request, for its headers.
- * @param res - The response carrying the resolved agent identity and user.
+ * @param caller - The request's facts.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns True when the touch should be recorded as yours.
  */
 export function isPersonAtTheApp(
-  req: Pick<Request, 'headers'>,
-  res: Response,
+  caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
   isLoginEnabled?: LoginEnabledLookup
 ): boolean {
-  if (presentsAgentIdentity(req, res)) return false;
-  const clientId = req.headers['x-client-id'];
+  if (presentsAgentIdentity(caller)) return false;
+  const clientId = caller.headers['x-client-id'];
   if (typeof clientId !== 'string' || clientId.length === 0) return false;
-  return requireOperatorCookieUnderLogin(res, 'this', isLoginEnabled) === undefined;
+  return requireOperatorCookieUnderLogin(caller, 'this', isLoginEnabled) === undefined;
 }

@@ -63,7 +63,7 @@ Phase 1 depends on nothing else. Phase 2's registry is a prerequisite for phases
 - The flow extension's UI (marketplace spec).
 - Moving the account pool; it is already core (`runtimes.claudeCode.accounts[]`, the usage store, the advisor).
 - Eligibility for Codex and OpenCode accounts. Only Claude Code has a multi-account registry today; the eligibility module is written runtime-keyed so a second runtime is a data change.
-- A sidebar entry for extension pages (N10: no new app chrome for a plugin).
+- A sidebar entry for extension pages (N10: no new app chrome for a plugin). _Superseded 2026-10-12 by spec `mini-app-placement` Part 2: the sidebar Library's Add-ons section lists them (DOR-2868)._
 - Exact escalation time limits (N7; flow owns them).
 
 ## 4. Invariants (each needs its evidence in a test)
@@ -409,7 +409,7 @@ registerPage(path: string, component: ComponentType<ExtensionPageProps>, options
 **Listing (N1):**
 
 - Command palette: `use-palette-items.ts` adds a group "Add-ons" with one item per page whose `options.menu !== false` and whose path has no params, labelled `options.title`. Selecting navigates.
-- Phone: `apps/client/src/layers/widgets/mobile-tabs/ui/MobileTabsLayout.tsx`'s "You" panel shows an "Add-ons" list under `SidebarFooterStrip`, same items, only when at least one exists. `SidebarFooterStrip`'s `DESTINATIONS` stays closed: no sidebar entry (N10).
+- Phone: `apps/client/src/layers/widgets/mobile-tabs/ui/MobileTabsLayout.tsx`'s "You" panel shows an "Add-ons" list under `SidebarFooterStrip`, same items, only when at least one exists. `SidebarFooterStrip`'s `DESTINATIONS` stays closed: no sidebar entry (N10). _Superseded by spec `mini-app-placement` Part 2 (DOR-2868): the Library's Add-ons section lists these pages on desktop and on the phone's Library tab, and the You list is gone._
 
 ### 6.6 The status-bar slot (V5, D8)
 

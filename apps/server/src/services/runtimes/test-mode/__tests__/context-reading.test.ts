@@ -8,7 +8,7 @@ import {
   disposeProjector,
   getOrCreateProjector,
 } from '../../../session/session-state-projector.js';
-import { feedProjector } from '../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../session/projection/session-event-normalizer.js';
 import {
   noteContextReading,
   resetContextWarnings,

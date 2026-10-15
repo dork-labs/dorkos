@@ -14,7 +14,7 @@ import {
   CheckboxAuthorityRefusal,
   CheckboxSnapshotRegistry,
   checkboxAuthoritySync,
-} from '../authority-snapshot.js';
+} from '../authority/authority-snapshot.js';
 import { canvasEditorLockHolder } from '../../../canvas-service.js';
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {

@@ -2,6 +2,7 @@ import { Button, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
+import { isOpenSpace, OpenAdmission } from './components/OpenAdmission.js';
 import { ChannelView } from './components/Channel.js';
 import { HoldBanner } from './components/HoldBanner.js';
 import { OwnerReplacementBanner } from './owner-replacement/OwnerReplacementBanner.js';
@@ -10,7 +11,7 @@ import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
 import { ErasureBanner } from './components/Erasure.js';
-import { ConnectDorkOS } from './connect/ConnectDorkOS.js';
+import { MembershipAdded } from './components/MembershipAdded.js';
 import { communityLink } from './connect/community-link.js';
 import { TakedownBanner } from './takedowns/TakedownNotices.js';
 import { AccountBannerSlot } from './email-links/AccountBannerSlot.js';
@@ -58,6 +59,10 @@ export function CommunityApp() {
   const [deletionNoticeAt, setDeletionNoticeAt] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
+  // An open space shows its join page to anyone who is not a member yet, unless they asked for
+  // the usual sign-in instead.
+  const [openSpace, setOpenSpace] = useState(false);
+  const [otherWays, setOtherWays] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
   const [admissionComplete, setAdmissionComplete] = useState(false);
   const [admissionResume, setAdmissionResume] = useState<AdmissionResume | null>(null);
@@ -219,9 +224,14 @@ export function CommunityApp() {
         } catch (cause) {
           if (!active) return;
           if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) {
+            // An open space's own page is its join page, signed in or not.
+            const open = !inviteTokenRef.current && !joinPath && (await isOpenSpace());
+            if (!active) return;
+            setOpenSpace(open);
             // A signed-in non-member on the join URL stays to read why membership was not
             // added; anywhere else the tenant is simply not theirs to enter.
-            if (cause.status === 403 && !inviteTokenRef.current && !joinPath) returnToChooser();
+            if (cause.status === 403 && !inviteTokenRef.current && !joinPath && !open)
+              returnToChooser();
             setMe(null);
             setUnadmitted(cause.status === 403);
           } else if (isCommunityUnavailable(cause)) {
@@ -291,35 +301,27 @@ export function CommunityApp() {
     );
   if (admissionComplete && community)
     return (
-      <main className="grid min-h-dvh place-items-center p-5">
-        <section className="panel max-w-md p-6" aria-labelledby="community-joined-title">
-          <p className="eyebrow">Membership added</p>
-          <h1 id="community-joined-title" ref={joinedHeading} tabIndex={-1}>
-            You’re in {community.name}.
-          </h1>
-          <p className="muted">
-            Open the space now, or connect a DorkOS installation as a separate next step.
-          </p>
-          <Button
-            variant="default"
-            onClick={() => {
-              setAdmissionComplete(false);
-              setRevision((old) => old + 1);
-            }}
-          >
-            Open space
-          </Button>
-          <ConnectDorkOS
-            link={
-              communityShortName
-                ? communityLink(window.location.origin, community.id, communityShortName)
-                : // Not read yet for someone who just joined: the name they arrived by, when it
-                  // leads to this community, otherwise its /c/ address.
-                  `${window.location.origin}${communityBasePath(community.id)}`
-            }
-          />
-        </section>
-      </main>
+      <MembershipAdded
+        community={community}
+        shortName={communityShortName}
+        headingRef={joinedHeading}
+        onOpen={() => {
+          setAdmissionComplete(false);
+          setRevision((old) => old + 1);
+        }}
+      />
+    );
+  if (!me && openSpace && community && !otherWays)
+    return (
+      <OpenAdmission
+        community={community}
+        signedIn={unadmitted}
+        onAdmitted={() => {
+          setOpenSpace(false);
+          setAdmissionComplete(true);
+        }}
+        onOtherWays={() => setOtherWays(true)}
+      />
     );
   if (!me)
     return (

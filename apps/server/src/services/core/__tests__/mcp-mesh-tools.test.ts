@@ -10,6 +10,7 @@ import {
   createMeshQueryTopologyHandler,
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
@@ -29,6 +30,7 @@ vi.mock('../../../lib/boundary.js', async () => {
   };
 });
 
+import { meshToolDefinitions } from '../../runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
   validateBoundary,
@@ -143,6 +145,23 @@ describe('Mesh MCP Tools', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/test/bot',
         expect.objectContaining({ name: 'bot', runtime: 'claude-code' }),
+        'mcp-tool'
+      );
+    });
+
+    it('mesh_register records the calling agent as createdBy (DOR-2788)', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot', runtime: 'claude-code' });
+
+      const handler = createMeshRegisterHandler(deps);
+      await runWithAuditActor(
+        { actor: { accountId: '01CALLER', kind: 'agent', name: 'Juno' }, surface: 'mcp' },
+        () => handler({ path: '/test/bot', name: 'bot' })
+      );
+      expect(meshCore.registerByPath).toHaveBeenCalledWith(
+        '/test/bot',
+        expect.objectContaining({ createdBy: '01CALLER' }),
         'mcp-tool'
       );
     });
@@ -475,6 +494,19 @@ describe('Mesh MCP Tools', () => {
       // knows the namespace the endpoint and its rules were registered under.
       expect(meshCore.getSubject).toHaveBeenCalledWith('a1');
       expect(meshCore.getSubject).toHaveBeenCalledWith('b2');
+    });
+
+    // DOR-2790: agents message each other with chat_send, which takes an agent id
+    // as "to". Telling them to send to relaySubject pointed at a retired path.
+    it('mesh_list and mesh_inspect point agents at the id for chat_send, not relaySubject', () => {
+      const defs = meshToolDefinitions(createMockDeps(true));
+      const descriptionOf = (name: string) => defs.find((d) => d.name === name)?.description ?? '';
+      for (const name of ['mesh_list', 'mesh_inspect']) {
+        const text = descriptionOf(name);
+        expect(text).toMatch(/the chat send tool/);
+        expect(text).toMatch(/only for Relay and A2A integrations/);
+        expect(text).not.toMatch(/Send to that exact/);
+      }
     });
 
     it('mesh_list omits relaySubject rather than inventing one when the id resolves to nothing', async () => {

@@ -37,16 +37,12 @@ import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
-import {
-  CreditsUnavailableError,
-  creditsRefusalEvent,
-} from '../../../core/cloud/credits-protocols.js';
+import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
 import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
 import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
-  CodexCrashLoopError,
   codexAppServerPool,
   type CodexAppServerProcess,
 } from '../app-server/process-pool.js';
@@ -85,6 +81,7 @@ import type {
   CodexTurnRequest,
   CodexTurnTools,
 } from './codex-transport.js';
+import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
 export const APP_SERVER_STOP_ACK_MS = 3_000;
@@ -374,7 +371,7 @@ export class AppServerCodexTransport implements CodexTransport {
       if (loaded.threadId !== current) clear = await this.settleLingering(process, loaded.threadId);
     } catch (err) {
       release?.();
-      yield* this.failedSetup(sessionId, err);
+      yield* failedSetup(sessionId, err);
       return;
     }
     if (loaded.retired !== undefined) this.retire(process, loaded.retired);
@@ -554,7 +551,7 @@ export class AppServerCodexTransport implements CodexTransport {
         );
         turnId = result.turn.id;
       } catch (err) {
-        yield* finish(this.failedStart(mapper, err));
+        yield* finish(failedStart(mapper, err));
         return;
       }
       if (this.isKnownOpenTurn(turnId, turn)) {
@@ -611,7 +608,7 @@ export class AppServerCodexTransport implements CodexTransport {
     try {
       await process.client.request('thread/compact/start', { threadId });
     } catch (err) {
-      queue.push(this.failedCompaction(mapper, err));
+      queue.push(failedCompaction(mapper, err));
       queue.end();
       yield* queue.drain();
       return;
@@ -844,6 +841,42 @@ export class AppServerCodexTransport implements CodexTransport {
       this.disposeChannel(process, threadId);
     }
     await this.pool.reapOnce();
+  }
+
+  /**
+   * The sessions with anything live here: an open turn, background work, or a
+   * loaded thread.
+   */
+  liveSessionIds(): string[] {
+    return [
+      ...new Set([
+        ...this.openBySession.keys(),
+        ...this.background.all().map((task) => task.sessionId),
+        ...this.loader.sessionIds(),
+      ]),
+    ];
+  }
+
+  /**
+   * End a session here (a pause, spec `audit-trail` PR5): stop every
+   * background command and helper it started, so none wakes it, then give its
+   * threads back. The app-server process is shared with other sessions, so it
+   * stays. Called after the runtime interrupted the session's turn.
+   *
+   * @param sessionId - The session.
+   * @returns Whether anything was running that this stopped or released.
+   */
+  async endSession(sessionId: string): Promise<boolean> {
+    const tasks = this.background.all().filter((task) => task.sessionId === sessionId);
+    const receipts = await Promise.all(
+      tasks.map((task) =>
+        this.stopTask(sessionId, task.taskId).catch(() => ({ outcome: 'failed' as const }))
+      )
+    );
+    const loaded = this.loader.threadsOf(sessionId).length > 0;
+    await this.reapSession(sessionId);
+    const released = loaded && this.loader.threadsOf(sessionId).length === 0;
+    return released || receipts.some((receipt) => receipt.outcome === 'acked');
   }
 
   /**
@@ -1502,53 +1535,6 @@ export class AppServerCodexTransport implements CodexTransport {
       ...(effort !== undefined ? { effort } : {}),
       summary: 'auto',
     };
-  }
-
-  private *failedSetup(sessionId: string, err: unknown): Generator<StreamEvent> {
-    const refusal = creditsRefusalEvent(err);
-    if (refusal) {
-      yield refusal;
-    } else if (err instanceof CodexCrashLoopError) {
-      yield { type: 'error', data: { message: err.message, code: 'codex_crash_loop' } };
-    } else {
-      logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
-      yield {
-        type: 'error',
-        data: {
-          message: 'Codex could not start this reply. Send your message again to retry.',
-          code: 'codex_unavailable',
-          details: err instanceof Error ? err.message : String(err),
-        },
-      };
-    }
-    yield { type: 'done', data: { sessionId } };
-  }
-
-  private failedCompaction(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
-    if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
-    logger.warn('[CodexAppServer] thread/compact/start failed', { err: String(err) });
-    const message = 'Codex could not summarize this chat. Try again.';
-    return [
-      {
-        type: 'operation_progress',
-        data: {
-          operation: 'compaction',
-          state: 'failed',
-          determinate: false,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      },
-      ...mapper.closeQuietly({ message, code: 'compaction_failed' }),
-    ];
-  }
-
-  private failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
-    if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
-    logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
-    return mapper.closeQuietly({
-      message: 'Codex could not start this reply. Send your message again to retry.',
-      code: 'codex_unavailable',
-    });
   }
 }
 
