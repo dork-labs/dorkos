@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import { SessionStore } from '../../sessions/session-store.js';
-import { feedProjector } from '../../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../../session/projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';

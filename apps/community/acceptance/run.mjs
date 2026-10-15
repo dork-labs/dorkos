@@ -1,5 +1,6 @@
 /** Run packaged community and local-agent proof inside an internal Docker network. */
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import process from 'node:process';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { URL } from 'node:url';
@@ -20,6 +21,9 @@ const admin = new Pool({ connectionString: databaseUrl, connectionTimeoutMillis:
 const suffix = randomBytes(8).toString('hex');
 const databases = ['a', 'b'].map((name) => `community_acceptance_${name}_${suffix}`);
 const children = new Map();
+// Diagnostic references never select a process for service control.
+const lastStartedForDiagnostics = new Map();
+let controlFailureDiagnostics = 0;
 const created = [];
 const secrets = [randomBytes(32).toString('hex'), randomBytes(32).toString('hex')];
 const environment = {
@@ -53,6 +57,7 @@ async function start(name, command, args, cwd, env, health) {
     stdio: ['ignore', output.fd, output.fd],
   });
   children.set(name, child);
+  lastStartedForDiagnostics.set(name, child);
   child.once('exit', () => {
     // An older process may exit after its replacement has already started.
     if (children.get(name) === child) children.delete(name);
@@ -193,6 +198,7 @@ try {
       return;
     }
     restarting = true;
+    let stage = 'stopping';
     try {
       if (action !== 'start') await stop(name);
       if (action !== 'stop') {
@@ -200,12 +206,46 @@ try {
           response.writeHead(409).end('Owned service is already running');
           return;
         }
+        stage = 'starting';
         await start(name, ...definitions.get(name));
       }
       response
         .writeHead(200, { 'content-type': 'application/json' })
         .end(JSON.stringify({ action, service: name, completed: true }));
-    } catch {
+    } catch (cause) {
+      // Fixed metadata only: never expose service logs, error text, paths or process IDs.
+      try {
+        if (controlFailureDiagnostics < 3) {
+          controlFailureDiagnostics++;
+          const child = lastStartedForDiagnostics.get(name);
+          const candidateErrorName = cause instanceof Error ? cause.name : undefined;
+          const errorClass = ['Error', 'AssertionError', 'TypeError', 'RangeError'].includes(
+            candidateErrorName
+          )
+            ? candidateErrorName
+            : 'other';
+          const exitCode = child?.exitCode;
+          const signal = child?.signalCode;
+          const data =
+            JSON.stringify({
+              tag: 'community-owned-service-control-failure',
+              action,
+              service: name,
+              stage,
+              errorClass,
+              ownedExitCode:
+                Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255 ? exitCode : null,
+              ownedSignal: ['SIGTERM', 'SIGKILL', 'SIGINT'].includes(signal)
+                ? signal
+                : signal
+                  ? 'other'
+                  : null,
+            }) + '\n';
+          if (Buffer.byteLength(data, 'utf8') <= 4096) process.stderr.write(data);
+        }
+      } catch {
+        /* Diagnostic failure must preserve the original control failure response. */
+      }
       response.writeHead(500).end('Owned service control failed');
     } finally {
       restarting = false;

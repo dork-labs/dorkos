@@ -1,0 +1,34 @@
+diff --git a/dist/components/schema/client.js b/dist/components/schema/client.js
+index 1deaf194b2e3d620df325ee5526051834bbbbb43..1ca0a082f89cbf3579cd1a2ecb400b76ef1cde3d 100644
+--- a/dist/components/schema/client.js
++++ b/dist/components/schema/client.js
+@@ -372,9 +372,12 @@ function SchemaUIPopover() {
+ 		})
+ 	});
+ }
+-function TypeInfoTrigger({ pathName, $ref, children }) {
++function TypeInfoTrigger({ pathName, $ref, children, ancestors = [] }) {
+ 	const { generated: { refs }, renderTypeInfoTrigger } = useStates();
+ 	const schema = refs[$ref];
++	// Expand each branch once; repeated types remain navigable through the original popover.
++	if (ancestors.includes($ref)) return renderTypeInfoTrigger({ $ref, pathName, children });
++	const nextAncestors = [...ancestors, $ref];
+ 	if (schema.type === "primitive" && !schema.description && (!schema.infoTags || schema.infoTags.length === 0)) return /* @__PURE__ */ jsx("span", {
+ 		className: cn(typeVariants()),
+ 		children
+@@ -386,6 +389,7 @@ function TypeInfoTrigger({ pathName, $ref, children }) {
+ 			children: schema.items.map((item, i) => /* @__PURE__ */ jsxs(Fragment, { children: [i > 0 && /* @__PURE__ */ jsx("span", { children: sep }), /* @__PURE__ */ jsx(TypeInfoTrigger, {
+ 				pathName,
+ 				$ref: item.$type,
++				ancestors: nextAncestors,
+ 				children: item.name
+ 			})] }, item.$type))
+ 		});
+@@ -397,6 +401,7 @@ function TypeInfoTrigger({ pathName, $ref, children }) {
+ 			/* @__PURE__ */ jsx(TypeInfoTrigger, {
+ 				pathName: `${pathName}[]`,
+ 				$ref: schema.item.$type,
++				ancestors: nextAncestors,
+ 				children: refs[schema.item.$type].aliasName
+ 			}),
+ 			">"

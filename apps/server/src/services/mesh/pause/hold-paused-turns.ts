@@ -50,6 +50,15 @@ import {
   type TurnAgentOpts,
 } from './agent-pause.js';
 
+const originalPausedRuntimeObservers = new WeakMap<
+  object,
+  (
+    sessionId: string,
+    opts: MessageOpts,
+    source: AsyncGenerator<StreamEvent>
+  ) => AsyncGenerator<StreamEvent>
+>();
+
 /** The session's stored folder, read lazily and never thrown. */
 function storedCwdOf(runtime: AgentRuntime, sessionId: string): () => string | undefined {
   return () => runtime.getSessionCwd?.(sessionId);
@@ -211,7 +220,7 @@ export function isSessionPaused(runtime: AgentRuntime, sessionId: string): boole
  * @returns A proxy over the runtime.
  */
 export function holdPausedAgents(runtime: AgentRuntime): AgentRuntime {
-  return new Proxy(runtime, {
+  const wrapped = new Proxy(runtime, {
     get(target, prop) {
       if (prop === 'sendMessage') {
         return (sessionId: string, content: string, opts?: MessageOpts) =>
@@ -267,4 +276,20 @@ export function holdPausedAgents(runtime: AgentRuntime): AgentRuntime {
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+  originalPausedRuntimeObservers.set(wrapped, (sessionId, opts, source) =>
+    holdOrRun(runtime, sessionId, opts, () => source)
+  );
+  return wrapped;
+}
+
+/** Apply the same pause admission and tracking to a genuine already-opened native stream. */
+export function observeOriginalPausedRuntimeStream(
+  wrapped: object,
+  sessionId: string,
+  opts: MessageOpts,
+  source: AsyncGenerator<StreamEvent>
+): AsyncGenerator<StreamEvent> {
+  const observe = originalPausedRuntimeObservers.get(wrapped);
+  if (!observe) throw new Error('Original paused runtime wrapper required.');
+  return observe(sessionId, opts, source);
 }

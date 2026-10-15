@@ -27,7 +27,7 @@ import { LocalSessionAttachmentStore } from '../../../../session/attachments/loc
 import { deriveSessionAttachmentId } from '../../../../session/attachments/session-attachment-id.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 import type { AgentSession } from '../../agent-types.js';
-import { streamTurnWindow } from '../pump-turn-stream.js';
+import { streamTurnWindow } from '../warm-process/pump-turn-stream.js';
 import type { TurnWindow } from '../session-turn-windows.js';
 import { TINY_PNG_BASE64 } from '../../__tests__/sdk-scenarios.js';
 

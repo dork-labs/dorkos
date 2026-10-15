@@ -188,6 +188,8 @@ describe('canvas channel production migration', () => {
     const db = database();
     const expected: Record<string, string[]> = {
       canvas_doc_channels_scope_idx: ['scope', 'closed_at'],
+      canvas_doc_channel_tokens_hash_unique: ['token_hash'],
+      canvas_doc_channel_tokens_document_idx: ['document_id', 'revoked_at', 'expires_at'],
       canvas_doc_events_sequence_unique: ['document_id', 'doc_seq'],
       canvas_doc_events_received_idx: ['document_id', 'received_at'],
       canvas_doc_events_retention_idx: ['received_at', 'document_id', 'doc_seq'],
@@ -200,8 +202,11 @@ describe('canvas channel production migration', () => {
       canvas_doc_batches_due_idx: ['status', 'due_at'],
       canvas_doc_batches_lease_idx: ['status', 'lease_until'],
       canvas_doc_batches_receipt_idx: ['admission_receipt_id'],
+      canvas_doc_batches_room_admission_unique: ['room_admission_id'],
+      canvas_doc_batches_room_resume: ['delivery_kind', 'status', 'updated_at', 'batch_id'],
       canvas_doc_deliveries_batch_idx: ['document_id', 'batch_id'],
       canvas_doc_deliveries_status_idx: ['status', 'updated_at'],
+      canvas_doc_deliveries_room_admission: ['room_admission_id', 'document_id', 'route_id'],
       canvas_doc_identity_intents_recovery_idx: ['status', 'updated_at'],
       canvas_doc_write_intents_event_unique: ['document_id', 'event_id'],
       canvas_doc_write_intents_recovery_idx: ['status', 'updated_at'],

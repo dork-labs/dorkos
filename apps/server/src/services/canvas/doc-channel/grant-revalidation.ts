@@ -1,259 +1,328 @@
-/** Current route admission checks, separated from grant creation and approval consumption. */
+import { type CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
+import { type DocRouteGrantRequest } from './grant-policy.js';
+import type { DbTransaction } from '@dorkos/db';
 import {
-  and,
-  eq,
-  isNull,
-  canvasDocChannels,
-  approvals,
-  canvasDocGrants,
-  type Db,
-  type DbTransaction,
-} from '@dorkos/db';
-import {
-  CanvasChannelDeclarationSchema,
-  matchesCanvasChannelEvent,
-  type CanvasChannelRoute,
-} from '@dorkos/shared/canvas-channel-schemas';
-import { redactSecretsInText } from '../../core/approvals/approval-summary.js';
-import { hashApprovalInput } from '../../core/approvals/approval-input-hash.js';
-import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
-import { DocChannelStore, type DocGrantRow, type DocBatchRow } from './store.js';
-import { readDocAppManifest, type DocAppManifest } from './app-manifest.js';
+  type DocGrantRow,
+  requireDocChannelStoreDatabase,
+  requireOriginalDocGrantStore,
+  requireOriginalDocumentRelayStore,
+} from './store.js';
+import { CompiledCanvasAppManifest } from '@dorkos/shared/canvas-app-manifest';
+import { createOriginalDocAppManifestReader } from './app-manifest.js';
 import {
   DocRouteGrantError,
-  declaredRoute,
-  validateDocGrantTarget,
   type DocGrantActor,
-  type DocGrantAuthority,
-  type DocGrantTarget,
   type DocOriginalWriteObservation,
 } from './grant-policy.js';
-import { DocChannelNotFoundError } from './authorization.js';
+import { captureCurrentDocConfiguration } from './current/current-operation-data.js';
+import type {
+  CurrentGrantSourceClaims,
+  DocGrantCurrentServices,
+} from './current/current-operation-types.js';
 import {
-  checkboxAuthorityClock,
-  captureCheckboxGrantContext,
-} from './writes/authority-snapshot.js';
-const PLATFORM_LIMITS = { envelopeBytes: 16384, eventsPerMinute: 60, turnsPerHour: 10 };
-/** Current route selection, including explicit reasons saved input must not dispatch. */
-export interface DocGrantedRoute {
-  route: CanvasChannelRoute;
-  grantId?: string;
-  grantRevision?: number;
-  allowedTypes?: string[];
-  targetSessionId?: string | null;
-  reason?: string;
-}
+  createIsolatedGrantCustodyMaps,
+  type OriginalGrantCustodyMaps,
+} from './grant/grant-original-custody-maps.js';
+import {
+  createOriginalGrantPublicDispatch,
+  type OriginalGrantPublicDispatch,
+} from './grant/grant-public-dispatch.js';
+import { installOriginalGrantCallbacks } from './grant/grant-constructor-bindings.js';
+import type {
+  OriginalGrantRevalidationView,
+  OriginalGrantCreationView,
+} from './grant/grant-private-views.js';
+import type { PreparedDocGrant, DocGrantResult } from './grant/grant-private-contracts.js';
+import * as grant_token_current from './grant/grant-token-current.js';
+import * as grant_live_current from './grant/grant-live-current.js';
+import * as grant_write_relay_current from './grant/grant-write-relay-current.js';
+import * as grant_document_dependencies from './grant/grant-document-dependencies.js';
+import * as grant_replay_routing from './grant/grant-replay-routing.js';
+import * as grant_channel_configuration from './grant/grant-channel-configuration.js';
+import * as grant_route_preparation from './grant/grant-route-preparation.js';
+import * as grant_route_approval from './grant/grant-route-approval.js';
 
+import { OriginalGrantRevalidationDispatch } from './grant/grant-revalidation-dispatch-base.js';
+import {
+  projectOriginalGrantRevalidationView,
+  projectOriginalGrantCreationView,
+} from './grant/grant-view-projection.js';
+
+export type { DocGrantedRoute } from './current/current-operation-types.js';
+export type {
+  OriginalCurrentDocumentGrantDependencies,
+  PreparedDocGrant,
+  DocGrantResult,
+} from './grant/grant-private-contracts.js';
+const originalGrantCustodyMaps = createIsolatedGrantCustodyMaps();
+const { currentGrantEngines, originalPreparedGrantCalls, originalGrantMutations } =
+  originalGrantCustodyMaps;
+const grantFreeze = Object.freeze;
+const originalCustodyKey = grantFreeze({});
+const custodyViews = new WeakMap<object, Readonly<OriginalGrantCustodyMaps>>();
+const baseViews = new WeakMap<object, OriginalGrantRevalidationView>();
+const creationViews = new WeakMap<object, OriginalGrantCreationView>();
+const grantApply = Reflect.apply;
+const grantGet = WeakMap.prototype.get;
+const grantSet = WeakMap.prototype.set;
+grantApply(grantSet, custodyViews, [originalCustodyKey, originalGrantCustodyMaps]);
+/** Exact private root membership maps; public engine/database objects are not selectors. */
+export function readOriginalGrantCustody(owner: object): Readonly<OriginalGrantCustodyMaps> {
+  const view = grantApply(grantGet, custodyViews, [owner]) as
+    Readonly<OriginalGrantCustodyMaps> | undefined;
+  if (!view) throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
+  return view;
+}
+/** Genuine constructor-private revalidation view, before any native effect. */
+export function readOriginalGrantRevalidationView(owner: object): OriginalGrantRevalidationView {
+  const view = grantApply(grantGet, baseViews, [owner]) as
+    OriginalGrantRevalidationView | undefined;
+  if (!view) throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
+  return view;
+}
+/** Genuine constructor-private grant mutation view, before any native effect. */
+export function readOriginalGrantCreationView(owner: object): OriginalGrantCreationView {
+  const view = grantApply(grantGet, creationViews, [owner]) as
+    OriginalGrantCreationView | undefined;
+  if (!view) throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
+  return view;
+}
+/** Original constructor-owned public grant entrypoints. */
+const originalGrantExplicitPublicBindings: Readonly<OriginalGrantPublicDispatch> =
+  createOriginalGrantPublicDispatch(originalCustodyKey);
+/** Original public function reference with its exact named declaration contract. */
+export const documentDependenciesBeforeOriginalGrantInsertion: OriginalGrantPublicDispatch['documentDependenciesBeforeOriginalGrantInsertion'] =
+  originalGrantExplicitPublicBindings.documentDependenciesBeforeOriginalGrantInsertion;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalCurrentDocReplayRouting: OriginalGrantPublicDispatch['readOriginalCurrentDocReplayRouting'] =
+  originalGrantExplicitPublicBindings.readOriginalCurrentDocReplayRouting;
+/** Original public function reference with its exact named declaration contract. */
+export const prepareCurrentDocGrantRoutes: OriginalGrantPublicDispatch['prepareCurrentDocGrantRoutes'] =
+  originalGrantExplicitPublicBindings.prepareCurrentDocGrantRoutes;
+/** Original public function reference with its exact named declaration contract. */
+export const prepareCurrentDocCheckboxGrantRoutes: OriginalGrantPublicDispatch['prepareCurrentDocCheckboxGrantRoutes'] =
+  originalGrantExplicitPublicBindings.prepareCurrentDocCheckboxGrantRoutes;
+/** Original public function reference with its exact named declaration contract. */
+export const auditCurrentDocGrantRows: OriginalGrantPublicDispatch['auditCurrentDocGrantRows'] =
+  originalGrantExplicitPublicBindings.auditCurrentDocGrantRows;
+/** Original public function reference with its exact named declaration contract. */
+export const refreshCurrentDocGrantAuthority: OriginalGrantPublicDispatch['refreshCurrentDocGrantAuthority'] =
+  originalGrantExplicitPublicBindings.refreshCurrentDocGrantAuthority;
+/** Original public function reference with its exact named declaration contract. */
+export const readCurrentOriginalRoomGrantSource: OriginalGrantPublicDispatch['readCurrentOriginalRoomGrantSource'] =
+  originalGrantExplicitPublicBindings.readCurrentOriginalRoomGrantSource;
+/** Original public function reference with its exact named declaration contract. */
+export const captureCurrentDocumentGrantDependencies: OriginalGrantPublicDispatch['captureCurrentDocumentGrantDependencies'] =
+  originalGrantExplicitPublicBindings.captureCurrentDocumentGrantDependencies;
+/** Original public function reference with its exact named declaration contract. */
+export const requireCurrentDocumentGrantFinal: OriginalGrantPublicDispatch['requireCurrentDocumentGrantFinal'] =
+  originalGrantExplicitPublicBindings.requireCurrentDocumentGrantFinal;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalTokenDocumentManifest: OriginalGrantPublicDispatch['readOriginalTokenDocumentManifest'] =
+  originalGrantExplicitPublicBindings.readOriginalTokenDocumentManifest;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalTokenDocumentManifestClosed: OriginalGrantPublicDispatch['requireOriginalTokenDocumentManifestClosed'] =
+  originalGrantExplicitPublicBindings.requireOriginalTokenDocumentManifestClosed;
+/** Original public function reference with its exact named declaration contract. */
+export const prepareOriginalTokenGrantInput: OriginalGrantPublicDispatch['prepareOriginalTokenGrantInput'] =
+  originalGrantExplicitPublicBindings.prepareOriginalTokenGrantInput;
+/** Original public function reference with its exact named declaration contract. */
+export const requireOriginalDocumentRelayGrants: OriginalGrantPublicDispatch['requireOriginalDocumentRelayGrants'] =
+  originalGrantExplicitPublicBindings.requireOriginalDocumentRelayGrants;
+/** Original public function reference with its exact named declaration contract. */
+export const requireCurrentDocGrantEngine: OriginalGrantPublicDispatch['requireCurrentDocGrantEngine'] =
+  originalGrantExplicitPublicBindings.requireCurrentDocGrantEngine;
+/** Original public function reference with its exact named declaration contract. */
+export const grantOriginalPreparedCheckboxRoute: OriginalGrantPublicDispatch['grantOriginalPreparedCheckboxRoute'] =
+  originalGrantExplicitPublicBindings.grantOriginalPreparedCheckboxRoute;
+/** Original public function reference with its exact named declaration contract. */
+export const configureOriginalDocChannel: OriginalGrantPublicDispatch['configureOriginalDocChannel'] =
+  originalGrantExplicitPublicBindings.configureOriginalDocChannel;
+/** Original public function reference with its exact named declaration contract. */
+export const approveOriginalDocRoute: OriginalGrantPublicDispatch['approveOriginalDocRoute'] =
+  originalGrantExplicitPublicBindings.approveOriginalDocRoute;
+/** Original public function reference with its exact named declaration contract. */
+export const revokeOriginalDocRoute: OriginalGrantPublicDispatch['revokeOriginalDocRoute'] =
+  originalGrantExplicitPublicBindings.revokeOriginalDocRoute;
+/** Original public function reference with its exact named declaration contract. */
+export const readOriginalReviewedDocReplayRoute: OriginalGrantPublicDispatch['readOriginalReviewedDocReplayRoute'] =
+  originalGrantExplicitPublicBindings.readOriginalReviewedDocReplayRoute;
+const originalTokenPayloadValidate = CompiledCanvasAppManifest.prototype.validate;
+const APPROVE_CAPABILITY = 'ui.approve_doc_route';
+const PLATFORM_LIMITS = { envelopeBytes: 16384, eventsPerMinute: 60, turnsPerHour: 10 };
 /** Shared synchronous current-authority checks for ingestion and background dispatch. */
-export class DocChannelGrantRevalidation {
+export class DocChannelGrantRevalidation extends OriginalGrantRevalidationDispatch {
+  readonly #grantKey: object;
+  readonly #relayStore: ReturnType<typeof requireOriginalDocGrantStore> &
+    ReturnType<typeof requireOriginalDocumentRelayStore>;
+
+  readonly #tokenManifestReader = createOriginalDocAppManifestReader();
+  readonly #fixedServices: OriginalGrantRevalidationView['fixedServices'];
+  readonly #fixedClaims = new WeakMap<DbTransaction, CurrentGrantSourceClaims>();
   /** Use current canonical authority ports without reusing an opener turn's expired proof. */
-  constructor(
-    protected readonly services: {
-      db: Db;
-      store: DocChannelStore;
-      authority: DocGrantAuthority;
-      now?: () => Date;
-    }
-  ) {}
-  protected now(): string {
-    return (this.services.now?.() ?? new Date()).toISOString();
+  constructor(protected readonly services: DocGrantCurrentServices) {
+    const originalKey = grantFreeze({});
+    super(originalKey);
+    this.#grantKey = originalKey;
+    const fixed = captureCurrentDocConfiguration(services);
+    if (fixed.db.$client.inTransaction)
+      throw new Error('Current grant construction requires an inactive database.');
+    this.#relayStore = Object.freeze({
+      ...requireOriginalDocGrantStore(fixed.store, fixed.db),
+      ...requireOriginalDocumentRelayStore(fixed.store),
+    });
+    this.#fixedServices = Object.freeze({
+      db: fixed.db,
+      store: fixed.store,
+      authority: captureCurrentDocConfiguration(fixed.authority),
+      now: fixed.now,
+      originalManifestReader: this.#tokenManifestReader,
+    });
+
+    const createOriginalView = (
+      owner: DocChannelGrantRevalidation
+    ): Readonly<OriginalGrantRevalidationView> =>
+      projectOriginalGrantRevalidationView(
+        grantFreeze<OriginalGrantRevalidationView>({
+          originalOwner: this,
+          get services() {
+            return owner.services;
+          },
+          originalTokenPayloadValidate,
+          get relayStore() {
+            return owner.#relayStore;
+          },
+          get tokenManifestReader() {
+            return owner.#tokenManifestReader;
+          },
+          get fixedServices() {
+            return owner.#fixedServices;
+          },
+          get fixedClaims() {
+            return owner.#fixedClaims;
+          },
+          privatePrepareTokenManifest: (documentId, observed) =>
+            grant_token_current.privatePrepareTokenManifest(owner.#grantKey, documentId, observed),
+          privatePrepareTokenCurrent: (input, authorization, tx) =>
+            grant_token_current.privatePrepareTokenCurrent(
+              owner.#grantKey,
+              input,
+              authorization,
+              tx
+            ),
+          privateReadTokenManifestOutsideSql: (documentId) =>
+            grant_token_current.privateReadTokenManifestOutsideSql(owner.#grantKey, documentId),
+          get now() {
+            return owner.now;
+          },
+          get access() {
+            return owner.access;
+          },
+          get refreshManifest() {
+            return owner.refreshManifest;
+          },
+          get refreshAuthority() {
+            return owner.refreshAuthority;
+          },
+          get refreshGrantedAuthority() {
+            return owner.refreshGrantedAuthority;
+          },
+          get manifest() {
+            return owner.manifest;
+          },
+          get suspend() {
+            return owner.suspend;
+          },
+          get validateEventPayload() {
+            return owner.validateEventPayload;
+          },
+          get revalidateGrant() {
+            return owner.revalidateGrant;
+          },
+          get verifyCurrentGrant() {
+            return owner.verifyCurrentGrant;
+          },
+          get revalidateOriginalWriteGrant() {
+            return owner.revalidateOriginalWriteGrant;
+          },
+          get revalidateBatchGrant() {
+            return owner.revalidateBatchGrant;
+          },
+          get getEffectiveLimits() {
+            return owner.getEffectiveLimits;
+          },
+          get getCurrentRoutes() {
+            return owner.getCurrentRoutes;
+          },
+          privateRelayRefresh: (grantId) =>
+            grant_write_relay_current.privateRelayRefresh(owner.#grantKey, grantId),
+          privateRelayBatch: (batch, tx) =>
+            grant_write_relay_current.privateRelayBatch(owner.#grantKey, batch, tx),
+          privateFixedNow: () => grant_write_relay_current.privateFixedNow(owner.#grantKey),
+          privateFixedAccess: (documentId, actor, tx) =>
+            grant_write_relay_current.privateFixedAccess(owner.#grantKey, documentId, actor, tx),
+          privateDocumentFinal: (documentId, grantIds, tx) =>
+            grant_document_dependencies.privateDocumentFinal(
+              owner.#grantKey,
+              documentId,
+              grantIds,
+              tx
+            ),
+          privateDocumentDependencies: (documentId, actor, grantIds, tx, observed) =>
+            grant_document_dependencies.privateDocumentDependencies(
+              owner.#grantKey,
+              documentId,
+              actor,
+              grantIds,
+              tx,
+              observed
+            ),
+          privateReplayRouting: (documentId, actor, tx, room, engine, observed) =>
+            grant_replay_routing.privateReplayRouting(
+              owner.#grantKey,
+              documentId,
+              actor,
+              tx,
+              room,
+              engine,
+              observed
+            ),
+          privateSourceRows: (documentId, tx) =>
+            grant_document_dependencies.privateSourceRows(owner.#grantKey, documentId, tx),
+          privatePrepareCurrent: (authorization, tx, observed) =>
+            grant_document_dependencies.privatePrepareCurrent(
+              owner.#grantKey,
+              authorization,
+              tx,
+              observed
+            ),
+          privateAuditCurrent: (authorization, tx) =>
+            grant_document_dependencies.privateAuditCurrent(owner.#grantKey, authorization, tx),
+          privateOriginalRoomSource: (authorization, tx, routeId) =>
+            grant_document_dependencies.privateOriginalRoomSource(
+              owner.#grantKey,
+              authorization,
+              tx,
+              routeId
+            ),
+          privateReadCurrentChannel: (documentId, tx) =>
+            grant_document_dependencies.privateReadCurrentChannel(owner.#grantKey, documentId, tx),
+          privateRefreshCurrentAuthority: (documentId, actor) =>
+            grant_document_dependencies.privateRefreshCurrentAuthority(
+              owner.#grantKey,
+              documentId,
+              actor
+            ),
+          ...originalGrantCustodyMaps,
+        }),
+        originalGrantCustodyMaps
+      );
+    grantApply(grantSet, baseViews, [this.#grantKey, createOriginalView(this)]);
+    installOriginalGrantCallbacks(this.#grantKey, fixed, services);
   }
-  protected access(
-    documentId: string,
-    actor: DocGrantActor,
-    tx?: DbTransaction
-  ): { id: string; scope: string } {
-    if (!isServerPrincipal(actor.principal)) throw new DocRouteGrantError('INVALID_PRINCIPAL');
-    return this.services.authority.requireCurrent(documentId, actor, true, tx);
-  }
+
   private refreshManifest(documentId: string, tx: DbTransaction): unknown {
-    let manifest: DocAppManifest | undefined;
-    let error: unknown;
-    try {
-      manifest = readDocAppManifest(this.services.authority.sourceRoot(documentId, tx));
-    } catch (caught) {
-      error = caught;
-    }
-    const channel = this.services.store.getChannel(documentId, tx)!;
-    const hash = manifest?.hash ?? null;
-    if (error || channel.manifestHash !== hash) {
-      tx.update(canvasDocChannels)
-        .set({ manifestHash: hash, updatedAt: this.now() })
-        .where(eq(canvasDocChannels.documentId, documentId))
-        .run();
-      this.suspend(documentId, tx);
-    }
-    return error;
-  }
-  /**
-   * Commit observed manifest suspension before opening an acceptance transaction.
-   * Call again after a final MANIFEST_CHANGED refusal if the app raced this preflight.
-   * A payload refusal or admission rollback cannot undo this explicit refresh.
-   */
-  refreshAuthority(documentId: string, actor: DocGrantActor): void {
-    if (this.services.db.$client.inTransaction)
-      throw new DocRouteGrantError('AUTHORITY_REFRESH_REQUIRES_COMMIT_BOUNDARY');
-    const error = this.services.store.transaction((tx) => {
-      this.access(documentId, actor, tx);
-      return this.refreshManifest(documentId, tx);
-    });
-    if (error) throw error;
-  }
-  /** Refresh durable background authority without reusing an expired opener-turn principal. */
-  refreshGrantedAuthority(grantId: string): void {
-    if (this.services.db.$client.inTransaction)
-      throw new DocRouteGrantError('AUTHORITY_REFRESH_REQUIRES_COMMIT_BOUNDARY');
-    const error = this.services.store.transaction((tx) => {
-      const grant = this.services.store.getGrant(grantId, tx);
-      if (!grant) throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
-      this.services.authority.requireGrantedCurrent(grant, tx);
-      return this.refreshManifest(grant.documentId, tx);
-    });
-    if (error) throw error;
-  }
-  protected manifest(documentId: string, tx: DbTransaction): DocAppManifest | undefined {
-    const manifest = readDocAppManifest(this.services.authority.sourceRoot(documentId, tx));
-    const channel = this.services.store.getChannel(documentId, tx)!;
-    if (channel.manifestHash !== (manifest?.hash ?? null))
-      throw new DocRouteGrantError('MANIFEST_CHANGED');
-    return manifest;
-  }
-  protected suspend(documentId: string, tx: DbTransaction): void {
-    tx.update(canvasDocGrants)
-      .set({ revokedAt: this.now() })
-      .where(and(eq(canvasDocGrants.documentId, documentId), isNull(canvasDocGrants.revokedAt)))
-      .run();
-  }
-  /** Validate declared app payloads inside acceptance's transaction; undeclared types stay log-only. */
-  validateEventPayload(
-    documentId: string,
-    type: string,
-    payload: unknown,
-    actor: DocGrantActor,
-    tx?: DbTransaction
-  ): void {
-    if (!tx) {
-      this.refreshAuthority(documentId, actor);
-      return this.services.store.transaction((current) =>
-        this.validateEventPayload(documentId, type, payload, actor, current)
-      );
-    }
-    this.access(documentId, actor, tx);
-    const manifest = this.manifest(documentId, tx);
-    const channel = this.services.store.getChannel(documentId, tx)!;
-    const declaration = CanvasChannelDeclarationSchema.safeParse(channel.declaration);
-    if (
-      !declaration.success ||
-      !declaration.data.routes.some((route) => matchesCanvasChannelEvent(route.on, type))
-    )
-      return;
-    if (manifest && manifest.compiled.validate(type, payload) !== 'valid')
-      throw new DocRouteGrantError('INVALID_DECLARED_PAYLOAD', 422);
-  }
-  /** Recheck hashes, current origin/target, expiry and revocation before a final admission effect. */
-  revalidateGrant(
-    documentId: string,
-    grantId: string,
-    actor: DocGrantActor,
-    tx?: DbTransaction
-  ): DocGrantRow {
-    if (!tx) {
-      this.refreshAuthority(documentId, actor);
-      return this.services.store.transaction((current) =>
-        this.revalidateGrant(documentId, grantId, actor, current)
-      );
-    }
-    const { scope } = this.access(documentId, actor, tx);
-    const grant = this.verifyCurrentGrant(documentId, grantId, scope, tx);
-    try {
-      // A current caller cannot reuse authority approved by a previous owner.
-      // Share the persisted/current gate with dispatch, without reviving opener proofs.
-      const grantedAccess = this.services.authority.requireGrantedCurrent(grant, tx);
-      if (
-        grantedAccess.id !== documentId ||
-        this.services.authority.resolveScope(grantedAccess.scope, tx) !==
-          this.services.authority.resolveScope(scope, tx)
-      )
-        throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
-    } catch (error) {
-      if (error instanceof DocChannelNotFoundError && !Object.hasOwn(error, 'cause'))
-        throw new DocRouteGrantError('GRANT_AUTHORITY_LOST');
-      throw error;
-    }
-    return grant;
-  }
-  private canonicalSession(sessionId: string | null, tx: DbTransaction): string | null {
-    return sessionId === null
-      ? null
-      : this.services.authority.resolveScope(`session:${sessionId}`, tx);
-  }
-  private verifyEvidence(grant: DocGrantRow, scope: string, tx: DbTransaction): void {
-    const evidence = grant.approvalEvidence as {
-      kind?: string;
-      inputHash?: string;
-      binding?: Record<string, unknown>;
-      approvalId?: string;
-      state?: string;
-      decidedAt?: string;
-      consumedAt?: string;
-    };
-    const binding = evidence?.binding;
-    const target = binding?.target as DocGrantTarget | undefined;
-    if (
-      !binding ||
-      evidence.inputHash !== hashApprovalInput(binding) ||
-      binding.documentId !== grant.documentId ||
-      typeof binding.scope !== 'string' ||
-      this.services.authority.resolveScope(binding.scope, tx) !== scope ||
-      !target ||
-      this.services.authority.resolveScope(target.scope, tx) !== scope ||
-      hashApprovalInput(binding.route) !== grant.routeHash ||
-      hashApprovalInput(grant.normalizedRoute) !== grant.routeHash ||
-      binding.declarationHash !== grant.declarationHash ||
-      binding.manifestHash !== grant.manifestHash ||
-      binding.openerAgentId !== grant.openerAgentId ||
-      target?.agentId !== grant.targetAgentId ||
-      this.canonicalSession(target?.sessionId ?? null, tx) !==
-        this.canonicalSession(grant.targetSessionId, tx) ||
-      target?.runtime !== grant.targetRuntime ||
-      hashApprovalInput(binding.allowedTypes) !== hashApprovalInput(grant.allowedTypes) ||
-      hashApprovalInput(binding.limits) !== hashApprovalInput(grant.limits) ||
-      binding.expiresAt !== grant.expiresAt ||
-      hashApprovalInput(binding.write) !== hashApprovalInput(grant.writeOperation)
-    )
-      throw new DocRouteGrantError('GRANT_EVIDENCE_MISMATCH');
-    if (evidence.kind === 'verified_opener') {
-      const origin = binding.origin as { kind?: string; agentId?: string } | undefined;
-      const route = grant.normalizedRoute as CanvasChannelRoute;
-      if (
-        grant.approvalId ||
-        grant.approvedBy !== grant.openerAgentId ||
-        (origin?.kind !== 'agent' && origin?.kind !== 'runtime') ||
-        origin.agentId !== grant.openerAgentId ||
-        (route.to !== 'log' && route.to !== 'agent:owner') ||
-        grant.writeOperation
-      )
-        throw new DocRouteGrantError('GRANT_EVIDENCE_MISMATCH');
-      return;
-    }
-    const approval = grant.approvalId
-      ? tx.select().from(approvals).where(eq(approvals.id, grant.approvalId)).get()
-      : undefined;
-    if (
-      evidence.kind !== 'operator_approval' ||
-      !approval ||
-      approval.capabilityId !== 'ui.approve_doc_route' ||
-      approval.state !== 'granted' ||
-      approval.inputHash !== evidence.inputHash ||
-      evidence.approvalId !== approval.id ||
-      grant.approvedBy !== `approval:${approval.id}` ||
-      evidence.state !== approval.state ||
-      !approval.decidedAt ||
-      !approval.consumedAt ||
-      evidence.decidedAt !== approval.decidedAt ||
-      evidence.consumedAt !== approval.consumedAt
-    )
-      throw new DocRouteGrantError('GRANT_EVIDENCE_MISMATCH');
+    return grant_live_current.refreshManifest(this.#grantKey, documentId, tx);
   }
   private verifyCurrentGrant(
     documentId: string,
@@ -262,237 +331,158 @@ export class DocChannelGrantRevalidation {
     tx: DbTransaction,
     observed?: DocOriginalWriteObservation
   ): DocGrantRow {
-    const manifestHash = observed
-      ? observed.manifestHash
-      : (this.manifest(documentId, tx)?.hash ?? null);
-    const channel = this.services.store.getChannel(documentId, tx)!;
-    const grant = this.services.store.getGrant(grantId, tx);
-    if (!grant || grant.documentId !== documentId)
-      throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
-    this.verifyEvidence(grant, scope, tx);
-    if (grant.manifestHash !== manifestHash || channel.manifestHash !== manifestHash)
-      throw new DocRouteGrantError('MANIFEST_CHANGED');
-    const route = declaredRoute(channel, grant.routeId);
-    if (
-      hashApprovalInput(CanvasChannelDeclarationSchema.parse(channel.declaration)) !==
-        channel.declarationHash ||
-      grant.declarationHash !== channel.declarationHash ||
-      grant.routeHash !== hashApprovalInput(route)
-    )
-      throw new DocRouteGrantError('DECLARATION_CHANGED');
-    if (grant.revokedAt) throw new DocRouteGrantError('GRANT_REVOKED');
-    if (!grant.expiresAt || Date.parse(grant.expiresAt) <= Date.parse(this.now()))
-      throw new DocRouteGrantError('GRANT_EXPIRED');
-    if (
-      grant.openerAgentId !== channel.openerAgentId ||
-      (route.to !== 'log' &&
-        (!grant.openerAgentId ||
-          !this.services.authority.originCurrent(documentId, grant.openerAgentId, tx)))
-    )
-      throw new DocRouteGrantError('ORIGIN_AUTHORITY_LOST');
-    const target = this.services.authority.resolveTarget(
-      { documentId, scope, route, openerAgentId: channel.openerAgentId },
-      tx
-    );
-    validateDocGrantTarget(scope, route, channel.openerAgentId, target);
-    if (
-      target.agentId !== grant.targetAgentId ||
-      this.canonicalSession(target.sessionId, tx) !==
-        this.canonicalSession(grant.targetSessionId, tx) ||
-      target.runtime !== grant.targetRuntime ||
-      target.agentPath !==
-        (grant.approvalEvidence as { binding?: { target?: DocGrantTarget } }).binding?.target
-          ?.agentPath
-    )
-      throw new DocRouteGrantError('TARGET_IDENTITY_CHANGED');
-    if (
-      grant.writeOperation &&
-      hashApprovalInput(
-        observed
-          ? observed.write
-          : (this.services.authority.resolveWriteBinding?.(documentId, tx) ?? null)
-      ) !== hashApprovalInput(grant.writeOperation)
-    )
-      throw new DocRouteGrantError('WRITE_BINDING_MISMATCH');
-    return grant;
-  }
-  /** Pure original write grant check: supplied observation replaces ONLY legacy filesystem ports. */
-  revalidateOriginalWriteGrant(
-    documentId: string,
-    grantId: string,
-    revision: number,
-    scope: string,
-    observed: DocOriginalWriteObservation,
-    tx: DbTransaction
-  ): DocGrantRow {
-    const capturedTime = checkboxAuthorityClock(() => this.services.now?.() ?? new Date());
-    const original = this.services.store.getGrant(grantId, tx);
-    if (
-      !original ||
-      original.documentId !== documentId ||
-      original.revision !== revision ||
-      !original.routeId
-    )
-      throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
-    const channel = this.services.store.getChannel(documentId, tx);
-    if (!channel) throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
-    const context = captureCheckboxGrantContext(
-      this.services.authority,
-      original,
-      channel,
+    return grant_live_current.verifyCurrentGrant(
+      this.#grantKey,
+      documentId,
+      grantId,
       scope,
-      tx
+      tx,
+      observed
     );
-    const fresh = this.services.store.getGrant(grantId, tx);
-    if (!fresh || fresh.documentId !== documentId || fresh.revision !== revision)
-      throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
-    const evidence = fresh.approvalEvidence as {
-      kind?: string;
-      binding?: unknown;
-      approvalId?: string;
-      inputHash?: string;
-    };
-    const approval = fresh.approvalId
-      ? tx.select().from(approvals).where(eq(approvals.id, fresh.approvalId)).get()
-      : undefined;
-    if (
-      evidence.kind !== 'operator_approval' ||
-      !approval ||
-      !approval.detail ||
-      approval.detail !== redactSecretsInText(JSON.stringify(evidence.binding))
-    )
-      throw new DocRouteGrantError('GRANT_EVIDENCE_MISMATCH');
-    const checker = new DocChannelGrantRevalidation({
-      ...this.services,
-      authority: { ...this.services.authority, ...context },
-      now: () => new Date(capturedTime),
+  }
+}
+
+/** Exact grants; declaration changes and approvals never replay previously accepted input. */
+export class DocChannelGrants extends DocChannelGrantRevalidation {
+  readonly #grantKey = grantFreeze({});
+  /** Build over the same SQLite connection as the existing one-use approval service. */
+  readonly #store: OriginalGrantCreationView['store'];
+  readonly #deps: OriginalGrantCreationView['deps'];
+  constructor(deps: OriginalGrantCreationView['deps']) {
+    const fixed = captureCurrentDocConfiguration(deps);
+    super(fixed);
+    this.#deps = fixed;
+    this.#store = requireOriginalDocGrantStore(fixed.store, fixed.db);
+    if (fixed.db.$client.inTransaction)
+      throw new Error('Current grant construction requires an inactive database.');
+    requireDocChannelStoreDatabase(fixed.store, fixed.db);
+    fixed.approvals.assertTransactionDatabase(fixed.db);
+    currentGrantEngines.set(this, Object.freeze({ db: fixed.db, store: fixed.store }));
+    originalGrantMutations.set(this, {
+      configure: (id, declaration, actor, opener) =>
+        grant_channel_configuration.privateConfigure(
+          this.#grantKey,
+          id,
+          declaration,
+          actor,
+          opener
+        ),
+      grant: (request, actor, token) =>
+        grant_route_approval.privateGrant(this.#grantKey, request, actor, token),
+      revoke: (id, grantId, actor) =>
+        grant_channel_configuration.privateRevoke(this.#grantKey, id, grantId, actor),
     });
-    return checker.verifyCurrentGrant(documentId, grantId, scope, tx, observed);
+    originalPreparedGrantCalls.set(this, {
+      db: fixed.db,
+      store: fixed.store,
+      grant: (helper, request, actor, token) =>
+        grant_route_approval.privateGrant(this.#grantKey, request, actor, token, helper),
+    });
+
+    const createOriginalView = (owner: DocChannelGrants): Readonly<OriginalGrantCreationView> =>
+      projectOriginalGrantCreationView(
+        grantFreeze<OriginalGrantCreationView>({
+          originalOwner: this,
+          get store() {
+            return owner.#store;
+          },
+          get deps() {
+            return owner.#deps;
+          },
+          privateSuspendOriginalGrants: (documentId, tx) =>
+            grant_channel_configuration.privateSuspendOriginalGrants(
+              owner.#grantKey,
+              documentId,
+              tx
+            ),
+          privateRefreshOriginalAuthority: (documentId, actor) =>
+            grant_channel_configuration.privateRefreshOriginalAuthority(
+              owner.#grantKey,
+              documentId,
+              actor
+            ),
+          privateNow: () => grant_channel_configuration.privateNow(owner.#grantKey),
+          privateAccess: (documentId, actor, tx) =>
+            grant_channel_configuration.privateAccess(owner.#grantKey, documentId, actor, tx),
+          get configure() {
+            return owner.configure;
+          },
+          privateConfigure: (documentId, declaration, actor, selectedOpenerAgentId) =>
+            grant_channel_configuration.privateConfigure(
+              owner.#grantKey,
+              documentId,
+              declaration,
+              actor,
+              selectedOpenerAgentId
+            ),
+          get prepare() {
+            return owner.prepare;
+          },
+          privatePrepare: (request, actor, tx, source) =>
+            grant_route_preparation.privatePrepare(owner.#grantKey, request, actor, tx, source),
+          privateExisting: (prepared, tx) =>
+            grant_route_preparation.privateExisting(owner.#grantKey, prepared, tx),
+          get grant() {
+            return owner.grant;
+          },
+          privateGrant: (request, actor, approvalToken, source) =>
+            grant_route_approval.privateGrant(
+              owner.#grantKey,
+              request,
+              actor,
+              approvalToken,
+              source
+            ),
+          get revoke() {
+            return owner.revoke;
+          },
+          privateRevoke: (documentId, grantId, actor) =>
+            grant_channel_configuration.privateRevoke(owner.#grantKey, documentId, grantId, actor),
+          ...originalGrantCustodyMaps,
+          PLATFORM_LIMITS,
+          APPROVE_CAPABILITY,
+        }),
+        originalGrantCustodyMaps
+      );
+    grantApply(grantSet, creationViews, [this.#grantKey, createOriginalView(this)]);
   }
 
-  /**
-   * Background dispatch uses persisted server grant evidence, never an expired
-   * opener-turn proof or a freshly minted broad operator identity.
-   */
-  revalidateBatchGrant(
-    batch: DocBatchRow,
+  /** Replace declarations as data, invalidating old authority without routing old events. */
+  configure(
+    documentId: string,
+    declaration: CanvasChannelDeclaration,
+    actor: DocGrantActor,
+    selectedOpenerAgentId?: string
+  ): void {
+    return grant_channel_configuration.configure(
+      this.#grantKey,
+      documentId,
+      declaration,
+      actor,
+      selectedOpenerAgentId
+    );
+  }
+
+  /** Resolve the exact binding shown for approval, using only current canonical server identity. */
+  prepare(
+    request: DocRouteGrantRequest,
+    actor: DocGrantActor,
     tx: DbTransaction
-  ): { grant: DocGrantRow; target: DocGrantTarget } {
-    const current = this.services.store.getBatch(batch.batchId, tx);
-    if (
-      !current ||
-      current.documentId !== batch.documentId ||
-      current.generation !== batch.generation ||
-      current.grantId !== batch.grantId ||
-      current.grantRevision !== batch.grantRevision ||
-      current.routeId !== batch.routeId
-    )
-      throw new DocRouteGrantError('BATCH_BINDING_CHANGED');
-    const grant = this.services.store.getGrant(current.grantId, tx);
-    if (
-      !grant ||
-      grant.documentId !== current.documentId ||
-      grant.revision !== current.grantRevision ||
-      grant.routeId !== current.routeId
-    )
-      throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
-    const access = this.services.authority.requireGrantedCurrent(grant, tx);
-    if (
-      access.id !== current.documentId ||
-      access.scope !== this.services.authority.resolveScope(current.scope, tx)
-    )
-      throw new DocRouteGrantError('BATCH_SCOPE_CHANGED');
-    const verified = this.verifyCurrentGrant(current.documentId, grant.grantId, access.scope, tx);
-    return {
-      grant: verified,
-      target: this.services.authority.resolveTarget(
-        {
-          documentId: current.documentId,
-          scope: access.scope,
-          route: declaredRoute(
-            this.services.store.getChannel(current.documentId, tx)!,
-            current.routeId
-          ),
-          openerAgentId: verified.openerAgentId,
-        },
-        tx
-      ),
-    };
+  ): PreparedDocGrant {
+    return grant_route_preparation.prepare(this.#grantKey, request, actor, tx);
   }
-  /** Effective document ingress caps; an app manifest can only lower platform caps. */
-  getEffectiveLimits(
-    documentId: string,
+
+  /** Enable opener self/log authority or request/consume an exact operator verdict atomically. */
+  grant(
+    request: DocRouteGrantRequest,
     actor: DocGrantActor,
-    tx?: DbTransaction
-  ): typeof PLATFORM_LIMITS {
-    if (!tx) {
-      this.refreshAuthority(documentId, actor);
-      return this.services.store.transaction((current) =>
-        this.getEffectiveLimits(documentId, actor, current)
-      );
-    }
-    this.access(documentId, actor, tx);
-    const app = this.manifest(documentId, tx)?.compiled.manifest.limits;
-    return {
-      envelopeBytes: app?.envelopeBytes ?? PLATFORM_LIMITS.envelopeBytes,
-      eventsPerMinute: app?.eventsPerMinute ?? PLATFORM_LIMITS.eventsPerMinute,
-      turnsPerHour: app?.turnsPerHour ?? PLATFORM_LIMITS.turnsPerHour,
-    };
+    approvalToken?: string
+  ): DocGrantResult {
+    return grant_route_approval.grant(this.#grantKey, request, actor, approvalToken);
   }
-  /** Return current granted or saved-only route outcomes; never enqueue or replay old input. */
-  getCurrentRoutes(
-    documentId: string,
-    type: string | undefined,
-    actor: DocGrantActor,
-    tx?: DbTransaction
-  ): DocGrantedRoute[] {
-    if (!tx) {
-      this.refreshAuthority(documentId, actor);
-      return this.services.store.transaction((current) =>
-        this.getCurrentRoutes(documentId, type, actor, current)
-      );
-    }
-    this.access(documentId, actor, tx);
-    this.manifest(documentId, tx);
-    const channel = this.services.store.getChannel(documentId, tx)!;
-    const declaration = CanvasChannelDeclarationSchema.safeParse(channel.declaration);
-    if (!declaration.success) return [];
-    return declaration.data.routes
-      .filter((route) => type === undefined || matchesCanvasChannelEvent(route.on, type))
-      .map((route) => {
-        const grants = tx
-          .select()
-          .from(canvasDocGrants)
-          .where(
-            and(eq(canvasDocGrants.documentId, documentId), eq(canvasDocGrants.routeId, route.id))
-          )
-          .all()
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        let reason = 'ROUTE_UNAPPROVED';
-        for (const grant of grants) {
-          try {
-            const current = this.revalidateGrant(documentId, grant.grantId, actor, tx);
-            const patterns = current.allowedTypes as string[];
-            if (
-              type !== undefined &&
-              !patterns.some((pattern) => matchesCanvasChannelEvent(pattern, type))
-            ) {
-              reason = 'TYPE_NOT_GRANTED';
-              continue;
-            }
-            return {
-              route,
-              grantId: current.grantId,
-              grantRevision: current.revision,
-              allowedTypes: patterns,
-              targetSessionId: current.targetSessionId,
-            };
-          } catch (error) {
-            if (!(error instanceof DocRouteGrantError)) throw error;
-            reason = error.code;
-          }
-        }
-        return { route, reason };
-      });
+
+  /** Explicit revoke; a later grant never implicitly retries input saved under this one. */
+  revoke(documentId: string, grantId: string, actor: DocGrantActor): void {
+    return grant_channel_configuration.revoke(this.#grantKey, documentId, grantId, actor);
   }
 }

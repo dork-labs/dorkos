@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { INTERACTIVE_SCENARIOS } from '../interactive-scenarios.js';
-import { toRawSessionEvent } from '../../../session/session-event-normalizer.js';
+import { toRawSessionEvent } from '../../../session/projection/session-event-normalizer.js';
 import type { ScenarioContext } from '../interaction-gate.js';
 
 /**

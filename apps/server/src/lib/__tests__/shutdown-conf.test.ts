@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const conf = pathToFileURL(createRequire(import.meta.url).resolve('conf')).href;
-const shutdown = new URL('../shutdown-signal.ts', import.meta.url).href;
+const shutdown = new URL('../lifecycle/shutdown-signal.ts', import.meta.url).href;
 const children: ChildProcess[] = [];
 const directories: string[] = [];
 

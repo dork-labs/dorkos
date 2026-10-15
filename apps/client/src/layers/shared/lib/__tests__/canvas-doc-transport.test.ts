@@ -251,3 +251,190 @@ it('does not assign backoff metadata to a503 even when its header is numeric', a
   expect(vi.mocked(fetch).mock.calls[0][1]?.body).toBe(JSON.stringify(input));
   expect(vi.mocked(fetch).mock.calls[0][1]?.signal).toBe(signal);
 });
+
+it('keeps operator token credentials in a POST response and rejects a mismatched issued scope', async () => {
+  const request = {
+    documentId: 'doc',
+    allowedTypes: ['task.changed'],
+    directions: ['upstream'] as const,
+    permissions: ['ingest', 'replay'] as const,
+    expiresAt: '2026-10-06T00:00:00.000Z',
+  };
+  const scope = {
+    ...request,
+    directions: [...request.directions],
+    permissions: [...request.permissions],
+  };
+  const issued = {
+    ...scope,
+    tokenId: 'token',
+    creatorId: 'owner',
+    createdAt: '2026-10-05T00:00:00.000Z',
+    token: 'dct_' + 'A'.repeat(43),
+  };
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(issued), { status: 201 }));
+  const transport = new HttpTransport('/api');
+  expect(await transport.issueCanvasDocToken(scope, ['grant'])).toEqual(issued);
+  expect(fetch).toHaveBeenLastCalledWith(
+    '/api/canvas/docs/doc/tokens',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ request: scope, approvedGrantIds: ['grant'] }),
+    })
+  );
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(JSON.stringify({ ...issued, documentId: 'other' }), { status: 201 })
+  );
+  await expect(transport.issueCanvasDocToken(scope, ['grant'])).rejects.toThrow('does not match');
+  vi.mocked(fetch).mockResolvedValueOnce(
+    new Response(JSON.stringify({ tokenId: 'foreign', revokedAt: '2026-10-05T00:00:00.000Z' }))
+  );
+  await expect(transport.revokeCanvasDocToken('doc', 'token')).rejects.toThrow('does not match');
+});
+
+describe('explicit operator document route controls', () => {
+  it('retains the exact approval subject and its independent route ticket on retry', async () => {
+    const request = Object.freeze({
+      documentId: 'a/b',
+      routeId: 'comments',
+      expiresAt: '2099-01-01T00:00:00Z',
+    });
+    const ticket = {
+      approvalId: 'approval',
+      token: 'exact-route-token',
+      expiresAt: '2099-01-01T00:00:00Z',
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ kind: 'approval_required', ticket })))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ kind: 'granted', grantId: 'grant', revision: 1 }))
+      );
+    const transport = new HttpTransport('/api');
+    expect(await transport.approveCanvasDocRoute(request)).toEqual({
+      kind: 'approval_required',
+      ticket,
+    });
+    expect(await transport.approveCanvasDocRoute(request, ticket.token)).toEqual({
+      kind: 'granted',
+      grantId: 'grant',
+      revision: 1,
+    });
+    const calls = vi.mocked(fetch).mock.calls;
+    expect(calls[0][0]).toBe('/api/canvas/docs/a%2Fb/manage/approve');
+    expect(calls[1][0]).toBe(calls[0][0]);
+    expect(JSON.parse(String(calls[0][1]?.body))).toEqual(request);
+    expect(JSON.parse(String(calls[1][1]?.body))).toEqual({
+      ...request,
+      routeApprovalToken: ticket.token,
+    });
+    expect(new Headers(calls[1][1]?.headers).get('X-DorkOS-Approval')).toBeNull();
+    expect(calls[1][1]?.credentials).toBe('include');
+  });
+  it('rejects an approval-shaped result that carries an unrecognized authority field', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ kind: 'granted', grantId: 'grant', revision: 1, principal: {} })
+      )
+    );
+    await expect(
+      new HttpTransport('/api').approveCanvasDocRoute({
+        documentId: 'doc',
+        routeId: 'comments',
+        expiresAt: '2099-01-01T00:00:00Z',
+      })
+    ).rejects.toThrow();
+  });
+});
+
+// Explicit review is separate from ordinary input acceptance and passive replay.
+describe('reviewed expired work Transport', () => {
+  const request = Object.freeze({
+    documentId: 'doc',
+    expectedGeneration: 'a'.repeat(64),
+    eventId: '11111111-2222-4333-8444-555555555555',
+    batchId: '22222222-2222-4333-8444-555555555555',
+    expectedBatchGeneration: '33333333-2222-4333-8444-555555555555',
+    grantId: 'grant',
+  });
+  const result = {
+    documentId: request.documentId,
+    eventId: request.eventId,
+    previousBatchId: request.batchId,
+    batchId: '44444444-2222-4333-8444-555555555555',
+    generation: '55555555-2222-4333-8444-555555555555',
+    status: 'pending',
+  };
+  it('keeps the original explicit operation across an unknown response and retry', async () => {
+    const raw = new Error('Lost response');
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(raw)
+      .mockResolvedValueOnce(new Response(JSON.stringify(result)));
+    const transport = new HttpTransport('/api');
+    await expect(transport.replayCanvasDocBatch(request)).rejects.toBe(raw);
+    expect(await transport.replayCanvasDocBatch(request)).toEqual(result);
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(2);
+    for (const [url, options] of vi.mocked(fetch).mock.calls) {
+      expect(url).toBe('/api/canvas/docs/doc/manage/replay');
+      expect(options?.body).toBe(JSON.stringify(request));
+      expect(options?.credentials).toBe('include');
+    }
+  });
+  it('refuses a well-shaped response belonging to another original operation', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ ...result, eventId: '66666666-2222-4333-8444-555555555555' }))
+    );
+    await expect(new HttpTransport('/api').replayCanvasDocBatch(request)).rejects.toThrow();
+  });
+  it('does not make a mock replay successful without an explicit configured owner', async () => {
+    await expect(createMockTransport().replayCanvasDocBatch(request)).rejects.toThrow(
+      'not configured'
+    );
+  });
+});
+
+// Host commands do not use the ordinary page submit envelope.
+describe('original editor selection Transport', () => {
+  const request = {
+    documentId: 'doc',
+    expectedGeneration: 'a'.repeat(64),
+    eventId: '11111111-2222-4333-8444-555555555555',
+    expectedFileHash: 'b'.repeat(64),
+    sourceGeneration: 'editor-model',
+    ranges: [{ start: 0, end: 1 }],
+    selectedText: 'x',
+  };
+  it('sends the exact source-bound command and correlates the original acceptance ID', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          receipt: { id: request.eventId, status: 'recorded', docSeq: 1 },
+          deliveries: [],
+        })
+      )
+    );
+    const transport = new HttpTransport('/api');
+    expect((await transport.askCanvasDocSelection(request)).receipt.id).toBe(request.eventId);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/canvas/docs/doc/editor/selection',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(request),
+        credentials: 'include',
+      })
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          receipt: { id: '22222222-2222-4333-8444-555555555555', status: 'recorded', docSeq: 2 },
+          deliveries: [],
+        })
+      )
+    );
+    await expect(transport.askCanvasDocSelection(request)).rejects.toThrow();
+  });
+  it('has no successful mock host command without its explicit owner', async () => {
+    await expect(createMockTransport().askCanvasDocSelection(request)).rejects.toThrow(
+      'not configured'
+    );
+  });
+});

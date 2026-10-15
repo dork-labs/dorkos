@@ -9,8 +9,8 @@ import {
   captureRecordSubject,
   readRecordSubject,
   recordSubjectCurrent,
-} from '../model/doc-channel-owner-record';
-import { buildOwnedLifecycle } from '../model/doc-channel-owner-custody';
+} from '../model/doc-owner/doc-channel-owner-record';
+import { buildOwnedLifecycle } from '../model/doc-owner/doc-channel-owner-custody';
 import {
   createOwnedCustody,
   consumeOwnedConstruction,
@@ -18,9 +18,12 @@ import {
   ownedProjectionCurrent,
   disposeOwnedCustody,
   requireOwnedCustody,
-} from '../model/doc-channel-owner-record';
-import { createOwnedReplayLifetime, createOwnedReplayRun } from '../model/doc-channel-owner-replay';
-import { createOwnedFrameFacade } from '../model/doc-channel-owner-frame';
+} from '../model/doc-owner/doc-channel-owner-record';
+import {
+  createOwnedReplayLifetime,
+  createOwnedReplayRun,
+} from '../model/doc-owner/doc-channel-owner-replay';
+import { createOwnedFrameFacade } from '../model/doc-owner/doc-channel-owner-frame';
 import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
 import { subscribeDocChannelNotifications } from '@/layers/shared/lib/transport';
 const birth = {

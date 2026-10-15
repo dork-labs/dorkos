@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomFileChangeEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomService } from '../room-service.js';
 import {
   agentLookupFor,

@@ -5549,7 +5549,7 @@
         "apps/server/src/services/rooms/addressing.ts",
         "apps/server/src/services/runtimes/shared/room-context-block.ts",
         "apps/server/src/services/rooms/room-trigger.ts",
-        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/services/rooms/data/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts"
       ],
       "lastVerified": "2026-10-06"
@@ -5579,7 +5579,7 @@
       "affects": [
         "apps/server/src/services/rooms/room-service.ts",
         "apps/server/src/services/rooms/room-capabilities.ts",
-        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/services/rooms/data/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts",
         "meta/agent-etiquette.md"
       ]
@@ -5992,7 +5992,7 @@
         "apps/server/src/services/rooms/room-trigger.ts",
         "apps/server/src/services/rooms/room-store.ts",
         "apps/server/src/services/rooms/room-service.ts",
-        "apps/server/src/services/rooms/room-rows.ts",
+        "apps/server/src/services/rooms/data/room-rows.ts",
         "apps/server/src/services/rooms/notices/notice-log.ts",
         "packages/db/src/schema/rooms.ts"
       ]

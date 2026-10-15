@@ -89,7 +89,7 @@ export { AgentListItem } from './ui/AgentListItem';
 // renders it too — a sibling feature composing this one's UI, which is the one
 // cross-feature import the layer rules allow.
 export { SessionSwitcher } from './ui/SessionSwitcher';
-export { AgentActivityBadge } from './ui/AgentActivityBadge';
+export { AgentActivityBadge } from './ui/activity/AgentActivityBadge';
 export { GroupCreateInput } from './ui/GroupCreateInput';
 // The section-header menu builders — exported for the Dev Playground, which
 // shows the shared `SectionHeader` primitive wearing a real section's items.

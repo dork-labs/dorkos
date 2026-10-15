@@ -33,7 +33,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 vi.mock('../../../../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
+  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined, DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434' },
 }));
 vi.mock('../../../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
 vi.mock('../../../../../lib/logger.js', () => ({
@@ -560,14 +560,30 @@ describe('in-session tool exposure', () => {
     // turn calls it, and the beat prompt names it so that turn can search.
     // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6), DEFERRED:
     // reading an agent's heartbeat is a deliberate step a turn can search for.
-    expect(tools).toHaveLength(130);
-    expect(deferred).toHaveLength(119);
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin are deferred, alongside end_beat.
+    // Eleven plain-session eager tools remain unchanged.
+    expect(tools).toHaveLength(135);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(135);
+    expect(tools.filter((tool) => tool._meta?.[ALWAYS_LOAD_META] === true)).toHaveLength(11);
+    expect(deferred).toHaveLength(124);
+    expect(tools.map((tool) => tool.name)).not.toContain('mcp_set_client');
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
+      'heartbeat_status',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }

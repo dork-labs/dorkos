@@ -1,3 +1,23 @@
+import type { CapabilityRegistry, OriginalRoomMergeInvocation } from './registry-types.js';
+export type { CapabilityRegistry } from './registry-types.js';
+import { serializeCapability, computeCatalogVersion, notify } from './registry-catalog.js';
+export { serializeCapability, computeCatalogVersion } from './registry-catalog.js';
+import type { OriginalRoomMergeRegistryConstruction } from './registry-context.js';
+export type { OriginalRoomMergeRegistryConstruction } from './registry-context.js';
+import type {
+  CapabilityInvocationContext,
+  CapabilityHandlerContext,
+  CapabilityInvocationObserver,
+  ContributeResult,
+} from './registry-context.js';
+export type {
+  CapabilityInvocationContext,
+  CapabilityPreflightResult,
+  HandToolReach,
+  CapabilityHandlerContext,
+  CapabilityInvocationObserver,
+  ContributeResult,
+} from './registry-context.js';
 /**
  * Registry composition and catalog serialization for the Capability Registry
  * (spec `capability-registry`, task 2.1).
@@ -18,16 +38,77 @@
  * @module services/core/capabilities/registry
  */
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
-import { createHash } from 'node:crypto';
+import type { Db } from '@dorkos/db';
+import type { ConnectorRuntimePrincipalService } from '../../connectors/principal/runtime-principal-service.js';
+import {
+  requireRoomMergeRegistryConstruction,
+  type RoomMergeService,
+} from '../../rooms/repo/room-merge-service.js';
+
+const originalRoomMergeContexts = new WeakMap<object, object>();
+const originalRoomMergeInvocations = new WeakMap<object, OriginalRoomMergeInvocation>();
+/** Read only the handle minted by the actual captured handler invocation after its real gates. */
+export function readOriginalRoomMergeInvocation(
+  context: CapabilityHandlerContext,
+  input: object,
+  service: RoomMergeService
+): object {
+  const handle = originalRoomMergeContexts.get(context);
+  const record = handle ? originalRoomMergeInvocations.get(handle) : undefined;
+  if (
+    !handle ||
+    !record?.active ||
+    record.context !== context ||
+    record.input !== input ||
+    record.construction.service !== service
+  )
+    throw new Error('Room merge requires its actual original gated invocation.');
+  requireOriginalRoomMergeInvocation(
+    handle,
+    service,
+    record.construction.nativePrincipals,
+    record.construction.db
+  );
+  return handle;
+}
+/** Fixed constructor/identity/lifetime recognition. Native currentness and Room policy remain separate. */
+export function requireOriginalRoomMergeInvocation(
+  handle: object,
+  service: RoomMergeService,
+  nativePrincipals: ConnectorRuntimePrincipalService,
+  db: Db
+): Readonly<{
+  roomId: string;
+  summary: string;
+  principal: ServerPrincipalProof;
+  signal?: AbortSignal;
+}> {
+  const record = originalRoomMergeInvocations.get(handle);
+  if (
+    !record?.active ||
+    record.construction.service !== service ||
+    record.construction.nativePrincipals !== nativePrincipals ||
+    record.construction.db !== db ||
+    originalRoomMergeContexts.get(record.context) !== handle ||
+    record.context.serverPrincipal !== record.principal ||
+    record.context.signal !== record.signal ||
+    record.signal?.aborted
+  )
+    throw new Error('Room merge invocation is foreign, retired or aborted.');
+  const input = record.input as { roomId?: unknown; summary?: unknown };
+  if (input.roomId !== record.values.roomId || input.summary !== record.values.summary)
+    throw new Error('Room merge invocation input changed.');
+  requireRoomMergeRegistryConstruction(service, nativePrincipals, db);
+  if (!record.active || originalRoomMergeInvocations.get(handle) !== record)
+    throw new Error('Room merge invocation retired during construction recognition.');
+  return Object.freeze({ ...record.values, principal: record.principal, signal: record.signal });
+}
+
 import { runAsAgent } from '../../audit/audit-trail.js';
-import { z } from 'zod';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
   EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
   isExtensionCapabilityId,
-  stableStringify,
-  type CapabilityCatalog,
-  type McpServerId,
   type SerializedCapability,
 } from '@dorkos/shared/capabilities';
 
@@ -36,23 +117,13 @@ import type {
   CapabilityDeps,
   CapabilityDomain,
 } from './capability-definition.js';
-import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
-import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
-import {
-  CapabilityGateRefusal,
-  enforceCapabilityTier,
-  type ApprovalRetryChannel,
-  type GrantedApproval,
-} from './tier-enforcement.js';
-import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
+import { CapabilityGateRefusal, enforceCapabilityTier } from './tier-enforcement.js';
+import { isTrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
-import {
-  isCapabilityAuthorityBinding,
-  type CapabilityAuthorityBindingProof,
-} from '../../connectors/principal/capability-authority-binding.js';
+import { isCapabilityAuthorityBinding } from '../../connectors/principal/capability-authority-binding.js';
 import { CapabilityToolError } from './mcp-envelope.js';
 import {
   buildExtensionDefinitions,
@@ -62,478 +133,7 @@ import {
   type ExtensionContribution,
 } from './extension-contribution.js';
 
-/**
- * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
- *
- * Threaded from whichever surface received the call (the invoke route, an MCP
- * server, a cockpit route) down to the registry, which is the single choke point
- * every surface funnels through — so the tier gate runs once, here, and
- * attribution is recorded once, here, rather than duplicated into every adapter.
- *
- * Note what this interface does NOT carry: a granted approval. That is the
- * registry's OWN conclusion, produced by the gate it runs, and a caller supplying
- * it would be handing the handler a person's consent nobody gave. Handlers read
- * it off {@link CapabilityHandlerContext} instead.
- */
-export interface CapabilityInvocationContext {
-  /**
-   * The agent behind this call, when one presented a resolved identity token.
-   * `undefined` means the human operator or an unattributed client, which is
-   * the normal case and does not change whether the gate runs — the capability's
-   * TIER decides that (see `tier-enforcement.ts`).
-   */
-  identity?: AgentIdentity;
-  /**
-   * Whether the caller claimed to be a machine AT ALL — resolved or not.
-   *
-   * The wider question than {@link identity}, and a different one: that field
-   * answers "WHICH agent is this", which needs a token that verified; this
-   * answers "is a machine calling", which a token that did NOT verify still
-   * says. It is the same fact `middleware/agent-identity.ts` exposes as
-   * `presentsAgentIdentity`, threaded here so the two HTTP surfaces
-   * (`routes/capabilities-invoke.ts`, `routes/mcp.ts`) can state it — an
-   * in-process surface resolves its caller structurally and leaves it absent.
-   *
-   * **It exists because absent {@link identity} was doing double duty.** A
-   * revoked or expired agent presents a token that resolves to nothing, so it
-   * arrived as "nobody this surface could name" — indistinguishable from the
-   * person at the keyboard, whom `room-capabilities.ts` answers with the install
-   * owner when login is off. That made `post_to_room` write as the operator and
-   * `read_room_history` read the operator's rooms (DOR-1361). It changes no tier
-   * decision: the gate deliberately never keys on whether a caller identified
-   * itself, and an unidentified caller already gets the anonymous ceiling.
-   */
-  agentIdentityPresented?: boolean;
-  /**
-   * Proof that this caller may decide approvals, and may therefore act without
-   * one — the single, unforgeable way past the gate. Only `trusted-caller.ts` can
-   * mint it, and only from the same check that guards the decide endpoint.
-   *
-   * Supplying this together with {@link identity} is a contradiction and is
-   * refused; see the module TSDoc of `trusted-caller.ts`.
-   */
-  trusted?: TrustedCaller;
-  /**
-   * The approval token the caller presented on a retry, when it presented one.
-   *
-   * It travels beside the input rather than inside it, because the approval binds
-   * to a hash of the input and a token carried as an input field would change the
-   * very hash it is checked against.
-   */
-  approvalToken?: string;
-  /**
-   * Which channel a retry should carry its approval token on, so the gate's
-   * instructions name the right field for the surface the call arrived on.
-   *
-   * Defaults to `http-header`, correct for every HTTP surface. An MCP adapter
-   * MUST pass `mcp-argument`, or it will tell a model to set a header it has no
-   * way to set.
-   */
-  retryChannel?: ApprovalRetryChannel;
-  /**
-   * Set only by the `request_permission` handler, on its own re-invocation of the
-   * action the agent asked for: the agent is deliberately asking past a Blocked
-   * permission, with this reason (spec `agent-permissions` D8). Forwarded to the
-   * gate and nowhere else. No surface reads it off the wire; each builds this
-   * context field by field.
-   */
-  blockedRequest?: { reason: string };
-  /**
-   * The signed-in PERSON behind this call, when login is on and the surface
-   * verified one — a session cookie or a per-user API key.
-   *
-   * It exists because "no agent identity" is not the same fact as "the owner".
-   * A capability that acts on somebody's own data (the rooms domain reads and
-   * writes rooms scoped to one member) has to know WHICH person is asking, and
-   * the honest answers are three, not two: an agent, a named person, or nobody
-   * this surface could name. Resolving the third case to the owner is how an
-   * invited user's API key came to read the owner's direct messages.
-   *
-   * Absent when login is off — where there is genuinely nothing to tell a local
-   * program from the person at the keyboard (the documented DOR-505 residual) —
-   * and absent on any surface that verifies no person. Informational, never an
-   * authorization: it says who the caller is, not what they may do.
-   */
-  userId?: string;
-  /**
-   * The session the call was made FROM, when the surface has one — the
-   * in-session `dorkos` server sets it from the live session (connector
-   * capabilities default their session-scoped actions to it). The external
-   * `/mcp` and HTTP surfaces have no invoking session and leave it absent, so a
-   * handler that needs one must then be told explicitly. An adapter fact like
-   * {@link identity}: informational, never an authorization.
-   */
-  sessionId?: string;
-  /**
-   * The working directory that session runs in, when the surface has one.
-   *
-   * Set beside {@link sessionId} and by the same surface, for handlers that must
-   * record WHERE a session lives rather than merely which one it is — a sign-in
-   * that outlives the process has to be resumable in the right directory after a
-   * restart has taken the live session with it (DOR-981). Informational, never an
-   * authorization: it says where the caller is, not what it may do.
-   */
-  cwd?: string;
-  /** Process-authenticated caller resolved by a server-owned boundary. */
-  /**
-   * Which MCP server's tool list this call arrived through, set by the MCP
-   * projections; absent on HTTP and the CLI. Informational: it decides no
-   * tier. The request tool uses it to reach only actions this same surface
-   * lists (spec `agent-permissions` D8).
-   */
-  mcpServer?: McpServerId;
-  serverPrincipal?: ServerPrincipalProof;
-  /** Abort only this capability call; never reused as a turn-lifetime signal. */
-  signal?: AbortSignal;
-  /**
-   * Stable agent deliberately selected by a verified program connector route.
-   *
-   * This is server-derived adapter context, never part of a public capability
-   * input and never forwarded by an MCP projection. Runtime principals already
-   * carry their canonical agent and therefore cannot set it.
-   */
-  connectorAgentId?: string;
-  /** Server-known connector entry surface used only for immutable usage attribution. */
-  connectorSurface?: 'mcp' | 'rest' | 'cli';
-  /**
-   * The hand-registered tools the calling MCP server built, handed on only to a
-   * `forwardsApproval` capability (the request tool). See {@link HandToolReach}.
-   */
-  handTools?: HandToolReach;
-}
-
-/** Live domain authorization resolved between parsing and tier approval. */
-export interface CapabilityPreflightResult {
-  /** Process-authenticated binding over authority, target, and parsed input. */
-  readonly authorityBinding: CapabilityAuthorityBindingProof;
-  /**
-   * What a connected-app action would do, for its approval card (DOR-2504).
-   * Built by the preflight from the stored records it just checked, so the
-   * card's app, account and action are the server's, never the caller's.
-   */
-  readonly approvalServiceAction?: ApprovalServiceAction;
-}
-
-/**
- * The hand-registered MCP tools one MCP server built, reachable by the request
- * tool (`permissions.request_access`) even when a Blocked permission left them
- * out of the list the agent sees (spec `agent-permissions` D8).
- *
- * Built by the two servers that register hand tools (claude-code's in-session
- * server and the external `/mcp` server) and handed only to the request tool.
- * `request` runs the tool through the same tier gate a direct call does, marked
- * as a deliberate request past Blocked, so the person is asked about exactly
- * this tool and these arguments.
- */
-export interface HandToolReach {
-  /** Whether this server built a hand-registered tool by this bare name. */
-  has(name: string): boolean;
-  /**
-   * Run one hand-registered tool as a request past Blocked.
-   *
-   * @param name - The bare tool name.
-   * @param args - The exact arguments the agent would call it with.
-   * @param options - Who is asking, why, and the token a retry presents.
-   * @returns The tool's own result.
-   * @throws {CapabilityGateRefusal} When the gate did not let it run (a card was
-   *   raised, or it was refused), so the in-session hold can wait on it.
-   */
-  request(
-    name: string,
-    args: Record<string, unknown>,
-    options: { identity: AgentIdentity; reason: string; approvalToken?: string }
-  ): Promise<unknown>;
-}
-
-/**
- * What a capability's handler receives — who is calling, and what the gate
- * already concluded about this exact call.
- *
- * Deliberately a different type from {@link CapabilityInvocationContext}: the
- * fields a caller may SUPPLY and the fields a handler may TRUST are not the same
- * set, and collapsing them is how a shared, memoized adapter context once
- * forwarded an `approval` the gate never granted.
- */
-export interface CapabilityHandlerContext {
-  /** The agent behind this call, when one presented a resolved identity token. */
-  identity?: AgentIdentity;
-  /**
-   * Whether a machine claimed this call at all, resolved or not. See
-   * {@link CapabilityInvocationContext.agentIdentityPresented} — a handler that
-   * resolves the caller to a domain principal must refuse when this holds and
-   * {@link identity} does not, rather than reading the pair as "no agent".
-   */
-  agentIdentityPresented?: boolean;
-  /**
-   * The signed-in person behind this call, when the surface verified one. See
-   * {@link CapabilityInvocationContext.userId} for why its ABSENCE is a distinct
-   * fact from "the owner" and must be treated as one.
-   */
-  userId?: string;
-  /**
-   * The approval the tier gate spent to let this call through, when the call was
-   * gated (`destructive` tier) and a person granted it.
-   *
-   * Set by the registry, never by a caller. A capability whose handler runs its
-   * own confirmation flow treats this as consent already given for this exact
-   * invocation, so the operator answers one card instead of two.
-   */
-  approval?: GrantedApproval;
-  /**
-   * For a capability with `describeApprovalChange`: the description the gate
-   * computed and let through, which is exactly the text the person approved
-   * when an approval was spent (DOR-2696). Set by the registry, never by a
-   * caller. A handler that acts on what the card showed acts on THIS text
-   * rather than reading the state again, which could have moved since.
-   */
-  approvedChange?: string;
-  /**
-   * The approval token the caller presented, handed to the handler only for a
-   * capability that declares `forwardsApproval` (the request tool), which passes
-   * it on to the action it asked for. Every other handler never sees a token.
-   */
-  approvalToken?: string;
-  /**
-   * The retry channel the surface asked for, handed on with
-   * {@link approvalToken} and only to a `forwardsApproval` capability, so the
-   * action it re-invokes tells the caller to retry the way it can.
-   */
-  retryChannel?: ApprovalRetryChannel;
-  /**
-   * Present when the caller proved it may decide approvals. A handler running its
-   * own confirmation flow treats this exactly like {@link approval}: the person
-   * whose consent that flow would go and fetch is the one already calling.
-   */
-  trusted?: TrustedCaller;
-  /**
-   * The invoking session, when the call arrived through a surface that has one
-   * (the in-session `dorkos` server). Resumable flows may bind to this verified
-   * session; it is absent on external `/mcp` and ordinary HTTP surfaces.
-   */
-  sessionId?: string;
-  /**
-   * That session's working directory, when the surface carries one — for a
-   * handler that must record WHERE the caller is, not merely which session it
-   * is. The managed-MCP sign-in stores it on its flow so a token that lands after
-   * a restart still resumes the agent in the right place (DOR-981).
-   */
-  cwd?: string;
-  /** Process-authenticated caller resolved by the server boundary. */
-  /** See {@link CapabilityInvocationContext.mcpServer}. */
-  mcpServer?: McpServerId;
-  serverPrincipal?: ServerPrincipalProof;
-  /** Abort only this capability call. */
-  signal?: AbortSignal;
-  /** Authenticated live authority established before approval and invocation. */
-  preflight?: CapabilityPreflightResult;
-  /** Verified program-selected agent; absent for runtime and public MCP callers. */
-  connectorAgentId?: string;
-  /** Server-known connector entry surface used only for immutable usage attribution. */
-  connectorSurface?: 'mcp' | 'rest' | 'cli';
-  /** The calling server's hand-registered tools; only the request tool receives it. */
-  handTools?: HandToolReach;
-  /**
-   * True when the turn the call came from was started by somebody from off this
-   * machine: a bridged Telegram or Slack sender, an external room author, an
-   * outside agent, a connector event (`session/origin/outsider-turns.ts`). Read
-   * off the invoking {@link sessionId}, so it is absent on surfaces with none.
-   * A handler that would hand a stranger more than the turn's grant covers
-   * refuses on it (PRINCIPLES §1).
-   */
-  turnStartedByOutsider?: boolean;
-}
-
-/**
- * Observer invoked after each capability invocation, for attribution and audit.
- *
- * Kept as an injected hook rather than a direct `ActivityService` dependency so
- * this module stays domain-free (see the module TSDoc on the dependency-free
- * spine). Boot wires it to the Activity feed; tests can assert on it directly.
- * It must never throw — {@link composeRegistry} does not guard the call site
- * beyond swallowing rejections, and an audit failure must not fail the call.
- */
-export type CapabilityInvocationObserver = (event: {
-  /** The capability that ran. */
-  capability: CapabilityDefinition;
-  /** The context the handler was invoked with. */
-  context: CapabilityHandlerContext;
-  /** Whether the handler completed without throwing. */
-  ok: boolean;
-  /**
-   * What the handler threw, when it did. Lets the observer tell a refusal the
-   * request tool passed on (a card raised, a request held back by its limits)
-   * from a real failure.
-   */
-  error?: unknown;
-}) => void;
-
-/**
- * What {@link CapabilityRegistry.contribute} answers: a handle to take the
- * tools away again, or the reason nothing was added.
- */
-export type ContributeResult =
-  | {
-      ok: true;
-      /**
-       * Take this contribution's tools away again. Idempotent: a second call,
-       * or a call after the same owner contributed afresh, changes nothing.
-       */
-      remove(): void;
-    }
-  | { ok: false; reason: string };
-
-/**
- * The runtime registry produced by {@link composeRegistry}: a frozen core plus
- * a live extension layer. Holds the composed capabilities plus the boot-time
- * dependency bag, and exposes lookup, validated invocation, and catalog
- * serialization.
- */
-export interface CapabilityRegistry {
-  /**
-   * Every registered capability: the core in registration order, then each
-   * live extension contribution in contribution order. A frozen array, rebuilt
-   * only when a contribution is added or removed.
-   */
-  readonly capabilities: readonly CapabilityDefinition[];
-  /**
-   * Look up a capability by its `${domain}.${verb}` id.
-   *
-   * @param id - The capability id.
-   * @returns The definition, or `undefined` if none is registered under `id`.
-   */
-  get(id: string): CapabilityDefinition | undefined;
-  /**
-   * Validate `input` against the capability's schema, ENFORCE ITS PERMISSION
-   * TIER, invoke its handler with the captured dependency bag, and return the
-   * plain typed output (see the result-wrapping seam note in
-   * `capability-definition.ts`).
-   *
-   * The gate is inside this method rather than in front of it (DOR-467). It used
-   * to sit in each transport adapter, which meant a surface was gated exactly as
-   * long as somebody remembered to gate it — and one did not: the legacy
-   * marketplace routes reached an uninstall with no tier check at all, which is
-   * the path the seeded skill pack taught agents. A new adapter now inherits the
-   * gate by calling this method, and the only way past it is a
-   * {@link TrustedCaller}, which no wire payload can mint.
-   *
-   * @param id - The capability id to invoke.
-   * @param input - Raw input; parsed against the capability's `input` schema.
-   * @param context - Optional request-scoped context: who is calling, any
-   *   approval token they presented, and whether they proved they may decide
-   *   approvals. Omitting it invokes as an unidentified, untrusted caller — which
-   *   is gated, because the TIER decides that, not the identity.
-   * @returns The capability's plain output.
-   * @throws A {@link CapabilityToolError} saying the tool is not available right
-   *   now when `id` is in the extension namespace but not registered (its
-   *   extension stopped or is restarting); if no other capability is registered
-   *   under `id`; if `input` fails schema
-   *   validation (a `ZodError`); if the context carries both a trusted marker and
-   *   an agent identity; or, when the gate (tier and permission together) does
-   *   not allow the call, a {@link CapabilityGateRefusal} carrying the payload to
-   *   return to the caller.
-   */
-  invoke(id: string, input: unknown, context?: CapabilityInvocationContext): Promise<unknown>;
-  /**
-   * Produce the serializable catalog: every capability with its Zod schemas
-   * converted to JSON Schema, a fresh `generatedAt`, and a stable
-   * `catalogVersion` content hash.
-   *
-   * @returns The catalog snapshot.
-   */
-  catalog(): CapabilityCatalog;
-  /**
-   * Add one running extension's tools. Never throws: anything wrong comes back
-   * as a refusal the caller reports on the extension.
-   *
-   * Refused, with nothing added, when the contribution is malformed, when its
-   * owner already has a live contribution (remove that first — nothing is ever
-   * replaced), or when any of its ids or MCP tool names is already claimed by
-   * the core or by another contribution. All of one extension's tools are
-   * added, or none are.
-   *
-   * @param contribution - The extension id, display name and tool specs.
-   * @returns A handle whose `remove()` takes the tools away, or the refusal.
-   */
-  contribute(contribution: ExtensionContribution): ContributeResult;
-  /**
-   * Hear about every successful contribute and remove.
-   *
-   * @param listener - Called with the new surface version, a monotonically
-   *   increasing integer, after each change. A listener that throws is logged
-   *   and ignored.
-   * @returns A function that stops the listener.
-   */
-  onChange(listener: (version: number) => void): () => void;
-}
-
-/**
- * Convert one capability to its serializable catalog entry: drop `invoke` and
- * render both Zod schemas as JSON Schema via Zod v4's native conversion.
- *
- * `area` is always present (`null` for an area-less capability), because the
- * declaration on the definition is meant to have exactly one answer everywhere:
- * the gate resolves it, the permissions pages read each area's actions off the
- * live catalog instead of a static list that would drift, and the docs
- * projection reports the same field.
- *
- * `source` is present only for an extension's capability, naming the
- * extension, so every reader of the catalog can say where a tool came from.
- *
- * @param capability - The runtime capability definition.
- * @returns The serialized, wire-safe entry.
- */
-export function serializeCapability(capability: CapabilityDefinition): SerializedCapability {
-  return {
-    id: capability.id,
-    title: capability.title,
-    description: capability.description,
-    tier: capability.tier,
-    inputSchema: z.toJSONSchema(capability.input),
-    outputSchema: z.toJSONSchema(capability.output),
-    surfaces: capability.surfaces,
-    area: capability.area,
-    // Only a definition the host built for a running extension has a source;
-    // a core capability's entry stays exactly as it was (DOR-2685).
-    ...(capability.source ? { source: { ...capability.source } } : {}),
-  };
-}
-
-/**
- * Call an invocation observer, swallowing anything it throws.
- *
- * Attribution is a side channel: it must never turn a successful capability
- * call into a failed one, nor mask the handler's own error with its own.
- */
-function notify(
-  observer: CapabilityInvocationObserver,
-  capability: CapabilityDefinition,
-  context: CapabilityInvocationContext,
-  ok: boolean,
-  error?: unknown
-): void {
-  try {
-    observer({ capability, context, ok, ...(ok ? {} : { error }) });
-  } catch {
-    // Deliberately ignored — see the TSDoc above.
-  }
-}
-
-/**
- * Compute the stable `catalogVersion` content hash over a set of serialized
- * capabilities.
- *
- * The hash is order-independent in two senses: capabilities are sorted by id,
- * and every object's keys are sorted recursively ({@link stableStringify}),
- * before hashing — so neither the order domains were composed in nor the order
- * fields were written in changes the version. Only the actual content does.
- *
- * @param capabilities - The serialized capabilities to hash.
- * @returns The first 12 hex chars of the SHA-256 digest.
- */
-export function computeCatalogVersion(capabilities: readonly SerializedCapability[]): string {
-  const sorted = [...capabilities].sort((a, b) => a.id.localeCompare(b.id));
-  return createHash('sha256').update(stableStringify(sorted)).digest('hex').slice(0, 12);
-}
+const originalRegistryInvocations = new WeakMap<CapabilityRegistry, CapabilityRegistry['invoke']>();
 
 /**
  * Compose one immutable {@link CapabilityRegistry} from the given domains,
@@ -561,8 +161,35 @@ export function computeCatalogVersion(capabilities: readonly SerializedCapabilit
 export function composeRegistry(
   domains: readonly CapabilityDomain[],
   deps: CapabilityDeps,
-  onInvocation?: CapabilityInvocationObserver
+  onInvocation?: CapabilityInvocationObserver,
+  originalRoomMerge?: OriginalRoomMergeRegistryConstruction
 ): CapabilityRegistry {
+  const mergeConstruction = originalRoomMerge ? Object.freeze({ ...originalRoomMerge }) : undefined;
+  if (mergeConstruction)
+    requireRoomMergeRegistryConstruction(
+      mergeConstruction.service,
+      mergeConstruction.nativePrincipals,
+      mergeConstruction.db
+    );
+  let mergeDefinition: CapabilityDefinition | undefined;
+  let mergeHandler: CapabilityDefinition['invoke'] | undefined;
+  let mergeParse: ((input: unknown) => unknown) | undefined;
+  const originalDocumentCalls = new Map<
+    CapabilityDefinition,
+    {
+      parse: (input: unknown) => unknown;
+      invoke: CapabilityDefinition['invoke'];
+    }
+  >();
+  const documentIds = new Set([
+    'ui.configure_doc_channel',
+    'ui.approve_doc_route',
+    'ui.revoke_doc_route',
+    'ui.inspect_doc_channel',
+    'ui.issue_doc_token',
+    'ui.revoke_doc_token',
+    'ui.replay_doc_batch',
+  ]);
   const byId = new Map<string, CapabilityDefinition>();
   const mcpToolNames = new Map<string, string>();
   const cliVerbs = new Map<string, string>();
@@ -600,7 +227,20 @@ export function composeRegistry(
       if (byId.has(id)) {
         throw new Error(`Capability registry: duplicate capability id "${id}".`);
       }
-      byId.set(id, capability);
+      if (id === 'rooms.merge' && mergeConstruction) {
+        // Keep original permission/tier primitives and function pointers private and fixed.
+        mergeDefinition = Object.freeze({ ...capability });
+        mergeHandler = capability.invoke.bind(capability);
+        mergeParse = capability.input.parse.bind(capability.input);
+        byId.set(id, mergeDefinition);
+      } else if (documentIds.has(id)) {
+        const original = Object.freeze({ ...capability });
+        originalDocumentCalls.set(original, {
+          parse: capability.input.parse.bind(capability.input),
+          invoke: capability.invoke.bind(capability),
+        });
+        byId.set(id, original);
+      } else byId.set(id, capability);
 
       if (surfaces.mcp) {
         claim(mcpToolNames, surfaces.mcp.toolName, id, 'MCP tool name');
@@ -631,7 +271,7 @@ export function composeRegistry(
   }
 
   const core: readonly CapabilityDefinition[] = Object.freeze(
-    domains.flatMap((domain) => [...domain.capabilities])
+    domains.flatMap((domain) => domain.capabilities.map((capability) => byId.get(capability.id)!))
   );
 
   // The live extension layer (DOR-2685). Kept apart from the core tables so a
@@ -790,7 +430,12 @@ export function composeRegistry(
       // applied, unknown keys stripped. The approval binds to a hash of this
       // value, so hashing anything else (the raw body, or a re-parse) would make
       // the binding cover something other than what runs.
-      const parsed = capability.input.parse(input);
+      const parsed =
+        capability === mergeDefinition && mergeParse
+          ? mergeParse(input)
+          : originalDocumentCalls.has(capability)
+            ? originalDocumentCalls.get(capability)!.parse(input)
+            : capability.input.parse(input);
 
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site. The invoking session
@@ -893,36 +538,64 @@ export function composeRegistry(
         if (change !== undefined) invocationContext.approvedChange = change;
       }
 
-      // Run as the caller (spec `audit-trail` PR2): an identified agent's call
-      // runs inside its own audit scope, so a write the capability makes further
-      // down names the agent, never the person whose message started the turn.
+      let mergeHandle: object | undefined;
+      let mergeRecord: OriginalRoomMergeInvocation | undefined;
+      if (id === 'rooms.merge' && mergeConstruction) {
+        if (
+          capability !== mergeDefinition ||
+          !mergeHandler ||
+          !invocationContext.serverPrincipal ||
+          !isServerPrincipal(invocationContext.serverPrincipal) ||
+          typeof parsed !== 'object' ||
+          parsed === null
+        )
+          throw new Error('Room merge original construction or principal is unavailable.');
+        const values = parsed as { roomId?: unknown; summary?: unknown };
+        if (typeof values.roomId !== 'string' || typeof values.summary !== 'string')
+          throw new Error('Room merge input is malformed.');
+        mergeHandle = Object.freeze({});
+        mergeRecord = {
+          construction: mergeConstruction,
+          context: invocationContext,
+          input: parsed,
+          values: Object.freeze({ roomId: values.roomId, summary: values.summary }),
+          principal: invocationContext.serverPrincipal,
+          signal: invocationContext.signal,
+          active: true,
+        };
+        originalRoomMergeInvocations.set(mergeHandle, mergeRecord);
+        originalRoomMergeContexts.set(invocationContext, mergeHandle);
+      }
+      const invokeHandler = (): Promise<unknown> =>
+        capability === mergeDefinition && mergeHandler
+          ? mergeHandler(deps, parsed, invocationContext)
+          : originalDocumentCalls.has(capability)
+            ? originalDocumentCalls.get(capability)!.invoke(deps, parsed, invocationContext)
+            : capability.invoke(deps, parsed, invocationContext);
+      // Keep caller audit attribution around the captured original handler.
       const run = () =>
-        runAsAgent(
-          invocationContext.identity,
-          supplied.sessionId,
-          () => capability.invoke(deps, parsed, invocationContext),
-          { inSession: supplied.mcpServer === 'in-session' }
-        );
-
-      // Reads with nobody named stay silent: there is nothing to attribute and a
-      // read changes nothing. Every other call reaches the observer, identified
-      // or not. A `destructive` one always did — the tier gate deliberately does
-      // NOT audit an `allowed` call, so skipping it left an irreversible action
-      // that RAN with an `approval_required` line and then silence. An
-      // unidentified `act` now does too, because trusted-by-default makes it the
-      // common case; the observer sends it to the audit log rather than the feed.
+        runAsAgent(invocationContext.identity, supplied.sessionId, invokeHandler, {
+          inSession: supplied.mcpServer === 'in-session',
+        });
+      // Unidentified reads stay silent; identified and mutating calls are observed.
       const silent = !invocationContext.identity && capability.tier === 'observe';
-      if (!onInvocation || silent) return run();
-
-      // Report the outcome either way: a failed attempt by a named agent is
-      // exactly as interesting to an audit trail as a successful one.
       try {
-        const result = await run();
-        notify(onInvocation, capability, invocationContext, true);
-        return result;
-      } catch (err) {
-        notify(onInvocation, capability, invocationContext, false, err);
-        throw err;
+        // Await both branches so the authentic invocation stays active for all admitted work.
+        if (!onInvocation || silent) return await run();
+        try {
+          const result = await run();
+          notify(onInvocation, capability, invocationContext, true);
+          return result;
+        } catch (err) {
+          notify(onInvocation, capability, invocationContext, false, err);
+          throw err;
+        }
+      } finally {
+        if (mergeRecord && mergeHandle) {
+          mergeRecord.active = false;
+          originalRoomMergeContexts.delete(invocationContext);
+          originalRoomMergeInvocations.delete(mergeHandle);
+        }
       }
     },
     catalog() {
@@ -955,5 +628,18 @@ export function composeRegistry(
     },
   };
 
+  originalRegistryInvocations.set(registry, registry.invoke);
   return Object.freeze(registry);
+}
+
+/** Dispatch through the exact original factory closure, retaining its parsing/tier/approval/audit gates. */
+export function invokeOriginalCapabilityRegistry(
+  registry: CapabilityRegistry,
+  id: string,
+  input: unknown,
+  context: CapabilityInvocationContext
+): Promise<unknown> {
+  const invoke = originalRegistryInvocations.get(registry);
+  if (!invoke) throw new Error('Original capability registry is unavailable.');
+  return Reflect.apply(invoke, registry, [id, input, context]);
 }

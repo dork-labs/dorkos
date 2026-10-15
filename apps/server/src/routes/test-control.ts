@@ -1,3 +1,12 @@
+import { installTestRoomWorktreeSeedRoute } from './test-control-room-seed.js';
+import type {
+  ConnectorRuntimeRequestProbe,
+  ConnectorRuntimeExecutionProbe,
+} from '../services/runtimes/test-mode/connector-runtime-probe-contract.js';
+export type {
+  ConnectorRuntimeRequestProbe,
+  ConnectorRuntimeExecutionProbe,
+} from '../services/runtimes/test-mode/connector-runtime-probe-contract.js';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono, type Context } from 'hono';
 import path from 'path';
@@ -12,8 +21,6 @@ import type { TestModeRuntime } from '../services/runtimes/test-mode/test-mode-r
 import {
   ConnectorAgentConnectionRequestInputSchema,
   ConnectorExecutionTargetSchema,
-  type ConnectorAgentConnectionRequestInput,
-  type ConnectorExecutionTarget,
 } from '@dorkos/shared/connector-schemas';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
@@ -32,9 +39,7 @@ import {
   getBridgeStore,
   getRoomAuthors,
   resolveOperatorAuthor,
-  tryGetRoomWorktreeManager,
 } from '../services/rooms/index.js';
-import { commitAll } from '../services/rooms/repo/room-repo-git.js';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
@@ -96,28 +101,6 @@ export function setRemoteCommunitySubscriptionProbe(
   next: ((ref: string, roomId: string) => unknown) | undefined
 ): void {
   remoteCommunitySubscriptionProbe = next;
-}
-
-/** Test-only bridge into the authenticated internal connector MCP listener. */
-export interface ConnectorRuntimeRequestProbe {
-  /** Open one real runtime principal, call the request tool, and close the turn. */
-  (input: {
-    readonly sessionId: string;
-    readonly agentPath: string;
-    readonly request: ConnectorAgentConnectionRequestInput;
-    readonly signal: AbortSignal;
-  }): Promise<unknown>;
-}
-
-/** Test-only bridge for one authenticated runtime read through the internal connector listener. */
-export interface ConnectorRuntimeExecutionProbe {
-  /** Open one real runtime principal, call the read tool, and close the turn. */
-  (input: {
-    readonly sessionId: string;
-    readonly agentPath: string;
-    readonly target: ConnectorExecutionTarget;
-    readonly signal: AbortSignal;
-  }): Promise<unknown>;
 }
 
 const remoteCommunitySubscriptionQuerySchema = z
@@ -494,68 +477,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     return c.json({ ok: true });
   });
 
-  /** What `POST /api/test/room-worktree-commit` needs to put work in a copy. */
-  const roomWorktreeCommitSchema = z.object({
-    roomId: z.string().min(1),
-    /** The agent whose working copy to commit in, by its project directory. */
-    agentPath: z.string().min(1),
-    /** The file to write, relative to the working copy's root. */
-    path: z.string().min(1),
-    /** Its whole contents. */
-    text: z.string(),
-    /** The commit subject. */
-    message: z.string().min(1).default('Work in progress'),
-  });
-
-  /**
-   * `POST /api/test/room-worktree-commit` — put one commit in an agent's own
-   * working copy of a room's files.
-   *
-   * **The one state a browser cannot reach.** An agent's working copy is written
-   * by the agent, with its own shell, inside a turn — and the test-mode runtime
-   * has no shell. So a spec about REVIEWING an agent's work (spec
-   * `canvas-agent-seat` §8) has no way to produce work to review: the room's diff
-   * surface appears only for a copy that is measurably ahead of the room, and
-   * nothing a person can press moves that number.
-   *
-   * It goes through the same {@link RoomWorktreeManager} a turn does, so the
-   * directory, the branch and the identity are the ones production writes; only
-   * the trigger is scripted. Gated the same way the rest of these routes are:
-   * mounted only under `DORKOS_TEST_RUNTIME`, absent in production.
-   */
-  router.post('/room-worktree-commit', async (c) => {
-    const result = roomWorktreeCommitSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
-    }
-    const { roomId, agentPath, text, message } = result.data;
-    const worktrees = tryGetRoomWorktreeManager();
-    if (!worktrees) return c.json({ error: 'Room repos are not wired here' }, 409);
-    try {
-      const agentName = getRoomAuthors().agentNameOf(agentPath);
-      if (agentName === null) {
-        return c.json({ error: `No agent is registered at ${agentPath}` }, 404);
-      }
-      const handle = await worktrees.ensureWorktree(roomId, agentPath, agentName);
-      const target = path.join(handle.path, result.data.path);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(target, text, 'utf-8');
-      // The room's home directory, which every git call in this domain uses as
-      // the ceiling a repository search may not climb past. Derived rather than
-      // asked for: a working copy is always `<home>/worktrees/<slug>`, and the
-      // store that knows the path is the manager's own.
-      const ceiling = path.resolve(handle.path, '..', '..');
-      const commit = await commitAll(
-        handle.path,
-        message,
-        { name: agentName, email: `${agentName}@dorkos.local` },
-        ceiling
-      );
-      return c.json({ ok: true, commit, worktree: handle.path, slug: handle.slug });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
-    }
-  });
+  installTestRoomWorktreeSeedRoute(router);
 
   /** What `POST /api/test/agent-token` needs to name the agent it speaks for. */
   const agentTokenSchema = z.object({

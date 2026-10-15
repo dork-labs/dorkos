@@ -22,7 +22,7 @@ import {
   setNotificationService,
 } from '../../notifications/notification-service.js';
 import { postFirstRunWelcome, type WelcomeDeps } from '../../core/onboarding/welcome.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import {
   agentLookupFor,
   createRoomHarness,

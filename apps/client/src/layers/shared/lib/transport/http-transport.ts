@@ -1,3 +1,4 @@
+import { createBrowserMethods } from './browser-methods';
 /**
  * HTTP Transport — implements the Transport interface for standalone web clients.
  *
@@ -59,6 +60,7 @@ import { createAuditMethods } from './audit-methods';
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface HttpTransport
   extends
+    ReturnType<typeof createBrowserMethods>,
     ReturnType<typeof createComputerMethods>,
     ReturnType<typeof createTasksMethods>,
     ReturnType<typeof createRelayMethods>,
@@ -113,6 +115,7 @@ export class HttpTransport implements Transport {
       this,
       createComputerMethods(baseUrl, () => this.clientId),
       createTasksMethods(baseUrl),
+      createBrowserMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),

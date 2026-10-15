@@ -4,6 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+
+// Preserve the native Date brand while sampling the deliberately configured fake clock.
+const NativeDate = Date;
 import {
   createDb,
   canvasDocChannels,
@@ -72,8 +75,12 @@ function host(f: BatchFixture, runtime: FakeAgentRuntime) {
     store: f.store,
     grants: f.grants,
     admission: f.admission,
-    now: () => new Date(),
-    ...createPrivateDocPumpGates({ grants: f.grants, runtimes: registry, now: () => new Date() }),
+    now: () => new NativeDate(Date.now()),
+    ...createPrivateDocPumpGates({
+      grants: f.grants,
+      runtimes: registry,
+      now: () => new NativeDate(Date.now()),
+    }),
     markWaitingWarning: (id, generation, at, tx) =>
       f.store.markWaitingWarning(id, generation, at, tx),
     nudge: (sessionId, receiptIds) => {
@@ -99,7 +106,7 @@ function host(f: BatchFixture, runtime: FakeAgentRuntime) {
   });
   const runner = new DocDeliveryRunner({
     pump,
-    now: () => new Date(),
+    now: () => new NativeDate(Date.now()),
     onError: (error) => errors.push(error),
   });
   const stop = async () => {
@@ -136,7 +143,14 @@ it('drains held adopted preparation before disposal, preserves accepted evidence
   const dir = mkdtempSync(join(tmpdir(), 'doc-host-stop-'));
   dirs.push(dir);
   const file = join(dir, 'state.db');
-  const f = batchFixture(file, null, undefined, 'boot-1', 'claude-code', () => new Date());
+  const f = batchFixture(
+    file,
+    null,
+    undefined,
+    'boot-1',
+    'claude-code',
+    () => new NativeDate(Date.now())
+  );
   dbs.push(f.db);
   const fake = runtime();
   const first = host(f, fake);
@@ -192,7 +206,7 @@ it('drains held adopted preparation before disposal, preserves accepted evidence
     { db, documentId: f.documentId, grantId: f.grantId },
     'boot-2',
     'claude-code',
-    () => new Date()
+    () => new NativeDate(Date.now())
   );
   expect(reboot.admission.initializeBoot()).toBe(0);
   const resumedRuntime = runtime();
@@ -256,7 +270,7 @@ function otherReceipt(f: BatchFixture) {
     { documentId: doc.id, routeId: 'route', expiresAt: '2026-10-02T00:00:00.000Z' },
     f.actor
   );
-  const event = new DocChannelIngest(f.store, () => new Date()).accept(
+  const event = new DocChannelIngest(f.store, () => new NativeDate(Date.now())).accept(
     { v: 1, id: randomUUID(), type: 'task.changed', payload: { unrelated: true } },
     (tx) => ({
       documentId: doc.id,
@@ -279,7 +293,7 @@ it('drops only the aborted host pending timer with no database work while an unr
     undefined,
     'boot-1',
     'claude-code',
-    () => new Date()
+    () => new NativeDate(Date.now())
   );
   dbs.push(f.db);
   const fake = runtime();

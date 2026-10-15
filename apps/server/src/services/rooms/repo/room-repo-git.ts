@@ -10,8 +10,8 @@
  *
  * ## What the hardening actually buys, measured rather than assumed
  *
- * Every command goes through {@link runGit}, which applies one shared argument
- * prefix and builds an explicit environment. Each piece is here because it was
+ * Every command goes through the private shared launchers; finite mutation helpers additionally require an original mutation context;
+ * no public arbitrary-argv launcher exists. Each piece is here because it was
  * observed to matter, and none of them claims more than that:
  *
  * - **`GIT_CEILING_DIRECTORIES=<room home>` — the one that was a live bug.**
@@ -115,7 +115,18 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
 import { internalGitArgs } from '../../../lib/git-safety.js';
-import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
+import { RoomRepoConfigUnsafeError } from '../data/room-errors.js';
+import {
+  readInstallationRoomMutationRoots,
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
+
+import { createOriginalRoomGitObservationsFamily } from './git/room-repo-git-observations.js';
+import { createOriginalRoomGitCheckoutFamily } from './git/room-repo-git-checkout.js';
+import { createOriginalRoomGitWorktreeFamily } from './git/room-repo-git-worktree.js';
+import { createOriginalRoomGitHistoryFamily } from './git/room-repo-git-history.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -405,14 +416,22 @@ function readsRoomRepo(ceilingDir: string, cwd: string): boolean {
 }
 
 /** The unsafe key names one settings file declares, read without following includes. */
-async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]> {
+async function unsafeKeysIn(
+  file: string,
+  ceilingDir: string,
+  context?: InstallationRoomMutationContext
+): Promise<string[]> {
   let listing: string;
+  const args = ['config', '--file', file, '--no-includes', '--name-only', '--list'];
+  const options = {
+    cwd: path.dirname(file),
+    timeout: GIT_TIMEOUT_MS,
+    env: gitEnv(ceilingDir, ceilingDir),
+  };
+  if (context) await checkInstallationRoomMutationTarget(context, file);
+  if (context) requireInstallationRoomMutationTarget(context, file);
   try {
-    const { stdout } = await execFileAsync(
-      'git',
-      ['config', '--file', file, '--no-includes', '--name-only', '--list'],
-      { cwd: path.dirname(file), timeout: GIT_TIMEOUT_MS, env: gitEnv(ceilingDir, ceilingDir) }
-    );
+    const { stdout } = await execFileAsync('git', args, options);
     listing = stdout;
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
@@ -461,16 +480,24 @@ async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]>
  * @throws {RoomError} `ROOM_REPO_CONFIG_UNSAFE` naming the offending keys.
  */
 export async function assertRoomRepoConfigSafe(ceilingDir: string): Promise<void> {
+  return checkRoomRepoConfigSafe(ceilingDir);
+}
+
+async function checkRoomRepoConfigSafe(
+  ceilingDir: string,
+  context?: InstallationRoomMutationContext
+): Promise<void> {
   const file = path.join(path.resolve(ceilingDir), 'repo', '.git', 'config');
   let stamp: string;
   try {
     const stat = await fsp.stat(file);
     stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
     return; // No repository yet (or none here): nothing configures anything.
   }
   if (safeConfigSeen.get(file) === stamp) return;
-  const unsafe = await unsafeKeysIn(file, ceilingDir);
+  const unsafe = await unsafeKeysIn(file, ceilingDir, context);
   if (unsafe.length > 0) {
     safeConfigSeen.delete(file);
     throw new RoomRepoConfigUnsafeError(file, unsafe);
@@ -510,145 +537,162 @@ export interface RunGitOptions {
   timeoutMs?: number;
 }
 
-/**
- * Run one git command in `cwd` and answer its stdout as raw BYTES.
- *
- * The primitive {@link runGit} is built on, and the one to reach for whenever
- * the output is content rather than a value: `git cat-file blob` answers a
- * file, and a file is bytes — decoding it as UTF-8 would corrupt anything that
- * is not text, and trimming it would silently drop a trailing newline the
- * person actually wrote.
- *
- * @param args - Arguments after `git`, without the shared config prefix.
- * @param cwd - The directory to run in. Must exist.
- * @param ceilingDir - The room home directory git's repository search may not
- *   climb past. Required rather than defaulted: a caller that forgets it is a
- *   caller reading somebody else's repository, which is the bug this exists to
- *   prevent.
- * @param options - Per-call tuning. See {@link RunGitOptions}.
- * @returns Raw stdout.
- * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero, the timeout elapses, or the output cap is hit.
- */
-export async function runGitRaw(
+/** Arbitrary argv are private; only fixed operation constructors below may launch them. */
+export interface NativeLaunch {
+  started: boolean;
+}
+
+/** Private owned launcher; extra targets come only from finite mutation helpers. */
+import { requireOriginalRoomWorktreeReapEffect } from './room-worktree-manager.js';
+
+async function runOwnedGitRaw(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext,
+  options: RunGitOptions = {},
+  extraTargets: readonly string[] = [],
+  launch?: NativeLaunch
+): Promise<Buffer> {
+  const roots = readInstallationRoomMutationRoots(context);
+  if (
+    !path.isAbsolute(cwd) ||
+    !path.isAbsolute(ceilingDir) ||
+    path.resolve(ceilingDir) !== roots.homePath
+  ) {
+    throw new Error('Git ceiling must be the captured room home.');
+  }
+  const targets = [cwd, ...extraTargets];
+  for (const target of targets) await checkInstallationRoomMutationTarget(context, target);
+  if (readsRoomRepo(ceilingDir, cwd)) await checkRoomRepoConfigSafe(ceilingDir, context);
+  // Construct all caller-controlled arguments/options before the decisive guards.
+  const command = [...SHARED_CONFIG_ARGS, ...args];
+  const childOptions = {
+    cwd,
+    timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
+    env: gitEnv(ceilingDir, cwd),
+    maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
+    encoding: 'buffer' as const,
+  };
+  for (const target of targets) await checkInstallationRoomMutationTarget(context, target);
+  for (const target of targets) requireInstallationRoomMutationTarget(context, target);
+  requireOriginalRoomWorktreeReapEffect(context);
+  if (launch) launch.started = true;
+  // No await or supplied callback between the final fixed guards and launch.
+  try {
+    const { stdout } = await execFileAsync('git', command, childOptions);
+    return stdout;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(error);
+    throw error;
+  }
+}
+
+async function runOwnedGit(
+  args: string[],
+  cwd: string,
+  ceilingDir: string,
+  context: InstallationRoomMutationContext,
+  options: RunGitOptions = {},
+  extraTargets: readonly string[] = [],
+  launch?: NativeLaunch
+): Promise<string> {
+  return (await runOwnedGitRaw(args, cwd, ceilingDir, context, options, extraTargets, launch))
+    .toString('utf-8')
+    .trim();
+}
+
+/** Private finite-read implementation. It is never exported as an arbitrary-args alias. */
+async function runReadGitRaw(
   args: string[],
   cwd: string,
   ceilingDir: string,
   options: RunGitOptions = {}
 ): Promise<Buffer> {
-  // Any command that reads the room's own repository reads its config, so none
-  // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
   if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
-      env: gitEnv(ceilingDir, cwd),
+      env: { ...gitEnv(ceilingDir, cwd), GIT_OPTIONAL_LOCKS: '0' },
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
-      // Bytes, not characters: this function's whole purpose is to answer what
-      // git wrote rather than what a decoder made of it.
       encoding: 'buffer',
     });
     return stdout;
-  } catch (err) {
-    // `ENOENT` from `execFile` is the BINARY, not a missing path: the cwd is
-    // checked by the caller and a missing repo exits 128 with a message.
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
-    throw err;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(error);
+    throw error;
   }
 }
 
-/**
- * Run one git command in `cwd` and answer its trimmed stdout.
- *
- * The reader for VALUES — a sha, a branch name, a porcelain status. For file
- * contents use {@link runGitRaw}, whose output this one trims and decodes.
- *
- * @param args - Arguments after `git`, without the shared config prefix.
- * @param cwd - The directory to run in. Must exist.
- * @param ceilingDir - The room home directory git's repository search may not
- *   climb past. Required rather than defaulted: a caller that forgets it is a
- *   caller reading somebody else's repository, which is the bug this exists to
- *   prevent.
- * @param options - Per-call tuning. See {@link RunGitOptions}.
- * @returns Trimmed stdout.
- * @throws {GitUnavailableError} When there is no `git` on this machine.
- * @throws When git exits non-zero or the timeout elapses.
- */
-export async function runGit(
+async function runReadGit(
   args: string[],
   cwd: string,
   ceilingDir: string,
   options: RunGitOptions = {}
 ): Promise<string> {
-  return (await runGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
+  return (await runReadGitRaw(args, cwd, ceilingDir, options)).toString('utf-8').trim();
 }
 
-/**
- * Create an empty repo whose default branch is `main`, with no hooks in it.
- *
- * `-b main` rather than a rename afterwards, so the branch is right before the
- * first commit exists and the sidecar's `defaultBranch: 'main'` is a statement
- * of fact rather than a hope.
- *
- * @param repoDir - The directory to initialise. Created by the caller.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function initRepo(repoDir: string, ceilingDir: string): Promise<void> {
-  await runGit(
-    ['-c', 'init.templateDir=', 'init', '-b', 'main', '--quiet', '.'],
-    repoDir,
-    ceilingDir
-  );
-}
-
-/**
- * Whether a checkout has a `main` branch at all.
- *
- * Its own probe rather than an inference from a failure, so that "this repo has
- * no main yet" and "this command failed" stop being the same answer (they were,
- * and the second one silently read as zero unmerged commits).
- *
- * @param checkoutDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function hasMainBranch(checkoutDir: string, ceilingDir: string): Promise<boolean> {
-  return hasLocalBranch(checkoutDir, 'main', ceilingDir);
-}
-
-/**
- * Whether a checkout has a local branch by this name.
- *
- * The general form of {@link hasMainBranch}, and the reason the worktree
- * manager can tell "this agent has never had a worktree here" from "the reap
- * removed the worktree and left the branch behind": those need opposite
- * `git worktree add` invocations, and picking by catching a failure would make
- * every OTHER failure look like the same case.
- *
- * @param checkoutDir - The checkout to ask.
- * @param branch - The branch name, without `refs/heads/`.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function hasLocalBranch(
-  checkoutDir: string,
-  branch: string,
-  ceilingDir: string
-): Promise<boolean> {
-  try {
-    await runGit(
-      ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
-      checkoutDir,
-      ceilingDir
-    );
-    return true;
-  } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
-    // `--verify --quiet` exits 1 with no output for a ref that is not there.
-    // Anything else — an unreadable directory, a corrupt repo — is not this
-    // question's to swallow, so it goes back to the caller.
-    if ((err as { code?: unknown })?.code === 1) return false;
-    throw err;
+/** Revision operands must remain operands, never additional log/diff output options. */
+function requireRevisionOperand(value: string): void {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.startsWith('-') ||
+    value.includes('\0')
+  ) {
+    throw new Error('Expected a Git revision operand, not a command option.');
   }
+}
+
+/** Resolve a literal pathspec before it can reach a mutation command. */
+function requireRepoRelativeMutationPath(repoDir: string, value: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.includes('\0') ||
+    path.isAbsolute(value)
+  )
+    throw new Error('Expected a repository-relative mutation path.');
+  const target = path.resolve(repoDir, value);
+  const relative = path.relative(path.resolve(repoDir), target);
+  if (
+    !relative ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative) ||
+    relative.split(path.sep)[0] === '.git'
+  )
+    throw new Error('Mutation path escapes the captured repository content.');
+  return target;
+}
+
+/** Recognize the same ASCII control range without a control-character regexp. */
+function roomFilePathHasControlCode(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/** A normalized literal room-reader path, already normalized by the owning caller. */
+function requireRoomFileLiteralPath(repoDir: string, value: string): void {
+  if (
+    typeof value !== 'string' ||
+    value.length > 4096 ||
+    value !== value.trim() ||
+    value.includes('\\') ||
+    /^[A-Za-z]:/.test(value) ||
+    roomFilePathHasControlCode(value)
+  )
+    throw new Error('Expected a normalized room-file literal path.');
+  for (const part of value.split('/')) {
+    if (!part || part === '.' || part === '..' || part !== part.trim())
+      throw new Error('Expected a normalized room-file literal path.');
+  }
+  requireRepoRelativeMutationPath(repoDir, value);
 }
 
 /**
@@ -687,138 +731,6 @@ function stripControlCharacters(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 }
 
-/**
- * Stage everything in the tree and commit it under `identity`.
- *
- * The identity is passed per command rather than written into the repo's
- * config, because who commits changes with who is asking — a merge is committed
- * as the agent that asked for it, a `ROOM.md` save as the person who typed it —
- * and a config value would make the LAST writer's name the default for the
- * next one.
- *
- * The identity's control characters are stripped on the way in
- * ({@link stripControlCharacters}) — a commit header DorkOS writes is parsed
- * again later, and a name carrying a field separator is a name that rewrites
- * somebody else's row.
- *
- * @param repoDir - The checkout to commit in.
- * @param message - The commit subject.
- * @param identity - Who the commit is attributed to.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The new commit's full sha.
- */
-export async function commitAll(
-  repoDir: string,
-  message: string,
-  identity: GitIdentity,
-  ceilingDir: string
-): Promise<string> {
-  await runGit(['add', '--all'], repoDir, ceilingDir);
-  return commitStaged(repoDir, message, identity, ceilingDir);
-}
-
-/**
- * Stage exactly these paths, and nothing else.
- *
- * `:(literal)` on every pathspec, so a member's filename means itself: without
- * it a file called `*` stages its whole directory and one called `!x` means
- * "not x". That is the same magic {@link listTree}'s callers guard against when
- * they READ a path, applied where it can actually change what gets committed.
- *
- * Its own step rather than part of a commit, because a caller that stages a
- * single path needs to know whether anything was staged at all
- * ({@link hasStagedChanges}) before it decides to commit — a person saving a
- * file they did not change is not an error, and it is not history either.
- *
- * @param repoDir - The checkout to stage in.
- * @param paths - Repo-relative paths. Already normalised by the caller.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function stagePaths(
-  repoDir: string,
-  paths: readonly string[],
-  ceilingDir: string
-): Promise<void> {
-  if (paths.length === 0) return;
-  await runGit(
-    ['add', '--', ...paths.map((filePath) => `:(literal)${filePath}`)],
-    repoDir,
-    ceilingDir
-  );
-}
-
-/**
- * Whether the index holds anything the current commit does not.
- *
- * `--quiet` makes git answer in its exit status — `1` for "there is a
- * difference" — which is why the failure is READ rather than propagated. Any
- * other exit is a real failure and goes back to the caller.
- *
- * `--cached` compares the index against `HEAD`, and on a repo whose first
- * commit has not happened git compares against the empty tree instead, so a
- * first file answers `true` rather than failing.
- *
- * @param repoDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function hasStagedChanges(repoDir: string, ceilingDir: string): Promise<boolean> {
-  try {
-    await runGit(['diff', '--cached', '--quiet'], repoDir, ceilingDir);
-    return false;
-  } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
-    if ((err as { code?: unknown })?.code === 1) return true;
-    throw err;
-  }
-}
-
-/**
- * Commit whatever is staged, under `identity`.
- *
- * The half of {@link commitAll} that is about authorship rather than about
- * staging, split out so a caller that staged one path can reuse it without
- * `--all` sweeping in whatever else happens to be in the tree.
- *
- * The identity's control characters are stripped on the way in
- * ({@link stripControlCharacters}) — a commit header DorkOS writes is parsed
- * again later, and a name carrying a field separator is a name that rewrites
- * somebody else's row.
- *
- * @param repoDir - The checkout to commit in.
- * @param message - The commit subject.
- * @param identity - Who the commit is attributed to.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The new commit's full sha.
- */
-export async function commitStaged(
-  repoDir: string,
-  message: string,
-  identity: GitIdentity,
-  ceilingDir: string
-): Promise<string> {
-  await runGit(
-    [
-      '-c',
-      // Stripped, not trusted: see {@link stripControlCharacters} for the
-      // parser this protects and the measurement behind it.
-      `user.name=${stripControlCharacters(identity.name)}`,
-      '-c',
-      `user.email=${stripControlCharacters(identity.email)}`,
-      'commit',
-      // The second line, not the first: `core.hooksPath` above is what actually
-      // stops a hook. See the module doc — this skips `pre-commit` and
-      // `commit-msg` only, measured.
-      '--no-verify',
-      '--quiet',
-      '-m',
-      message,
-    ],
-    repoDir,
-    ceilingDir
-  );
-  return runGit(['rev-parse', 'HEAD'], repoDir, ceilingDir);
-}
-
 /** What a working tree holds that its last commit does not. */
 export interface StrayChange {
   /** The path, relative to the checkout root. */
@@ -843,75 +755,6 @@ export interface StrayChange {
 }
 
 /**
- * Everything in a checkout that is not committed — staged, unstaged and
- * untracked alike, one record each.
- *
- * The richer twin of {@link hasUncommittedChanges}, and it exists because the
- * integration tree needs a different answer from a worktree. For a worktree the
- * question is yes/no: may this be thrown away. For `repo/` the answer has to be
- * SHOWN to a person and then acted on file by file — the spec's dirty-main
- * degradation offers "commit these" or "discard exactly these", and neither is
- * expressible without the list.
- *
- * `--porcelain=v1 -z` because it is the only stable format that can carry a
- * filename holding a newline or a quote, which a room's members can commit.
- * `--untracked-files=all` lists files inside a new directory individually
- * rather than naming the directory, so every entry is something the discard
- * path can name literally.
- *
- * **A rename is TWO records in `-z` output** (`R  <new>NUL<old>NUL`), and the
- * old path is consumed rather than reported: reporting it would offer the
- * person a path that is not there to discard.
- *
- * @param checkoutDir - The checkout to inspect.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns One record per path, in git's own order.
- */
-export async function listStrayChanges(
-  checkoutDir: string,
-  ceilingDir: string
-): Promise<StrayChange[]> {
-  // **Raw, because {@link runGit} trims and a status record can BEGIN with a
-  // space.** ` M notes.md` — unmodified in the index, modified in the tree — is
-  // the ordinary shape of an edit somebody made in a terminal, and trimming it
-  // shifts every field of the record it starts. Filenames may legitimately
-  // begin with whitespace too. Nothing here rewrites git's bytes.
-  const out = (
-    await runGitRaw(
-      ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      checkoutDir,
-      ceilingDir,
-      // A tree somebody dropped a build directory into can list a very large
-      // number of untracked files, and this is the one status read that has to
-      // survive it rather than fail the whole room's degradation report.
-      { maxBuffer: LARGE_OUTPUT_MAX_BUFFER }
-    )
-  ).toString('utf-8');
-  const records = out.split('\0');
-  const strays: StrayChange[] = [];
-  for (let at = 0; at < records.length; at += 1) {
-    const record = records[at];
-    // `XY <path>`: two status letters, a space, then the path — so anything
-    // shorter than four characters is not a record.
-    if (!record || record.length < 4) continue;
-    const index = record[0] ?? ' ';
-    const worktree = record[1] ?? ' ';
-    const filePath = record.slice(3);
-    // The old name of a rename or a copy follows in its own record. It is
-    // consumed rather than listed — offering it would offer a path that is not
-    // there — and kept on the record it belongs to, because undoing the rename
-    // means restoring it. See {@link StrayChange.renamedFrom}.
-    const renamedFrom = index === 'R' || index === 'C' ? records[++at] : undefined;
-    strays.push({
-      path: filePath,
-      kind: strayKind(index, worktree),
-      ...(renamedFrom ? { renamedFrom } : {}),
-    });
-  }
-  return strays;
-}
-
-/**
  * What a porcelain status pair means, in a word a person reads.
  *
  * Deliberately coarser than git's own vocabulary: the person is being asked
@@ -926,361 +769,6 @@ function strayKind(index: string, worktree: string): StrayChange['kind'] {
   if (index === 'D' || worktree === 'D') return 'deleted';
   if (index === 'A') return 'added';
   return 'modified';
-}
-
-/**
- * Whether this repo's own ignore rules exclude a path.
- *
- * `check-ignore -q` answers in its exit status — `0` ignored, `1` not, anything
- * else a real failure — which is why the `1` is read rather than propagated.
- * `--no-index` asks about the RULES rather than about what is already tracked,
- * so a file that is both tracked and matched by a rule answers honestly instead
- * of being excused by its own history.
- *
- * **The one command here that cannot take `:(literal)`** — `check-ignore`
- * refuses pathspec magic outright ("pathspec magic not supported by this
- * command"), so the path goes in bare, after `--` so a name beginning with a
- * dash is still a path rather than an option. The cost is that a filename
- * containing glob characters is tested as the pattern it looks like, which can
- * answer "ignored" for a file that is not. That direction is the safe one: it
- * refuses a save that would have worked, with a sentence saying why, rather
- * than committing something the room excludes.
- *
- * @param repoDir - The checkout whose rules to ask.
- * @param filePath - A normalised repo-relative path.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function isIgnored(
-  repoDir: string,
-  filePath: string,
-  ceilingDir: string
-): Promise<boolean> {
-  try {
-    await runGit(['check-ignore', '-q', '--no-index', '--', filePath], repoDir, ceilingDir);
-    return true;
-  } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
-    if ((err as { code?: unknown })?.code === 1) return false;
-    // **Anything else is this command failing on the PATH, and it is named as
-    // that rather than propagated raw.** `check-ignore` exits 128 on a pathspec
-    // it cannot parse — the magic it does not support — and letting that out
-    // reached the global handler as a 500 with no code, which is both a lie
-    // about whose fault it was and unactionable (`:!x.md`, found in review).
-    // Its own type, like the two failures above it, so the caller translates it
-    // into the room's own refusal instead of guessing from a message.
-    throw new UnreadablePathError(filePath, err);
-  }
-}
-
-/**
- * Which of these paths the commit `HEAD` names actually holds.
- *
- * The question a discard has to answer before it picks HOW to undo a change: a
- * path that is in `HEAD` is restored from it, and a path that is not can only
- * be removed. Asked in ONE command for every path, and asked of git rather than
- * of the index, because the index is one of the things a stray change may have
- * touched.
- *
- * @param repoDir - The checkout to ask.
- * @param paths - Repo-relative paths.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The subset of `paths` that `HEAD` holds.
- */
-export async function pathsInHead(
-  repoDir: string,
-  paths: readonly string[],
-  ceilingDir: string
-): Promise<Set<string>> {
-  if (paths.length === 0) return new Set();
-  // Raw for the reason {@link listStrayChanges} gives: a filename may begin or
-  // end with whitespace, and a trimmed answer would fail to match the path the
-  // caller asked about — which here would mean choosing the wrong way to undo
-  // it.
-  const out = (
-    await runGitRaw(
-      [
-        'ls-tree',
-        '-z',
-        '--name-only',
-        'HEAD',
-        '--',
-        ...paths.map((filePath) => `:(literal)${filePath}`),
-      ],
-      repoDir,
-      ceilingDir
-    )
-  ).toString('utf-8');
-  return new Set(out.split('\0').filter((name) => name !== ''));
-}
-
-/**
- * Put these paths back the way `HEAD` has them, in the index and in the tree.
- *
- * `git checkout HEAD --` rather than `git restore`, because it is one command
- * for both halves and it has meant the same thing in every git a person might
- * have. Every path is a `:(literal)` pathspec, so a filename never behaves as a
- * glob.
- *
- * **Destructive, and deliberately narrow**: it undoes exactly the paths it is
- * given and never a directory, so the caller has to have named each file.
- *
- * @param repoDir - The checkout to restore in.
- * @param paths - Repo-relative paths, all of which `HEAD` holds.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function restoreFromHead(
-  repoDir: string,
-  paths: readonly string[],
-  ceilingDir: string
-): Promise<void> {
-  if (paths.length === 0) return;
-  await runGit(
-    ['checkout', 'HEAD', '--', ...paths.map((filePath) => `:(literal)${filePath}`)],
-    repoDir,
-    ceilingDir
-  );
-}
-
-/**
- * Take these paths out of the index.
- *
- * The other half of a discard: a path that `HEAD` does not hold cannot be
- * restored from it, so what "undo" means for one is that its file goes away and
- * it stops being staged. The caller deletes the file itself — no subprocess, and
- * no `git clean`, a command whose whole reputation is for removing more than it
- * was asked to.
- *
- * **Call this AFTER deleting the file, not before**, and the order is a fix
- * rather than a preference. `git rm --cached` refuses a path whose staged
- * content differs from both `HEAD` and the file on disk — the state a person
- * leaves behind by staging something and then editing it again — and the
- * documented way past that refusal is `-f`, a flag this domain does not use and
- * a test forbids by name. With the file already gone there is nothing to
- * disagree with, and the same call succeeds. Measured both ways.
- *
- * `--ignore-unmatch` so a path that was never staged at all — an ordinary
- * untracked file — is a no-op rather than a failure.
- *
- * @param repoDir - The checkout to unstage in.
- * @param paths - Repo-relative paths, whose files are already deleted.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function unstagePaths(
-  repoDir: string,
-  paths: readonly string[],
-  ceilingDir: string
-): Promise<void> {
-  if (paths.length === 0) return;
-  await runGit(
-    [
-      'rm',
-      '--cached',
-      '--quiet',
-      '--ignore-unmatch',
-      '--',
-      ...paths.map((filePath) => `:(literal)${filePath}`),
-    ],
-    repoDir,
-    ceilingDir
-  );
-}
-
-/**
- * Whether a checkout holds changes that are not committed — staged, unstaged or
- * untracked alike.
- *
- * One `status --porcelain` rather than the workspace domain's richer dirty
- * state, because the question a room asks of a worktree is a yes/no: may this
- * be thrown away. What is dirty about it is the explorer's job to show, not the
- * delete guard's.
- *
- * @param checkoutDir - The checkout to inspect.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function hasUncommittedChanges(
-  checkoutDir: string,
-  ceilingDir: string
-): Promise<boolean> {
-  return (await runGit(['status', '--porcelain=v1'], checkoutDir, ceilingDir)).length > 0;
-}
-
-/**
- * How many commits `checkoutDir`'s HEAD holds that `main` does not.
- *
- * `0` means merged, and it means ONLY that: a repo with no `main` yet answers
- * `0` because a tree that cannot be compared against an integration branch that
- * does not exist has nothing stranded in it by definition, and that one case is
- * established by {@link hasMainBranch} rather than inferred from a failure.
- * Every other failure propagates, so the delete guard's conservative handler
- * sees it and calls the worktree unfinished.
- *
- * @param checkoutDir - The worktree to measure.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The count of unmerged commits.
- * @throws When the checkout cannot be read.
- */
-export async function commitsAheadOfMain(checkoutDir: string, ceilingDir: string): Promise<number> {
-  if (!(await hasMainBranch(checkoutDir, ceilingDir))) return 0;
-  const out = await runGit(['rev-list', '--count', 'main..HEAD'], checkoutDir, ceilingDir);
-  return Number.parseInt(out, 10) || 0;
-}
-
-/**
- * Add a standing worktree at `worktreeDir` on branch `branch`.
- *
- * Two shapes, because the branch may already exist: the reap removes a
- * worktree's DIRECTORY and `git worktree remove` leaves the branch behind, so
- * "create the branch" is right the first time and wrong every time after. The
- * caller decides which with `createFrom`, having asked
- * {@link hasLocalBranch} — see {@link addWorktree}'s only caller for why that
- * probe is not replaced by catching the failure.
- *
- * @param repoDir - The room's main checkout, which owns the worktree list.
- * @param worktreeDir - Where the new working tree goes. Must not exist.
- * @param branch - The branch to check out in it.
- * @param createFrom - The commit-ish to branch FROM (`'main'`), or `null` to
- *   check out a branch that already exists.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function addWorktree(
-  repoDir: string,
-  worktreeDir: string,
-  branch: string,
-  createFrom: string | null,
-  ceilingDir: string
-): Promise<void> {
-  const args = createFrom
-    ? ['worktree', 'add', '--quiet', '-b', branch, worktreeDir, createFrom]
-    : ['worktree', 'add', '--quiet', worktreeDir, branch];
-  await runGit(args, repoDir, ceilingDir);
-}
-
-/**
- * Remove a standing worktree — **never forced**.
- *
- * The absent `--force` is the point. Git refuses to remove a working tree that
- * holds modified or untracked files, so this call is a second, independent
- * check on the reap's own dirty gate, made by git at the moment of deletion
- * rather than by DorkOS a few milliseconds earlier. An agent that started
- * writing between the two is protected by the one that runs last.
- *
- * @param repoDir - The room's main checkout.
- * @param worktreeDir - The working tree to remove.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @throws When git refuses, which includes "it is not empty".
- */
-export async function removeWorktree(
-  repoDir: string,
-  worktreeDir: string,
-  ceilingDir: string
-): Promise<void> {
-  await runGit(['worktree', 'remove', worktreeDir], repoDir, ceilingDir);
-}
-
-/**
- * Drop the administrative records of worktrees whose directories are gone.
- *
- * Run after a reap so `git worktree list` matches the disk. Harmless when
- * nothing was removed.
- *
- * @param repoDir - The room's main checkout.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function pruneWorktrees(repoDir: string, ceilingDir: string): Promise<void> {
-  await runGit(['worktree', 'prune'], repoDir, ceilingDir);
-}
-
-/**
- * Delete a branch **only if `main` already contains it** (`-d`, never `-D`).
- *
- * The safe form is load-bearing rather than tidy: it means this call cannot be
- * the thing that loses a commit even if every check above it were wrong. Git
- * refuses and the branch stays.
- *
- * @param repoDir - The room's main checkout.
- * @param branch - The branch to retire.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns `true` when the branch is gone, `false` when git refused.
- */
-export async function deleteMergedBranch(
-  repoDir: string,
-  branch: string,
-  ceilingDir: string
-): Promise<boolean> {
-  try {
-    await runGit(['branch', '--quiet', '-d', branch], repoDir, ceilingDir);
-    return true;
-  } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
-    return false;
-  }
-}
-
-/**
- * When the commit at `HEAD` was committed.
- *
- * Committer date rather than author date: it moves when a commit is rebased or
- * amended in this tree, which is the question "when was this worktree last
- * worked in" actually asks.
- *
- * A checkout with no commits yet answers `null` rather than throwing, which the
- * caller reads as "this tree has no commit date" and moves on to its other
- * sources. That case is `git log` exiting 128 with "does not have any commits
- * yet" — caught here, because the alternative was a contract that said `null`
- * and a function that threw. Every OTHER failure still propagates: an
- * unreadable tree must not be spelled the same way as an empty one, which is
- * the mistake {@link commitsAheadOfMain} was fixed for.
- *
- * @param checkoutDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The commit time, or `null` when there are no commits yet.
- * @throws When the checkout cannot be read at all.
- */
-export async function headCommittedAt(
-  checkoutDir: string,
-  ceilingDir: string
-): Promise<Date | null> {
-  let iso: string;
-  try {
-    iso = await runGit(['log', '-1', '--format=%cI'], checkoutDir, ceilingDir);
-  } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
-    const stderr = String((err as { stderr?: unknown })?.stderr ?? '');
-    if (/does not have any commits yet|unknown revision or path/i.test(stderr)) return null;
-    throw err;
-  }
-  const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? null : at;
-}
-
-/**
- * How far one branch has run ahead of another, and how far behind.
- *
- * `rev-list --left-right --count a...b` counts the commits reachable from
- * exactly one side of the symmetric difference: the left number is what `a` has
- * and `b` has not (`behind`, from `b`'s point of view), the right is what `b`
- * has and `a` has not (`ahead`). Asked in the MAIN checkout so a status sweep
- * never has to enter somebody else's working copy.
- *
- * @param repoDir - The room's main checkout.
- * @param base - The integration branch, normally `main`.
- * @param branch - The branch being measured against it.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns How many commits `branch` holds that `base` does not, and vice versa.
- */
-export async function aheadBehind(
-  repoDir: string,
-  base: string,
-  branch: string,
-  ceilingDir: string
-): Promise<{ ahead: number; behind: number }> {
-  const out = await runGit(
-    ['rev-list', '--left-right', '--count', `${base}...${branch}`],
-    repoDir,
-    ceilingDir
-  );
-  const [behind, ahead] = out.split(/\s+/).map((part) => Number.parseInt(part, 10) || 0);
-  return { ahead: ahead ?? 0, behind: behind ?? 0 };
 }
 
 /** One entry in a tree, as `git ls-tree -r -l` describes it. */
@@ -1314,83 +802,6 @@ export const SYMLINK_MODE = '120000';
  */
 export const GITLINK_MODE = '160000';
 
-/**
- * Every blob in a commit's tree, with its mode, object id and size.
- *
- * `-r` recurses (so no sub-tree entries come back), `-l` adds the size, and
- * `-z` makes the record separator a NUL — which is the only way to read a path
- * that contains a newline, and paths in a repo members write to are not this
- * module's to trust.
- *
- * One command for the whole tree rather than one per changed file: the merge
- * validation needs both the delta (what changed) and the total (what the repo
- * would weigh), and comparing two of these answers both without a second pass.
- *
- * @param repoDir - The room's main checkout.
- * @param commitish - The commit or branch whose tree to list.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns Every blob, keyed by path.
- */
-export async function listTree(
-  repoDir: string,
-  commitish: string,
-  ceilingDir: string
-): Promise<Map<string, TreeEntry>> {
-  const out = await runGit(
-    ['ls-tree', '-r', '-l', '-z', commitish],
-    repoDir,
-    ceilingDir,
-    // A tree listing is one line per file, so a large repo outruns the shared
-    // default — measured to break around 15-20k files against `execFile`'s own
-    // 1 MB, and it surfaces as an unmapped 500 rather than as anything a caller
-    // could act on. Asked for explicitly rather than left to
-    // {@link GIT_MAX_OUTPUT_BYTES}, because this command's output is the one
-    // that scales with the whole repository.
-    { maxBuffer: LARGE_OUTPUT_MAX_BUFFER }
-  );
-  const entries = new Map<string, TreeEntry>();
-  for (const record of out.split('\0')) {
-    if (record.length === 0) continue;
-    // `<mode> SP <type> SP <sha> SP <size> TAB <path>`, with the size
-    // right-aligned in a padded column and `-` for anything that is not a blob.
-    const match = /^(\d{6}) (\w+) ([0-9a-f]+) +(\d+|-)\t(.*)$/s.exec(record);
-    if (!match) continue;
-    const [, mode, type, sha, size, entryPath] = match;
-    // **`commit` is kept, and dropping it was a hole.** A gitlink is type
-    // `commit`, so a filter of `type !== 'blob'` removed submodules from the
-    // listing entirely — which meant they appeared in neither the before tree
-    // nor the after tree, were therefore never in the delta, and reached `main`
-    // without meeting a single check. They are listed here so the caller can
-    // refuse them by name.
-    if ((type !== 'blob' && type !== 'commit') || !mode || !sha || !entryPath) continue;
-    entries.set(entryPath, {
-      path: entryPath,
-      mode,
-      sha,
-      size: size === '-' ? 0 : Number.parseInt(size, 10) || 0,
-    });
-  }
-  return entries;
-}
-
-/**
- * The content of one blob, as text.
- *
- * Used for exactly one thing: reading where a symlink points, which is a short
- * path and never a file the caller has not already size-checked. It trims,
- * which a general blob reader must not — a symlink target with trailing
- * whitespace is not a target anybody meant, and trimming can only make the
- * escape check stricter.
- *
- * @param repoDir - The room's main checkout.
- * @param sha - The blob to read.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The blob's content, trimmed.
- */
-export async function readBlob(repoDir: string, sha: string, ceilingDir: string): Promise<string> {
-  return runGit(['cat-file', 'blob', sha], repoDir, ceilingDir);
-}
-
 /** What one merge would bring in, as a person reads it. */
 export interface DiffStat {
   /** How many files the delta touches, additions and deletions included. */
@@ -1399,69 +810,6 @@ export interface DiffStat {
   insertions: number;
   /** Lines removed. */
   deletions: number;
-}
-
-/**
- * How large the delta between two commits is, in files and lines.
- *
- * `--shortstat` rather than counting `--numstat` rows, because the numbers are
- * for a sentence a person reads in the room ("4 files, +120/−8") and git
- * already writes that sentence. A delta of nothing answers all zeros, which is
- * what an empty `--shortstat` line means.
- *
- * @param repoDir - The room's main checkout.
- * @param from - The commit the delta starts at.
- * @param to - The commit it ends at.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The counts.
- */
-export async function shortstat(
-  repoDir: string,
-  from: string,
-  to: string,
-  ceilingDir: string
-): Promise<DiffStat> {
-  const out = await runGit(['diff', '--shortstat', from, to], repoDir, ceilingDir);
-  const read = (pattern: RegExp): number => Number.parseInt(pattern.exec(out)?.[1] ?? '0', 10) || 0;
-  return {
-    files: read(/(\d+) files? changed/),
-    insertions: read(/(\d+) insertions?\(\+\)/),
-    deletions: read(/(\d+) deletions?\(-\)/),
-  };
-}
-
-/**
- * The commit a ref points at right now.
- *
- * @param checkoutDir - The checkout to ask.
- * @param ref - The ref to resolve.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The full sha.
- */
-export async function revParse(
-  checkoutDir: string,
-  ref: string,
-  ceilingDir: string
-): Promise<string> {
-  return runGit(['rev-parse', ref], checkoutDir, ceilingDir);
-}
-
-/**
- * The branch a checkout has checked out, or `null` when its HEAD is detached.
- *
- * The main checkout of a room repo is only ever on `main` — the server is its
- * only writer and never leaves it — so anything else is an out-of-band change,
- * which the merge refuses rather than merging into whatever it finds.
- *
- * @param checkoutDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function currentBranch(
-  checkoutDir: string,
-  ceilingDir: string
-): Promise<string | null> {
-  const name = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], checkoutDir, ceilingDir);
-  return name === 'HEAD' ? null : name;
 }
 
 /**
@@ -1483,102 +831,175 @@ export class MergeConflictError extends Error {
   }
 }
 
-/**
- * Merge `branch` into whatever `repoDir` has checked out, always as a real
- * merge commit — and leave nothing behind if it fails.
- *
- * **`--no-ff` is the point, not a preference.** The caller has already refused
- * anything that is behind `main`, so every merge that gets here COULD fast
- * forward; letting it would erase the fact that the work happened on a branch,
- * and a room's log says "Ana merged …" about a commit that would then not
- * exist. One merge, one commit, one entry.
- *
- * **The abort is this function's own job**, and that is why the merge is here
- * rather than assembled by the caller. A conflicted `git merge` leaves the
- * checkout mid-merge — an index full of conflict stages, `MERGE_HEAD` written
- * — and the next merge into that tree would be refused, or worse, would commit
- * somebody's conflict markers. `git merge --abort` puts the tree back exactly
- * where it was, and it runs in a `finally`-shaped path so no error route can
- * skip it. The abort's own failure is swallowed deliberately: there is nothing
- * to abort when the merge failed before starting, and the caller is owed the
- * reason the merge failed rather than the reason the cleanup did.
- *
- * `--no-verify` is deliberately absent, unlike {@link commitAll}. It is a newer
- * option on `merge` than on `commit`, and `core.hooksPath` — applied to every
- * command in this module — is what actually stops a hook running (see the
- * module doc, where that was measured).
- *
- * @param repoDir - The checkout to merge INTO. Must be clean.
- * @param branch - The branch to merge in.
- * @param message - The merge commit's message. Sanitized by the caller.
- * @param identity - Who the merge commit is attributed to.
- * @param ceilingDir - The room home directory the search may not climb past.
- * @returns The new merge commit's full sha.
- * @throws {MergeConflictError} When the merge did not complete. The checkout is
- *   back at its previous commit, unmodified.
- */
-export async function mergeNoFf(
-  repoDir: string,
-  branch: string,
-  message: string,
-  identity: GitIdentity,
-  ceilingDir: string
-): Promise<string> {
-  try {
-    await runGit(
-      [
-        '-c',
-        `user.name=${identity.name}`,
-        '-c',
-        `user.email=${identity.email}`,
-        'merge',
-        '--no-ff',
-        '--quiet',
-        '-m',
-        message,
-        branch,
-      ],
-      repoDir,
-      ceilingDir
-    );
-  } catch (err) {
-    if (err instanceof GitUnavailableError || err instanceof RoomError) throw err;
-    try {
-      await runGit(['merge', '--abort'], repoDir, ceilingDir);
-    } catch {
-      // Nothing was in progress — the merge failed before it touched the tree.
-      // The caller's error is the one worth reporting.
-    }
-    throw new MergeConflictError(branch, err);
-  }
-  return runGit(['rev-parse', 'HEAD'], repoDir, ceilingDir);
+/** Fixed original private Git command ports, readable only with the module-owned key. */
+export interface OriginalRoomGitCommandPorts {
+  runOwnedGit: typeof runOwnedGit;
+  runReadGitRaw: typeof runReadGitRaw;
+  runReadGit: typeof runReadGit;
+  requireRevisionOperand: typeof requireRevisionOperand;
+  requireRepoRelativeMutationPath: typeof requireRepoRelativeMutationPath;
+  requireRoomFileLiteralPath: typeof requireRoomFileLiteralPath;
+  stripControlCharacters: typeof stripControlCharacters;
+  strayKind: typeof strayKind;
+  LARGE_OUTPUT_MAX_BUFFER: number;
 }
+const originalRoomGitCommandPorts = new WeakMap<object, OriginalRoomGitCommandPorts>();
+const roomGitMapGet = WeakMap.prototype.get;
+const roomGitMapSet = WeakMap.prototype.set;
+const roomGitApply = Reflect.apply;
+const roomGitFreeze = Object.freeze;
+const originalRoomGitCommandKey = roomGitFreeze({});
 
-/**
- * The absolute git directory backing a checkout.
- *
- * For a linked worktree this is `<repo>/.git/worktrees/<name>`, which is where
- * that worktree's own `index` lives — the file whose mtime says when anything
- * was last staged, committed or refreshed in it.
- *
- * @param checkoutDir - The checkout to ask.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function absoluteGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
-  return runGit(['rev-parse', '--absolute-git-dir'], checkoutDir, ceilingDir);
+/** Reject every caller that does not hold the original module-private command key. */
+export function readOriginalRoomGitCommandPorts(owner: object): OriginalRoomGitCommandPorts {
+  const ports = roomGitApply(roomGitMapGet, originalRoomGitCommandPorts, [owner]);
+  if (!ports) throw new Error('Original Room Git command owner required.');
+  return ports;
 }
+roomGitApply(roomGitMapSet, originalRoomGitCommandPorts, [
+  originalRoomGitCommandKey,
+  roomGitFreeze({
+    runOwnedGit,
+    runReadGitRaw,
+    runReadGit,
+    requireRevisionOperand,
+    requireRepoRelativeMutationPath,
+    requireRoomFileLiteralPath,
+    stripControlCharacters,
+    strayKind,
+    LARGE_OUTPUT_MAX_BUFFER,
+  }),
+]);
 
-/**
- * The git directory shared by a repo and every worktree of it.
- *
- * `info/exclude` lives here (git's `common_list` maps `info` to the common
- * directory), so one write covers the main checkout and every standing
- * worktree at once.
- *
- * @param checkoutDir - Any checkout of the repo.
- * @param ceilingDir - The room home directory the search may not climb past.
- */
-export async function commonGitDir(checkoutDir: string, ceilingDir: string): Promise<string> {
-  const dir = await runGit(['rev-parse', '--git-common-dir'], checkoutDir, ceilingDir);
-  return path.resolve(checkoutDir, dir);
-}
+const originalObservations = createOriginalRoomGitObservationsFamily(originalRoomGitCommandKey);
+/** Original finite readRoomForegroundMaintenance operation, retaining its private native launcher. */
+export const readRoomForegroundMaintenance: typeof originalObservations.readRoomForegroundMaintenance =
+  originalObservations.readRoomForegroundMaintenance;
+/** Original finite readRoomWorkingDiff operation, retaining its private native launcher. */
+export const readRoomWorkingDiff: typeof originalObservations.readRoomWorkingDiff =
+  originalObservations.readRoomWorkingDiff;
+/** Original finite readRoomWorktreeRegistration operation, retaining its private native launcher. */
+export const readRoomWorktreeRegistration: typeof originalObservations.readRoomWorktreeRegistration =
+  originalObservations.readRoomWorktreeRegistration;
+/** Original finite fastForwardRoomWorktree operation, retaining its private native launcher. */
+export const fastForwardRoomWorktree: typeof originalObservations.fastForwardRoomWorktree =
+  originalObservations.fastForwardRoomWorktree;
+/** Original finite roomStatusRaw operation, retaining its private native launcher. */
+export const roomStatusRaw: typeof originalObservations.roomStatusRaw =
+  originalObservations.roomStatusRaw;
+/** Original finite roomTrackedPathsRaw operation, retaining its private native launcher. */
+export const roomTrackedPathsRaw: typeof originalObservations.roomTrackedPathsRaw =
+  originalObservations.roomTrackedPathsRaw;
+/** Original finite roomHiddenUntrackedRaw operation, retaining its private native launcher. */
+export const roomHiddenUntrackedRaw: typeof originalObservations.roomHiddenUntrackedRaw =
+  originalObservations.roomHiddenUntrackedRaw;
+/** Original finite roomVerifiedTip operation, retaining its private native launcher. */
+export const roomVerifiedTip: typeof originalObservations.roomVerifiedTip =
+  originalObservations.roomVerifiedTip;
+/** Original finite roomSymbolicHead operation, retaining its private native launcher. */
+export const roomSymbolicHead: typeof originalObservations.roomSymbolicHead =
+  originalObservations.roomSymbolicHead;
+/** Original finite roomCommitCount operation, retaining its private native launcher. */
+export const roomCommitCount: typeof originalObservations.roomCommitCount =
+  originalObservations.roomCommitCount;
+/** Original finite roomChangedPathsRaw operation, retaining its private native launcher. */
+export const roomChangedPathsRaw: typeof originalObservations.roomChangedPathsRaw =
+  originalObservations.roomChangedPathsRaw;
+/** Original finite roomMergeBase operation, retaining its private native launcher. */
+export const roomMergeBase: typeof originalObservations.roomMergeBase =
+  originalObservations.roomMergeBase;
+/** Original finite roomLogRaw operation, retaining its private native launcher. */
+export const roomLogRaw: typeof originalObservations.roomLogRaw = originalObservations.roomLogRaw;
+/** Original finite roomBlobSize operation, retaining its private native launcher. */
+export const roomBlobSize: typeof originalObservations.roomBlobSize =
+  originalObservations.roomBlobSize;
+/** Original finite roomShowObject operation, retaining its private native launcher. */
+export const roomShowObject: typeof originalObservations.roomShowObject =
+  originalObservations.roomShowObject;
+/** Original finite readRoomFileTreeRaw operation, retaining its private native launcher. */
+export const readRoomFileTreeRaw: typeof originalObservations.readRoomFileTreeRaw =
+  originalObservations.readRoomFileTreeRaw;
+/** Original finite readRoomFileContentRaw operation, retaining its private native launcher. */
+export const readRoomFileContentRaw: typeof originalObservations.readRoomFileContentRaw =
+  originalObservations.readRoomFileContentRaw;
+/** Original finite readRoomFileProvenanceRaw operation, retaining its private native launcher. */
+export const readRoomFileProvenanceRaw: typeof originalObservations.readRoomFileProvenanceRaw =
+  originalObservations.readRoomFileProvenanceRaw;
+/** Original finite readRoomFileBlobRaw operation, retaining its private native launcher. */
+export const readRoomFileBlobRaw: typeof originalObservations.readRoomFileBlobRaw =
+  originalObservations.readRoomFileBlobRaw;
+/** Original finite readRoomFileCommitRaw operation, retaining its private native launcher. */
+export const readRoomFileCommitRaw: typeof originalObservations.readRoomFileCommitRaw =
+  originalObservations.readRoomFileCommitRaw;
+
+const originalCheckout = createOriginalRoomGitCheckoutFamily(originalRoomGitCommandKey);
+/** Original finite initRepo operation, retaining its private native launcher. */
+export const initRepo: typeof originalCheckout.initRepo = originalCheckout.initRepo;
+/** Original finite hasMainBranch operation, retaining its private native launcher. */
+export const hasMainBranch: typeof originalCheckout.hasMainBranch = originalCheckout.hasMainBranch;
+/** Original finite hasLocalBranch operation, retaining its private native launcher. */
+export const hasLocalBranch: typeof originalCheckout.hasLocalBranch =
+  originalCheckout.hasLocalBranch;
+/** Original finite commitAll operation, retaining its private native launcher. */
+export const commitAll: typeof originalCheckout.commitAll = originalCheckout.commitAll;
+/** Original finite stagePaths operation, retaining its private native launcher. */
+export const stagePaths: typeof originalCheckout.stagePaths = originalCheckout.stagePaths;
+/** Original finite hasStagedChanges operation, retaining its private native launcher. */
+export const hasStagedChanges: typeof originalCheckout.hasStagedChanges =
+  originalCheckout.hasStagedChanges;
+/** Original finite commitStaged operation, retaining its private native launcher. */
+export const commitStaged: typeof originalCheckout.commitStaged = originalCheckout.commitStaged;
+/** Original finite listStrayChanges operation, retaining its private native launcher. */
+export const listStrayChanges: typeof originalCheckout.listStrayChanges =
+  originalCheckout.listStrayChanges;
+/** Original finite isIgnored operation, retaining its private native launcher. */
+export const isIgnored: typeof originalCheckout.isIgnored = originalCheckout.isIgnored;
+/** Original finite pathsInHead operation, retaining its private native launcher. */
+export const pathsInHead: typeof originalCheckout.pathsInHead = originalCheckout.pathsInHead;
+/** Original finite restoreFromHead operation, retaining its private native launcher. */
+export const restoreFromHead: typeof originalCheckout.restoreFromHead =
+  originalCheckout.restoreFromHead;
+/** Original finite unstagePaths operation, retaining its private native launcher. */
+export const unstagePaths: typeof originalCheckout.unstagePaths = originalCheckout.unstagePaths;
+/** Original finite hasUncommittedChanges operation, retaining its private native launcher. */
+export const hasUncommittedChanges: typeof originalCheckout.hasUncommittedChanges =
+  originalCheckout.hasUncommittedChanges;
+/** Original finite commitsAheadOfMain operation, retaining its private native launcher. */
+export const commitsAheadOfMain: typeof originalCheckout.commitsAheadOfMain =
+  originalCheckout.commitsAheadOfMain;
+
+const originalWorktree = createOriginalRoomGitWorktreeFamily(originalRoomGitCommandKey);
+/** Original finite addWorktree operation, retaining its private native launcher. */
+export const addWorktree: typeof originalWorktree.addWorktree = originalWorktree.addWorktree;
+/** Original finite removeWorktree operation, retaining its private native launcher. */
+export const removeWorktree: typeof originalWorktree.removeWorktree =
+  originalWorktree.removeWorktree;
+/** Original finite pruneWorktrees operation, retaining its private native launcher. */
+export const pruneWorktrees: typeof originalWorktree.pruneWorktrees =
+  originalWorktree.pruneWorktrees;
+/** Original finite deleteMergedBranch operation, retaining its private native launcher. */
+export const deleteMergedBranch: typeof originalWorktree.deleteMergedBranch =
+  originalWorktree.deleteMergedBranch;
+
+const originalHistory = createOriginalRoomGitHistoryFamily(originalRoomGitCommandKey);
+/** Original finite headCommittedAt operation, retaining its private native launcher. */
+export const headCommittedAt: typeof originalHistory.headCommittedAt =
+  originalHistory.headCommittedAt;
+/** Original finite aheadBehind operation, retaining its private native launcher. */
+export const aheadBehind: typeof originalHistory.aheadBehind = originalHistory.aheadBehind;
+/** Original finite listTree operation, retaining its private native launcher. */
+export const listTree: typeof originalHistory.listTree = originalHistory.listTree;
+/** Original finite readBlob operation, retaining its private native launcher. */
+export const readBlob: typeof originalHistory.readBlob = originalHistory.readBlob;
+/** Original finite shortstat operation, retaining its private native launcher. */
+export const shortstat: typeof originalHistory.shortstat = originalHistory.shortstat;
+/** Original finite revParse operation, retaining its private native launcher. */
+export const revParse: typeof originalHistory.revParse = originalHistory.revParse;
+/** Original finite currentBranch operation, retaining its private native launcher. */
+export const currentBranch: typeof originalHistory.currentBranch = originalHistory.currentBranch;
+/** Original finite mergeNoFf operation, retaining its private native launcher. */
+export const mergeNoFf: typeof originalHistory.mergeNoFf = originalHistory.mergeNoFf;
+/** Original finite absoluteGitDir operation, retaining its private native launcher. */
+export const absoluteGitDir: typeof originalHistory.absoluteGitDir = originalHistory.absoluteGitDir;
+/** Original finite commonGitDir operation, retaining its private native launcher. */
+export const commonGitDir: typeof originalHistory.commonGitDir = originalHistory.commonGitDir;

@@ -1,322 +1,392 @@
 /**
- * A room turn stands in its agent's home and is granted the room's files —
- * end to end, over real git (spec `agent-home-desk` §5.1, §11 "Integration").
- *
- * The real store, the real repo service, the real worktree manager, the real
- * trigger dispatcher, and a real temporary DorkOS home sitting INSIDE another
- * git repository — the dev layout, which is also the trap layout. Only the turn
- * runner stands in, because the alternative is a model call; what the runner
- * hands the runtime is pinned in `__tests__/room-turn-runner.test.ts`.
- *
- * The claims:
- *
- * 1. A project room's turn stands at home (`cwd === agentPath`, invariant I4)
- *    and is granted exactly its copy, the room's shared tree read-only, and the
- *    parts of `.git` a commit writes.
- * 2. A room with no files of its own grants nothing and makes no copy.
- * 3. The files the model is told about are under the folder it stands in — the
- *    agent's home — and the files section names the copy it was granted.
- * 4. Nothing about the busy ceilings moved, and the reap still sees a live turn
- *    working on a copy it only reaches by path.
+ * A Room turn stands at its agent's home and reaches its own Room copy through
+ * exact grants. Real Git, the original owning HTTP composition, original Room
+ * trigger/runner and constructor-owned TestMode native entry are exercised.
+ * Only model output is local TestMode output; copied runner/request DTOs never
+ * authorize placement. The temporary installation remains inside another Git
+ * repository, preserving the original discovery trap.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, realpathSync } from 'node:fs';
-import { access, mkdtemp, mkdir, readdir, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
-import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { randomUUID } from 'node:crypto';
+import { sessionMetadata } from '@dorkos/db';
+import request from '@dorkos/test-utils/supertest';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { LocalRoomAttachmentStore } from '../../attachments/local-room-attachment-store.js';
-import { projectRoomAttachments } from '../../attachments/attachment-projection.js';
+import { setRoomAttachmentStores } from '../../attachments/attachment-stores.js';
+import { projectedAttachmentPath } from '../../attachments/attachment-paths.js';
+import { configManager } from '../../../core/config-manager.js';
+import { runtimeRegistry, readOriginalRegisteredRuntime } from '../../../core/runtime-registry.js';
+import { interactionGate } from '../../../runtimes/test-mode/interaction-gate.js';
 import {
-  agentLookupFor,
-  createRoomHarness,
-  gatedRunner,
-  scriptedRunner,
-  settleUntil,
-  type RoomHarness,
-  type ScriptedTurnRunner,
-} from '../../__tests__/room-test-harness.js';
-import { RoomRepoStore } from '../room-repo-store.js';
-import { RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomRepoService } from '../room-repo-service.js';
+  readTestModeOriginalPlacementOptions,
+  readTestModeOriginalPreparedRoomContext,
+  readTestModeOriginalScenarioCounts,
+} from '../../../runtimes/test-mode/test-mode-runtime.js';
+import { scenarioStore } from '../../../runtimes/test-mode/scenario-store.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  peekProjector,
+} from '../../../session/session-state-projector.js';
+import { isTurnInFlight } from '../../../session/message-dispatcher.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { runGit } from '../room-repo-git.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { createOriginalNativeLaunchFixture } from './room-original-native-launch-fixture.js';
+import {
+  fixtureGit as runGit,
+  removeFixtureTree,
+  silenceGitAutoMaintenance,
+} from './fixture-git.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+type Fixture = Awaited<ReturnType<typeof createOriginalNativeLaunchFixture>>;
+type Target = Awaited<ReturnType<Fixture['bootNativePair']>>[number];
+type ObservedTurn = {
+  entryId: string;
+  cwd: string;
+  agentPath: string;
+  worktree: string | null;
+  additionalDirectories: readonly Readonly<{ path: string; access: 'read' | 'write' }>[];
+  roomContext: RoomContextData;
+};
 
 describe('a room turn stands at home with the room’s files granted', () => {
   let scratch: string;
-  let dorkHome: string;
-  let anaPath: string;
-  let boPath: string;
-  let harness: RoomHarness;
-  let repos: RoomRepoService;
-  let manager: RoomWorktreeManager;
-  let repoStore: RoomRepoStore;
-  /** The agent workspace paths holding a live room claim — the reap's gate. */
-  let busyAgentPaths: string[];
-
-  /**
-   * Stand the whole thing up around one runner.
-   *
-   * The manager is reached through a thunk exactly as production reaches it:
-   * it needs the claim map the room service owns, so it cannot exist before the
-   * service does.
-   */
-  function standUp(runner: ScriptedTurnRunner): void {
-    harness = createRoomHarness({
-      agents: agentLookupFor({
-        // **`mention-only`, both of them, on purpose.** Two agents on `always`
-        // answer each other's replies, so the number of turns a message
-        // produces stops being a property of the test — which is how a suite
-        // acquires assertions that usually hold. Here every turn is one this
-        // test asked for by name.
-        [anaPath]: { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
-        [boPath]: { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
-      }),
-      runner,
-      worktrees: () => manager,
-    });
-    repoStore = new RoomRepoStore(harness.db, dorkHome);
-    repos = new RoomRepoService({
-      store: repoStore,
-      mutex: new RoomRepoMutex(),
-      queueWaitMs: () => 5000,
-      enabled: () => true,
-      getRoom: (roomId) => harness.store.getRoom(roomId),
-      // The harness's `human` is the owner, and enabling a repo is operator-only.
-      isOwnerAuthor: (authorId) => authorId === harness.human,
-      operatorGitName: () => 'Dorian',
-      pinRoomMd: () => {},
-      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    manager = new RoomWorktreeManager({
-      store: repoStore,
-      hasRepo: (roomId) => repos.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => repos.listStrandedWorktrees(roomId),
-      reapAfterDays: () => 14,
-      // Wired exactly as `index.ts` wires it — off the live claim map — so the
-      // reap gate below is the production one and not a fixture.
-      busyAgentPaths: () => [...busyAgentPaths, ...harness.service.listBusyAgentPaths()],
-    });
-  }
-
-  /** A channel both agents are in, optionally with files of its own. */
-  async function openRoom(title: string, withRepo: boolean): Promise<RoomWithRoster> {
-    const room = harness.service.createRoom(
-      { kind: 'channel', title, members: [], agentPaths: [anaPath, boPath] },
-      harness.human
-    );
-    if (withRepo) await repos.enable(room.id, harness.human);
-    return room;
-  }
+  let native: Awaited<ReturnType<typeof createOriginalNativeLaunchFixture>>;
+  let acquired: boolean;
+  let nativeConstructionAttempted: boolean;
+  let targets: Awaited<ReturnType<typeof native.bootNativePair>>;
+  let nowMs: number;
+  let otherRoomId: string | undefined;
+  let otherSessionId: string | undefined;
+  const observations = new Map<
+    string,
+    { sessionId: string; controller: AbortController; stream: AsyncIterable<SessionEvent> }
+  >();
+  const observationClosures = new Set<Promise<void>>();
+  const turns: ObservedTurn[] = [];
+  const launches: Array<Readonly<{ sessionId: string; roomId: string }>> = [];
 
   beforeEach(async () => {
-    // Before anything makes a repo: keep git's detached maintenance child from
-    // racing this suite's teardown into the directory. See `fixture-git.ts`.
+    acquired = false;
+    nativeConstructionAttempted = false;
+    otherRoomId = undefined;
+    otherSessionId = undefined;
+    turns.length = 0;
+    launches.length = 0;
     silenceGitAutoMaintenance();
-    // The DorkOS home sits inside a git repository on purpose — the trap layout.
-    scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-cwd-'));
+    scratch = await mkdtemp(path.join(await realpath(tmpdir()), 'dorkos-room-cwd-'));
     await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
-    await writeFile(path.join(scratch, '.gitignore'), '*\n', 'utf-8');
+    await writeFile(path.join(scratch, '.gitignore'), '*\n');
     await runGit(['add', '-f', '.gitignore'], scratch, scratch);
     await runGit(
       ['-c', 'user.name=E', '-c', 'user.email=e@dorkos.local', 'commit', '-q', '-m', 'base'],
       scratch,
       scratch
     );
-    dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-    anaPath = path.join(scratch, 'agents', 'ana');
-    boPath = path.join(scratch, 'agents', 'bo');
-    await mkdir(anaPath, { recursive: true });
-    await mkdir(boPath, { recursive: true });
-    busyAgentPaths = [];
+    nowMs = Date.now();
+    nativeConstructionAttempted = true;
+    native = await createOriginalNativeLaunchFixture({
+      seed: false,
+      homeParent: scratch,
+      now: () => nowMs,
+      maintenance: true,
+      observeOriginalLaunch: (data) => launches.push(data),
+    });
+    acquired = true;
+    configManager.set('rooms', { ...configManager.get('rooms'), maxConcurrentTurnsPerAgent: 1 });
+    targets = await native.bootNativePair();
   });
 
   afterEach(async () => {
-    vi.unstubAllEnvs();
-    await removeFixtureTree(scratch);
+    // Start same-owner cancellation for the extra Room before the original
+    // fixture joins its own native and file owners. Any uncertain close keeps
+    // the enclosing root; no copied token or signal substitutes for closure.
+    let failed = false,
+      first: unknown;
+    const remember = (cause: unknown) => {
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    };
+    // A rejected constructor preserves setup cause even if its owned close fails.
+    // Retain the enclosing root unless construction never began or close joins.
+    // Abort and join only our read-only streams before cancelling native owners.
+    for (const observation of observations.values()) observation.controller.abort();
+    await Promise.all(observationClosures);
+    observations.clear();
+    let closed = !nativeConstructionAttempted;
+    if (acquired) {
+      const selected = runtimeRegistry.get('claude-code');
+      const stops = [
+        Promise.resolve().then(() => {
+          if (!otherRoomId) return;
+          return native.subsystem.service.haltRoom(otherRoomId, native.operator.id);
+        }),
+        Promise.resolve().then(() => {
+          if (!otherSessionId) return;
+          return selected?.interruptQuery(otherSessionId);
+        }),
+      ];
+      for (const result of await Promise.allSettled(stops))
+        if (result.status === 'rejected') remember(result.reason);
+      try {
+        await native.close();
+        closed = true;
+      } catch (cause) {
+        remember(cause);
+      }
+      if (closed && otherSessionId) {
+        try {
+          scenarioStore.clearSession(otherSessionId);
+          disposeProjector(otherSessionId);
+        } catch (cause) {
+          remember(cause);
+        }
+      }
+    }
+    try {
+      vi.unstubAllEnvs();
+    } catch (cause) {
+      remember(cause);
+    }
+    if (closed && !failed) {
+      try {
+        await removeFixtureTree(scratch);
+      } catch (cause) {
+        remember(cause);
+      }
+    }
+    if (failed) throw first;
   });
 
-  /** Ana's worktree in `roomId`, as the manager names it. */
-  function anaWorktree(roomId: string): string {
-    return path.join(repoStore.worktreesPath(roomId), RoomWorktreeManager.slugFor('Ana', anaPath));
+  const ana = () => targets[0]!;
+  const bo = () => targets[1]!;
+  const copyFor = (target: Target) =>
+    path.join(
+      native.repos.worktreesPath(native.roomId),
+      RoomWorktreeManager.slugFor(target === ana() ? 'Ana' : 'Bo', target.agentPath)
+    );
+
+  async function enable(): Promise<void> {
+    const response = await request(native.server)
+      .post(`/api/rooms/${native.roomId}/repo`)
+      .set('Authorization', `Bearer ${native.ownerKey.key}`);
+    expect(response.status).toBe(201);
+  }
+
+  function post(target: Target, text: string, roomId = native.roomId, attachmentIds?: string[]) {
+    const sessionId = roomId === native.roomId ? target.sessionId : otherSessionId;
+    expect(sessionId).toBeDefined();
+    // The original trigger feeds this same projector. Capture its cursor BEFORE
+    // posting; durable replay retains events even if observe starts after launch.
+    const projector = getOrCreateProjector(sessionId!, target.agentPath, { persist: 'history' });
+    const controller = new AbortController();
+    const stream = projector.subscribe(projector.getCursor(), controller.signal);
+    try {
+      const entry = native.subsystem.service.post(roomId, {
+        authorId: native.operator.id,
+        mentions: [target.authorId],
+        text,
+        ...(attachmentIds ? { attachmentIds } : {}),
+      });
+      observations.set(entry.id, { sessionId: sessionId!, controller, stream });
+      return entry;
+    } catch (cause) {
+      controller.abort();
+      throw cause;
+    }
+  }
+
+  async function observe(
+    target: Target,
+    entryId: string,
+    sessionId = target.sessionId
+  ): Promise<ObservedTurn> {
+    const selected = runtimeRegistry.get('claude-code');
+    expect(selected).toBeDefined();
+    const original = readOriginalRegisteredRuntime(selected!);
+    expect(original).toBeDefined();
+    const observation = observations.get(entryId);
+    expect(observation?.sessionId).toBe(sessionId);
+    if (!observation) throw new Error('Original Room observation was not captured before post.');
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+    observationClosures.add(closed);
+    try {
+      let ready = false;
+      for await (const event of observation.stream) {
+        if (
+          interactionGate.isOpen(sessionId) &&
+          readTestModeOriginalPlacementOptions(original!, sessionId) !== undefined &&
+          readTestModeOriginalPreparedRoomContext(original!, sessionId)?.triggerEntryId === entryId
+        ) {
+          // Opening events precede warm-echo's awaitStep registration. Observe
+          // that same original gate's queued barrier without consuming a step.
+          await interactionGate.waitForStep(sessionId, observation.controller.signal);
+          ready = true;
+          break;
+        }
+        if (event.type === 'error') throw new Error(event.message);
+        if (event.type === 'turn_end')
+          throw new Error(
+            `Original Room turn ended before native readiness: ${event.terminalReason ?? 'closed'}`
+          );
+      }
+      if (!ready) throw new Error('Original Room readiness stream closed before native entry.');
+      expect(interactionGate.isOpen(sessionId)).toBe(true);
+      expect(readTestModeOriginalPlacementOptions(original!, sessionId)).toBeDefined();
+      expect(readTestModeOriginalPreparedRoomContext(original!, sessionId)?.triggerEntryId).toBe(
+        entryId
+      );
+    } finally {
+      observation.controller.abort();
+      observations.delete(entryId);
+      resolveClosed();
+      observationClosures.delete(closed);
+    }
+    const options = readTestModeOriginalPlacementOptions(original!, sessionId)!;
+    const roomContext = readTestModeOriginalPreparedRoomContext(original!, sessionId)!;
+    expect(options.cwd).toBe(target.agentPath);
+    expect(options.forAgent).toBe(target.agentPath);
+    const observed = {
+      entryId,
+      cwd: options.cwd!,
+      agentPath: options.forAgent!,
+      worktree: roomContext.files?.worktreePath ?? null,
+      additionalDirectories: options.additionalDirectories ?? [],
+      roomContext,
+    };
+    turns.push(observed);
+    return observed;
+  }
+
+  async function turn(
+    target: Target,
+    text: string,
+    attachmentIds?: string[]
+  ): Promise<ObservedTurn> {
+    native.holdNativeSession(target.sessionId);
+    const entry = post(target, text, native.roomId, attachmentIds);
+    const observed = await observe(target, entry.id);
+    await native.finishNativeSession(target.sessionId);
+    return observed;
   }
 
   it('stands the turn at home and grants the agent’s copy of the room’s files', async () => {
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await harness.service.triggersIdle();
-
-    expect(runner.turns).toHaveLength(1);
-    const turn = runner.turns[0]!;
-    // Invariant I4: the agent's home, never its copy, never `repo/`.
-    expect(turn.cwd).toBe(anaPath);
-    expect(turn.agentPath).toBe(anaPath);
-    expect(turn.worktree).toBe(anaWorktree(room.id));
-    // A real checkout, on its own branch, not just a directory name.
-    await expect(runGit(['branch', '--show-current'], turn.worktree!, dorkHome)).resolves.toBe(
-      `room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`
-    );
-    // Grants are realpath-resolved (a symlinked `/var` spelling would not match
-    // what a backend compares), so the expectation is too.
-    const repoDir = realpathSync(repoStore.repoPath(room.id));
-    const gitDir = path.join(repoDir, '.git');
-    expect(turn.additionalDirectories).toEqual([
-      { path: realpathSync(anaWorktree(room.id)), access: 'write' },
-      { path: repoDir, access: 'read' },
-      { path: path.join(gitDir, 'objects'), access: 'write' },
-      { path: path.join(gitDir, 'refs', 'heads', 'room'), access: 'write' },
-      { path: path.join(gitDir, 'logs', 'refs', 'heads', 'room'), access: 'write' },
-      {
-        path: path.join(gitDir, 'worktrees', RoomWorktreeManager.slugFor('Ana', anaPath)),
-        access: 'write',
-      },
+    await enable();
+    const observed = await turn(ana(), 'What is left?');
+    expect(turns).toHaveLength(1);
+    expect(observed.cwd).toBe(ana().agentPath);
+    expect(observed.agentPath).toBe(ana().agentPath);
+    expect(observed.worktree).toBe(copyFor(ana()));
+    const slug = RoomWorktreeManager.slugFor('Ana', ana().agentPath);
+    await expect(
+      runGit(['branch', '--show-current'], observed.worktree!, native.repos.homeDir(native.roomId))
+    ).resolves.toBe(`room/${slug}`);
+    const repo = realpathSync(native.repos.repoPath(native.roomId));
+    const git = path.join(repo, '.git');
+    expect(observed.additionalDirectories).toEqual([
+      { path: realpathSync(copyFor(ana())), access: 'write' },
+      { path: repo, access: 'read' },
+      { path: path.join(git, 'objects'), access: 'write' },
+      { path: path.join(git, 'refs', 'heads', 'room'), access: 'write' },
+      { path: path.join(git, 'logs', 'refs', 'heads', 'room'), access: 'write' },
+      { path: path.join(git, 'worktrees', slug), access: 'write' },
     ]);
-    // And a launch step, which the dispatcher runs when the turn launches.
-    expect(typeof turn.prepareLaunch).toBe('function');
+    // A real original native entry consumed the protected preparation, rather
+    // than merely receiving a copied prepareLaunch callback from a fake runner.
+    expect(launches).toEqual([{ sessionId: ana().sessionId, roomId: native.roomId }]);
   });
 
   it('leaves a room with no files of its own exactly where it was', async () => {
-    // The regression pin. Before the cwd rung a room turn ran in the agent's own
-    // directory, full stop; for every room that has not been given files, it
-    // still does, and nothing about the answer is derived from a worktree.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Backend', false);
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await harness.service.triggersIdle();
-
-    expect(runner.turns).toHaveLength(1);
-    const turn = runner.turns[0]!;
-    expect(turn.cwd).toBe(anaPath);
-    expect(turn.cwd).toBe(turn.agentPath);
-    expect(turn.additionalDirectories).toEqual([]);
-    expect(turn.worktree).toBeNull();
-    expect(turn.prepareLaunch).toBeUndefined();
-    expect(existsSync(repoStore.worktreesPath(room.id))).toBe(false);
+    const observed = await turn(ana(), 'What is left?');
+    expect(turns).toHaveLength(1);
+    expect(observed.cwd).toBe(ana().agentPath);
+    expect(observed.cwd).toBe(observed.agentPath);
+    expect(observed.additionalDirectories).toEqual([]);
+    expect(observed.worktree).toBeNull();
+    expect(observed.roomContext).not.toHaveProperty('files');
+    expect(existsSync(native.repos.worktreesPath(native.roomId))).toBe(false);
   });
 
   it('tells the turn where its own copy is, and how far the room has moved', async () => {
-    // Spec §3.7 end to end. The files section names the copy the turn was just
-    // granted, never the folder it stands in.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await harness.service.triggersIdle();
-
-    const files = runner.turns[0]!.roomContext?.files;
+    await enable();
+    const observed = await turn(ana(), 'What is left?');
+    const files = observed.roomContext.files;
     expect(files).toBeDefined();
-    expect(files!.worktreePath).toBe(anaWorktree(room.id));
-    expect(files!.worktreePath).toBe(runner.turns[0]!.worktree);
-    expect(files!.worktreePath).not.toBe(runner.turns[0]!.cwd);
-    expect(files!.repoPath).toBe(repoStore.repoPath(room.id));
-    expect(files!.branch).toBe(`room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`);
-    // A tree just branched off `main` is level with it in both directions.
+    expect(files!.worktreePath).toBe(copyFor(ana()));
+    expect(files!.worktreePath).toBe(observed.worktree);
+    expect(files!.worktreePath).not.toBe(observed.cwd);
+    expect(files!.repoPath).toBe(native.repos.repoPath(native.roomId));
+    expect(files!.branch).toBe(`room/${RoomWorktreeManager.slugFor('Ana', ana().agentPath)}`);
     expect(files).toMatchObject({ ahead: 0, behind: 0 });
   });
 
   it('counts the commits the room gained while an agent was away', async () => {
-    // The number the section exists for: "sync before you edit" is advice
-    // without it, because an agent cannot see what landed on `main` from inside
-    // its own tree.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    // First turn: Ana's worktree is created off main.
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await harness.service.triggersIdle();
-
-    // The room moves on without her — two commits on `main`, as a merge would
-    // leave it.
-    const repoDir = repoStore.repoPath(room.id);
+    await enable();
+    await turn(ana(), 'What is left?');
+    const repo = native.repos.repoPath(native.roomId);
+    // The ordinary launch fast-forwards a clean copy. Keep genuine local work
+    // so the original refresh holds it and reports the two commits still owed.
+    const localPath = path.join(copyFor(ana()), 'ROOM.md');
+    const localDraft = (await readFile(localPath, 'utf8')) + '\nAgent work not yet committed.\n';
+    await writeFile(localPath, localDraft);
     for (const name of ['CHECKLIST.md', 'NOTES.md']) {
-      await writeFile(path.join(repoDir, name), `# ${name}\n`, 'utf-8');
-      await runGit(['add', name], repoDir, dorkHome);
+      await writeFile(path.join(repo, name), `# ${name}\n`);
+      await runGit(['add', name], repo, native.repos.homeDir(native.roomId));
       await runGit(
         ['-c', 'user.name=E', '-c', 'user.email=e@dorkos.local', 'commit', '-q', '-m', name],
-        repoDir,
-        dorkHome
+        repo,
+        native.repos.homeDir(native.roomId)
       );
     }
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana and now?' });
-    await harness.service.triggersIdle();
-
-    const forAna = runner.turns.filter((turn) => turn.agentPath === anaPath);
-    expect(forAna.at(-1)!.roomContext?.files).toMatchObject({ behind: 2, ahead: 0 });
+    const observed = await turn(ana(), 'And now?');
+    expect(observed.roomContext.files).toMatchObject({
+      behind: 2,
+      ahead: 0,
+      refresh: { kind: 'held', reason: 'changes' },
+    });
+    expect(await readFile(localPath, 'utf8')).toBe(localDraft);
   });
 
   it('tells a room with no files of its own nothing about files', async () => {
-    // The additive promise: a conversation-only room renders a context
-    // byte-identical to the one it rendered before this field existed.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Backend', false);
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await harness.service.triggersIdle();
-
-    expect(runner.turns[0]!.roomContext).not.toHaveProperty('files');
+    const observed = await turn(ana(), 'What is left?');
+    expect(observed.roomContext).not.toHaveProperty('files');
   });
 
   it('gives each agent its own working copy, and reuses it across turns', async () => {
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    // Waited out to IDLE rather than to a turn count: the second message lands
-    // while Ana may still be holding her claim, in which case it is held and run
-    // afterwards (RP8) — so "two turns have happened" is a moment, not a settled
-    // state. The assertions below count turns PER AGENT for the same reason
-    // rather than in total: an agent that was mentioned once carries an engaged
-    // window afterwards, so how many turns a second message produces is the
-    // engagement rules' business and not this test's.
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana @bo what is left?' });
-    await harness.service.triggersIdle();
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana and now?' });
-    await harness.service.triggersIdle();
-
-    const forAna = runner.turns.filter((turn) => turn.agentPath === anaPath);
-    const forBo = runner.turns.filter((turn) => turn.agentPath === boPath);
+    await enable();
+    await turn(ana(), 'What is left?');
+    await turn(bo(), 'What is left?');
+    await turn(ana(), 'And now?');
+    const forAna = turns.filter((entry) => entry.agentPath === ana().agentPath);
+    const forBo = turns.filter((entry) => entry.agentPath === bo().agentPath);
     expect(forAna.length).toBeGreaterThanOrEqual(2);
     expect(forBo.length).toBeGreaterThanOrEqual(1);
-    // One tree per agent, standing across turns — a second turn must not mint a
-    // second checkout, or an agent would lose its uncommitted work every time
-    // somebody spoke to it.
-    expect(new Set(forAna.map((turn) => turn.worktree)).size).toBe(1);
+    expect(new Set(forAna.map((entry) => entry.worktree)).size).toBe(1);
     expect(forAna[0]!.worktree).not.toBe(forBo[0]!.worktree);
-    expect(new Set(forAna.map((turn) => turn.cwd))).toEqual(new Set([anaPath]));
-    expect(await readdir(repoStore.worktreesPath(room.id))).toHaveLength(2);
+    expect(new Set(forAna.map((entry) => entry.cwd))).toEqual(new Set([ana().agentPath]));
+    expect(await readdir(native.repos.worktreesPath(native.roomId))).toHaveLength(2);
   });
 
   it('puts the file the model is told about under the folder it stands in: its home', async () => {
-    // DOR-1266 end to end (spec `agent-home-desk` §5.4). The context names an
-    // ABSOLUTE path; the projector plans a RELATIVE one and joins it to the
-    // turn's own directory — the agent's home, room files or not.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    const attachments = new LocalRoomAttachmentStore(dorkHome);
-    const { url } = await attachments.put(room.id, 'att1', 'txt', Buffer.from('the notes'));
-    harness.attachments.create(
+    await enable();
+    const attachments = new LocalRoomAttachmentStore(native.dir);
+    const { url } = await attachments.put(native.roomId, 'att1', 'txt', Buffer.from('the notes'));
+    native.subsystem.attachments.create(
       {
-        roomId: room.id,
+        roomId: native.roomId,
         id: 'att1',
-        authorId: harness.human,
+        authorId: native.operator.id,
         name: 'notes.txt',
         extension: 'txt',
         mimeType: 'text/plain',
@@ -324,139 +394,115 @@ describe('a room turn stands at home with the room’s files granted', () => {
         preview: null,
         url,
       },
-      '2026-08-27T10:00:00.000Z'
+      new Date().toISOString()
     );
-    harness.service.post(room.id, {
-      authorId: harness.human,
-      text: '@ana read this',
-      attachmentIds: ['att1'],
-    });
-    await harness.service.triggersIdle();
-    expect(runner.turns).toHaveLength(1);
-
-    const turn = runner.turns[0]!;
-    // Exactly what the production runner does, with exactly what it is handed.
-    await projectRoomAttachments({
-      store: () => attachments,
-      roomId: room.id,
-      cwd: turn.cwd,
-      attachments: turn.attachmentProjection,
-    });
-
-    // The plan the dispatcher made, and the path it must resolve to from where
-    // the turn stands.
-    expect(turn.attachmentProjection).toHaveLength(1);
-    const landed = path.join(turn.cwd, turn.attachmentProjection[0]!.relativePath);
-    // Under the agent's HOME, and provably not in its copy of the room's files,
-    // which would dirty the copy and could be merged into the room.
-    expect(landed.startsWith(anaPath + path.sep)).toBe(true);
-    expect(landed.startsWith(anaWorktree(room.id) + path.sep)).toBe(false);
-    // The bytes really are there.
+    setRoomAttachmentStores({ attachments, rows: native.subsystem.attachments });
+    const observed = await turn(ana(), 'Read this.', ['att1']);
+    expect(turns).toHaveLength(1);
+    expect(observed.roomContext.triggerAttachments).toHaveLength(1);
+    const landed = path.join(
+      observed.cwd,
+      projectedAttachmentPath(observed.entryId, 'att1', 'notes.txt')
+    );
+    expect(landed.startsWith(ana().agentPath + path.sep)).toBe(true);
+    expect(landed.startsWith(copyFor(ana()) + path.sep)).toBe(false);
     await expect(access(landed)).resolves.toBeUndefined();
-    // And that exact string is what the model was handed — read back out of the
-    // RENDERED block, not the structured data behind it.
-    const block = formatRoomContext(turn.roomContext, { nonce: 'aaaa1111' });
-    expect(block).toContain(landed);
+    await expect(readFile(landed, 'utf8')).resolves.toBe('the notes');
+    expect(formatRoomContext(observed.roomContext, { nonce: 'aaaa1111' })).toContain(landed);
   });
 
   it('still holds another room’s message while the agent works in a worktree', async () => {
-    // Spec §5 Q6: no relaxation. The second ceiling is one working tree per
-    // AGENT, and it is keyed on `agentPath` — its home, where it stands.
-    // An agent mid-turn in a project room is still busy everywhere else, and the
-    // waiting message is HELD rather than refused (`room-hold-when-busy`).
-    const runner = gatedRunner({});
-    standUp(runner);
-    const project = await openRoom('Release train', true);
-    const other = await openRoom('Backend', false);
-
-    harness.service.post(project.id, { authorId: harness.human, text: '@ana what is left?' });
-    await settleUntil(() => runner.turns.length === 1, 'Ana started work in the project room');
-    // She really is working on the room's copy — otherwise this test would pass
-    // for the ordinary reason and prove nothing.
-    expect(runner.turns[0]!.worktree).toBe(anaWorktree(project.id));
-
-    harness.service.post(other.id, { authorId: harness.human, text: '@ana and here?' });
-    await settleUntil(
-      () => harness.service.listHolds().length === 1,
-      'the second room’s message was held'
+    await enable();
+    const other = native.subsystem.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Backend',
+        members: [],
+        agentPaths: [ana().agentPath],
+      },
+      native.operator.id
     );
-    expect(runner.turns).toHaveLength(1);
-
-    // And the hold is released by the claim, not by anything about directories.
-    runner.releaseAll();
-    await settleUntil(() => runner.turns.length === 2, 'the held message ran');
-    expect(runner.turns[1]!.roomId).toBe(other.id);
-    expect(runner.turns[1]!.cwd).toBe(anaPath);
-    expect(runner.turns[1]!.worktree).toBeNull();
-    runner.releaseAll();
+    // Distinct genuine sessions for the same actual agent make this the
+    // per-agent ceiling, rather than a same-session runtime-lock test.
+    otherRoomId = other.id;
+    otherSessionId = randomUUID();
+    native.db
+      .insert(sessionMetadata)
+      .values({
+        sessionId: otherSessionId,
+        agentPath: ana().agentPath,
+        runtime: 'claude-code',
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    const selected = runtimeRegistry.get('claude-code');
+    expect(selected).toBeDefined();
+    selected!.ensureSession(otherSessionId, { cwd: ana().agentPath, permissionMode: 'default' });
+    expect(
+      native.subsystem.store.bindRoomSession(
+        other.id,
+        ana().authorId,
+        otherSessionId,
+        new Date().toISOString()
+      )
+    ).toBe(otherSessionId);
+    const beforeNative = readTestModeOriginalScenarioCounts(selected!);
+    expect(beforeNative).toBeDefined();
+    const nativeStarts = beforeNative!.scenarioStarts;
+    scenarioStore.setForSession(otherSessionId, 'warm-echo');
+    expect(otherSessionId).not.toBe(ana().sessionId);
+    native.holdNativeSession(ana().sessionId);
+    const first = post(ana(), 'What is left?');
+    const observed = await observe(ana(), first.id);
+    expect(observed.worktree).toBe(copyFor(ana()));
+    const second = post(ana(), 'And here?', other.id);
+    await vi.waitFor(() => expect(native.subsystem.service.listHolds()).toHaveLength(1));
+    expect(launches).toHaveLength(1);
+    expect(readTestModeOriginalScenarioCounts(selected!)).toEqual({
+      scenarioStarts: nativeStarts + 1,
+    });
+    expect(native.subsystem.service.listBusyAgentPaths()).toContain(ana().agentPath);
+    // Release the first actual stream without joining the room-wide idle drain:
+    // that drain includes the held successor, which must get its own barrier.
+    expect(interactionGate.step(ana().sessionId)).toBe(true);
+    const next = await observe(ana(), second.id, otherSessionId);
+    // The callback observes copy-refresh launches only; this no-files Room
+    // correctly has none. Count both actual once-start native entries instead.
+    expect(launches).toHaveLength(1);
+    expect(readTestModeOriginalScenarioCounts(selected!)).toEqual({
+      scenarioStarts: nativeStarts + 2,
+    });
+    expect(next.roomContext.room.id).toBe(other.id);
+    expect(next.cwd).toBe(ana().agentPath);
+    expect(next.worktree).toBeNull();
+    expect(interactionGate.step(otherSessionId)).toBe(true);
+    await native.subsystem.service.triggersIdle();
+    scenarioStore.clearSession(ana().sessionId);
+    scenarioStore.clearSession(otherSessionId);
+    await vi.waitFor(() => {
+      for (const id of [ana().sessionId, otherSessionId!]) {
+        expect(isTurnInFlight(id, selected!)).toBe(false);
+        expect(peekProjector(id)?.getStatus().lifecycle).toBe('idle');
+      }
+    });
+    expect(native.subsystem.service.listHolds()).toEqual([]);
   });
 
   it('spares an ancient worktree that a live turn is working on', async () => {
-    // The 2.1 gate. A turn that only READS its copy leaves no mark on any date
-    // source the sweep can see, so without the claim map the reap would delete
-    // the copy the turn was granted. This
-    // drives it through the real claim map: the turn is mid-flight, held open,
-    // while the sweep runs.
-    const runner = gatedRunner({});
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-
-    // Age MAIN before the turn, so the worktree branches from an already-old
-    // commit — `lastTouchedAt` reads HEAD's committer date, and a tree branched
-    // from a commit made seconds ago can never look idle however its mtimes are
-    // backdated.
-    const when = new Date(Date.now() - 40 * DAY_MS);
-    vi.stubEnv('GIT_COMMITTER_DATE', when.toISOString());
-    vi.stubEnv('GIT_AUTHOR_DATE', when.toISOString());
-    await runGit(
-      [
-        // **Identity inline, never the machine's.** An `--amend` needs a
-        // COMMITTER, and a CI runner has no global `user.name`/`user.email` at
-        // all — this failed there while passing on every developer machine,
-        // which is the whole failure mode of leaning on ambient git config.
-        // `--no-edit` keeps the original author, so this only names the
-        // committer, and it names the same operator that made the commit.
-        '-c',
-        'user.name=Dorian',
-        '-c',
-        'user.email=operator@dorkos.local',
-        'commit',
-        '--amend',
-        '--no-edit',
-        '--quiet',
-      ],
-      repoStore.repoPath(room.id),
-      repoStore.homeDir(room.id)
-    );
-    // Drops the two date stubs — and the maintenance belt with them, since it is
-    // stubbed too, so it is put straight back for the rest of this test.
-    vi.unstubAllEnvs();
-    silenceGitAutoMaintenance();
-
-    harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
-    await settleUntil(() => runner.turns.length === 1, 'Ana started work');
-    const worktree = runner.turns[0]!.worktree!;
-    expect(worktree).toBe(anaWorktree(room.id));
-
-    // And age every mtime the sweep reads, so the ONLY thing keeping this tree
-    // is the live claim. That is the directory and its top-level entries — the
-    // git index is deliberately NOT among them (the sweep's own reads would
-    // refresh it), so there is nothing else to backdate here.
-    for (const name of await readdir(worktree)) {
-      await utimes(path.join(worktree, name), when, when).catch(() => undefined);
-    }
-    await utimes(worktree, when, when);
-
-    // The claim is live right now — this is the join the reap makes.
-    expect(harness.service.listBusyAgentPaths()).toContain(anaPath);
-
-    const swept = await manager.reapRoom(room.id);
-
-    expect(swept.reaped).toEqual([]);
-    expect(swept.spared).toEqual([RoomWorktreeManager.slugFor('Ana', anaPath)]);
-    expect(existsSync(worktree)).toBe(true);
-
-    runner.releaseAll();
-    await settleUntil(() => harness.service.listBusyAgentPaths().length === 0, 'the turn ended');
+    await enable();
+    native.holdNativeSession(ana().sessionId);
+    const entry = post(ana(), 'What is left?');
+    const observed = await observe(ana(), entry.id);
+    expect(observed.worktree).toBe(copyFor(ana()));
+    // The original manager's injected epoch advances beyond every actual commit
+    // and mtime while the genuine native claim remains held. No fake busy DTO.
+    nowMs += 40 * DAY_MS;
+    expect(native.subsystem.service.listBusyAgentPaths()).toContain(ana().agentPath);
+    expect(native.reconciler).toBeDefined();
+    const swept = await native.reconciler!.reconcile();
+    expect(swept.worktrees).toEqual({ reaped: 0, reapedTreeKeptBranch: 0, spared: 1, stranded: 0 });
+    expect(existsSync(observed.worktree!)).toBe(true);
+    await native.finishNativeSession(ana().sessionId);
+    expect(native.subsystem.service.listBusyAgentPaths()).toEqual([]);
   });
 });

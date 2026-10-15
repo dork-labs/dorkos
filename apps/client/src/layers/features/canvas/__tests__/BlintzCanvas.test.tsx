@@ -154,7 +154,7 @@ describe('BlintzCanvas public source callbacks', () => {
     mounted.unmount();
     expect(originalPort.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'disposed' });
   });
-  it('preserves the genuine package unavailable result for model-mismatched heading input', async () => {
+  it('refuses a different heading source without replacing the genuine mapped model', async () => {
     editorControl.real = true;
     let port: MarkdownSourcePort | undefined;
     const onSourceReady: NonNullable<MarkdownEditorProps['onSourceReady']> = (next) => {
@@ -169,11 +169,13 @@ describe('BlintzCanvas public source callbacks', () => {
       />
     );
     await waitFor(() => expect(port).toBeDefined());
-    expect(port!.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'unmapped' });
+    expect(port!.snapshot()).toMatchObject({ kind: 'mapped', value: { text: '# raw' } });
+    const original = port!.snapshot();
     let rebound: ReturnType<MarkdownSourcePort['bindSource']> | undefined;
     act(() => {
-      rebound = port!.bindSource('# raw', port!.generation());
+      rebound = port!.bindSource('# different heading', port!.generation());
     });
     expect(rebound).toMatchObject({ kind: 'unavailable', reason: 'model-mismatch' });
+    expect(port!.snapshot()).toEqual(original);
   });
 });

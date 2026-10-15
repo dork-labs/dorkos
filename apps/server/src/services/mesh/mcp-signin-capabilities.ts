@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { defineCapability, type CapabilityDefinition } from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { mcpOAuthCustodyDisclosure } from './agent-mcp-oauth-service.js';
-import { McpSigninStartError } from './mcp-signin-failure.js';
+import { McpSigninStartError } from './capabilities/mcp-signin-failure.js';
 import {
   AgentServerInput,
   agentIdField,
@@ -24,7 +24,7 @@ import {
   requireOAuth,
   resolveOAuthServerUrl,
   serverNameField,
-} from './mcp-capability-deps.js';
+} from './capabilities/mcp-capability-deps.js';
 
 /**
  * Re-raise a failed sign-in start as the caller-facing error shape: the plain

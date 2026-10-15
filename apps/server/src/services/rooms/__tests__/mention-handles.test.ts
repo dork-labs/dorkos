@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import type { AuthorRef, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { HANDLE_PATTERN } from '@dorkos/shared/handle';
-import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgent, RoomAgentLookup } from '../data/room-errors.js';
 import { createRoomHarness, scriptedRunner, type RoomHarness } from './room-test-harness.js';
 
 /**

@@ -1,17 +1,168 @@
+import {
+  createIsolatedClaudePreparationViews,
+  createIsolatedClaudeRelayConstructionViews,
+} from './custody/claude-private-view-custody.js';
+import {
+  createIsolatedClaudeCommandCacheCustody,
+  type OriginalClaudeCommands,
+} from './custody/claude-command-cache-custody.js';
+import * as originalClaudeCommandOperations from './custody/claude-command-cache-custody.js';
+const originalClaudeCommands = createIsolatedClaudeCommandCacheCustody();
+const originalClaudeCommandFreeze = Object.freeze;
+/** Read only the original runtime instance's command view using its inaccessible constructor key. */
+export function readOriginalClaudeCommandView(key: object): Readonly<OriginalClaudeCommands> {
+  return originalClaudeCommands.read(key);
+}
+
+import {
+  createIsolatedClaudeSessionQueryCustody,
+  type OriginalClaudeSessionQueries,
+} from './custody/claude-session-query-custody.js';
+import * as originalClaudeSessionQueryOperations from './custody/claude-session-query-custody.js';
+const originalClaudeSessionQueries = createIsolatedClaudeSessionQueryCustody();
+const originalClaudeSessionQueryFreeze = Object.freeze;
+/** Read only the original runtime instance's query view using its inaccessible constructor key. */
+export function readOriginalClaudeSessionQueryView(
+  key: object
+): Readonly<OriginalClaudeSessionQueries> {
+  return originalClaudeSessionQueries.read(key);
+}
+
+import {
+  createIsolatedClaudeNativeCustody,
+  type ClaudePreparedRoomContinuation,
+  type PluginReloadActivityPort,
+} from './custody/claude-native-custody.js';
+import { createIsolatedClaudeRelayCustody } from './custody/claude-relay-custody.js';
+import type { OriginalClaudeRelayClosedTurn } from './custody/claude-relay-custody.js';
+import '../../core/turn-power/turn-levels.js';
+import '../../session/session-state-projector.js';
+import { readOriginalRoomLaunchHolder } from '../../session/trigger-turn.js';
+import '../../session/projection/session-event-normalizer.js';
+import '../../session/projection/session-event-normalizer.js';
+
+import './messaging/relay/relay-sdk-launch.js';
+import '../../canvas/doc-channel/delivery/relay-authority.js';
+import type {
+  OriginalFrozenRelayDocumentSource,
+  PreparedRelayDocumentResponder,
+} from '../../canvas/doc-channel/delivery/relay-native-types.js';
+const {
+  claudeRelayDriverStops,
+  claudeRelayDrivers,
+  claudeRelayPreparers,
+  claudeRelayPrepared,
+  originalRelayLaunchPreparations,
+  originalClaudeRelayProjectionStreams,
+  originalRelayClosedTurns,
+  originalRelayClosedTurnReaders,
+  stopClaudeOriginalRelayDocumentDrive,
+  driveClaudeOriginalRelayDocument,
+  readOriginalClaudeRelayProjectionProjector,
+  observeOriginalClaudeRelayProjection,
+  observeOriginalClaudeRelayTerminalProjection,
+  readOriginalClaudeRelayClosedTurn,
+  readOriginalClaudeRelayClosedTurnData,
+  readOriginalClaudeRelayProjectedTurnStart,
+  requireOriginalClaudeRelayQueryStart,
+  commitOriginalClaudeRelayQueryStart,
+  sendClaudeOriginalRelayDocument,
+  prepareClaudeOriginalRelayDocument,
+  readClaudePreparedRelayDocument,
+  requireClaudeOriginalRelayPreparedTuple,
+  claimClaudeOriginalRelayDocument,
+  retireClaudePreparedRelayDocument,
+} = createIsolatedClaudeRelayCustody((operation) => readClaudeNativeOperation(operation));
+export {
+  stopClaudeOriginalRelayDocumentDrive,
+  driveClaudeOriginalRelayDocument,
+  readOriginalClaudeRelayProjectionProjector,
+  observeOriginalClaudeRelayProjection,
+  observeOriginalClaudeRelayTerminalProjection,
+  readOriginalClaudeRelayClosedTurn,
+  readOriginalClaudeRelayClosedTurnData,
+  readOriginalClaudeRelayProjectedTurnStart,
+  requireOriginalClaudeRelayQueryStart,
+  commitOriginalClaudeRelayQueryStart,
+  sendClaudeOriginalRelayDocument,
+  prepareClaudeOriginalRelayDocument,
+  readClaudePreparedRelayDocument,
+  requireClaudeOriginalRelayPreparedTuple,
+  claimClaudeOriginalRelayDocument,
+  retireClaudePreparedRelayDocument,
+};
+export type { OriginalClaudeRelayClosedTurn } from './custody/claude-relay-custody.js';
+
+import { readOriginalRegisteredRuntime } from '../../core/runtime-registry.js';
+const {
+  originalClaudeLockedStreams,
+  originalClaudeRoomStreams,
+  claudeLockMoves,
+  claudeLockedRunners,
+  claudeRoomPreparers,
+  claudeRoomQuerySessions,
+  claudeRoomPrepared,
+  claudeOriginalStores,
+  originalClaudePersistentRequests,
+  claudeOriginalLaunchAliases,
+  claudeNativeConstructors,
+  claudeNativeOperations,
+  claudeRuntimeEntries,
+  claudeOriginalSessionOperations,
+  readClaudeOriginalLockedStream,
+  readClaudeOriginalLockedTurnOptions,
+  retireClaudeOriginalRoomResponderStream,
+  readClaudeOriginalRoomResponderStream,
+  moveClaudeOriginalLockedAcquisition,
+  sendClaudeOriginalLockedMessage,
+  requireOriginalClaudeRoomQueryStart,
+  prepareClaudeOriginalLockedRoomResponder,
+  retireClaudePreparedRoomResponder,
+  readClaudePreparedRoomResponder,
+  startClaudeCommittedRoomResponder,
+  readOriginalClaudeRoomPersistentRequest,
+  requireOriginalClaudeRoomPersistentEffect,
+  requireOriginalClaudePersistentSession,
+  isClaudeOriginalRoomLaunchAlias,
+  captureClaudeOriginalQueryCurrent,
+  readClaudeNativeOperation,
+} = createIsolatedClaudeNativeCustody();
+export {
+  readClaudeOriginalLockedStream,
+  readClaudeOriginalLockedTurnOptions,
+  retireClaudeOriginalRoomResponderStream,
+  readClaudeOriginalRoomResponderStream,
+  moveClaudeOriginalLockedAcquisition,
+  sendClaudeOriginalLockedMessage,
+  requireOriginalClaudeRoomQueryStart,
+  prepareClaudeOriginalLockedRoomResponder,
+  retireClaudePreparedRoomResponder,
+  readClaudePreparedRoomResponder,
+  startClaudeCommittedRoomResponder,
+  readOriginalClaudeRoomPersistentRequest,
+  requireOriginalClaudeRoomPersistentEffect,
+  requireOriginalClaudePersistentSession,
+  isClaudeOriginalRoomLaunchAlias,
+  captureClaudeOriginalQueryCurrent,
+  readClaudeNativeOperation,
+};
+export type { PluginReloadActivityPort } from './custody/claude-native-custody.js';
+export { buildTaskEvent } from './sdk/build-task-event.js';
+import '@dorkos/shared/run-outcome';
+import './sessions/persistent-dispatch.js';
+import '../../session/trigger-turn.js';
+import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
+import '../../canvas/doc-channel/operations/room-current-operation.js';
+import type {
+  OriginalFrozenRoomSource,
+  PreparedRoomResponder,
+} from '../../canvas/doc-channel/current/current-operation-types.js';
+import './sessions/session-store.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
-/**
- * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
- *
- * Thin facade that coordinates SessionStore, RuntimeCache, TranscriptReader,
- * SessionLockManager, and CommandRegistryService.
- *
- * @module services/runtimes/claude-code/claude-code-runtime
- */
-import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { setAccountProbeBinaryResolver } from './accounts/account-probe.js';
 import path from 'path';
-import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
-import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
+
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
@@ -52,103 +203,123 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from './runtime-constants.js';
-import { ControlRequestTimeoutError } from './sessions/bounded-control.js';
-import { SessionStore } from './sessions/session-store.js';
+import './sessions/bounded-control.js';
+import { SessionStore, isOriginalClaudeSessionAlias } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
 import {
   PluginReloadScheduler,
-  PluginReloadSessionGoneError,
-  conversationTokens,
-  pluginReloadIsWorthHolding,
-  readCacheImpact,
   type PaidPluginReload,
   type PluginReloadCacheImpact,
 } from './messaging/plugin-reload-policy.js';
-import { SessionLockManager } from '../../session/session-lock.js';
+import {
+  SessionLockManager,
+  captureNativeSessionAcquisition,
+  isOriginalNativeSessionAcquisitionAlias,
+  type NativeSessionAcquisition,
+} from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
-import {
-  resolveClaudeBinaryBeforePath,
-  resolveClaudeCliPath,
-  createIdlePrompt,
-} from './sdk/sdk-utils.js';
-import {
-  claudeConfigDirEnv,
-  resolveActiveClaudeRoot,
-  resolveLaunchAccountRoot,
-  accountIdForRoot,
-  type LaunchAccountResolution,
-} from './claude-config-dir.js';
-import { isCreditsClaudeRoot } from './credits-root.js';
-import {
-  endSessionsWhere,
-  stopCreditsSessions,
-  sweepEvictedSessions,
-  type SessionEndingPort,
-} from './end-sessions.js';
-import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
-import {
-  asCreditsStopped,
-  creditsStoppedEvent,
-  onCreditsSession,
-} from './messaging/credits-launch.js';
-import { withClaudeConfigDir } from './claude-config-env-lock.js';
+import { resolveClaudeBinaryBeforePath, resolveClaudeCliPath } from './sdk/sdk-utils.js';
+import { type LaunchAccountResolution } from './claude-config-dir.js';
+import './credits-root.js';
+import '@dorkos/shared/runtime-error-classification';
+import './messaging/credits-launch.js';
+import './claude-config-env-lock.js';
+import { endSessionsWhere, type SessionEndingPort } from './end-sessions.js';
 import { logger } from '../../../lib/logger.js';
-import { SESSIONS } from '../../../config/constants.js';
+import '../../../config/constants.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
-import { attachTranscriptImages } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
-import { executeSdkQuery } from './messaging/message-sender.js';
+import './messaging/message-sender.js';
 import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { BackgroundWorkLedger } from './messaging/background-work-ledger.js';
-import { watchSessionList } from './sessions/session-list-watcher.js';
-import {
-  homeOf,
-  readHomeManifest,
-  resolveAgentHome,
-  turnAgentOf,
-} from '../../core/agent-identity/index.js';
-import { eventFanOut } from '../../core/event-fan-out.js';
-import { projectOfFolder } from '../../core/usage/account-eligibility.js';
-import { checkClaudeLaunchAccount } from './launch-account-check.js';
-import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
-import {
-  getOrCreateProjector,
-  overlayApprovalReceipts,
-  overlayModelSubstitutions,
-  overlayAgentCompactions,
-  overlayPermissionDenials,
-  peekProjector,
-  streamGenerationOf,
-} from '../../session/index.js';
-import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
+import './sessions/session-list-watcher.js';
+import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
+import '../../core/event-fan-out.js';
+import '../../core/usage/account-eligibility.js';
+import './launch-account-check.js';
+import { peekProjector } from '../../session/session-state-projector.js';
+import '../../session/overlays/approval-receipt-overlay.js';
+import '../../session/overlays/permission-denial-overlay.js';
+import '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
-
-/**
- * Where a plugin reload that cost something goes to be remembered.
- *
- * Best-effort by contract: it is handed a fact and must never throw one back —
- * a feed that cannot be written is not a reason for a reload to fail.
- */
-export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
+import '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
-import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
-import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 
-export { buildTaskEvent } from './sdk/build-task-event.js';
+import './connector-turn-context.js';
+import {
+  refreshActivatedPlugins,
+  reloadCommandsForLiveSessions,
+  reloadPlugins,
+} from './operations/claude-plugin-refresh-operations.js';
+import {
+  interruptQuery,
+  checkSessionHealth,
+} from './operations/claude-session-health-operations.js';
+import {
+  accountRootForSession,
+  checkLaunchAccount,
+  hasSettledAccount,
+  renameSession,
+} from './operations/claude-account-session-operations.js';
+import {
+  approveTool,
+  submitAnswers,
+  submitElicitation,
+} from './operations/claude-interaction-answer-operations.js';
+import {
+  deliverIntoTurn,
+  isHelperWorking,
+  stopCreditsSessions,
+  reapSession,
+} from './operations/claude-live-turn-operations.js';
+import { buildSenderOpts } from './operations/claude-sender-options-operations.js';
+import {
+  reportMcpAuthFailures,
+  broadcastCommandsChanged,
+  recordPaidPluginReload,
+  forgetProjectCommands,
+} from './operations/claude-runtime-notification-operations.js';
+import { createMessage, sendOwnedMessage } from './operations/claude-owned-message-production.js';
+import { installNativeTurn } from './operations/claude-native-turn-installation.js';
+import { prepareRelayDocument } from './operations/claude-relay-document-preparation.js';
+import { prepareRoomResponder } from './operations/claude-room-responder-preparation.js';
+import type {
+  OriginalClaudeNativeInstallation,
+  OriginalClaudeNativePreparationView,
+} from './custody/claude-native-preparation-contracts.js';
+import { projectOriginalClaudePreparationView } from './custody/claude-preparation-view-projection.js';
+import { projectOriginalClaudeSessionQueryView } from './custody/claude-session-query-view-projection.js';
+import { projectOriginalClaudeCommandCacheView } from './custody/claude-command-cache-view-projection.js';
+import { projectOriginalClaudeRelayView } from './custody/claude-relay-view-projection.js';
+import {
+  recheckHeldReload,
+  applyHeldReload,
+  resolveReloadableSession,
+} from './operations/claude-held-plugin-reload-operations.js';
+import { createClaudeIntrospectionSession } from './custody/claude-introspection-session-data.js';
+const originalClaudePreparationCustody = createIsolatedClaudePreparationViews();
+const originalClaudePreparationFreeze = Object.freeze;
+/** Resolve only the original runtime's inaccessible native preparation key before any effects. */
+export const readOriginalClaudeNativePreparationView = originalClaudePreparationCustody.read;
 
-/**
- * Claude Code runtime implementing the universal AgentRuntime interface.
- *
- * Manages Claude Agent SDK sessions — creation, resumption, streaming, tool approval,
- * and session locking. Delegates to focused collaborators for session state (SessionStore),
- * SDK response caching (RuntimeCache), transcript reading, broadcasting, and locking.
- */
+import { assembleOriginalClaudeRelayConstruction } from './operations/claude-relay-construction.js';
+import type { OriginalClaudeRelayConstructionView } from './custody/claude-relay-construction-contracts.js';
+const originalClaudeRelayConstructionCustody = createIsolatedClaudeRelayConstructionViews();
+const originalClaudeRelayConstructionFreeze = Object.freeze;
+/** Read only the actual runtime constructor's private relay assembly view. */
+export const readOriginalClaudeRelayConstructionView = originalClaudeRelayConstructionCustody.read;
+
+/** Run Claude Code sessions with their original SDK and native turn lifetimes. */
 export class ClaudeCodeRuntime implements AgentRuntime {
+  readonly #relayConstructionKey = originalClaudeRelayConstructionFreeze({});
+  readonly #nativePreparationKey = originalClaudePreparationFreeze({});
+  readonly #commandCacheKey = originalClaudeCommandFreeze({});
+  readonly #sessionQueryKey = originalClaudeSessionQueryFreeze({});
   readonly type = 'claude-code' as const;
 
   // Collaborators
@@ -175,7 +346,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * {@link pumps}'s SAME resolver, so the two structures can never learn about
    * a rekey at different times.
    */
-  private readonly persistent = new PersistentDispatch(
+  readonly #persistent = new PersistentDispatch(
     this.pumps,
     (id) => this.sessionStore.sessionKeyOf(id),
     (sessionId, impact, contextTokens) =>
@@ -205,7 +376,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly ending: SessionEndingPort = {
     sessionStore: this.sessionStore,
     pumps: this.pumps,
-    persistent: this.persistent,
+    persistent: this.#persistent,
     lockManager: this.lockManager,
     pluginReloads: this.pluginReloads,
     interruptQuery: (id) => this.interruptQuery(id),
@@ -287,7 +458,67 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    *   declares `mediaOutput: 'none'` and says so per image rather than dropping
    *   one quietly — see {@link getCapabilities}.
    */
+  readonly #roomPreparing = new Map<string, { retired: boolean }>();
+
   constructor(dorkHome: string, cwd?: string, attachments?: SessionAttachmentStore) {
+    claudeNativeConstructors.add(this);
+    const originalLocks = this.lockManager;
+    claudeOriginalStores.set(this, this.sessionStore);
+    const originalStore = this.sessionStore;
+    claudeOriginalLaunchAliases.set(this, (request, retiredId) => {
+      const launch = readOriginalRoomLaunchHolder(request);
+      if (
+        !launch ||
+        (readOriginalRegisteredRuntime(launch.runtime) ?? launch.runtime) !== this ||
+        !isOriginalClaudeSessionAlias(originalStore, retiredId, launch.key)
+      )
+        return false;
+      const acquisition = captureNativeSessionAcquisition(originalLocks, launch.key, launch.holder);
+      return (
+        !!acquisition &&
+        isOriginalNativeSessionAcquisitionAlias(
+          originalLocks,
+          acquisition,
+          launch.holder,
+          launch.key,
+          retiredId
+        ) &&
+        readOriginalRoomLaunchHolder(request) === launch &&
+        isOriginalClaudeSessionAlias(originalStore, retiredId, launch.key)
+      );
+    });
+    /** Build the fixed relay callback view inside its original runtime constructor. */
+    function createOriginalClaudeRelayConstructionView(
+      owner: ClaudeCodeRuntime
+    ): Readonly<OriginalClaudeRelayConstructionView> {
+      return projectOriginalClaudeRelayView({
+        runtime: owner,
+        originalLocks,
+        connectorRuntimeTools: () => owner.connectorRuntimeTools,
+        relayPreparing: () => owner.#relayPreparing,
+        claudeRelayDriverStops,
+        claudeRelayDrivers,
+        claudeRelayPreparers,
+        claudeRelayPrepared,
+        originalRelayClosedTurns,
+        originalRelayClosedTurnReaders,
+        claudeRoomPreparers,
+        claudeLockMoves,
+        claudeRuntimeEntries,
+        claudeLockedRunners,
+        prepareRelayDocument: (source, target, acquisition) =>
+          owner.#prepareRelayDocument(source, target, acquisition),
+        prepareRoomResponder: (source, target, acquisition) =>
+          owner.#prepareRoomResponder(source, target, acquisition),
+        createMessage: (sessionId, content, opts, acquisition, roomOrigin, roomPrepared) =>
+          owner.#createMessage(sessionId, content, opts, acquisition, roomOrigin, roomPrepared),
+      });
+    }
+    originalClaudeRelayConstructionCustody.register(
+      this.#relayConstructionKey,
+      createOriginalClaudeRelayConstructionView(this)
+    );
+    assembleOriginalClaudeRelayConstruction(this.#relayConstructionKey);
     this.attachments = attachments ?? null;
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
@@ -299,10 +530,140 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cache.setClaudeCliPath(this.claudeCliPath);
     // The account probe spawns too; it runs the binary a session would.
     setAccountProbeBinaryResolver(() => this.spawnBinaryPath);
-    this.transcriptReader = new TranscriptReader({
-      attachImages: (sessionId, messages, images) =>
-        attachTranscriptImages(this.attachments, sessionId, messages, images),
-    });
+    this.transcriptReader = originalClaudeSessionQueryOperations.newReader(() => this.attachments);
+    /** Build the original fixed query view inside its owning runtime constructor. */
+    function createClaudeSessionQueryView(
+      owner: ClaudeCodeRuntime
+    ): Readonly<OriginalClaudeSessionQueries> {
+      return projectOriginalClaudeSessionQueryView({
+        owner,
+        transcriptReader: () => owner.transcriptReader,
+        sessionStore: () => owner.sessionStore,
+        cwd: () => owner.cwd,
+        attachments: () => owner.attachments,
+        getInternalSessionId: () => owner.getInternalSessionId,
+        resolveLiveProjector: () => owner.resolveLiveProjector,
+        getMessageHistory: () => owner.getMessageHistory,
+        streamProjector: () => owner.streamProjector,
+      });
+    }
+    originalClaudeSessionQueries.register(
+      this.#sessionQueryKey,
+      createClaudeSessionQueryView(this)
+    );
+    /** Build the original fixed command-cache view inside its owning runtime constructor. */
+    function createClaudeCommandCacheView(
+      owner: ClaudeCodeRuntime
+    ): Readonly<OriginalClaudeCommands> {
+      return projectOriginalClaudeCommandCacheView({
+        owner,
+        cache: () => owner.cache,
+        cwd: () => owner.cwd,
+        warmingCwds: () => owner.warmingCwds,
+        warmFailedAt: () => owner.warmFailedAt,
+        activatedPlugins: () => owner.activatedPlugins,
+        spawnBinaryPath: () => owner.spawnBinaryPath,
+        commandRegistries: () => owner.commandRegistries,
+        MAX_COMMAND_REGISTRIES: () => ClaudeCodeRuntime.MAX_COMMAND_REGISTRIES,
+        WARM_FAILURE_COOLDOWN_MS: () => ClaudeCodeRuntime.WARM_FAILURE_COOLDOWN_MS,
+        WARM_TIMEOUT_MS: () => ClaudeCodeRuntime.WARM_TIMEOUT_MS,
+        getOrCreateRegistry: () => owner.getOrCreateRegistry,
+        warmCommands: () => owner.warmCommands,
+        recordWarmFailure: () => owner.recordWarmFailure,
+        broadcastCommandsChanged: () => owner.broadcastCommandsChanged,
+      });
+    }
+    originalClaudeCommands.register(this.#commandCacheKey, createClaudeCommandCacheView(this));
+    /** Build the fixed native preparation view inside its original runtime constructor. */
+    function createOriginalClaudePreparationView(
+      owner: ClaudeCodeRuntime
+    ): OriginalClaudeNativePreparationView {
+      return projectOriginalClaudePreparationView({
+        owner,
+        runtime: owner,
+        cache: () => owner.cache,
+        lockManager: () => owner.lockManager,
+        pluginReloads: () => owner.pluginReloads,
+        pumps: () => owner.pumps,
+        activatedPlugins: () => owner.activatedPlugins,
+        writeActivatedPlugins: (value) => {
+          owner.activatedPlugins = value;
+        },
+        broadcastCommandsChanged: () => owner.broadcastCommandsChanged,
+        forgetProjectCommands: () => owner.forgetProjectCommands,
+        reloadCommandsForLiveSessions: () => owner.reloadCommandsForLiveSessions,
+        recordPaidPluginReload: () => owner.recordPaidPluginReload,
+        notifyInteractionResolved: () => owner.notifyInteractionResolved,
+        interruptQuery: () => owner.interruptQuery,
+        attachments: () => owner.attachments,
+        adapterManager: () => owner.adapterManager,
+        bindingRouter: () => owner.bindingRouter,
+        bindingStore: () => owner.bindingStore,
+        mcpServerFactory: () => owner.mcpServerFactory,
+        spawnBinaryPath: () => owner.spawnBinaryPath,
+        mcpAuthEvidence: () => owner.mcpAuthEvidence,
+        pluginReloadActivity: () => owner.pluginReloadActivity,
+        warmFailedAt: () => owner.warmFailedAt,
+        connectorAgentFor: (cwdKey, turnAgent) => owner.#connectorAgentFor(cwdKey, turnAgent),
+        reportMcpAuthFailures: () => owner.reportMcpAuthFailures,
+        getOrCreateRegistry: () => owner.getOrCreateRegistry,
+        sessionStore: () => owner.sessionStore,
+        reloadableSession: () => owner.reloadableSession,
+        accountsAccess: () => owner.accountsAccess,
+        originalClaudeLockedStreams,
+        originalClaudeRoomStreams,
+        originalClaudePersistentRequests,
+        connectorRuntimeTools: () => owner.connectorRuntimeTools,
+        meshCore: () => owner.meshCore,
+        transcriptReader: () => owner.transcriptReader,
+        cwd: () => owner.cwd,
+        persistent: () => owner.#persistent,
+        ending: () => owner.ending,
+        relayPreparing: () => owner.#relayPreparing,
+        roomPreparing: () => owner.#roomPreparing,
+        claudeRuntimeEntries,
+        claudeOriginalStores,
+        claudeRoomQuerySessions,
+        claudeNativeConstructors,
+        claudeNativeOperations,
+        claudeOriginalSessionOperations,
+        claudeRoomPrepared,
+        claudeRelayPrepared,
+        originalRelayLaunchPreparations,
+        sendOwnedMessage: (sessionId, content, opts, lifetime) =>
+          owner.#sendOwnedMessage(sessionId, content, opts, lifetime),
+        installNativeTurn: (
+          sessionId,
+          session,
+          cwdKey,
+          agentPath,
+          meshAgent,
+          acquisition,
+          refuseExisting,
+          roomOrigin,
+          relayOwner
+        ) =>
+          owner.#installNativeTurn(
+            sessionId,
+            session,
+            cwdKey,
+            agentPath,
+            meshAgent,
+            acquisition,
+            refuseExisting,
+            roomOrigin,
+            relayOwner
+          ),
+        buildSenderOpts: (sessionId, session, cwdKey, turnAgent) =>
+          owner.#buildSenderOpts(sessionId, session, cwdKey, turnAgent),
+        createMessage: (sessionId, content, opts, acquisition, roomOrigin, roomPrepared) =>
+          owner.#createMessage(sessionId, content, opts, acquisition, roomOrigin, roomPrepared),
+      });
+    }
+    originalClaudePreparationCustody.register(
+      this.#nativePreparationKey,
+      createOriginalClaudePreparationView(this)
+    );
   }
 
   /**
@@ -519,8 +880,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   isTurnOpen(sessionId: string): boolean {
     return (
       this.sessionStore.findSession(sessionId)?.activeQuery !== undefined ||
-      this.persistent.bootingQuery(sessionId) !== undefined ||
-      this.persistent.runtimeTurnQuery(sessionId) !== undefined
+      this.#persistent.bootingQuery(sessionId) !== undefined ||
+      this.#persistent.runtimeTurnQuery(sessionId) !== undefined
     );
   }
 
@@ -546,7 +907,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param turnAgent - The agent a turn is dispatched as, when it names one
    * @returns The agent's home and its registry entry, or `undefined`
    */
-  private connectorAgentFor(
+  #connectorAgentFor(
     cwdKey: string,
     turnAgent?: string
   ):
@@ -571,188 +932,98 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param cwdKey - The working directory the caches and command list key on
    * @param turnAgent - The agent a turn is dispatched as, when it names one
    */
-  private buildSenderOpts(
+  #buildSenderOpts(
     sessionId: string,
     session: AgentSession,
     cwdKey: string,
     turnAgent?: string
   ): MessageSenderOpts {
-    // Resolve the selected model's capabilities once: thinking config + whether it
-    // supports auto permission mode (undefined when the model isn't cached yet).
-    const modelCapability = this.cache.resolveModelCapability(session.model);
-    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
-
-    return {
-      cwd: this.cwd,
-      sessionCwd: session.cwd,
-      claudeCliPath: this.spawnBinaryPath,
-      ...(this.attachments ? { attachments: this.attachments } : {}),
-      meshCore: this.meshCore,
-      bindingRouter: this.bindingRouter,
-      bindingStore: this.bindingStore,
-      adapterManager: this.adapterManager,
-      mcpServerFactory: this.mcpServerFactory,
-      // The same answer for a turn and for a stage that warms the process the
-      // turn will ride, so the two build the same tool list (DOR-2685).
-      connectorTools: this.connectorAgentFor(cwdKey, turnAgent) !== undefined,
-      ...cacheCallbacks,
-      // Composed over the cache's own handler rather than replacing it: the
-      // per-turn status snapshot is one observation with two readers — the
-      // cache, which answers "what is connected?", and the revocation watch,
-      // which acts on the single status that means "the token you sent me was
-      // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
-      // not now, so a session that was assigned its canonical id mid-turn
-      // reports the id its projector is keyed by.
-      onMcpStatusReceived: (servers) => {
-        cacheCallbacks.onMcpStatusReceived?.(servers);
-        this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
-      },
-      // `sessionId` is the id THIS turn was asked with, which is only a hint:
-      // after the session's first rename it is an alias, not the key the
-      // store holds it under. The store resolves the real key itself.
-      onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
-        this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
-      modelThinkingCapability: modelCapability,
-      modelSupportsAutoMode: modelCapability
-        ? (modelCapability.supportsAutoMode ?? false)
-        : undefined,
-      lookupModel: (value) => this.cache.resolveModelCapability(value),
-      rememberSessionModel: (model) => this.sessionStore.rememberModel(session, sessionId, model),
-      plugins: this.activatedPlugins,
-      getKnownCommands: async () => {
-        // Cold SDK cache → null: built-ins are unknowable before the first
-        // query for this cwd, so the sender passes command-shaped content
-        // through unverified (DOR-107).
-        if (!this.cache.hasSdkCommands(cwdKey)) return null;
-        const { commands } = await this.cache.getCommands(this.getOrCreateRegistry(cwdKey), cwdKey);
-        return commands.map((c) => c.fullCommand);
-      },
-    };
+    return buildSenderOpts(this.#nativePreparationKey, sessionId, session, cwdKey, turnAgent);
   }
 
   /** @inheritdoc */
-  async *sendMessage(
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent> {
+    return this.#createMessage(sessionId, content, opts);
+  }
+
+  #createMessage(
     sessionId: string,
     content: string,
-    opts?: MessageOpts
+    opts: MessageOpts | undefined,
+    acquisition?: NativeSessionAcquisition,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
+    roomPrepared?: ClaudePreparedRoomContinuation
   ): AsyncGenerator<StreamEvent> {
-    const session = await this.sessionStore.ensureForMessage(
+    return createMessage(
+      this.#nativePreparationKey,
       sessionId,
-      this.transcriptReader,
-      this.cwd,
-      opts
+      content,
+      opts,
+      acquisition,
+      roomOrigin,
+      roomPrepared
     );
+  }
 
-    // Neither the window snapshot nor the room marker is lifted onto the session
-    // any more: the `ui` verbs are capabilities, and both facts are bound
-    // runtime-neutrally by the trigger (spec `canvas-agent-seat` §5). That is the
-    // whole of what made Codex and OpenCode unable to answer "what is on the
-    // canvas" — the answer lived on this object, which only this runtime has.
+  #installNativeTurn(
+    sessionId: string,
+    session: AgentSession,
+    cwdKey: string,
+    agentPath: string | undefined,
+    meshAgent: { id: string } | undefined,
+    acquisition?: NativeSessionAcquisition,
+    refuseExisting = false,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
+    relayOwner?: { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown }
+  ): OriginalClaudeNativeInstallation {
+    return installNativeTurn(
+      this.#nativePreparationKey,
+      sessionId,
+      session,
+      cwdKey,
+      agentPath,
+      meshAgent,
+      acquisition,
+      refuseExisting,
+      roomOrigin,
+      relayOwner
+    );
+  }
 
-    const cwdKey = opts?.cwd || session.cwd || this.cwd;
+  readonly #relayPreparing = new Map<
+    string,
+    { retired: boolean; cleanupFailed?: boolean; cleanupCause?: unknown }
+  >();
+  #prepareRelayDocument(
+    source: OriginalFrozenRelayDocumentSource,
+    target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
+    acquisition: NativeSessionAcquisition
+  ): Promise<PreparedRelayDocumentResponder | undefined> {
+    return prepareRelayDocument(this.#nativePreparationKey, source, target, acquisition);
+  }
 
-    // The agent this turn acts as: the home the folder resolves to, and never
-    // another than the turn is dispatched as (DOR-2091, DOR-2355,
-    // `core/agent-identity/agent-home.ts`). The same answer the launch resolves
-    // its token from, so the connections below and the token cannot name two
-    // different agents.
-    const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
-    const meshAgent = connectorAgent?.meshAgent;
+  #prepareRoomResponder(
+    source: OriginalFrozenRoomSource,
+    target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
+    acquisition: NativeSessionAcquisition
+  ): Promise<PreparedRoomResponder | undefined> {
+    return prepareRoomResponder(this.#nativePreparationKey, source, target, acquisition);
+  }
 
-    const connectorTurn =
-      this.connectorRuntimeTools && connectorAgent
-        ? new ClaudeConnectorTurnContext({
-            tools: this.connectorRuntimeTools,
-            canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath: connectorAgent.agentPath,
-            cwd: cwdKey,
-          })
-        : undefined;
-    session.connectorTurn = connectorTurn;
-    // Unconditionally, `false` included: a warm session a person later talks
-    // to must hold for their answer again (spec `agent-permissions` D6).
-    session.unattendedApprovals = opts?.unattendedApprovals === true;
-    // Per turn too, for the same reason: an automatic carry-over's first turn
-    // has nobody to ask, and the person who opens it next does.
-    session.unattendedTurn = opts?.unattended === true;
-    // Per turn as well, and the one of the three that bounds what the turn may
-    // DO: a turn another agent's post or a stranger's message started runs no
-    // looser than its sender (spec `trusted-by-default-flip` §4). Cleared when
-    // absent, so a person's next turn runs at the level they chose.
-    if (opts?.permissionCeiling !== undefined) {
-      session.turnPermissionCeiling = opts.permissionCeiling;
-    } else {
-      delete session.turnPermissionCeiling;
+  #sendOwnedMessage(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    lifetime: {
+      closed: boolean;
+      entered: boolean;
+      retire?: () => void;
+      acquisition?: NativeSessionAcquisition;
+      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
+      roomPrepared?: ClaudePreparedRoomContinuation;
     }
-    const accessContext =
-      connectorTurn &&
-      this.connectorRuntimeTools &&
-      meshAgent &&
-      !content.trimStart().startsWith('/')
-        ? await this.accountsAccess.select(
-            this.connectorRuntimeTools,
-            meshAgent.id,
-            session.sdkSessionId || sessionId,
-            // The connection tools and the service lookup share the in-session server.
-            { serviceCatalog: true }
-          )
-        : undefined;
-    if (accessContext)
-      opts = {
-        ...opts,
-        additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
-      };
-    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
-    let observedEvent = false;
-    let sawRuntimeError = false;
-    try {
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
-      const persistent = this.persistent.shouldDispatch(sessionId);
-      // The resume path keeps no process between turns, so a turn there can
-      // never end background work by restarting one (DOR-2065).
-      if (!persistent) opts?.dispatchHold?.proceed();
-      const stream = persistent
-        ? this.persistent.dispatch({
-            sessionId,
-            content,
-            session,
-            opts: senderOpts,
-            ...(opts !== undefined ? { messageOpts: opts } : {}),
-          })
-        : executeSdkQuery(sessionId, content, session, senderOpts, opts);
-
-      for await (const raw of stream) {
-        observedEvent = true;
-        // A credits session whose token was refused partway through is a
-        // credits problem, not the person's Claude sign-in: it surfaces as the
-        // credits card, and no "sign in to Claude again" notice is raised
-        // (ADR 261001-000811).
-        const event = onCreditsSession(session) ? asCreditsStopped(raw) : raw;
-        if (event.type === 'error') sawRuntimeError = true;
-        yield event;
-      }
-      // Only a turn that ran delivered the context: an attempt held for
-      // background work yields nothing and must not record it as seen.
-      if (observedEvent && !sawRuntimeError) {
-        accessContext?.commit(session.sdkSessionId || sessionId);
-      }
-      connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
-    } catch (error) {
-      connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
-      const message = error instanceof Error ? error.message : String(error);
-      if (onCreditsSession(session) && detectAuthError({ message })) {
-        yield creditsStoppedEvent(message);
-        return;
-      }
-      throw error;
-    } finally {
-      if (connectorTurn) {
-        if (session.connectorTurn === connectorTurn) session.connectorTurn = undefined;
-        await connectorTurn.revoke(
-          connectorTurn.cancelled ? 'turn_cancelled' : connectorRevokeReason
-        );
-      }
-    }
+  ): AsyncGenerator<StreamEvent> {
+    return sendOwnedMessage(this.#nativePreparationKey, sessionId, content, opts, lifetime);
   }
 
   /**
@@ -827,72 +1098,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * approved leaves every global plugin out. Reload failures are per session
    * and never block the others.
    */
-  async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
-    const before = this.activatedPlugins.map((plugin) => plugin.path);
-    // Built into locals and assigned ONCE, after every await: two refreshes can
-    // overlap (boot, plus a change delivered right after it), and one that read
-    // or appended to the shared list between another's awaits loaded a root
-    // twice, or mistook an extension's own root for a same-named plugin.
-    let packages: Array<{ type: 'local'; path: string }>;
-    try {
-      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { listConsentedPluginNames } =
-        await import('../../marketplace/consent/global-plugin-consent.js');
-      const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
-      const { logger } = await import('../../../lib/logger.js');
-      const dorkHome = resolveDorkHome();
-      // Only packages a person approved (or that run nothing on their own):
-      // a global package's hooks and servers start in every session (DOR-2306).
-      const enabledNames = await listConsentedPluginNames(dorkHome);
-      packages =
-        enabledNames.length === 0
-          ? []
-          : await buildClaudeAgentSdkPluginsArray({
-              dorkHome,
-              enabledPluginNames: enabledNames,
-              logger,
-            });
-    } catch {
-      // Fail closed (DOR-2306): a refresh that cannot say which global packages
-      // a person approved loads none of them, rather than keeping a list that
-      // may hold one nobody approves any more.
-      packages = [];
-    }
-    // Running global extensions' skills (DOR-2685), each from its generated
-    // plugin root. Already consented: the extension's approval to run is the
-    // consent, and the root holds skills only. Asked separately, so a ledger
-    // that cannot be read loads no extension skills and leaves the packages
-    // above as they are.
-    let skillRoots: Array<{ type: 'local'; path: string }> = [];
-    try {
-      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { extensionSkillPluginRoots } =
-        await import('../../extensions/agent-skills/running-skills-ledger.js');
-      const loaded = new Set(packages.map((plugin) => path.basename(plugin.path)));
-      const roots = await extensionSkillPluginRoots(resolveDorkHome(), loaded);
-      skillRoots = roots.map((root) => ({ type: 'local' as const, path: root }));
-    } catch {
-      // Best-effort: no extension skills this time; the next refresh asks again.
-    }
-    this.activatedPlugins = [...packages, ...skillRoots];
-
-    // Hot-reload every live session so its cached command list reflects the
-    // new plugin set instantly, then tell clients to re-fetch. Isolated from
-    // the plugin-array swap above so a reload failure never reverts it.
-    const kept = new Set(this.activatedPlugins.map((plugin) => plugin.path));
-    await this.reloadCommandsForLiveSessions({
-      mayHold: before.every((pluginPath) => kept.has(pluginPath)),
-    });
-
-    // A PROJECT-scoped install/uninstall changes which commands that project's
-    // sessions report, but only sessions launched after the change see the new
-    // plugin set — so drop the cwd's cached command list (and any warm-probe
-    // cooldown) and let the broadcast below trigger a re-warm with the merged
-    // per-cwd plugins. Runs AFTER the live-session reload, which would
-    // otherwise repopulate the cache from a session still holding the old set.
-    if (changedProjectPath) this.forgetProjectCommands(changedProjectPath);
-
-    this.broadcastCommandsChanged();
+  refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
+    return refreshActivatedPlugins(this.#nativePreparationKey, changedProjectPath);
   }
 
   /**
@@ -915,8 +1122,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** Drop a cwd's cached command list and its warm-probe cooldown. */
   private forgetProjectCommands(projectPath: string): void {
-    this.cache.clearSdkCommands(projectPath);
-    this.warmFailedAt.delete(projectPath);
+    return forgetProjectCommands(this.#nativePreparationKey, projectPath);
   }
 
   /**
@@ -938,81 +1144,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    *   waits on the cache then (the process itself is relaunched before its
    *   next turn, since a reload cannot unload a plugin).
    */
-  private async reloadCommandsForLiveSessions({ mayHold }: { mayHold: boolean }): Promise<void> {
-    const reloadable = this.sessionStore.getReloadableSessions();
-    if (reloadable.length === 0) return;
-    await Promise.all(
-      reloadable.map(async ({ sessionId, session }) => {
-        const queryObj = session.activeQuery ?? session.lastQuery;
-        if (!queryObj) return;
-        const contextTokens = conversationTokens(session);
-        if (!mayHold) {
-          // A plugin was withdrawn: never wait on the cache for it.
-          try {
-            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
-          } catch (err) {
-            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
-              sessionId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-          return;
-        }
-        try {
-          const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
-            holdOnCacheImpact: true,
-            sessionId,
-            ...(contextTokens !== undefined ? { contextTokens } : {}),
-          });
-          if (!asked.held) {
-            logger.debug('[refreshActivatedPlugins] hot-reloaded session commands', {
-              sessionId,
-              commands: asked.commandCount,
-              plugins: asked.pluginCount,
-            });
-            return;
-          }
-          const impact = asked.cacheImpact ?? readCacheImpact(undefined);
-          if (pluginReloadIsWorthHolding(contextTokens)) {
-            this.pluginReloads.hold({ sessionId, impact, contextTokens });
-            logger.debug('[refreshActivatedPlugins] holding a session reload', {
-              sessionId,
-              contextTokens,
-            });
-            return;
-          }
-          // Small enough that waiting would cost more in staleness than it
-          // saves. Pay it now and say nothing.
-          await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
-          this.recordPaidPluginReload({
-            sessionId,
-            deferred: false,
-            heldMs: 0,
-            release: undefined,
-            contextTokens,
-            impact,
-          });
-        } catch (err) {
-          // Never strand a reload (spec §risks). The ask is a SECOND control
-          // round trip on a channel with a documented habit of going unanswered,
-          // and a reload nobody applied is worse than a reload nobody costed —
-          // so an unanswered ask falls back to exactly what this path did before
-          // the check existed: one plain reload, best-effort.
-          logger.debug('[refreshActivatedPlugins] cost check failed, reloading anyway', {
-            sessionId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          try {
-            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
-          } catch (fallbackErr) {
-            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
-              sessionId,
-              error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
-            });
-          }
-        }
-      })
-    );
+  private reloadCommandsForLiveSessions({ mayHold }: { mayHold: boolean }): Promise<void> {
+    return reloadCommandsForLiveSessions(this.#nativePreparationKey, { mayHold });
   }
 
   /**
@@ -1032,15 +1165,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    *   which the scheduler reads as "no longer worth applying". A control request
    *   that goes unanswered throws something else, and keeps the wait alive.
    */
-  private async recheckHeldPluginReload(sessionId: string): Promise<boolean> {
-    const { session, queryObj } = this.reloadableSession(sessionId);
-    const contextTokens = conversationTokens(session);
-    const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
-      holdOnCacheImpact: true,
-      sessionId,
-      ...(contextTokens !== undefined ? { contextTokens } : {}),
-    });
-    return !asked.held;
+  private recheckHeldPluginReload(sessionId: string): Promise<boolean> {
+    return recheckHeldReload(this.#nativePreparationKey, sessionId);
   }
 
   /**
@@ -1053,9 +1179,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - The session whose reload is being paid for
    * @throws PluginReloadSessionGoneError When the session or its query is gone
    */
-  private async applyHeldPluginReload(sessionId: string): Promise<void> {
-    const { session, queryObj } = this.reloadableSession(sessionId);
-    await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+  private applyHeldPluginReload(sessionId: string): Promise<void> {
+    return applyHeldReload(this.#nativePreparationKey, sessionId);
   }
 
   /**
@@ -1067,14 +1192,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    *   moot, because the next launch reads the plugin set off disk
    */
   private reloadableSession(sessionId: string): { session: AgentSession; queryObj: Query } {
-    const session = this.sessionStore.findSession(sessionId);
-    const queryObj = session?.activeQuery ?? session?.lastQuery;
-    if (!session || !queryObj) {
-      // Its own error type, because the scheduler drops a wait on THIS and
-      // keeps one on a control request that merely went unanswered.
-      throw new PluginReloadSessionGoneError(sessionId);
-    }
-    return { session, queryObj };
+    return resolveReloadableSession(this.#nativePreparationKey, sessionId);
   }
 
   /**
@@ -1090,9 +1208,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param entry - What was paid, and whether it waited first
    */
   private recordPaidPluginReload(entry: PaidPluginReload): void {
-    const port = this.pluginReloadActivity;
-    if (!port) return;
-    port(entry);
+    return recordPaidPluginReload(this.#nativePreparationKey, entry);
   }
 
   /**
@@ -1101,16 +1217,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * Best-effort: a broadcast failure must never break the install path.
    */
   private broadcastCommandsChanged(): void {
-    try {
-      eventFanOut.broadcast('commands_changed', { changedAt: new Date().toISOString() });
-    } catch (err) {
-      // warn, not debug: a failed broadcast means OTHER connected windows never
-      // learn to re-fetch, so their command palette stays stale until a manual
-      // reload (the initiating window still has its mutation-side invalidation).
-      logger.warn('[refreshActivatedPlugins] commands_changed broadcast failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    return broadcastCommandsChanged(this.#nativePreparationKey);
   }
 
   /**
@@ -1135,24 +1242,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @returns An absolute Claude config directory, or `null` when no account may
    *   work in the folder's project.
    */
-  async accountRootForSession(sessionId: string, projectDir: string): Promise<string | null> {
-    const settled = await this.sessionStore.settledAccountRoot(
-      sessionId,
-      this.transcriptReader,
-      projectDir
-    );
-    if (settled) return settled;
-    const home = homeOf(resolveAgentHome(projectDir));
-    const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
-    // Keeps to the accounts that may work in this folder's project; a launch
-    // that would be refused predicts no account at all (spec
-    // `flow-multiproject` §8.4).
-    const launch = resolveLaunchAccountRoot({
-      agentAccountId: manifest?.account,
-      agentId: manifest?.id,
-      project: await projectOfFolder(projectDir),
-    });
-    return launch.ok ? launch.root : null;
+  accountRootForSession(sessionId: string, projectDir: string): Promise<string | null> {
+    return accountRootForSession(this.#nativePreparationKey, sessionId, projectDir);
   }
 
   /**
@@ -1170,16 +1261,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param hintId - The account a person picked for this session, if any.
    * @returns The account the launch would use, or the refusal.
    */
-  async checkLaunchAccount(
+  checkLaunchAccount(
     sessionId: string,
     projectDir: string,
     hintId?: string
   ): Promise<LaunchAccountResolution> {
-    const settled = await this.sessionStore
-      .settledAccountRoot(sessionId, this.transcriptReader, projectDir)
-      .catch(() => undefined);
-    if (settled) return { ok: true, root: settled, accountId: accountIdForRoot(settled) };
-    return checkClaudeLaunchAccount({ cwd: projectDir, hintId });
+    return checkLaunchAccount(this.#nativePreparationKey, sessionId, projectDir, hintId);
   }
 
   /**
@@ -1191,30 +1278,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS or SDK session id.
    * @param projectDir - The folder the session runs in.
    */
-  async hasSettledAccount(sessionId: string, projectDir: string): Promise<boolean> {
-    const settled = await this.sessionStore
-      .settledAccountRoot(sessionId, this.transcriptReader, projectDir)
-      .catch(() => undefined);
-    return settled !== undefined;
+  hasSettledAccount(sessionId: string, projectDir: string): Promise<boolean> {
+    return hasSettledAccount(this.#nativePreparationKey, sessionId, projectDir);
   }
 
   /** @inheritdoc */
-  async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
-    // `renameSession` runs IN-PROCESS and its options expose no config dir, so
-    // the env lock is the only way to point it at the session's OWN account —
-    // without it a rename writes into whichever account is active, where the
-    // session does not exist, and the new title silently goes nowhere (spec D8).
-    const accountRoot = await this.sessionStore.accountRootFor(
-      sessionId,
-      this.transcriptReader,
-      projectDir
-    );
-    await withClaudeConfigDir(accountRoot, () =>
-      sdkRenameSession(sessionId, title, { dir: projectDir })
-    );
-    // The SDK persists the title; drop the reader's cache so the next read
-    // re-extracts it via getSessionInfo (no in-memory title overlay).
-    this.transcriptReader.invalidate(sessionId);
+  renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
+    return renameSession(this.#nativePreparationKey, sessionId, title, projectDir);
   }
 
   // ---------------------------------------------------------------------------
@@ -1228,17 +1298,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     approved: boolean,
     options?: ToolDecisionOptions
   ): boolean {
-    const resolved = this.sessionStore.approveTool(sessionId, toolCallId, approved, options);
-    if (resolved) {
-      // `reasonGiven` is asserted HERE, one line from the call that actually
-      // handed the reason to the model, so the transcript's "agent was told
-      // why" can never outrun what was delivered.
-      this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied', {
-        reasonGiven: !approved && (options?.denyReason?.trim() ?? '') !== '',
-        ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}),
-      });
-    }
-    return resolved;
+    return approveTool(this.#nativePreparationKey, sessionId, toolCallId, approved, options);
   }
 
   /** @inheritdoc */
@@ -1248,13 +1308,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     answers: Record<string, string>,
     options?: InteractionAnswerOptions
   ): boolean {
-    const resolved = this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
-    if (resolved) {
-      this.notifyInteractionResolved(sessionId, toolCallId, 'answered', {
-        ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}),
-      });
-    }
-    return resolved;
+    return submitAnswers(this.#nativePreparationKey, sessionId, toolCallId, answers, options);
   }
 
   /** @inheritdoc */
@@ -1265,16 +1319,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     content?: Record<string, unknown>,
     options?: InteractionAnswerOptions
   ): boolean {
-    const resolved = this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
-    if (resolved) {
-      this.notifyInteractionResolved(
-        sessionId,
-        interactionId,
-        action === 'accept' ? 'answered' : 'denied',
-        { ...(options?.answeredBy ? { answeredBy: options.answeredBy } : {}) }
-      );
-    }
-    return resolved;
+    return submitElicitation(
+      this.#nativePreparationKey,
+      sessionId,
+      interactionId,
+      action,
+      content,
+      options
+    );
   }
 
   /**
@@ -1321,65 +1373,17 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
-    const connectorCancellation = this.sessionStore.findSession(sessionId)?.connectorTurn?.cancel();
-    const receipt = await this.sessionStore.interruptQuery(sessionId);
-    await connectorCancellation;
-    // A turn DorkOS is only HOLDING open, waiting for an answer the CLI may
-    // still send (DOR-2064), has nothing left for an idle CLI to wind down: an
-    // acknowledged interrupt produces no `result`, so the hold would run to its
-    // 30 s cap and the Stop would look ignored. Settle it on the `result` it holds.
-    if (receipt.outcome === 'acked') this.persistent.settleHeldTurn(sessionId);
-    // Only `not-running` falls through. A stop that reached a live query and
-    // then failed is a fact about THAT query, and re-aiming it at the booting
-    // one would report the second attempt's ending for the first attempt's turn.
-    if (receipt.outcome !== 'not-running') return receipt;
-    // Nothing on the ordinary path — but a persistent session's FIRST turn may
-    // still be booting, so the pump holds a live query the `running` edge has
-    // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
-    // through the same interrupt→close escalation the running path uses.
-    const bootingQuery = this.persistent.bootingQuery(sessionId);
-    if (bootingQuery !== undefined) {
-      return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
-    }
-    // Or a turn the AGENT started, which never armed `session.activeQuery`
-    // either: nobody dispatched it, so the pump's `running` edge never fired
-    // (spec `warm-process-lifecycle` D6, the Stop rule). Without this, Stop on a
-    // turn the person can plainly see answers "nothing is running".
-    const runtimeQuery = this.persistent.runtimeTurnQuery(sessionId);
-    if (runtimeQuery === undefined) return receipt;
-    return this.sessionStore.interruptGivenQuery(sessionId, runtimeQuery);
+  interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    return interruptQuery(this.#nativePreparationKey, sessionId);
   }
 
   /** @inheritdoc */
-  async deliverIntoTurn(
+  deliverIntoTurn(
     sessionId: string,
     content: string,
     opts: DeliverIntoTurnOpts
   ): Promise<RuntimeDeliveryResult> {
-    if (opts.mode === 'stage') {
-      // A stage may have to WARM a cold session — the message has to reach a
-      // transcript, and a cold one has none live — so it needs the session
-      // record and the launch ports, exactly as a turn does. They are resolved
-      // here, from the session's own persisted settings (a stage carries no
-      // per-send cwd or model of its own), and handed to the pump. Warming is
-      // gated on the opt-in inside {@link PersistentDispatch.stage}, so a session
-      // that has not opted in is refused before any process is booted — reaching
-      // that refusal means the server ignored {@link canStageSession}.
-      const session = await this.sessionStore.ensureForMessage(
-        sessionId,
-        this.transcriptReader,
-        this.cwd
-      );
-      const cwdKey = session.cwd || this.cwd;
-      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
-      return this.persistent.stage(sessionId, content, opts, session, senderOpts);
-    }
-    // A steer rides the persistent pump's held input stream. On the resume path
-    // there is no held stream that outlives a turn to reach, so a steer there is
-    // simply "no open turn" — which `PersistentDispatch.steer` returns for a
-    // session it holds no live process for, without special-casing the path.
-    return this.persistent.steer(sessionId, content, opts);
+    return deliverIntoTurn(this.#nativePreparationKey, sessionId, content, opts);
   }
 
   /**
@@ -1399,7 +1403,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * already open would flicker with the turn rather than describe the session.
    */
   canSteerSession(sessionId: string): boolean {
-    return this.persistent.shouldDispatch(sessionId);
+    return this.#persistent.shouldDispatch(sessionId);
   }
 
   /**
@@ -1422,7 +1426,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * answering `true` cost them a subprocess they never asked for (DOR-1307).
    */
   canStageSession(sessionId: string): boolean {
-    return this.persistent.shouldDispatch(sessionId);
+    return this.#persistent.shouldDispatch(sessionId);
   }
 
   /**
@@ -1434,7 +1438,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * is the id the pump's wiring is filed under.
    */
   settleOpenTurn(sessionId: string): Promise<boolean> {
-    return Promise.resolve(this.persistent.settleOpenTurn(sessionId));
+    return Promise.resolve(this.#persistent.settleOpenTurn(sessionId));
   }
 
   /**
@@ -1448,50 +1452,39 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   onRuntimeTurn(
     listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
   ): () => void {
-    return this.persistent.onRuntimeTurn(listener);
+    return this.#persistent.onRuntimeTurn(listener);
   }
 
   /** @inheritdoc */
   isSegmentPending(sessionId: string): boolean {
-    return this.persistent.isSegmentPending(sessionId);
+    return this.#persistent.isSegmentPending(sessionId);
   }
 
   /** @inheritdoc */
   onDispatchGateChange(listener: (sessionId: string) => void): () => void {
-    return this.persistent.onDispatchGateChange(listener);
+    return this.#persistent.onDispatchGateChange(listener);
   }
 
   /** @inheritdoc */
   switchWhenReady(sessionId: string): boolean {
-    return this.persistent.switchWhenReady(sessionId);
+    return this.#persistent.switchWhenReady(sessionId);
   }
 
   /** @inheritdoc */
   onDispatchedTurn(listener: (sessionId: string) => void): () => void {
-    return this.persistent.onDispatchedTurn(listener);
+    return this.#persistent.onDispatchedTurn(listener);
   }
 
   /** @inheritdoc */
   holdsBackgroundWork(sessionId: string): boolean {
     // The warm path only. A resumed turn's process ends with its turn, and the
     // CLI ends its own background work with it, so nothing can follow.
-    return this.persistent.holdsBackgroundWork(sessionId);
+    return this.#persistent.holdsBackgroundWork(sessionId);
   }
 
   /** @inheritdoc */
   isHelperWorking(sessionId: string): boolean {
-    if (this.persistent.isHelperWorking(sessionId)) return true;
-    // The resume path: the running turn's own tracker. Its ceiling is measured
-    // from the turn's start, the one moment this path records; the pump's is
-    // measured from its busy spell.
-    const session = this.sessionStore.findSession(sessionId);
-    if (session?.liveHelperCount === undefined) return false;
-    return (
-      session.liveHelperCount() > 0 &&
-      // Awake time, so a laptop asleep mid-turn does not end the wait on waking (DOR-2717).
-      performance.now() - (session.turnStartedAwake ?? performance.now()) <
-        SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
-    );
+    return isHelperWorking(this.#nativePreparationKey, sessionId);
   }
 
   /** @inheritdoc */
@@ -1506,8 +1499,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * (ADR 261001-000811). The sessions themselves stay; their next turn is
    * refused until credits can be had again.
    */
-  async stopCreditsSessions(): Promise<void> {
-    await stopCreditsSessions(this.ending);
+  stopCreditsSessions(): Promise<void> {
+    return stopCreditsSessions(this.#nativePreparationKey);
   }
 
   /**
@@ -1519,16 +1512,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * process evicted (`end-sessions.ts`).
    */
   async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
-    return endSessionsWhere(this.ending, belongs);
+    return endSessionsWhere(this.#nativePreparationKey, belongs);
   }
 
   /** @inheritdoc */
-  async reapSession(sessionId: string): Promise<void> {
-    // A reaped pump is SPENT — the registry drops it, and `SessionPump` refuses
-    // everything asked of it afterwards. Forgetting the wiring in the same beat
-    // is what makes the next message build a fresh one instead of dispatching
-    // into a pump that can only throw.
-    if (await this.pumps.reap(sessionId)) this.persistent.forget(sessionId);
+  reapSession(sessionId: string): Promise<void> {
+    return reapSession(this.#nativePreparationKey, sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -1537,7 +1526,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async listSessions(projectDir: string): Promise<Session[]> {
-    return this.transcriptReader.listSessions(projectDir);
+    return originalClaudeSessionQueryOperations.listSessions(this.#sessionQueryKey, projectDir);
   }
 
   /**
@@ -1550,16 +1539,27 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   async listSessionsWithWarnings(
     projectDir: string
   ): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }> {
-    return this.transcriptReader.listSessionsAcrossAccounts(projectDir);
+    return originalClaudeSessionQueryOperations.listSessionsWithWarnings(
+      this.#sessionQueryKey,
+      projectDir
+    );
   }
 
   /** @inheritdoc */
   async findSession(sessionId: string, options?: { cwdHint?: string }): Promise<Session | null> {
-    return this.transcriptReader.findSession(sessionId, options);
+    return originalClaudeSessionQueryOperations.findSession(
+      this.#sessionQueryKey,
+      sessionId,
+      options
+    );
   }
 
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
-    return this.transcriptReader.getSession(projectDir, sessionId);
+    return originalClaudeSessionQueryOperations.getSession(
+      this.#sessionQueryKey,
+      projectDir,
+      sessionId
+    );
   }
 
   /**
@@ -1577,12 +1577,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS or SDK session id.
    */
   async sessionBillsPerToken(sessionId: string): Promise<boolean> {
-    const session = this.sessionStore.findSession(sessionId);
-    if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
-    if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
-    const root = session?.accountRoot;
-    return predictLaunchBillsPerToken(
-      readPerTokenSignals(root !== undefined && isCreditsClaudeRoot(root))
+    return originalClaudeSessionQueryOperations.sessionBillsPerToken(
+      this.#sessionQueryKey,
+      sessionId
     );
   }
 
@@ -1600,15 +1597,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionId: string,
     cwd: string | undefined
   ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
-    try {
-      const projectDir = cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd;
-      const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
-      const session = await this.transcriptReader.getSession(projectDir, historyId);
-      if (!session?.contextTokens) return null;
-      return { contextTokens: session.contextTokens, contextMaxTokens: 0 };
-    } catch {
-      return null;
-    }
+    return originalClaudeSessionQueryOperations.readContextUsage(
+      this.#sessionQueryKey,
+      sessionId,
+      cwd
+    );
   }
 
   /**
@@ -1626,43 +1619,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * interactions.
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    // Images tool results carried come back already placed: the reader's cache
-    // stores and splices each one the first time its line is parsed, through
-    // the attacher handed to it in the constructor. That keeps the reader a
-    // JSONL parser that learns nothing about where DorkOS keeps bytes.
-    //
-    // **Idempotent only because storage is keyed on the CANONICAL id.**
-    // `sessionId` here is already canonical: both callers translate first
-    // (`getSessionSnapshot`'s `historyId`, and `GET /:id/messages`'s
-    // `internalSessionId`), because the transcript on disk is named by it. The
-    // live path had to be taught to match — it stores under
-    // `session.sdkSessionId`, not the id its turn was asked with, which on a new
-    // session's first turn is a different string. Keyed on the request id, this
-    // call looked in a directory the live turn never wrote to and produced a
-    // second copy at a second URL (DOR-1664 review).
-    //
-    // claude-code is the only runtime that can hit this, and both halves of the
-    // reason are here: it is the only one that RENAMES a session mid-turn
-    // (`getInternalSessionId` returns undefined for codex and opencode), and the
-    // only one that rebuilds history by re-parsing a transcript rather than
-    // replaying recorded `image_attachment` events, which carry their URL
-    // (`services/session/event-log-history.ts`).
-    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
-    // A further pass, for the refusals nobody was asked about (DOR-795): a
-    // BACKGROUNDED subagent's denied tool call is written into the child's
-    // transcript, not this one, so without this the conversation comes back
-    // showing an agent that stopped making progress for no stated reason.
-    // And the fourth, for turns that ran on another model than the session
-    // names because DorkOS credits do not cover it (DOR-2636): the transcript
-    // names the model that ran and never the one it replaced.
-    // And the fifth, for summaries the agent asked for itself (DOR-2732): the
-    // transcript records that the conversation was summarized, never who asked.
-    return overlayAgentCompactions(
-      sessionId,
-      overlayModelSubstitutions(
-        sessionId,
-        overlayPermissionDenials(sessionId, overlayApprovalReceipts(sessionId, messages))
-      )
+    return originalClaudeSessionQueryOperations.getMessageHistory(
+      this.#sessionQueryKey,
+      projectDir,
+      sessionId
     );
   }
 
@@ -1684,11 +1644,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * registry entry serves the live turn.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projectDir = ctx.cwd ?? this.cwd;
-    const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
-    const projector =
-      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, projectDir);
-    return projector.buildSnapshot(() => this.getMessageHistory(projectDir, historyId));
+    return originalClaudeSessionQueryOperations.getSessionSnapshot(
+      this.#sessionQueryKey,
+      ctx,
+      sessionId
+    );
   }
 
   /**
@@ -1708,7 +1668,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return this.streamProjector(ctx, sessionId).subscribe(sinceCursor, signal);
+    return originalClaudeSessionQueryOperations.subscribeSession(
+      this.#sessionQueryKey,
+      ctx,
+      sessionId,
+      sinceCursor,
+      signal
+    );
   }
 
   /**
@@ -1728,7 +1694,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * the subsequent subscribe mints refuses every cursor above 0 on its own.
    */
   streamGeneration(_ctx: SessionOpts, sessionId: string): string {
-    return streamGenerationOf(this.resolveLiveProjector(sessionId));
+    return originalClaudeSessionQueryOperations.streamGeneration(
+      this.#sessionQueryKey,
+      _ctx,
+      sessionId
+    );
   }
 
   /**
@@ -1742,8 +1712,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - Target session ID, canonical or retired.
    */
   private streamProjector(ctx: SessionOpts, sessionId: string): SessionStateProjector {
-    return (
-      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, ctx.cwd ?? this.cwd)
+    return originalClaudeSessionQueryOperations.streamProjector(
+      this.#sessionQueryKey,
+      ctx,
+      sessionId
     );
   }
 
@@ -1763,22 +1735,30 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * exists because chokidar drops what happens while it is attaching (DOR-577).
    */
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
-    return watchSessionList(this.transcriptReader);
+    return originalClaudeSessionQueryOperations.subscribeSessionList(this.#sessionQueryKey, _ctx);
   }
 
   /** @inheritdoc */
   async getSessionTasks(projectDir: string, sessionId: string): Promise<TaskItem[]> {
-    return this.transcriptReader.readTasks(projectDir, sessionId);
+    return originalClaudeSessionQueryOperations.getSessionTasks(
+      this.#sessionQueryKey,
+      projectDir,
+      sessionId
+    );
   }
 
   /** @inheritdoc */
   async getSessionETag(projectDir: string, sessionId: string): Promise<string | null> {
-    return this.transcriptReader.getTranscriptETag(projectDir, sessionId);
+    return originalClaudeSessionQueryOperations.getSessionETag(
+      this.#sessionQueryKey,
+      projectDir,
+      sessionId
+    );
   }
 
   /** @inheritdoc */
   getSessionCwd(sessionId: string): string | undefined {
-    return this.sessionStore.findSession(sessionId)?.cwd;
+    return originalClaudeSessionQueryOperations.getSessionCwd(this.#sessionQueryKey, sessionId);
   }
 
   /**
@@ -1818,38 +1798,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * the exception.
    */
   getSessionAccount(sessionId: string): string | undefined {
-    const session = this.sessionStore.findSession(sessionId);
-    const root = session?.launchedAccountRoot ?? session?.accountRoot;
-    return root === undefined ? undefined : path.resolve(root);
+    return originalClaudeSessionQueryOperations.getSessionAccount(this.#sessionQueryKey, sessionId);
   }
 
   /** @inheritdoc */
   async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
-    try {
-      const session = this.sessionStore.findSession(sessionId);
-      const projectDir = session?.cwd ?? this.cwd;
-      const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
-      if (!messages.length) return null;
-
-      let lastUser: string | null = null;
-      let lastAssistant: string | null = null;
-
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (!lastAssistant && m.role === 'assistant') lastAssistant = m.id;
-        if (!lastUser && m.role === 'user') lastUser = m.id;
-        if (lastUser && lastAssistant) break;
-      }
-
-      if (!lastUser || !lastAssistant) return null;
-      return { user: lastUser, assistant: lastAssistant };
-    } catch (err) {
-      logger.warn('[getLastMessageIds] failed to read transcript', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
+    return originalClaudeSessionQueryOperations.getLastMessageIds(this.#sessionQueryKey, sessionId);
   }
 
   /** @inheritdoc */
@@ -1858,7 +1812,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionId: string,
     offset: number
   ): Promise<{ content: string; newOffset: number }> {
-    return this.transcriptReader.readFromOffset(projectDir, sessionId, offset);
+    return originalClaudeSessionQueryOperations.readFromOffset(
+      this.#sessionQueryKey,
+      projectDir,
+      sessionId,
+      offset
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1896,12 +1855,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async getSupportedModels(): Promise<ModelOption[]> {
-    return this.cache.getSupportedModels();
+    return originalClaudeCommandOperations.getSupportedModels(this.#commandCacheKey);
   }
 
   /** @inheritdoc */
   async getSupportedSubagents(): Promise<SubagentInfo[]> {
-    return this.cache.getSupportedSubagents();
+    return originalClaudeCommandOperations.getSupportedSubagents(this.#commandCacheKey);
   }
 
   // ---------------------------------------------------------------------------
@@ -1910,21 +1869,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
-    const root = cwd || this.cwd;
-    const registry = this.getOrCreateRegistry(root);
-    // Plugin commands (e.g. `/flow:*`) live in the SDK, not on the filesystem,
-    // so the cold-cache fallback (`command-registry` scans `.claude/commands/`
-    // only) can't surface them. When this cwd has no SDK command list yet, warm
-    // it in the background so the palette shows those commands before the
-    // session's first message. Whether any plugins actually apply (global OR
-    // project-scoped under `<cwd>/.dork/plugins/`) is decided inside
-    // `warmCommands` — it exits before booting a probe when none do.
-    // Fire-and-forget: the probe broadcasts `commands_changed` on completion,
-    // which re-fetches the palette.
-    if (!this.cache.hasSdkCommands(root)) {
-      void this.warmCommands(root);
-    }
-    return this.cache.getCommands(registry, root, forceRefresh);
+    return originalClaudeCommandOperations.getCommands(this.#commandCacheKey, forceRefresh, cwd);
   }
 
   /**
@@ -1943,97 +1888,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param cwd - Project directory whose command cache to warm.
    */
   private async warmCommands(cwd: string): Promise<void> {
-    if (this.cache.hasSdkCommands(cwd) || this.warmingCwds.has(cwd)) return;
-    const failedAt = this.warmFailedAt.get(cwd);
-    if (
-      failedAt !== undefined &&
-      Date.now() - failedAt < ClaudeCodeRuntime.WARM_FAILURE_COOLDOWN_MS
-    ) {
-      return;
-    }
-    this.warmingCwds.add(cwd);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // Both hoisted so the `finally` can close whatever was actually created:
-    // the plugins check below can exit before either exists, and `query()` can
-    // throw with `probe` still undefined. Closing stdin via `idle.close()`
-    // alone does NOT tear down the CLI child — `Query.close()` does (see
-    // RuntimeCache.warmup, which closes the query even though its input
-    // generator completes immediately).
-    let idle: ReturnType<typeof createIdlePrompt> | undefined;
-    let probe: ReturnType<typeof query> | undefined;
-    try {
-      // Only GLOBAL plugins are SDK-injected now; a project-scoped plugin's
-      // commands reach this cwd as `.claude/commands/<pkg>/` wrappers the FS
-      // registry already covers, so no probe is needed for them. When no global
-      // plugin applies, skip the probe entirely; built-ins arrive with the
-      // first real message.
-      const plugins = this.activatedPlugins;
-      if (plugins.length === 0) return;
-      idle = createIdlePrompt();
-      probe = query({
-        prompt: idle.prompt,
-        options: {
-          cwd,
-          plugins,
-          systemPrompt: { type: 'preset', preset: 'claude_code' },
-          settingSources: ['local', 'project', 'user'],
-          ...(this.spawnBinaryPath ? { pathToClaudeCodeExecutable: this.spawnBinaryPath } : {}),
-          env: runtimeEnvironment('claude-code', 'warmup', {
-            // The probe gets the same explicit account pin a turn does, for two
-            // reasons. `settingSources` includes `'user'`, which resolves under
-            // the config dir — an inherited root would warm this cwd's palette
-            // from ANOTHER account's user settings, and could boot against an
-            // account that is not signed in. And an explicit entry keeps the
-            // probe out of reach of the process-global mutation the D8 env lock
-            // holds during a rename or fork. There is no session here, so the
-            // ACTIVE account is the only account this can mean.
-            ...claudeConfigDirEnv(resolveActiveClaudeRoot()),
-          }),
-        },
-      });
-      const commands = await Promise.race([
-        probe.supportedCommands(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('warmCommands: supportedCommands timed out')),
-            ClaudeCodeRuntime.WARM_TIMEOUT_MS
-          );
-        }),
-      ]);
-      // Provisional: the probe omits `mcpServers` (real sessions inject them),
-      // so this list can miss MCP-contributed commands. Marking it provisional
-      // lets the first real message re-fetch the authoritative, MCP-inclusive
-      // set — the palette still populates immediately in the meantime.
-      this.cache.replaceSdkCommands(
-        cwd,
-        commands.map((c) => ({
-          name: c.name,
-          description: c.description,
-          argumentHint: c.argumentHint,
-          aliases: c.aliases,
-        })),
-        { provisional: true }
-      );
-      this.broadcastCommandsChanged();
-      this.warmFailedAt.delete(cwd);
-      logger.debug('[warmCommands] warmed command cache', { cwd, count: commands.length });
-    } catch (err) {
-      // Record the failure so the cooldown guard suppresses a re-probe storm if
-      // the SDK is persistently broken (bad auth, missing binary, boot crash).
-      this.recordWarmFailure(cwd);
-      logger.debug('[warmCommands] probe failed; cache stays cold until first message', {
-        cwd,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      if (timer) clearTimeout(timer);
-      // Close the query (kills the CLI child) AND the held prompt (closes
-      // stdin). Either can be undefined: the no-applicable-plugins exit creates
-      // neither, and a `query()` throw leaves `probe` unset — hence the guards.
-      probe?.close();
-      idle?.close();
-      this.warmingCwds.delete(cwd);
-    }
+    return originalClaudeCommandOperations.warmCommands(this.#commandCacheKey, cwd);
   }
 
   /**
@@ -2047,27 +1902,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param cwd - Project directory whose warm probe just failed.
    */
   private recordWarmFailure(cwd: string): void {
-    const now = Date.now();
-    for (const [key, at] of this.warmFailedAt) {
-      if (now - at >= ClaudeCodeRuntime.WARM_FAILURE_COOLDOWN_MS) {
-        this.warmFailedAt.delete(key);
-      }
-    }
-    this.warmFailedAt.set(cwd, now);
+    return originalClaudeCommandOperations.recordWarmFailure(this.#commandCacheKey, cwd);
   }
 
   /** Get or create a CommandRegistryService for the given root, with LRU eviction. */
   private getOrCreateRegistry(root: string): CommandRegistryService {
-    let registry = this.commandRegistries.get(root);
-    if (!registry) {
-      if (this.commandRegistries.size >= ClaudeCodeRuntime.MAX_COMMAND_REGISTRIES) {
-        const oldest = this.commandRegistries.keys().next().value!;
-        this.commandRegistries.delete(oldest);
-      }
-      registry = new CommandRegistryService(root);
-      this.commandRegistries.set(root, registry);
-    }
-    return registry;
+    return originalClaudeCommandOperations.getOrCreateRegistry(this.#commandCacheKey, root);
   }
 
   // ---------------------------------------------------------------------------
@@ -2076,7 +1916,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   checkSessionHealth(): void {
-    sweepEvictedSessions(this.ending);
+    checkSessionHealth(this.#nativePreparationKey);
   }
 
   /** @inheritdoc */
@@ -2131,11 +1971,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * port is only woken by news.
    */
   private reportMcpAuthFailures(sessionId: string, cwd: string, servers: McpServerEntry[]): void {
-    const port = this.mcpAuthEvidence;
-    if (!port) return;
-    const serverNames = mcpAuthEvidenceFrom(servers);
-    if (serverNames.length === 0) return;
-    port({ sessionId, cwd, serverNames });
+    return reportMcpAuthFailures(this.#nativePreparationKey, sessionId, cwd, servers);
   }
 
   /**
@@ -2152,59 +1988,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * either way, so the held reload has been paid, and the activity feed records
    * it as such.
    */
-  async reloadPlugins(sessionId: string): Promise<ReloadPluginsResult | null> {
-    const session = this.sessionStore.findSession(sessionId);
-    const queryObj = session?.activeQuery ?? session?.lastQuery;
-    if (!queryObj) {
-      logger.warn('[reloadPlugins] no query available', { sessionId });
-      return null;
-    }
-    try {
-      const contextTokens = conversationTokens(session!);
-      const result = await this.cache.reloadPlugins(queryObj, session!.cwd, this.cwd);
-      // Settled AFTER the apply landed: a reload that threw leaves the wait
-      // armed, so a failed hand trigger never strands the held reload.
-      const settled = this.pluginReloads.settle(sessionId, 'hand-triggered');
-      // An expensive reload is recorded whether or not a wait was running
-      // (decision 8: held OR above threshold). Nothing was holding when the
-      // person reloads a busy session the fan-out never reached — and that is
-      // exactly the reload worth a line in the feed. Below the threshold this
-      // stays silent, like every other cheap reload.
-      if (!settled && pluginReloadIsWorthHolding(contextTokens)) {
-        this.recordPaidPluginReload({
-          sessionId,
-          deferred: false,
-          heldMs: 0,
-          release: 'hand-triggered',
-          contextTokens,
-          // Nothing asked what this reload would disturb — it was applied
-          // outright — so there is nothing honest to put here.
-          impact: readCacheImpact(undefined),
-        });
-      }
-      logger.info('[reloadPlugins] plugins reloaded', {
-        sessionId,
-        commands: result.commandCount,
-        plugins: result.pluginCount,
-        errorCount: result.errorCount,
-      });
-      return {
-        commandCount: result.commandCount,
-        pluginCount: result.pluginCount,
-        errorCount: result.errorCount,
-      };
-    } catch (err) {
-      logger.error('[reloadPlugins] reload failed', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // A timeout is NOT the `null` case (DOR-1301). `null` means "no query to
-      // ask", which the route answers with "send a message first" — a sentence
-      // that is simply false about a session whose query existed and did not
-      // answer in time. Rethrown so the route can say the true thing.
-      if (err instanceof ControlRequestTimeoutError) throw err;
-      return null;
-    }
+  reloadPlugins(sessionId: string): Promise<ReloadPluginsResult | null> {
+    return reloadPlugins(this.#nativePreparationKey, sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -2214,13 +1999,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Return the MCP tool server config (stub session — used for introspection only). */
   getToolServerConfig(): Record<string, unknown> {
     if (!this.mcpServerFactory) return {};
-    const stubSession = {
-      eventQueue: [],
-      pendingInteractions: new Map(),
-      permissionMode: 'default',
-      lastActivity: Date.now(),
-      hasStarted: false,
-    } as unknown as AgentSession;
+    const stubSession = createClaudeIntrospectionSession();
     // Empty session id: introspection only, so the DevTools read tools register
     // as their session-less variants (no live preview buffer to bind to).
     return this.mcpServerFactory(stubSession, '');

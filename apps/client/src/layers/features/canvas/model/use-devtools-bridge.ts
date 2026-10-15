@@ -1,7 +1,7 @@
 /** Page-reported DevTools bridge. A generation correlates a frame lifetime; it authenticates no script. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { DevtoolsActionResult, DevtoolsIngest } from '@dorkos/shared/schemas';
-import type { UploadFile } from '@dorkos/shared/transport';
+import { bytesFile, pngBytes } from './devtools-media-data';
 import {
   CANVAS_BRIDGE_LIMITS as LIMITS,
   parseCanvasBridgeReport,
@@ -49,6 +49,8 @@ interface RecordingJob {
 }
 /** Host-resolved eligibility is distinct from the frame's reported origin. */
 export interface UseDevtoolsBridgeParams {
+  /** Retire the sibling Doc port before observable physical frame teardown. */
+  onFrameRetire?: () => void;
   iframeRef: RefObject<HTMLIFrameElement | null>;
   documentId: string;
   logicalUrl: string;
@@ -62,14 +64,6 @@ export interface DevtoolsBridge {
   resourceErrorCount: number;
   notePersonNavigated: () => void;
   noteFrameLoaded: () => void;
-}
-function bytesFile(name: string, type: string, bytes: Uint8Array): UploadFile {
-  const buffer = bytes.slice().buffer;
-  return { name, type, size: bytes.byteLength, arrayBuffer: async () => buffer };
-}
-function pngBytes(dataUrl: string): Uint8Array {
-  const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
 const MAX_RECORDING_RESERVATION_MS = 8_000;
@@ -197,8 +191,9 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
       )
       .catch(() => {});
   }
-  function retire(): void {
+  function retire(preserveDocLoad = false): void {
     const old = life.current;
+    if (old && !preserveDocLoad) currentParams.current.onFrameRetire?.();
     if (old) old.retired = true;
     life.current = null;
     if (flushTimer.current !== null) clearTimeout(flushTimer.current);
@@ -305,9 +300,17 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
         previous.logicalUrl !== next.logicalUrl ||
         previous.source !== next.source ||
         previous.reload !== next.reload;
+      const sessionOnlyChanged =
+        !!previous &&
+        !pageChanged &&
+        previous.eligibility === next.eligibility &&
+        previous.origin === next.origin;
       observedContext.current = next;
       awaitingFrameLoad.current = false;
-      retire();
+      // A conversation attribution change retires DevTools requests, not the
+      // sibling Doc protocol's captured physical load. Origin/eligibility and
+      // every real page boundary still retire that original Doc lifetime.
+      retire(sessionOnlyChanged);
       initialize({ reset: pageChanged });
     }
   });
@@ -325,10 +328,11 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
         logicalUrl: p.logicalUrl,
       };
     awaitingFrameLoad.current = false;
-    retire();
+    retire(true);
     initialize({ loadActivation: activation, reset: true });
   }, []);
   const notePersonNavigated = useCallback(() => {
+    currentParams.current.onFrameRetire?.();
     const current = life.current;
     // Address submission can precede signed-source resolution. Keep the person's
     // intent, but publish no claim until an eligible frame lifetime exists.

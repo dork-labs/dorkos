@@ -1,3 +1,12 @@
+import {
+  ceilingRefusalReason,
+  findMatchingEndpoints,
+  willDispatchAgentTurn,
+  evaluateInitiateConsent,
+  type PublishDeps,
+  type PublishResolvedOptions,
+} from './relay-publish-policy-data.js';
+export type { PublishDeps, PublishResolvedOptions } from './relay-publish-policy-data.js';
 /**
  * Publish logic for the Relay message bus.
  *
@@ -7,42 +16,37 @@
  *
  * @module relay/relay-publish
  */
-import type { DeliveryReceiptStore } from './delivery-receipt-store.js';
 import { ReceiptObservation } from './lib/receipt-observation.js';
 import { monotonicFactory } from 'ulidx';
-import { validateSubject, matchesPattern } from './subject-matcher.js';
+import { validateSubject } from './subject-matcher.js';
 import { mayReachServerDestination } from './lib/reserved-subjects.js';
-import { reachesServerDestination, SERVER_DESTINATION_REFUSAL } from '@dorkos/shared/relay-schemas';
-import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
+import {
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
+  isDocumentSubject,
+} from '@dorkos/shared/relay-schemas';
+import { BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
-import { dispatchTurnAccounting, RelayTurnCeiling, type TurnCeilingScope } from './turn-ceiling.js';
+import { dispatchTurnAccounting, RelayTurnCeiling } from './turn-ceiling.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { EndpointRegistry } from './endpoint-registry.js';
-import type { SubscriptionRegistry } from './subscription-registry.js';
-import type { MaildirStore } from './maildir-store.js';
-import type { SqliteIndex } from './sqlite-index.js';
-import type { AccessControl } from './access-control.js';
-import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { AdapterDelivery, ReplyFailureNotifier } from './adapter-delivery.js';
-import type { DeliveryPipeline } from './delivery-pipeline.js';
 import type {
   RateLimitConfig,
   PublishOptions,
   PrivateNotificationOptions,
   PrivateNotificationResult,
-  EndpointInfo,
-  AdapterRegistryLike,
   AdapterContext,
   DeliveryResult,
-  TraceStoreLike,
-  RelayLogger,
   InitiateConsentGate,
   InitiateConsentDecision,
   PublishResult,
 } from './types.js';
 import type { BudgetRejectionCode } from '@dorkos/shared/relay-schemas';
-import { chatSpanFields } from './lib/chat-span-fields.js';
+import { recordPublishTrace } from './relay-publish-trace.js';
+
+import type { AccessControl } from './access-control.js';
+import type { OriginalDocumentRelayWake } from './document-delivery.js';
 
 // === Types ===
 
@@ -51,94 +55,7 @@ import { chatSpanFields } from './lib/chat-span-fields.js';
 // callers that import it from the pipeline module.
 export type { PublishResult } from './types.js';
 
-/** Resolved options needed by the publish pipeline. */
-export interface PublishResolvedOptions {
-  maxHops: number;
-  defaultTtlMs: number;
-  defaultCallBudget: number;
-}
-
-/** Dependencies injected into the RelayPublishPipeline. */
-export interface PublishDeps {
-  receiptStore?: DeliveryReceiptStore;
-  endpointRegistry: EndpointRegistry;
-  subscriptionRegistry: SubscriptionRegistry;
-  maildirStore: MaildirStore;
-  sqliteIndex: SqliteIndex;
-  accessControl: AccessControl;
-  deadLetterQueue: DeadLetterQueue;
-  deliveryPipeline: DeliveryPipeline;
-  adapterDelivery: AdapterDelivery;
-  adapterRegistry?: AdapterRegistryLike;
-  traceStore?: TraceStoreLike;
-  logger?: RelayLogger;
-  /**
-   * The install-wide ceiling on agent turns started over the bus.
-   *
-   * Optional in the type and never optional in effect: RelayCore always
-   * constructs one (with the shipped defaults when a host wires no limits), so
-   * a pipeline built without it is a test double, not a production path.
-   */
-  turnCeiling?: RelayTurnCeiling;
-}
-
-/**
- * Subject prefixes whose adapter dispatch starts a real, paid turn.
- *
- * The FALLBACK, and it covers two cases rather than one: a registry shim that
- * cannot resolve an adapter at all (no `getBySubject`), AND a resolved adapter
- * that stays silent about {@link RelayAdapter.startsAgentTurns}. The
- * authoritative answer is the adapter's own, because the adapter is what knows
- * which of its prefixes end in `sendMessage`.
- *
- * **So this list is a net under today's prefixes, not a substitute for the
- * method.** A silent adapter answering for one of these two is counted; a silent
- * adapter answering for a prefix nobody has invented yet is NOT, and its turns
- * are free. That is the reason a turn-running adapter must implement the method
- * rather than lean on this.
- *
- * Both entries are here because both were reachable and only one was counted:
- * `relay.system.tasks.*` runs a scheduled turn through the SAME dispatch, and
- * `relay_send` will publish to it (`isReservedSubject` guards registration, not
- * publishing), so the ceiling was bypassable by exactly the party it bounds.
- */
-const TURN_SUBJECT_PREFIXES = ['relay.agent.', 'relay.system.tasks.'] as const;
-
-/**
- * The line a person is shown when a ceiling refused a turn.
- *
- * Names the ceiling that refused, because the two send someone to different
- * settings, and says what to do rather than what broke.
- *
- * @param scope - Which ceiling refused.
- * @param subject - The agent subject the turn was for.
- */
-function ceilingRefusalReason(scope: TurnCeilingScope, subject: string): string {
-  return scope === 'global'
-    ? 'agent messaging has run its hourly limit of turns for this whole DorkOS, so this ' +
-        "message did not start one. It is still in the agent's inbox. Raise " +
-        '"relay.maxAgentTurnsTotalPerHour" in your DorkOS config, or wait for the hour to roll.'
-    : `${subject} has run its hourly limit of turns, so this message did not start one. ` +
-        'It is still in the agent\'s inbox. Raise "relay.maxAgentTurnsPerAgentPerHour" ' +
-        'in your DorkOS config, or wait for the hour to roll.';
-}
-
-// === Private Helpers ===
-
 const generateUlid = monotonicFactory();
-
-/**
- * Find all registered endpoints whose subject matches the given target.
- *
- * @param endpointRegistry - The endpoint registry to search
- * @param subject - The target subject to match against
- */
-function findMatchingEndpoints(
-  endpointRegistry: EndpointRegistry,
-  subject: string
-): EndpointInfo[] {
-  return endpointRegistry.listEndpoints().filter((ep) => matchesPattern(ep.subject, subject));
-}
 
 // === RelayPublishPipeline ===
 
@@ -176,6 +93,50 @@ export class RelayPublishPipeline {
    * {@link evaluateInitiateConsent}.
    */
   private initiateConsentGate?: InitiateConsentGate;
+
+  /** A fresh pipeline and its original captured document publisher are constructed together.
+   * There is no attach/lookup publisher for an existing reflected pipeline instance. */
+  static createOriginalDocumentPipeline(
+    deps: PublishDeps,
+    opts: PublishResolvedOptions,
+    rateLimitConfig: RateLimitConfig,
+    adapterContextBuilder?: (subject: string) => AdapterContext | undefined
+  ) {
+    const pipeline = new RelayPublishPipeline(deps, opts, rateLimitConfig, adapterContextBuilder);
+    const publishDocumentWake = (wake: OriginalDocumentRelayWake): Promise<PublishResult> => {
+      if (!wake || Object.getPrototypeOf(wake) !== Object.prototype)
+        throw new Error('DOCUMENT_RELAY_WAKE_DATA_REQUIRED');
+      const keys = [
+        'documentId',
+        'batchId',
+        'generation',
+        'openerAgentId',
+        'targetAgentId',
+      ] as const;
+      if (Object.keys(wake).length !== keys.length)
+        throw new Error('DOCUMENT_RELAY_WAKE_FIELDS_INVALID');
+      const data: Record<string, string> = {};
+      for (const key of keys) {
+        const field = Object.getOwnPropertyDescriptor(wake, key);
+        if (
+          !field ||
+          !('value' in field) ||
+          typeof field.value !== 'string' ||
+          !field.value ||
+          Buffer.byteLength(field.value) > 4096
+        )
+          throw new Error('DOCUMENT_RELAY_WAKE_FIELD_INVALID');
+        data[key] = field.value;
+      }
+      return pipeline.#publish(
+        'relay.doc.batch',
+        Object.freeze(data),
+        { from: 'relay.doc.publisher' },
+        true
+      );
+    };
+    return Object.freeze({ pipeline, publishDocumentWake });
+  }
 
   constructor(
     deps: PublishDeps,
@@ -216,14 +177,7 @@ export class RelayPublishPipeline {
    * @param subject - The target subject.
    */
   private willDispatchAgentTurn(subject: string): boolean {
-    const registry = this.deps.adapterRegistry;
-    if (!registry) return false;
-    if (registry.getBySubject) {
-      const adapter = registry.getBySubject(subject);
-      if (!adapter) return false;
-      if (adapter.startsAgentTurns) return adapter.startsAgentTurns(subject);
-    }
-    return TURN_SUBJECT_PREFIXES.some((prefix) => subject.startsWith(prefix));
+    return willDispatchAgentTurn(this.deps.adapterRegistry, subject);
   }
 
   /**
@@ -331,6 +285,8 @@ export class RelayPublishPipeline {
     text: string,
     options: PrivateNotificationOptions
   ): Promise<PrivateNotificationResult> {
+    if (isDocumentSubject(subject) || isDocumentSubject(options.from))
+      throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     const messageId = generateUlid();
     const createdAt = new Date().toISOString();
     const envelope: RelayEnvelope = {
@@ -360,7 +316,7 @@ export class RelayPublishPipeline {
         '*',
         result.state === 'delivered' ? 'delivered' : 'failed'
       );
-      this.recordTrace({
+      recordPublishTrace(this.deps, {
         messageId,
         subject,
         from: options.from,
@@ -448,6 +404,20 @@ export class RelayPublishPipeline {
     payload: unknown,
     options: PublishOptions
   ): Promise<PublishResult> {
+    return this.#publish(subject, payload, options, false);
+  }
+
+  async #publish(
+    subject: string,
+    payload: unknown,
+    options: PublishOptions,
+    originalDocumentWake: boolean
+  ): Promise<PublishResult> {
+    // Document provenance cannot be asserted with PublishOptions.from, including a system sender.
+    // The original protected document transport is constructed separately; this public path
+    // must never create its source, invoke its sink, or consume its native capacity.
+    if (!originalDocumentWake && (isDocumentSubject(subject) || isDocumentSubject(options.from)))
+      throw new Error('DOCUMENT_RELAY_CONSTRUCTION_REQUIRED');
     const observation = new ReceiptObservation(
       subject,
       options.receiptContext,
@@ -466,12 +436,20 @@ export class RelayPublishPipeline {
     // by the bus, so a path that forgets to ask cannot hand anybody the
     // scheduler's or an approval bridge's address. Only a sender on the
     // server allowlist gets through — see `SERVER_DESTINATION_SENDERS`.
-    if (reachesServerDestination(subject) && !mayReachServerDestination(options.from)) {
+    if (
+      !originalDocumentWake &&
+      reachesServerDestination(subject) &&
+      !mayReachServerDestination(options.from)
+    ) {
       throw new Error(`Refused sender "${options.from}": ${SERVER_DESTINATION_REFUSAL}`);
     }
 
     // 2. Access control check
-    const accessResult = this.deps.accessControl.checkAccess(options.from, subject);
+    // The original server source rereads explicit opener->target ACL before this
+    // bounded wake. Ordinary publishers retain their existing bus ACL check.
+    const accessResult: ReturnType<AccessControl['checkAccess']> = originalDocumentWake
+      ? { allowed: true }
+      : this.deps.accessControl.checkAccess(options.from, subject);
     if (!accessResult.allowed) {
       throw new Error(
         `Access denied: ${options.from} -> ${subject}` +
@@ -493,7 +471,7 @@ export class RelayPublishPipeline {
     try {
       observation.captureLocator(messageId);
       return observation.withReceipt(
-        await this.publishAccepted(subject, payload, options, messageId, observation)
+        await this.#publishAccepted(subject, payload, options, messageId, observation)
       );
     } catch (error) {
       observation.settle(messageId, { state: 'outcome_unknown' });
@@ -501,7 +479,7 @@ export class RelayPublishPipeline {
     }
   }
 
-  private async publishAccepted(
+  async #publishAccepted(
     subject: string,
     payload: unknown,
     options: PublishOptions,
@@ -524,7 +502,7 @@ export class RelayPublishPipeline {
         this.deps.logger?.warn?.(`publish rate-limited: ${reason}, subject=${subject}`);
         const rejected: PublishResult['rejected'] = [{ endpointHash: '*', reason: 'rate_limited' }];
         observation.settle(messageId, { state: 'failed', code: 'rate_limited' });
-        this.recordTrace({
+        recordPublishTrace(this.deps, {
           messageId,
           subject,
           from: options.from,
@@ -790,7 +768,7 @@ export class RelayPublishPipeline {
     }
 
     // 11. Record trace span
-    this.recordTrace({
+    recordPublishTrace(this.deps, {
       messageId,
       subject,
       from: envelope.from,
@@ -841,27 +819,14 @@ export class RelayPublishPipeline {
    * @param subject - The target subject.
    */
   private evaluateInitiateConsent(from: string, subject: string): InitiateConsentDecision {
-    if (!this.initiateConsentGate) {
-      if (!requiresInitiateConsent(subject)) return { allowed: true };
-      return {
-        allowed: false,
-        code: 'NO_BINDING',
-        reason:
-          'initiate denied: no consent gate is installed, so this relay cannot tell ' +
-          'whether you allowed an agent to message this channel. Chat connections ' +
-          'stay silent until the binding subsystem starts.',
-      };
-    }
-
-    try {
-      return this.initiateConsentGate(from, subject);
-    } catch (err) {
-      // Fail closed: a throwing consent policy denies rather than letting the
-      // message slip through undecided. Dead-letter under the target subject.
-      const message = err instanceof Error ? err.message : String(err);
-      this.deps.logger?.warn?.(`initiate-consent gate threw; denying: ${message}`);
-      return { allowed: false, reason: `consent gate error: ${message}` };
-    }
+    return evaluateInitiateConsent(
+      this.initiateConsentGate
+        ? (source, target) => this.initiateConsentGate!(source, target)
+        : undefined,
+      this.deps.logger,
+      from,
+      subject
+    );
   }
 
   /**
@@ -959,7 +924,7 @@ export class RelayPublishPipeline {
 
     observation.assertOutsideTransaction();
     const rejected: PublishResult['rejected'] = [{ endpointHash: subject, reason: rejectionCode }];
-    this.recordTrace({
+    recordPublishTrace(this.deps, {
       messageId,
       subject,
       from: envelope.from,
@@ -997,91 +962,8 @@ export class RelayPublishPipeline {
       observation.enabled ? () => observation.assertOutsideTransaction() : undefined
     );
   }
-
-  /**
-   * Record a trace span for delivery tracking (best-effort).
-   *
-   * ## Zero deliveries is two different stories
-   *
-   * This used to write `failed` for every `deliveredTo === 0`, with no error
-   * message, which is how 1,653 rows came to claim failure while naming no
-   * cause and one whole day read as a 100% failure rate — its traffic was
-   * publishes to a subject nothing subscribed to. A message nobody was
-   * listening for is `no_subscriber`: nothing went wrong and nothing needs
-   * fixing. A message that hit a gate, a rejecting endpoint, or an adapter
-   * error is `failed`, and now carries the reason that made it one.
-   *
-   * @param span - What happened to one published message.
-   */
-  private recordTrace(span: {
-    messageId: string;
-    subject: string;
-    /**
-     * Who published it. Recorded so a span can tell a message a chat
-     * connection brought in (`relay.human.<platform>.<adapterId>.bot`) from the
-     * agent's replies and stream events published back to the same chat
-     * subject — the observed-chats list counts only the former (DOR-2590).
-     */
-    from: string;
-    /**
-     * The published payload, read only by {@link chatSpanFields} for a chat's
-     * display name and whether it said anything, never for its body.
-     */
-    payload?: unknown;
-    deliveredTo: number;
-    rejected: PublishResult['rejected'];
-    adapterResult: DeliveryResult | null;
-    /** When the publish started, for the span's duration. */
-    createdAt: string;
-    /** Human-readable cause, when this publish was stopped at a gate. */
-    error?: string;
-    /** Machine rejection code, when one applies (gate or budget). */
-    rejectionCode?: string;
-    /** The budget check that rejected it, for the budget-rejection counters. */
-    budgetCode?: BudgetRejectionCode;
-    /**
-     * The dispatch this publish belongs to, when the caller knows it.
-     *
-     * This is what turns the `relayTraces` table into the thing it was built
-     * for. `traceId` was set to `messageId` on every row, so every trace had
-     * exactly one span and `getTrace(traceId)` could only return the row you
-     * already had. Sharing the dispatch id across hops makes it a real trace.
-     */
-    dispatchId?: string;
-  }): void {
-    if (!this.deps.traceStore) return;
-    const { messageId, subject, deliveredTo, rejected, adapterResult, createdAt } = span;
-    const failureReason = span.error ?? adapterResult?.error ?? undefined;
-    const status =
-      deliveredTo > 0
-        ? 'delivered'
-        : failureReason || (rejected?.length ?? 0) > 0
-          ? 'failed'
-          : 'no_subscriber';
-    try {
-      this.deps.traceStore.insertSpan({
-        messageId,
-        traceId: span.dispatchId ?? messageId,
-        subject,
-        status,
-        // A delivery that happened has a time it happened at. Leaving this null
-        // on the delivered path is what left the latency percentiles computing
-        // over an empty column while the panel presented them as measurements.
-        ...(status === 'delivered' ? { deliveredAt: new Date().toISOString() } : {}),
-        ...(failureReason ? { error: failureReason } : {}),
-        metadata: {
-          from: span.from,
-          ...chatSpanFields(span.from, span.payload),
-          deliveredTo,
-          rejectedCount: rejected?.length ?? 0,
-          hasAdapterResult: !!adapterResult,
-          durationMs: Date.now() - new Date(createdAt).getTime(),
-          ...(span.rejectionCode ? { rejectionCode: span.rejectionCode } : {}),
-          ...(span.budgetCode ? { budgetCode: span.budgetCode } : {}),
-        },
-      });
-    } catch {
-      // Trace insertion is best-effort — never fail a publish for tracing
-    }
-  }
 }
+
+/** Fixed original constructor function binding; later reflected static replacement is not adopted. */
+export const createOriginalDocumentPublishPipeline =
+  RelayPublishPipeline.createOriginalDocumentPipeline;

@@ -1,3 +1,5 @@
+import { RoomFileRequestAuthError } from '../services/canvas/doc-channel/http-composition.js';
+import { DocChannelNotFoundError } from '../services/canvas/doc-channel/authorization.js';
 /**
  * What every room route on the Hono chain shares: who is asking, and how a
  * refusal is worded.
@@ -41,6 +43,10 @@ export function roomErrorResponse(
   context: string,
   caller: AuthorRecord | undefined
 ): Response {
+  if (err instanceof RoomFileRequestAuthError)
+    return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
+  if (err instanceof DocChannelNotFoundError)
+    return c.json({ error: 'No such room.', code: 'ROOM_NOT_FOUND' }, 404);
   const reply = roomErrorReply(err, context, () => isOwnerCaller(caller));
   return c.json(reply.body, reply.status as ContentfulStatusCode);
 }

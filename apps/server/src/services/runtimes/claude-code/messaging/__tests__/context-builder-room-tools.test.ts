@@ -29,10 +29,10 @@ import { buildSystemPromptAppend } from '../context-builder.js';
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(undefined) },
 }));
-vi.mock('../../../relay/relay-state.js', () => ({
+vi.mock('../../../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn().mockReturnValue(false),
 }));
-vi.mock('../../../tasks/task-state.js', () => ({
+vi.mock('../../../../tasks/task-state.js', () => ({
   isTasksEnabled: vi.fn().mockReturnValue(false),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({

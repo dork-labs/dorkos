@@ -676,9 +676,46 @@ async function* watchTurn(
  * @param runtime - The runtime to watch.
  * @returns A watching proxy over it.
  */
+const originalSigninReleaseWatches = new WeakMap<object, Set<() => void>>();
+/** Hints only. Native source/lock/SQL policy is rechecked by the consumer; this cannot mint authority. */
+export function onOriginalSigninRuntimeRelease(watched: object, listener: () => void): () => void {
+  const listeners = originalSigninReleaseWatches.get(watched);
+  if (!listeners) throw new Error('Original sign-in watch required.');
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+const originalSigninWatches = new WeakMap<
+  object,
+  (sessionId: string, source: AsyncGenerator<StreamEvent>) => AsyncGenerator<StreamEvent>
+>();
+/** Observation only: requires the actual watch constructor result and never invokes sendMessage. */
+export function observeOriginalSigninRuntimeStream(
+  watched: object,
+  sessionId: string,
+  source: AsyncGenerator<StreamEvent>
+): AsyncGenerator<StreamEvent> {
+  const observe = originalSigninWatches.get(watched);
+  if (!observe) throw new Error('Original sign-in watch required.');
+  return observe(sessionId, source);
+}
+/** Observe runtime sign-in activity through the configured original runtime. */
 export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
-  return new Proxy(runtime, {
+  const release = runtime.releaseLock.bind(runtime);
+  const releaseListeners = new Set<() => void>();
+  const watched = new Proxy(runtime, {
     get(target, prop) {
+      if (prop === 'releaseLock')
+        return (...args: Parameters<AgentRuntime['releaseLock']>) => {
+          release(...args);
+          // Observer hints cannot replace the original native release outcome.
+          for (const hint of releaseListeners) {
+            try {
+              hint();
+            } catch {}
+          }
+        };
       if (prop === 'sendMessage') {
         return (
           sessionId: string,
@@ -693,6 +730,9 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+  originalSigninReleaseWatches.set(watched, releaseListeners);
+  originalSigninWatches.set(watched, (sessionId, source) => watchTurn(runtime, sessionId, source));
+  return watched;
 }
 
 /**

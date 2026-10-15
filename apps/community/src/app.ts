@@ -23,7 +23,7 @@ import { registerEventRoutes } from './routes/community/events.js';
 import type { LiveHub } from './live/hub.js';
 import { createLiveHub, stopLiveWithPool } from './live/app-hub.js';
 import { registerMonitoringRoutes } from './live/monitoring.js';
-import { registerInviteRoutes } from './routes/community/invites.js';
+import { registerInviteRoutes } from './routes/community/admission/invites.js';
 import { registerMemberRoutes } from './routes/community/members.js';
 import { registerModerationRoutes } from './routes/community/moderation/register.js';
 import { registerOpenAdmissionRoutes } from './routes/community/open-admission.js';

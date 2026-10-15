@@ -1,3 +1,20 @@
+import { performRoomRepoHttpOperation, withRoomFileHttpRequest } from './room-file-http-owner.js';
+import { parseUploadForm, UploadLimitError } from '../http/uploads.js';
+import { originalDocHonoRequest } from '../http/original-doc-request.js';
+import {
+  requireRoomFileEditorHttpCurrent,
+  executeRoomFileSave,
+  executeRoomFilePrepareUpload,
+  executeRoomFileUpload,
+  executeRoomFileMove,
+  executeRoomFileRemove,
+  executeRoomFileAttachment,
+  createRoomFileEditorUploadStorage,
+} from '../services/rooms/repo/room-file-editor.js';
+import {
+  completeRoomFileUploadStorage,
+  issueRoomFileUploadSources,
+} from '../services/rooms/repo/room-file-upload-storage.js';
 /**
  * A room's own files (spec `project-rooms`, spec `agent-home-desk` §7.1): giving
  * a room files, reading its `main`, a person changing them (a save, an upload,
@@ -9,7 +26,6 @@
  *
  * @module routes/room-files
  */
-import { randomBytes } from 'node:crypto';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono, type Context } from 'hono';
 import {
@@ -33,22 +49,15 @@ import {
   getRoomFileEditor,
   getRoomFilesService,
   getRoomMergeService,
-  getRoomRepoService,
   getRoomService,
   RoomError,
-  type AuthorRecord,
 } from '../services/rooms/index.js';
-import {
-  readRoomRepoConfig,
-  ROOM_REPO_EXISTS_CODE,
-  type RoomFileActor,
-} from '../services/rooms/repo/index.js';
+import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/repo/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { describeBytes } from '../services/rooms/repo/room-file-ops.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
-import { parseUploadForm, UploadLimitError, type UploadForm } from '../http/uploads.js';
 import { errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { parseOrRefuse, resolveRoomCaller, roomErrorResponse, roomRoute } from './room-route.js';
@@ -86,7 +95,8 @@ const router = new Hono<ApiEnv>();
  */
 router.post('/:id/repo', (c) =>
   roomRoute(c, 'POST /:id/repo', async (caller) => {
-    const result = await getRoomRepoService().enable(c.req.param('id'), caller().id);
+    caller();
+    const result = await performRoomRepoHttpOperation(c, c.req.param('id'), 'enable');
     if (!result.created) {
       return c.json(
         {
@@ -229,14 +239,16 @@ router.get('/:id/files/content', (c) =>
 router.put('/:id/files/content', (c) =>
   roomRoute(c, 'PUT /:id/files/content', async (caller) => {
     // Caller first, for the reason `GET /:id/files` above writes down.
-    const actor = fileActor(c, caller());
+    caller();
     const body = parseOrRefuse(c, RoomFileSaveRequestSchema, readJsonBody(c));
     if (body instanceof Response) return body;
-    const outcome = await getRoomFileEditor().save(c.req.param('id'), actor, {
-      path: body.path,
-      baseCommit: body.baseCommit,
-      text: body.text,
-    });
+    const outcome = await withRoomFileHttpRequest(c, (editor, handle) =>
+      executeRoomFileSave(editor, handle, {
+        path: body.path,
+        baseCommit: body.baseCommit,
+        text: body.text,
+      })
+    );
     if (outcome.status === 'conflict') {
       return c.json(
         {
@@ -251,21 +263,6 @@ router.put('/:id/files/content', (c) =>
     return c.json(outcome.result);
   })
 );
-
-/**
- * Who is changing a room's files, as the file editor needs to know them.
- *
- * `signedIn` is whether a login session made this request — the chain sets
- * `user` only from the session gate, which only runs with login on. It decides
- * whose name the commit carries (spec `agent-home-desk` §7.1): the signed-in
- * person's, or the operator's.
- *
- * @param c - The Hono context, for the session the gate resolved.
- * @param caller - The resolved caller.
- */
-function fileActor(c: Context<ApiEnv>, caller: AuthorRecord): RoomFileActor {
-  return { authorId: caller.id, signedIn: c.get('user') !== undefined };
-}
 
 /**
  * Answer a file change that lost the race — the same 409 `FILE_CHANGED` body
@@ -306,57 +303,59 @@ function fileConflict(c: Context, conflict: RoomFileConflict): Response {
  */
 router.post('/:id/files/upload', async (c) => {
   const roomId = c.req.param('id');
-  let stagingDir: string | null = null;
-  let caller: AuthorRecord | undefined;
-  // The answer is decided first and SENT last, after the staging folder is
-  // gone: a client that sees the response can rely on nothing of its upload
-  // being left on disk.
   let reply: () => Response;
+  let caller: ReturnType<typeof resolveRoomCaller> | undefined;
   try {
     caller = resolveRoomCaller(c);
-    const actor = fileActor(c, caller);
-    const editor = getRoomFileEditor();
-    const prepared = await editor.prepareUpload(roomId, actor);
-    stagingDir = prepared.stagingDir;
-
-    let form: UploadForm | undefined;
-    try {
-      form = await parseUploadForm(c, {
-        field: ROOM_UPLOAD_FILES_FIELD,
-        maxCount: ROOM_UPLOAD_MAX_FILES,
-        disk: { directory: prepared.stagingDir, filename: () => randomBytes(16).toString('hex') },
-        // UTF-8 names: a person's file called `résumé.pdf` is not latin-1.
-        paramCharset: 'utf8',
-        limits: { fileSize: prepared.maxFileBytes, files: ROOM_UPLOAD_MAX_FILES, fields: 10 },
-      });
-    } catch (err) {
-      throw uploadError(err, prepared.maxFileBytes);
-    }
-    // A body that is not multipart carries its fields as the JSON stage read them.
-    const rawFields = form ? form.fields : (readJsonBody(c) ?? {});
-    const files = form?.files ?? [];
-    const fields = RoomFileUploadFieldsSchema.safeParse(rawFields);
-    if (!fields.success) {
-      const refusal = parseOrRefuse(c, RoomFileUploadFieldsSchema, rawFields) as Response;
-      reply = () => refusal;
-    } else {
-      const outcome = await editor.upload(roomId, actor, {
+    reply = await withRoomFileHttpRequest(c, async (editor, handle) => {
+      const { req } = originalDocHonoRequest(c);
+      const prepared = await executeRoomFilePrepareUpload(editor, handle);
+      const storage = createRoomFileEditorUploadStorage(editor, handle, prepared.stagingDir);
+      let form: Awaited<ReturnType<typeof parseUploadForm>>;
+      try {
+        form = await parseUploadForm(c, {
+          field: ROOM_UPLOAD_FILES_FIELD,
+          maxCount: ROOM_UPLOAD_MAX_FILES,
+          paramCharset: 'utf8',
+          limits: { fileSize: prepared.maxFileBytes, files: ROOM_UPLOAD_MAX_FILES, fields: 10 },
+          storage: {
+            store: (file, done) => storage._handleFile(req, file, done),
+            remove: (file, done) => storage._removeFile(req, file, done),
+          },
+        });
+      } catch (cause) {
+        // Restore the original storage cause after all owned writes have settled.
+        try {
+          await completeRoomFileUploadStorage(storage, cause);
+        } catch (original) {
+          throw uploadError(original, prepared.maxFileBytes);
+        }
+        throw uploadError(cause, prepared.maxFileBytes);
+      }
+      await completeRoomFileUploadStorage(storage, undefined);
+      requireRoomFileEditorHttpCurrent(editor, handle);
+      const files = form?.files ?? [];
+      const ownedSources = await issueRoomFileUploadSources(storage, req, files);
+      const rawFields = form?.fields ?? readJsonBody(c) ?? {};
+      const fields = RoomFileUploadFieldsSchema.safeParse(rawFields);
+      if (!fields.success) {
+        const refusal = parseOrRefuse(c, RoomFileUploadFieldsSchema, rawFields) as Response;
+        return () => refusal;
+      }
+      const outcome = await executeRoomFileUpload(editor, handle, {
         dir: fields.data.dir,
         baseCommit: fields.data.baseCommit,
         replace: fields.data.replace,
-        files: files.map((file) => ({
+        files: files.map((file, index) => ({
           name: file.originalname,
-          content: { file: file.path!, size: file.size },
+          content: ownedSources[index],
         })),
       });
-      reply =
-        outcome.status === 'conflict'
-          ? () => fileConflict(c, outcome.conflict)
-          : () => c.json(outcome.result);
-    }
+      return outcome.status === 'conflict'
+        ? () => fileConflict(c, outcome.conflict)
+        : () => c.json(outcome.result);
+    });
   } catch (err) {
-    // A person closing the tab mid-upload is not a server fault, and there is
-    // nobody left to answer: a note, not an error, and no response.
     if (isAbortedUpload(err)) {
       logger.info('[rooms] an upload was abandoned before it finished', {
         roomId,
@@ -371,7 +370,6 @@ router.post('/:id/files/upload', async (c) => {
       reply = () => roomErrorResponse(c, err, 'POST /:id/files/upload', settled);
     }
   }
-  if (stagingDir) await getRoomFileEditor().discardUpload(stagingDir);
   return reply();
 });
 
@@ -428,10 +426,12 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
  */
 router.post('/:id/files/move', (c) =>
   roomRoute(c, 'POST /:id/files/move', async (caller) => {
-    const actor = fileActor(c, caller());
+    caller();
     const body = parseOrRefuse(c, RoomFileMoveRequestSchema, readJsonBody(c));
     if (body instanceof Response) return body;
-    const outcome = await getRoomFileEditor().move(c.req.param('id'), actor, body);
+    const outcome = await withRoomFileHttpRequest(c, (editor, handle) =>
+      executeRoomFileMove(editor, handle, body)
+    );
     if (outcome.status === 'conflict') return fileConflict(c, outcome.conflict);
     return c.json(outcome.result);
   })
@@ -448,10 +448,12 @@ router.post('/:id/files/move', (c) =>
  */
 router.post('/:id/files/delete', (c) =>
   roomRoute(c, 'POST /:id/files/delete', async (caller) => {
-    const actor = fileActor(c, caller());
+    caller();
     const body = parseOrRefuse(c, RoomFileDeleteRequestSchema, readJsonBody(c));
     if (body instanceof Response) return body;
-    const outcome = await getRoomFileEditor().remove(c.req.param('id'), actor, body);
+    const outcome = await withRoomFileHttpRequest(c, (editor, handle) =>
+      executeRoomFileRemove(editor, handle, body)
+    );
     if (outcome.status === 'conflict') return fileConflict(c, outcome.conflict);
     return c.json(outcome.result);
   })
@@ -476,38 +478,38 @@ router.post('/:id/files/from-attachment', (c) =>
       const viewer = caller();
       const body = parseOrRefuse(c, RoomFileFromAttachmentRequestSchema, readJsonBody(c));
       if (body instanceof Response) return body;
-      const actor = fileActor(c, viewer);
-      const editor = getRoomFileEditor();
-      // The write gate before the attachment is looked up: a caller who may not
-      // change this room's files learns nothing about its attachments.
-      editor.assertCanChange(roomId, actor);
+      return await withRoomFileHttpRequest(c, async (editor, handle) => {
+        // The write gate before the attachment is looked up: a caller who may not
+        // change this room's files learns nothing about its attachments.
+        requireRoomFileEditorHttpCurrent(editor, handle);
 
-      const row = getAttachmentRowStore().get(roomId, body.attachmentId);
-      if (
-        !row ||
-        row.entryId === null ||
-        !getRoomService().canReadAttachment(roomId, viewer.id, row)
-      ) {
-        return notFound();
-      }
-      const stored = await getRoomAttachmentStore().get(
-        roomId,
-        row.id,
-        row.extension,
-        'application/octet-stream'
-      );
-      if (!stored) return notFound();
-      const chunks: Buffer[] = [];
-      for await (const chunk of stored.stream) chunks.push(Buffer.from(chunk as Buffer));
+        const row = getAttachmentRowStore().get(roomId, body.attachmentId);
+        if (
+          !row ||
+          row.entryId === null ||
+          !getRoomService().canReadAttachment(roomId, viewer.id, row)
+        ) {
+          return notFound();
+        }
+        const stored = await getRoomAttachmentStore().get(
+          roomId,
+          row.id,
+          row.extension,
+          'application/octet-stream'
+        );
+        if (!stored) return notFound();
+        const chunks: Buffer[] = [];
+        for await (const chunk of stored.stream) chunks.push(Buffer.from(chunk as Buffer));
 
-      const outcome = await editor.saveAttachment(roomId, actor, {
-        dir: body.dir,
-        name: body.name ?? row.name,
-        baseCommit: body.baseCommit,
-        bytes: Buffer.concat(chunks),
+        const outcome = await executeRoomFileAttachment(editor, handle, {
+          dir: body.dir,
+          name: body.name ?? row.name,
+          baseCommit: body.baseCommit,
+          bytes: Buffer.concat(chunks),
+        });
+        if (outcome.status === 'conflict') return fileConflict(c, outcome.conflict);
+        return c.json(outcome.result);
       });
-      if (outcome.status === 'conflict') return fileConflict(c, outcome.conflict);
-      return c.json(outcome.result);
     } catch (err) {
       if (err instanceof InvalidRoomAttachmentIdError) return notFound();
       throw err;
@@ -534,12 +536,10 @@ router.post('/:id/files/from-attachment', (c) =>
  */
 router.post('/:id/repo/main/repair', (c) =>
   roomRoute(c, 'POST /:id/repo/main/repair', async (caller) => {
-    const viewer = caller();
+    caller();
     const body = parseOrRefuse(c, RoomMainRepairRequestSchema, readJsonBody(c));
     if (body instanceof Response) return body;
-    return c.json(
-      await getRoomRepoService().repairMainCheckout(c.req.param('id'), viewer.id, body)
-    );
+    return c.json(await performRoomRepoHttpOperation(c, c.req.param('id'), 'repair', body));
   })
 );
 
@@ -560,10 +560,10 @@ router.post('/:id/repo/main/repair', (c) =>
 router.post('/:id/repo/merge', (c) =>
   roomRoute(c, 'POST /:id/repo/merge', async (caller) => {
     try {
-      const viewer = caller();
+      caller();
       const body = parseOrRefuse(c, MergeRoomRepoRequestSchema, readJsonBody(c));
       if (body instanceof Response) return body;
-      const result = await getRoomMergeService().merge(c.req.param('id'), viewer.id, {
+      const result = await performRoomRepoHttpOperation(c, c.req.param('id'), 'merge', {
         summary: body.summary,
         ...(body.worktree !== undefined ? { worktree: body.worktree } : {}),
       });

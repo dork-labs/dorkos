@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  sql,
   and,
   eq,
   canvasDocBatches,
@@ -486,3 +487,119 @@ describe('canonical document ownership transactions', () => {
     ).toBeDefined();
   });
 });
+
+// The paid SDK process alone is replaced. Authority comes from the real original constructor/FILE DB.
+const nativeRetentionSdk = vi.hoisted(() => ({
+  options: [] as unknown[],
+  prompts: [] as unknown[],
+  parked: true,
+  release: undefined as (() => void) | undefined,
+}));
+vi.mock('@openai/codex-sdk', () => ({
+  Codex: class {
+    constructor(options: unknown) {
+      nativeRetentionSdk.options.push(options);
+    }
+    startThread() {
+      return {
+        id: 'native-retention-source',
+        runStreamed: async (prompt: unknown) => {
+          nativeRetentionSdk.prompts.push(prompt);
+          return {
+            events: (async function* () {
+              yield { type: 'thread.started', thread_id: 'native-retention-source' };
+              if (nativeRetentionSdk.parked)
+                await new Promise<void>((resolve) => {
+                  nativeRetentionSdk.release = resolve;
+                });
+              yield {
+                type: 'turn.completed',
+                usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              };
+            })(),
+          };
+        },
+      };
+    }
+    resumeThread() {
+      return this.startThread();
+    }
+  },
+}));
+import { nativeCommittedCodexRoomFixture } from '../writes/__tests__/authority-fixtures.js';
+function originalNativeRetentionSource(disposition: 'settled' | 'unpulled' = 'settled') {
+  nativeRetentionSdk.options.length = 0;
+  nativeRetentionSdk.prompts.length = 0;
+  nativeRetentionSdk.parked = true;
+  nativeRetentionSdk.release = undefined;
+  return nativeCommittedCodexRoomFixture(
+    {
+      options: nativeRetentionSdk.options,
+      prompts: nativeRetentionSdk.prompts,
+      releaseProducer: () => nativeRetentionSdk.release?.(),
+      completeFutureTurns: () => {
+        nativeRetentionSdk.parked = false;
+      },
+    },
+    disposition
+  );
+}
+
+it.each(['settled', 'unpulled'] as const)(
+  'refuses physical removal before mutations and closes permission without rewriting %s native evidence',
+  async (disposition) => {
+    const h = await originalNativeRetentionSource(disposition);
+    let failed = false,
+      first: unknown;
+    try {
+      const scope = `room:${h.roomId}`;
+      const events = h.db.all(
+        sql`SELECT * FROM canvas_doc_events WHERE document_id=${h.documentId}`
+      );
+      const batches = h.db.all(
+        sql`SELECT * FROM canvas_doc_batches WHERE document_id=${h.documentId}`
+      );
+      const deliveries = h.db.all(
+        sql`SELECT * FROM canvas_doc_deliveries WHERE document_id=${h.documentId}`
+      );
+      const admissions = h.db.all(
+        sql`SELECT * FROM room_doc_admissions WHERE document_id=${h.documentId}`
+      );
+      expect(() => h.rooms.canvasDocuments.remove(scope, h.documentId)).toThrow(
+        'Document has retained native Room admission evidence.'
+      );
+      expect(h.http.channels.getChannel(h.documentId)!.closedAt).toBeNull();
+      expect(h.http.channels.getGrant(h.granted.grant.grantId)!.revokedAt).toBeNull();
+      const physical = h.rooms.canvasDocuments.get(scope, h.documentId);
+      if (!physical) throw new Error('Genuine physical document missing.');
+      h.db.transaction((tx) => h.rooms.canvasDocuments.lifecycle.close(tx, physical));
+      expect(h.http.channels.getChannel(h.documentId)!.closedAt).not.toBeNull();
+      expect(h.http.channels.getGrant(h.granted.grant.grantId)!.revokedAt).not.toBeNull();
+      expect(
+        h.db.all(sql`SELECT * FROM canvas_doc_events WHERE document_id=${h.documentId}`)
+      ).toEqual(events);
+      expect(
+        h.db.all(sql`SELECT * FROM canvas_doc_batches WHERE document_id=${h.documentId}`)
+      ).toEqual(batches);
+      expect(
+        h.db.all(sql`SELECT * FROM canvas_doc_deliveries WHERE document_id=${h.documentId}`)
+      ).toEqual(deliveries);
+      expect(
+        h.db.all(sql`SELECT * FROM room_doc_admissions WHERE document_id=${h.documentId}`)
+      ).toEqual(admissions);
+    } catch (cause) {
+      failed = true;
+      first = cause;
+    } finally {
+      try {
+        await h.cleanup();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+    }
+    if (failed) throw first;
+  }
+);

@@ -3,7 +3,7 @@ import { useWidgetActions } from '../model/widget-context';
 import type { WidgetChannelSubmission } from '../model/widget-channel';
 
 /** Describe acceptance separately from runtime completion and claimed application handling. */
-export function widgetChannelStatus(row: WidgetChannelSubmission, destination: string): string {
+export function widgetChannelStatus(row: WidgetChannelSubmission): string {
   if (row.phase === 'sending') return 'Saving…';
   if (row.phase !== 'accepted') return row.message ?? 'This action could not be saved.';
   const deliveries = row.receipt?.deliveries ?? [];
@@ -11,14 +11,14 @@ export function widgetChannelStatus(row: WidgetChannelSubmission, destination: s
   return deliveries
     .map((delivery) => {
       if (delivery.ackOutcome === 'handled' || delivery.status === 'handled')
-        return `${destination} reported that it handled this action.`;
+        return 'The destination reported that it handled this action.';
       if (delivery.ackOutcome === 'rejected' || delivery.status === 'rejected')
-        return `${destination} could not handle this action.`;
+        return 'The destination could not handle this action.';
       switch (delivery.status) {
         case 'turn_started':
-          return `${destination} started working.`;
+          return 'The destination started working.';
         case 'turn_done':
-          return `${destination} finished. Handling is not confirmed yet.`;
+          return 'The destination finished. Handling is not confirmed yet.';
         case 'in_doubt':
           return 'Saved; outcome unknown. Review before replaying.';
         case 'failed':
@@ -32,7 +32,7 @@ export function widgetChannelStatus(row: WidgetChannelSubmission, destination: s
         case 'unavailable':
           return 'Saved; the destination is not available.';
         default:
-          return `Saved; waiting for ${destination}.`;
+          return 'Saved; waiting for the destination.';
       }
     })
     .join(' ');
@@ -68,7 +68,7 @@ export function WidgetChannelStatus({
         >
           <span>
             {rows.length > 1 ? `Action ${index + 1}: ` : ''}
-            {widgetChannelStatus(row, channel.destinationLabel)}
+            {widgetChannelStatus(row)}
           </span>
           {row.phase === 'retry' && (
             <Button

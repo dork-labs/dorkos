@@ -21,7 +21,7 @@
  */
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
@@ -202,7 +202,6 @@ async function runProbe(
   const isAccountRoot = deps.isAccountRoot ?? isClaudeAccountRoot;
   if (!root || !isAccountRoot(root)) return failed('not-an-account');
 
-  const queryFactory = deps.queryFactory ?? query;
   const timeoutMs = deps.timeoutMs ?? PROBE_TIMEOUT_MS;
   const binary = 'binaryPath' in deps ? deps.binaryPath : binaryResolver();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -213,6 +212,8 @@ async function runProbe(
     // settings, and never leaves anything in a person's work.
     const cwd = path.join(deps.dorkHome ?? resolveDorkHome(), 'cache', 'account-probe');
     await mkdir(cwd, { recursive: true });
+    const queryFactory =
+      deps.queryFactory ?? (await import('@anthropic-ai/claude-agent-sdk')).query;
     idle = createIdlePrompt();
     probe = queryFactory({
       prompt: idle.prompt,

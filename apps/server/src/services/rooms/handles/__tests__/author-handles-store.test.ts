@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { agents, authors, handleTombstones, eq, sql, type Db } from '@dorkos/db';
 import { AuthorRegistry } from '../../author-registry.js';
 import { ensureHandles } from '../ensure-handles.js';
-import { RoomError } from '../../room-errors.js';
+import { RoomError } from '../../data/room-errors.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 
 const ANA_PATH = '/agents/ana';

@@ -21,6 +21,7 @@
  * @module services/core/self-description/dorkos-registry
  */
 import { noopLogger } from '@dorkos/shared/logger';
+import type { OriginalRoomMergeRegistryConstruction } from '../capabilities/registry.js';
 
 import {
   composeRegistry,
@@ -62,7 +63,8 @@ import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
  */
 export function composeDorkOsCapabilityRegistry(
   deps: CapabilityDeps,
-  onInvocation?: CapabilityInvocationObserver
+  onInvocation?: CapabilityInvocationObserver,
+  roomMergeConstruction?: OriginalRoomMergeRegistryConstruction
 ): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
   if (deps.operatorDeps) domains.push(operatorDomain);
@@ -94,7 +96,7 @@ export function composeDorkOsCapabilityRegistry(
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
 
-  const registry = composeRegistry(domains, deps, onInvocation);
+  const registry = composeRegistry(domains, deps, onInvocation, roomMergeConstruction);
   // Back-write the composed registry so `capabilities.list` can serialize it.
   // Done immediately after composition, before any request is served — this is
   // the late-binding half of the self-reference.

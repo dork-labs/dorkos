@@ -65,7 +65,7 @@ import {
   type CapabilityHandlerContext,
   type CapabilityRegistry,
 } from '../capabilities/index.js';
-import { titleForMcpTool } from '../mcp-tool-tiers.js';
+import { titleForMcpTool } from '../mcp-tools/mcp-tool-tiers.js';
 import { agentRequestWriter, agentWriter } from './permission-history.js';
 import { PermissionError, type PermissionService } from './permission-service.js';
 

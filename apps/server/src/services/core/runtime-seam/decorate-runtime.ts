@@ -48,10 +48,26 @@ export function decorateRuntime(
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
   return holdPausedAgents(
-    holdAwakeDuringTurns(
-      recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf)))),
-      keepAwakeService,
-      (sessionId) => isSessionPaused(runtime, sessionId)
+    holdAwakeForRegisteredRuntime(
+      runtime,
+      recordToolUse(watchRuntimeSignin(traceRuntime(recordTurnLevels(runtime, storedModeOf))))
     )
+  );
+}
+
+/**
+ * Share the pause-aware keep-awake constructor with the original registry seam.
+ * The observed runtime and returned wrapper retain their actual identities.
+ *
+ * @param runtime - The registered raw runtime whose session owner is checked.
+ * @param observed - The actual inner decorator result to observe.
+ * @returns The genuine keep-awake wrapper, with the same pause probe on both seams.
+ */
+export function holdAwakeForRegisteredRuntime(
+  runtime: AgentRuntime,
+  observed: AgentRuntime
+): AgentRuntime {
+  return holdAwakeDuringTurns(observed, keepAwakeService, (sessionId) =>
+    isSessionPaused(runtime, sessionId)
   );
 }

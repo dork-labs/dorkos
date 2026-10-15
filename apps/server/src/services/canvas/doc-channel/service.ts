@@ -2,28 +2,163 @@
 import {
   PageEventSchema,
   CanvasChannelGrantSchema,
-  CanvasChannelReplayResponseSchema,
   type CanvasChannelEventReceipt,
-  type CanvasChannelReplayResponse,
-  type CanvasChannelRouting,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { DocChannelIngest } from './ingest.js';
-import { DocIngestRefusal } from './ingest-types.js';
+
+import type { DocCurrentReplayResponse } from './current/current-operation-types.js';
+import { DocIngestRefusal } from './ingest-data/ingest-types.js';
 import type { DocChannelGrants } from './grants.js';
-import { DocRouteGrantError } from './grant-policy.js';
-import { replayDocChannel } from './replay.js';
 import type { DocDeliveryRow } from './store.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import {
   DocChannelAuthorization,
   DocChannelNotFoundError,
-  DocChannelArchivedError,
   type DocChannelActor,
 } from './authorization.js';
 import { DocChannelStore, type DocChannelRow } from './store.js';
 
+import { createIsolatedCurrentServiceBindings } from './binding/service-binding-operations.js';
+import { constructOriginalCurrentService } from './binding/service-construction.js';
+import type { OriginalServiceConstructionView } from './binding/service-binding-types.js';
+const originalServiceBindings = createIsolatedCurrentServiceBindings();
+const currentServiceBindings = originalServiceBindings.currentServiceBindings;
+/** Original operation selected by actual private service constructor membership. */
+export const submitCurrentDocEvent: typeof originalServiceBindings.submitCurrentDocEvent =
+  originalServiceBindings.submitCurrentDocEvent;
+/** Original operation selected by actual private service constructor membership. */
+export const inspectServiceCurrentDocReceipt: typeof originalServiceBindings.inspectServiceCurrentDocReceipt =
+  originalServiceBindings.inspectServiceCurrentDocReceipt;
+/** Original operation selected by actual private service constructor membership. */
+export const replayServiceCurrentDoc: typeof originalServiceBindings.replayServiceCurrentDoc =
+  originalServiceBindings.replayServiceCurrentDoc;
+/** Original operation selected by actual private service constructor membership. */
+export const currentRoomDueServicePort: typeof originalServiceBindings.currentRoomDueServicePort =
+  originalServiceBindings.currentRoomDueServicePort;
+/** Original operation selected by actual private service constructor membership. */
+export const prepareServiceOriginalRoomResponder: typeof originalServiceBindings.prepareServiceOriginalRoomResponder =
+  originalServiceBindings.prepareServiceOriginalRoomResponder;
+/** Original operation selected by actual private service constructor membership. */
+export const commitServiceOriginalRoomResponder: typeof originalServiceBindings.commitServiceOriginalRoomResponder =
+  originalServiceBindings.commitServiceOriginalRoomResponder;
+/** Original operation selected by actual private service constructor membership. */
+export const captureServiceCurrentDocument: typeof originalServiceBindings.captureServiceCurrentDocument =
+  originalServiceBindings.captureServiceCurrentDocument;
+/** Original operation selected by actual private service constructor membership. */
+export const requireServiceCurrentDocument: typeof originalServiceBindings.requireServiceCurrentDocument =
+  originalServiceBindings.requireServiceCurrentDocument;
+/** Original operation selected by actual private service constructor membership. */
+export const replayServiceDocumentAuthority: typeof originalServiceBindings.replayServiceDocumentAuthority =
+  originalServiceBindings.replayServiceDocumentAuthority;
+/** Original operation selected by actual private service constructor membership. */
+export const inspectServiceDocumentAuthority: typeof originalServiceBindings.inspectServiceDocumentAuthority =
+  originalServiceBindings.inspectServiceDocumentAuthority;
+/** Original operation selected by actual private service constructor membership. */
+export const submitServiceDocumentAuthority: typeof originalServiceBindings.submitServiceDocumentAuthority =
+  originalServiceBindings.submitServiceDocumentAuthority;
+/** Original operation selected by actual private service constructor membership. */
+export const readServiceOriginalRoomScenarioEvidence: typeof originalServiceBindings.readServiceOriginalRoomScenarioEvidence =
+  originalServiceBindings.readServiceOriginalRoomScenarioEvidence;
+/** Original operation selected by actual private service constructor membership. */
+export const prepareServiceOriginalCheckboxSource: typeof originalServiceBindings.prepareServiceOriginalCheckboxSource =
+  originalServiceBindings.prepareServiceOriginalCheckboxSource;
+/** Original operation selected by actual private service constructor membership. */
+export const completeServiceOriginalCheckboxSource: typeof originalServiceBindings.completeServiceOriginalCheckboxSource =
+  originalServiceBindings.completeServiceOriginalCheckboxSource;
+/** Original operation selected by actual private service constructor membership. */
+export const publishServiceOriginalCheckboxSource: typeof originalServiceBindings.publishServiceOriginalCheckboxSource =
+  originalServiceBindings.publishServiceOriginalCheckboxSource;
+/** Original operation selected by actual private service constructor membership. */
+export const abandonServiceOriginalCheckboxSource: typeof originalServiceBindings.abandonServiceOriginalCheckboxSource =
+  originalServiceBindings.abandonServiceOriginalCheckboxSource;
+/** Original operation selected by actual private service constructor membership. */
+export const notifyServiceOriginalCheckboxCommitted: typeof originalServiceBindings.notifyServiceOriginalCheckboxCommitted =
+  originalServiceBindings.notifyServiceOriginalCheckboxCommitted;
+/** Original operation selected by actual private service constructor membership. */
+export const requireServiceOriginalCheckboxGrantDependencies: typeof originalServiceBindings.requireServiceOriginalCheckboxGrantDependencies =
+  originalServiceBindings.requireServiceOriginalCheckboxGrantDependencies;
+/** Original operation selected by actual private service constructor membership. */
+export const requireServiceOriginalDocumentInTransaction: typeof originalServiceBindings.requireServiceOriginalDocumentInTransaction =
+  originalServiceBindings.requireServiceOriginalDocumentInTransaction;
+/** Original operation selected by actual private service constructor membership. */
+export const issueServiceOriginalDocToken: typeof originalServiceBindings.issueServiceOriginalDocToken =
+  originalServiceBindings.issueServiceOriginalDocToken;
+/** Original operation selected by actual private service constructor membership. */
+export const restoreServiceOriginalTokenScope: typeof originalServiceBindings.restoreServiceOriginalTokenScope =
+  originalServiceBindings.restoreServiceOriginalTokenScope;
+/** Original operation selected by actual private service constructor membership. */
+export const replayServiceOriginalTokenScope: typeof originalServiceBindings.replayServiceOriginalTokenScope =
+  originalServiceBindings.replayServiceOriginalTokenScope;
+/** Original operation selected by actual private service constructor membership. */
+export const readServiceOriginalTokenEvent: typeof originalServiceBindings.readServiceOriginalTokenEvent =
+  originalServiceBindings.readServiceOriginalTokenEvent;
+/** Original operation selected by actual private service constructor membership. */
+export const openServiceOriginalTokenStream: typeof originalServiceBindings.openServiceOriginalTokenStream =
+  originalServiceBindings.openServiceOriginalTokenStream;
+/** Original operation selected by actual private service constructor membership. */
+export const nextServiceOriginalTokenStream: typeof originalServiceBindings.nextServiceOriginalTokenStream =
+  originalServiceBindings.nextServiceOriginalTokenStream;
+/** Original operation selected by actual private service constructor membership. */
+export const closeServiceOriginalTokenStream: typeof originalServiceBindings.closeServiceOriginalTokenStream =
+  originalServiceBindings.closeServiceOriginalTokenStream;
+/** Original operation selected by actual private service constructor membership. */
+export const closedServiceOriginalTokenStream: typeof originalServiceBindings.closedServiceOriginalTokenStream =
+  originalServiceBindings.closedServiceOriginalTokenStream;
+/** Original operation selected by actual private service constructor membership. */
+export const readServiceOriginalTokenStreamState: typeof originalServiceBindings.readServiceOriginalTokenStreamState =
+  originalServiceBindings.readServiceOriginalTokenStreamState;
+/** Original operation selected by actual private service constructor membership. */
+export const readServiceOriginalTokenDrainData: typeof originalServiceBindings.readServiceOriginalTokenDrainData =
+  originalServiceBindings.readServiceOriginalTokenDrainData;
+/** Original operation selected by actual private service constructor membership. */
+export const revokeServiceOriginalDocToken: typeof originalServiceBindings.revokeServiceOriginalDocToken =
+  originalServiceBindings.revokeServiceOriginalDocToken;
+/** Original operation selected by actual private service constructor membership. */
+export const admitServiceOriginalTokenIngress: typeof originalServiceBindings.admitServiceOriginalTokenIngress =
+  originalServiceBindings.admitServiceOriginalTokenIngress;
+/** Original operation selected by actual private service constructor membership. */
+export const submitServiceOriginalTokenIngress: typeof originalServiceBindings.submitServiceOriginalTokenIngress =
+  originalServiceBindings.submitServiceOriginalTokenIngress;
+/** Original operation selected by actual private service constructor membership. */
+export const requireServiceOriginalTokenDependencies: typeof originalServiceBindings.requireServiceOriginalTokenDependencies =
+  originalServiceBindings.requireServiceOriginalTokenDependencies;
+/** Original operation selected by actual private service constructor membership. */
+export const readServiceOriginalDocManagement: typeof originalServiceBindings.readServiceOriginalDocManagement =
+  originalServiceBindings.readServiceOriginalDocManagement;
+/** Original operation selected by actual private service constructor membership. */
+export const askServiceOriginalDocSelection: typeof originalServiceBindings.askServiceOriginalDocSelection =
+  originalServiceBindings.askServiceOriginalDocSelection;
+/** Original operation selected by actual private service constructor membership. */
+export const replayServiceOriginalExpiredDocBatch: typeof originalServiceBindings.replayServiceOriginalExpiredDocBatch =
+  originalServiceBindings.replayServiceOriginalExpiredDocBatch;
+/** Original operation selected by actual private service constructor membership. */
+export const prepareServiceOriginalDocumentSave: typeof originalServiceBindings.prepareServiceOriginalDocumentSave =
+  originalServiceBindings.prepareServiceOriginalDocumentSave;
+/** Original operation selected by actual private service constructor membership. */
+export const completeServiceOriginalDocumentSave: typeof originalServiceBindings.completeServiceOriginalDocumentSave =
+  originalServiceBindings.completeServiceOriginalDocumentSave;
+/** Original operation selected by actual private service constructor membership. */
+export const updateServiceOriginalDocPresence: typeof originalServiceBindings.updateServiceOriginalDocPresence =
+  originalServiceBindings.updateServiceOriginalDocPresence;
+
+const constructionViews = new WeakMap<object, OriginalServiceConstructionView>();
+const constructionApply = Reflect.apply;
+const constructionGet = WeakMap.prototype.get;
+const constructionSet = WeakMap.prototype.set;
+/** Refuse every value except the exact original service constructor-private key before callback installation. */
+export function readOriginalServiceConstructionView(
+  owner: object
+): OriginalServiceConstructionView {
+  const view = constructionApply(constructionGet, constructionViews, [owner]) as
+    OriginalServiceConstructionView | undefined;
+  if (!view) throw new Error('Original service construction required');
+  return view;
+}
+const originalDocPrivateConstructionFreeze = Object.freeze;
+
 /** A current document's private channel data, returned only after scope authorization. */
 export class DocChannelService {
+  readonly #constructionKey = originalDocPrivateConstructionFreeze({});
   private readonly committedInputListeners = new Set<() => void>();
   /** Observe accepted input after its transaction commits; listeners receive no page data. */
   onCommittedInput(listener: () => void): () => void {
@@ -36,7 +171,28 @@ export class DocChannelService {
     private readonly channels: DocChannelStore,
     private readonly authorization: DocChannelAuthorization,
     private readonly events?: { ingest: DocChannelIngest; grants: DocChannelGrants }
-  ) {}
+  ) {
+    const createOriginalView = (
+      service: DocChannelService
+    ): Readonly<OriginalServiceConstructionView> =>
+      originalDocPrivateConstructionFreeze<OriginalServiceConstructionView>({
+        service,
+        authorization,
+        channels,
+        events,
+        get committedInputListeners() {
+          return service.committedInputListeners;
+        },
+        bind: (binding) => {
+          currentServiceBindings.set(service, binding);
+        },
+      });
+    constructionApply(constructionSet, constructionViews, [
+      this.#constructionKey,
+      createOriginalView(this),
+    ]);
+    constructOriginalCurrentService(this.#constructionKey);
+  }
   /** Read live channel state after authorizing the current physical document. */
   async readChannel(documentId: string, actor: DocChannelActor): Promise<DocChannelRow> {
     const identity = await this.authorization.require(documentId, actor);
@@ -142,87 +298,16 @@ export class DocChannelService {
     }
     return { receipt: result.receipt, deliveries: result.deliveries.map(publicDelivery) };
   }
-  /** Replay one bounded page after current authorization, with honest payload and receipt floors. */
+  /** Replay a bounded own-DB page with full server birth and final private current access. */
   async replay(
     documentId: string,
     actor: DocChannelActor,
     since = 0,
     limit = 200
-  ): Promise<CanvasChannelReplayResponse> {
-    await this.authorization.require(documentId, actor);
-    let routingAvailable = true;
-    if (this.events) {
-      try {
-        this.events.grants.refreshAuthority(documentId, actor);
-      } catch (error) {
-        if (!(error instanceof DocRouteGrantError) && !(error instanceof DocChannelArchivedError))
-          throw error;
-        routingAvailable = false;
-      }
-    }
-    let routing: CanvasChannelRouting = {
-      enabled: false,
-      approvedEventTypes: [],
-      destinationLabel: 'Actions unavailable',
-    };
-    const snapshot = replayDocChannel(
-      this.channels,
-      (tx) => {
-        const identity = this.authorization.requireCurrent(documentId, actor, false, tx);
-        if (routingAvailable && this.events) {
-          try {
-            const routes = this.events.grants.getCurrentRoutes(documentId, undefined, actor, tx);
-            // Cross-target Relay and room admission remain unavailable until their distinct transport gates land.
-            const ready = routes.filter(
-              (row) =>
-                row.grantId &&
-                !row.reason &&
-                (row.route.to === 'log' ||
-                  (identity.scope.startsWith('session:') &&
-                    row.targetSessionId !== null &&
-                    row.targetSessionId !== undefined &&
-                    this.documents.lifecycle.resolveScope(`session:${row.targetSessionId}`) ===
-                      identity.scope))
-            );
-            const types = [...new Set(ready.flatMap((row) => row.allowedTypes ?? []))];
-            routing = {
-              enabled: types.length > 0,
-              approvedEventTypes: types,
-              destinationLabel: ready.some((row) => row.route.to !== 'log')
-                ? 'This document’s agent'
-                : ready.length
-                  ? 'Saved in this document'
-                  : 'Approval needed',
-            };
-          } catch (error) {
-            if (
-              !(error instanceof DocRouteGrantError) &&
-              !(error instanceof DocChannelArchivedError)
-            )
-              throw error;
-          }
-        }
-
-        return {
-          ...identity,
-          documentId: identity.id,
-          documentLabel: '',
-          provenance: {},
-          routes: [],
-        };
-      },
-      since,
-      limit
-    );
-    return CanvasChannelReplayResponseSchema.parse({
-      ...snapshot,
-      routing,
-      receipts: snapshot.receipts.map((row) => ({
-        receipt: { id: row.id, status: 'recorded', docSeq: row.docSeq },
-        deliveries: row.deliveries.map(publicDelivery),
-        payloadAvailable: row.payloadAvailable,
-      })),
-    });
+  ): Promise<DocCurrentReplayResponse> {
+    const own = currentServiceBindings.get(this);
+    if (!own) throw new Error('Current replay requires its genuine service constructor.');
+    return own.replay(documentId, actor, since, limit);
   }
   /** Inspect one retained receipt without disclosing raw payload, provenance or other viewers. */
   async receipt(

@@ -24,7 +24,7 @@ const assignments = collect(ts.isBinaryExpression);
  * The object `index.ts` hands the moved routes under `name` (`http/hono-api.ts`):
  * either `deps.<name> = { … }`, or `<name>: { … }` in the `deps` declaration.
  */
-function handedOver(name: string): ts.ObjectLiteralExpression {
+function handedOver(name: string): ts.Expression {
   const assigned = assignments
     .filter(
       (node) =>
@@ -43,8 +43,7 @@ function handedOver(name: string): ts.ObjectLiteralExpression {
   const matches = [...assigned, ...declared];
   expect(matches).toHaveLength(1);
   const value = ts.isSatisfiesExpression(matches[0]!) ? matches[0]!.expression : matches[0]!;
-  expect(ts.isObjectLiteralExpression(value)).toBe(true);
-  return value as ts.ObjectLiteralExpression;
+  return value;
 }
 
 describe('production document metrics bootstrap', () => {
@@ -62,12 +61,34 @@ describe('production document metrics bootstrap', () => {
     expect(migrations[0]!.arguments.map((node) => node.getText(source))).toEqual(['db']);
     expect(migrations[0]!.pos).toBeLessThan(construction.pos);
     const http = handedOver('docChannel');
-    const metrics = http.properties
+    expect(ts.isIdentifier(http)).toBe(true);
+    const compositions = calls.filter(
+      (node) => node.expression.getText(source) === 'createDocChannelHttpComposition'
+    );
+    expect(compositions).toHaveLength(1);
+    const composition = compositions[0]!;
+    if (!ts.isVariableDeclaration(composition.parent))
+      throw new Error('Document HTTP composition has no retained instance');
+    expect(http.getText(source)).toBe(composition.parent.name.getText(source));
+    const metricAssignments = calls.filter(
+      (node) =>
+        node.expression.getText(source) === 'Object.assign' &&
+        node.arguments[0]?.getText(source) === http.getText(source)
+    );
+    expect(metricAssignments).toHaveLength(1);
+    const assignment = metricAssignments[0]!;
+    expect(assignment.pos).toBeGreaterThan(construction.pos);
+    expect(assignment.pos).toBeLessThan(http.pos);
+    const fields = assignment.arguments[1];
+    if (!fields || !ts.isObjectLiteralExpression(fields))
+      throw new Error('Document HTTP metrics assignment is not an object');
+    const metrics = fields.properties
       .filter(ts.isPropertyAssignment)
       .filter((node) => node.name.getText(source) === 'metrics');
     expect(metrics).toHaveLength(1);
     expect(metrics[0]!.initializer.getText(source)).toBe(name);
     const debug = handedOver('debug');
+    if (!ts.isObjectLiteralExpression(debug)) throw new Error('Debug composition is not an object');
     expect(
       debug.properties
         .filter(ts.isShorthandPropertyAssignment)

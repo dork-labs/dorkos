@@ -134,7 +134,9 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/operator/config-patch.ts':
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
       'index.ts':
-        'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+        'the boot permissions writer and profile route setter, at boot or behind the profile route (logConfigWrite records the guarded fixed-section writes)',
+      'startup/telemetry.ts':
+        'records only the first-run telemetry notice at boot; the captured pre-notice gate keeps sends off, and logConfigWrite records the fixed lastPromptedVersion write',
       'startup/marketplace.ts':
         'the dev-link approvals writer: records what a person approved on the link card for a linked folder, behind the link flow (logConfigWrite: "linking a folder"). Moved out of index.ts unchanged (DOR-2821)',
       'routes/config.ts':
@@ -149,7 +151,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'PUT /api/runtimes/doe/inference writes only the fixed DorkOS inference metadata leaf after the loopback and refuseUnlessAccountOwner bars: identified agents and approval-token requesters are refused in every posture; under login an install-owner cookie is required. logConfigWrite records the before/after runtimes section as the DorkOS model setup. Moved with its routes from services/runtimes/connect/doe-setup-router.ts when they left Express (DOR-2802); the bars run on the request facts the Hono chain resolved, the same ones the Express pair carried',
       'services/core/agent-creator.ts':
         'records the agent it just created as the default (logConfigWrite: "the agent creator")',
-      'services/core/auth/cloud-link.ts':
+      'services/core/auth/cloud-link-config.ts':
         'stores the token this instance was linked with, behind the link flow; an unlink, and a new key replacing a held one, also narrow `cloud.remote` with `withdrawnRemoteState` (logConfigWrite: "the account link" / "unlinking this instance")',
       'services/core/auth/seed-legacy-mcp-key.ts':
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
@@ -686,6 +688,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/workspaces.ts':
         'a person making a workspace over HTTP (DOR-2335). It does not skip a gate: a person is SHOWN what a new workspace brings (409 `workspace_needs_review`) and makes it with the review hash they saw; everyone else gets an approval card',
+      'routes/session-decision-caller.ts':
+        'the workspace caller helper reads trustedCaller from resolved request authority only; the session route still reviews a new workspace or gives an agent a remembered approval card',
       'routes/sessions.ts':
         'a turn that names a workspaceKey (DOR-2335): a person is shown a new workspace, never let through unseen (one that needs review is skipped and the turn runs where it would have); everyone else gets a remembered card',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',

@@ -13,7 +13,7 @@ import { relayRoutesListener } from './relay-routes-listener.js';
 import type { RequestListener } from 'node:http';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
-import { RoomError } from '../../services/rooms/room-errors.js';
+import { RoomError } from '../../services/rooms/data/room-errors.js';
 
 // The `/api` chain reads config (login, the host allowlist); nothing is set.
 vi.mock('../../services/core/config-manager.js', () => ({

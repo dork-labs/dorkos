@@ -4,6 +4,7 @@ import { getMDXComponents } from '@/components/mdx-components';
 import { notFound } from 'next/navigation';
 import { APIPage } from '@/components/api-page';
 import { openapi } from '@/lib/openapi';
+import { projectOpenAPIPage } from '@/lib/openapi/page-schema';
 import { LLMCopyButton, ViewOptions } from '@/components/ai/page-actions';
 import { isGeneratedApiPage } from '@/lib/ai/is-generated-api-page';
 import { siteConfig } from '@/config/site';
@@ -175,7 +176,10 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             preloaded
               ? {
                   APIPage: (apiPageProps: GeneratedPageProps) => (
-                    <APIPage {...apiPageProps} {...preloaded} />
+                    <APIPage
+                      {...apiPageProps}
+                      preloaded={projectOpenAPIPage(preloaded.preloaded, apiPageProps)}
+                    />
                   ),
                 }
               : undefined

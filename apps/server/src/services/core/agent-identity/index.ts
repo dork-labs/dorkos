@@ -29,6 +29,7 @@ export {
   chatAgentOf,
   readHomeManifest,
   setAgentHomeRegistry,
+  replaceAgentHomeRegistry,
   assertOwnDesk,
   assertNobodysDesk,
   isInsideRoomsDir,

@@ -29,7 +29,7 @@ import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
-import { feedProjector } from './session-event-normalizer.js';
+import { feedProjector } from './projection/session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { withStallGuard } from './stall-guard.js';
 import {

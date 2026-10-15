@@ -24,7 +24,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { mcpDomain } from '../mcp-capabilities.js';
 import { AgentMcpOAuthService } from '../agent-mcp-oauth-service.js';
 import { AgentMcpServerService, type AgentWorkspaceLocator } from '../agent-mcp-server-service.js';
-import { McpSigninStartError } from '../mcp-signin-failure.js';
+import { McpSigninStartError } from '../capabilities/mcp-signin-failure.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type { CapabilityDeps, CapabilityDefinition } from '../../core/capabilities/index.js';
 

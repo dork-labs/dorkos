@@ -1,5 +1,9 @@
 import { z } from 'zod';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { HARNESS_IDS } from './harness-ids.js';
+
+// This leaf can reach the OpenAPI registry before any other schema module.
+extendZodWithOpenApiOnce();
 
 /**
  * The harness vocabulary — the ids and display names of every agent harness

@@ -69,7 +69,7 @@ import {
 } from '../message-dispatcher.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { runtimeLockHolder } from '../session-lock.js';
-import { feedProjector } from '../session-event-normalizer.js';
+import { feedProjector } from '../projection/session-event-normalizer.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { withStallGuard } from '../stall-guard.js';
 import { DetachedTurnLifecycle, guardTurnErrors, tapEachEvent } from '../trigger-turn.js';

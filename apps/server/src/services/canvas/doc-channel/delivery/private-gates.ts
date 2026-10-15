@@ -5,7 +5,8 @@ import { isTurnInFlight } from '../../../session/message-dispatcher.js';
 import { peekProjector } from '../../../session/session-state-projector.js';
 import type { DocChannelGrants } from '../grants.js';
 import type { DocBatchRow } from '../store.js';
-import { privateDocTurnBudget } from './final-budget.js';
+import { readOriginalDocumentRelayAvailability } from './relay-authority.js';
+import { privateDocTurnBudget, documentRouteTurnBudget } from './final-budget.js';
 import type { DocPumpGate, DocBatchPumpOptions } from './pump.js';
 /** Registered runtime instances and current grant authority are mandatory. */
 export function createPrivateDocPumpGates(options: {
@@ -34,8 +35,18 @@ export function createPrivateDocPumpGates(options: {
     budget(batch, tx) {
       const { grant, target } = current(batch, tx);
       // These inputs stay durable until the separately typed room/Relay paths are installed.
-      if (!privateTarget(batch, target)) return wait('typed_destination_unavailable');
-      const decision = privateDocTurnBudget(
+      if (!batch.scope.startsWith('session:')) return wait('typed_destination_unavailable');
+      if (!privateTarget(batch, target)) {
+        const reason = readOriginalDocumentRelayAvailability(
+          options.grants,
+          target,
+          grant.openerAgentId
+        );
+        if (reason) return wait(reason);
+      }
+      const decision = (
+        privateTarget(batch, target) ? privateDocTurnBudget : documentRouteTurnBudget
+      )(
         {
           documentId: batch.documentId,
           batchId: batch.batchId,
@@ -63,8 +74,16 @@ export function createPrivateDocPumpGates(options: {
       return { available: true };
     },
     capacity(batch, tx) {
-      const { target } = current(batch, tx);
-      if (!privateTarget(batch, target)) return wait('typed_destination_unavailable');
+      const { grant, target } = current(batch, tx);
+      if (!batch.scope.startsWith('session:')) return wait('typed_destination_unavailable');
+      if (!privateTarget(batch, target)) {
+        const reason = readOriginalDocumentRelayAvailability(
+          options.grants,
+          target,
+          grant.openerAgentId
+        );
+        if (reason) return wait(reason);
+      }
       let runtime: AgentRuntime;
       try {
         runtime = options.runtimes.get(target.runtime!);
@@ -82,5 +101,45 @@ export function createPrivateDocPumpGates(options: {
         return wait('pending_segment');
       return { available: true };
     },
+  };
+}
+
+/** Final synchronous gate rereads original grant/source identity before cross-target spending. */
+export function createDocBeforeClaim(
+  store: import('../store.js').DocChannelStore,
+  grants: DocChannelGrants
+): import('./final-budget.js').DocBeforeClaim {
+  return (context, tx, now) => {
+    const batch = store.getBatch(context.batchId, tx);
+    if (
+      !batch ||
+      batch.documentId !== context.documentId ||
+      batch.generation !== context.generation ||
+      batch.scope !== context.scope ||
+      batch.routeId !== context.routeId ||
+      batch.grantId !== context.grantId
+    )
+      return { decision: 'refuse', code: 'document_batch_changed' };
+    const { grant, target } = grants.revalidateBatchGrant(batch, tx);
+    if (
+      grant.revision !== context.grantRevision ||
+      target.scope !== context.scope ||
+      target.sessionId !== context.sessionId ||
+      target.agentId !== context.agentId ||
+      target.runtime !== context.runtime ||
+      target.agentPath !== context.agentPath ||
+      (grant.limits as { turnsPerHour: number }).turnsPerHour !== context.turnsPerHour
+    )
+      return { decision: 'refuse', code: 'document_batch_changed' };
+    if (context.scope === `session:${context.sessionId}`)
+      return privateDocTurnBudget(context, tx, now);
+    const reason = readOriginalDocumentRelayAvailability(grants, target, grant.openerAgentId);
+    if (reason)
+      return {
+        decision: 'defer',
+        reason,
+        nextEligibleAt: new Date(Date.parse(now) + 60_000).toISOString(),
+      };
+    return documentRouteTurnBudget(context, tx, now);
   };
 }

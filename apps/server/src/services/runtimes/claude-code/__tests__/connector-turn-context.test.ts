@@ -1,9 +1,17 @@
+import {
+  prepareClaudeOriginalLockedRoomResponder,
+  startClaudeCommittedRoomResponder,
+} from '../claude-code-runtime.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
-import { ClaudeConnectorTurnContext } from '../connector-turn-context.js';
+import {
+  readClaudeConnectorContext,
+  resolveOriginalClaudeConnectorPrincipal,
+  ClaudeConnectorTurnContext,
+} from '../connector-turn-context.js';
 
 const principal = {
   claims: {
@@ -277,5 +285,88 @@ describe('ClaudeConnectorTurnContext', () => {
       await context.revoke('turn_cancelled').catch(() => undefined);
       fixture.close();
     }
+  });
+});
+
+describe('native context retirement', () => {
+  it('retires before an awaited revoke callback and cannot regain the original signal', async () => {
+    const principals = port();
+    const retire = vi.fn();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+      retireNative: retire,
+    });
+    await context.resolvePrincipal();
+    expect(readClaudeConnectorContext(context)).toEqual(expect.any(AbortSignal));
+    vi.mocked(principals.revoke).mockImplementation(async () => {
+      expect(retire).toHaveBeenCalledTimes(1);
+      expect(readClaudeConnectorContext(context)).toBeUndefined();
+      await held;
+    });
+    const revoked = context.revoke('turn_terminal');
+    expect(readClaudeConnectorContext(context)).toBeUndefined();
+    release();
+    await revoked;
+    expect(readClaudeConnectorContext(context)).toBeUndefined();
+    expect(readClaudeConnectorContext({})).toBeUndefined();
+  });
+});
+
+describe('fixed original Claude context opening', () => {
+  it('refuses a structural context instead of calling its resolver', () => {
+    const resolvePrincipal = vi.fn();
+    expect(() => resolveOriginalClaudeConnectorPrincipal({ resolvePrincipal })).toThrow(
+      'Original Claude connector context is unavailable.'
+    );
+    expect(resolvePrincipal).not.toHaveBeenCalled();
+  });
+  it('uses captured ordinary ports and retires before any later resolve', async () => {
+    const principals = port();
+    const opened = principals.openTurn;
+    const context = new ClaudeConnectorTurnContext({
+      tools: tooling(principals),
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+    const replacement = vi.fn().mockRejectedValue(new Error('replacement'));
+    principals.openTurn = replacement;
+    try {
+      await expect(resolveOriginalClaudeConnectorPrincipal(context)).resolves.toBe(principal);
+      expect(opened).toHaveBeenCalledTimes(1);
+      expect(replacement).not.toHaveBeenCalled();
+    } finally {
+      await context.cancel();
+    }
+    await expect(resolveOriginalClaudeConnectorPrincipal(context)).rejects.toThrow(
+      'Original Claude connector context is retired.'
+    );
+  });
+});
+
+describe('fixed Claude Room preparation boundary', () => {
+  it('refuses a structural runtime before consulting copied source data', async () => {
+    const prepare = vi.fn();
+    await expect(
+      prepareClaudeOriginalLockedRoomResponder(
+        { prepare },
+        {} as never,
+        'canonical-session',
+        Object.freeze({ kind: 'original-frozen-room-source' })
+      )
+    ).resolves.toBeUndefined();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+  it('refuses a copied preparation instead of authorizing committed start', () => {
+    expect(() =>
+      startClaudeCommittedRoomResponder({}, Object.freeze({ kind: 'prepared-room-responder' }))
+    ).toThrow('Room responder preparation is not original.');
   });
 });

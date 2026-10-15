@@ -9,6 +9,13 @@ import {
   CheckboxEvidenceError,
   type VerifiedCheckboxAuthority,
 } from './checkbox-evidence.js';
+const originalFileCloseFailures = new WeakMap<() => void, Readonly<{ cause: unknown }>>();
+/** Cleanup DATA only, recorded solely when an original acquired handle close rejects. */
+export function readOriginalCheckboxFileCloseFailure(
+  boundary: () => void
+): Readonly<{ cause: unknown }> | undefined {
+  return originalFileCloseFailures.get(boundary);
+}
 /** Remove only the exact exclusively-created inode recorded by this intent. */
 export async function cleanCheckboxTemporary(
   row: DocWriteIntentRow,
@@ -112,6 +119,22 @@ export async function readBoundedCheckboxFile(
 ): Promise<Buffer> {
   assertFs();
   const handle = await open(path, 'r');
+  let failed = false,
+    first: unknown;
+  // Join this scope to its captured cleanup before returning or reporting failure.
+  const drainOriginalCleanup = async () => {
+    try {
+      await handle.close();
+    } catch (cause) {
+      if (!originalFileCloseFailures.has(assertFs))
+        originalFileCloseFailures.set(assertFs, Object.freeze({ cause }));
+      if (!failed) {
+        failed = true;
+        first = cause;
+      }
+    }
+    if (failed) throw first;
+  };
   try {
     assertFs();
     const current = await handle.stat({ bigint: true });
@@ -143,8 +166,12 @@ export async function readBoundedCheckboxFile(
       chunks.push(chunk);
     }
     throw new Error('Checkbox source is too large.');
+  } catch (cause) {
+    failed = true;
+    first = cause;
+    throw cause;
   } finally {
-    await handle.close();
+    await drainOriginalCleanup();
   }
 }
 

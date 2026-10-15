@@ -1,3 +1,12 @@
+import { createIsolatedClaudeSessionCustody } from './custody/session-native-custody.js';
+import { selectReloadableSessions } from './custody/session-reload-selection.js';
+import {
+  isWaitingOnPerson,
+  sessionScopedMode,
+  isAdoptableMode,
+} from './session-decision-policy.js';
+export { isWaitingOnPerson } from './session-decision-policy.js';
+import { claudeInterruptReceipt as receipt } from '../connector-turn-context.js';
 /**
  * In-memory session store — lifecycle, lookup, and interactive flow management.
  *
@@ -6,38 +15,31 @@
  *
  * @module services/runtimes/claude-code/session-store
  */
+import type { PermissionUpdate, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
-  forkSession as sdkForkSession,
-  type PermissionUpdate,
-  type PermissionUpdateDestination,
-  type Query,
-} from '@anthropic-ai/claude-agent-sdk';
-import type {
-  PermissionMode,
-  Session,
-  PendingInteractionDTO,
-  InterruptOutcome,
-  InterruptReason,
-  InterruptReceipt,
-  SessionSettings,
+  type PermissionMode,
+  type Session,
+  type InterruptReason,
+  type InterruptReceipt,
+  type SessionSettings,
 } from '@dorkos/shared/types';
-import type {
-  SessionOpts,
-  MessageOpts,
-  SessionSettingsPort,
-  SessionUpdateResult,
-  ToolDecisionOptions,
+import {
+  type SessionOpts,
+  type MessageOpts,
+  type SessionSettingsPort,
+  type SessionUpdateResult,
+  type ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { tightensDeclaredMode, actsWithoutAsking } from '@dorkos/shared/permission-semantics';
+import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import { gatePermissionMode, isPersonOnlyMode } from '../turn-permission.js';
-import type { TranscriptReader } from './transcript-reader.js';
-import type { SessionLockManager } from '../../../session/session-lock.js';
+import { gatePermissionMode } from '../turn-permission.js';
+import { type TranscriptReader } from './transcript-reader.js';
+import { type SessionLockManager } from '../../../session/session-lock.js';
 import {
   awaitControlAck,
   PERMISSION_MODE_ACK_TIMEOUT_MS,
@@ -46,107 +48,8 @@ import {
   type ControlAck,
 } from './bounded-control.js';
 
-/**
- * Build one of this store's stop receipts.
- *
- * `runtime` is hardcoded rather than threaded from the facade because this store
- * IS the claude-code adapter's session state — it is reachable from no other
- * runtime, and `ClaudeCodeRuntime.type` is a fixed `'claude-code' as const` that
- * an injection would only be able to agree with.
- *
- * @param outcome - Which of the five endings the stop reached
- * @param reason - Why, when the outcome alone does not say it
- */
-function receipt(outcome: InterruptOutcome, reason?: InterruptReason): InterruptReceipt {
-  return { outcome, ...(reason ? { reason } : {}), runtime: 'claude-code' };
-}
-
-/**
- * Is this session holding a prompt somebody could still come back and answer?
- *
- * The one bounded answer for the whole runtime: record eviction here, and the
- * dispatch refusal and warm reap in `persistent-dispatch.ts`, which used the
- * pending map's raw size and so would have refused messages into a session with
- * a STRANDED entry forever.
- *
- * The exemption's bound is the wait a prompt actually allows, measured from when
- * it was raised: the park ceiling, after which the runtime would have refused it
- * anyway (spec `ask-parks-on-timeout` §7, §8). So a stranded entry ages out on
- * exactly that clock.
- *
- * There is no shorter bound for an unattended run any more, and none is needed:
- * such a session never holds a pending entry at all, because its asks are
- * refused before one is made (`messaging/interactive-handlers.ts`, spec
- * `unattended-session-permission-prompts`). An empty map answers `false` here on
- * the first line of the loop.
- *
- * @param session - The session to weigh.
- * @param now - Server epoch ms.
- */
-export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
-  for (const pending of session.pendingInteractions.values()) {
-    // On the awake clock when the entry has one (DOR-2717): a laptop asleep
-    // overnight is not a person who never came back.
-    const waited =
-      pending.startedAwake !== undefined
-        ? performance.now() - pending.startedAwake
-        : now - pending.startedAt;
-    if (waited < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
-  }
-  return false;
-}
-
 /** This runtime's own mode descriptors — the only meaning any mode id has. */
 const CLAUDE_MODES = CLAUDE_CODE_CAPABILITIES.permissionModes.values ?? [];
-
-/**
- * The one permission-update scope DorkOS mirrors into its own session state.
- *
- * The SDK's other destinations name settings FILES — the operator's, the
- * project's, the machine-local override — and a mode written there outlives the
- * conversation the card was answered in. `'session'` is the only one whose
- * lifetime matches the row DorkOS keeps per session.
- */
-const SESSION_SCOPED: PermissionUpdateDestination = 'session';
-
-/**
- * The mode a batch of accepted permission suggestions leaves the session in, or
- * `undefined` when none of them touches the mode.
- *
- * Last one wins, for the same reason the SDK applies them in order: a batch that
- * names the mode twice ends at the second value, not the first.
- *
- * @param suggestions - The SDK permission updates being forwarded verbatim.
- */
-function sessionScopedMode(suggestions: PermissionUpdate[]): PermissionMode | undefined {
-  let mode: PermissionMode | undefined;
-  for (const update of suggestions) {
-    if (update.type === 'setMode' && update.destination === SESSION_SCOPED) mode = update.mode;
-  }
-  return mode;
-}
-
-/**
- * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
- * an approval card.
- *
- * Two questions, both asked of the runtime's own declaration rather than of the
- * id's name. Does claude-code declare this mode at all — persisting an
- * undeclared id would make the settings overlay display a posture the runtime
- * never adopted (`PATCH /api/sessions/:id`, same check). And does it act
- * without asking (`actsWithoutAsking`): a card that says "Always Allow" over one
- * Write is not a person choosing a session that never asks again; that is a
- * choice made on the dial.
- *
- * @param mode - The mode an accepted suggestion asks for.
- */
-function isAdoptableMode(mode: PermissionMode): boolean {
-  // Nor "Never ask": a click that allowed one call is not a person choosing a
-  // chat that refuses everything it would ask about (DOR-2838).
-  if (isPersonOnlyMode(mode)) return false;
-  const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
-  return descriptor !== undefined && !actsWithoutAsking(descriptor);
-}
 
 /**
  * How many times a started session with no known account looks for its
@@ -163,8 +66,20 @@ export const ACCOUNT_ROOT_PROBE_LIMIT = 3;
  * Tracks active sessions, handles the SDK session ID reverse index,
  * and provides session lifecycle, interactive flow, and health check operations.
  */
+// Private actual instance; no actual registry or registration function is exported.
+const { nativeSessionStores, isCurrentClaudeNativeSession, isOriginalClaudeSessionAlias } =
+  createIsolatedClaudeSessionCustody();
+export { isCurrentClaudeNativeSession, isOriginalClaudeSessionAlias };
+/** Own Claude session state and its original native session records. */
 export class SessionStore {
   private sessions = new Map<string, AgentSession>();
+  constructor() {
+    nativeSessionStores.set(this, {
+      sessions: this.sessions,
+      index: this.sdkSessionIndex,
+      retired: new WeakSet(),
+    });
+  }
   /** Reverse index: SDK session ID → session map key, for O(1) lookup. */
   private sdkSessionIndex = new Map<string, string>();
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
@@ -349,13 +264,7 @@ export class SessionStore {
    * cold re-fetch returns the stale init-time list (SDK `commands_changed` doc).
    */
   getReloadableSessions(): Array<{ sessionId: string; session: AgentSession }> {
-    const reloadable: Array<{ sessionId: string; session: AgentSession }> = [];
-    for (const [sessionId, session] of this.sessions) {
-      if (session.activeQuery ?? session.lastQuery) {
-        reloadable.push({ sessionId, session });
-      }
-    }
-    return reloadable;
+    return selectReloadableSessions(this.sessions);
   }
 
   // ---------------------------------------------------------------------------
@@ -557,8 +466,9 @@ export class SessionStore {
     transcriptReader: TranscriptReader,
     opts?: { upToMessageId?: string; title?: string }
   ): Promise<Session | null> {
-    const internalId = this.getInternalSessionId(sessionId) ?? sessionId;
     try {
+      const { forkSession: sdkForkSession } = await import('@anthropic-ai/claude-agent-sdk');
+      const internalId = this.getInternalSessionId(sessionId) ?? sessionId;
       // `forkSession` runs IN-PROCESS and its options carry no config dir, so the
       // env lock is the only way to point it at the source session's account —
       // and the fork's own transcript is written under whatever account is
@@ -1117,6 +1027,7 @@ export class SessionStore {
       // because the exemption is right for the whole wait, not only its second
       // half (spec `ask-parks-on-timeout` §8).
       if (isWaitingOnPerson(session, now)) continue;
+      nativeSessionStores.get(this)!.retired.add(session);
       for (const interaction of session.pendingInteractions.values()) {
         clearTimeout(interaction.timeout);
       }

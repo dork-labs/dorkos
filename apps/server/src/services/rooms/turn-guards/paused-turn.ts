@@ -6,6 +6,7 @@
  * @module services/rooms/turn-guards/paused-turn
  */
 import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
+import { readOriginalRoomTurnRunView } from '../room-turn-runner.js';
 import { AgentPausedError, agentPause } from '../../mesh/pause/agent-pause.js';
 import { RoomTurnRuntimeGoneError, type RoomTurnRequest } from '../room-turn-port.js';
 import type { SilenceContext } from '../notices/notice-log.js';
@@ -19,8 +20,10 @@ import type { SilenceContext } from '../notices/notice-log.js';
  * @throws {AgentPausedError} When the turn's agent is paused.
  */
 export function refusePausedRoomTurn(
+  ownerKey: object,
   request: Pick<RoomTurnRequest, 'cwd' | 'agentPath' | 'sessionId'>
 ): void {
+  readOriginalRoomTurnRunView(ownerKey);
   const pauses = agentPause();
   const paused = pauses?.pausedAgentOfTurn({ cwd: request.cwd, forAgent: request.agentPath });
   if (!paused) return;

@@ -21,14 +21,14 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../../../lib/boundary.js';
-import { feedProjector } from '../../../../session/session-event-normalizer.js';
+import { feedProjector } from '../../../../session/projection/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { MessageQueueStore } from '../../../../session/message-queue-store.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
 import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
 import { SessionPump } from '../session-pump.js';
-import type { PumpLaunchInput } from '../session-pump-contract.js';
+import type { PumpLaunchInput } from '../warm-process/session-pump-contract.js';
 import { SessionTurnWindows, type TurnWindow } from '../session-turn-windows.js';
 import {
   AUTOMATIC_RESUMES_PER_CRASH,

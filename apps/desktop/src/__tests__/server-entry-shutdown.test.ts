@@ -71,7 +71,7 @@ beforeEach(async () => {
   // Import the actual server shutdown chain without making desktop's tsc trace
   // the server's separate NodeNext program through a static cross-app import.
   const { createSignalShutdown } = await vi.importActual<{ createSignalShutdown: ShutdownFactory }>(
-    '../../../server/src/lib/shutdown-signal.ts'
+    '../../../server/src/lib/lifecycle/shutdown-signal.ts'
   );
   const { shutdownRuntimes } = await vi.importActual<{
     shutdownRuntimes: (relay: null) => Promise<void>;

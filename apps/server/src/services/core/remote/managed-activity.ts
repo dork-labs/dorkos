@@ -43,7 +43,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { logger } from '../../../lib/logger.js';
-import { scheduleJittered, type JitteredSchedule } from '../../../lib/jittered-schedule.js';
+import {
+  scheduleJittered,
+  type JitteredSchedule,
+} from '../../../lib/lifecycle/jittered-schedule.js';
 import type { RemoteEventBatch } from './activity-outbox.js';
 import type { AdmittedSocket } from './ingress-mark.js';
 import { MAX_DRAIN_DEADLINE_MS } from './command-dispatcher.js';

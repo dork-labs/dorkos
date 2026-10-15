@@ -1,3 +1,23 @@
+import { createIsolatedRoomServiceFilePolicyCustody } from './service/room-file-policy-custody.js';
+const originalRoomFilePolicies = createIsolatedRoomServiceFilePolicyCustody();
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceOriginalBusyAgents =
+  originalRoomFilePolicies.readRoomServiceOriginalBusyAgents;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceFileWriteOwner =
+  originalRoomFilePolicies.requireRoomServiceFileWriteOwner;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceFileWriteCurrent =
+  originalRoomFilePolicies.requireRoomServiceFileWriteCurrent;
+/** Original constructor-owned Room file policy. */
+export const requireRoomServiceRepoWriteCurrent =
+  originalRoomFilePolicies.requireRoomServiceRepoWriteCurrent;
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceOriginalFileRequest =
+  originalRoomFilePolicies.readRoomServiceOriginalFileRequest;
+/** Original constructor-owned Room file policy. */
+export const readRoomServiceRepoAgentRoster =
+  originalRoomFilePolicies.readRoomServiceRepoAgentRoster;
 /**
  * Room orchestration: create, join, post, read cursor, thread replies.
  *
@@ -22,6 +42,7 @@
  * @module server/services/rooms/room-service
  */
 import type { DbTransaction } from '@dorkos/db';
+import type { RoomStore } from './room-store.js';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
@@ -97,7 +118,7 @@ export type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
 export type { RoomExternalPostInput } from './messages/room-entry-writer.js';
 export type { RoomPostInput } from './messages/room-posting.js';
 export type { RoomSignalListener } from './service/room-publisher.js';
-export { HISTORY_PAGE_MAX } from './messages/room-reads.js';
+export { HISTORY_PAGE_MAX } from './data/room-history-limits.js';
 export {
   FIND_ROOMS_MAX,
   MEMBER_ROOMS_PAGE_MAX,
@@ -137,6 +158,10 @@ export class RoomService {
         this.publishSignal(roomId, 'progress', authorId, presence),
     });
     this.triggers = this.parts.core.triggers;
+    originalRoomFilePolicies.register(
+      this,
+      Object.freeze({ core: this.parts.core, visibility: this.parts.visibility })
+    );
   }
 
   /** The live subscription source behind `GET /api/rooms/:id/events`. */

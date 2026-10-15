@@ -12,18 +12,18 @@ import {
   ROOM_TURN_LIMIT_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 
-/** The account that owns this install, as `readOwnerAccount` answers (DOR-2652). */
+/** No Better Auth instance is initialized; only the install owner is declared. */
 const owner = vi.hoisted(() => ({ account: { id: 'user_cockpit', name: 'Owner' } as unknown }));
-// The session gate lets every request through: with login off it is a
-// pass-through anyway, and the cases that turn login on present the identity it
-// would have proved (`configApp` below) to reach the route's own bars.
+// The gate already admits requests; the real route still enforces its own caller policy.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
+vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => owner.account,
+  hasAnyApiKey: () => false,
+  getAuth: () => undefined,
+  captureOriginalRequestAuthReader: () => undefined,
 }));
 
 // Mock tunnel-manager and agent-manager to avoid side effects
@@ -41,6 +41,24 @@ vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
     push: vi.fn(),
   })),
 }));
+
+// This suite registers only fake runtimes to describe settings; native execution must refuse.
+vi.mock(
+  '../../services/runtimes/claude-code/claude-code-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).claudeNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/codex/codex-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).codexNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/opencode/opencode-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).openCodeNativeRuntime
+);
+vi.mock(
+  '../../services/runtimes/test-mode/test-mode-runtime.js',
+  async () => (await import('./config-native-runtime-fixture.js')).testModeNativeRuntime
+);
 
 vi.mock('../../lib/boundary.js', () => ({
   getBoundary: () => '/Users/test-user',
@@ -178,17 +196,41 @@ async function configApp(configRouter: Hono<ApiEnv>) {
 
 describe('PATCH /api/config', () => {
   let tmpDir: string;
+  let firstHookObserved = false;
 
   beforeEach(async () => {
+    const observeColdHook = !firstHookObserved;
+    firstHookObserved = true;
+    const hookStarted = observeColdHook ? performance.now() : 0;
+    const phase = (name: string) => {
+      if (!observeColdHook) return;
+      try {
+        const data =
+          JSON.stringify({
+            tag: 'config-first-patch-hook-phase',
+            phase: name,
+            elapsedMs: Math.max(0, Math.round(performance.now() - hookStarted)),
+          }) + '\n';
+        if (Buffer.byteLength(data, 'utf8') <= 256) process.stderr.write(data);
+      } catch {
+        /* Observation must not replace the original hook result. */
+      }
+    };
+    phase('temp-dir');
     tmpDir = createTempDir();
     process.env.DORK_HOME = tmpDir;
 
     // Initialize config manager before importing routes
+    phase('config-manager-import');
     const { initConfigManager } = await import('../../services/core/config-manager.js');
+    phase('config-manager-init');
     initConfigManager(tmpDir);
 
+    phase('router-import');
     const configRouter = (await import('../config.js')).default;
+    phase('config-app');
     target.mount(await configApp(configRouter));
+    phase('ready');
   });
 
   afterEach(() => {

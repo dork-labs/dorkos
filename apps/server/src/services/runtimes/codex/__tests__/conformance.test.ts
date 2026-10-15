@@ -114,6 +114,11 @@ const codexClientOptions = vi.hoisted(() => [] as unknown[]);
  * running" means here, so it is checked rather than assumed.
  */
 const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
+/** Only the Room case installs behavior at the actual mocked SDK stream boundary. */
+const roomCanvasSdk = vi.hoisted(() => ({
+  beforeTurn: undefined as
+    undefined | ((cwd: string, headers?: Record<string, string>) => Promise<string>),
+}));
 
 /**
  * The `ThreadOptions` each minted thread was given, in order — what the SDK
@@ -121,7 +126,12 @@ const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
  * §4.6 gate reads folder grants off it.
  */
 const threadOptionsSeen = vi.hoisted(
-  () => [] as Array<{ additionalDirectories?: string[]; sandboxMode?: string }>
+  () =>
+    [] as Array<{
+      additionalDirectories?: string[];
+      sandboxMode?: string;
+      workingDirectory?: string;
+    }>
 );
 
 /**
@@ -160,18 +170,22 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
     // mockReturnValue here (a spent generator would end multi-turn tests with
     // zero events).
     Codex: class {
-      constructor(options?: unknown) {
+      constructor(private readonly options?: { env?: Record<string, string> }) {
         codexClientOptions.push(options ?? {});
       }
       startThread = vi.fn((options?: (typeof threadOptionsSeen)[number]) => {
         threadMints.push('start');
         threadOptionsSeen.push(options ?? {});
-        return recordPrompts(makeMockThread(mintTurnEvents()));
+        return roomCanvasSdk.beforeTurn
+          ? makeRoomCanvasThread(options?.workingDirectory, this.options?.env)
+          : recordPrompts(makeMockThread(mintTurnEvents()));
       });
       resumeThread = vi.fn((_id: string, options?: (typeof threadOptionsSeen)[number]) => {
         threadMints.push('resume');
         threadOptionsSeen.push(options ?? {});
-        return recordPrompts(makeMockThread(mintTurnEvents()));
+        return roomCanvasSdk.beforeTurn
+          ? makeRoomCanvasThread(options?.workingDirectory, this.options?.env)
+          : recordPrompts(makeMockThread(mintTurnEvents()));
       });
     },
   };
@@ -188,6 +202,27 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
  * @param thread - The mock thread to tap.
  * @returns The same thread.
  */
+/** SDK-only stream: original CodexRuntime owns the lock, principal and canonical session. */
+function makeRoomCanvasThread(cwd: string | undefined, env?: Record<string, string>) {
+  const beforeTurn = roomCanvasSdk.beforeTurn!;
+  return recordPrompts(
+    makeMockThread(
+      (async function* () {
+        if (!cwd) throw new Error('Original Room SDK cwd missing');
+        const sessionId = await beforeTurn(cwd, {
+          Authorization: env?.DORKOS_CONNECTOR_MCP_AUTHORIZATION ?? '',
+          'X-DorkOS-Connector-Runtime': env?.DORKOS_CONNECTOR_MCP_RUNTIME ?? '',
+          'X-DorkOS-Connector-Cwd': env?.DORKOS_CONNECTOR_MCP_CWD ?? '',
+        });
+        for (const event of codexSimpleTurn('pong from codex')) {
+          yield event.type === 'thread.started' ? { ...event, thread_id: sessionId } : event;
+        }
+      })(),
+      null
+    )
+  );
+}
+
 function recordPrompts<T extends { runStreamed: (...args: never[]) => unknown }>(thread: T): T {
   const inner = thread.runStreamed.bind(thread);
   thread.runStreamed = ((...args: never[]) => {
@@ -256,7 +291,6 @@ import { __setCreditsCatalogForTests } from '../../../core/cloud/credits-models.
 import { InferenceTokenSchema } from '@dork-labs/cloud-api';
 // The fixture whose token serves every format: Codex speaks only `responses`.
 import CREDITS_TOKEN_FIXTURE from '@dork-labs/cloud-api/fixtures/v1/inference/token-every-format.json' with { type: 'json' };
-import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { accountDefaultModel, onModel } from './live-model.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
@@ -451,23 +485,23 @@ runtimeConformance(
     // cannot hide a second write the way it would for a file. `documents.length`
     // in the shared case is therefore a real count.
     roomCanvasTurn: () =>
-      driveRoomCanvasTurn(
-        new CodexRuntime({
-          transport: 'exec',
-          threadMap: new CodexThreadMap(createTestDb()),
-          resolveBinary: async () => '/bin/codex',
-        }),
-        {
-          agentPath: '/agents/ana',
-          otherAgentPath: '/agents/ben',
-          produce: async (sessionId) => {
-            await controlUi(
-              { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
-              { sessionId }
-            );
-          },
-        }
-      ),
+      driveRoomCanvasTurn({
+        runtime: 'codex',
+        createRuntime: ({ db, mesh, tools, providerTurn }) => {
+          roomCanvasSdk.beforeTurn = providerTurn;
+          const runtime = new CodexRuntime({
+            transport: 'exec',
+            threadMap: new CodexThreadMap(db),
+            resolveBinary: async () => '/bin/codex',
+          });
+          runtime.setMeshCore(mesh);
+          runtime.setConnectorRuntimeTools(tools);
+          return runtime;
+        },
+        releaseProvider: () => {
+          roomCanvasSdk.beforeTurn = undefined;
+        },
+      }),
     // C2/C3 are server-owned invariants every runtime inherits by construction
     // (feedProjector collapses a multi-result window; the server owns the queue),
     // so both drivers exercise the shared machinery rather than the codex binary —
@@ -843,17 +877,17 @@ runtimeConformance(
             hydratedHistory: (runtime, sessionId, content) =>
               driveReloadedHistory(runtime, sessionId, content, projectDir),
           },
-          roomCanvasTurn: () =>
-            driveRoomCanvasTurn(makeAppServerRuntime(), {
-              agentPath: '/agents/ana',
-              otherAgentPath: '/agents/ben',
-              produce: async (sessionId) => {
-                await controlUi(
-                  { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
-                  { sessionId }
-                );
+          roomCanvasTurn: () => {
+            let originalRuntime: CodexRuntime | undefined;
+            return driveRoomCanvasTurn({
+              runtime: 'codex',
+              createRuntime: (construction) => {
+                originalRuntime = makeAppServerRuntime({ roomCanvas: construction });
+                return originalRuntime;
               },
-            }),
+              releaseProvider: () => originalRuntime?.shutdown(),
+            });
+          },
         }),
   }
 );

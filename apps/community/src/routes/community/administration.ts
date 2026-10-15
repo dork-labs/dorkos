@@ -37,13 +37,13 @@ import { resolveCommunityContext } from '../../tenant-context.js';
 import { revokeTenantAccess } from '../../host/communities.js';
 import { endOwnerReplacement } from '../../owner-replacement/end.js';
 import { notifyLive } from '../../live/notices.js';
-import { mapIconBlobError, requestBytes } from './community-icon.js';
+import { mapIconBlobError, requestBytes } from './administration/community-icon.js';
 import {
   DELETABLE,
   deletionOrigin,
   deletionProjection,
   deletionTakedown,
-} from './deletion-status.js';
+} from './administration/deletion-status.js';
 
 interface SettingsRow {
   id: string;

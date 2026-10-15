@@ -33,48 +33,114 @@
  * @module server/services/rooms/repo/room-repo-store
  */
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { constants, promises as fs, type Stats } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { roomRepos, rooms, type Db } from '@dorkos/db';
 import { RoomRepoSidecarSchema, type RoomRepoSidecar } from '@dorkos/shared/room-repo';
 import { logger } from '../../../lib/logger.js';
+import { readOriginalRoomRepoCleanupOperation } from './room-repo-service.js';
+import { readOriginalRoomRepoMaintenanceOperation } from './room-repo-reconciler.js';
+import {
+  checkInstallationRoomMutationTarget,
+  readInstallationRoomStoreRoots,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
 
-/**
- * The file inside a room's home directory that records its repo.
- *
- * A constant rather than an inline string because the reconciler's directory
- * walk and the store's path builder must name the same file, and a typo in
- * either would look like "no room on this install has a repo".
- */
-export const ROOM_REPO_SIDECAR_FILENAME = 'room-repo.json';
+import {
+  ROOM_REPO_SIDECAR_FILENAME,
+  ROOM_REPO_SIDECAR_MAX_BYTES,
+  SAFE_ROOM_ID,
+  InvalidRoomIdError,
+  captureRoomRepoPersistenceMetadata,
+  serializeBoundedRoomRepoSidecar,
+  toRow,
+  captureRoomRepoCacheRow,
+  captureRoomRepoInventoryRow,
+} from './repository-store/room-repo-sidecar-data.js';
+export {
+  ROOM_REPO_SIDECAR_FILENAME,
+  SAFE_ROOM_ID,
+  InvalidRoomIdError,
+} from './repository-store/room-repo-sidecar-data.js';
+import { createIsolatedRoomRepoOwnerCustody } from './repository-store/room-repo-owner-custody.js';
 
-/**
- * The characters a room id may be made of before it reaches the filesystem.
- *
- * The same allowlist `LocalRoomAttachmentStore` applies to the same segment of
- * the same path, and an allowlist for the same reason: a room id arrives here
- * from a URL path segment, and the only safe way to know a string is not a path
- * is that it cannot contain one.
- */
-export const SAFE_ROOM_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+import { publishOriginalRoomRepoSidecar } from './repository-store/room-repo-publish-current.js';
+import type { OriginalRoomRepoPublicationView } from './repository-store/room-repo-publication-context.js';
 
-/** Thrown when a room id could be read as a path. */
-export class InvalidRoomIdError extends Error {
-  constructor(roomId: string) {
-    super(`Invalid room id: ${roomId}`);
-    this.name = 'InvalidRoomIdError';
-  }
+const originalRoomRepoPublicationViews = new WeakMap<object, OriginalRoomRepoPublicationView>();
+const originalRoomRepoPublicationGet = WeakMap.prototype.get;
+const originalRoomRepoPublicationSet = WeakMap.prototype.set;
+const originalRoomRepoPublicationApply = Reflect.apply;
+/** Only the original constructor-private key may retrieve its fixed publication view. */
+export function readOriginalRoomRepoPublicationView(
+  owner: object
+): OriginalRoomRepoPublicationView {
+  const view = originalRoomRepoPublicationApply(
+    originalRoomRepoPublicationGet,
+    originalRoomRepoPublicationViews,
+    [owner]
+  ) as OriginalRoomRepoPublicationView | undefined;
+  if (!view) throw new Error('Unknown original Room repository publication owner.');
+  return view;
 }
 
-/** Map a sidecar onto its derived cache row. */
-function toRow(sidecar: RoomRepoSidecar): typeof roomRepos.$inferInsert {
-  return {
-    roomId: sidecar.roomId,
-    mode: sidecar.mode,
-    createdAt: sidecar.createdAt,
-    lastMergeSeq: sidecar.lastMergeSeq,
-  };
+const originalRoomRepoCustody = createIsolatedRoomRepoOwnerCustody();
+const requireOriginalStoreOperation = originalRoomRepoCustody.requireOriginalStoreOperation;
+/** Original constructor-owned Room repository operation. */
+export const requireRoomRepoStoreDatabase: (
+  ...args: Parameters<typeof originalRoomRepoCustody.requireRoomRepoStoreDatabase>
+) => ReturnType<typeof originalRoomRepoCustody.requireRoomRepoStoreDatabase> =
+  originalRoomRepoCustody.requireRoomRepoStoreDatabase;
+/** Original constructor-owned Room repository operation. */
+export const readOwnedRoomRepoSource: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOwnedRoomRepoSource>
+) => ReturnType<typeof originalRoomRepoCustody.readOwnedRoomRepoSource> =
+  originalRoomRepoCustody.readOwnedRoomRepoSource;
+/** Original constructor-owned Room repository operation. */
+export const readOwnedRoomRepoTransactionSource: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOwnedRoomRepoTransactionSource>
+) => ReturnType<typeof originalRoomRepoCustody.readOwnedRoomRepoTransactionSource> =
+  originalRoomRepoCustody.readOwnedRoomRepoTransactionSource;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreWrite: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreWrite;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreRead: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreRead>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreRead> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreRead;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoStoreUpsert: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert> =
+  originalRoomRepoCustody.executeOriginalRoomRepoStoreUpsert;
+/** Original constructor-owned Room repository operation. */
+export const rollbackOriginalRoomRepoStoreWrite: (
+  ...args: Parameters<typeof originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite>
+) => ReturnType<typeof originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite> =
+  originalRoomRepoCustody.rollbackOriginalRoomRepoStoreWrite;
+/** Original constructor-owned Room repository operation. */
+export const readOriginalRoomRepoInventory: (
+  ...args: Parameters<typeof originalRoomRepoCustody.readOriginalRoomRepoInventory>
+) => ReturnType<typeof originalRoomRepoCustody.readOriginalRoomRepoInventory> =
+  originalRoomRepoCustody.readOriginalRoomRepoInventory;
+/** Original constructor-owned Room repository operation. */
+export const originalRoomRepoRoomExists: (
+  ...args: Parameters<typeof originalRoomRepoCustody.originalRoomRepoRoomExists>
+) => ReturnType<typeof originalRoomRepoCustody.originalRoomRepoRoomExists> =
+  originalRoomRepoCustody.originalRoomRepoRoomExists;
+/** Original constructor-owned Room repository operation. */
+export const executeOriginalRoomRepoCacheRemove: (
+  ...args: Parameters<typeof originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove>
+) => ReturnType<typeof originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove> =
+  originalRoomRepoCustody.executeOriginalRoomRepoCacheRemove;
+
+function sameStoreInode(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 /**
@@ -84,8 +150,28 @@ function toRow(sidecar: RoomRepoSidecar): typeof roomRepos.$inferInsert {
  * `os.homedir()`, which is banned in `apps/server/src` (Hard Rule 3).
  */
 export class RoomRepoStore {
+  readonly #publicationKey = Object.freeze({});
   /** `{dorkHome}/rooms` — the same root the attachment store hangs off. */
-  private readonly root: string;
+  readonly #root: string;
+  readonly #db: Db;
+  readonly #nativeUpsert: (
+    sidecar: Pick<RoomRepoSidecar, 'roomId' | 'mode' | 'createdAt' | 'lastMergeSeq'>
+  ) => void;
+  readonly #nativeRemove: (roomId: string) => void;
+  readonly #publications = new WeakMap<
+    InstallationRoomMutationContext,
+    {
+      sidecar: RoomRepoSidecar;
+      installation: string;
+      installationStat: Stats;
+      parent: string;
+      parentStat: Stats;
+      target: string;
+      acquired: Stats;
+      previousRow: Readonly<typeof roomRepos.$inferSelect> | null;
+      newTarget: boolean;
+    }
+  >();
 
   /**
    * Bind the store to one install's database and data directory.
@@ -93,11 +179,279 @@ export class RoomRepoStore {
    * @param db - The consolidated DB handle.
    * @param dorkHome - The resolved DorkOS data directory. Required, no fallback.
    */
-  constructor(
-    private readonly db: Db,
-    dorkHome: string
-  ) {
-    this.root = path.join(dorkHome, 'rooms');
+  constructor(db: Db, dorkHome: string) {
+    this.#db = db;
+    this.#root = path.join(dorkHome, 'rooms');
+    const prepare = db.$client.prepare.bind(db.$client);
+    const upsert = prepare(
+      'INSERT INTO room_repos (room_id, mode, created_at, last_merge_seq) VALUES (?, ?, ?, ?) ON CONFLICT(room_id) DO UPDATE SET mode = excluded.mode, created_at = excluded.created_at, last_merge_seq = excluded.last_merge_seq'
+    );
+    const runUpsert = upsert.run.bind(upsert);
+    const select = prepare(
+      'SELECT room_id AS roomId, mode, created_at AS createdAt, last_merge_seq AS lastMergeSeq FROM room_repos WHERE room_id = ?'
+    );
+    const readRow = select.get.bind(select);
+    const allRowsStatement = prepare(
+      'SELECT room_id AS roomId, mode, created_at AS createdAt, last_merge_seq AS lastMergeSeq FROM room_repos'
+    );
+    const allRows = allRowsStatement.all.bind(allRowsStatement);
+    const existsStatement = prepare('SELECT id FROM rooms WHERE id = ? LIMIT 1');
+    const existsRow = existsStatement.get.bind(existsStatement);
+    const remove = prepare('DELETE FROM room_repos WHERE room_id = ?');
+    const removeRow = remove.run.bind(remove);
+    this.#nativeRemove = (roomId) => {
+      removeRow(roomId);
+    };
+    this.#nativeUpsert = (sidecar) => {
+      runUpsert(sidecar.roomId, sidecar.mode, sidecar.createdAt, sidecar.lastMergeSeq);
+    };
+    originalRoomRepoCustody.register(this, {
+      db,
+      native: db.$client,
+      root: this.#root,
+      read: (roomId) => {
+        const row = readRow(roomId) as typeof roomRepos.$inferSelect | undefined;
+        return captureRoomRepoCacheRow(row, roomId);
+      },
+      rows: () => {
+        requireRoomRepoStoreDatabase(this, db);
+        return Object.freeze(
+          (allRows() as (typeof roomRepos.$inferSelect)[]).map(captureRoomRepoInventoryRow)
+        );
+      },
+      exists: (roomId) => {
+        requireRoomRepoStoreDatabase(this, db);
+        return existsRow(roomId) !== undefined;
+      },
+      remove: (context, roomId) => this.#removeMaintenanceRow(context, roomId),
+      readSidecar: (context, roomId) => this.#readOwned(context, roomId),
+      write: (context, sidecar) => this.#writeOwned(context, sidecar),
+      upsert: (context, sidecar) => this.#upsertOwned(context, sidecar),
+      rollback: (context) => this.#rollbackOwned(context),
+    });
+    originalRoomRepoPublicationApply(
+      originalRoomRepoPublicationSet,
+      originalRoomRepoPublicationViews,
+      [
+        this.#publicationKey,
+        Object.freeze({
+          store: this,
+          db,
+          publications: this.#publications,
+          readOwner: originalRoomRepoCustody.readOwner,
+          requireOriginalStoreOperation,
+          sameStoreInode,
+          upsertOwned: (context: InstallationRoomMutationContext, sidecar: RoomRepoSidecar) =>
+            this.#upsertOwned(context, sidecar),
+        }),
+      ]
+    );
+  }
+
+  #removeMaintenanceRow(context: InstallationRoomMutationContext, roomId: string): void {
+    const actual = readOriginalRoomRepoMaintenanceOperation(context, this, this.#db);
+    if (!actual || actual.roomId !== roomId)
+      throw new Error('Room cache removal lacks its original maintenance lifetime.');
+    requireOriginalStoreOperation(this, this.#db, context, roomId);
+    this.#nativeRemove(roomId);
+  }
+
+  async #rollbackOwned(context: InstallationRoomMutationContext): Promise<void> {
+    const publication = this.#publications.get(context);
+    if (!publication) return; // Existing or merely observed sidecars are never acquired cleanup receipts.
+    const requireCleanup = () => {
+      requireRoomRepoStoreDatabase(this, this.#db);
+      const operation = readOriginalRoomRepoCleanupOperation(context, this, this.#db);
+      if (
+        !operation ||
+        operation.roomId !== publication.sidecar.roomId ||
+        this.#publications.get(context) !== publication
+      )
+        throw new Error('Room sidecar cleanup is foreign or retired.');
+    };
+    requireCleanup();
+    const parent = await fs.lstat(publication.parent),
+      installation = await fs.lstat(publication.installation);
+    const file = await fs.lstat(publication.target);
+    if (
+      !sameStoreInode(publication.parentStat, parent) ||
+      !sameStoreInode(publication.installationStat, installation) ||
+      !file.isFile() ||
+      file.isSymbolicLink() ||
+      !sameStoreInode(publication.acquired, file)
+    )
+      throw new Error('Room sidecar cleanup refuses a foreign publication/parent.');
+    const row = originalRoomRepoCustody.readOwner(this)!.read(publication.sidecar.roomId);
+    if (
+      row &&
+      (row.mode !== publication.sidecar.mode ||
+        row.createdAt !== publication.sidecar.createdAt ||
+        row.lastMergeSeq !== publication.sidecar.lastMergeSeq) &&
+      (!publication.previousRow ||
+        row.mode !== publication.previousRow.mode ||
+        row.createdAt !== publication.previousRow.createdAt ||
+        row.lastMergeSeq !== publication.previousRow.lastMergeSeq)
+    )
+      throw new Error('Room sidecar cleanup refuses a changed cache row.');
+    requireCleanup();
+    // Existing bindings/files are never deleted as though this enable acquired them.
+    // A preexisting cache row is left unchanged on a failed pre-upsert, or restored
+    // only when its current value is exactly this operation's own publication.
+    if (publication.previousRow) {
+      if (
+        row &&
+        row.mode === publication.sidecar.mode &&
+        row.createdAt === publication.sidecar.createdAt &&
+        row.lastMergeSeq === publication.sidecar.lastMergeSeq
+      ) {
+        if (publication.previousRow.mode !== 'owned')
+          throw new Error('Room sidecar cleanup refuses a foreign cache mode.');
+        this.#nativeUpsert({ ...publication.previousRow, mode: publication.previousRow.mode });
+      }
+    } else if (row) this.#nativeRemove(publication.sidecar.roomId);
+    if (!publication.newTarget) {
+      this.#publications.delete(context);
+      return;
+    }
+    const currentFile = await fs.lstat(publication.target),
+      currentParent = await fs.lstat(publication.parent);
+    const currentInstallation = await fs.lstat(publication.installation);
+    if (
+      !sameStoreInode(publication.acquired, currentFile) ||
+      !sameStoreInode(publication.parentStat, currentParent) ||
+      !sameStoreInode(publication.installationStat, currentInstallation)
+    )
+      throw new Error('Room sidecar cleanup refuses observed replacement.');
+    requireCleanup();
+    await fs.unlink(publication.target);
+    this.#publications.delete(context);
+  }
+
+  async #readOwned(
+    context: InstallationRoomMutationContext,
+    roomId: string
+  ): Promise<RoomRepoSidecar | null> {
+    const roots = readInstallationRoomStoreRoots(context, this, this.#db),
+      target = path.join(roots.home, ROOM_REPO_SIDECAR_FILENAME);
+    requireOriginalStoreOperation(this, this.#db, context, roomId);
+    let parent: Stats | undefined, previous: Stats | undefined;
+    try {
+      parent = await fs.lstat(roots.home);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+    await checkInstallationRoomMutationTarget(context, target);
+    if (!parent) return null;
+    if (
+      !parent.isDirectory() ||
+      parent.isSymbolicLink() ||
+      (await fs.realpath(roots.home)) !==
+        path.join(roots.canonicalInstallation, path.relative(roots.installation, roots.home))
+    )
+      throw new Error('Room sidecar read parent is not its actual directory.');
+    try {
+      previous = await fs.lstat(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+    await checkInstallationRoomMutationTarget(context, target);
+    if (!sameStoreInode(parent, await fs.lstat(roots.home)))
+      throw new Error('Room sidecar read parent replaced.');
+    requireOriginalStoreOperation(this, this.#db, context, roomId);
+    if (!previous) return null;
+    if (!previous.isFile() || previous.isSymbolicLink())
+      throw new Error('Room sidecar read refuses a non-regular file.');
+    let handle: FileHandle | undefined, result: RoomRepoSidecar | undefined;
+    let failed = false,
+      cause: unknown;
+    try {
+      requireOriginalStoreOperation(this, this.#db, context, roomId);
+      handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const acquired = await handle.stat();
+      if (!acquired.isFile() || !sameStoreInode(previous, acquired))
+        throw new Error('Room sidecar read lost its acquired file.');
+      await checkInstallationRoomMutationTarget(context, target);
+      if (
+        !Number.isSafeInteger(acquired.size) ||
+        acquired.size < 0 ||
+        acquired.size > ROOM_REPO_SIDECAR_MAX_BYTES
+      )
+        throw new Error('Room sidecar exceeds its persistence ceiling.');
+      const chunks: Buffer[] = [];
+      let position = 0;
+      while (true) {
+        requireOriginalStoreOperation(this, this.#db, context, roomId);
+        const chunk = Buffer.alloc(Math.min(4096, ROOM_REPO_SIDECAR_MAX_BYTES + 1 - position));
+        const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, position);
+        await checkInstallationRoomMutationTarget(context, target);
+        requireOriginalStoreOperation(this, this.#db, context, roomId);
+        if (bytesRead === 0) break;
+        position += bytesRead;
+        if (position > ROOM_REPO_SIDECAR_MAX_BYTES)
+          throw new Error('Room sidecar grew beyond its persistence ceiling.');
+        chunks.push(chunk.subarray(0, bytesRead));
+      }
+      const bytes = Buffer.concat(chunks, position);
+      const text = bytes.toString('utf8');
+      if (!Buffer.from(text, 'utf8').equals(bytes))
+        throw new Error('Room sidecar is not valid UTF8.');
+      await checkInstallationRoomMutationTarget(context, target);
+      const finalAcquired = await handle.stat();
+      await checkInstallationRoomMutationTarget(context, target);
+      const finalTarget = await fs.lstat(target);
+      await checkInstallationRoomMutationTarget(context, target);
+      const finalParent = await fs.lstat(roots.home);
+      await checkInstallationRoomMutationTarget(context, target);
+      for (const observed of [finalAcquired, finalTarget]) {
+        if (
+          !observed.isFile() ||
+          observed.isSymbolicLink() ||
+          !sameStoreInode(acquired, observed) ||
+          !Number.isSafeInteger(observed.size) ||
+          observed.size < 0 ||
+          observed.size > ROOM_REPO_SIDECAR_MAX_BYTES ||
+          observed.size !== acquired.size ||
+          observed.mtimeMs !== acquired.mtimeMs ||
+          observed.ctimeMs !== acquired.ctimeMs
+        )
+          throw new Error('Room sidecar read changed its acquired file.');
+      }
+      if (!sameStoreInode(parent, finalParent))
+        throw new Error('Room sidecar read lost its acquired parent.');
+      // Preserve the original full schema and refuse corrupt persisted data; never normalize it.
+      result = RoomRepoSidecarSchema.parse(JSON.parse(text));
+      if (result.roomId !== roomId) throw new Error('Room sidecar belongs to another room.');
+      requireOriginalStoreOperation(this, this.#db, context, roomId);
+    } catch (error) {
+      failed = true;
+      cause = error;
+    } finally {
+      if (handle) {
+        try {
+          await handle.close();
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            cause = error;
+          }
+        }
+      }
+    }
+    if (failed) throw cause;
+    return result!;
+  }
+
+  #upsertOwned(context: InstallationRoomMutationContext, sidecar: RoomRepoSidecar): void {
+    const parsed = RoomRepoSidecarSchema.parse(sidecar);
+    requireOriginalStoreOperation(this, this.#db, context, parsed.roomId);
+    this.#nativeUpsert(parsed);
+  }
+
+  async #writeOwned(
+    context: InstallationRoomMutationContext,
+    input: RoomRepoSidecar
+  ): Promise<void> {
+    return publishOriginalRoomRepoSidecar(this.#publicationKey, context, input);
   }
 
   /**
@@ -109,7 +463,7 @@ export class RoomRepoStore {
    */
   homeDir(roomId: string): string {
     if (!SAFE_ROOM_ID.test(roomId)) throw new InvalidRoomIdError(roomId);
-    return path.join(this.root, roomId);
+    return path.join(this.#root, roomId);
   }
 
   /**
@@ -148,11 +502,13 @@ export class RoomRepoStore {
    *
    * @param sidecar - The binding to record.
    */
-  async write(sidecar: RoomRepoSidecar): Promise<void> {
+  async write(input: RoomRepoSidecar): Promise<void> {
+    const sidecar = captureRoomRepoPersistenceMetadata(input);
+    const serialized = serializeBoundedRoomRepoSidecar(sidecar);
     const dir = this.homeDir(sidecar.roomId);
     await fs.mkdir(dir, { recursive: true });
     const tmp = path.join(dir, `.${randomUUID()}.tmp`);
-    await fs.writeFile(tmp, JSON.stringify(sidecar, null, 2) + '\n', 'utf-8');
+    await fs.writeFile(tmp, serialized);
     await fs.rename(tmp, this.sidecarPath(sidecar.roomId));
     this.upsertRow(sidecar);
   }
@@ -163,7 +519,7 @@ export class RoomRepoStore {
    * @param sidecar - The binding the row mirrors.
    */
   upsertRow(sidecar: RoomRepoSidecar): void {
-    this.db
+    this.#db
       .insert(roomRepos)
       .values(toRow(sidecar))
       .onConflictDoUpdate({ target: roomRepos.roomId, set: toRow(sidecar) })
@@ -191,7 +547,7 @@ export class RoomRepoStore {
    * @param roomId - The room.
    */
   removeRow(roomId: string): void {
-    this.db.delete(roomRepos).where(eq(roomRepos.roomId, roomId)).run();
+    this.#db.delete(roomRepos).where(eq(roomRepos.roomId, roomId)).run();
   }
 
   /**
@@ -206,12 +562,12 @@ export class RoomRepoStore {
    * @param roomId - The room.
    */
   getRow(roomId: string): typeof roomRepos.$inferSelect | null {
-    return this.db.select().from(roomRepos).where(eq(roomRepos.roomId, roomId)).get() ?? null;
+    return this.#db.select().from(roomRepos).where(eq(roomRepos.roomId, roomId)).get() ?? null;
   }
 
   /** Every cached binding on this install. */
   listRows(): (typeof roomRepos.$inferSelect)[] {
-    return this.db.select().from(roomRepos).all();
+    return this.#db.select().from(roomRepos).all();
   }
 
   /**
@@ -282,11 +638,11 @@ export class RoomRepoStore {
    */
   async listHomeDirs(): Promise<string[]> {
     try {
-      const entries = await fs.readdir(this.root, { withFileTypes: true });
+      const entries = await fs.readdir(this.#root, { withFileTypes: true });
       return entries.filter((e) => e.isDirectory() && SAFE_ROOM_ID.test(e.name)).map((e) => e.name);
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
-      logger.error('[rooms] could not list the room homes', { root: this.root, err });
+      logger.error('[rooms] could not list the room homes', { root: this.#root, err });
       throw err;
     }
   }
@@ -345,7 +701,7 @@ export class RoomRepoStore {
    */
   roomExists(roomId: string): boolean {
     return (
-      this.db.select({ id: rooms.id }).from(rooms).where(eq(rooms.id, roomId)).get() !== undefined
+      this.#db.select({ id: rooms.id }).from(rooms).where(eq(rooms.id, roomId)).get() !== undefined
     );
   }
 

@@ -69,6 +69,8 @@ import { answerUnclaimed } from './unclaimed.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
+  /** Exact object admitted by the original session gate, never a reconstructed request. */
+  originalAdmittedRequest?: import('./request-facts.js').RequestFacts;
   /** The parsed request body (`http/request-body.ts`). */
   body?: unknown;
   /** The request's audit scope, entered by the audit-actor step. */
@@ -87,6 +89,8 @@ export type ApiEnv = { Bindings: HttpBindings; Variables: ApiVariables };
 export interface ApiChainOptions {
   /** The main listener's shared terminal state. */
   admission: MainRequestAdmission;
+  /** Constructor-owned bearer leaves, after terminal/managed admission and before ordinary CORS. */
+  beforeCors?: (app: Hono<ApiEnv>) => void;
   /**
    * Routes that must answer BEFORE the body is parsed and before the session
    * gate, registered at that point in the chain. Better Auth reads its own
@@ -144,6 +148,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     if (underMount(c.req.path, '/api')) noteFirstApiRequest();
     await next();
   });
+  options.beforeCors?.(app);
+
   warnOnWildcardCorsOrigin();
   app.use(keepEachVaryFieldOnce);
   app.use(
@@ -183,8 +189,10 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     await next();
   });
   app.use(async (c, next) => {
-    const decision = await decideSessionGate(c.req.method, c.req.path, honoRequestFacts(c));
+    const admittedRequest = honoRequestFacts(c);
+    const decision = await decideSessionGate(c.req.method, c.req.path, admittedRequest);
     if (!decision.allowed) return c.json(AUTH_REQUIRED_BODY, 401);
+    c.set('originalAdmittedRequest', admittedRequest);
     if (decision.user) c.set('user', decision.user);
     noteGateAdmitted(c.env.incoming, c.env.outgoing);
     await next();

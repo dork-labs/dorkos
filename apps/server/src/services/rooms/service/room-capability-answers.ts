@@ -7,7 +7,7 @@
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { CapabilityToolError } from '../../core/capabilities/index.js';
 import type { AuthorRecord } from '../author-registry.js';
-import { RoomError, roomRefusalFor } from '../room-errors.js';
+import { RoomError, roomRefusalFor } from '../data/room-errors.js';
 import { normalizeMemberHandle, type RoomService } from '../room-service.js';
 
 /**

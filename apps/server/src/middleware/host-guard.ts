@@ -166,3 +166,24 @@ export function refuseUntrustedHost(
   });
   return { error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE };
 }
+
+/** Bearer leaves never inherit the login-enabled Host waiver or log query credentials. */
+export function refuseStandaloneDocTokenHost(
+  host: string | undefined
+): { error: string; code: typeof HOST_NOT_ALLOWED_CODE } | null {
+  if (env.DORKOS_ALLOW_INSECURE_BIND) return null;
+  const hostname = parseHostname(host);
+  if (
+    isHostAllowed({
+      hostname,
+      trustedHosts: parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS),
+      tunnelHosts: getTunnelHosts(),
+      lanHosts: getLanAccessHosts(),
+    })
+  )
+    return null;
+  return {
+    error: 'This instance does not answer to this Host header.',
+    code: HOST_NOT_ALLOWED_CODE,
+  };
+}

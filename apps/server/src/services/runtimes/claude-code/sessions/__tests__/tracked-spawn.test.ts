@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import { createTrackedSpawn } from '../tracked-spawn.js';
-import { WarmProcessLedger, systemProcessProbe } from '../warm-process-ledger.js';
+import { WarmProcessLedger, systemProcessProbe } from '../warm-process/warm-process-ledger.js';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

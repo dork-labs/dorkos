@@ -16,7 +16,7 @@ import { composeDorkOsCapabilityRegistry } from './self-description/dorkos-regis
 import type { CapabilityRegistry } from './capabilities/index.js';
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
-import { SERVER_ICONS } from './mcp-tool-metadata.js';
+import { SERVER_ICONS } from './mcp-tools/mcp-tool-metadata.js';
 import { gatedToolRegistrar } from './mcp-tool-gate.js';
 
 /**

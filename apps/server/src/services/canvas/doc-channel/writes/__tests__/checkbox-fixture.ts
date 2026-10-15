@@ -10,9 +10,9 @@ import { rawByteHash } from '../checkbox-bytes.js';
 import { DocCheckboxAuthority } from '../authority.js';
 import { DocChannelGrants } from '../../grants.js';
 import { readDocSourceDescriptor } from '../../http-composition.js';
-import { observeCheckboxSource } from '../authority-snapshot.js';
-import { CheckboxAuthorityRefusal } from '../authority-snapshot.js';
-export { CheckboxAuthorityRefusal as AuthorityRefused } from '../authority-snapshot.js';
+import { observeCheckboxSource } from '../authority/authority-snapshot.js';
+import { CheckboxAuthorityRefusal } from '../authority/authority-snapshot.js';
+export { CheckboxAuthorityRefusal as AuthorityRefused } from '../authority/authority-snapshot.js';
 
 export async function fixture(
   options: CheckboxServiceOptions = {},
@@ -26,11 +26,13 @@ export async function fixture(
     documentId = h.input.documentId,
     grantId = h.granted.grant.grantId;
   const notices: string[] = [];
+  let resolveCalls = 0;
   const coordinator = new CanonicalFileWriteCoordinator({
     assertOutsideTransaction: () => {
       if (h.db.$client.inTransaction) throw new Error('FS inside SQL');
     },
     resolve: async (path) => {
+      resolveCalls++;
       const canonicalPath = await realpath(path),
         info = await stat(canonicalPath, { bigint: true });
       return { canonicalPath, device: String(info.dev), inode: String(info.ino) };
@@ -80,6 +82,7 @@ export async function fixture(
     row,
     counts,
     coordinator,
+    readResolveCalls: () => resolveCalls,
     approved,
     delivery,
     notices,

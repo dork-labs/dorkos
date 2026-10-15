@@ -37,7 +37,7 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // An owner opens a normal chat in the retained agent computer.
   'startup/computers.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.
-  'services/rooms/room-turn-runner.ts': ['room'],
+  'services/rooms/room-turn-original-run.ts': ['room'],
   // A task's run — the timer's, or a person's "Run now".
   'services/tasks/task-scheduler-service.ts': ['schedule'],
   // A message addressed to an agent over the relay: one of our agents, a chat
@@ -65,7 +65,7 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // `heartbeats` §7.2).
   'services/heartbeats/beat-launch.ts': ['heartbeat'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
-  'index.ts': ['test-harness'],
+  'startup/test-connector-probes.ts': ['test-harness'],
 };
 
 /**

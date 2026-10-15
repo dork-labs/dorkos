@@ -24,7 +24,7 @@ import {
   type RawSessionEvent,
 } from '../../session-state-projector.js';
 import { SessionEventStore } from '../../session-event-store.js';
-import { feedProjector } from '../../session-event-normalizer.js';
+import { feedProjector } from '../../projection/session-event-normalizer.js';
 import { SessionContextStore } from '../session-context-store.js';
 import {
   envBillsPerToken,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
-import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
+import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { pulseSchedules, pulseRuns, pulseDispatchLog } from '@dorkos/db';

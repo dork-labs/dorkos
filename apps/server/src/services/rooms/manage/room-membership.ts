@@ -23,7 +23,7 @@ import type { AuthorRecord } from '../author-registry.js';
 import { buildBridgeSecondAgentRefusedNotice } from '../notices/notice-copy.js';
 import type { RoomAuthority } from '../service/room-authority.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { dmTitleNames, type AddMemberInput, type RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomSystemPosts } from '../messages/room-system-posts.js';

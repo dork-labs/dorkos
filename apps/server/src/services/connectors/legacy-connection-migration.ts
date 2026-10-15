@@ -88,19 +88,6 @@ class ConnectorMigrationInvariantError extends Error {
   }
 }
 
-const LEGACY_CONNECTOR_TABLES = [
-  'session_connector_attachments',
-  'agent_connector_attachments',
-  'connected_accounts',
-  'connector_legacy_agent_revocations',
-] as const;
-
-function retireLegacyConnectorTables(db: Db): void {
-  for (const table of LEGACY_CONNECTOR_TABLES) {
-    db.$client.exec(`DROP TABLE IF EXISTS ${table}`);
-  }
-}
-
 /** Stable opaque id for one provider type's legacy default instance. */
 export function legacyDefaultProviderInstanceId(type: string): string {
   const digest = createHash('sha256').update(`dorkos:legacy-connector:${type}`).digest('hex');
@@ -151,7 +138,6 @@ export function runLegacyConnectionMigration(
         .prepare('SELECT state FROM connector_application_migrations WHERE version = ?')
         .get(CONNECTOR_FOUNDATION_MIGRATION_VERSION) as { state: string } | undefined;
       if (existing?.state === 'complete') {
-        retireLegacyConnectorTables(db);
         return;
       }
 
@@ -462,7 +448,8 @@ export function runLegacyConnectionMigration(
           'UPDATE connector_application_migrations SET state = ?, completed_at = ? WHERE version = ?'
         )
         .run('complete', now(), CONNECTOR_FOUNDATION_MIGRATION_VERSION);
-      retireLegacyConnectorTables(db);
+      // The completed ledger retires legacy reads, not Drizzle-owned schema.
+      // Retain canonical tables and rows so normal migration verification can restart.
       phase = 'retired';
       input.afterStep?.('retired');
       migrated = true;

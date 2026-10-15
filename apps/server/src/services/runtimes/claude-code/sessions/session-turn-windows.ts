@@ -225,7 +225,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, UsageStatus } from '@dorkos/shared/types';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import { logger } from '../../../../lib/logger.js';
-import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
+import type { TurnOrigin } from '../../../session/projection/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import {
@@ -237,7 +237,7 @@ import {
   type PumpControlQuery,
   type PumpCrash,
   type PumpDispatch,
-} from './session-pump-contract.js';
+} from './warm-process/session-pump-contract.js';
 
 /**
  * How long a window's accounting fetch may take before the window closes

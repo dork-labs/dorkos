@@ -15,6 +15,7 @@ function publishDocChannelNotification(value: unknown) {
   return ownDocChannelConnection(testOwner, new AbortController().signal).publish(value);
 }
 import { CanvasRenderer } from '../ui/CanvasRenderer';
+import { CanvasWidgetContent } from '../ui/CanvasWidgetContent';
 
 // Only widget dispatch is under test; unrelated viewer dependencies never mount.
 vi.mock('../ui/CanvasBrowserContent', () => ({ CanvasBrowserContent: () => null }));
@@ -192,12 +193,7 @@ describe('production hosted canvas widget', () => {
     };
     render(
       <TransportProvider transport={transport}>
-        <CanvasRenderer
-          documentId="fixture-doc"
-          content={content}
-          widgetChannel={port}
-          onContentChange={vi.fn()}
-        />
+        <CanvasWidgetContent documentId="fixture-doc" content={content} channel={port} />
       </TransportProvider>
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Save' }));

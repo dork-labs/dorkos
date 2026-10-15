@@ -486,6 +486,40 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   return dest;
 }
 
+/** Copy a normal file-backed daily snapshot without exposing its native server connection. */
+async function snapshotDailySource(sqlite: BetterSqlite3.Database, dest: string): Promise<void> {
+  if (!sqlite.open) throw new Error('The snapshot source database is closed');
+  // An anonymous database cannot be reopened. Transaction views and relative
+  // filenames retain the original connection's existing backup semantics.
+  if (sqlite.memory || sqlite.inTransaction || !path.isAbsolute(sqlite.name)) {
+    return snapshotSqliteInSteps(sqlite, dest);
+  }
+  const reader = new Database(sqlite.name, { readonly: true, fileMustExist: true });
+  try {
+    const checkSource = () => {
+      if (!sqlite.open) throw new Error('The snapshot source database was closed while copying');
+      if (sqlite.inTransaction)
+        throw new Error('The snapshot source database entered a transaction while copying');
+    };
+    const backup = reader.backup.bind(reader);
+    reader.backup = (filename, options) =>
+      backup(filename, {
+        ...options,
+        progress: (info) => {
+          checkSource();
+          return options!.progress!(info);
+        },
+      }).then((info) => {
+        // The driver's final transfer does not invoke the progress callback.
+        checkSource();
+        return info;
+      });
+    await snapshotSqliteInSteps(reader, dest);
+  } finally {
+    reader.close();
+  }
+}
+
 /**
  * Snapshot `dork.db` once per UTC day, as a safety net under everything a
  * migration cannot see coming — a bad delete, a corrupted page, a mistake.
@@ -510,7 +544,7 @@ export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<s
   if (reuseOrClear(dest)) return null;
 
   try {
-    await snapshotSqliteInSteps(db.$client, dest);
+    await snapshotDailySource(db.$client, dest);
   } catch (err) {
     throw new SnapshotFailedError(options.dir, err);
   }

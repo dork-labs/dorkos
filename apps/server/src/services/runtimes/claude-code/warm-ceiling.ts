@@ -24,7 +24,7 @@ import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import type { LaunchFingerprint } from './sessions/launch-fingerprint.js';
 import type { LiveChangeOptions } from './sessions/launch-live-settings.js';
-import { decideProcessReuse, type ProcessReuse } from './sessions/pump-launch.js';
+import { decideProcessReuse, type ProcessReuse } from './sessions/warm-process/pump-launch.js';
 import { bothCeilings, clampClaudeMode } from './turn-permission.js';
 
 /** The two ceilings a live session carries. */

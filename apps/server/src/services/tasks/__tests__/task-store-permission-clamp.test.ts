@@ -13,7 +13,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
-import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
+import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { logger } from '../../../lib/logger.js';
 
 vi.mock('../../../lib/logger.js', () => ({

@@ -112,6 +112,24 @@ export interface UploadedFile extends UploadFileInfo {
   path?: string;
 }
 
+/** A file stream before storage has completed. */
+export interface UploadStreamFile extends UploadedFile {
+  stream: Readable;
+}
+
+/**
+ * Request-owned storage; the route closes over its exact admitted raw request.
+ * The first callback settles storage. Refusal attempts remove even if only a
+ * partial file was acquired; cleanup failure preserves the original refusal.
+ */
+export interface UploadStreamStorage {
+  store(
+    file: UploadStreamFile,
+    done: (error?: unknown, info?: Partial<UploadedFile>) => void
+  ): void;
+  remove(file: UploadedFile, done: (error: Error | null) => void): void;
+}
+
 /** Where files go: kept in memory, unless a folder is named. */
 export interface UploadDiskStorage {
   /** The folder, created on demand for each file. */
@@ -158,6 +176,8 @@ export type ParseUploadsOptions =
 
 /** What every {@link ParseUploadsOptions} carries. */
 interface UploadOptionsBase {
+  /** Constructor-owned streaming storage, used instead of memory or ordinary disk storage. */
+  storage?: UploadStreamStorage;
   /** See {@link UploadLimits}. */
   limits?: UploadLimits;
   /** An error refuses the whole body, as a multer `fileFilter` passing one did. */
@@ -400,14 +420,15 @@ class UploadRead {
         this.stored.push(file);
         return settleWrite();
       }
-      if (err) {
+      if (err !== undefined && err !== null) {
+        if (this.options.storage) this.stored.push(file);
         settleWrite();
         return this.abort(err);
       }
       if (this.cleanupDone) {
         // The abort already removed what it knew of; this file finished after.
         if (this.removedOnAbort.has(file)) return settleWrite();
-        return void removeStored(file).finally(settleWrite);
+        return void this.removeStored(file).finally(settleWrite);
       }
       slot.file = file;
       this.stored.push(file);
@@ -418,7 +439,29 @@ class UploadRead {
 
   /** Store one accepted file: multer's memory or disk engine. */
   private store(file: UploadedFile, stream: Readable, done: (err?: unknown) => void): void {
-    const { disk } = this.options;
+    const { disk, storage } = this.options;
+    if (storage) {
+      const streamed: UploadStreamFile = Object.assign(file, { stream });
+      let settled = false;
+      const settle = (error?: unknown, info?: Partial<UploadedFile>) => {
+        if (settled) return;
+        settled = true;
+        if (error !== undefined && error !== null) return done(error);
+        try {
+          if (info) Object.assign(file, info);
+        } catch (cause) {
+          done(cause);
+          return;
+        }
+        done();
+      };
+      try {
+        storage.store(streamed, settle);
+      } catch (error) {
+        settle(error);
+      }
+      return;
+    }
     if (!disk) {
       const chunks: Buffer[] = [];
       stream.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -453,6 +496,14 @@ class UploadRead {
     );
   }
 
+  private removeStored(file: UploadedFile): Promise<void> {
+    const storage = this.options.storage;
+    if (!storage) return removeStored(file);
+    return new Promise((resolve, reject) => {
+      storage.remove(file, (error) => (error ? reject(error) : resolve()));
+    });
+  }
+
   private writeSettled(): void {
     this.pendingWrites -= 1;
     if (this.pendingWrites === 0 && this.onIdle) {
@@ -472,11 +523,11 @@ class UploadRead {
     this.failed = true;
     const cleanup = () => {
       this.cleanupDone = true;
-      const inFlight = [...this.writing].filter((file) => file.path);
+      const inFlight = [...this.writing].filter((file) => this.options.storage || file.path);
       for (const file of inFlight) this.removedOnAbort.add(file);
       const toRemove = [...this.stored, ...inFlight];
       void (async () => {
-        for (const file of toRemove) await removeStored(file).catch(() => undefined);
+        for (const file of toRemove) await this.removeStored(file).catch(() => undefined);
         this.finish(error);
       })();
     };

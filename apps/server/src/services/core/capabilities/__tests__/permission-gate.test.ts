@@ -14,8 +14,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { AgentPermissions, PermissionPreset } from '@dorkos/shared/permissions';
 
-vi.mock('../../mcp-tool-tiers.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../mcp-tool-tiers.js')>();
+vi.mock('../../mcp-tools/mcp-tool-tiers.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../mcp-tools/mcp-tool-tiers.js')>();
   return {
     ...real,
     // One hand-registered probe tool in the Rooms area. No real hand-registered

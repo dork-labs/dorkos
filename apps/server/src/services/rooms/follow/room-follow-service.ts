@@ -31,7 +31,7 @@
  */
 import { ROOM_LIVE_BEAT_MS, ROOM_LIVE_TTL_MS } from '@dorkos/shared/room-schemas';
 import type { RoomSignalView } from '@dorkos/shared/room-schemas';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import type { AuthorRegistry } from '../author-registry.js';

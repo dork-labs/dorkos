@@ -62,6 +62,10 @@ const VALIDATION_FAILED = z
   .object({ error: z.literal('Validation failed'), details: z.object({}).loose() })
   .strict();
 const UUID = '00000000-0000-4000-8000-000000000000';
+/** Valid request syntax for unknown-document probes; it grants no document authority. */
+const DOC_GENERATION_HEADERS = { 'X-DorkOS-Doc-Generation': '0'.repeat(64) };
+/** A valid public event envelope; an unknown document still grants no authority. */
+const DOC_EVENT = { v: 1, id: UUID, type: 'ui.input', payload: {} };
 
 /** A JSON body of about `bytes` bytes. */
 function jsonOfSize(bytes: number): string {
@@ -461,7 +465,8 @@ contractSuite(
       name: 'POST /api/canvas/docs/:id/events answers an unknown document',
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
-      body: {},
+      headers: DOC_GENERATION_HEADERS,
+      body: DOC_EVENT,
       expect: { status: 404, headers: JSON_TYPE, body: DOC_NOT_FOUND },
     },
     {
@@ -488,15 +493,15 @@ contractSuite(
       name: 'POST /api/canvas/docs/:id/events takes a body just inside the limit',
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
-      headers: { 'content-type': 'application/json' },
-      body: jsonOfSize(15_000),
+      headers: { 'content-type': 'application/json', ...DOC_GENERATION_HEADERS },
+      body: JSON.stringify({ ...DOC_EVENT, payload: { padding: 'x'.repeat(15_000) } }),
       expect: { status: 404, body: DOC_NOT_FOUND },
     },
     {
       name: 'POST /api/canvas/docs/:id/events refuses an unverified agent',
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
-      headers: AGENT,
+      headers: { ...AGENT, ...DOC_GENERATION_HEADERS },
       body: {},
       expect: {
         status: 401,
@@ -553,6 +558,7 @@ contractSuite(
     {
       name: 'GET /api/canvas/docs/:id/events/:eventId answers an unknown document',
       path: `/api/canvas/docs/doc-1/events/${UUID}`,
+      headers: DOC_GENERATION_HEADERS,
       expect: { status: 404, body: DOC_NOT_FOUND },
     },
     // debug

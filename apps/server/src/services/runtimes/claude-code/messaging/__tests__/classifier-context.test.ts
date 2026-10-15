@@ -43,7 +43,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../../../../core/mcp-tools/mcp-tool-tiers.js';
 import {
   resetAutoModeStops,
   autoModeStopStats,

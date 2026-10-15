@@ -1,3 +1,6 @@
+import type { DocChannelHttp } from '../routes/canvas-doc-events.js';
+import type { createDocChannelHttpComposition } from '../services/canvas/doc-channel/http-composition.js';
+import { createCanvasDocManagementRouter } from '../routes/canvas-doc-management.js';
 /**
  * The server's routing: the chain (`http/api-chain.ts`) with every route group
  * mounted on it, and the client build behind them in production.
@@ -38,11 +41,7 @@ import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/ap
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
 import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
-import {
-  canvasDocBodyRule,
-  createCanvasDocEventRoutes,
-  type DocChannelHttp,
-} from '../routes/canvas-doc-events.js';
+import { canvasDocBodyRule, createCanvasDocEventRoutes } from '../routes/canvas-doc-events.js';
 import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
@@ -68,7 +67,7 @@ import {
   type ExtensionDecisionsRouterDeps,
 } from '../routes/extension-decisions.js';
 import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
-import fileRoutes from '../routes/files.js';
+import { createFileRoutes } from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
@@ -101,6 +100,7 @@ import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
 import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
+import { createStandaloneDocTokenRoutes } from '../routes/canvas-doc-token-events.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
 import { createTasksRoutes, type TasksRouterDeps } from '../routes/tasks.js';
@@ -226,7 +226,7 @@ export interface ComposedGroupDeps {
    * Document events (`/api/canvas/docs`). Always mounted; without this every
    * request answers that document events are not available yet.
    */
-  docChannel?: DocChannelHttp;
+  docChannel?: ReturnType<typeof createDocChannelHttpComposition> & Pick<DocChannelHttp, 'metrics'>;
   /**
    * The agent registry first-run setup moves DorkBot's runtime through
    * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
@@ -305,6 +305,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   const docEventBodyRule = canvasDocBodyRule(() => deps.docChannel?.metrics);
   const app = createApiApp({
     admission: options.admission,
+    beforeCors: (early) => {
+      early.route(
+        '/api/canvas/token/docs',
+        createStandaloneDocTokenRoutes(() => deps.docChannel)
+      );
+    },
     // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
@@ -345,7 +351,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/community-connections', createCommunityConnectionsRoutes());
   app.use('/api/communities/*', gateRemoteCommunities());
   app.route('/api/communities', createRemoteCommunitiesRoutes());
-  app.route('/api/files', fileRoutes);
+  app.route(
+    '/api/files',
+    createFileRoutes(() => deps.docChannel)
+  );
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);
@@ -367,6 +376,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     )
   );
   app.route('/api/feedback', feedbackRoutes);
+  app.route(
+    '/api/canvas/docs',
+    createCanvasDocManagementRouter(() => ({ registry: deps.capabilities, http: deps.docChannel }))
+  );
   app.route(
     '/api/canvas/docs',
     createCanvasDocEventRoutes(() => deps.docChannel)

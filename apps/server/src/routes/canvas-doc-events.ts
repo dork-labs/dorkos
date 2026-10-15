@@ -4,6 +4,10 @@ import bodyParser from 'body-parser';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
+  CanvasChannelSelectionRequestSchema,
+  CanvasChannelTokenRequestSchema,
+  CanvasChannelCheckboxRequestSchema,
+  CanvasChannelPresenceRequestSchema,
   CanvasChannelEventIdSchema,
   CanvasChannelReplayQuerySchema,
 } from '@dorkos/shared/canvas-channel-schemas';
@@ -12,7 +16,23 @@ import { readJsonBody, underMount, type BodyRule } from '../http/request-body.js
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import type { DocChannelActor } from '../services/canvas/doc-channel/authorization.js';
-import type { DocChannelService } from '../services/canvas/doc-channel/service.js';
+import {
+  askServiceOriginalDocSelection,
+  readServiceOriginalDocManagement,
+  issueServiceOriginalDocToken,
+  revokeServiceOriginalDocToken,
+  submitCurrentDocEvent,
+  inspectServiceCurrentDocReceipt,
+  replayServiceCurrentDoc,
+  updateServiceOriginalDocPresence,
+  type DocChannelService,
+} from '../services/canvas/doc-channel/service.js';
+import { z } from 'zod';
+import {
+  toggleOriginalCheckboxWriter,
+  type DocCheckboxWriteService,
+} from '../services/canvas/doc-channel/writes/checkbox-service.js';
+import { isCheckboxAuthorityRefusal } from '../services/canvas/doc-channel/writes/authority/authority-policy.js';
 import { logger } from '../lib/logger.js';
 import type {
   DocChannelMetrics,
@@ -53,6 +73,8 @@ function refusalClass(status: number): DocChannelRejectionClass {
 /** The composition root resolves authenticated callers; page envelopes carry no authority. */
 export interface DocChannelHttp {
   service: DocChannelService;
+  /** Exact installation-owned native checkbox writer. */
+  checkboxWriter?: DocCheckboxWriteService;
   metrics?: DocChannelMetrics;
   actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
 }
@@ -154,18 +176,100 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
     );
   }
 
+  function reply<T>(c: Context<ApiEnv>, status: number, value: T): Response {
+    return c.json(value, status as ContentfulStatusCode);
+  }
+
+  function originalGeneration(c: Context<ApiEnv>): { readonly expectedGeneration: string } {
+    const value = c.env.incoming.headers['x-dorkos-doc-generation'];
+    if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value))
+      throw Object.assign(new Error(), { code: 'INVALID_DOC_GENERATION', status: 409 });
+    return Object.freeze({ expectedGeneration: value });
+  }
+  /** Native FILE writes share the ordinary Host/origin/session gates and bounded parser above. */
+  /** Verified original editor selection stays behind the SAME ordinary Host/origin/session/body gates. */
+  router.post('/:id/editor/selection', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try {
+      const deps = dependencies(),
+        id = documentId(c);
+      const request = CanvasChannelSelectionRequestSchema.parse(readJsonBody(c));
+      if (
+        request.documentId !== id ||
+        Object.keys(readQuery(c)).length ||
+        (typeof c.env.incoming.headers.authorization === 'string' &&
+          /^Bearer dct_/iu.test(c.env.incoming.headers.authorization))
+      )
+        throw Object.assign(new Error(), { status: 403, code: 'EDITOR_SELECTION_UNAVAILABLE' });
+      const actor = deps.actor(honoRequestFacts(c));
+      if (actor.principal.claims.kind !== 'operator')
+        throw Object.assign(new Error(), { status: 403, code: 'EDITOR_SELECTION_UNAVAILABLE' });
+      return c.json(await askServiceOriginalDocSelection(deps.service, request, actor));
+    } catch (error) {
+      return failure(c, error, 'ingest');
+    }
+  });
+  router.post('/:id/checkbox', async (c) => {
+    try {
+      const deps = dependencies(),
+        id = documentId(c);
+      const parsed = CanvasChannelCheckboxRequestSchema.safeParse(readJsonBody(c));
+      if (!parsed.success || parsed.data.documentId !== id) {
+        return reply(c, 400, {
+          error: 'The checkbox request is not valid.',
+          code: 'INVALID_CHECKBOX_REQUEST',
+        });
+      }
+      if (!deps.checkboxWriter) {
+        return reply(c, 503, {
+          error: 'Checkbox writes are not available.',
+          code: 'CHECKBOX_UNAVAILABLE',
+        });
+      }
+      const actor = deps.actor(honoRequestFacts(c));
+      const receipt = await toggleOriginalCheckboxWriter(deps.checkboxWriter, parsed.data, actor);
+      // Conflict/review are verified write outcomes, not successful channel ingestion.
+      // Return their strict receipt so the client offers the appropriate explicit action.
+      return c.json(receipt);
+    } catch (error) {
+      if (isCheckboxAuthorityRefusal(error)) {
+        return reply(c, 403, {
+          error: 'You cannot change this document.',
+          code: 'CHECKBOX_ACCESS_LOST',
+        });
+      }
+      return failure(c, error, 'ingest');
+    }
+  });
   router.post('/:id/events', async (c) => {
     try {
       const deps = dependencies();
-      const receipt = await deps.service.ingestEvent(
+      const condition = originalGeneration(c);
+      const receipt = await submitCurrentDocEvent(
+        deps.service,
         documentId(c),
         readJsonBody(c),
-        deps.actor(honoRequestFacts(c))
+        deps.actor(honoRequestFacts(c)),
+        condition
       );
-      observeResult(c.env.outgoing, deps.metrics, 'ingest', { kind: 'success' });
-      return c.json(receipt, receipt.receipt.status === 'duplicate' ? 200 : 201);
+      observeResult(c.env.outgoing, source()?.metrics, 'ingest', { kind: 'success' });
+      return reply(c, receipt.receipt.status === 'duplicate' ? 200 : 201, receipt);
     } catch (error) {
       return failure(c, error, 'ingest');
+    }
+  });
+  router.post('/:id/presence', async (c) => {
+    try {
+      const deps = dependencies();
+      const actor = deps.actor(honoRequestFacts(c));
+      const request = CanvasChannelPresenceRequestSchema.safeParse(readJsonBody(c));
+      if (!request.success)
+        throw Object.assign(new Error(), { code: 'INVALID_DOC_PRESENCE', status: 400 });
+      return c.json(
+        await updateServiceOriginalDocPresence(deps.service, documentId(c), actor, request.data)
+      );
+    } catch (error) {
+      return failure(c, error, 'replay');
     }
   });
   router.get('/:id/channel', async (c) => {
@@ -181,13 +285,14 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
       const query = CanvasChannelReplayQuerySchema.safeParse(numeric);
       if (!query.success)
         throw Object.assign(new Error(), { code: 'INVALID_DOC_QUERY', status: 400 });
-      const snapshot = await deps.service.replay(
+      const snapshot = await replayServiceCurrentDoc(
+        deps.service,
         documentId(c),
         deps.actor(honoRequestFacts(c)),
         query.data.since,
         query.data.limit
       );
-      observeResult(c.env.outgoing, deps.metrics, 'replay', {
+      observeResult(c.env.outgoing, source()?.metrics, 'replay', {
         kind: snapshot.resetRequired ? 'retention_reset' : 'success',
       });
       return c.json(snapshot);
@@ -201,20 +306,142 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
       const id = CanvasChannelEventIdSchema.safeParse(c.req.param('eventId'));
       if (!id.success)
         throw Object.assign(new Error(), { code: 'INVALID_DOC_EVENT_ID', status: 400 });
-      const receipt = await deps.service.receipt(
+      const inspected = await inspectServiceCurrentDocReceipt(
+        deps.service,
         documentId(c),
         id.data,
-        deps.actor(honoRequestFacts(c))
+        deps.actor(honoRequestFacts(c)),
+        originalGeneration(c)
       );
-      observeResult(c.env.outgoing, deps.metrics, 'receipt', { kind: 'success' });
+      // The actual fixed inspector owns original birth/access/floor classification.
+      // Never use a legacy public getter as proof of original absence.
+      if (inspected.kind !== 'receipt') {
+        observeResult(c.env.outgoing, source()?.metrics, 'receipt', {
+          kind: 'refused',
+          reason: 'conflict',
+        });
+        return reply(c, 409, {
+          code: 'DOC_RECEIPT_UNCONFIRMED',
+          error: 'The original document receipt is unconfirmed.',
+        });
+      }
+      const receipt = inspected.event;
+      observeResult(c.env.outgoing, source()?.metrics, 'receipt', { kind: 'success' });
       return c.json(receipt);
     } catch (error) {
       return failure(c, error, 'receipt');
     }
   });
-  // Claim every path under `/api/canvas/docs`, served or not, so a request to
-  // one no route serves still gets this group's body limit before its `/api`
-  // 404, as it always had.
+  /** Operator revocation stays behind ordinary Host/origin/session gates, never bearer CORS. */
+  /** Operator management shares the same original document Host/session/actor gates. */
+  router.get('/:id/management', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try {
+      if (
+        Object.keys(readQuery(c)).length ||
+        (typeof c.env.incoming.headers.authorization === 'string' &&
+          /^Bearer dct_/iu.test(c.env.incoming.headers.authorization))
+      )
+        throw new Error('Invalid management credential or query.');
+      const deps = dependencies();
+      return c.json(
+        await readServiceOriginalDocManagement(
+          deps.service,
+          documentId(c),
+          deps.actor(honoRequestFacts(c))
+        )
+      );
+    } catch {
+      return reply(c, 403, {
+        code: 'DOC_MANAGEMENT_UNAVAILABLE',
+        error: 'Document controls are not available.',
+      });
+    }
+  });
+  const tokenIssueInput = z
+    .object({
+      request: CanvasChannelTokenRequestSchema,
+      approvedGrantIds: z
+        .array(z.string().min(1).max(200))
+        .max(1024)
+        .refine((ids) => new Set(ids).size === ids.length),
+    })
+    .strict();
+  /** Issue once through the original authenticated operator and native issuance transaction. */
+  router.post('/:id/tokens', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    try {
+      const credential = c.env.incoming.headers.authorization;
+      if (typeof credential === 'string' && /^Bearer dct_/iu.test(credential))
+        throw new Error('Document bearer cannot authorize operator issuance.');
+      const parsed = tokenIssueInput.safeParse(readJsonBody(c));
+      const id = documentId(c);
+      if (
+        Object.keys(readQuery(c)).length !== 0 ||
+        !parsed.success ||
+        parsed.data.request.documentId !== id
+      ) {
+        return reply(c, 400, {
+          code: 'INVALID_DOC_TOKEN_ISSUANCE',
+          error: 'The document token scope is not valid.',
+        });
+      }
+      const deps = dependencies();
+      const response = await issueServiceOriginalDocToken(
+        deps.service,
+        deps.actor(honoRequestFacts(c)),
+        parsed.data.request,
+        parsed.data.approvedGrantIds
+      );
+      return reply(c, 201, response);
+    } catch {
+      // Never expose credentials, native rows, paths or the private failure to the response/log.
+      return reply(c, 403, {
+        code: 'DOC_TOKEN_ISSUANCE_UNAVAILABLE',
+        error: 'The document token cannot be issued.',
+      });
+    }
+  });
+  router.post('/:id/tokens/:tokenId/revoke', async (c) => {
+    try {
+      const credential = c.env.incoming.headers.authorization;
+      // An installation permitting anonymous operators must still never promote a document bearer.
+      if (typeof credential === 'string' && /^Bearer dct_/iu.test(credential))
+        throw new Error('Document bearer cannot authorize operator revocation.');
+      const body = readJsonBody(c);
+      if (
+        Object.keys(readQuery(c)).length !== 0 ||
+        (body !== undefined &&
+          (!body ||
+            typeof body !== 'object' ||
+            Array.isArray(body) ||
+            Object.keys(body).length !== 0))
+      ) {
+        return reply(c, 400, {
+          code: 'INVALID_DOC_TOKEN_REVOCATION',
+          error: 'The document token revocation is not valid.',
+        });
+      }
+      const tokenId = c.req.param('tokenId');
+      if (typeof tokenId !== 'string' || !tokenId || tokenId.length > 200)
+        throw new Error('Invalid token identifier.');
+      const deps = dependencies();
+      const result = await revokeServiceOriginalDocToken(
+        deps.service,
+        deps.actor(honoRequestFacts(c)),
+        documentId(c),
+        tokenId
+      );
+      c.header('Cache-Control', 'no-store');
+      return c.json(result);
+    } catch {
+      // No token existence, native row, credential, path or private raw failure is disclosed.
+      return reply(c, 403, {
+        code: 'DOC_TOKEN_REVOCATION_UNAVAILABLE',
+        error: 'The document token cannot be revoked.',
+      });
+    }
+  });
   router.all('*', (c) => c.notFound());
   return router;
 }

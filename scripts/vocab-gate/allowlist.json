@@ -53,7 +53,7 @@
       "reason": "Marketing visual-design sandbox routes (hero/diagram prototypes) — \"connection lines\" describes SVG graph edges in a prototype, not shipped product copy."
     },
     {
-      "path": "apps/server/src/services/core/mcp-tool-tiers.ts",
+      "path": "apps/server/src/services/core/mcp-tools/mcp-tool-tiers.ts",
       "terms": ["connection"],
       "reason": "MCP tool titles \"List/Turn a chat connection on/off/Reload chat connections\" describe relay adapters (Telegram/Slack) — the same Connections-domain entity as RelayHealthBar, surfaced to the agent rather than the human."
     },

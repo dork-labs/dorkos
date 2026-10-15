@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import type { Db } from '@dorkos/db';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
@@ -140,6 +140,35 @@ vi.mock('../messaging/plugin-activation.js', () => ({
 describe('ClaudeCodeRuntime', () => {
   let agentManager: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
 
+  const principalDatabases: Db[] = [];
+
+  // The authority resolver remains this unit's external policy boundary. The
+  // principal port, binding, bearer and proof come from the original constructor.
+  async function principalFixture(agentId: string) {
+    const { createDb, runMigrations, connectorRuntimeBindings } = await import('@dorkos/db');
+    const { ConnectorRuntimePrincipalService } =
+      await import('../../../connectors/principal/runtime-principal-service.js');
+    const db = createDb(':memory:');
+    principalDatabases.push(db);
+    runMigrations(db);
+    const authority = {
+      authorizeTurn: vi.fn().mockResolvedValue({
+        owner: { kind: 'local_install', installationId: 'runtime-unit-install' },
+        agentId,
+      }),
+      revalidateTurn: vi.fn().mockResolvedValue(true),
+    };
+    const principals = new ConnectorRuntimePrincipalService({
+      db,
+      authority,
+      makeBearer: () => 'turn-secret',
+    });
+    await principals.initializeBoot();
+    const resolve = vi.spyOn(principals, 'resolve');
+    const revoke = vi.spyOn(principals, 'revoke');
+    return { principals, authority, resolve, revoke, db, connectorRuntimeBindings };
+  }
+
   beforeEach(async () => {
     vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
     vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
@@ -170,6 +199,7 @@ describe('ClaudeCodeRuntime', () => {
       }
     } finally {
       vi.unstubAllEnvs();
+      for (const db of principalDatabases.splice(0)) db.$client.close();
     }
   });
 
@@ -271,18 +301,8 @@ describe('ClaudeCodeRuntime', () => {
       async (content) => {
         _mockRenderContextEntry.mockClear();
         const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-        const proof = { claims: { kind: 'runtime' } } as ServerPrincipalProof;
-        const principals: ConnectorRuntimePrincipalPort = {
-          openTurn: vi.fn().mockResolvedValue({
-            bindingId: 'binding-1',
-            bearer: 'turn-secret',
-            expiresAt: '2099-01-01T00:00:00.000Z',
-            renewalPermit: {} as never,
-          }),
-          renew: vi.fn(),
-          resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal: proof }),
-          revoke: vi.fn().mockResolvedValue(undefined),
-        };
+        const fixture = await principalFixture('agent-1');
+        const { principals } = fixture;
         agentManager.setMeshCore({
           getByPath: () => ({ id: 'agent-1', name: 'agent' }),
           listWithPaths: () => [],
@@ -334,22 +354,28 @@ describe('ClaudeCodeRuntime', () => {
           });
         }
 
-        expect(principals.openTurn).toHaveBeenCalledWith(
-          {
-            runtime: 'claude-code',
-            canonicalSessionId: 'canonical-claude-session',
-            agentPath: DEFAULT_CWD,
-            canonicalCwd: DEFAULT_CWD,
-            signal: expect.any(AbortSignal),
-          },
-          { isCurrent: expect.any(Function) }
-        );
+        expect(fixture.authority.authorizeTurn).toHaveBeenCalledWith({
+          runtime: 'claude-code',
+          canonicalSessionId: 'canonical-claude-session',
+          agentPath: DEFAULT_CWD,
+          canonicalCwd: DEFAULT_CWD,
+          signal: expect.any(AbortSignal),
+        });
+        const bindings = fixture.db.select().from(fixture.connectorRuntimeBindings).all();
+        expect(bindings).toHaveLength(1);
+        expect(bindings[0]).toMatchObject({
+          canonicalSessionId: 'canonical-claude-session',
+          agentPath: DEFAULT_CWD,
+          canonicalCwd: DEFAULT_CWD,
+          agentId: 'agent-1',
+          revokeReason: 'turn_terminal',
+        });
         expect(principals.resolve).toHaveBeenCalledWith({
           bearer: 'turn-secret',
           expectedRuntime: 'claude-code',
           expectedCanonicalCwd: DEFAULT_CWD,
         });
-        expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+        expect(principals.revoke).toHaveBeenCalledWith(bindings[0]!.id, 'turn_terminal');
       }
     );
 
@@ -363,20 +389,8 @@ describe('ClaudeCodeRuntime', () => {
 
       async function turnFor(cwd: string, forAgent: string) {
         const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-        const principals: ConnectorRuntimePrincipalPort = {
-          openTurn: vi.fn().mockResolvedValue({
-            bindingId: 'binding-1',
-            bearer: 'turn-secret',
-            expiresAt: '2099-01-01T00:00:00.000Z',
-            renewalPermit: {} as never,
-          }),
-          renew: vi.fn(),
-          resolve: vi.fn().mockResolvedValue({
-            status: 'resolved',
-            principal: { claims: { kind: 'runtime' } } as ServerPrincipalProof,
-          }),
-          revoke: vi.fn().mockResolvedValue(undefined),
-        };
+        const fixture = await principalFixture('agent-ana');
+        const { principals } = fixture;
         agentManager.setMeshCore({
           getByPath: (p: string) => (p === ANA ? { id: 'agent-ana', name: 'ana' } : undefined),
           listWithPaths: () => [],
@@ -412,24 +426,28 @@ describe('ClaudeCodeRuntime', () => {
           roomTurn: { roomId: '01ROOM', authorId: 'a-1', turnId: 't-1', cwd, agentPath: forAgent },
         }))
           void event;
-        return { principals, connectorTurn };
+        return { ...fixture, connectorTurn };
       }
 
       it('opens the connections as the agent, standing in its home', async () => {
         // A room turn stands at home (spec `agent-home-desk` §5.1).
-        const { principals } = await turnFor(ANA, ANA);
+        const fixture = await turnFor(ANA, ANA);
 
-        expect(principals.openTurn).toHaveBeenCalledWith(
-          expect.objectContaining({ agentPath: ANA, canonicalCwd: ANA }),
-          expect.anything()
+        expect(fixture.authority.authorizeTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: ANA, canonicalCwd: ANA })
         );
+        expect(fixture.db.select().from(fixture.connectorRuntimeBindings).all()).toEqual([
+          expect.objectContaining({ agentId: 'agent-ana', agentPath: ANA, canonicalCwd: ANA }),
+        ]);
       });
 
       it("opens nothing for a turn for Ben that stands in Ana's own folder", async () => {
-        const { principals, connectorTurn } = await turnFor(ANA, '/agents/ben');
+        const fixture = await turnFor(ANA, '/agents/ben');
+        const { connectorTurn } = fixture;
 
         expect(connectorTurn).toBeUndefined();
-        expect(principals.openTurn).not.toHaveBeenCalled();
+        expect(fixture.authority.authorizeTurn).not.toHaveBeenCalled();
+        expect(fixture.db.select().from(fixture.connectorRuntimeBindings).all()).toEqual([]);
       });
     });
 

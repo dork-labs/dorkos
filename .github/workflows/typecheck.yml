@@ -431,4 +431,50 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           NODE_OPTIONS: --max-old-space-size=8192
-        run: pnpm exec turbo typecheck --continue
+        run: |
+          # The control pipe closes on normal cleanup; only this owned sampler is waited.
+          sampler_pid=
+          sampler_control=
+          sampler_original_control=
+          sampler_start_failed=0
+          exec 3>&1
+          if coproc RESOURCE_SAMPLER { exec node scripts/typecheck-resource-sampler.mjs "$$" >&3; }; then
+            sampler_pid="${RESOURCE_SAMPLER_PID:-}"
+            sampler_original_control="${RESOURCE_SAMPLER[1]:-}"
+            if ! exec {sampler_control}>&"${RESOURCE_SAMPLER[1]}"; then
+              sampler_start_failed=1
+            fi
+          else
+            sampler_start_failed=1
+          fi
+          finish_observation() {
+            local primary_status=$?
+            local observation_status=$sampler_start_failed
+            trap - EXIT TERM INT
+            if [[ -n "$sampler_original_control" ]]; then
+              exec {sampler_original_control}>&-
+            fi
+            if [[ -n "$sampler_control" ]]; then
+              exec {sampler_control}>&-
+            fi
+            if [[ -n "$sampler_pid" ]]; then
+              if wait "$sampler_pid"; then :; else observation_status=$?; fi
+            else
+              observation_status=1
+            fi
+            if (( observation_status != 0 )); then
+              echo '::error::Typecheck resource observation failed or was incomplete.'
+              if (( primary_status == 0 )); then primary_status=1; fi
+            fi
+            exit "$primary_status"
+          }
+          trap finish_observation EXIT
+          trap 'exit 143' TERM
+          trap 'exit 130' INT
+          (
+            trap - EXIT TERM INT
+            # Compiler descendants must not retain a writer to the sampler control pipe.
+            if [[ -n "$sampler_original_control" ]]; then exec {sampler_original_control}>&-; fi
+            if [[ -n "$sampler_control" ]]; then exec {sampler_control}>&-; fi
+            pnpm exec turbo typecheck --continue --concurrency=2
+          )

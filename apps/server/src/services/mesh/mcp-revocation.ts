@@ -205,7 +205,7 @@
 import type { Logger } from '@dorkos/shared/logger';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 
-import { peekProjector } from '../session/index.js';
+import { peekProjector } from '../session/session-state-projector.js';
 import { mcpOAuthCustodyDisclosure } from './agent-mcp-oauth-service.js';
 import type { McpOAuthTarget, StartSigninResult } from './agent-mcp-oauth-service.js';
 import type { McpCacheRefreshVerdict } from './agent-mcp-access-token-cache.js';

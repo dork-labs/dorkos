@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,9 +38,13 @@ import {
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { createServerPrincipal } from '../../services/connectors/principal/server-principal.js';
 import { DocChannelMetrics } from '../../services/observability/doc-channel-metrics.js';
-import { DocChannelService } from '../../services/canvas/doc-channel/service.js';
+import {
+  DocChannelService,
+  replayServiceCurrentDoc,
+} from '../../services/canvas/doc-channel/service.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
+import { initBoundary } from '../../lib/boundary.js';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -65,6 +69,8 @@ let sessionId: string;
 let agentId: string;
 let project: string;
 let documentId: string;
+let generation: string;
+let stopWrites: (() => Promise<void>) | undefined;
 const event = (payload: unknown = { done: true }) => ({
   v: 1 as const,
   id: randomUUID(),
@@ -72,7 +78,17 @@ const event = (payload: unknown = { done: true }) => ({
   payload,
 });
 const endpoint = () => `/api/canvas/docs/${documentId}`;
-const post = (body: object) => request(server).post(`${endpoint()}/events`).send(body);
+const post = (body: object) =>
+  request(server)
+    .post(`${endpoint()}/events`)
+    .set('X-DorkOS-Doc-Generation', generation)
+    .send(body);
+async function captureGeneration(): Promise<void> {
+  // Read the actual current server projection, without an extra observed HTTP request.
+  const replay = await replayServiceCurrentDoc(http.service, documentId, operator());
+  if (!replay.incarnation) throw new Error('Original document incarnation is unavailable.');
+  generation = replay.incarnation.generation;
+}
 function operator() {
   return {
     surface: 'http' as const,
@@ -82,11 +98,12 @@ function operator() {
     }),
   };
 }
-function localDocument() {
+async function localDocument(): Promise<void> {
   documentId = rooms.canvas.open(`session:${sessionId}`, 'owner', {
     type: 'file',
     sourcePath: path.join(project, 'tasks.md'),
   }).id;
+  await captureGeneration();
 }
 function manifest(types: Record<string, unknown>, limits?: Record<string, number>) {
   fs.mkdirSync(path.join(project, '.dork'), { recursive: true });
@@ -126,8 +143,10 @@ function grant(limits?: { envelopeBytes?: number; eventsPerMinute?: number }) {
   if (granted.kind !== 'granted') throw new Error('Expected grant');
   return granted.grant;
 }
-beforeAll(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-metrics-http-'));
+beforeEach(async () => {
+  stopWrites = undefined;
+  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-metrics-http-')));
+  await initBoundary(dir);
   initConfigManager(dir);
   db = createDb(path.join(dir, 'http.db'));
   runMigrations(db);
@@ -165,7 +184,7 @@ beforeAll(async () => {
   apiKey = (await getAuth()!.api.createApiKey({ body: { userId: owner.id, name: 'metrics-http' } }))
     .key;
 });
-beforeEach(() => {
+beforeEach(async () => {
   configManager.set('auth', { enabled: false });
   rooms = createRoomSubsystem({ db });
   setRoomService(rooms.service);
@@ -179,6 +198,21 @@ beforeEach(() => {
     approvals,
     installationId: 'test-install',
   });
+  const originalHttp = http;
+  stopWrites = async () => {
+    let failed = false;
+    let cause: unknown;
+    for (const result of await Promise.allSettled([
+      Promise.resolve().then(() => originalHttp.stopCheckboxWrites()),
+      Promise.resolve().then(() => originalHttp.stopFileWrites()),
+    ])) {
+      if (result.status === 'rejected' && !failed) {
+        failed = true;
+        cause = result.reason;
+      }
+    }
+    if (failed) throw cause;
+  };
   metrics = new DocChannelMetrics(db);
   deps.docChannel = { ...http, metrics };
   deps.debug = { docChannelMetrics: metrics };
@@ -204,15 +238,42 @@ beforeEach(() => {
     type: 'url',
     url: `https://example.test/${sessionId}`,
   }).id;
+  await captureGeneration();
 });
-afterEach(() => {
+afterEach(async () => {
   configManager.set('auth', { enabled: false });
   resetAgentIdentityService();
   vi.restoreAllMocks();
-});
-afterAll(() => {
-  db.$client.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  let failed = false;
+  let cause: unknown;
+  const remember = (error: unknown): void => {
+    if (!failed) {
+      failed = true;
+      cause = error;
+    }
+  };
+  try {
+    await stopWrites?.();
+  } catch (error) {
+    remember(error);
+  }
+  // A rejected original writer drain cannot authorize releasing its native Db.
+  if (!failed) {
+    try {
+      if (db.$client.open) db.$client.close();
+      if (db.$client.open) throw new Error('Original HTTP fixture database remains open.');
+    } catch (error) {
+      remember(error);
+    }
+  }
+  if (!failed) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      remember(error);
+    }
+  }
+  if (failed) throw cause;
 });
 
 const debug = () => request(server).get('/api/debug/doc-channels');
@@ -285,6 +346,7 @@ describe('document metrics through the full app', () => {
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('Content-Type', 'application/json')
           .send('{')
       ).status
@@ -321,11 +383,12 @@ describe('document metrics through the full app', () => {
       variant: 'EvEnTs',
     },
   ] as const)('counts parser refusals for $label case variants', async (scenario) => {
-    localDocument();
+    await localDocument();
     configManager.set('auth', { enabled: true });
     for (const suffix of ['events', scenario.variant]) {
       const response = await request(server)
         .post(`${endpoint()}/${suffix}`)
+        .set('X-DorkOS-Doc-Generation', generation)
         .set('Cookie', cookies)
         .set('Content-Type', 'application/json')
         .send(scenario.body);
@@ -339,6 +402,7 @@ describe('document metrics through the full app', () => {
     // nothing.
     const valid = await request(server)
       .post(`${endpoint()}/events`)
+      .set('X-DorkOS-Doc-Generation', generation)
       .set('Cookie', cookies)
       .send({});
     expect(valid.status).toBe(400);
@@ -356,7 +420,7 @@ describe('document metrics through the full app', () => {
     expect((await debug().set('Cookie', cookies)).body.requestAttempts).toEqual(attempts());
   });
   it('preserves real duplicate, rate Retry-After, manifest, conflict, storage and authority outcomes', async () => {
-    localDocument();
+    await localDocument();
     manifest({
       'task.changed': {
         type: 'object',
@@ -379,6 +443,7 @@ describe('document metrics through the full app', () => {
       type: 'url',
       url: 'https://example.test/storage',
     }).id;
+    await captureGeneration();
     db.$client.exec(
       "CREATE TRIGGER fail_metrics_input BEFORE INSERT ON canvas_doc_events BEGIN SELECT RAISE(ABORT,'forced'); END;"
     );
@@ -410,6 +475,7 @@ describe('document metrics through the full app', () => {
       type: 'url',
       url: 'https://example.test/not-composed',
     }).id;
+    await captureGeneration();
     deps.docChannel = {
       ...http,
       metrics,
@@ -441,11 +507,17 @@ describe('document metrics through the full app', () => {
     expect((await request(server).get(`${endpoint()}/channel?since=1`)).body.resetRequired).toBe(
       false
     );
-    expect((await request(server).get(`${endpoint()}/events/${input.id}`)).status).toBe(200);
+    expect(
+      (
+        await request(server)
+          .get(`${endpoint()}/events/${input.id}`)
+          .set('X-DorkOS-Doc-Generation', generation)
+      ).status
+    ).toBe(200);
     expect(attempts().replayRetentionResetResponses).toBe(2);
   });
   it('cannot retry, alter responses or log when the observer throws after finish', async () => {
-    localDocument();
+    await localDocument();
     configure();
     grant({ eventsPerMinute: 1 });
     const log = vi.spyOn(logger, 'error');
@@ -488,6 +560,7 @@ describe('document metrics through the full app', () => {
       (
         await request(server)
           .post(`${endpoint()}/events`)
+          .set('X-DorkOS-Doc-Generation', generation)
           .set('Content-Type', 'application/json')
           .send('{')
       ).status

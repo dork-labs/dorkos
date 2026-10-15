@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createSignalShutdown } from '../shutdown-signal.js';
+import { createSignalShutdown } from '../lifecycle/shutdown-signal.js';
 
 describe('createSignalShutdown', () => {
   it('shuts down gracefully once, then exits 0', async () => {

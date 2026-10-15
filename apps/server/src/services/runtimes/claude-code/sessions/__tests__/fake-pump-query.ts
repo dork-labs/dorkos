@@ -7,7 +7,7 @@
  * @module services/runtimes/claude-code/sessions/__tests__/fake-pump-query
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { PumpQuery } from '../session-pump-contract.js';
+import type { PumpQuery } from '../warm-process/session-pump-contract.js';
 
 /**
  * A control answer that arrives on a LATER macrotask, as a real one does.

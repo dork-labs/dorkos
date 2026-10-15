@@ -22,7 +22,7 @@ import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { CollectWindow } from '../room-collect.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRunner } from '../room-turn-port.js';
 

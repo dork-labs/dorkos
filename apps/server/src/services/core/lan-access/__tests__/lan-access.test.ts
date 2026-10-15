@@ -191,14 +191,30 @@ describe('LanAccess', () => {
     await controller.reconcile();
 
     // A connection that never finishes a request, like a held-open stream.
+    let duringShutdown = false;
+    const errors: { error: NodeJS.ErrnoException; duringShutdown: boolean }[] = [];
     const socket = connect(port, '127.0.0.1');
-    await new Promise<void>((resolve) => socket.once('connect', () => resolve()));
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      errors.push({ error, duringShutdown });
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject);
+      socket.once('connect', () => {
+        socket.off('error', reject);
+        resolve();
+      });
+    });
     socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\n');
     const ended = new Promise<void>((resolve) => socket.once('close', () => resolve()));
 
+    duringShutdown = true;
     turn(false);
     await controller.reconcile();
     await ended;
+    for (const observed of errors) {
+      expect(observed.duringShutdown).toBe(true);
+      expect(observed.error.code).toBe('ECONNRESET');
+    }
     expect(socket.destroyed).toBe(true);
   });
 

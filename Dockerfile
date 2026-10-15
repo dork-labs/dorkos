@@ -35,7 +35,7 @@ ARG NODE_VERSION=24
 # (FROM install-${INSTALL_MODE}) can see it — args used in FROM lines must be
 # global. npm mode never even reads the build context.
 ARG INSTALL_MODE=tarball
-FROM node:${NODE_VERSION}-slim AS base
+FROM public.ecr.aws/docker/library/node:${NODE_VERSION}-slim AS base
 
 # ── builder ────────────────────────────────────────────────────────────────
 # Toolchain for native addons. node-pty (a direct CLI dep) ships no Linux

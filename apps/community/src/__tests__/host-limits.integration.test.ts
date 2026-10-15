@@ -544,8 +544,36 @@ it('lets only one of two concurrent uploads that would jointly pass the storage 
 
   // The declared size is refused before any bytes are sent or any file is reserved.
   const reservations = await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [a]);
-  const early = await upload(6 * MiB, 'six-c');
+  // The early refusal may close its unread-body connection. Keep it out of the fetch pool,
+  // with the same 20-second request deadline as h.call in the tenancy harness.
+  const early = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const outgoing = httpRequest(
+      `${h.baseUrl}${tenant(a)}/channels/${channelA}/attachments`,
+      {
+        method: 'POST',
+        agent: false,
+        signal: AbortSignal.timeout(20_000),
+        headers: {
+          cookie: operator.cookie,
+          origin: h.config.publicUrl,
+          'content-type': 'text/plain',
+          'x-file-name': 'six-c.txt',
+          'x-file-size': String(6 * MiB),
+          'idempotency-key': 'six-c',
+          'content-length': 6 * MiB,
+        },
+      },
+      (response) => {
+        let body = '';
+        response.on('data', (chunk) => (body += chunk));
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      }
+    );
+    outgoing.on('error', reject);
+    outgoing.end(Buffer.alloc(6 * MiB, 'a'));
+  });
   expect(early.status).toBe(409);
+  expect(JSON.parse(early.body).code).toBe('STORAGE_LIMIT_REACHED');
   expect(await count('SELECT 1 FROM managed_blobs WHERE community_id=$1', [a])).toBe(reservations);
 });
 

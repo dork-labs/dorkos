@@ -10,7 +10,7 @@ import {
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../../rooms/room-errors.js';
+import { RoomError } from '../../rooms/data/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';

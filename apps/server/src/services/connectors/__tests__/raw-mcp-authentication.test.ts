@@ -115,7 +115,7 @@ describe('raw MCP durable authentication', () => {
         displayName: slug,
         connection: {
           transport: 'http',
-          url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+          url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
           headers: { Authorization: 'Bearer local-fixture-only' },
         },
       })),
@@ -202,7 +202,7 @@ describe('raw MCP durable authentication', () => {
             displayName: 'Notes',
             connection: {
               transport: 'http',
-              url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+              url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
               headers: { Authorization: 'Bearer local-fixture-only' },
             },
           },
@@ -249,7 +249,7 @@ describe('raw MCP durable authentication', () => {
           displayName: 'Notes',
           connection: {
             transport: 'http',
-            url: `http://localhost:${(target.server.address() as AddressInfo).port}/mcp`,
+            url: `http://127.0.0.1:${(target.server.address() as AddressInfo).port}/mcp`,
           },
         },
       ],
@@ -390,10 +390,114 @@ describe('raw MCP durable authentication', () => {
   });
 
   it('reconnects an already-connected raw account with the same stable ID and original label', async () => {
-    const context = boot();
+    let probeClass: 'not-observed' | 'ok' | 'unauthorized' | 'timeout' | 'other-failure' =
+      'not-observed';
+    let probeFailureData: {
+      reasonClass: string;
+      nodeCode: string | null;
+      httpStatus: number | null;
+    } = { reasonClass: 'not-observed', nodeCode: null, httpStatus: null };
+    const fetchFailureCodes: string[] = [];
+    const probeFetch: typeof fetch = async (...args) => {
+      try {
+        return await fetch(...args);
+      } catch (cause) {
+        // Preserve the real fetch error; retain no URLs, headers, or arbitrary messages.
+        try {
+          const pending: unknown[] = [cause];
+          for (let i = 0; i < pending.length && i < 8; i++) {
+            const error = pending[i];
+            if (!error || typeof error !== 'object') continue;
+            const code = Reflect.get(error, 'code');
+            if (
+              typeof code === 'string' &&
+              /^(ECONNREFUSED|ECONNRESET|EPIPE|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ABORT_ERR|UND_ERR_(SOCKET|CLOSED|ABORTED|CONNECT_TIMEOUT|HEADERS_TIMEOUT|BODY_TIMEOUT))$/.test(
+                code
+              ) &&
+              !fetchFailureCodes.includes(code) &&
+              fetchFailureCodes.length < 2
+            )
+              fetchFailureCodes.push(code);
+            if (pending.length < 8) pending.push(Reflect.get(error, 'cause'));
+            if (error instanceof AggregateError)
+              pending.push(...error.errors.slice(0, 8 - pending.length));
+          }
+        } catch {
+          /* Failure DATA must preserve the original fetch rejection. */
+        }
+        throw cause;
+      }
+    };
+    const context = boot({
+      probe: async (connection) => {
+        // Same real default probe and header normalization; retain only bounded DATA.
+        const outcome = await runProbe(
+          { ...connection, headers: connection.headers ?? {} },
+          probeFetch
+        );
+        if (outcome.kind === 'failed') {
+          const message = outcome.error;
+          const nodeCode =
+            [
+              'ECONNREFUSED',
+              'ECONNRESET',
+              'EPIPE',
+              'ENOTFOUND',
+              'EAI_AGAIN',
+              'UND_ERR_SOCKET',
+            ].find((code) => message.includes(code)) ?? null;
+          const status = /\b(?:HTTP|status(?: code)?)\s*[:=]?\s*([1-5][0-9]{2})\b/i.exec(message);
+          probeFailureData = {
+            reasonClass: nodeCode
+              ? 'node-transport-error'
+              : /fetch failed/i.test(message)
+                ? 'fetch-failed'
+                : /content.type|JSON|parse/i.test(message)
+                  ? 'response-format-error'
+                  : /MCP error|protocol/i.test(message)
+                    ? 'protocol-error'
+                    : 'other-failure',
+            nodeCode,
+            httpStatus: status ? Number(status[1]) : null,
+          };
+        }
+        probeClass =
+          outcome.kind === 'failed'
+            ? outcome.error.startsWith('MCP server probe timed out after ')
+              ? 'timeout'
+              : 'other-failure'
+            : outcome.kind;
+        return outcome;
+      },
+    });
     const flow = await start(context);
     const connected = await context.service.poll(OWNER, flow.flowId);
-    expect(connected.state).toBe('connected');
+    try {
+      expect(connected.state).toBe('connected');
+    } catch (cause) {
+      try {
+        const data =
+          JSON.stringify({
+            tag: 'raw-mcp-initial-connect-failure',
+            probeClass,
+            ...probeFailureData,
+            fetchFailureCodes,
+            listenerListening: target.server.listening,
+            listenerBoundIpv4:
+              (target.server.address() as AddressInfo | null)?.address === '127.0.0.1',
+            targetHostClass: '127.0.0.1',
+            initializeObserved: methods.includes('initialize'),
+            initializedObserved: methods.includes('notifications/initialized'),
+            toolsListObserved: methods.includes('tools/list'),
+            publicFailedReasonPresent:
+              connected.state === 'failed' && typeof connected.reason === 'string',
+          }) + '\n';
+        if (Buffer.byteLength(data, 'utf8') <= 512) process.stderr.write(data);
+      } catch {
+        /* Failure DATA must preserve the original assertion cause. */
+      }
+      throw cause;
+    }
     if (connected.state !== 'connected') throw new Error('expected connection');
     const reconnect = await context.service.reconnect(OWNER, connected.connectionId, 'reconnect');
     expect(reconnect.state).toBe('pending');

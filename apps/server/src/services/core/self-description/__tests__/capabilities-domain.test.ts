@@ -20,7 +20,7 @@ import {
 } from '../../capabilities/index.js';
 import { unwrapMcpEnvelope, CapabilityToolError } from '../../capabilities/mcp-envelope.js';
 import { invokeCapabilityAsMcpResult } from '../../capabilities/mcp-projection.js';
-import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../../mcp-tools/mcp-tool-tiers.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';

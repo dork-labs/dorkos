@@ -26,7 +26,7 @@ import { deriveCascade } from '../cascade-guard.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { RoomCore } from '../service/room-core.js';
 import { threadPointers } from './room-entry-writer.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomPosting } from './room-posting.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import type { RoomStore } from '../room-store.js';

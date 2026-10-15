@@ -20,7 +20,7 @@ import { logger } from '../../../lib/logger.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';

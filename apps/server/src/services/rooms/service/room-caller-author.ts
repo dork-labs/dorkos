@@ -9,7 +9,7 @@ import { readOwnerAccount } from '../../core/auth/index.js';
 import { configManager } from '../../core/config-manager.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { resolveOperatorAuthor } from '../operator-author.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomService } from '../room-service.js';
 
 /**

@@ -98,8 +98,7 @@ import {
   readDevLinksSync,
   scaffoldManifest,
   HARNESS_MANIFEST_PATH,
-} from '@dorkos/harness';
-import type { HarnessId } from '@dorkos/harness';
+} from '@dorkos/harness/server-workspace';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
@@ -107,24 +106,12 @@ import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { logger } from '../../lib/logger.js';
 import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
+import { AGENT_WORKSPACE_HARNESSES } from './agent-workspace-harnesses.js';
 
 /** Workspace-relative directory holding an agent's canonical skills. */
 const AGENT_SKILLS_DIR = join('.agents', 'skills');
 
-/**
- * The harness set DorkOS scaffolds into an agent workspace it owns.
- *
- * Only Claude Code, because only Claude Code needs anything projected: the other
- * harnesses read `.agents/skills/` natively. Enabling more would add no skill
- * coverage and would make this unattended pass generate hook files. See the
- * module docs.
- *
- * Exported because it decides more than the scaffold: it is the harness set
- * whose projection TARGETS a caller has to account for. `room-worktree-manager`
- * reads it to recognise the harness manifest it once scaffolded into a room
- * worktree, so the two can never disagree about which file DorkOS wrote.
- */
-export const AGENT_WORKSPACE_HARNESSES: readonly HarnessId[] = ['claude-code'];
+export { AGENT_WORKSPACE_HARNESSES } from './agent-workspace-harnesses.js';
 
 /**
  * No installed package may contribute hooks to an agent-workspace projection.

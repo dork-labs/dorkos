@@ -52,7 +52,7 @@ import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabili
 import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
-import type { McpCapabilityDeps } from '../../../mesh/mcp-capability-deps.js';
+import type { McpCapabilityDeps } from '../../../mesh/capabilities/mcp-capability-deps.js';
 import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
@@ -353,8 +353,9 @@ describe('the ui domain exposes only document mutations on external /mcp', () =>
   const external = new Map([
     ['ui.send_canvas_event', 'canvas_send'],
     ['ui.patch_canvas_state', 'canvas_patch_state'],
+    ['ui.set_canvas_checkbox', 'canvas_set_checkbox'],
   ]);
-  it('exposes exactly the two document tools and no session-window tool', async () => {
+  it('exposes exactly the three document tools and no session-window tool', async () => {
     const live = new Set((await fetchLiveTools()).map((tool) => tool.name));
     const exposed: string[] = [];
     for (const capability of uiDomain.capabilities) {

@@ -1,5 +1,5 @@
 # Build the real distributable apps before sealing the runtime network.
-FROM node:24-bookworm-slim
+FROM public.ecr.aws/docker/library/node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends python3 build-essential git ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /work

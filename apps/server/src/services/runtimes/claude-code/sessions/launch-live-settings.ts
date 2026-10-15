@@ -43,7 +43,7 @@ import {
   type LiveSettings,
   type ReuseDecision,
 } from './launch-fingerprint.js';
-import type { PumpControlQuery } from './session-pump-contract.js';
+import type { PumpControlQuery } from './warm-process/session-pump-contract.js';
 
 /**
  * May the next dispatch ride the live process, and what has to change first?

@@ -1,3 +1,4 @@
+import { readOriginalClaudeNativePreparationView } from './claude-code-runtime.js';
 /**
  * Ending Claude Code sessions outright: a pause that stops every live session
  * of an agent (spec `audit-trail` PR5), and an unlink that stops every session
@@ -84,14 +85,15 @@ async function endSession(port: SessionEndingPort, id: string): Promise<boolean>
  * every session this process has run, and skips the cold ones with nothing
  * running. Each live one is ended, all at once.
  *
- * @param port - The runtime's session wiring.
+ * @param owner - The actual runtime's inaccessible registered preparation key.
  * @param belongs - Picks the sessions to end.
  * @returns The ids of the sessions this stopped something in
  */
 export async function endSessionsWhere(
-  port: SessionEndingPort,
+  owner: object,
   belongs: (session: LiveSessionRef) => boolean
 ): Promise<string[]> {
+  const port = readOriginalClaudeNativePreparationView(owner).ending;
   const ids = port.sessionStore
     .sessionIdsWhere(() => true)
     .filter((sessionId) => isLive(port, sessionId))
@@ -105,9 +107,10 @@ export async function endSessionsWhere(
 /**
  * End every session running on DorkOS credits, one after another.
  *
- * @param port - The runtime's session wiring.
+ * @param owner - The actual runtime's inaccessible registered preparation key.
  */
-export async function stopCreditsSessions(port: SessionEndingPort): Promise<void> {
+export async function stopCreditsSessions(owner: object): Promise<void> {
+  const port = readOriginalClaudeNativePreparationView(owner).ending;
   const ids = port.sessionStore.sessionIdsWhere((session) => {
     const root = session.launchedAccountRoot ?? session.accountRoot;
     return root !== undefined && isCreditsClaudeRoot(root);
@@ -121,9 +124,10 @@ export async function stopCreditsSessions(port: SessionEndingPort): Promise<void
  * and its stream projector. Synchronous by contract (the runtime's
  * `checkSessionHealth`).
  *
- * @param port - The runtime's session wiring.
+ * @param owner - The actual runtime's inaccessible registered preparation key.
  */
-export function sweepEvictedSessions(port: SessionEndingPort): void {
+export function sweepEvictedSessions(owner: object): void {
+  const port = readOriginalClaudeNativePreparationView(owner).ending;
   // Drop the projector of every evicted session (I1 fix — the registry Map
   // otherwise grows per session id forever). The store returns each evicted
   // session's request UUID AND its canonical sdkSessionId: rekeyProjector

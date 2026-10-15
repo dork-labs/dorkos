@@ -71,6 +71,8 @@ for path in \
   packages/connector-providers/src/connector-schemas.ts \
   packages/connector-providers/package.json \
   packages/cli/scripts/build.ts \
+  package.json \
+  patches/@fumadocs__api-docs@0.2.9.patch \
   pnpm-lock.yaml \
   pnpm-workspace.yaml \
   scripts/sweep-ephemeral-docker.sh \
@@ -102,7 +104,9 @@ for path in \
   apps/communityx/src/index.ts \
   apps/e2e/tests/community.spec.ts \
   research/apps/server/src/communities-notes.md \
-  package.json \
+  package.jsonx \
+  patches-other/not-a-dependency.patch \
+  patchesx/not-a-dependency.patch \
   pnpm-lock.yamlx \
   scripts/sweep-ephemeral-docker.shx \
   scripts/test-sweep-ephemeral-docker.sh \

@@ -27,6 +27,11 @@ export {
   type UseDevtoolsBridgeParams,
 } from './model/use-devtools-bridge';
 
-export { CanvasWidgetContent } from './ui/CanvasWidgetContent';
+export {
+  useNativeCheckboxWrite,
+  type NativeCheckboxWriteState,
+} from './model/use-native-checkbox-write';
 
 export { useDocChannel } from './model/use-doc-channel';
+
+export { CanvasWidgetContent } from './ui/CanvasWidgetContent';

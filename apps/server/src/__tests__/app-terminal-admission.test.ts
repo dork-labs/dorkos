@@ -152,7 +152,7 @@ function mountPaths() {
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === 'app' &&
+        ['app', 'early'].includes(node.expression.expression.text) &&
         ['use', 'get', 'post', 'all', 'route'].includes(node.expression.name.text) &&
         node.arguments[0] &&
         ts.isStringLiteral(node.arguments[0])
@@ -251,6 +251,7 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
     expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
+    expect(mounts).toContain('/api/canvas/token/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
     // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
@@ -291,9 +292,10 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
     expect(mounts).toContain('/api/heartbeats/triage-credits');
     expect(mounts).toContain('/api/terminal');
-    // 71 -> 72: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
+    // The pre-CORS document-token mount uses the same admitted early app.
+    // 72 -> 73: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
     expect(mounts).toContain('/api/lan-access');
-    expect(mounts).toHaveLength(72);
+    expect(mounts).toHaveLength(73);
     const byHand = [
       '/',
       '/x/fixture',

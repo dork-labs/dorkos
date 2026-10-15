@@ -4,6 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+
+// Preserve the native Date brand while sampling the deliberately configured fake clock.
+const NativeDate = Date;
 import {
   createDb,
   sessionMessageAcceptanceReceipts,
@@ -152,7 +155,7 @@ function runner(
 it('waits without admission while busy, rekeys and restarts, then dispatches one original generation and separately acknowledges it', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
-  const now = () => new Date();
+  const now = () => new NativeDate(Date.now());
   const directory = mkdtempSync(join(tmpdir(), 'doc-runner-delivery-'));
   directories.push(directory);
   const file = join(directory, 'state.db');
@@ -392,7 +395,7 @@ it('waits without admission while busy, rekeys and restarts, then dispatches one
 it('preserves an accepted receipt across a real capacity race, canonical move, file restart and later release', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(NOW));
-  const now = () => new Date();
+  const now = () => new NativeDate(Date.now());
   const directory = mkdtempSync(join(tmpdir(), 'doc-runner-accepted-'));
   directories.push(directory);
   const file = join(directory, 'state.db');

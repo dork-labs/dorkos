@@ -87,7 +87,7 @@ import type { HookCallback, HookJSONOutput } from '@anthropic-ai/claude-agent-sd
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 import { recordClassifierAssertion } from '../../../observability/auto-mode-stops.js';
-import { MCP_TOOL_TIERS, type McpToolTier } from '../../../core/mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, type McpToolTier } from '../../../core/mcp-tools/mcp-tool-tiers.js';
 import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
 
 /**

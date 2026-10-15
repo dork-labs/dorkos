@@ -20,7 +20,7 @@ import { roomAttachments } from '@dorkos/db';
 import type { RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';

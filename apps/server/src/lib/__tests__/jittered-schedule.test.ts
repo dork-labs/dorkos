@@ -11,7 +11,7 @@ import {
   jitteredDelay,
   scheduleJittered,
   type ScheduleTimers,
-} from '../jittered-schedule.js';
+} from '../lifecycle/jittered-schedule.js';
 
 /** Timers that run only when the test says, recording each wait. */
 function manualTimers() {

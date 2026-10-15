@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { aliasTurnLevel, recordTurnLevels } from '../turn-levels.js';
+import { aliasTurnLevel, recordRuntimeTurnLevel, recordTurnLevels } from '../turn-levels.js';
 import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import type { TurnOrigin } from '../../../session/origin/turn-origin.js';
 import {
@@ -118,6 +118,36 @@ describe('outsider output', () => {
     await turn('sdk-id', STRANGER);
     expect(sendAll('post', 'born-id')).toBe(OUTSIDER_TURN_LIMIT);
     expect(reserveOutsiderOutput('post', 'sdk-id')).toBe(false);
+  });
+
+  it('starts a fresh allowance for each captured original native turn under either session id', () => {
+    const sessionId = 'native-born';
+    noteTurnOrigin(sessionId, STRANGER);
+    recordRuntimeTurnLevel(runtime, null, sessionId);
+    linkSessionId(sessionId, 'native-canonical');
+    aliasTurnLevel(sessionId, 'native-canonical');
+    expect(sendAll('post', 'native-canonical')).toBe(OUTSIDER_TURN_LIMIT);
+    expect(reserveOutsiderOutput('post', sessionId)).toBe(false);
+
+    noteTurnOrigin('native-canonical', STRANGER);
+    recordRuntimeTurnLevel(runtime, null, 'native-canonical');
+    expect(sendAll('post', sessionId)).toBe(OUTSIDER_TURN_LIMIT);
+    expect(reserveOutsiderOutput('post', 'native-canonical')).toBe(false);
+    expect(sendAll('note', 'native-canonical')).toBe(OUTSIDER_TURN_LIMIT);
+  });
+
+  it('does not refresh an exhausted allowance when original native admission refuses', () => {
+    const sessionId = 'native-refused';
+    noteTurnOrigin(sessionId, STRANGER);
+    recordRuntimeTurnLevel(runtime, null, sessionId);
+    expect(sendAll('post', sessionId)).toBe(OUTSIDER_TURN_LIMIT);
+    const refusal = new Error('Original runtime selection retired during turn recording.');
+    expect(() =>
+      recordRuntimeTurnLevel(runtime, null, sessionId, undefined, () => {
+        throw refusal;
+      })
+    ).toThrow(refusal);
+    expect(reserveOutsiderOutput('post', sessionId)).toBe(false);
   });
 
   it('never counts a caller that names no session', () => {

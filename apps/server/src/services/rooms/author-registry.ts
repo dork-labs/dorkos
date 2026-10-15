@@ -54,7 +54,7 @@ import {
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { AuthorHandleStore } from './handles/author-handle-store.js';
-import { RoomError, type RoomAgent, type RoomAgentLookup } from './room-errors.js';
+import { RoomError, type RoomAgent, type RoomAgentLookup } from './data/room-errors.js';
 
 /**
  * The mesh-cache read the registry falls back to when nobody injects a lookup.

@@ -1,3 +1,36 @@
+import { createIsolatedCodexNativeContinuations } from './runtime/codex-native-continuations.js';
+const originalCodexNativeContinuations = createIsolatedCodexNativeContinuations();
+const originalCodexNativeContinuationApply = Reflect.apply;
+const originalCodexPrivateConstructionFreeze = Object.freeze;
+import { createIsolatedCodexCommandIntentProducer } from './runtime/codex-command-intent-producer.js';
+const originalCodexCommandIntents = createIsolatedCodexCommandIntentProducer();
+import { createIsolatedCodexRuntimeDiscovery } from './runtime/codex-runtime-discovery.js';
+const originalCodexDiscovery = createIsolatedCodexRuntimeDiscovery();
+const originalCodexDiscoveryApply = Reflect.apply;
+import { createIsolatedCodexOwnedMessageProducer } from './runtime/codex-owned-message-producer.js';
+const originalCodexOwnedMessages = createIsolatedCodexOwnedMessageProducer();
+const originalCodexOwnedMessageApply = Reflect.apply;
+import { createIsolatedCodexSessionQueries } from './runtime/codex-session-queries.js';
+const originalCodexQueries = createIsolatedCodexSessionQueries();
+const originalCodexQueryApply = Reflect.apply;
+import {
+  MAX_CONSECUTIVE_WAKES,
+  WAKE_BUDGET_SPENT_COPY,
+  sharedWakeContext,
+  type CodexRuntimeOptions,
+  type CodexPreparedRoomContinuation,
+  type CodexWakeContext,
+} from './runtime/codex-runtime-data.js';
+export { MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from './runtime/codex-runtime-data.js';
+export type { CodexRuntimeOptions } from './runtime/codex-runtime-data.js';
+import { createIsolatedCodexNativeCustody } from './runtime/codex-native-custody.js';
+import { captureOriginalRoomDispatchLifecycle } from '../../session/trigger-turn.js';
+import type { OriginalRoomDispatchCustody } from '../../rooms/service/room-core.js';
+import { readOriginalFrozenRoomTarget } from '../../canvas/doc-channel/operations/room-current-operation.js';
+import type {
+  OriginalFrozenRoomSource,
+  PreparedRoomResponder,
+} from '../../canvas/doc-channel/current/current-operation-types.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * Codex Runtime — implements the AgentRuntime interface for OpenAI Codex.
@@ -59,7 +92,6 @@ import type {
   RuntimeDeliveryResult,
   LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
-import { picksSession } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -67,47 +99,22 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
+import { peekProjector } from '../../session/session-state-projector.js';
 import {
-  getOrCreateProjector,
-  peekProjector,
-  streamGenerationOf,
-} from '../../session/session-state-projector.js';
-import { readLogBackedHistory } from '../../session/log-backed-history.js';
-import { SessionLockManager, runtimeLockHolder } from '../../session/session-lock.js';
+  SessionLockManager,
+  runtimeLockHolder,
+  captureNativeSessionAcquisition,
+  requireOriginalNativeSessionAcquisitionRetired,
+  type NativeSessionAcquisition,
+} from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { buildAgentContextAppend } from '../shared/agent-context.js';
-import {
-  homeOf,
-  resolveAgentTokenEnv,
-  resolveAgentHome,
-  turnAgentOf,
-  type AgentHome,
-} from '../../core/agent-identity/index.js';
-import {
-  checkCodexDependencies,
-  codexAppServerVersionNote,
-  resolveCodexBinaryPath,
-} from './check-dependencies.js';
-import { codexAppServerPool } from './app-server/process-pool.js';
-import { PINNED_CODEX_APP_SERVER_VERSION } from './app-server/protocol/methods.js';
-import { createCodexEventContext } from './event-mapper.js';
-import { readCodexTurnContextUsage, readCodexTurnReading } from './turn-context-usage.js';
+import { type AgentHome } from '../../core/agent-identity/index.js';
+import { resolveCodexBinaryPath } from './check-dependencies.js';
 import { ensureCreditsCodexHome, threadRunsOnCredits } from './credits-launch.js';
-import { creditsCodexHome } from './codex-home.js';
 import { resolveCreditsLaunch } from '../../core/cloud/credits-inference.js';
-import {
-  catalogNameFor,
-  decideCreditsLaunchModel,
-  type CreditsModelDecision,
-} from '../../core/cloud/credits-models.js';
-import {
-  asCreditsStopped,
-  creditsRefusalEvent,
-  type CreditsLaunch,
-} from '../../core/cloud/credits-protocols.js';
+import { type CreditsLaunch } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
-import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import { CodexNativeSessionReader } from './native-session-reader.js';
@@ -116,7 +123,6 @@ import {
   type CodexThreadMetadataPatch,
   type CodexThreadRecord,
 } from './thread-map.js';
-import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   ExecCodexTransport,
@@ -124,36 +130,12 @@ import {
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
-import { backgroundDoneEvent, nothingToSummarize } from './transport/app-server-transport.js';
+import { backgroundDoneEvent } from './transport/app-server-transport.js';
 import { buildBackgroundUpdate, type BackgroundWake } from './app-server/background-work.js';
-import {
-  MAX_CONSECUTIVE_WAKES,
-  WAKE_BUDGET_SPENT_COPY,
-  sharedWakeContext,
-  wakeContextOf,
-  type CodexWakeContext,
-} from './app-server/background-wake.js';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
-import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
-import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
-import {
-  renderBlockedAreaLines,
-  resolveToolVisibilityFor,
-} from '../shared/permission-tool-filter.js';
-import { resolveManagedMcpServers } from './mcp-server-config.js';
-import { buildCodexPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
-import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
-import { scanSkillCommands } from './scan-skill-commands.js';
-import type { ConnectorRuntimeMcpInjection, ConnectorRuntimeTools } from '../connector-tools.js';
-import type {
-  OpenConnectorTurnResult,
-  RevokeConnectorTurnReason,
-} from '../../connectors/runtime-principal-port.js';
-import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
-import { openConnectorTurn } from '../connectors/open-connector-turn.js';
+import { type ConnectorRuntimeTools } from '../connector-tools.js';
 
 /**
  * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
@@ -177,59 +159,57 @@ const CODEX_MODES = CODEX_CAPABILITIES.permissionModes.values ?? [];
 /** The mode a session runs under until something says otherwise. */
 const CODEX_DEFAULT_MODE = CODEX_CAPABILITIES.permissionModes.default ?? 'default';
 
-/** Constructor dependencies for {@link CodexRuntime} (composition root). */
-export interface CodexRuntimeOptions {
-  /** Durable sessionId ↔ threadId binding (backed by the `codex_threads` table). */
-  threadMap: CodexThreadMap;
-  /**
-   * How this runtime finds its `codex` binary. Defaults to the shared ladder
-   * ({@link resolveCodexBinaryPath}: configured `binaryPath` → SDK-vendored →
-   * provisioned → `PATH`), which is the SAME resolution the dependency check
-   * reports on, so the status card and the turn can never disagree. Injectable
-   * for tests; production passes nothing.
-   */
-  resolveBinary?: () => Promise<string | null>;
-  /** Account-aware model catalog; injectable so runtime tests never spawn app-server. */
-  modelCatalog?: Pick<CodexModelCatalog, 'getSupportedModels'>;
-  /**
-   * Fallback working directory for a turn that arrives with no cwd from any
-   * source (send opts, registry, persisted binding) — mirrors the Claude
-   * adapter's default. Guarantees every bound thread persists a real cwd, so
-   * a `codex_threads` row can never be minted cwd-less (DOR-202). Defaults to
-   * the server's resolved workspace root.
-   */
-  defaultCwd?: string;
-  /**
-   * Where images this runtime's turns produce are stored (the local store over
-   * the resolved data directory in production). Omitted, the runtime declares
-   * `mediaOutput: 'none'` and says so per image rather than dropping one
-   * quietly — see {@link CodexRuntime.getCapabilities}.
-   */
-  attachments?: SessionAttachmentStore;
-  /**
-   * How this runtime talks to Codex (`runtimes.codex.transport`, already
-   * resolved — `resolveCodexTransport`), or a ready transport (tests). Fixed
-   * for the runtime's life: capabilities are cached by clients, so a change
-   * takes effect at the next server start. Required, so no caller can fall
-   * back to a transport the product does not default to.
-   */
-  transport: CodexTransportKind | CodexTransport;
-  /**
-   * The loopback credits relay, when boot started one. Only the app-server
-   * transport uses it: a credits thread's provider points at the relay, so the
-   * credits token never enters Codex's process.
-   */
-  creditsRelay?: () => CreditsRelay | undefined;
-}
-
 /**
  * Codex runtime implementing the universal AgentRuntime interface.
  */
+const nativeMapGet = Map.prototype.get;
+const nativeMapSet = Map.prototype.set;
+const nativeSignalAborted = Object.getOwnPropertyDescriptor(AbortSignal.prototype, 'aborted')!.get!;
+const originalCodexCustody = createIsolatedCodexNativeCustody(nativeMapGet, nativeSignalAborted);
+const codexLockedRunners = originalCodexCustody.codexLockedRunners;
+const codexRoomPreparers = originalCodexCustody.codexRoomPreparers;
+const codexOriginalActiveSlots = originalCodexCustody.codexOriginalActiveSlots;
+const codexNativeConstructors = originalCodexCustody.codexNativeConstructors;
+const codexNativeControllers = originalCodexCustody.codexNativeControllers;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const readCodexOriginalLockedStream = originalCodexCustody.readCodexOriginalLockedStream;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const readCodexOriginalLockedTurnOptions =
+  originalCodexCustody.readCodexOriginalLockedTurnOptions;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const retireCodexOriginalRoomResponderStream =
+  originalCodexCustody.retireCodexOriginalRoomResponderStream;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const readCodexOriginalRoomResponderStream =
+  originalCodexCustody.readCodexOriginalRoomResponderStream;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const sendCodexOriginalLockedMessage = originalCodexCustody.sendCodexOriginalLockedMessage;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const prepareCodexOriginalLockedRoomResponder =
+  originalCodexCustody.prepareCodexOriginalLockedRoomResponder;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const retireCodexPreparedRoomResponder =
+  originalCodexCustody.retireCodexPreparedRoomResponder;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const readCodexPreparedRoomResponder = originalCodexCustody.readCodexPreparedRoomResponder;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const startCodexCommittedRoomResponder =
+  originalCodexCustody.startCodexCommittedRoomResponder;
+/** Original native custody reader bound to the runtime module-private instance. */
+export const readCodexNativeOperation = originalCodexCustody.readCodexNativeOperation;
+
+/** Run Codex sessions with their original client and native turn lifetimes. */
 export class CodexRuntime implements AgentRuntime {
+  readonly #nativeContinuationKey = originalCodexPrivateConstructionFreeze({});
+  readonly #queryKey = originalCodexPrivateConstructionFreeze({});
+  readonly #discoveryKey = originalCodexPrivateConstructionFreeze({});
+  readonly #ownedMessageKey = originalCodexPrivateConstructionFreeze({});
+  readonly #commandIntentKey = originalCodexPrivateConstructionFreeze({});
   readonly type = 'codex' as const;
 
   /** How turns reach Codex — see {@link CodexRuntimeOptions.transport}. */
-  private readonly transport: CodexTransport;
+  readonly #transport: CodexTransport;
+  readonly #runTransportTurn: CodexTransport['runTurn'];
   /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
   private readonly resolveBinary: () => Promise<string | null>;
   /** Models visible to the same binary and Codex account a real turn uses. */
@@ -257,6 +237,14 @@ export class CodexRuntime implements AgentRuntime {
   /** The in-flight turns running on DorkOS credits, so an unlink can stop them at once. */
   private readonly creditsTurns = new Set<AbortController>();
   private readonly locks = new SessionLockManager();
+  readonly #runtimeWakeAcquisitions = new Map<
+    string,
+    Readonly<{
+      acquisition: NativeSessionAcquisition;
+      holder: SseResponse;
+      manager: SessionLockManager;
+    }>
+  >();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
   /** Told when a dispatched turn opens (DOR-2717), on a transport with background work. */
@@ -299,6 +287,353 @@ export class CodexRuntime implements AgentRuntime {
   private readonly attachments: SessionAttachmentStore | null;
 
   constructor(options: CodexRuntimeOptions) {
+    /** Build the exact constructor-owned continuation view with original live descriptors. */
+    const createOriginalContinuationView = (
+      continuationRuntime: CodexRuntime
+    ): Readonly<Parameters<typeof originalCodexNativeContinuations.register>[1]> =>
+      originalCodexPrivateConstructionFreeze<
+        Parameters<typeof originalCodexNativeContinuations.register>[1]
+      >({
+        runtime: continuationRuntime,
+        custody: originalCodexCustody,
+        nativeMapGet,
+        nativeMapSet,
+        get activeTurns() {
+          return continuationRuntime.activeTurns;
+        },
+        get activeConnectorBindings() {
+          return continuationRuntime.activeConnectorBindings;
+        },
+        get connectorRuntimeTools() {
+          return continuationRuntime.connectorRuntimeTools;
+        },
+        get meshCore() {
+          return continuationRuntime.meshCore;
+        },
+        get sendOwnedMessage() {
+          const fn = continuationRuntime.#sendOwnedMessage;
+          return (...args: Parameters<typeof fn>) =>
+            originalCodexNativeContinuationApply(fn, continuationRuntime, args);
+        },
+        get installNativeTurn() {
+          const fn = continuationRuntime.#installNativeTurn;
+          return (...args: Parameters<typeof fn>) =>
+            originalCodexNativeContinuationApply(fn, continuationRuntime, args);
+        },
+        get createMessage() {
+          const fn = continuationRuntime.#createMessage;
+          return (...args: Parameters<typeof fn>) =>
+            originalCodexNativeContinuationApply(fn, continuationRuntime, args);
+        },
+        get identityPathFor() {
+          const fn = continuationRuntime.identityPathFor;
+          return (...args: Parameters<typeof fn>) =>
+            originalCodexNativeContinuationApply(fn, continuationRuntime, args);
+        },
+      });
+    originalCodexNativeContinuations.register(
+      this.#nativeContinuationKey,
+      createOriginalContinuationView(this)
+    );
+    /** Build the exact constructor-owned discovery view with original live descriptors. */
+    const createOriginalDiscoveryView = (
+      discoveryRuntime: CodexRuntime
+    ): Readonly<Parameters<typeof originalCodexDiscovery.register>[1]> =>
+      originalCodexPrivateConstructionFreeze<Parameters<typeof originalCodexDiscovery.register>[1]>(
+        {
+          MCP_STATUS_TTL_MS,
+          CONTEXT_USAGE_AT_REST_TIMEOUT_MS,
+          get transport() {
+            return discoveryRuntime.#transport;
+          },
+          get modelCatalog() {
+            return discoveryRuntime.modelCatalog;
+          },
+          get attachments() {
+            return discoveryRuntime.attachments;
+          },
+          get meshCore() {
+            return discoveryRuntime.meshCore;
+          },
+          get connectorRuntimeTools() {
+            return discoveryRuntime.connectorRuntimeTools;
+          },
+          get threadMap() {
+            return discoveryRuntime.threadMap;
+          },
+          get resolveBinary() {
+            return discoveryRuntime.resolveBinary;
+          },
+          get mcpStatusCache() {
+            return discoveryRuntime.mcpStatusCache;
+          },
+          set mcpStatusCache(value: McpServerEntry[] | null) {
+            discoveryRuntime.mcpStatusCache = value;
+          },
+          get mcpStatusWarmedAt() {
+            return discoveryRuntime.mcpStatusWarmedAt;
+          },
+          set mcpStatusWarmedAt(value: number | null) {
+            discoveryRuntime.mcpStatusWarmedAt = value;
+          },
+          get mcpWarmPromise() {
+            return discoveryRuntime.mcpWarmPromise;
+          },
+          set mcpWarmPromise(value: Promise<void> | null) {
+            discoveryRuntime.mcpWarmPromise = value;
+          },
+          get identityPathFor() {
+            const fn = discoveryRuntime.identityPathFor;
+            return (cwd: string, forAgent: string | undefined) =>
+              originalCodexDiscoveryApply(fn, discoveryRuntime, [cwd, forAgent]);
+          },
+          get maybeWarmMcpStatus() {
+            const fn = discoveryRuntime.maybeWarmMcpStatus;
+            return () => originalCodexDiscoveryApply(fn, discoveryRuntime, []);
+          },
+          get warmMcpStatus() {
+            const fn = discoveryRuntime.warmMcpStatus;
+            return () => originalCodexDiscoveryApply(fn, discoveryRuntime, []);
+          },
+        }
+      );
+    originalCodexDiscovery.register(this.#discoveryKey, createOriginalDiscoveryView(this));
+    /** Build the shared constructor-owned message and command view with original live descriptors. */
+    const createOriginalProducerView = (
+      producerRuntime: CodexRuntime
+    ): Readonly<
+      Parameters<typeof originalCodexOwnedMessages.register>[1] &
+        Parameters<typeof originalCodexCommandIntents.register>[1]
+    > =>
+      originalCodexPrivateConstructionFreeze<
+        Parameters<typeof originalCodexOwnedMessages.register>[1] &
+          Parameters<typeof originalCodexCommandIntents.register>[1]
+      >({
+        runtime: producerRuntime,
+        get transport() {
+          return producerRuntime.#transport;
+        },
+        get runTransportTurn() {
+          return producerRuntime.#runTransportTurn;
+        },
+        get dispatchedTurnListeners() {
+          return producerRuntime.dispatchedTurnListeners;
+        },
+        get consecutiveWakes() {
+          return producerRuntime.consecutiveWakes;
+        },
+        get threadMap() {
+          return producerRuntime.threadMap;
+        },
+        get registry() {
+          return producerRuntime.registry;
+        },
+        get defaultCwd() {
+          return producerRuntime.defaultCwd;
+        },
+        get meshCore() {
+          return producerRuntime.meshCore;
+        },
+        get connectorRuntimeTools() {
+          return producerRuntime.connectorRuntimeTools;
+        },
+        get managedMcpServers() {
+          return producerRuntime.managedMcpServers;
+        },
+        get creditsTurns() {
+          return producerRuntime.creditsTurns;
+        },
+        get activeConnectorBindings() {
+          return producerRuntime.activeConnectorBindings;
+        },
+        get activeTurns() {
+          return producerRuntime.activeTurns;
+        },
+        get type() {
+          return producerRuntime.type;
+        },
+        get contextGate() {
+          return producerRuntime.contextGate;
+        },
+        get accountsAccess() {
+          return producerRuntime.accountsAccess;
+        },
+        get attachments() {
+          return producerRuntime.attachments;
+        },
+        get importNativeThread() {
+          const fn = producerRuntime.importNativeThread;
+          return (sessionId: string, isCurrent?: () => boolean) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [sessionId, isCurrent]);
+        },
+        get seedFromDurable() {
+          const fn = producerRuntime.seedFromDurable;
+          return (sessionId: string) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [sessionId]);
+        },
+        get resolveTurnSettings() {
+          const fn = producerRuntime.resolveTurnSettings;
+          return (sessionId: string, opts?: MessageOpts) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [sessionId, opts]);
+        },
+        get persistSessionMetadata() {
+          const fn = producerRuntime.persistSessionMetadata;
+          return (sessionId: string) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [sessionId]);
+        },
+        get identityPathFor() {
+          const fn = producerRuntime.identityPathFor;
+          return (cwd: string, forAgent: string | undefined) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [cwd, forAgent]);
+        },
+        get creditsLaunchFor() {
+          const fn = producerRuntime.creditsLaunchFor;
+          return (threadId: string | undefined) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [threadId]);
+        },
+        get getCapabilities() {
+          const fn = producerRuntime.getCapabilities;
+          return () => originalCodexOwnedMessageApply(fn, producerRuntime, []);
+        },
+        get updateSession() {
+          const fn = producerRuntime.updateSession;
+          return (sessionId: string, opts: SessionSettings) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [sessionId, opts]);
+        },
+        get resolveTurnBinary() {
+          const fn = producerRuntime.resolveTurnBinary;
+          return () => originalCodexOwnedMessageApply(fn, producerRuntime, []);
+        },
+        get toMetadataPatch() {
+          const fn = producerRuntime.toMetadataPatch;
+          return (session: Session) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [session]);
+        },
+        get installNativeTurn() {
+          const fn = producerRuntime.#installNativeTurn;
+          return (
+            sessionId: string,
+            cwd: string,
+            agentPath: string | undefined,
+            controller: AbortController,
+            acquisition?: NativeSessionAcquisition,
+            refuseExisting?: boolean,
+            roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>
+          ) =>
+            originalCodexOwnedMessageApply(fn, producerRuntime, [
+              sessionId,
+              cwd,
+              agentPath,
+              controller,
+              acquisition,
+              refuseExisting,
+              roomOrigin,
+            ]);
+        },
+      });
+    const originalProducerView = createOriginalProducerView(this);
+    originalCodexOwnedMessages.register(this.#ownedMessageKey, originalProducerView);
+    originalCodexCommandIntents.register(this.#commandIntentKey, originalProducerView);
+    /** Build the exact constructor-owned query view with original live descriptors. */
+    const createOriginalQueryView = (
+      queryRuntime: CodexRuntime
+    ): Readonly<Parameters<typeof originalCodexQueries.register>[1]> =>
+      originalCodexPrivateConstructionFreeze<Parameters<typeof originalCodexQueries.register>[1]>({
+        CODEX_MODES,
+        CODEX_DEFAULT_MODE,
+        get settingsPort() {
+          return queryRuntime.settingsPort;
+        },
+        get importNativeThread() {
+          const fn = queryRuntime.importNativeThread;
+          return (sessionId: string, ...args: [isCurrent?: () => boolean]) =>
+            originalCodexQueryApply(fn, queryRuntime, [sessionId, ...args]);
+        },
+        get maybeWarmMcpStatus() {
+          const fn = queryRuntime.maybeWarmMcpStatus;
+          return () => originalCodexQueryApply(fn, queryRuntime, []);
+        },
+        get seedDisplayFromDurable() {
+          const fn = queryRuntime.seedDisplayFromDurable;
+          return (sessionId: string) => originalCodexQueryApply(fn, queryRuntime, [sessionId]);
+        },
+        get persistSessionMetadata() {
+          const fn = queryRuntime.persistSessionMetadata;
+          return (sessionId: string) => originalCodexQueryApply(fn, queryRuntime, [sessionId]);
+        },
+        get buildDurableSession() {
+          const fn = queryRuntime.buildDurableSession;
+          return (record: CodexThreadRecord) => originalCodexQueryApply(fn, queryRuntime, [record]);
+        },
+        get toDurableDisplaySession() {
+          const fn = queryRuntime.toDurableDisplaySession;
+          return (record: CodexThreadRecord) => originalCodexQueryApply(fn, queryRuntime, [record]);
+        },
+        get toMetadataPatch() {
+          const fn = queryRuntime.toMetadataPatch;
+          return (session: Session) => originalCodexQueryApply(fn, queryRuntime, [session]);
+        },
+        get getCapabilities() {
+          const fn = queryRuntime.getCapabilities;
+          return () => originalCodexQueryApply(fn, queryRuntime, []);
+        },
+        get threadMap() {
+          return queryRuntime.threadMap;
+        },
+        get activeTurns() {
+          return queryRuntime.activeTurns;
+        },
+        get registry() {
+          return queryRuntime.registry;
+        },
+        get nativeSessions() {
+          return queryRuntime.nativeSessions;
+        },
+        get hasThreadProof() {
+          const fn = queryRuntime.hasThreadProof;
+          return (sessionId: string) => originalCodexQueryApply(fn, queryRuntime, [sessionId]);
+        },
+        get withNativeSettings() {
+          const fn = queryRuntime.withNativeSettings;
+          return (native: Session) => originalCodexQueryApply(fn, queryRuntime, [native]);
+        },
+        get withNativeIdentity() {
+          const fn = queryRuntime.withNativeIdentity;
+          return (tracked: Session, native: Session) =>
+            originalCodexQueryApply(fn, queryRuntime, [tracked, native]);
+        },
+        get seedFromDurable() {
+          const fn = queryRuntime.seedFromDurable;
+          return (sessionId: string) => originalCodexQueryApply(fn, queryRuntime, [sessionId]);
+        },
+        get findSession() {
+          const fn = queryRuntime.findSession;
+          return (sessionId: string) => originalCodexQueryApply(fn, queryRuntime, [sessionId]);
+        },
+        get getMessageHistory() {
+          const fn = queryRuntime.getMessageHistory;
+          return (projectDir: string, sessionId: string) =>
+            originalCodexQueryApply(fn, queryRuntime, [projectDir, sessionId]);
+        },
+      });
+    originalCodexQueries.register(this.#queryKey, createOriginalQueryView(this));
+    codexNativeConstructors.add(this);
+    codexOriginalActiveSlots.set(this, this.activeTurns);
+    const originalLocks = this.locks;
+    codexRoomPreparers.set(this, (source, holder, key) => {
+      const target = readOriginalFrozenRoomTarget(source, 'codex');
+      const acquisition = captureNativeSessionAcquisition(originalLocks, key, holder);
+      if (!acquisition || target.sessionId !== key) return Promise.resolve(undefined);
+      return this.#prepareRoomResponder(source, target, acquisition);
+    });
+    codexLockedRunners.set(this, (sessionId, content, opts, holder, lockKey) => {
+      const acquisition = captureNativeSessionAcquisition(originalLocks, lockKey, holder);
+      if (!acquisition)
+        throw new Error('Native turn requires its exact original session lock acquisition.');
+      const custody = captureOriginalRoomDispatchLifecycle(holder, this);
+      const roomOrigin = custody ? Object.freeze({ holder, custody }) : undefined;
+      return this.#createMessage(sessionId, content, opts, acquisition, roomOrigin);
+    });
     this.attachments = options.attachments ?? null;
     this.nativeSessions = new CodexNativeSessionReader(undefined, this.attachments);
     this.threadMap = options.threadMap;
@@ -306,11 +641,12 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    this.transport = this.buildTransport(options.transport, options.creditsRelay);
+    this.#transport = this.buildTransport(options.transport, options.creditsRelay);
+    this.#runTransportTurn = this.#transport.runTurn;
     // Capability-gated members exist only where the transport backs them, so a
     // runtime on exec keeps the shape it always had.
-    if (this.transport.getSessionWarmth) {
-      const transport = this.transport;
+    if (this.#transport.getSessionWarmth) {
+      const transport = this.#transport;
       this.getSessionWarmth = (sessionId) => transport.getSessionWarmth?.(sessionId) ?? 'cold';
       this.reapSession = async (sessionId) => transport.reapSession?.(sessionId);
       // A turn here ends with its stream (the generator returns at its own
@@ -319,15 +655,15 @@ export class CodexRuntime implements AgentRuntime {
     }
     // Present only where the transport can take a message mid-turn: on exec
     // it stays absent (C1: "absent or refused as unsupported").
-    if (this.transport.deliverIntoTurn) {
-      const transport = this.transport;
+    if (this.#transport.deliverIntoTurn) {
+      const transport = this.#transport;
       this.deliverIntoTurn = (sessionId, content, opts) =>
         transport.deliverIntoTurn!(sessionId, content, opts);
     }
     // Work that outlives its turn (spec §12): only a transport that keeps the
     // thread loaded can hear it finish, so only there can the agent start a
     // turn of its own. On exec every one of these stays absent.
-    if (this.transport.onWake) this.installBackgroundWork(this.transport);
+    if (this.#transport.onWake) this.installBackgroundWork(this.#transport);
   }
 
   /**
@@ -379,8 +715,21 @@ export class CodexRuntime implements AgentRuntime {
       this.dispatchedTurnListeners.add(listener);
       return () => void this.dispatchedTurnListeners.delete(listener);
     };
-    this.acquireRuntimeLock = (sessionKey, res, token) =>
-      this.locks.acquireRuntimeLock(sessionKey, res, token);
+    const originalLocks = this.locks;
+    const acquireRuntimeLock = originalLocks.acquireRuntimeLock;
+    this.acquireRuntimeLock = (sessionKey, res, token) => {
+      const acquired = acquireRuntimeLock.call(originalLocks, sessionKey, res, token);
+      if (acquired) {
+        const acquisition = captureNativeSessionAcquisition(originalLocks, sessionKey, res);
+        if (acquisition)
+          this.#runtimeWakeAcquisitions.set(
+            sessionKey,
+            Object.freeze({ acquisition, holder: res, manager: originalLocks })
+          );
+        else this.#runtimeWakeAcquisitions.delete(sessionKey);
+      }
+      return acquired;
+    };
   }
 
   /**
@@ -392,15 +741,28 @@ export class CodexRuntime implements AgentRuntime {
     const { sessionId } = wake;
     const self = Symbol('wake');
     const owner = !this.openWakes.has(sessionId);
+    const acquisition = owner ? this.#runtimeWakeAcquisitions.get(sessionId) : undefined;
     if (owner) this.openWakes.set(sessionId, self);
     try {
-      yield* this.wakeEvents(wake, owner);
+      yield* this.wakeEvents(wake, owner, acquisition);
     } finally {
       if (this.openWakes.get(sessionId) === self) this.openWakes.delete(sessionId);
+      if (owner && this.#runtimeWakeAcquisitions.get(sessionId) === acquisition)
+        this.#runtimeWakeAcquisitions.delete(sessionId);
     }
   }
 
-  private async *wakeEvents(wake: BackgroundWake, owner: boolean): AsyncGenerator<StreamEvent> {
+  private async *wakeEvents(
+    wake: BackgroundWake,
+    owner: boolean,
+    acquisition:
+      | Readonly<{
+          acquisition: NativeSessionAcquisition;
+          holder: SseResponse;
+          manager: SessionLockManager;
+        }>
+      | undefined
+  ): AsyncGenerator<StreamEvent> {
     const { sessionId } = wake;
     for (const message of wake.notices) {
       yield { type: 'system_status', data: { message } };
@@ -412,7 +774,11 @@ export class CodexRuntime implements AgentRuntime {
     // a consumer that never took the lock (one that gave up waiting while
     // another wake held it, and is merely draining) must not start a hidden turn.
     const locked =
-      owner && this.locks.getLockInfo(sessionId)?.clientId === runtimeLockHolder(sessionId);
+      owner &&
+      !!acquisition &&
+      captureNativeSessionAcquisition(acquisition.manager, sessionId, acquisition.holder) ===
+        acquisition.acquisition &&
+      this.locks.getLockInfo(sessionId)?.clientId === runtimeLockHolder(sessionId);
     const spent = this.consecutiveWakes.get(sessionId) ?? 0;
     if (context === undefined || !locked || spent >= MAX_CONSECUTIVE_WAKES) {
       if (context !== undefined && !locked) {
@@ -430,7 +796,14 @@ export class CodexRuntime implements AgentRuntime {
     // The session's CURRENT mode, model and effort apply (`resolveTurnSettings`
     // reads them): the context carries none, so a mode the person lowered
     // since the starting turn is never climbed back over.
-    yield* this.runTurn(sessionId, buildBackgroundUpdate(waking), context.opts, 'runtime', context);
+    yield* this.runTurn(
+      sessionId,
+      buildBackgroundUpdate(waking),
+      context.opts,
+      'runtime',
+      context,
+      acquisition?.acquisition
+    );
   }
 
   /**
@@ -467,7 +840,7 @@ export class CodexRuntime implements AgentRuntime {
 
   /** Stop every process this runtime's transport started (server shutdown). */
   async shutdown(): Promise<void> {
-    await this.transport.shutdown();
+    await this.#transport.shutdown();
   }
 
   /**
@@ -523,15 +896,14 @@ export class CodexRuntime implements AgentRuntime {
    * paid under. The next turn of such a session is refused, never moved.
    */
   stopCreditsTurns(): void {
-    for (const controller of this.creditsTurns) controller.abort();
-    // On app-server the credits home is a long-lived process: stop it too, so
-    // nothing paid for by the old link keeps running (its relay key revokes
-    // with it).
-    void this.transport
-      .closeCreditsProcess?.()
-      .catch((err: unknown) =>
-        logger.warn('[CodexRuntime] could not stop the credits Codex process', { err: String(err) })
-      );
+    for (const controller of this.creditsTurns) {
+      const operation = codexNativeControllers.get(controller);
+      if (operation) operation.retired = true;
+      controller.abort();
+    }
+    void this.#transport.closeCreditsProcess?.().catch((err: unknown) => {
+      logger.warn('[CodexRuntime] credits process close failed', { err });
+    });
   }
 
   /**
@@ -580,30 +952,16 @@ export class CodexRuntime implements AgentRuntime {
   // --- Session lifecycle ---
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
-    // Seed display metadata from the durable row before the register below,
-    // so a touch that lands before startup hydration completes cannot mint a
-    // fresh blank entry (see seedFromDurable).
-    this.seedDisplayFromDurable(sessionId);
-    this.registry.register(sessionId, {
-      permissionMode: opts.permissionMode,
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    });
-    // Pre-warm the MCP-status cache the first time Codex is actually used, so
-    // the Agent Profile MCP list is usually populated before the UI's first
-    // (synchronous) `getMcpStatus` call instead of empty until a later refetch.
-    this.maybeWarmMcpStatus();
+    return originalCodexQueries.queryEnsureSession(this.#queryKey, sessionId, opts);
   }
 
   hasSession(sessionId: string): boolean {
-    return this.registry.has(sessionId);
+    return originalCodexQueries.queryHasSession(this.#queryKey, sessionId);
   }
 
   /** @inheritdoc */
   isTurnOpen(sessionId: string): boolean {
-    return this.activeTurns.has(sessionId);
+    return originalCodexQueries.queryIsTurnOpen(this.#queryKey, sessionId);
   }
 
   /** Codex has no fork surface — a thread can only be resumed, not branched. */
@@ -630,26 +988,7 @@ export class CodexRuntime implements AgentRuntime {
    * change takes permissions away, that is reported rather than assumed.
    */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
-    await this.seedFromDurable(sessionId);
-    if (!this.hasThreadProof(sessionId)) {
-      const native = await this.nativeSessions.findSession(sessionId);
-      if (native) this.registry.adoptNative(native);
-    }
-    // Read BEFORE the register below overwrites it — this is the mode the
-    // in-flight turn's sandbox was projected from.
-    const prevMode = this.registry.get(sessionId)?.permissionMode ?? CODEX_DEFAULT_MODE;
-    await this.settingsPort?.saveSessionSettings(sessionId, opts);
-    this.registry.register(sessionId, {
-      ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
-    });
-    const pending =
-      opts.permissionMode !== undefined &&
-      this.activeTurns.has(sessionId) &&
-      tightensDeclaredMode(CODEX_MODES, prevMode, opts.permissionMode);
-    return { updated: true, ...(pending ? { permissionModePendingUntilNextTurn: true } : {}) };
+    return originalCodexQueries.queryUpdateSession(this.#queryKey, sessionId, opts);
   }
 
   /**
@@ -658,12 +997,7 @@ export class CodexRuntime implements AgentRuntime {
    * `codex_threads` row (when one exists) so it survives a server restart.
    */
   async renameSession(sessionId: string, title: string): Promise<void> {
-    // Seed first so the rename lands on top of the durable createdAt/cwd (the
-    // user's title is genuinely fresher and overwrites the seeded one).
-    await this.importNativeThread(sessionId);
-    await this.seedFromDurable(sessionId);
-    this.registry.rename(sessionId, title);
-    this.persistSessionMetadata(sessionId);
+    return originalCodexQueries.queryRenameSession(this.#queryKey, sessionId, title);
   }
 
   /**
@@ -683,11 +1017,7 @@ export class CodexRuntime implements AgentRuntime {
    * mints a fresh entry that would make this hydrate skip the persisted one.
    */
   async hydrateSessions(): Promise<void> {
-    // The settings joins run concurrently (per-row degradation preserved);
-    // Promise.all keeps the records' order for a deterministic hydrate.
-    this.registry.hydrate(
-      await Promise.all(this.threadMap.listAll().map((record) => this.buildDurableSession(record)))
-    );
+    return originalCodexQueries.queryHydrateSessions(this.#queryKey);
   }
 
   /**
@@ -697,18 +1027,7 @@ export class CodexRuntime implements AgentRuntime {
    * seeding paths use this shape directly.
    */
   private toDurableDisplaySession(record: CodexThreadRecord): Session {
-    return {
-      id: record.sessionId,
-      title: record.title ?? '',
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt ?? record.createdAt,
-      permissionMode: 'default',
-      runtime: 'codex',
-      ...(record.lastMessagePreview !== undefined
-        ? { lastMessagePreview: record.lastMessagePreview }
-        : {}),
-      ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
-    };
+    return originalCodexQueries.queryToDurableDisplaySession(this.#queryKey, record);
   }
 
   /**
@@ -717,26 +1036,7 @@ export class CodexRuntime implements AgentRuntime {
    * joined from the core settings store (ADR-0260) where available.
    */
   private async buildDurableSession(record: CodexThreadRecord): Promise<Session> {
-    let settings: SessionSettings | null = null;
-    try {
-      settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
-    } catch (err) {
-      // Degrade to defaults rather than dropping the session: the metadata
-      // row alone is enough to put it back on the list.
-      logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
-        sessionId: record.sessionId,
-        err,
-      });
-    }
-    return {
-      ...this.toDurableDisplaySession(record),
-      ...(settings?.permissionMode !== undefined
-        ? { permissionMode: settings.permissionMode }
-        : {}),
-      ...(settings?.model !== undefined ? { model: settings.model } : {}),
-      ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
-      ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
-    };
+    return originalCodexQueries.queryBuildDurableSession(this.#queryKey, record);
   }
 
   /**
@@ -750,10 +1050,7 @@ export class CodexRuntime implements AgentRuntime {
    * fresher in-memory state.
    */
   private async seedFromDurable(sessionId: string): Promise<void> {
-    if (this.registry.has(sessionId)) return;
-    const record = this.threadMap.getRecord(sessionId);
-    if (!record) return;
-    this.registry.hydrate([await this.buildDurableSession(record)]);
+    return originalCodexQueries.querySeedFromDurable(this.#queryKey, sessionId);
   }
 
   /**
@@ -763,22 +1060,15 @@ export class CodexRuntime implements AgentRuntime {
    * persisted-settings join ever existed on that path).
    */
   private seedDisplayFromDurable(sessionId: string): void {
-    if (this.registry.has(sessionId)) return;
-    const record = this.threadMap.getRecord(sessionId);
-    if (!record) return;
-    this.registry.hydrate([this.toDurableDisplaySession(record)]);
+    return originalCodexQueries.querySeedDisplayFromDurable(this.#queryKey, sessionId);
   }
 
   /** Bind only a verified imported thread; no SDK resume or model turn is started. */
-  private async importNativeThread(sessionId: string): Promise<void> {
-    if (this.threadMap.get(sessionId)) return;
-    const native = await this.nativeSessions.findSession(sessionId);
-    if (!native?.cwd) return;
-    this.registry.adoptNative(native);
-    this.threadMap.setThreadId(sessionId, sessionId, native.cwd, {
-      title: native.title,
-      updatedAt: native.updatedAt,
-    });
+  private async importNativeThread(
+    sessionId: string,
+    isCurrent: () => boolean = () => true
+  ): Promise<void> {
+    return originalCodexQueries.queryImportNativeThread(this.#queryKey, sessionId, isCurrent);
   }
 
   // --- Messaging ---
@@ -793,393 +1083,111 @@ export class CodexRuntime implements AgentRuntime {
    * throw AbortError, normalized to a quiet `done`), and crash — so no
    * additional done-guard is layered here.
    */
-  async *sendMessage(
-    sessionId: string,
-    content: string,
-    opts?: MessageOpts
-  ): AsyncGenerator<StreamEvent> {
-    // A dispatched turn opening ends every follow of this session's later
-    // turns (DOR-2717): from here on a wake may be answering this work.
-    for (const listener of this.dispatchedTurnListeners) {
-      try {
-        listener(sessionId);
-      } catch (err) {
-        logger.warn('[CodexRuntime] a dispatched-turn listener threw', { sessionId, err });
-      }
-    }
-    // A dispatched turn is somebody's word: the agent may wake again.
-    this.consecutiveWakes.delete(sessionId);
-    yield* this.runTurn(sessionId, content, opts, 'dispatched');
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent> {
+    return this.#createMessage(sessionId, content, opts);
   }
 
-  /**
-   * One turn, dispatched or the agent's own (a wake). A wake's input is
-   * DorkOS's notice, so it never becomes the session's preview or title.
-   */
-  private async *runTurn(
+  private runTurn(
     sessionId: string,
     content: string,
     opts: MessageOpts | undefined,
     origin: 'dispatched' | 'runtime',
+    inherited?: CodexWakeContext,
+    acquisition?: NativeSessionAcquisition
+  ): AsyncGenerator<StreamEvent> {
+    return this.#createMessage(
+      sessionId,
+      content,
+      opts,
+      origin === 'runtime' ? acquisition : undefined,
+      undefined,
+      undefined,
+      origin,
+      inherited
+    );
+  }
+
+  #createMessage(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    acquisition?: NativeSessionAcquisition,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>,
+    roomPrepared?: CodexPreparedRoomContinuation,
+    origin: 'dispatched' | 'runtime' = 'dispatched',
     inherited?: CodexWakeContext
   ): AsyncGenerator<StreamEvent> {
-    // Seed from the durable row before any registry mutation: recordMessage's
-    // title-if-blank derivation must see the persisted title, not a fresh
-    // blank entry it would fill with an auto-preview (see seedFromDurable).
-    await this.importNativeThread(sessionId);
-    await this.seedFromDurable(sessionId);
-    let settings = await this.resolveTurnSettings(sessionId, opts);
-    const binding = this.threadMap.get(sessionId);
-    const boundThreadId = binding?.threadId;
-    // Resolution order (post-restart safe): per-send override → in-memory
-    // registry → the persisted binding's cwd → the server's default root. The
-    // registry is empty after a restart, so the persisted cwd is what keeps
-    // `codex exec` in the right dir. The default-root floor guarantees the
-    // turn, the registry entry, and the binding row persisted below always
-    // carry a real cwd — a cwd-less session belongs to no project list and
-    // would be invisible in every sidebar (DOR-202).
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd ?? this.defaultCwd;
-    // Durably backfill a legacy cwd-less binding row (NULL-guarded, so the
-    // first-write-wins binding is never overwritten). Without this the session
-    // gains a cwd in memory only and re-hydrates cwd-less — invisible in every
-    // list — after each restart. Best-effort like persistSessionMetadata.
-    if (binding !== undefined && binding.cwd === undefined) {
-      try {
-        this.threadMap.backfillCwd(sessionId, cwd);
-      } catch (err) {
-        logger.warn('[CodexRuntime] failed to backfill binding cwd', { sessionId, err });
-      }
-    }
-    if (origin === 'dispatched') {
-      this.registry.recordMessage(sessionId, content, {
-        cwd,
-        ...(opts?.title !== undefined ? { title: opts.title } : {}),
-      });
-      // Write the refreshed preview/updatedAt (and first-turn title) through to
-      // the durable row. A no-op before the first bind — the setThreadId below
-      // carries the first turn's metadata with the row instead.
-      this.persistSessionMetadata(sessionId);
-    }
+    return originalCodexNativeContinuations.createMessage(
+      this.#nativeContinuationKey,
+      sessionId,
+      content,
+      opts,
+      acquisition,
+      roomOrigin,
+      roomPrepared,
+      origin,
+      inherited
+    );
+  }
 
-    // Which registered agent does this turn act as? Everything below that
-    // mints, injects or names a tool is gated on the answer, and the agent's
-    // context is read from it. Resolved to a home rather than read off `cwd`
-    // (DOR-2091, DOR-2355): a turn may stand in a room worktree, a worktree of
-    // the agent's own repo or a managed checkout, none of which is the home —
-    // and it is nobody when the turn names a different agent. `cwd` stays where
-    // the thread runs; `agentPath` is whose identity it has.
-    const agentPath = this.identityPathFor(cwd, turnAgentOf(opts));
-    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+  #installNativeTurn(
+    sessionId: string,
+    cwd: string,
+    agentPath: string | undefined,
+    controller: AbortController,
+    acquisition?: NativeSessionAcquisition,
+    refuseExisting = false,
+    roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>
+  ) {
+    return originalCodexNativeContinuations.installNativeTurn(
+      this.#nativeContinuationKey,
+      sessionId,
+      cwd,
+      agentPath,
+      controller,
+      acquisition,
+      refuseExisting,
+      roomOrigin
+    );
+  }
 
-    // **Who pays** (ADR 261001-000811), decided before anything starts. A
-    // thread that already exists stays on whatever paid for it: its rollout
-    // lives in exactly one Codex home. A new thread runs on DorkOS credits
-    // when that is Codex's recorded default. A credits turn with no live token
-    // is REFUSED here, and nothing is spawned.
-    let credits: CreditsLaunch | null;
-    let creditsSwap: CreditsModelDecision['swap'];
-    try {
-      credits = await this.creditsLaunchFor(boundThreadId);
-      // **Which model a credits turn runs** (DOR-2636), the same decision every
-      // runtime on credits makes: once the service says which formats its
-      // models are in, a model it does not serve in Codex's format runs on the
-      // service's suggestion instead, and a list naming none refuses the turn.
-      // While the service says nothing, the session's model stands.
-      if (credits) {
-        const decided = await decideCreditsLaunchModel({
-          capabilities: this.getCapabilities(),
-          runtimeLabel: 'Codex',
-          sessionId,
-          model: settings.model,
-          nameOf: async () =>
-            settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
-          remember: async (model) => {
-            await this.updateSession(sessionId, { model });
-          },
-        });
-        if (decided.model !== undefined) settings = { ...settings, model: decided.model };
-        creditsSwap = decided.swap;
-      }
-    } catch (err) {
-      const refusal = creditsRefusalEvent(err);
-      if (!refusal) throw err;
-      yield refusal;
-      return;
-    }
-    // Said before anything is spawned, and saved only once it has been said: a
-    // swap's notice and its save are one step (`CreditsModelDecision.swap`).
-    if (creditsSwap?.notice) yield creditsSwap.notice;
-    await creditsSwap?.commit();
+  async #prepareRoomResponder(
+    source: OriginalFrozenRoomSource,
+    target: Readonly<{ sessionId: string; agentPath: string; agentId: string }>,
+    acquisition: NativeSessionAcquisition
+  ): Promise<PreparedRoomResponder | undefined> {
+    return originalCodexNativeContinuations.prepareRoomResponder(
+      this.#nativeContinuationKey,
+      source,
+      target,
+      acquisition
+    );
+  }
 
-    const controller = new AbortController();
-    this.activeTurns.set(sessionId, controller);
-    if (credits) this.creditsTurns.add(controller);
-    let connectorBinding: OpenConnectorTurnResult | undefined;
-    let connectorSupervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
-    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
-    let connectorRuntimeFailed = false;
-    try {
-      let connectorTools: ConnectorRuntimeMcpInjection | null = null;
-      const opened =
-        this.connectorRuntimeTools && meshAgent && agentPath
-          ? await openConnectorTurn(this.connectorRuntimeTools, {
-              runtime: this.type,
-              sessionId,
-              agentPath,
-              cwd,
-              signal: controller.signal,
-              isCurrent: () => this.activeTurns.get(sessionId) === controller,
-              onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
-            })
-          : null;
-      if (opened) {
-        connectorBinding = opened.binding;
-        this.activeConnectorBindings.set(controller, opened.binding.bindingId);
-        connectorSupervisor = opened.supervisor;
-        connectorTools = opened.injection;
-      }
-
-      // Mint this session's agent identity token when this cwd hosts a registered
-      // agent. It rides the subprocess env, never the prompt, so it stays a
-      // credential for the `dorkos` commands the agent runs rather than text in its
-      // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
-      // unattributed, exactly as before.
-      //
-      // Minted under the name a PERSON reads, never the slug: the token's label
-      // is replayed onto the agent's author row by every room tool it calls, so
-      // the slug there renames a live agent mid-conversation (DOR-1264).
-      //
-      // On app-server a loaded thread keeps the token it loaded with, so the
-      // transport mints only when a thread actually loads (`mintAgentToken`).
-      const mintAgentToken = () =>
-        resolveAgentTokenEnv(
-          meshAgent ? agentPath : undefined,
-          meshAgent?.displayName ?? meshAgent?.name
-        );
-      const mintsOnLoad = this.transport.kind === 'app-server' && meshAgent !== undefined;
-      const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
-
-      // The `dorkos` tool server, when the experiment is on and this cwd hosts a
-      // registered agent (spec `tool-only-room-replies` §D4). It reuses the
-      // already-open connector turn binding on a separate capability route, so
-      // it expires and revokes with this exact turn. `null` injects nothing.
-      //
-      // Scoped to every agent-bound session rather than to room turns: the runtime
-      // cannot know why it was called, and these tools are worth having outside a
-      // room anyway.
-      //
-      // Resolved BEFORE the managed servers because it decides whether the name
-      // `dorkos` is reserved against them this turn — see below.
-      const dorkosTools = await resolveDorkosMcpInjection(
-        meshAgent ? agentPath : undefined,
-        connectorTools
-      );
-
-      // The agent's ENABLED managed MCP servers, injected inline via
-      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Keyed
-      // on the agent the turn acts as — its own folder even when it stands in a
-      // room worktree (DOR-2091) — and a non-agent session contributes none.
-      // No anchored agent — including a refused turn standing in another
-      // agent's folder — means no managed servers, never the directory's.
-      const managedMcpServers = agentPath
-        ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
-        : { servers: {}, env: {} };
-
-      // Validated before anything starts: an invalid grant set throws here.
-      const writableDirectories = grantedWritableDirectories(opts?.additionalDirectories, cwd);
-      // Resolved per turn, before any context work, so a missing CLI fails the
-      // turn with its actionable message as a setup failure.
-      const binary = await this.resolveTurnBinary();
-      // A fresh thread holds nothing this session's previous thread was ever sent,
-      // so the gate is cleared BEFORE it is consulted (DOR-477).
-      if (boundThreadId === undefined) this.contextGate.forget(sessionId);
-
-      // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-      // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
-      // Codex agent knows who it is and how to reach its capabilities.
-      //
-      // Codex's only input channel is the prompt, and a prompt lands in the
-      // thread's persisted rollout, so re-sending this every turn leaves one copy
-      // per turn IN the conversation. {@link CodexContextGate} decides which half
-      // this turn owes: the whole append when the thread has not been told (or the
-      // agent was edited since), the memory block alone otherwise — memory is
-      // outside the gate because it changes while the thread runs.
-      const neutralContextSelection = this.contextGate.select(
-        sessionId,
-        await buildAgentContextAppend(agentPath, cwd)
-      );
-
-      // The room verbs, and ONLY when this turn actually carries them — gated on
-      // the resolved injection itself, not on a second guess at it, so the prose
-      // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
-      // Named under codex's own MCP prefix, never claude-code's: a bare or
-      // wrongly-prefixed name is uncallable, which is the DOR-1292 defect.
-      //
-      // Outside the context gate, and deliberately: whether this session HAS the
-      // room tools is answered per turn, so a menu written in the wrong tense must
-      // never survive into a turn where it is false.
-      //
-      // Beside it, one line per Blocked permission area (spec `agent-permissions`
-      // D15), resolved per turn like the menu: the runtime listener hides the
-      // same area's tools from this turn's list.
-      const agentContext = dorkosTools
-        ? [
-            neutralContextSelection.text,
-            buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
-            // The agent's own Blocked areas, read where its manifest lives —
-            // the listener hides the same areas keyed on the same anchor.
-            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-        : neutralContextSelection.text;
-
-      const accessContext =
-        connectorTools && this.connectorRuntimeTools && meshAgent
-          ? await this.accountsAccess.select(this.connectorRuntimeTools, meshAgent.id, sessionId, {
-              serviceCatalog: Boolean(dorkosTools),
-            })
-          : undefined;
-      const turnOpts = accessContext
-        ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }
-        : opts;
-      // No room marker: `control_ui` is a `ui` capability now, and its handler
-      // reads the room this turn is answering in from the runtime-neutral turn
-      // facts the trigger bound (spec `canvas-agent-seat` §5). The mapper has
-      // nothing left to refuse.
-      // A credits thread's rollout is in the credits home. Its context reading
-      // is read from there, and its rate limits are dropped: they are the
-      // credits endpoint's, not the person's Codex account's, and must never
-      // be filed under that account's usage.
-      const ctx = createCodexEventContext(
-        sessionId,
-        credits
-          ? {
-              readTurnContextUsage: async (threadId, turnStartedAtMs, signal) => {
-                const reading = await readCodexTurnReading({
-                  threadId,
-                  turnStartedAtMs,
-                  signal,
-                  codexHome: creditsCodexHome(),
-                });
-                return reading ? { ...reading, rateLimits: [] } : null;
-              },
-            }
-          : {}
-      );
-      connectorRevokeReason = 'runtime_failed';
-      const turnEvents = this.transport.runTurn({
-        binary,
-        sessionId,
-        boundThreadId,
-        cwd,
-        settings,
-        writableDirectories,
-        prompt: buildCodexPrompt(content, turnOpts, agentContext),
-        // What a wake from this turn's leftover work runs with: the same
-        // agent, folder, grants and settings. A wake's own turn passes its
-        // context on, so a chain of wakes stays the same agent.
-        ...(() => {
-          const wakeContext = inherited ?? wakeContextOf(opts, cwd);
-          return wakeContext ? { wakeContext } : {};
-        })(),
-        ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
-        launch: credits ? { home: 'credits', credits } : { home: 'person' },
-        tools: {
-          agentTokenEnv,
-          ...(mintsOnLoad ? { mintAgentToken } : {}),
-          managed: managedMcpServers,
-          dorkosTools,
-          connectorTools,
-          ...(connectorBinding ? { connectorBindingId: connectorBinding.bindingId } : {}),
-        },
-        signal: controller.signal,
-        events: ctx,
-        // Persisted the moment the transport learns the id — before the
-        // terminal done — so even an interrupted or crashed first turn stays
-        // resumable. The cwd is persisted with it so a post-restart resume runs
-        // in the right dir, and the registry's current display metadata rides
-        // along so the first turn's title/preview land with the row.
-        // First-write-wins keeps re-binds benign; `replaces` is the one
-        // exception (a thread Codex can no longer continue, spec §6).
-        onThreadBound: (threadId, replaces) => {
-          if (replaces !== undefined) {
-            this.threadMap.replaceThreadId(sessionId, replaces, threadId);
-            return;
-          }
-          const tracked = this.registry.get(sessionId);
-          this.threadMap.setThreadId(
-            sessionId,
-            threadId,
-            cwd,
-            tracked ? this.toMetadataPatch(tracked) : undefined
-          );
-        },
-      });
-      let completedTurn = false;
-      let sawDone = false;
-      let sawCompaction = false;
-      for await (const event of turnEvents) {
-        if (event.type === 'done') sawDone = true;
-        if (event.type === 'compact_boundary') sawCompaction = true;
-        if (
-          event.type === 'session_status' &&
-          'terminalReason' in event.data &&
-          event.data.terminalReason === 'completed'
-        )
-          completedTurn = true;
-        // On credits, a refused token is the credits card, never a Codex
-        // sign-in error: the person's own sign-in was not used.
-        yield credits ? asCreditsStopped(event, 'Codex') : event;
-        if (
-          event.type === 'session_status' &&
-          'terminalReason' in event.data &&
-          event.data.terminalReason === 'error'
-        ) {
-          connectorRuntimeFailed = true;
-        }
-        // The async half of media mapping. `mapCodexThread` is pure and cannot
-        // store bytes, so it records what it saw on `ctx` and this drains it
-        // here — after the event it rode in on, so an image lands in the
-        // transcript exactly where the tool result that produced it did.
-        yield* captureCodexMedia(this.attachments, sessionId, ctx);
-      }
-      // A transport promises exactly one `done`; if one ever ends without it,
-      // the session must not be left looking busy.
-      if (!sawDone) {
-        logger.error('[CodexRuntime] a turn ended without its done; closing it', { sessionId });
-        yield { type: 'done', data: { sessionId } };
-      }
-      // The SDK iterator is lazy: returning runStreamed is not delivery.
-      // Only acknowledge after successful consumption; failures keep the notice owed.
-      if (completedTurn && !connectorRuntimeFailed && !controller.signal.aborted) {
-        neutralContextSelection.commit();
-        accessContext?.commit();
-      }
-      // Codex summarized the thread on its own mid-turn: the summary may have
-      // dropped the identity it was told, so the next turn re-anchors it.
-      if (sawCompaction) this.contextGate.forget(sessionId);
-      connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
-    } finally {
-      if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
-      connectorSupervisor?.stop();
-      try {
-        if (connectorBinding && this.activeConnectorBindings.has(controller)) {
-          this.activeConnectorBindings.delete(controller);
-          await this.connectorRuntimeTools?.principals.revoke(
-            connectorBinding.bindingId,
-            connectorRevokeReason
-          );
-        }
-      } finally {
-        this.creditsTurns.delete(controller);
-        // Guard against clearing a NEWER turn's controller: this turn's entry
-        // may already have been replaced if a second send raced in.
-        if (this.activeTurns.get(sessionId) === controller) {
-          this.activeTurns.delete(sessionId);
-        }
-      }
-    }
+  async *#sendOwnedMessage(
+    sessionId: string,
+    content: string,
+    opts: MessageOpts | undefined,
+    lifetime: {
+      closed: boolean;
+      entered: boolean;
+      retire?: () => void;
+      acquisition?: NativeSessionAcquisition;
+      roomOrigin?: Readonly<{ holder: SseResponse; custody: OriginalRoomDispatchCustody }>;
+      roomPrepared?: CodexPreparedRoomContinuation;
+    },
+    origin: 'dispatched' | 'runtime',
+    inherited?: CodexWakeContext
+  ): AsyncGenerator<StreamEvent> {
+    yield* originalCodexOwnedMessages.sendOriginalOwnedMessage(
+      this.#ownedMessageKey,
+      sessionId,
+      content,
+      opts,
+      lifetime,
+      origin,
+      inherited
+    );
   }
 
   /**
@@ -1204,81 +1212,12 @@ export class CodexRuntime implements AgentRuntime {
     _intent: RuntimeCommandIntentId,
     opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    const compact = this.transport.compact?.bind(this.transport);
-    if (!compact) {
-      throw new Error('executeCommandIntent(compact) is not supported by codex on exec');
-    }
-    await this.seedFromDurable(sessionId);
-    const settings = await this.resolveTurnSettings(sessionId, opts);
-    const binding = this.threadMap.get(sessionId);
-    const boundThreadId = binding?.threadId;
-    // No thread, no conversation: said before anything about who would pay.
-    if (boundThreadId === undefined) {
-      yield* nothingToSummarize(sessionId);
-      return;
-    }
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd ?? this.defaultCwd;
-    let credits: CreditsLaunch | null;
-    let creditsSwap: CreditsModelDecision['swap'];
-    try {
-      credits = await this.creditsLaunchFor(boundThreadId);
-      // The same model decision a credits turn makes (DOR-2636): a list that
-      // names no model Codex can run refuses the summary too. A swap it makes
-      // is said and saved here, but takes effect from the next turn:
-      // `thread/compact/start` takes no model, so the summary runs on the
-      // model the thread already has.
-      if (credits) {
-        creditsSwap = (
-          await decideCreditsLaunchModel({
-            capabilities: this.getCapabilities(),
-            runtimeLabel: 'Codex',
-            sessionId,
-            model: settings.model,
-            nameOf: async () =>
-              settings.model === undefined ? undefined : catalogNameFor(this, settings.model),
-            remember: async (model) => {
-              await this.updateSession(sessionId, { model });
-            },
-          })
-        ).swap;
-      }
-    } catch (err) {
-      const refusal = creditsRefusalEvent(err);
-      if (!refusal) throw err;
-      yield refusal;
-      yield { type: 'done', data: { sessionId } };
-      return;
-    }
-    if (creditsSwap?.notice) yield creditsSwap.notice;
-    await creditsSwap?.commit();
-    const controller = new AbortController();
-    this.activeTurns.set(sessionId, controller);
-    if (credits) this.creditsTurns.add(controller);
-    try {
-      const events = compact({
-        binary: await this.resolveTurnBinary(),
-        sessionId,
-        boundThreadId,
-        cwd,
-        settings,
-        launch: credits ? { home: 'credits', credits } : { home: 'person' },
-        signal: controller.signal,
-        events: createCodexEventContext(sessionId),
-        onThreadBound: (threadId, replaces) => {
-          if (replaces !== undefined) this.threadMap.replaceThreadId(sessionId, replaces, threadId);
-        },
-      });
-      let summarized = false;
-      for await (const event of events) {
-        if (event.type === 'compact_boundary') summarized = true;
-        yield credits ? asCreditsStopped(event, 'Codex') : event;
-      }
-      // The summary may have dropped the identity this thread was told.
-      if (summarized) this.contextGate.forget(sessionId);
-    } finally {
-      this.creditsTurns.delete(controller);
-      if (this.activeTurns.get(sessionId) === controller) this.activeTurns.delete(sessionId);
-    }
+    yield* originalCodexCommandIntents.executeOriginalCommandIntent(
+      this.#commandIntentKey,
+      sessionId,
+      _intent,
+      opts
+    );
   }
 
   /**
@@ -1290,38 +1229,7 @@ export class CodexRuntime implements AgentRuntime {
     sessionId: string,
     opts?: MessageOpts
   ): Promise<SessionSettings> {
-    if (!this.registry.has(sessionId)) {
-      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
-      this.registry.register(sessionId, {
-        permissionMode: opts?.permissionMode ?? persisted?.permissionMode ?? 'default',
-        ...(persisted?.model !== undefined ? { model: persisted.model } : {}),
-        ...(persisted?.effort !== undefined ? { effort: persisted.effort } : {}),
-        ...(persisted?.fastMode !== undefined ? { fastMode: persisted.fastMode } : {}),
-        ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
-      });
-    }
-    const tracked = this.registry.get(sessionId)!;
-    const model = opts?.model ?? tracked.model;
-    const effort = opts?.effort ?? tracked.effort;
-    const fastMode = opts?.fastMode ?? tracked.fastMode;
-    const chosen = opts?.permissionMode ?? tracked.permissionMode;
-    return {
-      // Held to the turn's ceiling, for this turn only: a turn another agent's
-      // post or a stranger's message started runs no looser than its sender,
-      // and the tracked mode is left as the person chose it (spec
-      // `trusted-by-default-flip` §4).
-      permissionMode:
-        opts?.permissionCeiling !== undefined
-          ? clampModeToCeiling(
-              this.getCapabilities().permissionModes,
-              chosen,
-              opts.permissionCeiling
-            )
-          : chosen,
-      ...(model !== undefined ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-    };
+    return originalCodexQueries.queryResolveTurnSettings(this.#queryKey, sessionId, opts);
   }
 
   /**
@@ -1331,13 +1239,7 @@ export class CodexRuntime implements AgentRuntime {
    * fresh row — NULL hydrates back to the same blank default).
    */
   private toMetadataPatch(session: Session): CodexThreadMetadataPatch {
-    return {
-      ...(session.title !== '' ? { title: session.title } : {}),
-      updatedAt: session.updatedAt,
-      ...(session.lastMessagePreview !== undefined
-        ? { lastMessagePreview: session.lastMessagePreview }
-        : {}),
-    };
+    return originalCodexQueries.queryToMetadataPatch(this.#queryKey, session);
   }
 
   /**
@@ -1347,13 +1249,7 @@ export class CodexRuntime implements AgentRuntime {
    * best-effort and the in-memory registry already holds the fresh state.
    */
   private persistSessionMetadata(sessionId: string): void {
-    const tracked = this.registry.get(sessionId);
-    if (!tracked) return;
-    try {
-      this.threadMap.updateMetadata(sessionId, this.toMetadataPatch(tracked));
-    } catch (err) {
-      logger.warn('[CodexRuntime] failed to persist session metadata', { sessionId, err });
-    }
+    return originalCodexQueries.queryPersistSessionMetadata(this.#queryKey, sessionId);
   }
 
   // --- Interactive flows (app-server only — spec §10; exec: NOTES.md Verdict 1) ---
@@ -1375,7 +1271,7 @@ export class CodexRuntime implements AgentRuntime {
     opts?: ToolDecisionOptions
   ): boolean {
     if (
-      !this.transport.answerApproval?.(sessionId, toolCallId, approved, opts?.alwaysAllow === true)
+      !this.#transport.answerApproval?.(sessionId, toolCallId, approved, opts?.alwaysAllow === true)
     ) {
       return false;
     }
@@ -1392,7 +1288,7 @@ export class CodexRuntime implements AgentRuntime {
     answers: Record<string, string>,
     opts?: InteractionAnswerOptions
   ): boolean {
-    if (!this.transport.answerQuestion?.(sessionId, toolCallId, answers)) return false;
+    if (!this.#transport.answerQuestion?.(sessionId, toolCallId, answers)) return false;
     peekProjector(sessionId)?.resolveInteraction(toolCallId, 'answered', {
       ...(opts?.answeredBy ? { answeredBy: opts.answeredBy } : {}),
     });
@@ -1407,7 +1303,7 @@ export class CodexRuntime implements AgentRuntime {
     content?: Record<string, unknown>,
     opts?: InteractionAnswerOptions
   ): boolean {
-    if (!this.transport.answerElicitation?.(sessionId, interactionId, action, content)) {
+    if (!this.#transport.answerElicitation?.(sessionId, interactionId, action, content)) {
       return false;
     }
     peekProjector(sessionId)?.resolveInteraction(
@@ -1425,7 +1321,7 @@ export class CodexRuntime implements AgentRuntime {
    * (spec §12). On exec nothing outlives the turn, so there is nothing to stop.
    */
   async stopTask(sessionId: string, taskId: string): Promise<InterruptReceipt> {
-    if (this.transport.stopTask) return this.transport.stopTask(sessionId, taskId);
+    if (this.#transport.stopTask) return this.#transport.stopTask(sessionId, taskId);
     return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
   }
 
@@ -1441,6 +1337,10 @@ export class CodexRuntime implements AgentRuntime {
    */
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const controller = this.activeTurns.get(sessionId);
+    if (controller) {
+      const operation = codexNativeControllers.get(controller);
+      if (operation) operation.retired = true;
+    }
     if (!controller) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
     this.activeTurns.delete(sessionId);
     const connectorBindingId = this.activeConnectorBindings.get(controller);
@@ -1457,7 +1357,7 @@ export class CodexRuntime implements AgentRuntime {
       }
     }
     logger.debug('[CodexRuntime] interrupted in-flight turn', { sessionId });
-    return this.transport.interrupt(sessionId);
+    return this.#transport.interrupt(sessionId);
   }
 
   /**
@@ -1468,94 +1368,37 @@ export class CodexRuntime implements AgentRuntime {
    * interrupted, then ended at the transport, so no wake follows.
    */
   async endSessionsWhere(belongs: (session: LiveSessionRef) => boolean): Promise<string[]> {
-    const ids = new Set([...this.activeTurns.keys(), ...(this.transport.liveSessionIds?.() ?? [])]);
-    const ended: string[] = [];
-    for (const sessionId of ids) {
-      const cwd = this.registry.get(sessionId)?.cwd ?? this.threadMap.get(sessionId)?.cwd;
-      if (!picksSession(belongs, { sessionId, cwd })) continue;
-      const receipt = await this.interruptQuery(sessionId).catch(() => undefined);
-      const released = await (
-        this.transport.endSession?.(sessionId) ?? Promise.resolve(false)
-      ).catch(() => false);
-      if (receipt?.outcome === 'acked' || receipt?.outcome === 'closed' || released) {
-        ended.push(sessionId);
-      }
-    }
-    return ended;
+    void this.#queryKey;
+    return originalCodexOwnedMessages.endOriginalOwnedSessionsWhere(this.#ownedMessageKey, belongs);
   }
 
   // --- Session queries (storage) ---
 
   /** Settings and ensureSession metadata alone never prove native existence. */
   private hasThreadProof(sessionId: string): boolean {
-    return this.threadMap.get(sessionId) !== undefined || this.activeTurns.has(sessionId);
+    return originalCodexQueries.queryHasThreadProof(this.#queryKey, sessionId);
   }
 
   /** Preserve native identity, directory and account while overlaying launch settings. */
   private withNativeSettings(native: Session): Session {
-    const tracked = this.registry.get(native.id);
-    if (!tracked) return native;
-    return {
-      ...native,
-      permissionMode: tracked.permissionMode,
-      ...(tracked.model !== undefined ? { model: tracked.model } : {}),
-      ...(tracked.effort !== undefined ? { effort: tracked.effort } : {}),
-      ...(tracked.fastMode !== undefined ? { fastMode: tracked.fastMode } : {}),
-    };
+    return originalCodexQueries.queryWithNativeSettings(this.#queryKey, native);
   }
 
   /** Display edits stay durable; native directory and account remain authoritative. */
   private withNativeIdentity(tracked: Session, native: Session): Session {
-    return {
-      ...native,
-      ...tracked,
-      cwd: native.cwd,
-      account: native.account,
-      createdAt: native.createdAt,
-    };
+    return originalCodexQueries.queryWithNativeIdentity(this.#queryKey, tracked, native);
   }
 
   async listSessions(projectDir: string): Promise<Session[]> {
-    const native = await this.nativeSessions.listSessions(projectDir);
-    const nativeIds = new Set(native.map((session) => session.id));
-    // Explicit ensureSession scopes remain listable for task/relay launch
-    // continuity. An imported native row supplies its own identity instead.
-    const nativeById = new Map(native.map((session) => [session.id, session]));
-    const tracked = this.registry
-      .list(projectDir)
-      .filter((session) => this.hasThreadProof(session.id) || !nativeIds.has(session.id))
-      .map((session) =>
-        nativeById.has(session.id)
-          ? this.withNativeIdentity(session, nativeById.get(session.id)!)
-          : session
-      );
-    const trackedIds = new Set(tracked.map((session) => session.id));
-    const boundNativeIds = new Set(this.threadMap.listAll().map((row) => row.threadId));
-    return [
-      ...tracked,
-      ...native
-        .filter((session) => !boundNativeIds.has(session.id) && !trackedIds.has(session.id))
-        .map((session) => this.withNativeSettings(session)),
-    ];
+    return originalCodexQueries.queryListSessions(this.#queryKey, projectDir);
   }
 
   async getSession(_projectDir: string, sessionId: string): Promise<Session | null> {
-    return this.findSession(sessionId);
+    return originalCodexQueries.queryGetSession(this.#queryKey, _projectDir, sessionId);
   }
 
   async findSession(sessionId: string): Promise<Session | null> {
-    if (this.hasThreadProof(sessionId)) {
-      await this.seedFromDurable(sessionId);
-      const tracked = this.registry.get(sessionId);
-      if (tracked) {
-        const binding = this.threadMap.get(sessionId);
-        const native =
-          binding?.threadId === sessionId ? await this.nativeSessions.findSession(sessionId) : null;
-        return native ? this.withNativeIdentity(tracked, native) : tracked;
-      }
-    }
-    const native = await this.nativeSessions.findSession(sessionId);
-    return native ? this.withNativeSettings(native) : null;
+    return originalCodexQueries.queryFindSession(this.#queryKey, sessionId);
   }
 
   /**
@@ -1564,22 +1407,12 @@ export class CodexRuntime implements AgentRuntime {
    * Never concatenate these stores: Codex records DorkOS turns there too.
    */
   async getMessageHistory(_projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    const log = await readLogBackedHistory(sessionId);
-    const binding = this.threadMap.get(sessionId);
-    // DorkOS-created threads keep their log-backed IDs. External native IDs
-    // keep their full native transcript, including turns created elsewhere.
-    if (binding && binding.threadId !== sessionId) return log;
-    const imported =
-      binding?.threadId === sessionId ||
-      (await this.nativeSessions.findSession(sessionId)) !== null;
-    const native = await this.nativeSessions.readHistory(sessionId, { required: imported });
-    return imported || native.length ? native : log;
+    return originalCodexQueries.queryGetMessageHistory(this.#queryKey, _projectDir, sessionId);
   }
 
   /** Completed history comes from the owning store; live state/cursors remain projector-owned. */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
-    return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
+    return originalCodexQueries.queryGetSessionSnapshot(this.#queryKey, ctx, sessionId);
   }
 
   /**
@@ -1595,7 +1428,10 @@ export class CodexRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
+    return originalCodexQueries.querySubscribeSession(
+      this.#queryKey,
+      ctx,
+      sessionId,
       sinceCursor,
       signal
     );
@@ -1611,7 +1447,7 @@ export class CodexRuntime implements AgentRuntime {
    * subsequent subscribe would mint refuses every cursor above 0 anyway.
    */
   streamGeneration(_ctx: SessionOpts, sessionId: string): string {
-    return streamGenerationOf(peekProjector(sessionId));
+    return originalCodexQueries.queryStreamGeneration(this.#queryKey, _ctx, sessionId);
   }
 
   /**
@@ -1623,7 +1459,7 @@ export class CodexRuntime implements AgentRuntime {
    * via the session-list broadcaster, same as every runtime.
    */
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
-    return this.registry.subscribe();
+    return originalCodexQueries.querySubscribeSessionList(this.#queryKey, _ctx);
   }
 
   /** Todo state streams live as task_update events; Codex persists no task store. */
@@ -1651,7 +1487,16 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   releaseLock(sessionId: string, clientId: string, token?: symbol): void {
+    const own = this.#runtimeWakeAcquisitions.get(sessionId);
     this.locks.releaseLock(sessionId, clientId, token);
+    if (
+      own &&
+      this.#runtimeWakeAcquisitions.get(sessionId) === own &&
+      captureNativeSessionAcquisition(own.manager, sessionId, own.holder) !== own.acquisition
+    ) {
+      requireOriginalNativeSessionAcquisitionRetired(own.manager, own.acquisition, own.holder);
+      this.#runtimeWakeAcquisitions.delete(sessionId);
+    }
   }
 
   isLocked(sessionId: string, clientId?: string): boolean {
@@ -1665,12 +1510,12 @@ export class CodexRuntime implements AgentRuntime {
   // --- Capabilities ---
 
   async getSupportedModels(): Promise<ModelOption[]> {
-    return this.modelCatalog.getSupportedModels();
+    return originalCodexDiscovery.discoverGetSupportedModels(this.#discoveryKey);
   }
 
   /** Codex exposes no subagent registry. */
   async getSupportedSubagents(): Promise<SubagentInfo[]> {
-    return [];
+    return originalCodexDiscovery.discoverGetSupportedSubagents(this.#discoveryKey);
   }
 
   /**
@@ -1683,29 +1528,11 @@ export class CodexRuntime implements AgentRuntime {
    * promise this field exists to end. Same arrangement as the OpenCode adapter.
    */
   getCapabilities(): RuntimeCapabilities {
-    const overrides = this.transport.capabilities;
-    // `commandIntents` is merged per intent, so a transport that turns one on
-    // does not drop the others the base declares.
-    const base =
-      Object.keys(overrides).length === 0
-        ? CODEX_CAPABILITIES
-        : {
-            ...CODEX_CAPABILITIES,
-            ...overrides,
-            commandIntents: { ...CODEX_CAPABILITIES.commandIntents, ...overrides.commandIntents },
-          };
-    if (!this.attachments) return base;
-    return { ...base, mediaOutput: 'attachments' };
+    return originalCodexDiscovery.discoverGetCapabilities(this.#discoveryKey);
   }
 
   async checkDependencies(): Promise<DependencyCheck[]> {
-    const checks = await checkCodexDependencies();
-    if (this.transport.kind !== 'app-server') return checks;
-    const note = codexAppServerVersionNote(
-      codexAppServerPool.lastSeenVersion,
-      PINNED_CODEX_APP_SERVER_VERSION
-    );
-    return note ? [...checks, note] : checks;
+    return originalCodexDiscovery.discoverCheckDependencies(this.#discoveryKey);
   }
 
   // --- Commands ---
@@ -1722,8 +1549,7 @@ export class CodexRuntime implements AgentRuntime {
    * there is no project to scan, so the palette is empty.
    */
   async getCommands(_forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
-    const commands = cwd ? scanSkillCommands(cwd) : [];
-    return { commands, lastScanned: new Date().toISOString() };
+    return originalCodexDiscovery.discoverGetCommands(this.#discoveryKey, _forceRefresh, cwd);
   }
 
   // --- MCP ---
@@ -1742,8 +1568,7 @@ export class CodexRuntime implements AgentRuntime {
    * MCP config is user-global, not per-project.
    */
   getMcpStatus(_cwd: string): McpServerEntry[] | null {
-    this.maybeWarmMcpStatus();
-    return this.mcpStatusCache;
+    return originalCodexDiscovery.discoverGetMcpStatus(this.#discoveryKey, _cwd);
   }
 
   /**
@@ -1778,11 +1603,7 @@ export class CodexRuntime implements AgentRuntime {
    * @returns Whether the `dorkos` entry is configured for it.
    */
   async carriesRoomTools(session: { cwd: string; agentPath?: string }): Promise<boolean> {
-    const agentPath = this.identityPathFor(session.cwd, session.agentPath);
-    return dorkosToolsPosture(
-      agentPath && this.meshCore?.getByPath(agentPath) ? agentPath : undefined,
-      this.connectorRuntimeTools !== undefined
-    ).wired;
+    return originalCodexDiscovery.discoverCarriesRoomTools(this.#discoveryKey, session);
   }
 
   /**
@@ -1796,7 +1617,7 @@ export class CodexRuntime implements AgentRuntime {
    * @param forAgent - The agent a room turn is for, when a room dispatched it.
    */
   private identityPathFor(cwd: string, forAgent: string | undefined): AgentHome | undefined {
-    return homeOf(resolveAgentHome(cwd, forAgent));
+    return originalCodexDiscovery.discoverIdentityPathFor(this.#discoveryKey, cwd, forAgent);
   }
 
   /**
@@ -1807,11 +1628,7 @@ export class CodexRuntime implements AgentRuntime {
    * the last-known cache.
    */
   private maybeWarmMcpStatus(): void {
-    if (this.mcpWarmPromise !== null) return;
-    const isFresh =
-      this.mcpStatusWarmedAt !== null && Date.now() - this.mcpStatusWarmedAt < MCP_STATUS_TTL_MS;
-    if (isFresh) return;
-    this.mcpWarmPromise = this.warmMcpStatus();
+    return originalCodexDiscovery.discoverMaybeWarmMcpStatus(this.#discoveryKey);
   }
 
   /**
@@ -1821,15 +1638,7 @@ export class CodexRuntime implements AgentRuntime {
    * list) caches the result and stamps {@link mcpStatusWarmedAt} to start the TTL.
    */
   private async warmMcpStatus(): Promise<void> {
-    try {
-      const servers = await enumerateCodexMcpServers(this.resolveBinary);
-      if (servers !== null) {
-        this.mcpStatusCache = servers;
-        this.mcpStatusWarmedAt = Date.now();
-      }
-    } finally {
-      this.mcpWarmPromise = null;
-    }
+    return originalCodexDiscovery.discoverWarmMcpStatus(this.#discoveryKey);
   }
 
   // --- Lifecycle ---
@@ -1862,14 +1671,7 @@ export class CodexRuntime implements AgentRuntime {
     sessionId: string,
     _cwd: string | undefined
   ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
-    const threadId = this.threadMap.get(sessionId)?.threadId;
-    if (!threadId) return null;
-    const codexHome = (await threadRunsOnCredits(threadId)) ? creditsCodexHome() : undefined;
-    return readCodexTurnContextUsage({
-      threadId,
-      timeoutMs: CONTEXT_USAGE_AT_REST_TIMEOUT_MS,
-      ...(codexHome ? { codexHome } : {}),
-    });
+    return originalCodexDiscovery.discoverReadContextUsage(this.#discoveryKey, sessionId, _cwd);
   }
 
   // --- Dependency injection ---

@@ -125,7 +125,7 @@ import {
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { resolveLaunchAccountRoot as resolveLaunch } from '../../claude-config-dir.js';
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../../../../core/mcp-tools/mcp-tool-tiers.js';
 import type { McpToolDeps } from '../types.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';

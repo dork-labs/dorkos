@@ -736,6 +736,10 @@ export const roomEntries = sqliteTable(
       .where(sql`"timeline_band" IS NOT NULL`),
     uniqueIndex('room_entries_room_id_entry_id_unique').on(table.roomId, table.id),
     index('idx_room_entries_cascade_root').on(table.roomId, table.cascadeRoot),
+    index('idx_room_entries_global_root')
+      .on(table.id, table.roomId)
+      .where(sql`id=cascade_root`),
+    index('idx_room_entries_global_descendants').on(table.cascadeRoot, table.roomId, table.id),
     // PARTIAL, like `rooms_channel_slug_unique` above and for the same reason:
     // the predicate is the query. Every thread read asks for a NON-NULL root
     // (`WHERE room_id = ? AND thread_root_entry_id = ?`), and in a channel that

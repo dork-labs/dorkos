@@ -19,7 +19,8 @@ vi.mock('../../core/config-manager.js', () => ({
 // point of this suite (`runAutoProjection` must reach the engine through it and
 // nowhere else), so it stays a real reference that `vi.spyOn` replaces.
 
-vi.mock('node:fs', () => ({
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
   existsSync: vi.fn(),
 }));
 

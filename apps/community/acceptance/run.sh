@@ -61,7 +61,7 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 # Pull on the host before starting any tested process. Neither runtime receives
 # a second network, host network mode, a host port, or model credentials.
-docker pull postgres:17-alpine >/dev/null
+docker pull public.ecr.aws/docker/library/postgres:17-alpine >/dev/null
 docker network create --internal "${ephemeral_labels[@]}" "$network" >/dev/null
 network_created=true
 [[ "$(docker network inspect -f '{{.Internal}}' "$network")" == true ]]
@@ -72,7 +72,7 @@ docker volume create "${ephemeral_labels[@]}" "$pgdata" >/dev/null
 pgdata_created=true
 docker run -d --name "$postgres" --network "$network" "${ephemeral_labels[@]}" \
   -v "$pgdata:/var/lib/postgresql/data" \
-  -e POSTGRES_DB=community -e POSTGRES_PASSWORD=community-test-only postgres:17-alpine >/dev/null
+  -e POSTGRES_DB=community -e POSTGRES_PASSWORD=community-test-only public.ecr.aws/docker/library/postgres:17-alpine >/dev/null
 postgres_created=true
 ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do

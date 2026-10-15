@@ -26,6 +26,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import {
   HARNESS_NATIVE_SKILL_ROOTS,
@@ -332,14 +333,32 @@ describe('SRC-11: harness.autoAdopt on in a room worktree', () => {
     // `RoomRepoStore` itself rather than spelled a second time here, so moving
     // the layout reds this instead of silently making every room worktree read
     // as somebody's own project — where `harness.autoAdopt` does nothing and R3
-    // never fires. `worktreesPath` touches no database.
-    const store = new RoomRepoStore(undefined as never, dorkHome);
-    const worktree = join(store.worktreesPath('room-1'), 'agent-abc');
+    // never fires. The native constructor still requires a migrated owned Db.
+    const db = createTestDb();
+    let failed = false;
+    let first: unknown;
+    try {
+      const store = new RoomRepoStore(db, dorkHome);
+      const worktree = join(store.worktreesPath('room-1'), 'agent-abc');
 
-    expect(resolveDirectoryOwnership(worktree, dorkHome)).toBe('room-worktree');
-    // And one rung either side, so the match is the shape rather than a prefix.
-    expect(resolveDirectoryOwnership(store.worktreesPath('room-1'), dorkHome)).toBe('plain');
-    expect(resolveDirectoryOwnership(join(worktree, 'nested'), dorkHome)).toBe('plain');
+      expect(resolveDirectoryOwnership(worktree, dorkHome)).toBe('room-worktree');
+      // And one rung either side, so the match is the shape rather than a prefix.
+      expect(resolveDirectoryOwnership(store.worktreesPath('room-1'), dorkHome)).toBe('plain');
+      expect(resolveDirectoryOwnership(join(worktree, 'nested'), dorkHome)).toBe('plain');
+    } catch (cause) {
+      failed = true;
+      first = cause;
+    } finally {
+      try {
+        db.$client.close();
+      } catch (cause) {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      }
+    }
+    if (failed) throw first;
   });
 
   it('SRC-11: refuses a reserved pack name with S4 and moves the authored one', () => {

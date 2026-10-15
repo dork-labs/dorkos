@@ -5,11 +5,12 @@
  * pins what the contract cannot see from outside, the files on disk.
  */
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { createServer, request as nodeRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import {
@@ -231,4 +232,243 @@ describe('parseUploadForm', () => {
 
     expect(res.body).toEqual({ multipart: false });
   });
+});
+
+describe('request-owned streaming storage', () => {
+  it('passes actual streams to storage while preserving form fields and file order', async () => {
+    const names: string[] = [];
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          names.push(file.originalname);
+          void (async () => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of file.stream) chunks.push(Buffer.from(chunk));
+            const buffer = Buffer.concat(chunks);
+            done(undefined, { size: buffer.length, buffer });
+          })().catch(done);
+        },
+        remove(_file, done) {
+          done(null);
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/form')
+      .field('dir', 'notes')
+      .attach('files', Buffer.from('one'), 'a.txt')
+      .attach('files', Buffer.from('two'), 'b.txt');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ fields: { dir: 'notes' }, names: ['a.txt', 'b.txt'] });
+    expect(names).toEqual(['a.txt', 'b.txt']);
+  });
+
+  it('removes owned files when a later file exceeds the limit', async () => {
+    const removed: string[] = [];
+    options = {
+      field: 'files',
+      limits: { fileSize: 8 },
+      storage: {
+        store(file, done) {
+          void (async () => {
+            let size = 0;
+            for await (const chunk of file.stream) size += Buffer.byteLength(chunk);
+            done(undefined, { size });
+          })().catch(done);
+        },
+        remove(file, done) {
+          removed.push(file.originalname);
+          done(null);
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('files', Buffer.from('fine'), 'a.txt')
+      .attach('files', Buffer.from('nine bytes'), 'b.txt');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'File too large', code: 'LIMIT_FILE_SIZE' });
+    expect(new Set(removed)).toEqual(new Set(['a.txt', 'b.txt']));
+  });
+
+  it('drains the body and reports the original storage failure', async () => {
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          file.stream.resume();
+          done(new Error('owned descriptor refused'));
+        },
+        remove(_file, done) {
+          done(null);
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('files', Buffer.from('bytes'), 'a.txt');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'owned descriptor refused' });
+  });
+});
+
+describe('stream storage settlement and cancellation', () => {
+  it.each([false, 0, ''])('refuses falsey non-null storage cause %j', async (cause) => {
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          file.stream.resume();
+          done(cause);
+        },
+        remove(_file, done) {
+          done(null);
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('files', Buffer.from('bytes'), 'a.txt');
+    expect(res.status).toBe(400);
+  });
+
+  it('keeps the first storage completion through duplicate callbacks and a later throw', async () => {
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          file.stream.resume();
+          done(undefined, { size: 5, buffer: Buffer.from('first') });
+          done(new Error('duplicate refusal'));
+          throw new Error('after callback');
+        },
+        remove(_file, done) {
+          done(null);
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('files', Buffer.from('bytes'), 'a.txt');
+    expect(res.status).toBe(200);
+    expect(res.body.files).toEqual([{ name: 'a.txt', size: 5, stored: 'first' }]);
+  });
+
+  it('attempts partial-file cleanup while preserving the original storage refusal', async () => {
+    const removed: string[] = [];
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          file.stream.resume();
+          done(new Error('original refusal'));
+        },
+        remove(file, done) {
+          removed.push(file.originalname);
+          done(new Error('cleanup refusal'));
+        },
+      },
+    };
+    const res = await request(server)
+      .post('/upload')
+      .attach('files', Buffer.from('bytes'), 'a.txt');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'original refusal' });
+    expect(removed).toEqual(['a.txt']);
+  });
+
+  it('removes in-flight owned storage when the actual client disconnects mid-part', async () => {
+    let started!: () => void;
+    let removed!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const removedPromise = new Promise<void>((resolve) => {
+      removed = resolve;
+    });
+    const removedNames: string[] = [];
+    options = {
+      field: 'files',
+      storage: {
+        store(file, done) {
+          file.stream.once('data', started);
+          file.stream.once('error', done);
+        },
+        remove(file, done) {
+          removedNames.push(file.originalname);
+          removed();
+          done(null);
+        },
+      },
+    };
+    const native = createServer(getRequestListener(app.fetch, { overrideGlobalObjects: false }));
+    let client: ReturnType<typeof nodeRequest> | undefined = undefined;
+    let closing: Promise<void> | undefined;
+    const cleanup = () => {
+      if (!closing)
+        closing = (async () => {
+          client?.destroy();
+          native.closeAllConnections();
+          if (!native.listening) return;
+          await new Promise<void>((resolve, reject) =>
+            native.close((error) => (error ? reject(error) : resolve()))
+          );
+        })();
+      return closing;
+    };
+    // A Vitest timeout does not cancel awaits; cleanup is registered before listening.
+    onTestFinished(cleanup);
+    await new Promise<void>((resolve) => {
+      native.listen(0, '127.0.0.1', resolve);
+    });
+    const address = native.address();
+    if (!address || typeof address === 'string') throw new Error('Test listener has no port.');
+    client = nodeRequest({
+      hostname: '127.0.0.1',
+      port: address.port,
+      path: '/upload',
+      method: 'POST',
+      headers: { 'content-type': 'multipart/form-data; boundary=owned-abort' },
+    });
+    client.on('error', () => undefined);
+    try {
+      client.write(
+        '--owned-abort\r\nContent-Disposition: form-data; name="files"; filename="a.txt"\r\nContent-Type: application/octet-stream\r\n\r\n' +
+          'partial-bytes'.repeat(64)
+      );
+      await startedPromise;
+      client.destroy();
+      await removedPromise;
+      expect(removedNames).toContain('a.txt');
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+it('refuses throwing stored-file metadata and removes the partial file without hanging', async () => {
+  const removed: string[] = [];
+  options = {
+    field: 'files',
+    storage: {
+      store(file, done) {
+        file.stream.resume();
+        done(undefined, {
+          get size(): number {
+            throw new Error('metadata refusal');
+          },
+        });
+        done(undefined, { size: 0 });
+      },
+      remove(file, done) {
+        removed.push(file.originalname);
+        done(null);
+      },
+    },
+  };
+  const res = await request(server).post('/upload').attach('files', Buffer.from('bytes'), 'a.txt');
+  expect(res.status).toBe(400);
+  expect(res.body).toEqual({ error: 'metadata refusal' });
+  expect(removed).toEqual(['a.txt']);
 });

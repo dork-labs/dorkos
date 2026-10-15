@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
-import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../../mcp-tools/mcp-tool-tiers.js';
 import { APPLY_SHAPE_ACTION } from '../../../../routes/shapes.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';

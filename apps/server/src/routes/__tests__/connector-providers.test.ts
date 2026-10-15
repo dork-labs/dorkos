@@ -8,6 +8,11 @@ vi.mock('../../services/core/config-manager.js', () => ({
     onChange: () => () => {},
   },
 }));
+// Legacy-key startup migration is outside this owner-bar fixture. Keep its
+// config-write import from loading the owner predicate before the account mock.
+vi.mock('../../services/core/auth/seed-legacy-mcp-key.js', () => ({
+  seedLegacyMcpApiKey: vi.fn(async () => undefined),
+}));
 // With login on, the real session gate would refuse these requests before the
 // route's own bars, and each one sets the user the gate would have proved
 // (`before` below), as the Express version stubbed `res.locals.user`.

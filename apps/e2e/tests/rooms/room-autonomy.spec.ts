@@ -1,5 +1,6 @@
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
+import type { APIRequestContext, APIResponse, Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { captureRoomFailureData } from '../../fixtures/room-failure-data';
 import { SERVER_ROUND_TRIP_MS, type SeededRoom } from '../../fixtures/rooms-api';
 
 /**
@@ -262,6 +263,69 @@ async function expectRoomBusy(page: Page): Promise<void> {
   await expect(page.getByTestId('room-run-state')).toHaveAttribute('data-idle', 'false', {
     timeout: SERVER_ROUND_TRIP_MS,
   });
+}
+
+/**
+ * Preserve the second-room frontier only after the original busy assertion fails.
+ * Reads existing DATA once, with bounded requests; never retries or replaces the cause.
+ * @param request - The original authenticated test API context.
+ * @param firstRoomId - The room whose busy assertion already passed.
+ * @param secondRoomId - The room whose busy assertion failed.
+ * @param postResults - The retained original second-room POST responses.
+ */
+async function captureSecondRoomFailure(
+  request: APIRequestContext,
+  firstRoomId: string,
+  secondRoomId: string,
+  postResults: APIResponse[]
+): Promise<void> {
+  const paths = [
+    '/api/debug/dispatches?limit=256',
+    '/api/debug/refusals?limit=256',
+    `/api/debug/rooms/${firstRoomId}/bindings`,
+    `/api/debug/rooms/${secondRoomId}/bindings`,
+    `/api/rooms/${firstRoomId}`,
+    `/api/rooms/${secondRoomId}`,
+  ];
+  const reads = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const response = await request.get(path, { timeout: 1_000 });
+        const data = await response.json();
+        // Existing debug routes return ids, enums and counts. The room read is
+        // reduced to its count so no entry text, prompts or agent paths are copied.
+        const selected =
+          path === `/api/rooms/${firstRoomId}` || path === `/api/rooms/${secondRoomId}`
+            ? { workingAgents: data.workingAgents }
+            : data;
+        return { path, status: response.status(), data: JSON.stringify(selected).slice(0, 8_192) };
+      } catch {
+        return { path, unavailable: true };
+      }
+    })
+  );
+  const posts = await Promise.all(
+    postResults.map(async (response) => {
+      try {
+        return {
+          status: response.status(),
+          data: JSON.stringify(await response.json()).slice(0, 4_096),
+        };
+      } catch {
+        return { status: response.status(), unavailable: true };
+      }
+    })
+  );
+  console.error(
+    'ORIGINAL_SECOND_ROOM_BUSY_FAILURE ' +
+      JSON.stringify({
+        firstRoomId,
+        secondRoomId,
+        posts,
+        reads,
+        meaning: 'FAILURE_ONLY_DATA_SNAPSHOT_ABSENCE_UNKNOWN',
+      })
+  );
 }
 
 /**
@@ -537,17 +601,26 @@ test.describe('A room gathers what is said at once @smoke', () => {
 
       // The blocking turn ends, and the waiting message becomes a turn HERE.
       await request.post('/api/test/finish-turn');
-      await expect
-        .poll(
-          async () =>
-            (await roomsApi.listEntries(asking.id)).filter((entry) => entry.authorId === seat)
-              .length,
-          {
-            timeout: SERVER_ROUND_TRIP_MS,
-            message: 'the message that waited on a busy agent never got an answer',
-          }
-        )
-        .toBe(1);
+      try {
+        await expect
+          .poll(
+            async () =>
+              (await roomsApi.listEntries(asking.id)).filter((entry) => entry.authorId === seat)
+                .length,
+            {
+              timeout: SERVER_ROUND_TRIP_MS,
+              message: 'the message that waited on a busy agent never got an answer',
+            }
+          )
+          .toBe(1);
+      } catch (cause) {
+        try {
+          await captureRoomFailureData(request, [busy.id, asking.id], 'busy-other-room-answer');
+        } catch {
+          // Preserve the original assertion failure even if diagnostics are unavailable.
+        }
+        throw cause;
+      }
 
       // **One answer, and it says which message it answers.** A count alone is
       // satisfied by any reply at all; the pointer is what says the room
@@ -604,8 +677,18 @@ test.describe('A room gathers what is said at once @smoke', () => {
 
       // The first turn is still running, and the second room starts anyway.
       await openRoom(page, basePage, roomsPage, second.id);
-      await roomsApi.postEntries(second.id, [`and over here ${tag}`]);
-      await expectRoomBusy(page);
+      const secondPostResults: APIResponse[] = [];
+      await roomsApi.postEntries(second.id, [`and over here ${tag}`], secondPostResults);
+      try {
+        await expectRoomBusy(page);
+      } catch (cause) {
+        try {
+          await captureSecondRoomFailure(request, first.id, second.id, secondPostResults);
+        } catch {
+          // Diagnostic failure must not replace the original busy assertion.
+        }
+        throw cause;
+      }
       await expect(page.getByTestId('room-held')).toHaveCount(0);
     } finally {
       await request.post('/api/test/finish-turn').catch(() => {});

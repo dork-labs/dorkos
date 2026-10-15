@@ -232,6 +232,87 @@ function powerForTurn(
     : base;
 }
 
+/** Copy only turn-level DATA at the native stream's original construction. */
+export function captureTurnLevelOptions(opts: MessageOpts | undefined): Readonly<MessageOpts> {
+  const bound = (value: import('@dorkos/shared/agent-runtime').TurnPermissionBound) =>
+    value === 'runtime-default'
+      ? value
+      : Object.freeze({
+          asks: value.asks,
+          reach: value.reach,
+          ...(value.auto === true ? { auto: true as const } : {}),
+          ...(value.outsider === true ? { outsider: true as const } : {}),
+        });
+  const permissionMode = opts?.permissionMode;
+  const ceiling = opts?.permissionCeiling;
+  const cwd = opts?.cwd;
+  const forAgent = opts?.forAgent;
+  const room = opts?.roomTurn;
+  const roomTurn =
+    room === undefined
+      ? undefined
+      : Object.freeze({
+          roomId: room.roomId,
+          authorId: room.authorId,
+          turnId: room.turnId,
+          ...(room.cwd !== undefined ? { cwd: room.cwd } : {}),
+          ...(room.agentPath !== undefined ? { agentPath: room.agentPath } : {}),
+          ...(room.outsiderInView === true ? { outsiderInView: true as const } : {}),
+        });
+  return Object.freeze({
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
+    ...(roomTurn !== undefined ? { roomTurn } : {}),
+    ...(permissionMode !== undefined ? { permissionMode } : {}),
+    ...(ceiling !== undefined
+      ? {
+          permissionCeiling:
+            typeof ceiling === 'string'
+              ? ceiling
+              : 'asks' in ceiling
+                ? bound(ceiling)
+                : Object.freeze(ceiling.map(bound)),
+        }
+      : {}),
+  });
+}
+
+/** Record one original turn under both names of its conversation. */
+function rememberTurnSerial(sessionId: string): void {
+  const serial = ++nextTurnSerial;
+  for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+    turnSerials.delete(id);
+    turnSerials.set(id, serial);
+  }
+  while (turnSerials.size > TURN_LEVEL_MEMORY) {
+    turnSerials.delete(turnSerials.keys().next().value!);
+  }
+}
+
+/**
+ * Record one genuine turn's permission DATA without opening another runtime stream.
+ * The registry uses this for captured original native sends; ordinary sends use
+ * the same calculation below. This records a downstream bound, never grants a turn.
+ *
+ * @param runtime - The selected original runtime whose modes describe the turn.
+ * @param stored - Its current stored session mode, or none when unavailable.
+ * @param sessionId - The original turn's session id.
+ * @param opts - The exact options forwarded to the native entry.
+ */
+export function recordRuntimeTurnLevel(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  sessionId: string,
+  opts?: MessageOpts,
+  beforeRecord?: () => void
+): TurnPermissionLevel {
+  const level = levelForTurn(runtime, stored, opts);
+  beforeRecord?.();
+  remember(turnLevels, sessionId, level);
+  rememberTurnSerial(sessionId);
+  return level;
+}
+
 /** Where a turn stands and whom it is for, for {@link countWhileRunning}. */
 function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | undefined) {
   let cwd = opts?.cwd ?? opts?.roomTurn?.cwd;
@@ -241,6 +322,31 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
     // An unknown folder is counted under no agent, which marks more, not less.
   }
   return { cwd, forAgent: turnAgentOf(opts) };
+}
+
+/** Count the same captured native stream after its genuine registry custody checks. */
+export function countRecordedRuntimeTurnStream(
+  runtime: AgentRuntime,
+  sessionId: string,
+  opts: MessageOpts,
+  level: TurnPermissionLevel,
+  events: AsyncGenerator<StreamEvent>,
+  beforeUse: () => void
+): AsyncGenerator<StreamEvent> {
+  if (!level.outsider) {
+    beforeUse();
+    return events;
+  }
+  const place = placeOf(runtime, sessionId, opts);
+  const counted = countWhileRunning(place, events);
+  // Both runtime folder lookup and home resolution can reenter or retire selection.
+  beforeUse();
+  outsiderPlaces.delete(sessionId);
+  outsiderPlaces.set(sessionId, place);
+  if (outsiderPlaces.size > TURN_LEVEL_MEMORY) {
+    outsiderPlaces.delete(outsiderPlaces.keys().next().value!);
+  }
+  return counted;
 }
 
 /**
@@ -278,16 +384,7 @@ export function recordTurnLevels(
           }
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
-          // Under the id the turn was sent with AND the conversation's first
-          // id, so a turn sent under a renamed id is the newest by either.
-          const serial = ++nextTurnSerial;
-          for (const id of new Set([sessionId, primaryOf(sessionId)])) {
-            turnSerials.delete(id);
-            turnSerials.set(id, serial);
-          }
-          while (turnSerials.size > TURN_LEVEL_MEMORY) {
-            turnSerials.delete(turnSerials.keys().next().value!);
-          }
+          rememberTurnSerial(sessionId);
           const events = target.sendMessage(sessionId, content, opts);
           if (!level.outsider) return events;
           // A caller that cannot name this session can still name its agent.

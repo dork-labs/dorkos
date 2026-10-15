@@ -39,7 +39,7 @@ import {
   type AuthorRegistry,
 } from './author-registry.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
-import { RoomError, type RoomAgentLookup } from './room-errors.js';
+import { RoomError, type RoomAgentLookup } from './data/room-errors.js';
 import { isDmMemberSetTaken } from './manage/room-dm-key.js';
 import type { RoomStore } from './room-store.js';
 

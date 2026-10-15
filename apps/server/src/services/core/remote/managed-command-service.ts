@@ -47,7 +47,10 @@ import { V1_ROUTES } from '@dork-labs/cloud-api';
 import type { Db } from '@dorkos/db';
 
 import { logger } from '../../../lib/logger.js';
-import { scheduleJittered, type JitteredSchedule } from '../../../lib/jittered-schedule.js';
+import {
+  scheduleJittered,
+  type JitteredSchedule,
+} from '../../../lib/lifecycle/jittered-schedule.js';
 import { configManager } from '../config-manager.js';
 import {
   captureCloudV1Context,

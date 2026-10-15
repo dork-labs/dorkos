@@ -16,8 +16,8 @@ import { completionFixture } from './completion-fixtures.js';
 import {
   scanCheckboxReservationPolicies,
   resolveCheckboxSqlScope,
-} from '../reservation-policy-census.js';
-import { CheckboxReservationCensusError } from '../intent-reservations.js';
+} from '../reservations/reservation-policy-census.js';
+import { CheckboxReservationCensusError } from '../reservations/intent-reservations.js';
 import type { DocWriteIntentRow } from '../../store.js';
 
 const cleanups: (() => Promise<void>)[] = [];

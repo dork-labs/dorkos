@@ -14,9 +14,9 @@ import {
   type LaunchParams,
 } from '../launch-fingerprint.js';
 import { applyLiveChanges, prepareDispatch } from '../launch-live-settings.js';
-import { decideProcessReuse } from '../pump-launch.js';
+import { decideProcessReuse } from '../warm-process/pump-launch.js';
 import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
-import type { PumpControlQuery } from '../session-pump-contract.js';
+import type { PumpControlQuery } from '../warm-process/session-pump-contract.js';
 
 const CLIENT_ROOT = '/staged/claude-client';
 const OTHER_ROOT = '/staged/claude-other';

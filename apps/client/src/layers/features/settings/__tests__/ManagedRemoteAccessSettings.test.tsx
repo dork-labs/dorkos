@@ -17,7 +17,7 @@ import {
 import { TransportProvider } from '@/layers/shared/model';
 import { resetRemoteAccessStore } from '@/layers/entities/tunnel';
 import { RemoteAccessTab } from '../ui/RemoteAccessTab';
-import { MANAGED_CONSENT, expiryLine } from '../ui/ManagedSetup';
+import { MANAGED_CONSENT, expiryLine } from '../ui/remote-access/ManagedSetup';
 
 vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => [null, vi.fn()],

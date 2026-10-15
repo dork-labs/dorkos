@@ -1,3 +1,5 @@
+import { CanvasDocumentSaveIdentitySchema } from '@dorkos/shared/schemas';
+import { CanvasChannelEventReceiptSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 /**
@@ -60,52 +62,9 @@ import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { postSseAction, readOpenRouterOAuthStatus } from './system-action-stream';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
-
-/**
- * POST an SSE-streaming action and fold its frames into a single terminal result.
- *
- * The shared shape for every streamed install/pull endpoint (runtime provision,
- * Ollama pull, Ollama install): `progress` frames drive `onProgress` while a
- * terminal `result` frame carries the outcome. A non-2xx opening response throws
- * an honest error; a stream that ends with no `result` frame resolves to
- * `fallback`.
- *
- * @param url - The absolute endpoint URL to POST.
- * @param body - Optional JSON body (omit for a bodyless trigger).
- * @param fallback - The result returned when the stream carries no terminal frame.
- * @param onProgress - Optional callback for streamed progress frames.
- */
-async function postSseAction<TProgress, TResult>(
-  url: string,
-  body: Record<string, unknown> | undefined,
-  fallback: TResult,
-  onProgress?: (progress: TProgress) => void
-): Promise<TResult> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!response.ok) {
-    const errBody = (await response.json().catch(() => ({
-      error: response.statusText,
-    }))) as { error?: string };
-    throw new Error(errBody.error ?? `HTTP ${response.status}`);
-  }
-
-  const reader = response.body!.getReader();
-  let result = fallback;
-  for await (const event of parseSSEStream<TProgress | TResult>(reader)) {
-    if (event.type === 'result') {
-      result = event.data as TResult;
-    } else if (event.type === 'progress') {
-      onProgress?.(event.data as TProgress);
-    }
-  }
-  return result;
-}
 
 /**
  * Create all system-level methods bound to a base URL.
@@ -294,8 +253,14 @@ export function createSystemMethods(baseUrl: string) {
       cwd: string,
       filePath: string,
       content: string,
-      options?: { expectedHash?: string; expectedContent?: string }
+      options?: {
+        expectedHash?: string;
+        expectedContent?: string;
+        documentSave?: import('@dorkos/shared/schemas').CanvasDocumentSaveIdentity;
+      }
     ): Promise<WriteFileResult> {
+      const documentSave =
+        options?.documentSave && CanvasDocumentSaveIdentitySchema.parse(options.documentSave);
       // Raw fetch (not fetchJSON) so the 409 body — the current on-disk bytes —
       // survives; fetchJSON discards response bodies on non-OK.
       const res = await fetch(`${baseUrl}/files/content`, {
@@ -308,6 +273,7 @@ export function createSystemMethods(baseUrl: string) {
           content,
           expectedHash: options?.expectedHash,
           expectedContent: options?.expectedContent,
+          documentSave,
         }),
       });
       if (res.status === 409) {
@@ -342,7 +308,28 @@ export function createSystemMethods(baseUrl: string) {
       ) {
         throw new Error('Invalid file save response');
       }
-      return { ok: true, hash: data.hash, effect: data.effect };
+      const documentReceipt =
+        'documentReceipt' in data && data.documentReceipt !== undefined
+          ? CanvasChannelEventReceiptSchema.parse(data.documentReceipt)
+          : undefined;
+      if (
+        documentSave &&
+        (!/^[a-f0-9]{64}$/.test(data.hash) ||
+          (data.effect === 'changed' &&
+            (!documentReceipt || documentReceipt.receipt.status !== 'recorded')) ||
+          (data.effect === 'no_op' &&
+            documentReceipt &&
+            documentReceipt.receipt.status !== 'duplicate') ||
+          (documentReceipt && documentReceipt.receipt.id !== documentSave.eventId))
+      )
+        throw new Error('Document save receipt does not match its original operation');
+      if (!documentSave && documentReceipt) throw new Error('Unexpected document save receipt');
+      return {
+        ok: true,
+        hash: data.hash,
+        effect: data.effect,
+        ...(documentReceipt ? { documentReceipt } : {}),
+      };
     },
 
     getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {
@@ -625,11 +612,7 @@ export function createSystemMethods(baseUrl: string) {
     },
 
     getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
-      const qs = buildQueryString({ state });
-      return fetchJSON<OpenRouterOAuthStatus>(
-        baseUrl,
-        `/runtimes/opencode/openrouter/oauth/status${qs}`
-      );
+      return readOpenRouterOAuthStatus(baseUrl, state);
     },
 
     detectOllama(): Promise<OllamaStatus> {

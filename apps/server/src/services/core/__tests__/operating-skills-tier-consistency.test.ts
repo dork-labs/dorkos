@@ -45,7 +45,7 @@ import { describe, it, expect } from 'vitest';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { noopLogger } from '@dorkos/shared/logger';
 
-import { MCP_TOOL_TIERS } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS } from '../mcp-tools/mcp-tool-tiers.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../marketplace-mcp/marketplace-mcp-tools.js';

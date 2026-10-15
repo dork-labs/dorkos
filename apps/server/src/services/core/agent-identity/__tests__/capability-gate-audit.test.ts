@@ -43,7 +43,7 @@ import {
   type CapabilityRegistry,
 } from '../../capabilities/index.js';
 import { enforceCapabilityTier } from '../../capabilities/tier-enforcement.js';
-import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
+import { gatedActionForMcpTool } from '../../mcp-tools/mcp-tool-tiers.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { createCapabilityAttributionObserver } from '../capability-attribution.js';

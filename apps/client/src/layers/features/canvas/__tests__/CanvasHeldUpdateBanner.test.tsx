@@ -18,6 +18,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { createMockTransport } from '@dorkos/test-utils';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // jsdom cannot load Milkdown/ProseMirror. The stub surfaces the value and the
 // editable flag, which is how these cases read "is the person still editing".
@@ -43,7 +45,7 @@ vi.mock('../model/use-canvas-file-save', () => ({
   }),
 }));
 
-import { useAppStore } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { CanvasContent } from '../ui/CanvasViews';
 
 const MINE: UiCanvasContent = { type: 'markdown', content: 'my draft', sourcePath: 'notes.md' };
@@ -52,6 +54,20 @@ const THEIRS: UiCanvasContent = {
   content: 'the agent version',
   sourcePath: 'notes.md',
 };
+
+let transport: ReturnType<typeof createMockTransport>;
+
+/** Supply the real viewer's query and transport contexts without replacing its hooks. */
+function renderCanvas() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <CanvasContent />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
 
 /** The active document as the store currently holds it. */
 function activeDoc() {
@@ -65,7 +81,7 @@ async function openAndEdit(): Promise<void> {
     useAppStore.getState().openCanvasDocument(MINE);
     useAppStore.setState({ canvasOpen: true, selectedCwd: '/work' });
   });
-  render(<CanvasContent />);
+  renderCanvas();
   // The editor chunk is lazy, so every assertion about what the person sees
   // waits for it — without this the first case reads the Suspense fallback.
   await screen.findByTestId('blintz-canvas');
@@ -81,6 +97,7 @@ function agentPushes(): void {
 describe('an agent update that arrives while a person is editing', () => {
   beforeEach(() => {
     localStorage.clear();
+    transport = createMockTransport();
     useAppStore.setState({
       canvasOpen: false,
       openDocuments: [],
@@ -109,7 +126,7 @@ describe('an agent update that arrives while a person is editing', () => {
       useAppStore.getState().openCanvasDocument(MINE);
       useAppStore.setState({ canvasOpen: true, selectedCwd: '/work' });
     });
-    render(<CanvasContent />);
+    renderCanvas();
     await screen.findByTestId('blintz-canvas');
     agentPushes();
 

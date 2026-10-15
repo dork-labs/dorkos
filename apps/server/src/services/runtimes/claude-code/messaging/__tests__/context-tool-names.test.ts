@@ -113,7 +113,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
     personaEnabled: true,
   }),
 }));
-vi.mock('../../../../lib/logger.js', () => ({
+vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
@@ -504,13 +504,26 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // names it, as a searchable ending, so it stays deferred and unprefixed.
     // 129 -> 130 for `heartbeat_status` (spec `heartbeats` §10 PR 6): no prompt
     // block names it, so it stays deferred and unprefixed.
-    expect(advertised.size).toBe(130);
+    // The full registry includes the imported MCP sign-in capability spread:
+    // mcp_signin and mcp_poll_signin remain searchable, alongside end_beat.
+    expect(advertised.size).toBe(135);
+    expect(advertised.has('mcp_set_client')).toBe(false);
     for (const name of [
+      'mcp_signin',
+      'mcp_poll_signin',
+      'end_beat',
+      'audit_verify',
       'configure_doc_channel',
       'approve_doc_route',
       'revoke_doc_route',
       'canvas_send',
       'canvas_patch_state',
+      'replay_doc_batch',
+      'inspect_doc_channel',
+      'issue_doc_token',
+      'revoke_doc_token',
+      'canvas_set_checkbox',
+      'heartbeat_status',
     ])
       expect(advertised.has(name)).toBe(true);
     expect(advertised.has('react_to_room_entry')).toBe(true);

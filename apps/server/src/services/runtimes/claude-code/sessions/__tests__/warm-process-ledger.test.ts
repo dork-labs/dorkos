@@ -9,7 +9,7 @@ import {
   reapOrphanedWarmProcesses,
   systemProcessProbe,
   type ProcessProbe,
-} from '../warm-process-ledger.js';
+} from '../warm-process/warm-process-ledger.js';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

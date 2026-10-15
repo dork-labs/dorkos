@@ -23,7 +23,12 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { isHostAllowed, parseTrustedHosts, refuseUntrustedHost } from '../host-guard.js';
+import {
+  isHostAllowed,
+  parseTrustedHosts,
+  refuseStandaloneDocTokenHost,
+  refuseUntrustedHost,
+} from '../host-guard.js';
 import { setLanTrust } from '../../services/core/lan-access/lan-trust.js';
 import { createApiApp } from '../../http/api-chain.js';
 import { frontDoorListener } from '../../http/front-door.js';
@@ -194,6 +199,38 @@ describe('the host guard in the chain', () => {
       const res = await request(fixtureServer).get('/api/health').set('Host', 'anything.internal');
       expect(res.status).toBe(200);
     });
+  });
+});
+
+describe('standalone Doc token hosts', () => {
+  it('reads live Wi-Fi trust without inheriting the login-enabled Host waiver', () => {
+    mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+    mockEnv.DORKOS_TRUSTED_HOSTS = undefined;
+    mockTunnelManager.status.url = null;
+    mockAuthConfig.enabled = true;
+    setLanTrust(null);
+    try {
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      setLanTrust({ port: 4242, names: ['studio.local'], secureCookies: false });
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toBeNull();
+      expect(refuseStandaloneDocTokenHost('evil.com:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      setLanTrust({ port: 4242, names: ['office.local'], secureCookies: false });
+      expect(refuseStandaloneDocTokenHost('studio.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+      expect(refuseStandaloneDocTokenHost('office.local:4242')).toBeNull();
+      setLanTrust(null);
+      expect(refuseStandaloneDocTokenHost('office.local:4242')).toMatchObject({
+        code: 'HOST_NOT_ALLOWED',
+      });
+    } finally {
+      setLanTrust(null);
+      mockAuthConfig.enabled = false;
+    }
   });
 });
 

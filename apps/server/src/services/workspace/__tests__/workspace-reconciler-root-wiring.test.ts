@@ -61,11 +61,22 @@ function expectAwaitedDisposal(statement: ts.Statement, owner: string) {
   if (!ts.isAwaitExpression(statement.expression)) throw new Error('Expected awaited disposal');
   const call = statement.expression.expression;
   expect(
-    namedCall(call, owner, 'dispose'),
-    'await the same root owner before unrelated operations'
+    ts.isCallExpression(call) &&
+      ts.isIdentifier(call.expression) &&
+      call.expression.text === 'drainOwnedFileLifetimes',
+    'await the shared owned drain before unrelated operations'
   ).toBe(true);
   if (!ts.isCallExpression(call)) throw new Error('Expected disposal call');
   expect(call.arguments).toHaveLength(0);
+  const drain = source.statements
+    .filter(ts.isFunctionDeclaration)
+    .find((node) => node.name?.text === 'drainOwnedFileLifetimes');
+  expect(drain?.body).toBeDefined();
+  const disposal = descendants(drain!).filter((node) => namedCall(node, owner, 'dispose'));
+  expect(disposal).toHaveLength(1);
+  const invocation = disposal[0];
+  if (!ts.isCallExpression(invocation)) throw new Error('Expected owned disposal call');
+  expect(invocation.arguments).toHaveLength(0);
 }
 
 function expectAdmissionClose(statement: ts.Statement) {
@@ -175,20 +186,23 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     expect(descendants(caught!.block).some(ts.isThrowStatement)).toBe(false);
     // The existing unrelated fixture cleanup remains outside the contained failure.
     const fixtureClose = callback.body.statements[2];
-    expect(
-      ts.isExpressionStatement(fixtureClose) && ts.isAwaitExpression(fixtureClose.expression)
-    ).toBe(true);
-    if (!ts.isExpressionStatement(fixtureClose) || !ts.isAwaitExpression(fixtureClose.expression))
+    expect(ts.isTryStatement(fixtureClose)).toBe(true);
+    if (!ts.isTryStatement(fixtureClose)) throw new Error('Expected independent fixture cleanup');
+    expect(fixtureClose.tryBlock.statements).toHaveLength(1);
+    const close = fixtureClose.tryBlock.statements[0];
+    expect(ts.isExpressionStatement(close) && ts.isAwaitExpression(close.expression)).toBe(true);
+    if (!ts.isExpressionStatement(close) || !ts.isAwaitExpression(close.expression))
       throw new Error('Expected fixture cleanup await');
-    const fixtureCall = fixtureClose.expression.expression;
-    expect(ts.isCallExpression(fixtureCall)).toBe(true);
-    if (!ts.isCallExpression(fixtureCall) || !ts.isPropertyAccessExpression(fixtureCall.expression))
-      throw new Error('Expected fixture close call');
-    expect(fixtureCall.expression.name.text).toBe('close');
+    const fixtureCall = close.expression.expression;
     expect(
-      ts.isIdentifier(fixtureCall.expression.expression) &&
-        fixtureCall.expression.expression.text === 'testComposioFixture'
+      ts.isCallExpression(fixtureCall) &&
+        ts.isPropertyAccessExpression(fixtureCall.expression) &&
+        ts.isIdentifier(fixtureCall.expression.expression) &&
+        fixtureCall.expression.expression.text === 'testComposioFixture' &&
+        fixtureCall.expression.name.text === 'close'
     ).toBe(true);
+    expect(fixtureClose.catchClause).toBeDefined();
+    expect(descendants(fixtureClose.catchClause!).some(ts.isThrowStatement)).toBe(false);
   });
 
   it.each(['throw', 'reject'] as const)(
@@ -216,9 +230,16 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const stopDocDelivery = vi.fn().mockResolvedValue(undefined);
       const docNotificationCleanup = vi.fn();
       const callback = startupCatch();
-      const javascript = ts.transpileModule(`(${callback.getText(source)})`, {
-        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-      }).outputText;
+      const drain = source.statements
+        .filter(ts.isFunctionDeclaration)
+        .find((node) => node.name?.text === 'drainOwnedFileLifetimes');
+      expect(drain).toBeDefined();
+      const javascript = ts.transpileModule(
+        `let ownedFileLifetimeDrain; ${drain!.getText(source)} (${callback.getText(source)})`,
+        {
+          compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+        }
+      ).outputText;
       const run = runInNewContext(javascript, {
         [ownerName()]: owner,
         mainRequestAdmission: new MainRequestAdmission(),
@@ -228,25 +249,30 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
         testComposioFixture: { close: fixtureClose },
         stopDocDelivery,
         docNotificationCleanup,
+        stopCurrentRoomDueMaintenance: undefined,
+        stopRoomRepoReconciliation: undefined,
+        stopOriginalDocumentRelay: undefined,
+        stopCheckboxWrites: undefined,
+        stopFileWrites: undefined,
         DatabaseOpenError: class extends Error {},
         SnapshotFailedError: class extends Error {},
       }) as (error: Error) => Promise<void>;
       try {
         await run(original);
         expect(logged.error).toHaveBeenCalledWith(
-          '[workspace] Reconciliation disposal failed during startup cleanup:',
+          '[DorkOS] Owned file lifetime disposal failed during startup cleanup:',
           cleanupError
         );
         expect(fixtureClose).toHaveBeenCalledTimes(1);
         expect(stopDocDelivery).toHaveBeenCalledTimes(1);
-        expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeGreaterThan(
+        expect(stopDocDelivery.mock.invocationCallOrder[0]).toBeLessThan(
           fixtureClose.mock.invocationCallOrder[0]
         );
         expect(docNotificationCleanup).toHaveBeenCalledTimes(1);
         expect(docNotificationCleanup.mock.invocationCallOrder[0]).toBeGreaterThan(
           stopDocDelivery.mock.invocationCallOrder[0]
         );
-        expect(docNotificationCleanup.mock.invocationCallOrder[0]).toBeGreaterThan(
+        expect(docNotificationCleanup.mock.invocationCallOrder[0]).toBeLessThan(
           fixtureClose.mock.invocationCallOrder[0]
         );
         expect(logError).toHaveBeenCalledExactlyOnceWith(original);
