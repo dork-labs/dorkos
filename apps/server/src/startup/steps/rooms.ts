@@ -45,6 +45,7 @@ import { isCurrentLocalMeshAgent } from '../../services/communities/remote/local
 import { spaceReachable } from '../../middleware/spaces-enabled.js';
 import { RemoteRedactionSync } from '../../services/communities/remote/remote-redaction-sync.js';
 import { RemoteRoomSubscriptionRuntime } from '../../services/communities/remote/remote-room-subscription-runtime.js';
+import { AgentAvailabilityRuntime } from '../../services/communities/remote/availability/agent-availability-runtime.js';
 import { env } from '../../env.js';
 import { setRemoteCommunitySubscriptionProbe } from '../../routes/test-control.js';
 import { logger } from '../../lib/logger.js';
@@ -206,6 +207,22 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     redactions: refs.remoteRedactionSync,
   });
   setRemoteCommunityLifecycle(refs.remoteCommunitySubscriptions);
+  // Each space an enrolled agent belongs to hears that it is there, while this computer is on
+  // (specs/server-merge step 3, DOR-2878). Started beside the streams, once Mesh has reconciled.
+  refs.remoteAgentAvailability = new AgentAvailabilityRuntime({
+    enrollments: refs.remoteCommunityRuntime.enrollments,
+    spaces: getRemoteCommunityAdapter,
+    // Every agent this app runs is on this person's computer. An app running as an agent
+    // computer (specs/everything-is-a-space A8, DOR-2748) answers 'agent-computer' here.
+    runsOn: () => 'computer',
+    reachable: spaceReachable,
+    onConnectionChange: (listener) => getRemoteConnectionStore().onChange(listener),
+    onFailing: (communityRef, error) =>
+      logger.debug('[Communities] Agent availability reports are failing', {
+        communityRef,
+        error: String(error),
+      }),
+  });
   // Native room streams need Mesh's trusted manifest-to-path registry. Start
   // them only after startup reconciliation below, so a cold boot never treats
   // an as-yet-unavailable registry as an authoritative empty agent directory.

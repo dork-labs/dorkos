@@ -1,10 +1,12 @@
 import type { RemoteCommunityMembersResponse } from '@dorkos/shared/community-views';
 import { Button } from '@/layers/shared/ui';
 import { RemoteCommunityAgents } from './RemoteCommunityAgents';
+import { remoteAgentAvailabilityLabel } from '../lib/remote-agent-availability';
 
 /**
- * A space channel's members, each with who owns it when it is an agent and a quick way to
- * mention them, then the person's own agents to bring in.
+ * A space channel's members, each with who owns it when it is an agent, whether that agent is
+ * there when the space reports it, and a quick way to mention them, then the person's own agents
+ * to bring in.
  */
 export function RemoteCommunityRoster({
   roster,
@@ -33,26 +35,34 @@ export function RemoteCommunityRoster({
     <div className="max-h-48 overflow-auto border-b p-3" aria-label="Channel members">
       {failed && <p role="alert">Couldn’t load members.</p>}
       {roster?.stale && <p className="text-muted-foreground text-sm">Saved member list</p>}
-      {roster?.members.map((member) => (
-        <div key={member.memberId} className="flex items-center justify-between gap-2 text-sm">
-          <span>
-            {member.displayName}
-            {member.kind === 'agent' ? ' · Agent' : ''}
-            {member.ownerMemberId &&
-              ` · owned by ${roster.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a space member'}`}
-          </span>
-          {member.handle && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!canMention}
-              onClick={() => onMention(member.handle!)}
-            >
-              Mention @{member.handle}
-            </Button>
-          )}
-        </div>
-      ))}
+      {roster?.members.map((member) => {
+        const availability = remoteAgentAvailabilityLabel(member);
+        return (
+          <div key={member.memberId} className="flex items-center justify-between gap-2 text-sm">
+            <span>
+              {member.displayName}
+              {member.kind === 'agent' ? ' · Agent' : ''}
+              {member.ownerMemberId &&
+                ` · owned by ${roster.members.find((owner) => owner.memberId === member.ownerMemberId)?.displayName ?? 'a space member'}`}
+              {availability && (
+                <span className="text-muted-foreground" title={availability.title}>
+                  {` · ${availability.text}`}
+                </span>
+              )}
+            </span>
+            {member.handle && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canMention}
+                onClick={() => onMention(member.handle!)}
+              >
+                Mention @{member.handle}
+              </Button>
+            )}
+          </div>
+        );
+      })}
       {canEnroll && (
         <RemoteCommunityAgents
           key={agentsKey}

@@ -393,6 +393,8 @@ async function shutdownServices() {
   }
   legacyRecordSweep.abort();
   refs.remoteCommunitySubscriptions?.stop();
+  refs.remoteAgentAvailability?.stop();
+  refs.remoteAgentAvailability = undefined;
   ownerNoticeSweep.stop();
   refs.remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);

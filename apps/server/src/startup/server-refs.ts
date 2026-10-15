@@ -22,6 +22,7 @@ import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-se
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
 import type { CommunityOutboxRuntime } from '../services/communities/remote/community-outbox-runtime.js';
 import type { RemoteRoomSubscriptionRuntime } from '../services/communities/remote/remote-room-subscription-runtime.js';
+import type { AgentAvailabilityRuntime } from '../services/communities/remote/availability/agent-availability-runtime.js';
 import type { RemoteRedactionSync } from '../services/communities/remote/remote-redaction-sync.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
@@ -97,6 +98,8 @@ export interface ServerRefs {
   agentMcpOAuthService: AgentMcpOAuthService | undefined;
   remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
   remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
+  /** Reports enrolled agents as there to each space they belong to (DOR-2878). */
+  remoteAgentAvailability: AgentAvailabilityRuntime | undefined;
   remoteRedactionSync: RemoteRedactionSync | undefined;
   extensionManager: ExtensionManager | undefined;
   /** Where room conversations run (DOR-1624); set once rooms are wired. */
@@ -223,6 +226,7 @@ export function createServerRefs(): Omit<ServerRefs, BareServerRefs> {
     agentMcpOAuthService: undefined,
     remoteCommunityRuntime: undefined,
     remoteCommunitySubscriptions: undefined,
+    remoteAgentAvailability: undefined,
     remoteRedactionSync: undefined,
     extensionManager: undefined,
     roomSessionPlacePort: undefined,

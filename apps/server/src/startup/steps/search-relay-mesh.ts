@@ -392,6 +392,7 @@ export async function startSearchRelayAndMesh(
     if (refs.meshStartupReconciled) {
       refs.remoteCommunityRuntime?.start();
       refs.remoteCommunitySubscriptions?.start();
+      refs.remoteAgentAvailability?.start();
       ownerNoticeSweep.start();
       // Copies left behind by a connection that no longer exists (DOR-2334).
       const subscriptions = refs.remoteCommunitySubscriptions;

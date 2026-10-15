@@ -32,6 +32,7 @@ import {
   remoteAuthorOf,
   remoteSequenceOf,
 } from '../../../server/src/services/communities/remote/remote-community-adapter.js';
+import { AgentAvailabilityReporter } from '../../../server/src/services/communities/remote/availability/agent-availability-reporter.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)
@@ -757,5 +758,68 @@ describe('RemoteCommunityAdapter native sequence metadata', () => {
     } finally {
       await iterator.return?.();
     }
+  });
+});
+
+describe('RemoteCommunityAdapter agent availability (DOR-2878)', () => {
+  it('reports an enrolled agent, and the roster then shows it as available', async () => {
+    const localDb = createDb(':memory:');
+    runMigrations(localDb);
+    const enrollments = new CommunityAgentEnrollmentStore(localDb);
+    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store, enrollments);
+    await adapter.connect();
+    // A channel with no posts: the file's earlier tests have spent this owner's post budget.
+    const channel = await pool.query<{ id: string }>(
+      "INSERT INTO channels(community_id,name,visibility) VALUES($1,$2,'private') RETURNING id",
+      [communityId, `Availability ${randomUUID()}`]
+    );
+    const roomId = channel.rows[0]!.id;
+    await pool.query(
+      'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
+      [communityId, roomId, ownerMemberId]
+    );
+    const admitted = await adapter.admitAgent({
+      agentId: 'availability-agent',
+      displayName: 'Availability agent',
+    });
+    await adapter.addMember(roomId, admitted.memberId);
+    expect(await adapter.supportsAgentAvailability()).toBe(true);
+    // No app has reported for it yet: the space says unknown, which shows nothing.
+    const before = (await adapter.listMembers(roomId)).find(
+      (member) => member.memberId === admitted.memberId
+    );
+    expect(before).toMatchObject({ availability: 'unknown', lastSeenAt: null, runsOn: null });
+
+    const reporter = new AgentAvailabilityReporter({
+      space: adapter,
+      agents: () =>
+        enrollments.activeForOwner(ref, ownerKey).map((enrollment) => ({
+          agentId: enrollment.remoteMemberId,
+          localAgentId: enrollment.localAgentId,
+        })),
+      runsOn: () => 'computer',
+      reachable: () => true,
+    });
+    await reporter.reportNow();
+    reporter.dispose();
+
+    const after = (await adapter.listMembers(roomId)).find(
+      (member) => member.memberId === admitted.memberId
+    );
+    expect(after).toMatchObject({ availability: 'available', runsOn: 'computer' });
+    expect(after?.lastSeenAt).toEqual(expect.any(String));
+    // A person's row never carries it.
+    const owner = (await adapter.listMembers(roomId)).find(
+      (member) => member.memberId === ownerMemberId
+    );
+    expect(owner).not.toHaveProperty('availability');
+  });
+
+  it('is refused for an agent this installation did not enroll, and records nothing', async () => {
+    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
+    const stranger = randomUUID();
+    await expect(
+      adapter.reportAgentAvailability({ agents: [{ agentId: stranger, runsOn: 'computer' }] })
+    ).resolves.toMatchObject({ accepted: [], refused: [stranger] });
   });
 });
