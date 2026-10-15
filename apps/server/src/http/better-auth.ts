@@ -21,6 +21,10 @@ import type { Context, Hono } from 'hono';
 import type { Auth } from '../services/core/auth/index.js';
 import { buildAuthRateLimiter } from '../middleware/auth-rate-limit.js';
 import type { ApiEnv } from './api-chain.js';
+import { honoRequestFacts } from './request-facts.js';
+import { classifyRequest } from '../lib/request-classifier.js';
+import { currentServerRole } from '../lib/server-role.js';
+import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -39,7 +43,12 @@ export interface BetterAuthOptions {
  */
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
-  app.all('/api/auth/*', (c) => options.auth.handler(requestForBetterAuth(c)));
+  app.all('/api/auth/*', (c) =>
+    // The sign-up hook asks where this request came from (registration-policy.ts).
+    withRegistrationCaller(classifyRequest(honoRequestFacts(c), currentServerRole()), () =>
+      options.auth.handler(requestForBetterAuth(c))
+    )
+  );
 }
 
 /**

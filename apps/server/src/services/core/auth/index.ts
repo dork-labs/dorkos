@@ -8,11 +8,13 @@
  *
  * ## Registration policy
  *
- * Sign-up is open only while the `user` table is empty; the first registered
- * user becomes the `owner`. Once any user exists every further sign-up is
- * rejected (a `databaseHooks.user.create.before` hook that throws
- * `FORBIDDEN`). A future invites spec reopens registration via invitation
- * tokens only.
+ * Whether a sign-up may create an account is decided per request by
+ * `decideRegistration` (`./registration-policy.ts`), which the
+ * `databaseHooks.user.create.before` hook asks. Today that keeps the old rule:
+ * sign-up is open only while the `user` table is empty, the first registered
+ * user becomes the `owner`, and once any user exists every further sign-up is
+ * rejected with `FORBIDDEN`. The policy already knows where the request came
+ * from, so setup codes (F5) and hub provisioning (A2) plug in there.
  *
  * ## Lifecycle
  *
@@ -54,6 +56,12 @@ import { logger } from '../../../lib/logger.js';
 import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
+import {
+  currentRegistrationCaller,
+  decideRegistration,
+  registrationAllowed,
+} from './registration-policy.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 
 /**
@@ -243,12 +251,17 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       user: {
         create: {
           before: async (userData) => {
-            // Owner-only registration: allow sign-up only while the user table
-            // is empty, and stamp the first user as the owner. (Single-writer
-            // local instance, so the empty-table check is race-free enough for
-            // P1; the invites spec adds real multi-user provisioning.)
+            // Owner-only registration, decided per request: allowed only while
+            // the user table is empty, and the first user is the owner.
+            // (Single-writer local instance, so the empty-table check is
+            // race-free enough; the invites spec adds multi-user provisioning.)
             const existing = db.select({ id: user.id }).from(user).limit(1).get();
-            if (existing) {
+            const mode = decideRegistration({
+              caller: currentRegistrationCaller(),
+              hasUsers: existing !== undefined,
+              role: currentServerRole(),
+            });
+            if (!registrationAllowed(mode)) {
               throw new APIError('FORBIDDEN', {
                 code: 'REGISTRATION_CLOSED',
                 message:
