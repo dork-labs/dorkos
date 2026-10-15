@@ -5,6 +5,7 @@
  *
  * @module connector-providers/connection-copy
  */
+import type { ConnectStartRefusal } from './connector-provider.js';
 import type {
   ConnectionReadinessReason,
   ConnectorOperationClassification,
@@ -328,6 +329,14 @@ export const SIGN_IN_COPY = {
   /** The service hit a brief, transient failure trying to start sign-in. */
   serviceUnavailable: 'Nothing was connected. Try again in a few minutes.',
 } as const;
+
+/** What a flow refused for good says, for every surface that shows its reason. */
+export const CONNECT_REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
+  service_not_ready: SIGN_IN_COPY.serviceNotReady,
+  setup_needs_fix: SIGN_IN_COPY.setupNeedsFix,
+  account_link_required: SIGN_IN_COPY.accountLinkRequired,
+  service_unavailable: SIGN_IN_COPY.serviceUnavailable,
+};
 
 /** The service behind each way, by the way's type: what its key or server is called. */
 const SERVICE_NAMES: Readonly<Record<string, string>> = {
