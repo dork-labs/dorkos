@@ -4,12 +4,10 @@
  * `/api/ext/<id>`.
  *
  * A handler either answers or passes. A request every handler passes on gets
- * the `/api` 404, as it did when the extension's Express router called
- * `next()` and the request fell through to the rest of the server. Each piece
- * an extension can have is one handler, tried in a fixed order
- * ({@link firstAnswer}): its own Express router, through the bridge
- * (`express-bridge.ts`); its `dataProxy` (`extension-proxy.ts`); or, for one
- * that runs in its own process, the forwarder (`isolation/isolated-router.ts`).
+ * the `/api` 404. Each piece an extension can have is one handler, tried in a
+ * fixed order ({@link firstAnswer}): its `dataProxy` (`extension-proxy.ts`),
+ * then its fetch handler (`fetch-handler.ts`); or, for one that runs in its
+ * own process, the forwarder (`isolation/isolated-router.ts`).
  *
  * @module services/extensions/http/extension-http
  */

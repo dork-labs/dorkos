@@ -439,9 +439,6 @@ async function buildCLI() {
       // packages/cli, exactly like better-sqlite3 and node-pty. Used by
       // services/extensions/extension-compiler.ts to tsx-transpile extensions.
       'esbuild',
-      // Only the extension bridge runs Express now
-      // (`services/extensions/http/express-bridge.ts`): an extension's router.
-      'express',
       'dotenv',
       'uuid',
       'zod',
@@ -461,9 +458,9 @@ async function buildCLI() {
   // 2.1: The extension child (DOR-2686). DorkOS forks this file, not the
   // server bundle, for every extension that runs separately, with Node's
   // permission model on and read access to nothing but this file and the
-  // extension's own. So it must be ONE self-contained file: express and the
-  // extension API are inlined (the server bundle keeps them external, and the
-  // child could not read node_modules anyway). CommonJS, as `.cjs`, because
+  // extension's own. So it must be ONE self-contained file: the extension API
+  // and Hono's Node adapter are inlined (the child could not read node_modules
+  // anyway). CommonJS, as `.cjs`, because
   // this package is `"type": "module"`. The server finds it beside its own
   // bundle (`isolation/child-entry.ts`, CHILD_ENTRY_FILE); the name and the
   // entry are pinned by scripts/__tests__/extension-child-build-entry.test.ts.

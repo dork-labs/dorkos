@@ -122,6 +122,8 @@ export type {
   ServerExtensionRegister,
   ServerExtensionRegisterResult,
   ServerExtensionHandlers,
+  ServerDefinition,
+  ServerStart,
   ExtensionFetchHandler,
   AccountsApi,
   AccountSummary,

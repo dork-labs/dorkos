@@ -14,7 +14,7 @@
  * `stop`), the program broker (`run-*`), `ctx` over the boundary (`call`,
  * `ret`, `emit`, `sub`/`unsub`/`evt`, `expose`/`unexpose`, `rcall`/`rret`/
  * `cancel`; spec §5.2, routed by `ctx-protocol.ts`), the HTTP byte streams of
- * the extension's router (`conn-*`, spec §7) and a test-only `probe`.
+ * the extension's fetch handler (`conn-*`, spec §7) and a test-only `probe`.
  *
  * @module services/extensions/isolation/ipc-protocol
  */
@@ -86,8 +86,11 @@ export interface RegisteredMessage {
    * offers only the tools it bound itself, through the real ctx.
    */
   handledTools: string[];
-  /** Whether `register()` added routes to the old Express router (DOR-2858). */
-  usesRouter?: boolean;
+  /**
+   * Set when it failed because it touched the old Express router, which
+   * DorkOS no longer runs (DOR-2861).
+   */
+  oldRouter?: boolean;
   /** Why it failed, when it did. */
   error?: string;
 }
@@ -296,7 +299,7 @@ export interface InitMessage {
    */
   tools: ToolHandleCheck[];
   /**
-   * What `ctx.requirePerson` answers when the host's verdict header is
+   * What a fetch handler's caller reads as when the host's verdict header is
    * missing or unreadable: the in-process refusal of an agent, word for word
    * (fail closed).
    */
@@ -307,14 +310,14 @@ export interface InitMessage {
  * The header the host sets on every request it forwards to an isolated
  * extension: the person bar's verdict (a `PersonCheck`), as JSON. A
  * client-sent header of the same name is replaced, never forwarded. The
- * child reads it for `ctx.requirePerson` and for a fetch handler's caller,
+ * child reads it for a fetch handler's caller,
  * and takes it off the request a fetch handler sees.
  */
 export const PERSON_VERDICT_HEADER = 'x-dorkos-ext-person';
 
 /**
  * Read the verdict header in the child. Anything that is not a well-formed
- * verdict reads as `null`, which `requirePerson` refuses.
+ * verdict reads as `null`, which the child reads as a refusal.
  *
  * @param raw - The header's value.
  */
@@ -420,7 +423,7 @@ export interface RunErrorMessage {
   message: string;
 }
 
-/** The host opened a virtual HTTP connection to the extension's router. */
+/** The host opened a virtual HTTP connection to the extension's fetch handler. */
 export interface ConnOpenMessage {
   type: 'conn-open';
   cid: number;
@@ -577,7 +580,7 @@ export function isChildMessage(value: unknown): value is ChildMessage {
         typeof value.hasCleanup === 'boolean' &&
         Array.isArray(value.handledTools) &&
         value.handledTools.every((t) => typeof t === 'string') &&
-        (value.usesRouter === undefined || typeof value.usesRouter === 'boolean') &&
+        (value.oldRouter === undefined || typeof value.oldRouter === 'boolean') &&
         (value.error === undefined || typeof value.error === 'string')
       );
     // The ctx messages are checked for shape only; their meaning (whether a

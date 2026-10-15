@@ -107,7 +107,6 @@ const config: KnipConfig = {
         '@modelcontextprotocol/sdk',
         '@ngrok/ngrok',
         'conf',
-        'express',
         // Read from disk by the extension compiler, which bundles DorkOS's own
         // copy into every extension's server half (`server-bundle/host-hono.ts`).
         'hono',

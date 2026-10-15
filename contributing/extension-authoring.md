@@ -51,7 +51,7 @@ my-extension/
 
 **Extensions inside a plugin.** A marketplace plugin can carry extensions in its own `.dork/extensions/{id}/`. Discovery reads them where the installer put the plugin: `~/.dork/plugins/{plugin}/.dork/extensions/{id}/` (global) and `{projectDir}/.dork/plugins/{plugin}/.dork/extensions/{id}/` (project). The record's `sourcePlugin` names the plugin. When one id turns up in more than one place, precedence is: a core extension, then one installed directly under `~/.dork/extensions/`, then the copy a person approved to run, then a plugin-carried copy by sorted plugin name (global plugins before project ones), with one warning. A project copy never takes a core id or an id approved for another copy (DOR-2383, `extension-discovery.ts`).
 
-**Every known project, not just the working folder (spec `flow-multiproject` §9.2).** Discovery scans `.dork/extensions` and `.dork/plugins/*/.dork/extensions` in the server's working folder **and** in every project the project registry has seen (sessions, agents, workspaces, installs), plus every project the installer put a package into. A root only an extension reported through `ctx.projects.report` is never a scan root, so an extension cannot widen where core looks for code. The scan is bounded to those two folders per root, a gone folder is skipped silently, and every re-scan runs one at a time and, where it can, off the request path: debounced when the registry learns a project, and after `POST /api/extensions/reload`, an install, or a trust change has already answered (clients learn what changed from `extension_reloaded`). `POST /api/extensions/cwd-changed` still waits for its scan, because its answer (which extensions the new folder added or removed) is what the app remounts from. Every re-scan, including that one, moves an id whose running copy changed onto the new copy: its server half is stopped and started again there, and one that may no longer run is stopped. An extension's server `register()` gets 15 seconds (`REGISTER_TIMEOUT_MS`): one that never finishes is marked as unable to start (`serverError.code: 'server_start_timeout'`), everything it set up is released, and the queue moves on, so one hung extension cannot stall every later scan or install. So which copy runs no longer depends on the folder the server started in.
+**Every known project, not just the working folder (spec `flow-multiproject` §9.2).** Discovery scans `.dork/extensions` and `.dork/plugins/*/.dork/extensions` in the server's working folder **and** in every project the project registry has seen (sessions, agents, workspaces, installs), plus every project the installer put a package into. A root only an extension reported through `ctx.projects.report` is never a scan root, so an extension cannot widen where core looks for code. The scan is bounded to those two folders per root, a gone folder is skipped silently, and every re-scan runs one at a time and, where it can, off the request path: debounced when the registry learns a project, and after `POST /api/extensions/reload`, an install, or a trust change has already answered (clients learn what changed from `extension_reloaded`). `POST /api/extensions/cwd-changed` still waits for its scan, because its answer (which extensions the new folder added or removed) is what the app remounts from. Every re-scan, including that one, moves an id whose running copy changed onto the new copy: its server half is stopped and started again there, and one that may no longer run is stopped. An extension's server half gets 15 seconds to start (`REGISTER_TIMEOUT_MS`): one that never finishes is marked as unable to start (`serverError.code: 'server_start_timeout'`), everything it set up is released, and the queue moves on, so one hung extension cannot stall every later scan or install. So which copy runs no longer depends on the folder the server started in.
 
 **Newest copy from one trusted source wins.** A plugin-carried copy has a _trusted origin_ only when this machine's installer can prove where it came from: a plugin under `~/.dork/plugins/` from its own install sidecar's `sourceRepo`, or a project plugin from the `source` the installer wrote into `~/.dork/marketplace/project-installs.json` at install time. It is the GitHub `owner/repo`, lowercased (https, ssh and bare forms all reduce to it; `installedFrom` is never used). A sidecar inside a project proves nothing: anyone can commit one. More conditions hold (two security reviews of DOR-2527). **The whole plugin folder is what is vouched for**, because a bundle can import any file in its plugin (flow imports `../../../../scripts/*`): the installer digests the whole staged install folder (every file, `.git` and DorkOS's own runtime state left out) just before moving it into place, and keeps that `installDigest` in a project install's record; a project copy has an origin only while its plugin folder still hashes to it, so an agent, a `git pull` or a re-clone changing any file in the plugin gets no origin. **No symbolic link anywhere in the plugin folder**, global or project: the installer strips links, and a loader follows one (`index.js → evil.js`) that a hash of files would skip. Such a copy is marked `originProblem` (`changed` for a project copy, `linked` for a global plugin), and its Settings card says so. **Only a branch or tag counts**: the install must have been fetched at the default branch, a branch or a tag, never at another `refs/…` name or a bare commit id, because GitHub serves every pull request's head (`refs/pull/N/head`) and any fork's commits through the parent repository's URL (`isTrustableRef` in `lib/trusted-source.ts`). Uninstalling a project install forgets its record.
 
@@ -63,7 +63,7 @@ my-extension/
 
 **What it costs.** Whole-folder digests are cached per file by `(inode, size, mtime, ctime)` and per folder by the whole walk (every stamp plus every directory listing): a file's bytes are read again only when one of those changes, so a warm scan walks and `lstat`s and reads nothing. Each plugin folder is inspected once per scan however many extensions it carries, and a global plugin is only walked for links, never digested. On a laptop, a warm scan of five flow-sized copies (about 1,200 files each) takes about 150ms (`extension-discovery-perf.test.ts`).
 
-**A server half that never finishes starting is let go completely.** On the `register()` timeout its context is disposed: what it scheduled is cancelled, what it registered is released, and any later `ctx.schedule` or listener registration from the still-running `register()` is a no-op, logged once. A retry starts a fresh instance; nothing of the abandoned one keeps running beside it.
+**A server half that never finishes starting is let go completely.** On that timeout its context is disposed: what it scheduled is cancelled, what it registered is released, and any later `ctx.schedule` or listener registration from the still-running start is a no-op, logged once. A retry starts a fresh instance; nothing of the abandoned one keeps running beside it.
 
 ## Manifest (`extension.json`)
 
@@ -716,13 +716,13 @@ The three tiers of server-side capability, from simplest to most powerful:
 
 ### Creating `server.ts`
 
-Create a `server.ts` file in your extension directory that default-exports a `register` function. Its API is a Hono app (built in, nothing to install), returned as `{ fetch }`:
+Create a `server.ts` file in your extension directory that default-exports `defineServer`: a function DorkOS calls with `ctx` once the extension starts. Its API is a Hono app (built in, nothing to install), returned as `{ fetch }`:
 
 ```typescript
 import { Hono } from 'hono';
-import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
 
-export default function register(_router: unknown, ctx: DataProviderContext) {
+export default defineServer((ctx) => {
   const app = new Hono();
   app.get('/data', async (c) => c.json({ data: (await ctx.storage.loadData()) ?? [] }));
   app.put('/data', requirePerson(), async (c) => {
@@ -733,15 +733,10 @@ export default function register(_router: unknown, ctx: DataProviderContext) {
   // `cleanup` is called when the extension is disabled or reloaded.
   const cancel = ctx.schedule(60, async () => {});
   return { fetch: app.fetch, cleanup: () => cancel() };
-}
+});
 ```
 
-The `register` function receives two arguments:
-
-- **`router`** — The old Express router ([deprecated](#the-old-router)). Leave it empty.
-- **`ctx`** — A `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below).
-
-`register` returns nothing, a cleanup function, or `{ fetch, cleanup }`; see [Route Conventions](#route-conventions).
+`ctx` is a `DataProviderContext` with secrets, settings, storage, scheduling, and event emission (see below). The function returns nothing, a cleanup function, or `{ fetch, cleanup }`; see [Route Conventions](#route-conventions).
 
 Server-side code is compiled to CommonJS (Node.js target) by the host using esbuild. TypeScript is supported out of the box.
 
@@ -985,13 +980,13 @@ if (ctx.inbox !== undefined) {
 - **Hidden while you are not running.** While your extension is off, or a decision's project folder is missing, its rows are hidden and kept and their clocks stop; they come back when you run again.
 - **The push says little.** A phone, a desktop banner and a chat message see "Flow needs you in 2 projects", never your title, key or project name, and at most once an hour per extension however many decisions stand; one still waiting when the hour is up gets its own push then.
 
-#### `ctx.requirePerson`
+#### People only: `requirePerson()`
 
-Express middleware for the [old router](#the-old-router) that admits only a person: the same bar as approving an extension. A fetch handler uses `requirePerson()` or `checkPerson(caller)` from `@dorkos/extension-api/server` instead (see [Serving with a fetch handler](#serving-with-a-fetch-handler)), which apply the same bar. The rest of this section holds for both. Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
+`requirePerson()` from `@dorkos/extension-api/server` is Hono middleware that admits only a person: the same bar as approving an extension. A handler written without Hono calls `checkPerson(caller)` (see [Serving with a fetch handler](#serving-with-a-fetch-handler)). Put it in front of every route that changes state on a person's behalf (settings, pause and resume):
 
 ```typescript
-router.put('/settings', ctx.requirePerson, saveSettings);
-router.use('/admin', ctx.requirePerson); // a whole sub-router
+app.put('/settings', requirePerson(), saveSettings);
+app.use('/admin/*', requirePerson()); // a whole group of routes
 ```
 
 An agent that names itself is refused with "Only a person can change Flow's settings." (`extension_person_required`), and so is a request from another site. With Require login on it needs the person's cookie. Say the residual honestly: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does. Routes without it stay open. Decisions are not answered through your own routes: use `ctx.inbox`.
@@ -1054,7 +1049,7 @@ if (ctx.agent !== undefined) {
 
 #### `ctx.tools`
 
-Give the person's agents typed tools while your extension runs (DOR-2685). Declare each tool in `extension.json`, then bind its handler with `ctx.tools.handle` while `register()` runs. A complete mail-style extension, with one tool and one skill:
+Give the person's agents typed tools while your extension runs (DOR-2685). Declare each tool in `extension.json`, then bind its handler with `ctx.tools.handle` while its server half starts. A complete mail-style extension, with one tool and one skill:
 
 ```jsonc
 {
@@ -1089,13 +1084,13 @@ Give the person's agents typed tools while your extension runs (DOR-2685). Decla
 
 ```typescript
 // server.ts
-import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { defineServer } from '@dorkos/extension-api/server';
 
 interface Outbox {
   sent: Array<{ to: string; subject?: string; body: string; sentAt: string }>;
 }
 
-const register: ServerExtensionRegister = (_router, ctx) => {
+export default defineServer((ctx) => {
   ctx.tools.handle('send_message', async (input, call) => {
     // Already parsed against inputSchema, so the shape is known.
     const { to, subject, body } = input as { to: string; subject?: string; body: string };
@@ -1106,20 +1101,18 @@ const register: ServerExtensionRegister = (_router, ctx) => {
     await ctx.storage.saveData(outbox);
     return { sent: true, to };
   });
-};
-
-export default register;
+});
 ```
 
 - **Naming.** `name` is lowercase words joined by single underscores. Agents see the tool as `ext_<id with - as _>__<name>` (`ext_mail_app__send_message`), and `mcp__dorkos__` plus that name must fit 64 characters, which the manifest checks. In a skill, name the tool by that bare name: the prefix in front of it differs per agent runtime.
 - **Tiers.** `observe` only reads. `act` changes something, and sits in the **Extension tools** permission area, so a person can set it to Ask or Blocked. `destructive` deletes or removes something and asks a person on every call, bound to that call's input. The tier is your claim; the area lets a person block all of your tools at once. `act` and `destructive` tools must name `approvalDisplayFields`, top-level input fields the approval card shows.
 - **The schema subset.** `inputSchema` must be closed JSON Schema: `type`, `properties`, `required`, `items`, `enum`, `const`, `description`, `title`, `default`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `format`, `minItems`/`maxItems`, `anyOf`, and on every object `"additionalProperties": false`. Every node says its `type` (or lists its values with `enum`, `const` or `anyOf`), every array says its `items`, and a `default` must fit its own schema. An open object, `patternProperties`, `propertyNames`, `$ref` and `$defs` are refused, because each becomes an open-ended map, and one open-ended map anywhere on the `dorkos` server hides every DorkOS tool from Claude Code agents. DorkOS checks each tool when it discovers the extension, before any of its code runs, with the same check (`@dorkos/extension-api/tool-check`) the capability registry runs when the tools register and `dorkos marketplace validate` runs on a package, so a tool that passes one passes the others. A refused tool is reported on `GET /api/extensions` (`tools[].status: 'refused'` and a `reason`); your other tools still load. Titles are one line with no quote marks, and the extension's display name must be plain A to Z letters and may not be "DorkOS".
 - **Which problems cost what.** A problem the manifest schema catches makes the whole extension invalid, its client half included: a tool name that breaks the pattern, a name too long for 64 characters, a tool declared twice, an approval display field the input does not have, `timeoutSeconds` out of range, or `tools` with no `serverCapabilities`. A problem with one tool's schema, title or card fields (the subset above, a quoted title, a missing `approvalDisplayFields`) refuses only that tool, and the rest of the extension loads. A display name the registry refuses ("DorkOS", non-ASCII letters, quotes) refuses every tool but loads the extension. `dorkos marketplace validate` reports all of these as errors before you publish.
-- **Binding.** `ctx.tools.handle` throws for a name the manifest does not declare, a tool DorkOS refused, a second handler for one tool, or a call after `register()` finished. A declared tool you never handle is not offered, and its status says why. A `register()` that throws or times out offers no tools.
+- **Binding.** `ctx.tools.handle` throws for a name the manifest does not declare, a tool DorkOS refused, a second handler for one tool, or a call after it finished starting. A declared tool you never handle is not offered, and its status says why. A start that throws or times out offers no tools.
 - **Calls.** `input` is already parsed against your schema. `call` carries only `signal` and `agentId` (the calling agent's Mesh id, or `null`): no session id, folder or token. Return plain JSON; a string passes through as text. A result over 256 KB serialized, or one that is not JSON, becomes an error. A throw becomes a tool error the agent reads as `<your extension name>: <message>`, capped at 500 characters, with absolute file paths replaced by `<path>` and never a stack.
 - **Time and stops.** A call runs at most `timeoutSeconds` (1 to 300, default 60), counted after any approval. Past that, or when the agent's turn is cancelled, or when your extension stops, `call.signal` aborts and any later result is thrown away. On stop, reload, turn-off, revoke or uninstall, your tools leave the registry first, before your cleanup runs. An uninstall also clears every per-tool permission setting kept for your tools, so nothing carries over to whatever is installed under the same id next.
 - **A handler that never yields.** In-process, the deadline can only abort `call.signal`; a handler stuck in a synchronous loop blocks DorkOS itself. An extension that runs separately (`runtime: "subprocess"`, see [Running separately](#running-separately)) gives agents the same tools with the same checks, and a stuck handler freezes only its own process, which the watchdog stops, removing its tools.
-- **When agents see them.** Tools join once `register()` finishes and leave when the extension stops. Codex and OpenCode chats see a change the next time they ask DorkOS for its tool list: their tool server is built from the live registry for every request, so even a client that stays connected gets the new list on its next `tools/list`. A Claude Code chat sees it with its next message: a process kept warm between messages compares its tool list (every tool's name, description and input schema) with what a fresh launch would list, and relaunches before that message when they differ. A reply already in progress finishes with the tools it started with, and a chat whose helper agent or Monitor is still working keeps its process, and the old list, until that work ends. The relaunch costs that chat its prompt cache once, so it happens only when the list really changed.
+- **When agents see them.** Tools join once it finishes starting and leave when the extension stops. Codex and OpenCode chats see a change the next time they ask DorkOS for its tool list: their tool server is built from the live registry for every request, so even a client that stays connected gets the new list on its next `tools/list`. A Claude Code chat sees it with its next message: a process kept warm between messages compares its tool list (every tool's name, description and input schema) with what a fresh launch would list, and relaunches before that message when they differ. A reply already in progress finishes with the tools it started with, and a chat whose helper agent or Monitor is still working keeps its process, and the old list, until that work ends. The relaunch costs that chat its prompt cache once, so it happens only when the list really changed.
 - **Where people see them.** Settings → Extensions sums up each extension's tools and skills on its card ("Gives agents 3 tools and 1 skill" while it runs, "Would give agents …" while it is off, waiting for approval or broken; only tools and skills that reach agents are counted) and opens to each tool's title with its tier as "Reads", "Acts" or "Asks you first", and each skill. A refused tool or a skill left out is listed by name with its reason. The Activity inbox row that asks a person to turn the extension on carries the same summary and list (`agentTools` and `agentSkills` on `GET /api/extensions/pending-approvals`), so a person sees every tool and tier before the first run. Each tool is a row in Settings → Permissions under **Extension tools**, labelled "From <extension name>", and its approval card says the same under the tool's title. A person blocks every extension tool at once by setting that area to Blocked, or one tool from its own row.
 - **The dev loop.** Editing `server.ts` restarts the extension. Editing only the `tools` or `skills` in `extension.json` restarts it too (the restart key includes a digest of those declarations), so a dev-linked extension picks up a new tool on save. A `server.ts`-only save re-registers the same tools, which leaves the tool list unchanged, so normally no Claude Code chat is relaunched for it.
 
@@ -1150,7 +1143,7 @@ description: Sort the person's inbox. Use ext_mail_app__send_message to reply.
 
 #### Feature detection
 
-Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `typeof ctx.requirePerson === 'function'`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `ctx.tools !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
+Probe for a seam instead of checking the host version, so one build runs on hosts from before and after it: `ctx.inbox !== undefined`, `ctx.projectSettings !== undefined`, `ctx.sessions !== undefined`, `ctx.agent !== undefined`, `ctx.tools !== undefined`, `typeof api.answerDecision === 'function'`, `typeof api.startWork === 'function'`, `'requireLogin' in api.getState()`.
 
 ### Route Conventions
 
@@ -1164,37 +1157,35 @@ app.get('/deep/path', handler); // GET  /api/ext/my-ext/deep/path
 
 #### Serving with a fetch handler
 
-`register` returns `{ fetch, cleanup? }` (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
+The server entry returns `{ fetch, cleanup? }` (DOR-2687). `fetch(request, caller)` takes a web-standard `Request` and returns a `Response` (or a promise of one), the shape a Hono app exposes, so an app written against the web `Request` and `Response` runs unchanged. It runs on Node inside DorkOS (or its own Node process), so Bun- or Deno-only APIs are not there. **`hono` is built in** (DOR-2857): the compiler resolves `hono` and every `hono/<subpath>` its `exports` map offers to DorkOS's own copy and bundles it inline (`services/extensions/server-bundle/host-hono.ts`), so it builds from `~/.dork/extensions` with nothing installed, and DorkOS's copy wins over one the extension ships:
 
 ```typescript
 import { Hono } from 'hono';
-import { requirePerson, type ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
 
-const register: ServerExtensionRegister = (_router, ctx) => {
+export default defineServer((ctx) => {
   const app = new Hono();
   app.get('/status', async (c) => c.json({ data: await ctx.storage.loadData() }));
   app.put('/settings', requirePerson(), async (c) => c.json(await save(await c.req.json())));
   return { fetch: app.fetch };
-};
-
-export default register;
+});
 ```
 
 A server entry that needs nothing from `ctx` can export the handler's owner itself: `export default app`, or `export default { fetch(request) { … } }`.
 
 - **The path is below your mount.** `GET /api/ext/my-ext/status?x=1` reaches `fetch` as `http://<host>/status?x=1`. The mount is always `/api/ext/<id>`.
-- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets them stripped, as its router does). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
-- **Order.** In-process, the router answers first; what it passes on goes to the `dataProxy` (for `/proxy/*`, when declared), then to `fetch`. For an extension that runs in its own process, the `dataProxy` is asked first, in DorkOS, and what it passes on goes to the process: its router, then `fetch`. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
+- **The request is the caller's.** Headers as sent (in-process; an extension that runs separately gets credentials and DorkOS's own headers stripped). A JSON body DorkOS already parsed is sent again as JSON, so `request.json()` works; any other body is the caller's bytes, up to 1 MB (a larger one is answered `413` before `fetch` runs). `request.signal` aborts when the caller leaves.
+- **Order.** The `dataProxy` (for `/proxy/*`, when declared) is asked first, in DorkOS; what it passes on goes to `fetch`, in-process or in the extension's own process. `fetch` answers everything it is given, so a path it does not serve should return its own 404.
 - **Errors.** A `fetch` that throws, or returns something that is not a `Response`, gets the same `500` a throwing route does, and DorkOS keeps serving.
-- **Who is asking.** The second argument, `caller` (`ExtensionCaller`), carries the person bar's verdict on this request: `caller.person` is `{ ok: true }` or the refusal to answer with, worded with your extension's name, the same verdict `ctx.requirePerson` acts on. A Hono app reads it as `c.env`. It is decided by DorkOS on the real request, in-process and for an extension in its own process alike; the request your handler sees carries no header a caller could forge it with.
-- **People only.** `requirePerson()` from `@dorkos/extension-api/server` is Hono middleware that answers anyone but a person with that refusal and never runs the route. A handler written without Hono calls `checkPerson(caller)`, which returns the refusal `Response` or `null`. Both fail closed on a caller they cannot read. Same residuals as `ctx.requirePerson`.
-- **Reply headers.** One rule for every fetch reply, in-process or not (`http/reply-headers.ts`): content and caching headers, other `x-` headers (no `x-dorkos-`) and a `location` inside `/api/ext/<id>/` pass; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped, and `content-security-policy: sandbox; default-src 'none'` plus `x-content-type-options: nosniff` are always set, so an HTML page a handler serves never runs script (an OAuth callback page that calls `window.close()` does not work; finish the flow in your extension's own page instead). A `location` on the handler's own origin is moved under the mount first, since that is where its paths live: `c.redirect('/done')` sends the browser to `/api/ext/<id>/done`. A `location` on any other origin is dropped. A router's in-process replies still go straight to the socket, which is one reason it is on its way out (DOR-2856).
+- **Who is asking.** The second argument, `caller` (`ExtensionCaller`), carries the person bar's verdict on this request: `caller.person` is `{ ok: true }` or the refusal to answer with, worded with your extension's name, the same bar as approving an extension. A Hono app reads it as `c.env`. It is decided by DorkOS on the real request, in-process and for an extension in its own process alike; the request your handler sees carries no header a caller could forge it with.
+- **People only.** `requirePerson()` from `@dorkos/extension-api/server` is Hono middleware that answers anyone but a person with that refusal and never runs the route. A handler written without Hono calls `checkPerson(caller)`, which returns the refusal `Response` or `null`. Both fail closed on a caller they cannot read. Same residuals as approving: with Require login off, a local caller that does not name itself an agent passes, and in any posture your own page code does.
+- **Reply headers.** One rule for every fetch reply, in-process or not (`http/reply-headers.ts`): content and caching headers, other `x-` headers (no `x-dorkos-`) and a `location` inside `/api/ext/<id>/` pass; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped, and `content-security-policy: sandbox; default-src 'none'` plus `x-content-type-options: nosniff` are always set, so an HTML page a handler serves never runs script (an OAuth callback page that calls `window.close()` does not work; finish the flow in your extension's own page instead). A `location` on the handler's own origin is moved under the mount first, since that is where its paths live: `c.redirect('/done')` sends the browser to `/api/ext/<id>/done`. A `location` on any other origin is dropped.
 
-How the host serves each shape: `services/extensions/http/` (`express-bridge.ts` runs a router on its own private Express app; `fetch-handler.ts` builds the `Request` and passes the caller). In an extension's own process, a fetch-only extension never reaches Express: `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is. That `require` offers `express`, `@dorkos/extension-api`, `@dorkos/extension-api/server` and Node's built-ins, and nothing else: no `require.resolve`, `require.cache` or `require.main`, and any other module name is refused. Bundle what you use.
+How the host serves it: `services/extensions/http/fetch-handler.ts` builds the `Request` and passes the caller; in an extension's own process, `@hono/node-server`'s request listener serves it (`isolation/child/virtual-server.ts`). Both runtimes load the bundle with the same injected `require` (`server-bundle/load-in-process.ts`, `isolation/child/load-bundle.ts`), so `@dorkos/extension-api/server`'s helpers resolve from `~/.dork`, where no `node_modules` is. That `require` offers `@dorkos/extension-api`, `@dorkos/extension-api/server` and Node's built-ins, and nothing else: no `require.resolve`, `require.cache` or `require.main`, and any other module name is refused. Bundle what you use.
 
 #### The old router
 
-Before DOR-2856, `register(router, ctx)` added routes to the Express `router` it is handed (`router.get('/status', (req, res) => res.json(...))`), with `ctx.requirePerson` as Express middleware. That still runs, beside a fetch handler (the router answers first), but it is deprecated and DorkOS will stop running it: Express replies go straight to the socket, past the reply-header rule, and the router cannot leave Node. An extension that adds a route to it is logged once (`serves its API with the old Express router`) and its Extensions card says "Uses an older server style DorkOS will stop running. Ask an agent to update it." (`usesOldRouter` on the public record, set from the running instance: in-process from the router, isolated from the child's `registered` message). The `serving-an-extension-api` operating skill gives an agent the move, route by route: `req.params.x` → `c.req.param('x')`, `req.query.q` → `c.req.query('q')`, `req.body` → `await c.req.json()`, `res.json(b)` → `return c.json(b)`, `res.status(n).json(b)` → `return c.json(b, n)`, `ctx.requirePerson` → `requirePerson()`.
+Before DOR-2856, `register(router, ctx)` added routes to the Express `router` it was handed, with `ctx.requirePerson` as Express middleware. DorkOS no longer runs it (DOR-2861): Express replies went straight to the socket, past the reply-header rule, and the router could not leave Node. An older `register(router, ctx)` entry is still called, with a `router` that throws `OldRouterError` if touched: one that leaves it alone (`(_router, ctx) => ({ fetch })`) starts as before; one that adds a route stops with "This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it." (`server_old_router` on its card, "<Name> uses an old server style. Ask an agent to update it."). Its page, settings and data are untouched. The `serving-an-extension-api` operating skill gives an agent the move, route by route.
 
 From the client-side `index.ts`, call your server routes via `fetch`:
 
@@ -1252,16 +1243,16 @@ Be exact about this when you describe your extension. "Runs separately" is not a
 | Messaging agents needs `allow.agents`                                    | DorkOS refuses the call                                                                                                                                                                                       | Real: DorkOS is the only way to reach an agent.                                                                                                                   |
 | Its screens (`index.ts`)                                                 | Nothing new                                                                                                                                                                                                   | **Not isolated.** The client bundle runs in the page with the person's access, exactly as before.                                                                 |
 
-Where it is proven: the isolation suite (`apps/server/src/services/extensions/isolation/__tests__/`) runs real child processes on macOS and on CI's Linux runners, and the packaged macOS desktop smoke forks a fixture isolated extension on the app's own packaged Node binary and checks its self-check and limits hold (`apps/desktop/scripts/smoke-isolation.ts`). The router, ctx and restart lifecycle have not been run inside the packaged app: that smoke does not reproduce the app's server process around the child. The same suite runs on CI's Windows runner, but no real Windows install has confirmed it yet, so make no claim about Windows. On a computer where Node does not honour the limits, the extension's self-check fails and it does not run at all (`isolation_unavailable`); there is no fallback to running inside DorkOS.
+Where it is proven: the isolation suite (`apps/server/src/services/extensions/isolation/__tests__/`) runs real child processes on macOS and on CI's Linux runners, and the packaged macOS desktop smoke forks a fixture isolated extension on the app's own packaged Node binary and checks its self-check and limits hold (`apps/desktop/scripts/smoke-isolation.ts`). The fetch handler, ctx and restart lifecycle have not been run inside the packaged app: that smoke does not reproduce the app's server process around the child. The same suite runs on CI's Windows runner, but no real Windows install has confirmed it yet, so make no claim about Windows. On a computer where Node does not honour the limits, the extension's self-check fails and it does not run at all (`isolation_unavailable`); there is no fallback to running inside DorkOS.
 
 ### How it runs
 
 - **ctx.** DorkOS builds your extension's real `ctx` in its own process and gives yours a stand-in that forwards each call, so every check and limit is the in-process one. Arguments and results must be plain data (structured clone): no functions, class instances or symbols. Listeners and the account advisor work; an advisor's methods are fixed when you call `registerAdvisor`.
-- **Routes.** Your router is served from your process as real HTTP: `req.baseUrl`, `req.path`, `req.params` and JSON bodies (`express.json`, 1 MB) match the in-process case, and streamed replies and server-sent events arrive as they are written. Your process never listens on a port. Requests reach you without the person's cookies, tokens or `x-client-id`. Replies keep only content and caching headers (`content-type`, `content-length`, `content-encoding`, `content-disposition`, `cache-control`, `etag`, `last-modified`, `vary`, `retry-after` and a few more), other `x-` headers, and a `location` that stays inside `/api/ext/<id>/`; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped. A request with no bytes either way for 120 seconds gets a 504, or is cut off once the reply has started: send a heartbeat comment on a quiet server-sent-events stream. Writes have real backpressure: when the person reads slowly, `res.write()` returns `false` and `'drain'` waits, so honour it; a process that ignores it is cut off once 4 MB sits unread.
-- **`ctx.requirePerson`** works the same: DorkOS decides on the real request and tells your process, and the refusals are word for word the in-process ones.
+- **Routes.** Your fetch handler is served from your process as real HTTP: the path below the mount, the query and the body match the in-process case, and streamed replies and server-sent events arrive as they are written. Your process never listens on a port. Requests reach you without the person's cookies, tokens or `x-client-id`. Replies keep only content and caching headers (`content-type`, `content-length`, `content-encoding`, `content-disposition`, `cache-control`, `etag`, `last-modified`, `vary`, `retry-after` and a few more), other `x-` headers, and a `location` that stays inside `/api/ext/<id>/`; everything else (`set-cookie`, `clear-site-data`, `refresh`, `www-authenticate`, CORS and CSP headers) is dropped. A request with no bytes either way for 120 seconds gets a 504, or is cut off once the reply has started: send a heartbeat comment on a quiet server-sent-events stream. Writes have real backpressure: when the person reads slowly, a streamed body's `pull()` waits, so produce on demand; a process that pushes regardless is cut off once 4 MB sits unread.
+- **`requirePerson()` and `checkPerson`** work the same: DorkOS decides on the real request and tells your process, and the refusals are word for word the in-process ones.
 - **Files.** Write under `ctx.filesDir`. Ship read-only files in an `assets/` folder beside `extension.json`; read them from `path.join(ctx.extensionDir, 'assets', …)`. An `assets/` that links outside itself stops the extension from starting.
-- **Code.** Bundle every dependency: an `import` of anything but Node's built-ins, `express` and `@dorkos/extension-api` fails. No native addons. `child_process` works only in its async forms (`spawn`, `execFile`, `exec`), and only for `allow.run` programs. `process.send` is not available: your process talks to DorkOS only through `ctx`.
-- **Tools.** `ctx.tools.handle` works the same as in-process (see [`ctx.tools`](#ctxtools)): bind every declared tool while `register()` runs, with the same errors for an undeclared, refused or twice-bound tool. DorkOS keeps each tool in its own process: the permission check, the `timeoutSeconds` deadline, the 256 KB result limit and the path redaction of error messages all run in DorkOS before and after your handler. Your handler gets `call.signal` and must stop work when it aborts (the deadline passed, the agent's turn was cancelled, or the extension is stopping); DorkOS does not wait for it, and a result sent after that is thrown away. Return plain data that survives both a structured clone and `JSON.stringify` (no functions, class instances, `Map`s or binary data such as `Uint8Array`, which an isolated extension can't send back). If your process crashes, freezes or is stopped, its tools leave the agents' tool lists first, a call still running fails with "<Name> stopped while this ran.", and a restart offers them again. A handler stuck in a synchronous loop freezes your whole process, so the watchdog stops it.
+- **Code.** Bundle every dependency: an `import` of anything but Node's built-ins and `@dorkos/extension-api` fails (`hono` is bundled in for you). No native addons. `child_process` works only in its async forms (`spawn`, `execFile`, `exec`), and only for `allow.run` programs. `process.send` is not available: your process talks to DorkOS only through `ctx`.
+- **Tools.** `ctx.tools.handle` works the same as in-process (see [`ctx.tools`](#ctxtools)): bind every declared tool while its server half starts, with the same errors for an undeclared, refused or twice-bound tool. DorkOS keeps each tool in its own process: the permission check, the `timeoutSeconds` deadline, the 256 KB result limit and the path redaction of error messages all run in DorkOS before and after your handler. Your handler gets `call.signal` and must stop work when it aborts (the deadline passed, the agent's turn was cancelled, or the extension is stopping); DorkOS does not wait for it, and a result sent after that is thrown away. Return plain data that survives both a structured clone and `JSON.stringify` (no functions, class instances, `Map`s or binary data such as `Uint8Array`, which an isolated extension can't send back). If your process crashes, freezes or is stopped, its tools leave the agents' tool lists first, a call still running fails with "<Name> stopped while this ran.", and a restart offers them again. A handler stuck in a synchronous loop freezes your whole process, so the watchdog stops it.
 - **Stopping.** A stop asks your process to run its cleanup, then ends it after 3 seconds.
 
 ### When something is refused
@@ -1457,7 +1448,7 @@ A manifest declaring both secrets (with placeholder and group) and settings:
 Read and write settings values via `ctx.settings`:
 
 ```typescript
-const register: ServerExtensionRegister = (_router, ctx) => {
+export default defineServer((ctx) => {
   const app = new Hono();
   app.get('/config', async (c) => {
     const interval = await ctx.settings.get<number>('refresh_interval');
@@ -1470,9 +1461,7 @@ const register: ServerExtensionRegister = (_router, ctx) => {
     // Fetch data with the user's configured preferences...
   });
   return { fetch: app.fetch };
-};
-
-export default register;
+});
 ```
 
 ---
@@ -1578,7 +1567,7 @@ Both can coexist in the same extension — use the proxy for simple endpoints an
 Background tasks use `ctx.schedule()` to poll external APIs, detect changes, and notify clients. The canonical pattern is **poll, compare, store, emit**:
 
 ```typescript
-const register: ServerExtensionRegister = (_router, ctx) => {
+export default defineServer((ctx) => {
   ctx.schedule(60, async () => {
     // 1. Poll — fetch fresh data from the external API
     const apiKey = await ctx.secrets.get('api_key');
@@ -1596,9 +1585,7 @@ const register: ServerExtensionRegister = (_router, ctx) => {
     // 4. Emit — notify connected clients
     ctx.emit('data-updated', fresh);
   });
-};
-
-export default register;
+});
 ```
 
 ### Lifecycle

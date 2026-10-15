@@ -92,15 +92,8 @@ import { boundedMessageSize } from './message-size.js';
 import { RunBroker } from './run-broker.js';
 import { VirtualSocket } from './virtual-socket.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
+import { loadRefusal, registerRefusal, type IsolatedStartResult } from './start-refusal.js';
 import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
-
-/** Why a start was refused, as a record's `serverError.code`. */
-export type IsolatedStartErrorCode =
-  'isolation_unavailable' | 'server_start_failed' | 'server_start_timeout';
-
-/** The outcome of {@link IsolatedExtensionHost.start}. */
-export type IsolatedStartResult =
-  { ok: true } | { ok: false; code: IsolatedStartErrorCode; message: string };
 
 /** How a running child ended. */
 export type IsolatedExitReason =
@@ -265,7 +258,6 @@ export class IsolatedExtensionHost {
   private dispatcher: CtxDispatcher | null = null;
   private lastDispatchCounts: Record<string, number> = {};
   private registeredCleanup = false;
-  private registeredRouter = false;
   private serving = false;
   private nextCid = 1;
   private readonly connections = new Map<number, VirtualSocket>();
@@ -293,11 +285,6 @@ export class IsolatedExtensionHost {
   /** Whether the running child's `register()` returned a cleanup function. */
   get hasCleanup(): boolean {
     return this.registeredCleanup;
-  }
-
-  /** Whether the running child's `register()` added routes to the old router. */
-  get usesRouter(): boolean {
-    return this.registeredRouter;
   }
 
   /**
@@ -497,7 +484,6 @@ export class IsolatedExtensionHost {
           this.dispatcher = null;
         }
         this.registeredCleanup = false;
-        this.registeredRouter = false;
         // Every open request learns the child is gone: one still waiting for
         // its headers answers 503, one already streaming is cut off.
         this.serving = false;
@@ -629,11 +615,7 @@ export class IsolatedExtensionHost {
             `[Extensions] ${this.options.extensionId}: couldn't load: ${message.error ?? 'unknown error'}`
           );
           this.killNow();
-          settleStart({
-            ok: false,
-            code: 'server_start_failed',
-            message: `${name} couldn't start: ${message.error ?? 'its code failed to load'}.`,
-          });
+          settleStart(loadRefusal(name, message.error));
           return;
         }
         phase = 'register';
@@ -647,15 +629,10 @@ export class IsolatedExtensionHost {
             `[Extensions] ${this.options.extensionId}: register() failed: ${message.error ?? 'unknown error'}`
           );
           this.killNow();
-          settleStart({
-            ok: false,
-            code: 'server_start_failed',
-            message: `${name} couldn't start: ${message.error ?? 'its server part failed to start'}.`,
-          });
+          settleStart(registerRefusal(name, message));
           return;
         }
         this.registeredCleanup = message.hasCleanup;
-        this.registeredRouter = message.usesRouter === true;
         // register() finished: from here no tool binds, whatever the child
         // (or code inside it posting its own messages) sends next.
         this.dispatcher?.closeTools();

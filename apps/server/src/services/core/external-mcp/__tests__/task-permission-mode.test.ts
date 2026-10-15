@@ -12,10 +12,10 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request, { type Response } from '@dorkos/test-utils/supertest';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
+import { answerStatelessMcp, type NodeEnv } from '../../../__tests__/stateless-mcp.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -78,7 +78,6 @@ function parseResponse(res: Response): JsonRpcMessage {
 describe('tasks_* operator-only field guard (external /mcp server)', () => {
   let db: Db;
   let store: TaskStore;
-  let app: express.Express;
   let existing: Task;
 
   beforeEach(() => {
@@ -102,21 +101,11 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
     } as unknown as McpToolDeps;
 
     // Stateless: a fresh server + transport per POST, the SDK's own pattern and
-    // the shape `index.ts` mounts in production.
-    app = express();
-    app.use(express.json());
-    app.post('/mcp', async (req, res) => {
-      const server = createExternalMcpServer(deps);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
-    });
+    // the shape `routes/mcp.ts` serves in production.
+    const app = new Hono<NodeEnv>();
+    app.post('/mcp', (c) => answerStatelessMcp(c, createExternalMcpServer(deps)));
 
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(honoListener(app));
   });
 
   afterEach(() => {

@@ -1,7 +1,8 @@
 /**
- * The three `ctx` members that keep an extension's asks and settings with a
- * person (spec `flow-multiproject` §7.1, §7.6, §7.10): `ctx.inbox`,
- * `ctx.requirePerson` and the read-only `ctx.projectSettings`.
+ * What keeps an extension's asks and settings with a person (spec
+ * `flow-multiproject` §7.1, §7.6, §7.10): `ctx.inbox`, the read-only
+ * `ctx.projectSettings`, and the person bar's verdict a fetch handler is told
+ * about its caller ({@link personVerdict}).
  *
  * Each is built per extension instance and scoped to its id. Everything the
  * instance registers (its action handler, its settings listeners) is tracked,
@@ -9,11 +10,9 @@
  *
  * @module services/extensions/extension-inbox-context
  */
-import type { RequestHandler } from 'express';
 import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/extension-api/server';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
-import { expressRequestFacts } from '../http/express-bridge.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { getExtensionInbox, type ExtensionInboxService } from './extension-inbox.js';
 import { projectSettingsStore } from './extension-project-settings.js';
@@ -75,7 +74,7 @@ export function createInboxApi(
 }
 
 /**
- * What `ctx.requirePerson` says when it refuses, worded with the extension's
+ * What the person bar says when it refuses a caller, worded with the extension's
  * name. Shared by the in-process bar and the verdict the host computes for an
  * isolated extension (`isolation/isolated-router.ts`), so both refuse with the
  * same words.
@@ -109,27 +108,6 @@ export function requirePersonCopy(extensionName: string): PersonBarCopy {
 export function personVerdict(request: RequestFacts, extensionName: string): PersonCheck {
   const refusal = assessPerson(request, requirePersonCopy(extensionName));
   return refusal ? { ok: false, status: refusal.status, body: refusal.body } : { ok: true };
-}
-
-/**
- * `ctx.requirePerson`: the bar that guards approving an extension, in front of
- * one of the extension's own routes, worded with its name (§7.6). It has the
- * same residuals: with Require login off, a local caller that does not name
- * itself an agent passes, and in any posture the extension's own page code
- * passes.
- *
- * @param extensionName - The extension's manifest name.
- */
-export function createRequirePerson(extensionName: string): RequestHandler {
-  const copy = requirePersonCopy(extensionName);
-  return (req, res, next) => {
-    const refusal = assessPerson(expressRequestFacts(req, res), copy);
-    if (refusal) {
-      res.status(refusal.status).json(refusal.body);
-      return;
-    }
-    next();
-  };
 }
 
 /**

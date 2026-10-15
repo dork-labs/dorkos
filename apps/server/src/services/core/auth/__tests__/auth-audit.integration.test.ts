@@ -8,7 +8,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, auditEvents, type Db } from '@dorkos/db';
@@ -39,9 +38,7 @@ describe('auth events in the audit log (integration)', () => {
       log: new AuditLog(db),
       accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
     });
-    const app = express();
-    app.all('/api/auth/*splat', toNodeHandler(createAuth(db, tmpDir)));
-    fixtureTarget.mount(app);
+    fixtureTarget.mount(toNodeHandler(createAuth(db, tmpDir)));
   });
 
   afterAll(() => {

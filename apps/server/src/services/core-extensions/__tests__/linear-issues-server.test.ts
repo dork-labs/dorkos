@@ -3,7 +3,8 @@
  * as a Hono fetch handler, called with `app.request()`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import register, { createApp } from '../../../core-extensions/linear-issues/server.js';
+import { serverEntryStart } from '@dorkos/extension-api/server';
+import server, { createApp } from '../../../core-extensions/linear-issues/server.js';
 
 /** A context with the given secret and stored data. */
 function ctx(apiKey: string | null, stored: unknown) {
@@ -73,15 +74,13 @@ describe('linear-issues API', () => {
     expect(await res.json()).toEqual({ error: 'Not found' });
   });
 
-  it('serves its API as a fetch handler and adds nothing to the old router', async () => {
-    const router = { get: vi.fn(), post: vi.fn(), put: vi.fn(), use: vi.fn() };
+  it('starts with ctx alone and serves its API as a fetch handler', async () => {
     const context = ctx('k', { loop: null });
 
-    const result = (await register(router as never, context as never)) as {
+    const result = (await serverEntryStart(server)!(context as never)) as {
       fetch: (request: Request) => Promise<Response>;
     };
 
-    expect(Object.values(router).every((fn) => fn.mock.calls.length === 0)).toBe(true);
     expect(context.schedule).toHaveBeenCalledTimes(1);
     expect((await result.fetch(new Request('http://x/loop'))).status).toBe(200);
   });

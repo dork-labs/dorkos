@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { DataProviderContext, ServerExtensionRegister } from '@dorkos/extension-api/server';
+import { defineServer, type DataProviderContext } from '@dorkos/extension-api/server';
 
 const LINEAR_API = 'https://api.linear.app/graphql';
 
@@ -231,7 +231,7 @@ export function createApp(ctx: Pick<DataProviderContext, 'secrets' | 'storage'>)
   return app;
 }
 
-const register: ServerExtensionRegister = async (_router, ctx) => {
+export default defineServer(async (ctx) => {
   // refreshInterval is read once — changing it requires extension reload
   const refreshInterval = (await ctx.settings.get<number>('refresh_interval')) ?? 60;
 
@@ -263,6 +263,4 @@ const register: ServerExtensionRegister = async (_router, ctx) => {
   });
 
   return { fetch: createApp(ctx).fetch };
-};
-
-export default register;
+});

@@ -78,10 +78,7 @@ describe('extension seam contract', () => {
 
   it('matches the context and session members it covers both ways', () => {
     expectTypeOf<
-      Pick<
-        DataProviderContext,
-        'projects' | 'inbox' | 'requirePerson' | 'projectSettings' | 'sessions'
-      >
+      Pick<DataProviderContext, 'projects' | 'inbox' | 'projectSettings' | 'sessions'>
     >().toEqualTypeOf<Contract.DataProviderContextSeams>();
     expectTypeOf<
       Pick<SessionInfo, 'trackerItems' | 'trackerItem'>

@@ -1,11 +1,12 @@
 /**
  * `/api/ext/:id/*` on the real `/api` chain: the lookup, and an extension's
- * Express router reached through the bridge (`express-bridge.ts`).
+ * fetch handler (`fetch-handler.ts`) reached through it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { Router } from 'express';
+import { Hono } from 'hono';
+import type { ExtensionCaller } from '@dorkos/extension-api/server';
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
@@ -15,8 +16,8 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import type { ExtensionHttpHandler } from '../../services/extensions/http/extension-http.js';
+import { createFetchHandler } from '../../services/extensions/http/fetch-handler.js';
 import { createExtensionApiRoutes, splitExtensionMount } from '../extension-api.js';
 
 const fixtureTarget = swappableServer();
@@ -36,25 +37,14 @@ describe('/api/ext/:id/*', () => {
     vi.clearAllMocks();
     manager = createMockManager();
     fixtureTarget.mount(
-      honoGroupListener(
-        { path: '/api/ext', routes: createExtensionApiRoutes(manager) },
-        {
-          // Stands in for the session gate's resolved user.
-          before: async (c, next) => {
-            if (c.req.header('x-test-user')) {
-              c.set('user', { userId: 'u1', credential: 'cookie' } as never);
-            }
-            await next();
-          },
-        }
-      )
+      honoGroupListener({ path: '/api/ext', routes: createExtensionApiRoutes(manager) })
     );
   });
 
-  /** Serve `router` as extension `id`, through the bridge. */
-  function serve(routers: Record<string, Router>): void {
+  /** Serve each Hono `app` as extension `id`, through its fetch handler. */
+  function serve(apps: Record<string, Hono<{ Bindings: ExtensionCaller }>>): void {
     const handlers = Object.fromEntries(
-      Object.entries(routers).map(([id, router]) => [id, bridgeExpressRouter(router)])
+      Object.entries(apps).map(([id, app]) => [id, createFetchHandler(id, app.fetch)])
     );
     manager.getServerHandler.mockImplementation((id) => handlers[id] ?? null);
   }
@@ -67,12 +57,10 @@ describe('/api/ext/:id/*', () => {
     expect(manager.getServerHandler).toHaveBeenCalledWith('my-ext');
   });
 
-  it('delegates GET requests to the extension router', async () => {
-    const router = Router();
-    router.get('/status', (_req, res) => {
-      res.json({ ok: true, data: 'from-extension' });
-    });
-    serve({ 'my-ext': router });
+  it('delegates GET requests to the extension', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.get('/status', (c) => c.json({ ok: true, data: 'from-extension' }));
+    serve({ 'my-ext': app });
 
     const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
@@ -80,12 +68,10 @@ describe('/api/ext/:id/*', () => {
     expect(res.body).toEqual({ ok: true, data: 'from-extension' });
   });
 
-  it('hands the router the JSON body the chain already parsed', async () => {
-    const router = Router();
-    router.post('/action', (req, res) => {
-      res.json({ received: req.body });
-    });
-    serve({ 'test-ext': router });
+  it('hands it the JSON body the chain already parsed, as JSON', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.post('/action', async (c) => c.json({ received: await c.req.json() }));
+    serve({ 'test-ext': app });
 
     const res = await request(fixtureServer)
       .post('/api/ext/test-ext/action')
@@ -95,15 +81,10 @@ describe('/api/ext/:id/*', () => {
     expect(res.body).toEqual({ received: { key: 'value' } });
   });
 
-  it('leaves a body the chain does not parse for the router to read', async () => {
-    const router = Router();
-    router.post('/raw', (req, res) => {
-      let text = '';
-      req.setEncoding('utf8');
-      req.on('data', (chunk: string) => (text += chunk));
-      req.on('end', () => res.json({ text }));
-    });
-    serve({ 'test-ext': router });
+  it('hands it a body the chain does not parse as it was sent', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.post('/raw', async (c) => c.json({ text: await c.req.text() }));
+    serve({ 'test-ext': app });
 
     const res = await request(fixtureServer)
       .post('/api/ext/test-ext/raw')
@@ -113,28 +94,22 @@ describe('/api/ext/:id/*', () => {
     expect(res.body).toEqual({ text: 'just words' });
   });
 
-  it('shows the router its mount, nested paths and its own params', async () => {
-    const router = Router();
-    router.get('/deep/:item/path', (req, res) => {
-      res.json({ baseUrl: req.baseUrl, path: req.path, params: req.params });
-    });
-    serve({ 'my-ext': router });
+  it('shows it nested paths, its own params and the query, below the mount', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.get('/deep/:item/path', (c) =>
+      c.json({ path: c.req.path, item: c.req.param('item'), x: c.req.query('x') })
+    );
+    serve({ 'my-ext': app });
 
     const res = await request(fixtureServer).get('/api/ext/my-ext/deep/thing/path?x=1');
 
-    expect(res.body).toEqual({
-      baseUrl: '/api/ext/my-ext',
-      path: '/deep/thing/path',
-      params: { item: 'thing' },
-    });
+    expect(res.body).toEqual({ path: '/deep/thing/path', item: 'thing', x: '1' });
   });
 
-  it('handles the root path of the extension router', async () => {
-    const router = Router();
-    router.get('/', (_req, res) => {
-      res.json({ root: true });
-    });
-    serve({ 'my-ext': router });
+  it('handles the root path of the extension', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.get('/', (c) => c.json({ root: true }));
+    serve({ 'my-ext': app });
 
     const res = await request(fixtureServer).get('/api/ext/my-ext');
 
@@ -142,8 +117,8 @@ describe('/api/ext/:id/*', () => {
     expect(res.body).toEqual({ root: true });
   });
 
-  it('gives a path the router does not serve the /api 404', async () => {
-    serve({ 'my-ext': Router() });
+  it('gives a request every handler passes on the /api 404', async () => {
+    manager.getServerHandler.mockReturnValue(async () => null);
 
     const res = await request(fixtureServer).get('/api/ext/my-ext/nothing');
 
@@ -151,50 +126,30 @@ describe('/api/ext/:id/*', () => {
     expect(res.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
   });
 
-  it('answers a route that throws, rejects or hands on an error with the chain’s error', async () => {
-    const router = Router();
-    router.get('/throws', () => {
-      throw new Error('sync failure');
-    });
-    router.get('/rejects', async () => {
-      throw new Error('async failure');
-    });
-    router.get('/next', (_req, _res, next) => next(new Error('handed on')));
-    serve({ 'my-ext': router });
-
-    for (const [path, message] of [
-      ['/throws', 'sync failure'],
-      ['/rejects', 'async failure'],
-      ['/next', 'handed on'],
-    ]) {
-      const res = await request(fixtureServer).get(`/api/ext/my-ext${path}`);
+  it('answers a handler that throws or rejects with the chain’s error', async () => {
+    for (const [id, fetch] of [
+      [
+        'throws',
+        () => {
+          throw new Error('sync failure');
+        },
+      ],
+      ['rejects', async () => Promise.reject(new Error('async failure'))],
+    ] as const) {
+      manager.getServerHandler.mockImplementation(() => createFetchHandler(id, fetch));
+      const res = await request(fixtureServer).get(`/api/ext/${id}/x`);
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: message, code: 'INTERNAL_ERROR' });
+      expect(res.body).toEqual({
+        error: id === 'throws' ? 'sync failure' : 'async failure',
+        code: 'INTERNAL_ERROR',
+      });
     }
   });
 
-  it('puts the caller the chain resolved on res.locals', async () => {
-    const router = Router();
-    router.get('/who', (_req, res) => {
-      res.json({ user: res.locals.user ?? null });
-    });
-    serve({ 'my-ext': router });
-
-    const anonymous = await request(fixtureServer).get('/api/ext/my-ext/who');
-    const signedIn = await request(fixtureServer)
-      .get('/api/ext/my-ext/who')
-      .set('x-test-user', '1');
-
-    expect(anonymous.body).toEqual({ user: null });
-    expect(signedIn.body).toEqual({ user: { userId: 'u1', credential: 'cookie' } });
-  });
-
-  it('sends no X-Powered-By header', async () => {
-    const router = Router();
-    router.get('/status', (_req, res) => {
-      res.json({ ok: true });
-    });
-    serve({ 'my-ext': router });
+  it('sends no X-Powered-By header, and sandboxes the answer', async () => {
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.get('/status', (c) => c.json({ ok: true }));
+    serve({ 'my-ext': app });
 
     const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
@@ -203,14 +158,10 @@ describe('/api/ext/:id/*', () => {
   });
 
   it('isolates requests between different extensions', async () => {
-    const a = Router();
-    a.get('/data', (_req, res) => {
-      res.json({ source: 'ext-a' });
-    });
-    const b = Router();
-    b.get('/data', (_req, res) => {
-      res.json({ source: 'ext-b' });
-    });
+    const a = new Hono<{ Bindings: ExtensionCaller }>();
+    a.get('/data', (c) => c.json({ source: 'ext-a' }));
+    const b = new Hono<{ Bindings: ExtensionCaller }>();
+    b.get('/data', (c) => c.json({ source: 'ext-b' }));
     serve({ 'ext-a': a, 'ext-b': b });
 
     const resA = await request(fixtureServer).get('/api/ext/ext-a/data');

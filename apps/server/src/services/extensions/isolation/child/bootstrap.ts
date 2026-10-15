@@ -3,7 +3,7 @@
  *
  * Bundled on its own (`extension-child.cjs` beside the server bundle in the
  * CLI and desktop builds; bundled on demand in development, see
- * `child-entry.ts`), with `express` and the extension API inside it, and
+ * `child-entry.ts`), with the extension API and Hono's Node adapter inside it, and
  * started by `isolated-host.ts` with Node's permission model on.
  *
  * In this order, before any extension code is evaluated:
@@ -15,14 +15,13 @@
  * 3. **Guards.** Install the network guard, the process guard (signals only
  *    to itself), and build the `child_process` shim.
  * 4. **Load the bundle** with the injected `require`.
- * 5. **register(router, ctx)** with the proxy ctx (`proxy-ctx.ts`), whose
+ * 5. **Start the server half** with the proxy ctx (`proxy-ctx.ts`), whose
  *    every member is decided by the protocol table; report `registered`,
  *    with the tools it bound. The host measures how long it takes.
  *
- * The fetch handler `register()` returned, and the router while it still has
- * routes, are served by a virtual HTTP server that never listens
- * (`virtual-server.ts`): the host opens connections to it over the IPC
- * channel.
+ * The fetch handler the server half returned is served by a virtual HTTP
+ * server that never listens (`virtual-server.ts`): the host opens
+ * connections to it over the IPC channel.
  *
  * On `stop`: cancel every scheduled task, drop open connections, run the
  * cleanup `register()` returned, then exit. A test seam (`init.testSeams`) lets the host call the
@@ -35,7 +34,6 @@
  * @module services/extensions/isolation/child/bootstrap
  */
 import os from 'node:os';
-import express from 'express';
 import * as extensionApi from '@dorkos/extension-api';
 import * as extensionServerApi from '@dorkos/extension-api/server';
 import type { ChildMessage, HostMessage, InitMessage, PermissionReport } from '../ipc-protocol.js';
@@ -193,7 +191,6 @@ function main(): void {
     receiveRun = shim.receive;
     const injected = createInjectedRequire(
       {
-        express: () => express,
         '@dorkos/extension-api': () => extensionApi,
         '@dorkos/extension-api/server': () => extensionServerApi,
         child_process: () => shim.module,
@@ -231,10 +228,10 @@ function main(): void {
         StartWorkError: extensionServerApi.StartWorkError as never,
       },
     });
-    // As in-process: `module.exports = register`, `export default register`,
-    // or a default export that has a `fetch` handler.
-    const candidate = extensionServerApi.serverEntryRegister(exported);
-    if (!candidate) {
+    // As in-process: a `defineServer` entry, a default export that has a
+    // `fetch` handler, or an older `register(router, ctx)`.
+    const start = extensionServerApi.serverEntryStart(exported);
+    if (!start) {
       send(
         init.testSeams
           ? { type: 'registered', ok: true, hasCleanup: false, handledTools: [] }
@@ -243,18 +240,15 @@ function main(): void {
               ok: false,
               hasCleanup: false,
               handledTools: [],
-              error: 'Server entry does not export a register function',
+              error: 'Server entry does not export a server definition',
             }
       );
       return;
     }
-    const router = express.Router();
-    // Requests reach the router over virtual connections the host opens once
-    // `registered` says it is ready (spec §7).
+    // Requests reach the fetch handler over virtual connections the host
+    // opens once `registered` says it is ready (spec §7).
     const served = createVirtualServer({
       extensionId: init.extensionId,
-      express,
-      router,
       send,
       personRefusal: init.personRefusal,
     });
@@ -262,22 +256,15 @@ function main(): void {
     const ctx = proxy.ctx;
     const proxied = proxy;
     Promise.resolve()
-      .then(() => candidate(router, ctx as never))
+      .then(() => start(ctx as never))
       .then((result) => extensionServerApi.readRegisterResult(result))
       .then(
         (outcome) => {
           cleanup = outcome.cleanup;
-          // What the router passes on goes to its fetch handler, as in-process.
           served.serveFetch(outcome.fetch);
-          // register() finished: no more tool handlers, as in-process.
+          // The server half started: no more tool handlers, as in-process.
           const handledTools = proxied.sealTools();
-          send({
-            type: 'registered',
-            ok: true,
-            hasCleanup: cleanup !== null,
-            handledTools,
-            usesRouter: router.stack.length > 0,
-          });
+          send({ type: 'registered', ok: true, hasCleanup: cleanup !== null, handledTools });
         },
         (err: unknown) => {
           proxied.sealTools();
@@ -287,6 +274,7 @@ function main(): void {
             hasCleanup: false,
             handledTools: [],
             error: describe(err).message,
+            ...(err instanceof extensionServerApi.OldRouterError ? { oldRouter: true } : {}),
           });
         }
       );

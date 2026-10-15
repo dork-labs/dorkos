@@ -1,6 +1,6 @@
 /**
- * An extension's `fetch` handler behind its mount (DOR-2687): the
- * web-standard shape beside the Express router (`@dorkos/extension-api`'s
+ * An extension's `fetch` handler behind its mount (DOR-2687): the one shape
+ * an extension serves its API with (`@dorkos/extension-api`'s
  * `server-entry.ts`).
  *
  * The handler gets a `Request` for the path below the mount, so an app

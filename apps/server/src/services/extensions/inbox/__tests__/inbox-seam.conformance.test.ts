@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { extensionDecisions } from '@dorkos/db';
 import { createDataProviderContext } from '../../extension-server-api-factory.js';
 import { createInboxFixture, flush, type InboxFixture } from './inbox-fixture.js';
-import { heard, raiseAll, register } from './fixtures/inbox-fixture.js';
+import { heard, raiseAll, start } from './fixtures/inbox-fixture.js';
 
 const ONE_MINUTE = 60_000;
 let fx: InboxFixture;
@@ -23,9 +23,6 @@ function contextFor(extensionId: string, extensionName: string) {
     dorkHome: '/tmp/dork-home-unused',
   });
 }
-
-/** A router stand-in: the fixture only mounts one route on it. */
-const router = () => ({ put: vi.fn() }) as never;
 
 beforeEach(() => {
   vi.useFakeTimers({ now: new Date('2026-09-29T09:00:00.000Z') });
@@ -43,8 +40,8 @@ describe('the inbox seam, through the real context', () => {
   it('runs the fixture end to end for two extensions without either touching the other', async () => {
     const alpha = contextFor('alpha', 'Alpha');
     const beta = contextFor('beta', 'Beta');
-    const stopAlpha = register(router(), alpha.ctx);
-    register(router(), beta.ctx);
+    const stopAlpha = start(alpha.ctx).cleanup;
+    start(beta.ctx);
     fx.inbox.markRunning('alpha', 'Alpha');
     fx.inbox.markRunning('beta', 'Beta');
 
@@ -110,7 +107,7 @@ describe('the inbox seam, through the real context', () => {
 
   it('keeps the row when the handler takes longer than 5 seconds', async () => {
     const alpha = contextFor('alpha', 'Alpha');
-    register(router(), alpha.ctx);
+    start(alpha.ctx);
     fx.inbox.markRunning('alpha', 'Alpha');
     await alpha.ctx.inbox.raise({
       key: 'slow',

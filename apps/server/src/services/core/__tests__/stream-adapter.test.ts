@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { initSSEStream, sendSSEEvent, endSSEStream } from '../streams/stream-adapter.js';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { Response } from 'express';
+import type { ServerResponse } from 'node:http';
 
 function createMockResponse() {
   return {
@@ -9,7 +9,7 @@ function createMockResponse() {
     write: vi.fn().mockReturnValue(true),
     once: vi.fn(),
     end: vi.fn(),
-  } as unknown as Response;
+  } as unknown as ServerResponse;
 }
 
 describe('Stream Adapter', () => {
@@ -50,7 +50,7 @@ describe('Stream Adapter', () => {
         if (event === 'drain') cb();
       }),
     };
-    await sendSSEEvent(mockRes as unknown as Response, {
+    await sendSSEEvent(mockRes as unknown as ServerResponse, {
       type: 'text_delta',
       data: { text: 'hi' },
     });
@@ -60,7 +60,7 @@ describe('Stream Adapter', () => {
 
   it('does not wait when write returns true', async () => {
     const mockRes = { write: vi.fn().mockReturnValue(true), once: vi.fn() };
-    await sendSSEEvent(mockRes as unknown as Response, { type: 'done', data: {} });
+    await sendSSEEvent(mockRes as unknown as ServerResponse, { type: 'done', data: {} });
     expect(mockRes.once).not.toHaveBeenCalled();
   });
 

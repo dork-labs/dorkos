@@ -44,25 +44,13 @@ const OTEL_BAN = {
     'OpenTelemetry imports are confined to services/observability/. Instrument through the observability helpers instead.',
 };
 // Express left the server in DOR-2818 (ADR 261009-192542): every route is Hono
-// (`http/hono-api.ts`). It runs in exactly one place, the extension host, where
-// an extension's `register(router, ctx)` still fills an Express router and the
-// bridge serves it (`services/extensions/http/express-bridge.ts`). Tests may
-// still stand an Express app up as a fake upstream server, so the ban leaves
-// them alone (see `TEST_CONFINED`).
+// (`http/hono-api.ts`). It left the extension host in DOR-2861: an extension
+// serves a fetch handler. Tests stand fake servers up with Hono or `node:http`.
 const EXPRESS_BAN = {
   group: ['express', 'express/*'],
   message:
-    'Express runs only behind the extension bridge (services/extensions/http/express-bridge.ts). Routes are Hono: mount a group in http/hono-api.ts.',
+    'DorkOS does not run Express. Routes are Hono: mount a group in http/hono-api.ts; fake a server in a test with Hono or node:http.',
 };
-/** The extension-host files that hand an extension its Express router, and nothing else. */
-const EXPRESS_HOSTS = [
-  'src/services/extensions/http/express-bridge.ts',
-  'src/services/extensions/extension-server-lifecycle.ts',
-  'src/services/extensions/server-bundle/load-in-process.ts',
-  'src/services/extensions/inbox/extension-inbox-context.ts',
-  'src/services/extensions/isolation/child/**/*.ts',
-  'src/services/extensions/__fixtures__/**/*.ts',
-];
 
 // Server tests must use the facade that accepts only an already-listening
 // Server or an explicit URL. Direct Supertest imports can silently reintroduce
@@ -105,8 +93,6 @@ const ALL_CONFINED = [
   GRAY_MATTER_BAN,
   EXPRESS_BAN,
 ];
-/** What stays banned in tests: everything but Express (see `EXPRESS_BAN`). */
-const TEST_CONFINED = ALL_CONFINED.filter((ban) => ban !== EXPRESS_BAN);
 // os.homedir() ban (Hard Rule #3), half one. `no-restricted-imports` sees the
 // IMPORT: `import { homedir } from 'os'` and `import * as os from 'os'`. It is
 // blind to `import os from 'os'` — which is the spelling this server actually
@@ -180,10 +166,7 @@ function confineDirectory(dir, patterns) {
     {
       files: [`${dir}/**/__tests__/**/*.ts`, `${dir}/**/*.test.ts`],
       rules: {
-        'no-restricted-imports': [
-          'error',
-          { patterns: [...patterns.filter((ban) => ban !== EXPRESS_BAN), SUPERTEST_BAN] },
-        ],
+        'no-restricted-imports': ['error', { patterns: [...patterns, SUPERTEST_BAN] }],
       },
     },
   ];
@@ -208,7 +191,7 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          patterns: [...TEST_CONFINED, SUPERTEST_BAN],
+          patterns: [...ALL_CONFINED, SUPERTEST_BAN],
         },
       ],
     },
@@ -269,7 +252,6 @@ export default defineConfig([
       'src/services/terminal/**',
       'src/services/observability/**',
       'src/lib/dork-home.ts',
-      ...EXPRESS_HOSTS,
       'src/**/__tests__/**',
       'src/**/*.test.ts',
     ],
@@ -280,17 +262,6 @@ export default defineConfig([
           patterns: ALL_CONFINED,
           paths: HOMEDIR_BANS,
         },
-      ],
-    },
-  },
-
-  // The extension host's Express files: every other confinement still holds.
-  {
-    files: EXPRESS_HOSTS,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        { patterns: ALL_CONFINED.filter((ban) => ban !== EXPRESS_BAN), paths: HOMEDIR_BANS },
       ],
     },
   },

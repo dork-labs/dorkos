@@ -2,9 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import express from 'express';
+import { Hono } from 'hono';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectorAuthenticationFlows,
@@ -15,7 +14,7 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { ConnectorProviderBootstrapper } from '../bootstrap.js';
 import { ConnectorLifecycleService } from '../resources/lifecycle-service.js';
@@ -24,6 +23,7 @@ import { RawMcpConnectorProvider, type RawMcpConnectorProviderOpts } from '../pr
 import { createRawMcpPendingConnectResolver } from '../resources/raw-mcp-pending-connect.js';
 import { ConnectorRegistry } from '../registry.js';
 import { ConnectorAuthenticationFlowService } from '../resources/authentication-flow-service.js';
+import { answerStatelessMcp, type NodeEnv } from '../../__tests__/stateless-mcp.js';
 
 const OWNER = { kind: 'local_install', installationId: 'raw-owner' } as const;
 const INSTANCE = ConnectorProviderInstanceIdSchema.parse('raw-instance');
@@ -31,35 +31,27 @@ const NOW = new Date('2026-09-08T00:00:00.000Z');
 const methods: string[] = [];
 let holdTools: (() => Promise<void>) | undefined;
 let malformedTools = false;
-const app = express();
-app.use(express.json());
-app.post('/mcp', async (req, res) => {
-  if (req.get('authorization') !== 'Bearer local-fixture-only') {
-    res.status(401).set('WWW-Authenticate', 'Bearer').end();
-    return;
+const app = new Hono<NodeEnv>();
+app.post('/mcp', async (c) => {
+  if (c.req.header('authorization') !== 'Bearer local-fixture-only') {
+    return c.body(null, 401, { 'WWW-Authenticate': 'Bearer' });
   }
-  if (req.body.method) methods.push(req.body.method as string);
-  if (req.body.method === 'tools/list') {
+  const body = await c.req.json<{ method?: string; id?: unknown }>();
+  if (body.method) methods.push(body.method);
+  if (body.method === 'tools/list') {
     await holdTools?.();
     if (malformedTools) {
-      res.json({ jsonrpc: '2.0', id: req.body.id, result: { tools: [{ broken: true }] } });
-      return;
+      return c.json({ jsonrpc: '2.0', id: body.id, result: { tools: [{ broken: true }] } });
     }
   }
   const server = new McpServer({ name: 'durable-auth-fixture', version: '1.0.0' });
   server.registerTool('verified', { description: 'Authentication probe fixture.' }, () => ({
     content: [{ type: 'text', text: 'unused' }],
   }));
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
-  res.on('close', () => {
-    void transport.close().catch(() => {});
-    void server.close().catch(() => {});
-  });
-  await transport.handleRequest(req, res, req.body);
+  return answerStatelessMcp(c, server, body);
 });
 const target = swappableServer();
-target.mount(app);
+target.mount(honoListener(app));
 
 function deferred() {
   let resolve!: () => void;

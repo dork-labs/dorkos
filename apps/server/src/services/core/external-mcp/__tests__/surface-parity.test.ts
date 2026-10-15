@@ -21,10 +21,10 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request, { type Response } from '@dorkos/test-utils/supertest';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
+import { answerStatelessMcp, type NodeEnv } from '../../../__tests__/stateless-mcp.js';
 
 vi.mock('../../../../env.js', () => ({
   env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
@@ -100,20 +100,12 @@ function parseResponse(res: Response): JsonRpcMessage {
 
 /** Every tool the live external `/mcp` server advertises. */
 async function fetchExternalTools(): Promise<ToolListEntry[]> {
-  const app = express();
-  app.use(express.json());
-  app.post('/mcp', async (req, res) => {
-    const server = createExternalMcpServer(createFullDeps(), createMarketplaceDeps());
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-    res.on('close', () => {
-      transport.close().catch(() => {});
-      server.close().catch(() => {});
-    });
-  });
+  const app = new Hono<NodeEnv>();
+  app.post('/mcp', (c) =>
+    answerStatelessMcp(c, createExternalMcpServer(createFullDeps(), createMarketplaceDeps()))
+  );
 
-  requestTarget.mount(app);
+  requestTarget.mount(honoListener(app));
   const res = await request(requestTarget.server)
     .post('/mcp')
     .set('Content-Type', 'application/json')

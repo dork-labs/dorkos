@@ -3,8 +3,8 @@
  * (DOR-2686, spec §4 step 4), in its own process or in the server's
  * (`server-bundle/load-in-process.ts`).
  *
- * The compiler bundles everything an extension imports except `express` and
- * `@dorkos/extension-api` (`extension-compiler.ts` marks them external). The
+ * The compiler bundles everything an extension imports except
+ * `@dorkos/extension-api` (`extension-compiler.ts` marks it external). The
  * loader's caller provides those: the server its own, the isolated bootstrap
  * its bundled copies plus the `child_process` shim in place of the real
  * module. Node's built-in modules come as they are. Anything else is refused:
@@ -26,7 +26,7 @@ export type ProvidedModules = Record<string, () => unknown>;
 /**
  * Build the `require` a bundle sees.
  *
- * @param provided - Modules provided by name (express, the extension API, the shim).
+ * @param provided - Modules provided by name (the extension API, the shim).
  * @param fromFile - A file to resolve built-ins relative to (the bootstrap).
  */
 export function createInjectedRequire(

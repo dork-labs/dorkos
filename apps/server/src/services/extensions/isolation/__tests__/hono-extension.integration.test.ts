@@ -16,7 +16,11 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
-import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
+import {
+  OLD_ROUTER_MESSAGE,
+  readRegisterResult,
+  serverEntryStart,
+} from '@dorkos/extension-api/server';
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
@@ -162,8 +166,8 @@ function rawGet(port: number, target: string): Promise<{ status: number; body: u
 async function startInProcess(): Promise<void> {
   const file = path.join(h.tmp, 'bundles', 'inproc.js');
   await fs.writeFile(file, code);
-  const register = serverEntryRegister(loadInProcessBundle(file));
-  const { fetch } = readRegisterResult(await register!({} as never, {} as never));
+  const start = serverEntryStart(loadInProcessBundle(file));
+  const { fetch } = readRegisterResult(await start!({} as never));
   handlers.set('inproc', createFetchHandler(NAME, fetch!));
 }
 
@@ -173,8 +177,6 @@ async function startIsolated(): Promise<void> {
   await fs.writeFile(bundle, code);
   const host = makeHost(h, { id: 'iso', bundle, overrides: { displayName: NAME } });
   await startOk(host);
-  // A fetch handler only: nothing on the old router (DOR-2858).
-  expect(host.usesRouter).toBe(false);
   handlers.set('iso', createIsolatedHandler({ displayName: NAME, host }));
 }
 
@@ -280,44 +282,27 @@ describe.each([
   });
 });
 
-/** A router with one route and a fetch handler beside it, as CommonJS. */
-const MIXED_SOURCE = String.raw`
+/** An older entry that still fills the Express router, as CommonJS. */
+const OLD_ROUTER_SOURCE = String.raw`
 module.exports = function register(router) {
   router.get('/from-router', (req, res) => res.json({ from: 'router' }));
-  return {
-    fetch: (request, caller) =>
-      Response.json({
-        from: 'fetch',
-        person: caller.person.ok,
-        verdictHeader: request.headers.get('${PERSON_VERDICT_HEADER}'),
-      }),
-  };
+  return { fetch: () => Response.json({ from: 'fetch' }) };
 };
 `;
 
-describe('an extension in its own process with a router and a fetch handler', () => {
-  beforeEach(async () => {
-    const bundle = path.join(h.tmp, 'bundles', 'mixed.js');
-    await fs.writeFile(bundle, MIXED_SOURCE);
-    const host = makeHost(h, { id: 'mixed', bundle, overrides: { displayName: NAME } });
-    await startOk(host);
-    // It filled the old router, which the host hears from the child (DOR-2858).
-    expect(host.usesRouter).toBe(true);
-    handlers.set('mixed', createIsolatedHandler({ displayName: NAME, host }));
-  });
+describe('an older extension that touches the router, in its own process', () => {
+  it('does not start, and says why in its card’s words', async () => {
+    const bundle = path.join(h.tmp, 'bundles', 'old-router.js');
+    await fs.writeFile(bundle, OLD_ROUTER_SOURCE);
+    const host = makeHost(h, { id: 'old-router', bundle, overrides: { displayName: NAME } });
 
-  it('asks the router first, and gives the fetch handler the rest with the caller', async () => {
-    const routed = await fetch(`${base}/api/ext/mixed/from-router`);
-    const person = await fetch(`${base}/api/ext/mixed/other`);
-    const agent = await fetch(`${base}/api/ext/mixed/other`, {
-      headers: {
-        'x-dorkos-agent': 'agent-1',
-        [PERSON_VERDICT_HEADER]: JSON.stringify({ ok: true }),
-      },
+    const result = await host.start();
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'server_old_router',
+      message: `${NAME} uses an old server style. Ask an agent to update it.`,
     });
-
-    expect(await routed.json()).toEqual({ from: 'router' });
-    expect(await person.json()).toEqual({ from: 'fetch', person: true, verdictHeader: null });
-    expect(await agent.json()).toEqual({ from: 'fetch', person: false, verdictHeader: null });
+    expect(h.logs.map((log) => log.message).join('\n')).toContain(OLD_ROUTER_MESSAGE);
   });
 });

@@ -529,15 +529,14 @@ describe('ExtensionCompiler', () => {
       }
     });
 
-    it('externalizes express and extension-api packages', async () => {
+    it('externalizes the extension-api packages', async () => {
       const extDir = path.join(tmpDir, 'server-external-ext');
       await fs.mkdir(extDir, { recursive: true });
       // Use value imports (not type-only) so esbuild preserves them
       const source = [
-        'import express from "express";',
         'import api from "@dorkos/extension-api";',
         'import serverApi from "@dorkos/extension-api/server";',
-        'export default function register() { return [express, api, serverApi]; }',
+        'export default [api, serverApi];',
       ].join('\n');
       const serverPath = path.join(extDir, 'server.ts');
       await fs.writeFile(serverPath, source);
@@ -548,10 +547,22 @@ describe('ExtensionCompiler', () => {
       expect('code' in result).toBe(true);
       if ('code' in result) {
         // Externalized packages should appear as require() calls, not inlined
-        expect(result.code).toContain('require("express")');
         expect(result.code).toContain('require("@dorkos/extension-api")');
         expect(result.code).toContain('require("@dorkos/extension-api/server")');
       }
+    });
+
+    it('no longer provides express (DOR-2861)', async () => {
+      const extDir = path.join(tmpDir, 'server-express-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      const serverPath = path.join(extDir, 'server.ts');
+      await fs.writeFile(serverPath, 'import express from "express";\nexport default express;\n');
+
+      const result = await compiler.compileServer(
+        makeServerRecord('server-express-ext', extDir, serverPath)
+      );
+
+      expect('error' in result && JSON.stringify(result.error)).toContain('express');
     });
   });
 

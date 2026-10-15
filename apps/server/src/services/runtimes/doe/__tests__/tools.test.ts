@@ -204,18 +204,15 @@ it('RT-MCP-01: executes registry projections through the real authenticated list
   }
 });
 
-import express from 'express';
-import { createServer } from 'node:http';
+import { createServer, type RequestListener, type ServerResponse } from 'node:http';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { mcpAlias } from '@dorkos/doe';
 it('RT-MCP-02: bridges legacy managed SSE with explicit headers, deferred foreign aliases and owned shutdown', async () => {
-  const app = express();
-  app.use(express.json());
   const sessions = new Map<string, SSEServerTransport>(),
     servers: McpServer[] = [],
     headers: string[] = [];
-  app.get('/sse', async (req, res) => {
-    headers.push(req.header('authorization') ?? '');
+  /** Open one legacy SSE session: the stream that publishes its POST endpoint. */
+  const openStream = async (res: ServerResponse) => {
     const transport = new SSEServerTransport('/messages', res);
     sessions.set(transport.sessionId, transport);
     const server = new McpServer({ name: 'legacy-managed', version: '1.0.0' });
@@ -231,16 +228,24 @@ it('RT-MCP-02: bridges legacy managed SSE with explicit headers, deferred foreig
       async () => new Promise<never>(() => {})
     );
     await server.connect(transport);
-  });
-  app.post('/messages', async (req, res) => {
-    headers.push(req.header('authorization') ?? '');
-    const transport = sessions.get(String(req.query.sessionId));
-    if (!transport) {
-      res.sendStatus(404);
+  };
+  const app: RequestListener = (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (req.method === 'GET' && url.pathname === '/sse') {
+      headers.push(req.headers.authorization ?? '');
+      void openStream(res);
       return;
     }
-    await transport.handlePostMessage(req, res, req.body);
-  });
+    if (req.method === 'POST' && url.pathname === '/messages') {
+      headers.push(req.headers.authorization ?? '');
+      const transport = sessions.get(String(url.searchParams.get('sessionId')));
+      if (!transport) return void res.writeHead(404).end();
+      // The transport reads and parses the JSON body itself.
+      void transport.handlePostMessage(req, res);
+      return;
+    }
+    res.writeHead(404).end();
+  };
   const http = createServer(app);
   await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
   const port = (http.address() as { port: number }).port;

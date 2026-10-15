@@ -2,9 +2,8 @@
  * The one rule for which reply headers an extension may send on DorkOS's
  * origin, for every reply DorkOS gets to look at before it goes out: a fetch
  * handler's `Response`, in the server's process or in its own
- * (`fetch-handler.ts`, `isolation/isolated-router.ts`). An Express router
- * writes straight to the socket in the server's process, so this cannot
- * reach it; that is one reason the router is on its way out (DOR-2856).
+ * (`fetch-handler.ts`, `isolation/isolated-router.ts`). That every reply is
+ * a value DorkOS sees first is one reason the Express router went (DOR-2856).
  *
  * - **Allowed:** an allowlist ({@link OUTBOUND_ALLOWED}) of content and
  *   caching headers, other `x-` headers (never `x-dorkos-`), and a

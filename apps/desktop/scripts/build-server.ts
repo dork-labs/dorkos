@@ -152,7 +152,7 @@ function dorkosSourcePlugin(): Plugin {
  * run the same way. Routing these specific packages through `require()`
  * (via the banner's `createRequire` shim) sidesteps the ESM path entirely.
  * Only applied to packages that actually `dlopen` a native `.node` binary —
- * pure-JS externals (express, zod, cors, ...) aren't subject to this and
+ * pure-JS externals (zod, cors, ...) aren't subject to this and
  * bundle as plain ESM imports.
  *
  * The shim's named exports come from the STATIC map below rather than a
@@ -935,7 +935,6 @@ async function buildServer() {
       'better-sqlite3',
       'node-pty',
       'esbuild',
-      'express',
       'cors',
       'dotenv',
       'uuid',
@@ -988,7 +987,7 @@ async function buildServer() {
   // The extension child (DOR-2686): the file DorkOS forks for every extension
   // that runs separately, with Node's permission model on and read access to
   // nothing but this file and the extension's own. One self-contained
-  // CommonJS file (express and the extension API inlined), emitted beside the
+  // CommonJS file (the extension API and Hono's Node adapter inlined), emitted beside the
   // server bundle where `isolation/child-entry.ts` looks for it, and unpacked
   // from app.asar (electron-builder.yml) because the permission model grants
   // real files, not archive entries. Same entry and name as the CLI build;

@@ -1,20 +1,21 @@
 /**
- * An isolated extension's router through DorkOS's mount (DOR-2686 tasks 5.1
- * and 5.2), against a real forked child with the real flags: real HTTP over
- * virtual connections, the header policy both ways, streaming, a person's
- * request going away, a child that dies mid-reply, and `ctx.requirePerson`
- * refusing exactly what the in-process bar refuses.
+ * An isolated extension's fetch handler through DorkOS's mount (DOR-2686
+ * tasks 5.1 and 5.2, DOR-2861), against a real forked child with the real
+ * flags: real HTTP over virtual connections, the header policy both ways,
+ * streaming, backpressure, a person's request going away, a child that dies
+ * mid-reply, and `checkPerson` refusing exactly what the in-process bar
+ * refuses.
  *
- * The same fixture source runs in-process beside it, so "matches the
- * in-process case" is measured, not assumed.
+ * The same fixture bundle is served in this process beside it (the
+ * in-process lifecycle's own steps: load, start, `createFetchHandler`), so
+ * "matches the in-process case" is measured, not assumed.
  */
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import vm from 'node:vm';
-import { Router } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readRegisterResult, serverEntryStart } from '@dorkos/extension-api/server';
 
 const state = vi.hoisted(() => ({ authEnabled: false }));
 
@@ -33,49 +34,56 @@ vi.stubEnv('VITE_PORT', '7779');
 // judges against the server's static set and not this list.
 vi.stubEnv('DORKOS_CORS_ORIGIN', 'https://evil.example');
 // The session gate lets every request through: the cases here are about the
-// person bar, and a signed-in person is set after the chain (`before` below),
-// as the Express version stubbed `res.locals.user`.
+// person bar, and a signed-in person is set after the chain (`before` below).
 vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
-import { createRequirePerson } from '../../inbox/extension-inbox-context.js';
 import { createIsolatedHandler } from '../isolated-router.js';
-import { bridgeExpressRouter } from '../../http/express-bridge.js';
+import { createFetchHandler } from '../../http/fetch-handler.js';
 import type { ExtensionHttpHandler } from '../../http/extension-http.js';
+import { loadInProcessBundle } from '../../server-bundle/load-in-process.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { PERSON_VERDICT_HEADER } from '../ipc-protocol.js';
 import type { IsolatedExit } from '../isolated-host.js';
-import { ROUTER_BUNDLE_SOURCE } from './fixtures/router-bundle.js';
+import { FETCH_BUNDLE_SOURCE } from './fixtures/fetch-bundle.js';
 import { cleanup, createHarness, makeHost, startOk, type Harness } from './isolation-harness.js';
 
-const NAME = 'Router Test';
+const NAME = 'Fetch Test';
 const TRUSTED_ORIGIN = 'http://localhost:7777';
 
 let h: Harness;
 let server: http.Server;
 let base: string;
 let signedIn = false;
-const routers = new Map<string, ExtensionHttpHandler>();
+const handlers = new Map<string, ExtensionHttpHandler>();
 
-/** Load the fixture in this process, as the in-process lifecycle would. */
-function inProcessRouter(): ExtensionHttpHandler {
-  const fn = vm.compileFunction(ROUTER_BUNDLE_SOURCE, ['exports', 'require', 'module']);
-  const mod: { exports: unknown } = { exports: {} };
-  fn(mod.exports, () => ({}), mod);
-  const router = Router();
-  (mod.exports as (r: Router, c: unknown) => void)(router, {
-    requirePerson: createRequirePerson(NAME),
-  });
-  return bridgeExpressRouter(router);
+/** Both runtimes, by mount id, for the cases that compare them. */
+const RUNTIMES = [
+  ['in the server’s process', 'inproc'],
+  ['in its own process', 'iso'],
+] as const;
+
+/**
+ * Serve the fixture in this process as `inproc`, the in-process lifecycle's
+ * own steps: load the bundle, start it, serve what it returned.
+ */
+async function startInProcess(): Promise<void> {
+  const file = path.join(h.tmp, 'bundles', 'inproc.js');
+  await fs.writeFile(file, FETCH_BUNDLE_SOURCE);
+  const start = serverEntryStart(loadInProcessBundle(file));
+  if (!start) throw new Error('the fixture provides no server half');
+  const { fetch } = readRegisterResult(await start({} as never));
+  if (!fetch) throw new Error('the fixture returned no fetch handler');
+  handlers.set('inproc', createFetchHandler(NAME, fetch));
 }
 
-/** Start the fixture in a real child and mount its isolated router as `id`. */
+/** Start the fixture in a real child and mount its isolated handler as `id`. */
 async function startIsolated(id: string, idleMs?: number) {
   const bundle = path.join(h.tmp, 'bundles', `${id}.js`);
-  await fs.writeFile(bundle, ROUTER_BUNDLE_SOURCE);
+  await fs.writeFile(bundle, FETCH_BUNDLE_SOURCE);
   const exits: IsolatedExit[] = [];
   const host = makeHost(h, {
     id,
@@ -84,16 +92,26 @@ async function startIsolated(id: string, idleMs?: number) {
     overrides: { displayName: NAME },
   });
   await startOk(host);
-  routers.set(id, createIsolatedHandler({ displayName: NAME, host, idleMs }));
+  handlers.set(id, createIsolatedHandler({ displayName: NAME, host, idleMs }));
   return { host, exits };
+}
+
+/**
+ * GET a path below a runtime's mount and read the JSON answer.
+ *
+ * @param id - The mount id.
+ * @param below - The path below the mount, with its query.
+ */
+async function getJson<T = Record<string, unknown>>(id: string, below: string): Promise<T> {
+  return (await (await fetch(`${base}/api/ext/${id}${below}`)).json()) as T;
 }
 
 beforeEach(async () => {
   h = await createHarness();
   state.authEnabled = false;
   signedIn = false;
-  routers.clear();
-  routers.set('inproc', inProcessRouter());
+  handlers.clear();
+  await startInProcess();
   // DorkOS's own order: the `/api` chain (its JSON parser, the session gate,
   // here letting everyone through, with a signed-in person when the test
   // says so), then the extension mount.
@@ -101,7 +119,7 @@ beforeEach(async () => {
     honoGroupListener(
       {
         path: '/api/ext',
-        routes: createExtensionApiRoutes({ getServerHandler: (id) => routers.get(id) ?? null }),
+        routes: createExtensionApiRoutes({ getServerHandler: (id) => handlers.get(id) ?? null }),
       },
       {
         before: async (c, next) => {
@@ -121,26 +139,35 @@ afterEach(async () => {
   await cleanup(h);
 });
 
-describe('requests reach the child as real HTTP', () => {
-  // Purpose: a JSON body the chain's parser already consumed still reaches the
-  // child whole, re-encoded with a fresh content-length.
+describe('requests reach the handler', () => {
+  // Purpose: a JSON body the chain's parser already consumed still reaches
+  // the handler whole in both runtimes; in the child it arrives as real HTTP
+  // with a fresh content-length.
   it('round-trips a JSON body', async () => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/echo-json`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ hello: 'world', n: [1, 2] }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.body).toEqual({ hello: 'world', n: [1, 2] });
-    expect(body.contentLength).toBe(String(JSON.stringify({ hello: 'world', n: [1, 2] }).length));
+    const sent = { hello: 'world', n: [1, 2] };
+    const send = async (id: string) => {
+      const res = await fetch(`${base}/api/ext/${id}/echo-json`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(sent),
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as Record<string, unknown>;
+    };
+    const iso = await send('iso');
+    const inproc = await send('inproc');
+    expect(iso.body).toEqual(sent);
+    expect(inproc.body).toEqual(sent);
+    expect(iso.contentType).toBe('application/json');
+    expect(inproc.contentType).toBe('application/json');
+    expect(iso.contentLength).toBe(String(JSON.stringify(sent).length));
   });
 
-  // Purpose: a body no parser read is streamed through as is.
-  it('streams a raw text body', async () => {
+  // Purpose: a body no parser read is passed through as is.
+  it.each(RUNTIMES)('passes a raw text body through %s', async (_label, id) => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/echo-raw`, {
+    const res = await fetch(`${base}/api/ext/${id}/echo-raw`, {
       method: 'POST',
       headers: { 'content-type': 'text/plain' },
       body: 'plain words',
@@ -149,10 +176,10 @@ describe('requests reach the child as real HTTP', () => {
   });
 
   // Purpose: a body over the app-wide 1 MB limit is refused before it
-  // reaches the child.
-  it('refuses a body over 1 MB', async () => {
+  // reaches the handler.
+  it.each(RUNTIMES)('refuses a body over 1 MB %s', async (_label, id) => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/echo-raw`, {
+    const res = await fetch(`${base}/api/ext/${id}/echo-raw`, {
       method: 'POST',
       headers: { 'content-type': 'application/octet-stream' },
       body: Buffer.alloc(1024 * 1024 + 10, 1),
@@ -160,23 +187,14 @@ describe('requests reach the child as real HTTP', () => {
     expect(res.status).toBe(413);
   });
 
-  // Purpose: req.baseUrl, req.path and req.params in the child equal the
-  // in-process ones, because the host forwards req.originalUrl.
+  // Purpose: the handler in the child gets the same path below the mount and
+  // query as in-process, so its own routing matches.
   it('matches the in-process routing', async () => {
     await startIsolated('iso');
-    const iso = (await (await fetch(`${base}/api/ext/iso/items/42?x=1`)).json()) as Record<
-      string,
-      unknown
-    >;
-    const inproc = (await (await fetch(`${base}/api/ext/inproc/items/42?x=1`)).json()) as Record<
-      string,
-      unknown
-    >;
-    expect(iso.params).toEqual({ itemId: '42' });
-    expect(iso.query).toEqual({ x: '1' });
-    expect(iso.path).toBe(inproc.path);
-    expect(iso.baseUrl).toBe('/api/ext/iso');
-    expect(inproc.baseUrl).toBe('/api/ext/inproc');
+    const iso = await getJson('iso', '/items/42?x=1');
+    const inproc = await getJson('inproc', '/items/42?x=1');
+    expect(iso).toEqual({ path: '/items/42', params: { itemId: '42' }, query: { x: '1' } });
+    expect(iso).toEqual(inproc);
   });
 
   // Purpose: server-sent events arrive as they are written, not when the
@@ -202,39 +220,50 @@ describe('requests reach the child as real HTTP', () => {
 });
 
 describe('the header policy', () => {
+  /** A request carrying every credential and a forged verdict. */
+  const SENT = {
+    cookie: 'better-auth.session_token=secret',
+    authorization: 'Bearer secret',
+    'x-api-key': 'secret',
+    'x-dorkos-agent': 'agent-1',
+    'x-dorkos-approval': 'token',
+    [PERSON_VERDICT_HEADER]: JSON.stringify({ ok: true }),
+    'x-kept': 'yes',
+  };
+
   // Purpose: the person's cookie, authorization, API key and DorkOS headers
-  // never reach extension code, and a forged verdict header is replaced by
-  // the host's own.
-  it('strips credentials and replaces a forged verdict', async () => {
+  // never reach extension code in its own process; no handler in either
+  // runtime sees the verdict header, and a forged one changes nothing: the
+  // caller is the host's own verdict, the same in both.
+  it('strips credentials and ignores a forged verdict', async () => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/headers`, {
-      headers: {
-        cookie: 'better-auth.session_token=secret',
-        authorization: 'Bearer secret',
-        'x-api-key': 'secret',
-        'x-dorkos-agent': 'agent-1',
-        'x-dorkos-approval': 'token',
-        [PERSON_VERDICT_HEADER]: JSON.stringify({ ok: true }),
-        'x-kept': 'yes',
-      },
-    });
-    const seen = (await res.json()) as Record<string, string>;
-    expect(seen.cookie).toBeUndefined();
-    expect(seen.authorization).toBeUndefined();
-    expect(seen['x-api-key']).toBeUndefined();
-    expect(seen['x-dorkos-agent']).toBeUndefined();
-    expect(seen['x-dorkos-approval']).toBeUndefined();
-    expect(seen['x-kept']).toBe('yes');
-    // The request named an agent, so the host's verdict is a refusal, not
-    // the forged yes.
-    expect(JSON.parse(seen[PERSON_VERDICT_HEADER]!)).toMatchObject({ ok: false, status: 403 });
+    const send = async (id: string) =>
+      (await (await fetch(`${base}/api/ext/${id}/headers`, { headers: SENT })).json()) as {
+        headers: Record<string, string>;
+        person: Record<string, unknown>;
+      };
+    const iso = await send('iso');
+    const inproc = await send('inproc');
+    expect(iso.headers.cookie).toBeUndefined();
+    expect(iso.headers.authorization).toBeUndefined();
+    expect(iso.headers['x-api-key']).toBeUndefined();
+    expect(iso.headers['x-dorkos-agent']).toBeUndefined();
+    expect(iso.headers['x-dorkos-approval']).toBeUndefined();
+    expect(iso.headers['x-kept']).toBe('yes');
+    expect(iso.headers[PERSON_VERDICT_HEADER]).toBeUndefined();
+    expect(inproc.headers[PERSON_VERDICT_HEADER]).toBeUndefined();
+    expect(inproc.headers['x-kept']).toBe('yes');
+    // The request named an agent, so the caller is a refusal, not the forged
+    // yes, and the same refusal in both runtimes.
+    expect(iso.person).toMatchObject({ ok: false, status: 403 });
+    expect(iso.person).toEqual(inproc.person);
   });
 
   // Purpose: a reply cannot set cookies, transport policy or CORS on
   // DorkOS's origin, and always carries the sandboxing CSP and nosniff.
-  it('strips reply headers and forces the CSP', async () => {
+  it.each(RUNTIMES)('strips reply headers and forces the CSP %s', async (_label, id) => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/cookie`);
+    const res = await fetch(`${base}/api/ext/${id}/cookie`);
     expect(res.status).toBe(200);
     expect(res.headers.get('set-cookie')).toBeNull();
     expect(res.headers.get('strict-transport-security')).toBeNull();
@@ -249,9 +278,9 @@ describe('the reply header allowlist', () => {
   // Purpose: a header that could sign the person out, prompt for a
   // password, redirect, register a service worker or loosen CORS on
   // DorkOS's origin never reaches the browser; an ordinary one does.
-  it('drops every header outside the allowlist', async () => {
+  it.each(RUNTIMES)('drops every header outside the allowlist %s', async (_label, id) => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/danger`);
+    const res = await fetch(`${base}/api/ext/${id}/danger`);
     expect(res.status).toBe(200);
     for (const name of [
       'clear-site-data',
@@ -265,36 +294,40 @@ describe('the reply header allowlist', () => {
       expect(res.headers.get(name), name).toBeNull();
     }
     expect(res.headers.get('etag')).toBe('"v1"');
-    // The child's own CORS headers are dropped like the rest. What remains is
-    // DorkOS's: the `/api` chain's CORS step answers every request with it,
-    // as the Express chain's did.
+    // The handler's own CORS headers are dropped like the rest. What remains
+    // is DorkOS's: the `/api` chain's CORS step answers every request with it.
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  // Purpose: a redirect stays inside the extension's own mount; one to
-  // another site or another DorkOS route is dropped.
+  // Purpose: a redirect stays inside the extension's own mount. The handler
+  // names locations on its own origin, which is the path below the mount, so
+  // even a path that looks like another DorkOS route lands inside the mount;
+  // one to another site is dropped. Both runtimes agree.
   it.each([
-    ['/api/ext/iso/items/1', '/api/ext/iso/items/1'],
-    ['items/2?x=1', '/api/ext/iso/items/2?x=1'],
+    ['/items/1', '/api/ext/RT/items/1'],
+    ['items/2?x=1', '/api/ext/RT/items/2?x=1'],
+    ['/api/config', '/api/ext/RT/api/config'],
+    ['/../../config', '/api/ext/RT/config'],
     ['https://evil.example/', null],
     ['//evil.example/', null],
-    ['/api/config', null],
-    ['/api/ext/iso/../../config', null],
-    ['/api/ext/isomorphic', null],
+    ['\\\\evil.example/', null],
   ])('a redirect to %s keeps location %s', async (to, expected) => {
     await startIsolated('iso');
-    const res = await fetch(`${base}/api/ext/iso/redirect?to=${encodeURIComponent(to)}`, {
-      redirect: 'manual',
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(expected);
+    for (const id of ['iso', 'inproc']) {
+      const res = await fetch(`${base}/api/ext/${id}/redirect?to=${encodeURIComponent(to)}`, {
+        redirect: 'manual',
+      });
+      expect(res.status, id).toBe(302);
+      expect(res.headers.get('location'), id).toBe(expected?.replace('RT', id) ?? null);
+    }
   });
 });
 
 describe('flow control', () => {
-  // Purpose: a child writing faster than the person reads is paused, so
-  // DorkOS holds a bounded amount; reading again resumes it to the end.
+  // Purpose: a child streaming faster than the person reads is paused, so
+  // its stream is pulled no further and DorkOS holds a bounded amount;
+  // reading again resumes it to the end.
   it('pauses a fast child for a slow reader, then resumes', async () => {
     const { host } = await startIsolated('iso');
     // A plain Node client whose response is paused: a reader that stopped.
@@ -305,9 +338,8 @@ describe('flow control', () => {
     });
     await until(() => reply !== null);
     await new Promise((r) => setTimeout(r, 1_500));
-    const { flooded } = (await (await fetch(`${base}/api/ext/iso/flooded`)).json()) as {
-      flooded: number;
-    };
+    const { flooded } = await getJson<{ flooded: number }>('iso', '/flooded');
+    expect(flooded).toBeGreaterThan(0);
     expect(flooded).toBeLessThan(16 * 1024 * 1024);
     expect(host.bufferedBytes).toBeLessThanOrEqual(4 * 1024 * 1024);
     let total = 0;
@@ -332,26 +364,23 @@ async function until(check: () => boolean, ms = 5_000): Promise<void> {
 }
 
 describe('when a request or the child goes away', () => {
-  // Purpose: a person abandoning a request closes it in the child too.
-  it('carries a client abort to the child', async () => {
+  // Purpose: a person abandoning a request aborts the handler's
+  // `request.signal`, in its own process as in the server's.
+  it.each(RUNTIMES)('carries a client abort to the handler %s', async (_label, id) => {
     await startIsolated('iso');
     const controller = new AbortController();
-    const pending = fetch(`${base}/api/ext/iso/hang`, { signal: controller.signal }).catch(
+    const pending = fetch(`${base}/api/ext/${id}/hang`, { signal: controller.signal }).catch(
       () => null
     );
     await new Promise((r) => setTimeout(r, 300));
-    const before = (await (await fetch(`${base}/api/ext/iso/aborted`)).json()) as {
-      aborted: boolean;
-    };
+    const before = await getJson<{ aborted: boolean }>(id, '/aborted');
     expect(before.aborted).toBe(false);
     controller.abort();
     await pending;
     let aborted = false;
     for (let i = 0; i < 50 && !aborted; i++) {
       await new Promise((r) => setTimeout(r, 50));
-      aborted = (
-        (await (await fetch(`${base}/api/ext/iso/aborted`)).json()) as { aborted: boolean }
-      ).aborted;
+      aborted = (await getJson<{ aborted: boolean }>(id, '/aborted')).aborted;
     }
     expect(aborted).toBe(true);
   });
@@ -387,7 +416,7 @@ describe('when a request or the child goes away', () => {
   });
 });
 
-describe('ctx.requirePerson reads the host verdict (task 5.2)', () => {
+describe('checkPerson reads the host verdict (task 5.2)', () => {
   /** PUT /settings on both runtimes with the same request. */
   async function both(headers: Record<string, string>) {
     await startIsolated('iso');

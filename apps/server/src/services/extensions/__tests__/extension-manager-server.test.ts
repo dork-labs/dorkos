@@ -327,7 +327,7 @@ describe('ExtensionManager — server lifecycle', () => {
       const result = await manager.initializeServer('obj-srv');
 
       expect(result.ok).toBe(false);
-      expect(result.error).toBe('Server entry does not export a register function');
+      expect(result.error).toBe('Server entry does not export a server definition');
     });
 
     it('shuts down the existing instance when the server source changed', async () => {
@@ -591,7 +591,7 @@ describe('ExtensionManager — server lifecycle', () => {
       delete (globalThis as { __fetchExtCleaned?: boolean }).__fetchExtCleaned;
     });
 
-    it('says when a running server half uses the old router, and logs it once', async () => {
+    it('stops an older entry that touches the router, and says why on its card', async () => {
       const records = ['old-style', 'new-style'].map((id) =>
         makeRecord(id, {
           status: 'compiled',
@@ -604,8 +604,8 @@ describe('ExtensionManager — server lifecycle', () => {
       mockCompileServer.mockImplementation(async (record: ExtensionRecord) => ({
         code:
           record.id === 'old-style'
-            ? `module.exports = function register(router) { router.get('/x', (req, res) => res.json({})); };`
-            : `exports.default = { fetch: () => new Response('ok') };`,
+            ? `module.exports = function register(router) { router.get('/x', () => {}); };`
+            : `module.exports = function register(_router) { return { fetch: () => new Response('ok') }; };`,
         sourceHash: `srv-${record.id}`,
       }));
       mockConfigGet.mockReturnValue({
@@ -613,27 +613,26 @@ describe('ExtensionManager — server lifecycle', () => {
         disabled: [],
         ...approved(['old-style', 'new-style']),
       });
-      vi.mocked(logger.warn).mockClear();
 
       await manager.initialize(null);
-      expect(await manager.initializeServer('old-style')).toEqual({ ok: true });
-      expect(await manager.initializeServer('new-style')).toEqual({ ok: true });
-      // Asked again with nothing changed: still one warning.
-      expect(await manager.initializeServer('old-style')).toEqual({ ok: true });
+      const old = await manager.initializeServer('old-style');
+      const fresh = await manager.initializeServer('new-style');
 
-      const byId = Object.fromEntries(manager.listPublic().map((r) => [r.id, r]));
-      expect(byId['old-style']?.usesOldRouter).toBe(true);
-      expect(byId['new-style']).not.toHaveProperty('usesOldRouter');
-      const warnings = vi
-        .mocked(logger.warn)
-        .mock.calls.filter(([line]) => String(line).includes('old Express router'));
-      expect(warnings).toHaveLength(1);
-      expect(String(warnings[0]![0])).toContain('old-style');
-
-      await manager.shutdownServer('old-style');
-      expect(manager.listPublic().find((r) => r.id === 'old-style')).not.toHaveProperty(
-        'usesOldRouter'
-      );
+      expect(old).toEqual({
+        ok: false,
+        error:
+          'This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it.',
+      });
+      expect(manager.getServerHandler('old-style')).toBeNull();
+      const card = manager.listPublic().find((r) => r.id === 'old-style');
+      expect(card?.serverError).toEqual({
+        code: 'server_old_router',
+        message: 'old-style uses an old server style. Ask an agent to update it.',
+      });
+      // Only the server half is refused: the record itself is not an error.
+      expect(card?.error).toBeUndefined();
+      // An older entry that leaves the router alone still starts.
+      expect(fresh).toEqual({ ok: true });
     });
 
     it('serves a server entry that exports only a fetch handler', async () => {

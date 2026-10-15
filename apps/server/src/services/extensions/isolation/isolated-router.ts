@@ -22,8 +22,8 @@
  *   `proxy-authorization`, `x-api-key` (the MCP and per-user key header), every
  *   `x-dorkos-*` header (agent identity, approval tokens), and hop-by-hop
  *   headers. Added: {@link PERSON_VERDICT_HEADER}, the person bar's verdict
- *   on the real request (`assessPerson`), which `ctx.requirePerson` and a
- *   fetch handler's caller read in the child. A client-sent copy of that
+ *   on the real request (`assessPerson`), which a fetch handler's caller
+ *   reads in the child. A client-sent copy of that
  *   header is stripped with the rest, so it cannot be forged. The session
  *   cookie stays here, which matters because a cookie that left the machine
  *   works through the tunnel.

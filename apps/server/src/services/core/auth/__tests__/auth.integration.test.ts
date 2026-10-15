@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
@@ -19,14 +19,11 @@ const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 /**
- * Mounts the Better Auth handler over a throwaway temp SQLite database exactly
- * as `app.ts` does: `app.all('/api/auth/*splat', ...)` BEFORE `express.json()`.
+ * Serves the Better Auth handler over a throwaway temp SQLite database. As in
+ * the server, nothing parses the body first: Better Auth reads its own.
  */
-function buildApp(db: Db, dorkHome: string): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(createAuth(db, dorkHome)));
-  app.use(express.json({ limit: '1mb' }));
-  return app;
+function buildApp(db: Db, dorkHome: string): RequestListener {
+  return toNodeHandler(createAuth(db, dorkHome));
 }
 
 // Emails are assembled from parts so the source never contains a literal
@@ -43,7 +40,7 @@ const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
 describe('Better Auth — local identity core (integration)', () => {
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
+  let app: RequestListener;
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-'));

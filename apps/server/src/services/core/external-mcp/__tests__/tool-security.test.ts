@@ -11,10 +11,10 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import { Hono } from 'hono';
 import request, { type Response } from '@dorkos/test-utils/supertest';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
+import { answerStatelessMcp, type NodeEnv } from '../../../__tests__/stateless-mcp.js';
 
 // Mock env for the server factory and core-tools handlers.
 vi.mock('../../../../env.js', () => ({
@@ -89,10 +89,9 @@ function createMarketplaceDeps(): MarketplaceMcpDeps {
 
 /** Stateless test app: a fresh server + transport per POST (the SDK pattern). */
 function createStatelessTestApp() {
-  const app = express();
-  app.use(express.json());
+  const app = new Hono<NodeEnv>();
 
-  app.post('/mcp', async (req, res) => {
+  app.post('/mcp', async (c) => {
     try {
       // Compose the registry with all three domain bundles (stubs are enough:
       // tools/list registers, never invokes), exactly as boot does — without
@@ -114,25 +113,16 @@ function createStatelessTestApp() {
         roomDeps: {} as never,
       });
       const server = createExternalMcpServer(deps, marketplaceDeps, registry);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
+      return await answerStatelessMcp(c, server);
     } catch (_err) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
-      }
+      return c.json(
+        { jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null },
+        500
+      );
     }
   });
 
-  return app;
+  return honoListener(app);
 }
 
 /** A tool entry as returned by tools/list, with its annotations. */

@@ -642,9 +642,6 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
-      express:
-        specifier: ^5.2.1
-        version: 5.2.1
       hono:
         specifier: ^4.13.9
         version: 4.13.12
@@ -920,9 +917,6 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
-      express:
-        specifier: ^5.2.1
-        version: 5.2.1
       giget:
         specifier: ^3.3.1
         version: 3.3.1
@@ -999,9 +993,6 @@ importers:
       '@types/busboy':
         specifier: ^1.5.5
         version: 1.5.5
-      '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
       '@types/jsdom':
         specifier: ^27.0.0
         version: 27.0.0
@@ -1354,9 +1345,6 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
-      express:
-        specifier: ^5.2.1
-        version: 5.2.1
       hono:
         specifier: ^4.13.9
         version: 4.13.12
@@ -1652,9 +1640,6 @@ importers:
       '@dorkos/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
-      '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0

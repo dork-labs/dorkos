@@ -2,22 +2,21 @@
  * How an extension's server half serves its API at `/api/ext/<id>/*`, and how
  * the host reads a server entry.
  *
- * `register` returns `{ fetch }`: a function that takes a web-standard
- * `Request` and returns a `Response`, the shape a Hono app exposes. `hono` is
+ * A server entry default-exports {@link defineServer}: a function DorkOS calls
+ * with `ctx` that returns `{ fetch }`, a function that takes a web-standard
+ * `Request` and returns a `Response` (the shape a Hono app exposes). `hono` is
  * built in: an extension imports it with nothing installed. It runs on Node,
  * so Bun- or Deno-only APIs are not there. A server entry that needs nothing
- * from `ctx` can export that object itself (`export default app`).
+ * from `ctx` can export the handler's owner itself (`export default app`).
  *
  * A fetch handler gets who is asking as its second argument
  * ({@link ExtensionCaller}), which a Hono app reads as `c.env`. To keep a
  * route to people only, put {@link requirePerson} in front of it, or call
  * {@link checkPerson} in a handler written without Hono.
  *
- * The `router` `register` is handed is the old Express router, deprecated
- * (DOR-2856): routes added to it still run, ahead of `fetch`, until DorkOS
- * stops running it. A request it does not answer goes to the `dataProxy`
- * when the request is for `/proxy/*` and the manifest declares one, then to
- * `fetch`.
+ * DorkOS no longer runs the old Express router (DOR-2856). An older
+ * `register(router, ctx)` entry still starts as long as it never touches
+ * `router`; one that does stops with {@link OLD_ROUTER_MESSAGE}.
  *
  * @module server-entry
  */
@@ -62,43 +61,124 @@ export type ExtensionFetchHandler = (
   caller: ExtensionCaller
 ) => Response | Promise<Response>;
 
-/** What `register()` returns to serve its API with a fetch handler. */
+/** What a server entry's start returns to serve its API. */
 export interface ServerExtensionHandlers {
-  /** Answers every request under `/api/ext/<id>/` the router does not. */
+  /** Answers every request under `/api/ext/<id>/`. */
   fetch?: ExtensionFetchHandler;
-  /** Called when the extension stops, like the function `register()` may return. */
+  /** Called when the extension stops. */
   cleanup?: () => void | Promise<void>;
 }
 
-/** What `register()` may return: nothing, a cleanup function, or handlers. */
+/** What a server entry's start may return: nothing, a cleanup function, or handlers. */
 export type ServerExtensionRegisterResult = void | (() => void) | ServerExtensionHandlers;
 
-/**
- * Server-side extension entry point signature. Leave `router` empty: serve
- * the API by returning `{ fetch }`.
- */
-export type ServerExtensionRegister = (
-  /** @deprecated The old Express router. Return `{ fetch }` instead (DOR-2856). */
-  router: import('express').Router,
+/** Starts an extension's server half with its context. */
+export type ServerStart = (
   ctx: DataProviderContext
 ) => ServerExtensionRegisterResult | Promise<ServerExtensionRegisterResult>;
 
 /**
- * The register function a loaded server entry provides, or `null` when it
- * provides none.
+ * An older server entry: `register(router, ctx)`. DorkOS hands it a router
+ * that stops the extension with {@link OLD_ROUTER_MESSAGE} if touched.
  *
- * Accepts `module.exports = register`, `export default register`, and a
- * default export that is itself a fetch handler's owner (`{ fetch }`, or a
- * Hono app), which is served as if `register` had returned it.
+ * @deprecated Default-export {@link defineServer} instead (DOR-2856).
+ */
+export type ServerExtensionRegister = (
+  router: unknown,
+  ctx: DataProviderContext
+) => ServerExtensionRegisterResult | Promise<ServerExtensionRegisterResult>;
+
+/** The mark {@link defineServer} puts on what it returns. */
+const SERVER_DEFINITION = Symbol.for('dorkos.extension.serverDefinition');
+
+/** A server entry made with {@link defineServer}. */
+export interface ServerDefinition {
+  /** The start function, under the mark the host looks for. */
+  readonly [SERVER_DEFINITION]: ServerStart;
+}
+
+/**
+ * Define an extension's server half: a function DorkOS calls with `ctx`, which
+ * returns `{ fetch, cleanup? }`.
+ *
+ * ```ts
+ * import { Hono } from 'hono';
+ * import { defineServer, requirePerson } from '@dorkos/extension-api/server';
+ *
+ * export default defineServer((ctx) => {
+ *   const app = new Hono();
+ *   app.get('/items', async (c) => c.json((await ctx.storage.loadData()) ?? []));
+ *   app.put('/items', requirePerson(), async (c) => {
+ *     await ctx.storage.saveData(await c.req.json());
+ *     return c.json({ ok: true });
+ *   });
+ *   return { fetch: app.fetch };
+ * });
+ * ```
+ *
+ * @param start - Called once when the extension starts.
+ */
+export function defineServer(start: ServerStart): ServerDefinition {
+  if (typeof start !== 'function') {
+    throw new TypeError('defineServer() needs a function that takes ctx.');
+  }
+  return Object.freeze({ [SERVER_DEFINITION]: start });
+}
+
+/** What an extension that touches the old router stops with. */
+export const OLD_ROUTER_MESSAGE =
+  'This extension uses the old router, which DorkOS no longer runs. Ask an agent to update it.';
+
+/** Thrown when an older `register(router, ctx)` touches `router`. */
+export class OldRouterError extends Error {
+  /** Names this failure for the host. */
+  readonly code = 'old_router';
+
+  /** Make the error. */
+  constructor() {
+    super(OLD_ROUTER_MESSAGE);
+    this.name = 'OldRouterError';
+  }
+}
+
+/** The router an older `register(router, ctx)` is handed: touching it throws. */
+const RETIRED_ROUTER: unknown = new Proxy(Object.freeze({}), {
+  get() {
+    throw new OldRouterError();
+  },
+  set() {
+    throw new OldRouterError();
+  },
+  has() {
+    throw new OldRouterError();
+  },
+});
+
+/**
+ * How to start the server half a loaded server entry provides, or `null`
+ * when it provides none.
+ *
+ * Accepts, as `module.exports` or `export default`: a {@link defineServer}
+ * definition; a fetch handler's owner (`{ fetch }`, or a Hono app), served as
+ * if a start had returned it; or an older `register(router, ctx)` function,
+ * handed a router that stops the extension if touched.
  *
  * @param exported - What loading the server entry produced.
  */
-export function serverEntryRegister(exported: unknown): ServerExtensionRegister | null {
+export function serverEntryStart(exported: unknown): ServerStart | null {
   const candidate =
     exported && typeof exported === 'object' && 'default' in exported
       ? (exported as { default: unknown }).default
       : exported;
-  if (typeof candidate === 'function') return candidate as ServerExtensionRegister;
+  const defined =
+    candidate && typeof candidate === 'object'
+      ? (candidate as Partial<ServerDefinition>)[SERVER_DEFINITION]
+      : undefined;
+  if (typeof defined === 'function') return defined;
+  if (typeof candidate === 'function') {
+    const register = candidate as ServerExtensionRegister;
+    return (ctx) => register(RETIRED_ROUTER, ctx);
+  }
   if (hasFetch(candidate)) {
     return () => ({ fetch: (request, caller) => candidate.fetch(request, caller) });
   }
@@ -109,15 +189,15 @@ export function serverEntryRegister(exported: unknown): ServerExtensionRegister 
 export interface RegisterOutcome {
   /** Called when the extension stops. */
   cleanup: (() => unknown) | null;
-  /** The fetch handler, when `register()` returned one. */
+  /** The fetch handler, when the start returned one. */
   fetch: ExtensionFetchHandler | null;
 }
 
 /**
- * Read what `register()` returned: a cleanup function, `{ fetch, cleanup }`,
- * or nothing.
+ * Read what a server entry's start returned: a cleanup function,
+ * `{ fetch, cleanup }`, or nothing.
  *
- * @param result - The value `register()` resolved to.
+ * @param result - The value the start resolved to.
  * @throws TypeError when it returned `fetch` or `cleanup` that is not a function.
  */
 export function readRegisterResult(result: unknown): RegisterOutcome {
@@ -125,10 +205,10 @@ export function readRegisterResult(result: unknown): RegisterOutcome {
   if (!result || typeof result !== 'object') return { cleanup: null, fetch: null };
   const { fetch, cleanup } = result as { fetch?: unknown; cleanup?: unknown };
   if (fetch !== undefined && typeof fetch !== 'function') {
-    throw new TypeError('register() returned a `fetch` that is not a function');
+    throw new TypeError('The server half returned a `fetch` that is not a function');
   }
   if (cleanup !== undefined && typeof cleanup !== 'function') {
-    throw new TypeError('register() returned a `cleanup` that is not a function');
+    throw new TypeError('The server half returned a `cleanup` that is not a function');
   }
   return {
     cleanup: cleanup ? () => (cleanup as () => unknown).call(result) : null,

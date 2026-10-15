@@ -3,7 +3,10 @@ import {
   checkPerson,
   readRegisterResult,
   requirePerson,
-  serverEntryRegister,
+  defineServer,
+  OLD_ROUTER_MESSAGE,
+  OldRouterError,
+  serverEntryStart,
   type ExtensionCaller,
 } from '../server-entry.js';
 
@@ -26,14 +29,26 @@ const agent: ExtensionCaller = {
   },
 };
 
-describe('serverEntryRegister', () => {
-  it('takes a register function exported either way', () => {
-    const register = vi.fn();
-    expect(serverEntryRegister(register)).toBe(register);
-    expect(serverEntryRegister({ default: register })).toBe(register);
+describe('serverEntryStart', () => {
+  const ctx = { extensionId: 'my-ext' } as never;
+
+  it('starts a defineServer entry with ctx alone, exported either way', async () => {
+    const start = vi.fn((_given: unknown) => ({ fetch: echo }));
+    const defined = defineServer(start);
+
+    for (const exported of [defined, { default: defined }]) {
+      const outcome = readRegisterResult(await serverEntryStart(exported)!(ctx));
+      expect(outcome.fetch).toBeTypeOf('function');
+    }
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(start.mock.calls.every((args) => args.length === 1 && args[0] === ctx)).toBe(true);
   });
 
-  it('serves a default export that has a fetch handler, as register would return it', async () => {
+  it('refuses a definition that is not a function', () => {
+    expect(() => defineServer('nope' as never)).toThrow(TypeError);
+  });
+
+  it('serves a default export that has a fetch handler, as a start would return it', async () => {
     const app = {
       prefix: 'app:',
       fetch(request: Request, caller: ExtensionCaller) {
@@ -42,10 +57,10 @@ describe('serverEntryRegister', () => {
         );
       },
     };
-    const register = serverEntryRegister({ default: app });
-    expect(register).not.toBeNull();
+    const start = serverEntryStart({ default: app });
+    expect(start).not.toBeNull();
 
-    const outcome = readRegisterResult(await register!({} as never, {} as never));
+    const outcome = readRegisterResult(await start!(ctx));
     const answer = await outcome.fetch!(new Request('http://localhost/items'), person);
     // Called on its owner, so a method that reads `this` (a Hono app) works,
     // and handed the caller, which a Hono app reads as `c.env`.
@@ -53,11 +68,42 @@ describe('serverEntryRegister', () => {
     expect(outcome.cleanup).toBeNull();
   });
 
-  it('finds nothing in an entry with neither', () => {
-    expect(serverEntryRegister({})).toBeNull();
-    expect(serverEntryRegister({ default: 42 })).toBeNull();
-    expect(serverEntryRegister(null)).toBeNull();
-    expect(serverEntryRegister({ default: { fetch: 'not a function' } })).toBeNull();
+  it('starts an older register(router, ctx) that leaves the router alone', async () => {
+    const register = vi.fn((_router: unknown, given: unknown) => ({ fetch: echo, given }));
+
+    const outcome = readRegisterResult(await serverEntryStart({ default: register })!(ctx));
+
+    expect(outcome.fetch).toBeTypeOf('function');
+    expect(register.mock.calls[0]![1]).toBe(ctx);
+  });
+
+  it.each([
+    [
+      'adds a route',
+      (router: { get: (p: string, h: unknown) => void }) => router.get('/x', () => 0),
+    ],
+    ['reads a property', (router: { stack: unknown }) => router.stack],
+    ['checks for a member', (router: object) => 'use' in router],
+    ['sets a property', (router: Record<string, unknown>) => void (router.mergeParams = true)],
+  ])('stops an older register that %s with the old-router message', async (_label, touch) => {
+    const start = serverEntryStart((router: never) => {
+      touch(router);
+    })!;
+
+    const failure = await Promise.resolve()
+      .then(() => start(ctx))
+      .catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(OldRouterError);
+    expect((failure as OldRouterError).message).toBe(OLD_ROUTER_MESSAGE);
+    expect((failure as OldRouterError).code).toBe('old_router');
+  });
+
+  it('finds nothing in an entry with none', () => {
+    expect(serverEntryStart({})).toBeNull();
+    expect(serverEntryStart({ default: 42 })).toBeNull();
+    expect(serverEntryStart(null)).toBeNull();
+    expect(serverEntryStart({ default: { fetch: 'not a function' } })).toBeNull();
   });
 });
 

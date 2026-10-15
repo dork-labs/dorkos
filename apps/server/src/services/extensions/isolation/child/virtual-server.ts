@@ -1,34 +1,20 @@
 /**
  * The child half of an isolated extension's HTTP (DOR-2686, spec §7): an
- * `http.Server` that never listens, serving the extension's fetch handler,
- * and its Express router while it still has one.
+ * `http.Server` that never listens, serving the extension's fetch handler
+ * with `@hono/node-server`'s request listener.
  *
  * Connections arrive as `conn-open` messages from the host. Each becomes a
- * {@link VirtualSocket} handed to the server as if a client had connected, so
- * the extension sees an ordinary request: `req.baseUrl`, `req.path` and
- * `req.params` match the in-process case because the host forwards
- * `req.originalUrl` unchanged.
- *
- * The request it sees has no cookie, no authorization header and no DorkOS
- * tokens (the host strips them); `ctx.requirePerson` reads the host's verdict
- * instead (`proxy-ctx.ts`).
- *
- * An extension whose router has no routes, which is every extension written
- * the current way, never reaches Express: its fetch handler is served by
- * `@hono/node-server`'s request listener, with the path below the mount, the
- * caller's headers and the body as its stream. One that still fills its
- * router gets Express, with the router first and the fetch handler for what
- * the router passes on, as in-process (`http/fetch-handler.ts`). Either way
- * the handler's second argument is the caller (`ExtensionCaller`), read from
- * the host's verdict header, which the request it sees no longer carries.
+ * {@link VirtualSocket} handed to the server as if a client had connected.
+ * The handler gets a request for the path below the mount, with the caller's
+ * headers and the body as its stream, and the caller (`ExtensionCaller`) as
+ * its second argument, read from the host's verdict header, which the request
+ * it sees no longer carries. That request has no cookie, no authorization
+ * header and no DorkOS tokens (the host strips them).
  *
  * @module services/extensions/isolation/child/virtual-server
  */
 import http from 'node:http';
-import { Readable } from 'node:stream';
-import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { getRequestListener } from '@hono/node-server';
-import type express from 'express';
 import type {
   ExtensionCaller,
   ExtensionFetchHandler,
@@ -46,12 +32,8 @@ import { VirtualSocket } from '../virtual-socket.js';
 
 /** What {@link createVirtualServer} needs. */
 export interface VirtualServerDeps {
-  /** The extension id: the router is mounted at `/api/ext/<id>`. */
+  /** The extension id: its mount is `/api/ext/<id>`. */
   extensionId: string;
-  /** The bundled `express`. */
-  express: typeof express;
-  /** The router `register()` filled. */
-  router: express.Router;
   /** Send one message to the host; `onWritten` runs once it is written to the channel. */
   send: (message: ChildMessage, onWritten?: () => void) => void;
   /**
@@ -71,7 +53,7 @@ export interface VirtualServer {
   receive(message: HostMessage): boolean;
   /** Drop every open connection (the child is stopping). */
   closeAll(): void;
-  /** Send what the router passes on to this `fetch` handler, or to the 404 for `null`. */
+  /** Serve requests with this `fetch` handler, or answer 404 for `null`. */
   serveFetch(handler: ExtensionFetchHandler | null): void;
 }
 
@@ -99,69 +81,6 @@ export function callerFrom(raw: unknown, refusal: PersonRefusal['body']): Extens
 function belowMount(pathname: string, mount: string): string | null {
   if (pathname === mount) return '/';
   return pathname.startsWith(`${mount}/`) ? pathname.slice(mount.length) : null;
-}
-
-/**
- * Answer one request with an extension's `fetch` handler: a web `Request`
- * for the path below the mount (`req.url` inside the mount), and its
- * `Response` written back.
- *
- * @param handler - The extension's handler.
- * @param req - The request, with any JSON body already parsed.
- * @param res - Where the answer goes.
- * @param refusal - What a missing verdict refuses with.
- * @param mount - The mount, `/api/ext/<id>`.
- */
-async function answerWithFetch(
-  handler: ExtensionFetchHandler,
-  req: express.Request,
-  res: express.Response,
-  refusal: PersonRefusal['body'],
-  mount: string
-): Promise<void> {
-  const caller = callerFrom(req.headers[PERSON_VERDICT_HEADER], refusal);
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (value === undefined || name === PERSON_VERDICT_HEADER) continue;
-    for (const one of Array.isArray(value) ? value : [value]) headers.append(name, one);
-  }
-  let body: BodyInit | null = null;
-  if (req.body !== undefined) {
-    body = JSON.stringify(req.body);
-    for (const name of ['content-length', 'content-encoding', 'transfer-encoding']) {
-      headers.delete(name);
-    }
-  } else if (!BODILESS.has(req.method)) {
-    body = Readable.toWeb(req) as unknown as BodyInit;
-  }
-  const abort = new AbortController();
-  res.once('close', () => {
-    if (!res.writableFinished) abort.abort();
-  });
-  const request = new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
-    method: req.method,
-    headers,
-    body,
-    signal: abort.signal,
-    duplex: 'half',
-  } as RequestInit);
-  const answered: unknown = await handler(request, caller);
-  if (!(answered instanceof Response)) {
-    throw new Error('The fetch handler answered with something that is not a Response.');
-  }
-  const answer = withMountedLocation(answered, request.url, mount);
-  res.status(answer.status);
-  // `set-cookie` is left out here: the host drops it from every reply anyway.
-  answer.headers.forEach((value, name) => {
-    if (name !== 'set-cookie') res.setHeader(name, value);
-  });
-  if (!answer.body) {
-    res.end();
-    return;
-  }
-  Readable.fromWeb(answer.body as WebReadableStream)
-    .on('error', () => res.destroy())
-    .pipe(res);
 }
 
 /**
@@ -209,11 +128,10 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
   const notFound = (path: string): Response =>
     errorAnswer(404, `Extension '${deps.extensionId}' has no route for ${path}`);
 
-  // Fetch only: no Express at all. The handler gets a request for the path
-  // below the mount, without the verdict header, and the caller it named.
-  // `overrideGlobalObjects: false`, so the extension's own `Request` and
-  // `Response` stay the platform's.
-  const serveFetchOnly = getRequestListener(
+  // The handler gets a request for the path below the mount, without the
+  // verdict header, and the caller it named. `overrideGlobalObjects: false`,
+  // so the extension's own `Request` and `Response` stay the platform's.
+  const serveFetch = getRequestListener(
     async (incoming) => {
       const sent = new URL(incoming.url);
       const below = belowMount(sent.pathname, mount);
@@ -249,41 +167,7 @@ export function createVirtualServer(deps: VirtualServerDeps): VirtualServer {
     { overrideGlobalObjects: false }
   );
 
-  const app = deps.express();
-  app.disable('x-powered-by');
-  // DorkOS parses JSON bodies app-wide before any extension route (`app.ts`),
-  // so in-process routes see `req.body` already; the same parser, with the
-  // same limit, gives isolated routes the same request.
-  app.use(deps.express.json({ limit: '1mb' }));
-  app.use(mount, deps.router);
-  app.use(mount, (req, res, next) => {
-    if (!fetchHandler) {
-      next();
-      return;
-    }
-    answerWithFetch(fetchHandler, req, res, deps.personRefusal, mount).catch(next);
-  });
-  // Nothing in the router matched.
-  app.use((req: express.Request, res: express.Response) => {
-    res.status(404).json({ error: `Extension '${deps.extensionId}' has no route for ${req.path}` });
-  });
-  // A route threw: answer like DorkOS's own handler, without a stack.
-  app.use(
-    (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      console.error('Route error:', err);
-      if (res.headersSent) {
-        res.destroy();
-        return;
-      }
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Internal error' });
-    }
-  );
-
-  // Decided per request, so a router that gains routes late is still served.
-  const server = http.createServer((req, res) => {
-    if (deps.router.stack.length > 0) app(req, res);
-    else void serveFetchOnly(req, res);
-  });
+  const server = http.createServer((req, res) => void serveFetch(req, res));
   // A request that ends its stream early or never sends headers is the
   // host's problem to time out; nothing here waits on a wall clock.
   server.requestTimeout = 0;

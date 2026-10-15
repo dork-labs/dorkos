@@ -2,7 +2,8 @@
  * An isolated extension through DorkOS's real start and stop paths (DOR-2686
  * task 5.3): real discovery, the real esbuild compile of `server.ts`, the
  * real server lifecycle, a real forked child with the real flags, and its
- * router reached through DorkOS's own `/api/ext/:id` routes. Only the
+ * fetch handler (a Hono app behind `defineServer`) reached through DorkOS's
+ * own `/api/ext/:id` routes. Only the
  * config store, the logger, and the agent-send and inbox services (fakes
  * that record what the lifecycle told them) are stand-ins.
  *
@@ -54,31 +55,41 @@ import { setExtensionInbox, type ExtensionInboxService } from '../../inbox/exten
 const ID = 'iso-live';
 const NAME = 'Iso Live';
 
-/** The extension's server half: routes that report, use ctx, crash and hang. */
+/**
+ * The extension's server half: routes that report, use ctx, crash and hang.
+ * A Hono app behind `defineServer`, the shape the guide teaches; the
+ * compiler bundles `hono` in.
+ */
 function serverSource(version: string): string {
   return `
-export default function register(router: any, ctx: any) {
-  router.get('/ping', (_req: any, res: any) => res.json({ pid: process.pid, version: '${version}' }));
-  router.post('/store', async (req: any, res: any) => {
-    await ctx.storage.saveData({ n: req.body.n });
-    res.json(await ctx.storage.loadData());
+import { Hono } from 'hono';
+import { defineServer } from '@dorkos/extension-api/server';
+
+export default defineServer((ctx) => {
+  const app = new Hono();
+  app.get('/ping', (c) => c.json({ pid: process.pid, version: '${version}' }));
+  app.post('/store', async (c) => {
+    const { n } = await c.req.json();
+    await ctx.storage.saveData({ n });
+    return c.json(await ctx.storage.loadData());
   });
-  router.post('/crash', (_req: any, res: any) => {
-    res.json({ ok: true });
+  app.post('/crash', (c) => {
     setTimeout(() => process.abort(), 50);
+    return c.json({ ok: true });
   });
-  router.post('/hang', (_req: any, res: any) => {
-    res.json({ ok: true });
+  app.post('/hang', (c) => {
     setTimeout(() => { for (;;) {} }, 50);
+    return c.json({ ok: true });
   });
-  router.post('/send', (_req: any, res: any) => {
+  app.post('/send', (c) => {
     ctx.agent.send({ to: 'agent-1', text: 'hello', idempotencyKey: 'k1' }).then(
       () => undefined,
       () => undefined
     );
-    res.json({ sent: true });
+    return c.json({ sent: true });
   });
-}
+  return { fetch: app.fetch };
+});
 `;
 }
 
@@ -292,7 +303,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
   // Purpose: approved and started, it answers through DorkOS from its own
   // process (not this one), and ctx crosses the boundary to the real store.
   it(
-    'serves its router from its own process and uses ctx',
+    'serves its fetch handler from its own process and uses ctx',
     async () => {
       await install();
       await boot();

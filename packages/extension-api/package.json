@@ -37,7 +37,6 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/express": "^5.0.6",
     "@types/react": "^19.3.0",
     "vitest": "^4.1.11"
   }

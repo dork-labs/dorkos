@@ -3,7 +3,7 @@
 // settles every answer. Served as a fetch handler with Hono, which DorkOS
 // builds in, behind `requirePerson()` (DOR-2859).
 import { Hono } from 'hono';
-import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
 
 /** What the raise route is sent. */
 interface RaiseBody {
@@ -13,13 +13,8 @@ interface RaiseBody {
   projectLabel?: string;
 }
 
-/**
- * Register the raise route and the handler.
- *
- * @param _router - The old router, which this fixture leaves empty.
- * @param ctx - The extension's context.
- */
-export default function register(_router: unknown, ctx: DataProviderContext) {
+/** The raise route and the handler. */
+export default defineServer((ctx) => {
   const stop = ctx.inbox.onAction(() => ({ resolve: 'approved' }));
   const app = new Hono();
   app.post('/raise', requirePerson(), async (c) => {
@@ -40,4 +35,4 @@ export default function register(_router: unknown, ctx: DataProviderContext) {
     return c.json({ resolved: await ctx.inbox.resolve(key, { outcome: 'cancelled' }) });
   });
   return { fetch: app.fetch, cleanup: stop };
-}
+});

@@ -17,9 +17,7 @@
  *   (`agent-tools/tool-handle-rules.ts`), and closes when `register()`
  *   finishes ({@link ProxyCtx.sealTools}).
  * - `local`: `schedule` (the same 5-second floor as in-process; every cancel
- *   runs on stop) and `requirePerson`, which reads the verdict the host put
- *   in a header (`isolated-router.ts`) and refuses when there is none: fail
- *   closed.
+ *   runs on stop).
  *
  * Nothing here enforces anything: the extension shares this process, and
  * could send any message itself. The host checks every message
@@ -31,7 +29,6 @@
  *
  * @module services/extensions/isolation/child/proxy-ctx
  */
-import type { RequestHandler } from 'express';
 import type { DataProviderContext } from '@dorkos/extension-api/server';
 import {
   ADVISOR_METHODS,
@@ -42,8 +39,6 @@ import {
 } from '../ctx-protocol.js';
 import { toolHandleProblem, type ToolHandleCheck } from '../../agent-tools/tool-handle-rules.js';
 import {
-  PERSON_VERDICT_HEADER,
-  parsePersonVerdict,
   type ChildMessage,
   type HostMessage,
   type InitMessage,
@@ -376,27 +371,13 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     return cancel;
   };
 
-  // The host ran the person bar on the real request (whose cookie and
-  // tokens never reach this process) and put its verdict in a header it
-  // always sets; a client-sent copy is replaced (spec §7). A missing or
-  // unreadable verdict refuses, with the in-process words for an agent.
-  const requirePerson: RequestHandler = (req, res, next) => {
-    const verdict = parsePersonVerdict(req.headers[PERSON_VERDICT_HEADER]);
-    if (verdict?.ok === true) {
-      next();
-      return;
-    }
-    if (verdict) res.status(verdict.status).json(verdict.body);
-    else res.status(403).json(init.personRefusal);
-  };
-
   const consts: Record<string, string> = {
     extensionId: init.extensionId,
     extensionDir: init.ctx.extensionDir,
     dorkHome: init.ctx.dorkHome,
     filesDir: init.ctx.filesDir,
   };
-  const locals: Record<string, unknown> = { schedule, requirePerson };
+  const locals: Record<string, unknown> = { schedule };
 
   const build = (members: { readonly [name: string]: Kind }, prefix: string): object => {
     const out: Record<string, unknown> = {};

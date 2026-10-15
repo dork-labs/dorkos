@@ -14,8 +14,8 @@
 /**
  * The `serverError` codes that mean an extension's server half is stopped
  * and nothing of it is serving: it stopped on its own (an extension that runs
- * separately), it can't run with its limits here, or it never finished
- * starting. The card shows the sentence with a Reload action. A failed
+ * separately), it can't run with its limits here, it never finished
+ * starting, or it is written for the Express router DorkOS no longer runs. The card shows the sentence with a Reload action. A failed
  * rebuild while the old version keeps serving is not one of these.
  */
 export const EXTENSION_SERVER_ERROR_CODES = [
@@ -25,6 +25,7 @@ export const EXTENSION_SERVER_ERROR_CODES = [
   'isolation_unavailable',
   'server_start_failed',
   'server_start_timeout',
+  'server_old_router',
 ] as const;
 
 /** One of {@link EXTENSION_SERVER_ERROR_CODES}. */
@@ -38,6 +39,7 @@ const COPY: Record<ExtensionServerErrorCode, (name: string) => string> = {
   isolation_unavailable: (name) => `${name} can’t run with its limits on this computer.`,
   server_start_failed: (name) => `${name} couldn’t start. Reload it to try again.`,
   server_start_timeout: (name) => `${name} took too long to start. Reload it to try again.`,
+  server_old_router: (name) => `${name} uses an old server style. Ask an agent to update it.`,
 };
 
 /**

@@ -12,8 +12,8 @@
  *   fails. A project copy's digest covers the plugin folder and nothing
  *   beyond it, so code from outside would run under the plugin's approval
  *   without ever being checked. The host's externals (`react`,
- *   `@dorkos/extension-api`, `express`) and Node's built-ins are left to the
- *   host, as before.
+ *   `@dorkos/extension-api`) and Node's built-ins are left to the host, as
+ *   before.
  * - **The pinned digest.** A copy whose trust was judged against a plugin
  *   folder digest (`ExtensionRecord.pinnedDigest`) is re-hashed immediately
  *   before the bundle is built or served and again right after, so files

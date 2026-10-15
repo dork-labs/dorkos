@@ -3,15 +3,14 @@
  *
  * Every request under an extension's mount goes to the handler its server
  * half has while it runs (`services/extensions/http/extension-http.ts`): its
- * Express router through the bridge, its `dataProxy`, or the forwarder to its
- * own process. These routes add nothing in front of that but the lookup, and
+ * `dataProxy`, its fetch handler, or the forwarder to its own process. These routes add nothing in front of that but the lookup, and
  * they run behind the whole `/api` chain, so the host guard, the session
  * gate, agent identity and the audit scope apply as to any route.
  *
  * Extensions are code from strangers. One that is not installed, not turned
  * on, not approved to run, or stopped has no handler, and its mount answers
- * `404` before any of its code runs. A path the extension passes on gets the
- * `/api` 404, as it did when the request fell through its Express router.
+ * `404` before any of its code runs. A path every handler passes on gets the
+ * `/api` 404.
  *
  * @module routes/extension-api
  */

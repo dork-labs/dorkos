@@ -309,18 +309,6 @@ export interface DataProviderContext {
    */
   readonly inbox: InboxApi;
   /**
-   * Express middleware that admits only a person (the same bar as approving an
-   * extension, including its login-off residual: with Require login off, a
-   * local caller that does not name itself an agent passes, and in any posture
-   * this extension's own page code passes). Put it in front of every route
-   * that changes state on a person's behalf:
-   * `router.put('/settings', ctx.requirePerson, handler)`.
-   *
-   * @deprecated For the old Express router. A fetch handler uses
-   * `requirePerson()` or `checkPerson(caller)` from this module (DOR-2856).
-   */
-  readonly requirePerson: import('express').RequestHandler;
-  /**
    * Read-only view of the per-project settings a person writes through
    * `api.projectSettings.set` (§7.10). No setter exists here, so neither this
    * server half nor any agent it runs can change them.
@@ -624,13 +612,18 @@ export type {
   PersonCheck,
   PersonRefusal,
   RegisterOutcome,
+  ServerDefinition,
   ServerExtensionHandlers,
   ServerExtensionRegister,
   ServerExtensionRegisterResult,
+  ServerStart,
 } from './server-entry.js';
 export {
   checkPerson,
+  defineServer,
+  OLD_ROUTER_MESSAGE,
+  OldRouterError,
   readRegisterResult,
   requirePerson,
-  serverEntryRegister,
+  serverEntryStart,
 } from './server-entry.js';

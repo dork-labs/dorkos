@@ -7,9 +7,8 @@
  * client library would quietly merge or reject before sending.
  */
 import net from 'node:net';
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
 import { isLocalCaller } from '../../../../lib/caller-authority.js';
@@ -46,6 +45,20 @@ function get(port: number, path: string, headers: string[]): Promise<RawResponse
   return rawRequest(port, [`GET ${path} HTTP/1.1`, ...headers]);
 }
 
+/**
+ * Answer `body` as JSON with a 200 and a fixed length, so the raw reader sees
+ * the body itself rather than chunked framing.
+ */
+function sendJson(res: ServerResponse, body: unknown): void {
+  const text = JSON.stringify(body);
+  res
+    .writeHead(200, {
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(text),
+    })
+    .end(text);
+}
+
 const proofHeader = `X-DorkOS-Edge: ${PROOF.secret}`;
 const hostHeader = `Host: ${HOST}`;
 
@@ -61,31 +74,33 @@ let seenHeaders: { raw: string[]; parsed: Record<string, unknown> } | null;
 beforeEach(async () => {
   routeSpy = vi.fn();
   seenHeaders = null;
-  const app = express();
-  app.use((req, res, next) => {
-    routeSpy(req.path);
+  const app: RequestListener = (req, res) => {
+    const path = (req.url ?? '/').split('?')[0]!;
+    routeSpy(path);
     seenHeaders = { raw: [...req.rawHeaders], parsed: { ...req.headers } };
-    next();
-  });
-  app.get('/whoami', (req, res) => {
-    res.json({
-      local: isLocalCaller({
-        headers: req.headers,
-        peerAddress: req.socket.remoteAddress,
-        managedIngress: isManagedIngress(req),
-      }),
-      marked: isManagedIngress(req),
-    });
-  });
-  app.get('/stream', (_req, res) => {
-    // A long-lived event stream: it never ends on its own.
-    res.writeHead(200, { 'content-type': 'text/event-stream' });
-    res.write(': open\n\n');
-  });
-  app.get('/slow', (_req, res) => {
-    setTimeout(() => res.json({ done: true }), 150);
-  });
-  app.use((_req, res) => res.status(200).json({ reached: true }));
+    if (req.method !== 'GET') return sendJson(res, { reached: true });
+    if (path === '/whoami') {
+      return sendJson(res, {
+        local: isLocalCaller({
+          headers: req.headers,
+          peerAddress: req.socket.remoteAddress,
+          managedIngress: isManagedIngress(req),
+        }),
+        marked: isManagedIngress(req),
+      });
+    }
+    if (path === '/stream') {
+      // A long-lived event stream: it never ends on its own.
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(': open\n\n');
+      return;
+    }
+    if (path === '/slow') {
+      setTimeout(() => sendJson(res, { done: true }), 150);
+      return;
+    }
+    sendJson(res, { reached: true });
+  };
 
   forwardUpgrade = vi.fn((_req: IncomingMessage, socket: Duplex, _head: Buffer) => {
     socket.destroy();
@@ -113,11 +128,10 @@ describe('edge proof on HTTP requests', () => {
 
   it('leaves no trace of the proof in headersDistinct either', async () => {
     let distinct: Record<string, unknown> | null = null;
-    const app = express();
-    app.use((req, res) => {
+    const app: RequestListener = (req, res) => {
       distinct = { ...req.headersDistinct };
       res.end();
-    });
+    };
     await ingress.close({ immediate: true });
     ingress = createManagedIngress({ handler: app, forwardUpgrade, now: () => now });
     port = Number(new URL(await ingress.open()).port);
@@ -257,7 +271,7 @@ describe('host and path checks', () => {
     expect(routeSpy).not.toHaveBeenCalled();
   });
 
-  // Express routes by `parseurl`, which reads all of these as an agent path.
+  // A lenient URL parser (Express's `parseurl`, say) reads all of these as an agent path.
   it.each([
     '/a2a#x',
     '/a2a/#',

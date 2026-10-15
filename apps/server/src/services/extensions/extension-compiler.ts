@@ -312,7 +312,7 @@ const SERVER_TARGET: BuildTarget = {
     format: 'cjs',
     platform: 'node',
     target: 'node20',
-    external: ['express', '@dorkos/extension-api', '@dorkos/extension-api/server'],
+    external: ['@dorkos/extension-api', '@dorkos/extension-api/server'],
     write: false,
     minify: false,
     sourcemap: 'inline',
@@ -403,9 +403,9 @@ export class ExtensionCompiler {
   /**
    * Compile a server-side extension entry point for Node.js.
    *
-   * Uses CJS format for dynamic `require()` loading. Externals include express
-   * and extension-api packages (provided by the host process); `hono` is
-   * bundled inline from DorkOS's own copy.
+   * Uses CJS format for dynamic `require()` loading. The extension-api
+   * packages are external (provided by the host process); `hono` is bundled
+   * inline from DorkOS's own copy.
    *
    * @param record - Extension record with serverEntryPath
    * @returns Compiled code and hash on success, or error on failure

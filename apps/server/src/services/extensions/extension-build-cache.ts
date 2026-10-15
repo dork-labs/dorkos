@@ -158,7 +158,7 @@ export function buildStartTime(): number {
  * maps record source paths relative to it), and every build option.
  *
  * The host's own version is deliberately absent: host-provided modules
- * (`react`, `@dorkos/extension-api`, `express`) are externals the bundle
+ * (`react`, `@dorkos/extension-api`) are externals the bundle
  * imports at run time, so nothing from the host is baked into the output.
  *
  * @param esbuildVersion - The running esbuild's version string.

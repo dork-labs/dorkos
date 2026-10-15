@@ -7,12 +7,11 @@ import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { Router } from 'express';
 import { Hono } from 'hono';
 import {
   readRegisterResult,
   requirePerson,
-  serverEntryRegister,
+  serverEntryStart,
   type ExtensionCaller,
   type ExtensionFetchHandler,
 } from '@dorkos/extension-api/server';
@@ -26,7 +25,6 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
-import { bridgeExpressRouter } from '../express-bridge.js';
 import { firstAnswer, type ExtensionHttpHandler } from '../extension-http.js';
 import { createFetchHandler } from '../fetch-handler.js';
 
@@ -438,8 +436,8 @@ describe('a Hono app as the fetch handler', () => {
     const app = new Hono();
     app.get('/status', (c) => c.json({ ok: true, q: c.req.query('q') }));
     app.post('/items', async (c) => c.json({ got: await c.req.json() }, 201));
-    const register = serverEntryRegister({ default: app });
-    const { fetch } = readRegisterResult(await register!({} as never, {} as never));
+    const start = serverEntryStart({ default: app });
+    const { fetch } = readRegisterResult(await start!({} as never));
     serve(createFetchHandler('My Extension', fetch!));
 
     const status = await request(server).get('/api/ext/my-ext/status?q=yes');
@@ -453,33 +451,19 @@ describe('a Hono app as the fetch handler', () => {
   });
 });
 
-describe('a router and a fetch handler together', () => {
-  it('asks the router first, and gives the fetch handler what it passes on', async () => {
-    const router = Router();
-    router.get('/from-router', (_req, res) => {
-      res.json({ from: 'router' });
-    });
+describe('a dataProxy and a fetch handler together', () => {
+  it('asks the first handler, and gives the fetch handler what it passes on', async () => {
     serve(
       firstAnswer(
-        bridgeExpressRouter(router),
+        async ({ subPath }) => (subPath === '/proxy/x' ? Response.json({ from: 'proxy' }) : null),
         createFetchHandler('My Extension', () => Response.json({ from: 'fetch' }))
       )
     );
 
-    expect((await request(server).get('/api/ext/my-ext/from-router')).body).toEqual({
-      from: 'router',
+    expect((await request(server).get('/api/ext/my-ext/proxy/x')).body).toEqual({
+      from: 'proxy',
     });
     expect((await request(server).get('/api/ext/my-ext/other')).body).toEqual({ from: 'fetch' });
-  });
-
-  it('never runs Express for a router with no routes', async () => {
-    const handled = await bridgeExpressRouter(Router())({
-      c: {} as never,
-      mount: '/api/ext/my-ext',
-      subPath: '/x',
-    });
-
-    expect(handled).toBeNull();
   });
 });
 

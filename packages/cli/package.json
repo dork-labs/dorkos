@@ -73,7 +73,6 @@
     "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.2",
-    "express": "^5.2.1",
     "hono": "^4.13.9",
     "node-pty": "^1.1.0",
     "playwright-core": "1.63.0",

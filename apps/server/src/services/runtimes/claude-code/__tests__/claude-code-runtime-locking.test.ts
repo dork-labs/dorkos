@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { Response } from 'express';
+import type { SseResponse } from '@dorkos/shared/agent-runtime';
 
 // Mock the SDK before importing agent-manager
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -21,7 +21,7 @@ interface SessionLock {
   clientId: string;
   acquiredAt: number;
   ttl: number;
-  response: Response;
+  response: SseResponse;
 }
 
 interface LockManagerWithLocks {
@@ -41,8 +41,8 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
   let ClaudeCodeRuntime: typeof import('../claude-code-runtime.js').ClaudeCodeRuntime;
   let agentManager: InstanceType<typeof ClaudeCodeRuntime>;
 
-  // Helper to create a mock Express Response
-  function createMockResponse(): Response & { _triggerClose: () => void } {
+  // Helper to create a mock SSE response
+  function createMockResponse(): SseResponse & { _triggerClose: () => void } {
     const handlers = new Map<string, Function>();
     const mockRes = {
       on: vi.fn((event: string, cb: Function) => {
@@ -53,7 +53,7 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
         handlers.get('close')?.();
       },
     };
-    return mockRes as unknown as Response & { _triggerClose: () => void };
+    return mockRes as unknown as SseResponse & { _triggerClose: () => void };
   }
 
   beforeEach(async () => {

@@ -29,11 +29,7 @@ import { createProjectsApi } from '../projects/extension-projects-api.js';
 import { getStartWorkService } from './start-work.js';
 import { getAgentSendService } from './agent-send/agent-send.js';
 import { projectRegistry } from '../projects/project-registry.js';
-import {
-  createInboxApi,
-  createProjectSettingsReader,
-  createRequirePerson,
-} from './inbox/extension-inbox-context.js';
+import { createInboxApi, createProjectSettingsReader } from './inbox/extension-inbox-context.js';
 import fs from 'fs/promises';
 import { mkdirSync } from 'fs';
 import path from 'path';
@@ -253,7 +249,6 @@ interface CreateContextDeps {
  * - `accounts`: the agent accounts, their usage, and the account advisor seam
  * - `projects`: the projects core knows, scoped to this extension
  * - `inbox`: decisions in the Activity inbox (spec `flow-multiproject` §7)
- * - `requirePerson`: the person bar for the extension's own routes
  * - `projectSettings`: per-project settings only a person writes, read-only here
  * - `sessions`: start work in a new chat by the extension's own rules (§7.7)
  * - `agent`: send one of the person's agents a message, held while it is busy,
@@ -400,7 +395,6 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     accounts: guardedAccounts,
     projects: guardedProjects,
     inbox: guardedInbox,
-    requirePerson: createRequirePerson(extensionName),
     projectSettings: guardedProjectSettings,
     sessions: {
       start: async (input) => {

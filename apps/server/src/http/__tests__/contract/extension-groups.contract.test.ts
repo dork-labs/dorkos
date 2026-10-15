@@ -4,29 +4,31 @@
  * now", trusted sources, init-server, reload, the working-folder notice, the
  * bundle, an extension's data, secrets, settings, decisions, project settings
  * and start-work) and each running extension's own API under `/api/ext/:id`:
- * its router, its `dataProxy`, and the router of one that runs in its own
- * process. That PR must pass this file unchanged.
+ * its fetch handler, its `dataProxy`, and the fetch handler of one that runs
+ * in its own process. That PR must pass this file unchanged; DOR-2861, which
+ * retired the Express router, rewrote the extensions it installs.
  *
  * Extensions are code from strangers, so most of this file is the trust
  * surface: an extension nobody approved serves nothing, one that is turned
  * off serves nothing, only a person may turn one on or allow it to run, and
  * an agent that names itself is refused all of those. What an approved
- * extension's router sees is pinned too, since authors build on it: its mount
- * (`req.baseUrl`), its path, the JSON body DorkOS already parsed for it, a
- * body DorkOS did not parse still readable as a stream, and what a route that
- * throws answers.
+ * extension's handler sees is pinned too, since authors build on it: the
+ * path below its mount and the query, the JSON body DorkOS already parsed
+ * for it, a body DorkOS did not parse still readable, and what a handler
+ * that throws answers.
  *
  * Four servers:
  *
  * 1. Login off, nothing installed: shapes, validation answers, 404s and the
  *    refusals a caller earns with headers alone.
  * 2. Login off, driven by hand: three extensions copied into the server's
- *    data directory (one with a router, one with only a `dataProxy` to an
- *    upstream this file runs, one that runs in its own process), turned on,
- *    approved, used, turned off.
- * 3. Login off, extensions that serve with a `fetch` handler (DOR-2687):
- *    beside a router, as the server entry's only export, and in its own
- *    process.
+ *    data directory (one a Hono app behind `defineServer`, one with only a
+ *    `dataProxy` to an upstream this file runs, one that runs in its own
+ *    process), turned on, approved, used, turned off.
+ * 3. Login off, extensions that serve with a plain `fetch` handler
+ *    (DOR-2687): from `defineServer`, as the server entry's only export, and
+ *    in its own process; and an older entry that touches the retired router,
+ *    which does not start.
  * 4. Login on: no credential is refused at the gate; an API key may not do
  *    what only a signed-in person does; the owner's cookie may.
  */
@@ -38,6 +40,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { OLD_ROUTER_MESSAGE } from '@dorkos/extension-api/server';
 import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
@@ -76,7 +79,7 @@ const EXTENSION_LIST = z.array(
   z.object({ id: z.string(), status: z.string(), approvedToRun: z.boolean() }).loose()
 );
 
-/** The extension with a router, one with only a proxy, one in its own process. */
+/** The extension with a fetch handler, one with only a proxy, one in its own process. */
 const ROUTED = 'contract-routed';
 const PROXIED = 'contract-proxied';
 const ISOLATED = 'contract-isolated';
@@ -480,61 +483,77 @@ async function check(server: ComposedServer | undefined, testCase: Omit<Contract
 }
 
 /**
- * The router extension's server half. No imports: DorkOS compiles it with
- * esbuild and `require`s it, and only the router and ctx are handed in.
+ * The in-process extension's server half: a Hono app behind `defineServer`,
+ * the shape the guide teaches. DorkOS compiles it with esbuild, bundling
+ * `hono` in, and `require`s it. Its `onError` hands a thrown error on, so
+ * DorkOS answers it (Hono's own default would answer a plain-text 500).
+ * `/not-a-response` sits outside the app: a handler that answers with
+ * something that is not a `Response`.
  */
 const ROUTED_SERVER = `
-export default function register(router: any, ctx: any) {
-  router.get('/where', (req: any, res: any) =>
-    res.json({
-      baseUrl: req.baseUrl,
-      path: req.path,
-      url: req.url,
-      originalUrl: req.originalUrl,
-      query: req.query,
-      method: req.method,
-    })
+import { Hono } from 'hono';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
+
+export default defineServer(() => {
+  const app = new Hono();
+  app.get('/where', (c) =>
+    c.json({ path: c.req.path, url: c.req.url, query: c.req.query(), method: c.req.method })
   );
-  router.get('/items/:itemId', (req: any, res: any) => res.json({ params: req.params }));
-  router.post('/echo', (req: any, res: any) =>
-    res.json({ body: req.body === undefined ? 'none' : req.body })
-  );
-  router.post('/raw', (req: any, res: any) => {
-    let text = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk: string) => (text += chunk));
-    req.on('end', () => res.json({ text, body: req.body === undefined ? 'none' : req.body }));
+  app.get('/items/:itemId', (c) => c.json({ params: c.req.param() }));
+  app.post('/echo', async (c) => {
+    const text = await c.req.text();
+    return c.json({ body: text ? JSON.parse(text) : 'none' });
   });
-  router.post('/person', ctx.requirePerson, (_req: any, res: any) => res.json({ ok: true }));
-  router.get('/status', (_req: any, res: any) =>
-    res.status(418).set('x-contract', 'yes').type('text/plain').send('short and stout')
+  app.post('/raw', async (c) =>
+    c.json({ text: await c.req.text(), type: c.req.header('content-type') ?? null })
   );
-  router.get('/boom', () => {
+  app.post('/person', requirePerson(), (c) => c.json({ ok: true }));
+  app.get('/status', (c) => c.text('short and stout', 418, { 'x-contract': 'yes' }));
+  app.get('/boom', () => {
     throw new Error('the extension route broke');
   });
-  router.get('/boom-later', async () => {
+  app.get('/boom-later', async () => {
+    await Promise.resolve();
     throw new Error('the extension route broke later');
   });
-  router.get('/handed-on', (_req: any, _res: any, next: any) => next(new Error('handed on')));
-  router.get('/cookie', (req: any, res: any) => res.json({ cookie: req.headers.cookie ?? null }));
-}
+  app.get('/cookie', (c) => c.json({ cookie: c.req.header('cookie') ?? null }));
+  app.onError((error) => {
+    throw error;
+  });
+  return {
+    fetch: (request: Request, caller: unknown) =>
+      new URL(request.url).pathname === '/not-a-response'
+        ? ({ not: 'a Response' } as unknown as Response)
+        : app.fetch(request, caller),
+  };
+});
 `;
 
 /** The isolated extension's server half: the same shape, in its own process. */
 const ISOLATED_SERVER = `
-export default function register(router: any) {
-  router.get('/where', (req: any, res: any) =>
-    res.json({ baseUrl: req.baseUrl, path: req.path, originalUrl: req.originalUrl })
-  );
-  router.post('/echo', (req: any, res: any) =>
-    res.json({ body: req.body === undefined ? 'none' : req.body })
-  );
-  router.get('/cookie', (req: any, res: any) => res.json({ cookie: req.headers.cookie ?? null }));
-  router.get('/boom', () => {
+import { Hono } from 'hono';
+import { defineServer } from '@dorkos/extension-api/server';
+
+export default defineServer(() => {
+  const app = new Hono();
+  app.get('/where', (c) => c.json({ path: c.req.path, url: c.req.url }));
+  app.post('/echo', async (c) => {
+    const text = await c.req.text();
+    return c.json({ body: text ? JSON.parse(text) : 'none' });
+  });
+  app.get('/cookie', (c) => c.json({ cookie: c.req.header('cookie') ?? null }));
+  app.get('/boom', () => {
     throw new Error('the isolated route broke');
   });
-}
+  app.onError((error) => {
+    throw error;
+  });
+  return { fetch: app.fetch };
+});
 `;
+
+/** What Hono answers a path its app does not route. */
+const HONO_NOT_FOUND = '404 Not Found';
 
 /** Write one extension into the server's data directory. */
 function install(dorkHome: string, id: string, manifest: object, server?: string): void {
@@ -676,17 +695,15 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     expect(mine.map((e) => e.approvedToRun)).toEqual([true, true, true]);
   });
 
-  it('shows an extension’s router its mount, path and query', async () => {
+  it('shows an extension the path below its mount, on DorkOS’s origin, and the query', async () => {
     await check(server, {
       path: `/api/ext/${ROUTED}/where?x=1&y=two`,
       expect: {
         status: 200,
         headers: { ...JSON_TYPE, 'x-content-type-options': 'nosniff' },
         body: {
-          baseUrl: `/api/ext/${ROUTED}`,
           path: '/where',
-          url: '/where?x=1&y=two',
-          originalUrl: `/api/ext/${ROUTED}/where?x=1&y=two`,
+          url: new URL('/where?x=1&y=two', server!.baseUrl).href,
           query: { x: '1', y: 'two' },
           method: 'GET',
         },
@@ -718,7 +735,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/raw`,
       headers: { 'content-type': 'text/plain' },
       body: 'plain words, not JSON',
-      expect: { status: 200, body: { text: 'plain words, not JSON', body: 'none' } },
+      expect: { status: 200, body: { text: 'plain words, not JSON', type: 'text/plain' } },
     });
   });
 
@@ -743,7 +760,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
   });
 
-  it('answers a route that throws with the server’s own error, and keeps serving', async () => {
+  it('answers a handler that throws, or answers wrongly, with the server’s own error, and keeps serving', async () => {
     const thrown = z.object({ error: z.string(), code: z.literal('INTERNAL_ERROR') }).strict();
     await check(server, {
       path: `/api/ext/${ROUTED}/boom`,
@@ -761,16 +778,22 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       },
     });
     await check(server, {
-      path: `/api/ext/${ROUTED}/handed-on`,
-      expect: { status: 500, body: { error: 'handed on', code: 'INTERNAL_ERROR' } },
+      path: `/api/ext/${ROUTED}/not-a-response`,
+      expect: {
+        status: 500,
+        body: {
+          error: `${ROUTED} answered with something that is not a Response.`,
+          code: 'INTERNAL_ERROR',
+        },
+      },
     });
     await check(server, { path: '/api/health', expect: { status: 200 } });
   });
 
-  it('answers a path the extension does not serve with the /api 404', async () => {
+  it('answers a path the extension does not serve with the extension’s own 404', async () => {
     await check(server, {
       path: `/api/ext/${ROUTED}/nothing-here`,
-      expect: { status: 404, body: NOT_FOUND },
+      expect: { status: 404, body: HONO_NOT_FOUND },
     });
   });
 
@@ -949,11 +972,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
           'content-security-policy': "sandbox; default-src 'none'",
           'x-content-type-options': 'nosniff',
         },
-        body: {
-          baseUrl: `/api/ext/${ISOLATED}`,
-          path: '/where',
-          originalUrl: `/api/ext/${ISOLATED}/where?q=1`,
-        },
+        body: { path: '/where', url: new URL('/where?q=1', server!.baseUrl).href },
       },
     });
     await check(server, {
@@ -973,12 +992,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
     await check(server, {
       path: `/api/ext/${ISOLATED}/nothing-here`,
-      expect: {
-        status: 404,
-        body: {
-          error: `Extension '${ISOLATED}' has no route for /api/ext/${ISOLATED}/nothing-here`,
-        },
-      },
+      expect: { status: 404, body: HONO_NOT_FOUND },
     });
   });
 
@@ -1037,12 +1051,17 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
   });
 });
 
-/** An extension that serves with a router and a fetch handler together. */
+/** An extension whose `defineServer` start returns a fetch handler. */
 const FETCHED = 'contract-fetched';
 /** An extension whose server entry exports nothing but a fetch handler. */
 const FETCH_DEFAULT = 'contract-fetch-default';
-/** An extension in its own process that serves with a fetch handler. */
+/**
+ * An extension in its own process that serves with a fetch handler, from an
+ * older `register()` that never touches its router: that still starts.
+ */
 const ISOLATED_FETCHED = 'contract-isolated-fetched';
+/** An older extension that still fills the Express router DorkOS no longer runs. */
+const OLD_ROUTER = 'contract-old-router';
 
 /** A fetch handler that describes the request it was given, or throws on `/boom`. */
 const DESCRIBE_REQUEST = `
@@ -1070,10 +1089,9 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
       dorkHome,
       FETCHED,
       { serverCapabilities: { serverEntry: './server.ts' } },
-      `export default function register(router: any) {
-  router.get('/from-router', (_req: any, res: any) => res.json({ from: 'router' }));
-  return { fetch: ${DESCRIBE_REQUEST}, cleanup() {} };
-}
+      `import { defineServer } from '@dorkos/extension-api/server';
+
+export default defineServer(() => ({ fetch: ${DESCRIBE_REQUEST}, cleanup() {} }));
 `
     );
     install(
@@ -1098,12 +1116,23 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
 }
 `
     );
+    install(
+      dorkHome,
+      OLD_ROUTER,
+      { serverCapabilities: { serverEntry: './server.ts' } },
+      `export default function register(router: any) {
+  router.get('/from-router', (_req: any, res: any) => res.json({ from: 'router' }));
+  return { fetch: ${DESCRIBE_REQUEST} };
+}
+`
+    );
     await setup(server, 'POST', '/api/extensions/reload', {});
     const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await setup(server, 'GET', '/api/extensions');
       const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
-      if ([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED].every((id) => ids.includes(id))) break;
+      if ([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED, OLD_ROUTER].every((id) => ids.includes(id)))
+        break;
       if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -1115,7 +1144,7 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
   }, 30_000);
 
   it('serves nothing before a person approves it', async () => {
-    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
+    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED, OLD_ROUTER]) {
       await setup(server, 'POST', `/api/extensions/${id}/enable`, {});
       await check(server, {
         path: `/api/ext/${id}/items`,
@@ -1172,10 +1201,32 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
     });
   });
 
-  it('asks the router first when an extension has both', async () => {
+  it('does not start an extension that touches the old router, and still loads its page', async () => {
+    await setup(server, 'POST', `/api/extensions/${OLD_ROUTER}/approve`, {});
     await check(server, {
-      path: `/api/ext/${FETCHED}/from-router`,
-      expect: { status: 200, body: { from: 'router' } },
+      method: 'POST',
+      path: `/api/extensions/${OLD_ROUTER}/init-server`,
+      body: {},
+      expect: { status: 400, body: { error: OLD_ROUTER_MESSAGE } },
+    });
+    // Neither the router it filled nor the fetch handler it returned is served.
+    for (const below of ['/from-router', '/items']) {
+      await check(server, {
+        path: `/api/ext/${OLD_ROUTER}${below}`,
+        expect: { status: 404, body: NO_ROUTES(OLD_ROUTER) },
+      });
+    }
+    const listed = await setup(server, 'GET', '/api/extensions');
+    const card = (listed.json as unknown as { id: string; serverError?: unknown }[]).find(
+      (e) => e.id === OLD_ROUTER
+    );
+    expect(card?.serverError).toEqual({
+      code: 'server_old_router',
+      message: `${OLD_ROUTER} uses an old server style. Ask an agent to update it.`,
+    });
+    await check(server, {
+      path: `/api/extensions/${OLD_ROUTER}/bundle`,
+      expect: { status: 200, headers: { 'content-type': /^application\/javascript\b/ } },
     });
   });
 

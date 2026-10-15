@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
@@ -30,12 +30,9 @@ function setLegacyKey(value: string | null): void {
   });
 }
 
-/** Mount the Better Auth handler as `app.ts` does, so HTTP sign-up fires its hooks. */
-function buildApp(): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  app.use(express.json({ limit: '1mb' }));
-  return app;
+/** Serve the Better Auth handler over HTTP, so sign-up fires its hooks. */
+function buildApp(): RequestListener {
+  return toNodeHandler(getAuth()!);
 }
 
 describe('seedLegacyMcpApiKey — legacy MCP key migration (task 1.4)', () => {

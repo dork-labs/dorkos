@@ -20,17 +20,17 @@ export function activate(api: ExtensionAPI): () => void {
 }
 ```
 
-`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`requirePerson()`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
 
 ## Your extension's own API
 
-An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. Write that API as a Hono app and return it as `{ fetch }` from `register`. Hono is built in, so `import { Hono } from 'hono'` works with nothing installed. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
+An extension with a server half can answer web requests at `/api/ext/<your-id>/`. Its page calls them with `fetch('/api/ext/my-extension/status')`. Write that API as a Hono app and return it as `{ fetch }` from `defineServer`. Hono is built in, so `import { Hono } from 'hono'` works with nothing installed. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. If your server half needs nothing from `ctx`, export the app itself with `export default app`.
 
 ```typescript title="server.ts"
 import { Hono } from 'hono';
-import { requirePerson } from '@dorkos/extension-api/server';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
 
-export default function register(_router, ctx) {
+export default defineServer((ctx) => {
   const app = new Hono();
   app.get('/status', async (c) => c.json(await ctx.storage.loadData()));
   app.put('/settings', requirePerson(), async (c) => {
@@ -38,7 +38,7 @@ export default function register(_router, ctx) {
     return c.json({ ok: true });
   });
   return { fetch: app.fetch };
-}
+});
 ```
 
 `fetch` is a standard web handler: it takes a `Request` and returns a `Response`. Any framework that gives you one works, but Hono is the one that needs no install.
@@ -58,7 +58,7 @@ Nothing in your API runs until you approve the extension, and turning it off sto
 
 ### Older extensions
 
-Extensions made before this used the Express router `register` is handed: `router.get('/status', …)`. That still works for now, but DorkOS will stop running it, and the extension's row in **Settings > Extensions** says so. To update one, ask an agent to move it to a Hono app. Its page needs no change: the addresses stay the same.
+Extensions made before this used an Express router: `router.get('/status', …)`. DorkOS no longer runs it. Such an extension's server part doesn't start, and its card in **Settings > Extensions** says "uses an old server style". Its page, settings and data are untouched. To update one, ask an agent to move it to a Hono app. Its page needs no change: the addresses stay the same.
 
 ## Messaging an agent from the server half
 

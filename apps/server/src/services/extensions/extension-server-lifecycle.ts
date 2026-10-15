@@ -18,11 +18,9 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyHandler } from './http/extension-proxy.js';
-import { bridgeExpressRouter } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
@@ -38,7 +36,7 @@ import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
-import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
+import { readRegisterResult, serverEntryStart } from '@dorkos/extension-api/server';
 import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
@@ -47,32 +45,14 @@ import {
   IsolatedExtensionHost,
   type IsolatedExit,
   type IsolatedHostTimings,
-  type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
+import type { IsolatedStartErrorCode } from './isolation/start-refusal.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
+import { refuseOldRouter } from './server-bundle/old-router.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
-
-/** Extensions already warned about in this process, so the log says it once. */
-const warnedOldRouter = new Set<string>();
-
-/**
- * Log once per extension that it serves its API with the old Express router
- * (DOR-2858), which DorkOS is retiring in favour of a fetch handler.
- *
- * @param id - The extension id.
- * @param name - Its manifest name.
- */
-function warnOldRouter(id: string, name: string): void {
-  if (warnedOldRouter.has(id)) return;
-  warnedOldRouter.add(id);
-  logger.warn(
-    `[Extensions] ${name} (${id}) serves its API with the old Express router, which DorkOS ` +
-      `will stop running. Serve it with a fetch handler instead: Hono is built in.`
-  );
-}
 
 /**
  * Everything the running instance of an extension was built from, as one
@@ -173,8 +153,8 @@ export interface ServerLifecycleOptions {
  *
  * Each active extension gets one HTTP handler for `/api/ext/{id}/*`
  * (`extension-http.ts`). Proxy-only extensions (no server.ts) get the proxy;
- * extensions with server.ts get their router, through the Express bridge,
- * with the proxy tried after it.
+ * extensions with server.ts get their fetch handler, with the proxy tried
+ * first.
  */
 export class ExtensionServerLifecycle {
   private serverExtensions = new Map<string, ActiveServerExtension>();
@@ -446,12 +426,11 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
-      const registerFn = serverEntryRegister(loadInProcessBundle(tempFile));
-      if (!registerFn) {
-        return { ok: false, error: 'Server entry does not export a register function' };
+      const start = serverEntryStart(loadInProcessBundle(tempFile));
+      if (!start) {
+        return { ok: false, error: 'Server entry does not export a server definition' };
       }
 
-      const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
       const toolChecks = checkDeclaredTools(record.manifest);
@@ -473,7 +452,7 @@ export class ExtensionServerLifecycle {
       closeTools = () => tools.close();
 
       const outcome = await settleWithin(
-        Promise.resolve(registerFn(router, ctx)),
+        Promise.resolve().then(() => start(ctx)),
         this.registerTimeoutMs
       );
       if (outcome.timedOut) {
@@ -497,9 +476,8 @@ export class ExtensionServerLifecycle {
       // has tools, and only the declared tools it handled (DOR-2685).
       const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
 
-      // Its routes first; its proxy and its fetch handler get what they pass on.
+      // Its proxy first; its fetch handler gets what that passes on.
       const handler = firstAnswer(
-        bridgeExpressRouter(router),
         this.proxyFor(id, record),
         fetch && createFetchHandler(record.manifest.name, fetch)
       );
@@ -538,10 +516,8 @@ export class ExtensionServerLifecycle {
         disposeCtx: dispose,
         sourceKey,
         agentTools,
-        usesOldRouter: router.stack.length > 0,
       });
       registered = undefined;
-      if (router.stack.length > 0) warnOldRouter(id, record.manifest.name);
 
       // Only now, with the instance active, can agents reach its tools. A
       // refusal leaves the extension running without them and says why on
@@ -564,6 +540,9 @@ export class ExtensionServerLifecycle {
       registered?.();
       // Nor are its tools ever offered: it never started.
       closeTools?.();
+      // Written for the Express router DorkOS no longer runs (DOR-2861).
+      const oldRouter = refuseOldRouter(err, record);
+      if (oldRouter) return oldRouter;
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -772,9 +751,7 @@ export class ExtensionServerLifecycle {
       sourceKey,
       agentTools,
       isolated: host,
-      usesOldRouter: host.usesRouter,
     });
-    if (host.usesRouter) warnOldRouter(id, name);
     // It may have died in the moment between starting and being stored, when
     // nothing could hear it: treat that exactly like any other crash.
     if (!host.running) {
@@ -910,16 +887,6 @@ export class ExtensionServerLifecycle {
    */
   supervisedStatus(id: string): SupervisedServerStatus {
     return this.supervised.get(id) ?? {};
-  }
-
-  /**
-   * Whether the running instance of an extension added routes to the old
-   * Express router (DOR-2858), which its Extensions row says.
-   *
-   * @param id - The extension id.
-   */
-  usesOldRouter(id: string): boolean {
-    return this.serverExtensions.get(id)?.usesOldRouter === true;
   }
 
   /**

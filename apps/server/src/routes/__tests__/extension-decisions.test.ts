@@ -1,7 +1,7 @@
 /**
  * The decision routes (spec `flow-multiproject` §7.3, §7.6, §7.8, §7.10):
  * the bell's core UI endpoints, the extension-scoped ones its pages use, the
- * per-project settings only a person writes, and `ctx.requirePerson` in front
+ * per-project settings only a person writes, and `requirePerson()` in front
  * of an extension's own route through the real `/api/ext/:id/*` middleware.
  *
  * Every person-bar case here carries the residual the bar documents: with
@@ -56,7 +56,7 @@ vi.mock('../../services/projects/project-registry.js', () => {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { Router } from 'express';
+import { requirePerson, type ExtensionCaller } from '@dorkos/extension-api/server';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Hono, type MiddlewareHandler } from 'hono';
@@ -67,7 +67,8 @@ import { parseRequestBody } from '../../http/request-body.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { createExtensionApiRoutes } from '../extension-api.js';
-import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
+import { createFetchHandler } from '../../services/extensions/http/fetch-handler.js';
+import type { ExtensionHttpHandler } from '../../services/extensions/http/extension-http.js';
 import { createDataProviderContext } from '../../services/extensions/extension-server-api-factory.js';
 import {
   createInboxFixture,
@@ -94,7 +95,7 @@ let fx: InboxFixture;
 let dorkHome: string;
 let emitted: Array<{ summary: string }>;
 let signedInUser: { userId: string; credential: 'cookie' } | undefined;
-let extRouter: Router;
+let extHandler: ExtensionHttpHandler;
 
 beforeEach(() => {
   state.authEnabled = false;
@@ -110,7 +111,7 @@ beforeEach(() => {
       id === 'flow' || id === 'other'
         ? { id, manifest: { id, name: id === 'flow' ? 'Flow' : 'Other', version: '1.0.0' } }
         : undefined,
-    getServerHandler: (id: string) => (id === 'flow' ? bridgeExpressRouter(extRouter) : null),
+    getServerHandler: (id: string) => (id === 'flow' ? extHandler : null),
     listPublic: () => [],
   };
 
@@ -400,17 +401,12 @@ describe('per-project settings only a person writes', () => {
   });
 });
 
-describe('ctx.requirePerson through /api/ext/:id/*', () => {
+describe('requirePerson() through /api/ext/:id/*', () => {
   beforeEach(() => {
-    const { ctx } = createDataProviderContext({
-      extensionId: 'flow',
-      extensionDir: '/fake',
-      dorkHome,
-      extensionName: 'Flow',
-    });
-    extRouter = Router();
-    extRouter.put('/settings', ctx.requirePerson, (_req, res) => res.json({ ok: true }));
-    extRouter.get('/open', (_req, res) => res.json({ ok: true }));
+    const app = new Hono<{ Bindings: ExtensionCaller }>();
+    app.put('/settings', requirePerson(), (c) => c.json({ ok: true }));
+    app.get('/open', (c) => c.json({ ok: true }));
+    extHandler = createFetchHandler('Flow', app.fetch);
   });
 
   it('refuses an agent with the extension-named copy', async () => {

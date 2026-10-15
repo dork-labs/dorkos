@@ -261,11 +261,6 @@ export interface ExtensionRecordPublic {
    * `null`. See {@link ExtensionRecord.restartingAt}. Absent from an older server.
    */
   restartingAt?: string | null;
-  /**
-   * The running server half serves its API with the old Express router
-   * (DOR-2858). Still served; the card asks for an update. Absent otherwise.
-   */
-  usesOldRouter?: true;
   bundleReady: boolean;
   hasServerEntry: boolean;
   hasDataProxy: boolean;

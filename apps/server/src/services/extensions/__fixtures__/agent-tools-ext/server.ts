@@ -3,15 +3,10 @@
  * tier, bound with `ctx.tools.handle`. Tests load it through the real
  * compiler and lifecycle.
  */
-import type { DataProviderContext } from '@dorkos/extension-api/server';
+import { defineServer } from '@dorkos/extension-api/server';
 
-/**
- * Bind a handler to each declared tool.
- *
- * @param _router - The old router, which this fixture leaves empty.
- * @param ctx - The extension's server context.
- */
-export default function register(_router: unknown, ctx: DataProviderContext): void {
+/** Bind a handler to each declared tool. */
+export default defineServer((ctx) => {
   let counter = 0;
   ctx.tools.handle('echo', (input) => {
     const { message } = input as { message: string };
@@ -26,4 +21,4 @@ export default function register(_router: unknown, ctx: DataProviderContext): vo
     const { noteId } = input as { noteId: string };
     return { deleted: noteId };
   });
-}
+});

@@ -18,13 +18,14 @@
  * `ExtensionDialogProps` and `ExtensionDialogControls` (1.4.0). Serving the
  * API with a fetch handler adds `ExtensionCaller`, `PersonCheck`,
  * `PersonRefusal`, `ExtensionFetchHandler` and `ServerExtensionHandlers`
- * (1.5.0, DOR-2856). Each later
+ * (1.5.0, DOR-2856). DorkOS no longer runs the Express router, so
+ * `ctx.requirePerson`, its Express middleware, is gone (2.0.0, DOR-2861):
+ * a fetch handler checks the caller instead. Each later
  * phase adds its own members here.
  *
  * @module extension-api/__fixtures__/seam-contract
  */
 import type { ComponentType } from 'react';
-import type { RequestHandler } from 'express';
 
 /** What DorkOS answers a caller who is not a person with. */
 export interface PersonRefusal {
@@ -109,8 +110,6 @@ export interface DataProviderContextSeams {
   readonly projects: ProjectsApi;
   /** The inbox. */
   readonly inbox: InboxApi;
-  /** Admits only a person. */
-  readonly requirePerson: RequestHandler;
   /** Read-only per-project settings. */
   readonly projectSettings: ProjectSettingsReader;
   /** Start work in a new chat, by the extension's own rules. */

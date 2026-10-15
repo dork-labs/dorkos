@@ -13,7 +13,7 @@
  * | `emit`      | fire-and-forget (`ctx.emit`)                                         |
  * | `subscribe` | a listener the host registers on the real ctx; events go to the child |
  * | `reverse`   | the host calls a function the child holds and awaits its answer     |
- * | `local`     | implemented in the child, never sent (`schedule`, `requirePerson`)  |
+ * | `local`     | implemented in the child, never sent (`schedule`)                    |
  * | `object`    | a namespace whose members each have their own kind                  |
  *
  * `gate: 'agents'` marks a member an isolated extension may use only when its
@@ -193,7 +193,6 @@ export const CTX_PROTOCOL = {
       onAction: { kind: 'reverse', boundMs: INBOX_ACTION_BOUND_MS },
     },
   },
-  requirePerson: local,
   projectSettings: { kind: 'object', members: { get: call, onChange: subscribe } },
   sessions: { kind: 'object', members: { start: { kind: 'call', gate: 'agents' } } },
   agent: {

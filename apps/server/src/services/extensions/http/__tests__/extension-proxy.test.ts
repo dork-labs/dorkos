@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import http from 'node:http';
-import type { RequestListener } from 'node:http';
-import type { Request, Response } from 'express';
+import type { IncomingHttpHeaders, RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { DataProxyConfig } from '@dorkos/extension-api';
@@ -73,10 +72,18 @@ const DEFAULT_CONFIG: DataProxyConfig = {
   authSecret: 'api_key',
 };
 
-/** Build a minimal Express-like Request object. */
-function makeReq(
-  overrides: Partial<Request> & { params?: Record<string, string | string[]> } = {}
-): Request {
+/** The parts of a request the forwarder is handed, as a test sets them. */
+interface FakeRequest {
+  method: string;
+  url: string;
+  /** The decoded segments below `/proxy/`. */
+  params: { splat?: string[] };
+  headers: IncomingHttpHeaders;
+  body: unknown;
+}
+
+/** Build a minimal request. */
+function makeReq(overrides: Partial<FakeRequest> = {}): FakeRequest {
   return {
     method: 'GET',
     url: '/proxy/graphql',
@@ -89,37 +96,44 @@ function makeReq(
     },
     body: undefined,
     ...overrides,
-  } as unknown as Request;
+  };
 }
 
-/** Build a minimal Express-like Response object with spies. */
-function makeRes(): Response & {
+/** A response that records what the forwarder's answer set on it. */
+interface FakeResponse {
   _status: number | null;
   _headers: Record<string, string>;
   _body: unknown;
-} {
-  const res = {
-    _status: null as number | null,
-    _headers: {} as Record<string, string>,
-    _body: undefined as unknown,
-    status(code: number) {
+  status(code: number): FakeResponse;
+  setHeader(name: string, value: string): FakeResponse;
+  json(body: unknown): FakeResponse;
+  send(body: unknown): FakeResponse;
+}
+
+/** Build a minimal response with spies. */
+function makeRes(): FakeResponse {
+  const res: FakeResponse = {
+    _status: null,
+    _headers: {},
+    _body: undefined,
+    status(code) {
       res._status = code;
       return res;
     },
-    setHeader(name: string, value: string) {
+    setHeader(name, value) {
       res._headers[name] = value;
       return res;
     },
-    json(body: unknown) {
+    json(body) {
       res._body = body;
       return res;
     },
-    send(body: unknown) {
+    send(body) {
       res._body = body;
       return res;
     },
   };
-  return res as unknown as Response & typeof res;
+  return res;
 }
 
 /**
@@ -151,12 +165,12 @@ function rawGetStatus(app: RequestListener, rawPath: string): Promise<number> {
  */
 function getProxyHandler(
   config: DataProxyConfig = DEFAULT_CONFIG
-): (req: Request, res: Response) => Promise<void> {
+): (req: FakeRequest, res: FakeResponse) => Promise<void> {
   const forward = createProxyForwarder('test-ext', config, '/fake/dork-home');
   return async (req, res) => {
     const answer = await forward({
       method: req.method,
-      segments: (req.params as { splat?: string[] }).splat ?? [],
+      segments: req.params.splat ?? [],
       url: req.url,
       headers: req.headers,
       body: req.body,

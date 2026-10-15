@@ -1,10 +1,9 @@
 import type { AddressInfo } from 'node:net';
-import express from 'express';
+import { Hono } from 'hono';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
-import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ProbeOutcome } from '../../../mesh/agent-mcp-probe.js';
 import type {
   RawMcpConnectorProviderOpts,
@@ -12,6 +11,7 @@ import type {
   RemoteMcpConnection,
 } from '../raw-mcp.js';
 import { RawMcpConnectorProvider } from '../raw-mcp.js';
+import { answerStatelessMcp, type NodeEnv } from '../../../__tests__/stateless-mcp.js';
 
 /** Header accepted by the listening MCP fixture. */
 const AUTHORIZATION = 'Bearer configured-secret';
@@ -20,29 +20,21 @@ const AUTHORIZATION = 'Bearer configured-secret';
 const receivedMethods: string[] = [];
 
 /** A real stateless Streamable HTTP MCP server behind one listener for this test file. */
-const app = express();
-app.use(express.json());
-app.post('/mcp', async (req, res) => {
-  if (req.get('authorization') !== AUTHORIZATION) {
-    res.status(401).set('WWW-Authenticate', 'Bearer').end();
-    return;
+const app = new Hono<NodeEnv>();
+app.post('/mcp', async (c) => {
+  if (c.req.header('authorization') !== AUTHORIZATION) {
+    return c.body(null, 401, { 'WWW-Authenticate': 'Bearer' });
   }
-  const body = req.body as { method?: string };
+  const body = await c.req.json<{ method?: string }>();
   if (body.method) receivedMethods.push(body.method);
   const server = new McpServer({ name: 'raw-mcp-verification-test', version: '1.0.0' });
   server.registerTool('verified-tool', { description: 'Proves tools/list completed.' }, () => ({
     content: [{ type: 'text' as const, text: 'verified' }],
   }));
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-  res.on('close', () => {
-    void transport.close().catch(() => {});
-    void server.close().catch(() => {});
-  });
+  return answerStatelessMcp(c, server, body);
 });
 const target = swappableServer();
-target.mount(app);
+target.mount(honoListener(app));
 
 /** URL of the listening MCP fixture after the test helper binds it. */
 function fixtureUrl(): string {

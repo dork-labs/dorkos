@@ -44,7 +44,6 @@
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
-    "express": "^5.2.1",
     "hono": "^4.13.9",
     "node-pty": "^1.1.0",
     "uuid": "^13.0.2",

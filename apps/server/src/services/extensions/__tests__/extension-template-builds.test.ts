@@ -10,7 +10,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
-import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
+import { readRegisterResult, serverEntryStart } from '@dorkos/extension-api/server';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -65,9 +65,8 @@ describe('the data-provider server template', () => {
       schedule: vi.fn(() => () => undefined),
       emit: vi.fn(),
     };
-    const router = { get: vi.fn(), put: vi.fn(), post: vi.fn(), use: vi.fn() };
-    const register = serverEntryRegister(loadInProcessBundle(bundle))!;
-    const { fetch, cleanup } = readRegisterResult(await register(router as never, ctx as never));
+    const start = serverEntryStart(loadInProcessBundle(bundle))!;
+    const { fetch, cleanup } = readRegisterResult(await start(ctx as never));
     const person = { person: { ok: true } } as const;
     const agent = {
       person: {
@@ -97,7 +96,6 @@ describe('the data-provider server template', () => {
     expect(refused.status).toBe(403);
     expect(saved.status).toBe(200);
     expect(stored).toEqual(['rain']);
-    expect(Object.values(router).every((fn) => fn.mock.calls.length === 0)).toBe(true);
     expect(cleanup).toBeTypeOf('function');
   });
 });

@@ -56,6 +56,7 @@ const CASES: Array<[string, string]> = [
   ['isolation_unavailable', 'Mail can’t run with its limits on this computer.'],
   ['server_start_failed', 'Mail couldn’t start. Reload it to try again.'],
   ['server_start_timeout', 'Mail took too long to start. Reload it to try again.'],
+  ['server_old_router', 'Mail uses an old server style. Ask an agent to update it.'],
 ];
 
 describe('ExtensionCard: a stopped server half (DOR-2686)', () => {
@@ -96,26 +97,5 @@ describe('ExtensionCard: a stopped server half (DOR-2686)', () => {
     cleanup();
     renderCard(makeExtension({ restartingAt: null }));
     expect(screen.queryByText(/Restarting/)).not.toBeInTheDocument();
-  });
-});
-
-describe('ExtensionCard: a server half on the old router (DOR-2858)', () => {
-  // Purpose: a person sees the extension needs an update, and what to do.
-  it('says it uses an older server style and to ask an agent', () => {
-    renderCard(makeExtension({ usesOldRouter: true }));
-    expect(screen.getByTestId('extension-old-router-mail')).toHaveTextContent(
-      'Uses an older server style DorkOS will stop running. Ask an agent to update it.'
-    );
-  });
-
-  // Purpose: one that does not use it, or that has stopped, says nothing of it.
-  it('says nothing when it does not, or when its server half has a problem to show', () => {
-    renderCard(makeExtension());
-    expect(screen.queryByTestId('extension-old-router-mail')).not.toBeInTheDocument();
-    cleanup();
-    renderCard(
-      makeExtension({ usesOldRouter: true, serverError: { code: 'server_crashed', message: '' } })
-    );
-    expect(screen.queryByTestId('extension-old-router-mail')).not.toBeInTheDocument();
   });
 });

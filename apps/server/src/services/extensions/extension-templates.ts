@@ -143,15 +143,10 @@ export function generateServerTemplate(name: string, description: string): strin
 // person can use it, never an agent or another website.
 
 import { Hono } from 'hono';
-import { requirePerson, type DataProviderContext } from '@dorkos/extension-api/server';
+import { defineServer, requirePerson } from '@dorkos/extension-api/server';
 
-/**
- * Register the API and background tasks for ${titleName}.
- *
- * @param _router - Unused: the API is the Hono app below
- * @param ctx - Isolated context with secrets, storage, scheduling, and SSE emission
- */
-export default function register(_router: unknown, ctx: DataProviderContext) {
+/** The API and background tasks for ${titleName}. ctx has secrets, storage, scheduling and events. */
+export default defineServer((ctx) => {
   const app = new Hono();
 
   // GET /api/ext/${name}/data — the cached data
@@ -187,7 +182,7 @@ export default function register(_router: unknown, ctx: DataProviderContext) {
   });
 
   return { fetch: app.fetch, cleanup: () => cancel() };
-}
+});
 `;
 }
 

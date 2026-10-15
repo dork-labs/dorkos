@@ -5,11 +5,15 @@
  * a near deadline, records a history-only decision, and starts a chat
  * (`ctx.sessions.start`, §7.7).
  *
- * `register` has the `ServerExtensionRegister` shape, so the conformance test
- * drives it through the real `createDataProviderContext`.
+ * `start` has the `ServerStart` shape, so the conformance test drives it
+ * through the real `createDataProviderContext`.
  */
-import type { Router } from 'express';
-import type { DataProviderContext } from '@dorkos/extension-api/server';
+import { Hono } from 'hono';
+import {
+  requirePerson,
+  type DataProviderContext,
+  type ServerExtensionHandlers,
+} from '@dorkos/extension-api/server';
 
 /** What the fixture was told, for the test to read. */
 export const heard: Array<{
@@ -20,12 +24,11 @@ export const heard: Array<{
 }> = [];
 
 /**
- * Register the fixture: an action handler, and a person-only route.
+ * Start the fixture: an action handler, and a person-only route.
  *
- * @param router - The extension's router.
  * @param ctx - Its context.
  */
-export function register(router: Router, ctx: DataProviderContext): () => void {
+export function start(ctx: DataProviderContext): ServerExtensionHandlers & { cleanup: () => void } {
   const stop = ctx.inbox.onAction(async (event) => {
     heard.push({
       extension: ctx.extensionId,
@@ -46,10 +49,9 @@ export function register(router: Router, ctx: DataProviderContext): () => void {
       offer: { text: 'Next time, do this on its own?', offerId: 'auto' },
     };
   });
-  router.put('/settings', ctx.requirePerson, (_req, res) => {
-    res.json({ ok: true });
-  });
-  return stop;
+  const app = new Hono();
+  app.put('/settings', requirePerson(), (c) => c.json({ ok: true }));
+  return { fetch: app.fetch, cleanup: stop };
 }
 
 /**

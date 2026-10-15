@@ -9,8 +9,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import express from 'express';
+import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initConfigManager } from '../../config-manager.js';
@@ -150,30 +149,27 @@ describe('counting through the real ingress and gate', () => {
     initConfigManager(tmpDir);
     counted.length = 0;
     setManagedAdmissionListener((req) => counted.push(`${req.method} ${req.url}`));
-    const app = express();
-    // A stand-in for a login the request does not have: refused before the gate admits.
-    app.use((req, res, next) => {
-      if (req.headers['x-test-signed-out']) return void res.status(401).end();
-      next();
-    });
-    // A page or asset is served before the gate, as the front door does.
-    app.get('/', (_req, res) => void res.status(200).send('<html></html>'));
-    // The chain's session gate step (`http/api-chain.ts`): the real decision,
-    // and the managed-access count once it admits.
-    app.use(async (req, res, next) => {
-      const decision = await decideSessionGate(req.method, req.path, { headers: req.headers });
-      if (!decision.allowed) return void res.status(401).end();
+    // The front door and the `/api` chain, in order, as one plain listener.
+    const handler: RequestListener = async (req, res) => {
+      // A stand-in for a login the request does not have: refused before the gate admits.
+      if (req.headers['x-test-signed-out']) return void res.writeHead(401).end();
+      const method = req.method ?? 'GET';
+      const path = (req.url ?? '/').split('?')[0]!;
+      // A page or asset is served before the gate, as the front door does.
+      if (method === 'GET' && path === '/') {
+        return void res.writeHead(200, { 'content-type': 'text/html' }).end('<html></html>');
+      }
+      // The chain's session gate step (`http/api-chain.ts`): the real decision,
+      // and the managed-access count once it admits.
+      const decision = await decideSessionGate(method, path, { headers: req.headers });
+      if (!decision.allowed) return void res.writeHead(401).end();
       noteGateAdmitted(req, res);
-      next();
-    });
-    // A second pass through the hook (the Hono chain, say) never counts twice.
-    app.use((req, res, next) => {
+      // A second pass through the hook (the Hono chain, say) never counts twice.
       noteGateAdmitted(req, res);
-      next();
-    });
-    app.use((_req, res) => res.status(200).json({ ok: true }));
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+    };
     ingress = createManagedIngress({
-      handler: app,
+      handler,
       forwardUpgrade: (_r, socket) => socket.destroy(),
     });
     const url = await ingress.open();

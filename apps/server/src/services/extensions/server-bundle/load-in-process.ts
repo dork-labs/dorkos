@@ -8,7 +8,6 @@
  * @module services/extensions/server-bundle/load-in-process
  */
 import { fileURLToPath } from 'node:url';
-import express from 'express';
 import * as extensionApi from '@dorkos/extension-api';
 import * as extensionServerApi from '@dorkos/extension-api/server';
 import { createInjectedRequire, loadBundle } from '../isolation/child/load-bundle.js';
@@ -16,7 +15,6 @@ import { createInjectedRequire, loadBundle } from '../isolation/child/load-bundl
 /** The `require` every in-process bundle sees. */
 const injectedRequire = createInjectedRequire(
   {
-    express: () => express,
     '@dorkos/extension-api': () => extensionApi,
     '@dorkos/extension-api/server': () => extensionServerApi,
   },
