@@ -137,6 +137,18 @@ describe('ManagedCloudConnectorProvider.startConnect', () => {
     expect((error as ConnectStartRefusedError).refusal).toBe('service_not_ready');
   });
 
+  it('says the setup needs a fix when the service refused its own sign-in setup', async () => {
+    const { provider } = harness(() =>
+      Response.json(
+        { error: 'connection_setup_conflict', reason: 'Setup failed its safety check.' },
+        { status: 503 }
+      )
+    );
+    const error = await provider.startConnect('posthog').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ConnectStartRefusedError);
+    expect((error as ConnectStartRefusedError).refusal).toBe('setup_needs_fix');
+  });
+
   it('says the service is briefly unavailable on a bare transient `unavailable` refusal', async () => {
     const { provider } = harness(() =>
       Response.json(

@@ -320,6 +320,9 @@ export const SIGN_IN_COPY = {
   failed: 'Sign-in didn’t finish. Try again.',
   /** The service that handles sign-in isn't set up to connect this app. */
   serviceNotReady: 'This app can’t be connected yet. This isn’t something you can fix here.',
+  /** The service's sign-in setup for this app failed its own safety check. */
+  setupNeedsFix:
+    'This app’s sign-in setup in DorkOS has a problem. Trying again won’t help until it’s fixed.',
   /** This computer has to be linked to its DorkOS account before sign-in can start. */
   accountLinkRequired: 'Link this computer to your DorkOS account, then connect again.',
   /** The service hit a brief, transient failure trying to start sign-in. */

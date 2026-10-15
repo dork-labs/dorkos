@@ -60,6 +60,7 @@ export class ConnectorAuthenticationFlowError extends Error {
 /** What a flow refused for good says, for every surface that shows its reason. */
 const REFUSAL_COPY: Readonly<Record<ConnectStartRefusal, string>> = {
   service_not_ready: SIGN_IN_COPY.serviceNotReady,
+  setup_needs_fix: SIGN_IN_COPY.setupNeedsFix,
   account_link_required: SIGN_IN_COPY.accountLinkRequired,
   service_unavailable: SIGN_IN_COPY.serviceUnavailable,
 };
