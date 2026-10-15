@@ -95,7 +95,10 @@ describe('authoritative Cloud identity for credits', () => {
     link.token = 'token-A';
     link.origin = 'https://cloud.example.invalid';
     link.generation += 1;
-    __setCreditsStateForTests({ token: null });
+    __setCreditsStateForTests({
+      token: null,
+      now: () => Date.parse(tokenFixture.expiresAt) - 60 * 60_000,
+    });
   });
 
   afterEach(() => {
