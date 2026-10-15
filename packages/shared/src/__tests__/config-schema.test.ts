@@ -260,6 +260,8 @@ describe('UserConfigSchema', () => {
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
         trustedStoresAppliedAt: null,
+        sharedAppsAppliedAt: null,
+        sharedAtUpgrade: [],
       },
       cloud: {
         instanceToken: null,
@@ -676,6 +678,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         defaults: { areas: {}, actions: {} },
         upgradeSweptVersion: null,
         trustedStoresAppliedAt: null,
+        sharedAppsAppliedAt: null,
+        sharedAtUpgrade: [],
       },
       cloud: {
         instanceToken: null,
@@ -2216,6 +2220,8 @@ describe('permissions section (spec agent-permissions D4)', () => {
     defaults: { areas: {}, actions: {} },
     upgradeSweptVersion: null,
     trustedStoresAppliedAt: null,
+    sharedAppsAppliedAt: null,
+    sharedAtUpgrade: [],
   };
 
   it('defaults the whole section from the object-literal default', () => {

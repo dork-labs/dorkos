@@ -218,6 +218,26 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves).toEqual({});
   });
 
+  it('carries the once-per-install Trusted stamps, so a wipe never runs either step twice', () => {
+    const salvaged = salvageProtectedState(
+      {
+        permissions: {
+          trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+          sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+        },
+      },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({
+      'permissions.trustedStoresAppliedAt': '2026-10-10T08:00:00.000Z',
+      'permissions.sharedAppsAppliedAt': '2026-10-12T08:00:00.000Z',
+    });
+    // An unset stamp is the fresh value: nothing to carry.
+    expect(
+      salvageProtectedState({ permissions: { sharedAppsAppliedAt: null } }, fresh).leaves
+    ).toEqual({});
+  });
+
   it('carries a login gate that was switched on', () => {
     const salvaged = salvageProtectedState({ auth: { enabled: true } }, fresh);
     expect(salvaged.leaves['auth.enabled']).toBe(true);
@@ -568,6 +588,23 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(manager.get('runtimes').defaultTrustStop).toBe('ask');
   });
 
+  it('keeps both Trusted step stamps across recovery (DOR-2739)', () => {
+    // Without them a wipe would open a mesh the person closed and share apps
+    // with every agent again on the next boot.
+    const { dir } = seedInvalidConfig({
+      permissions: {
+        preset: 'trusted',
+        defaults: { areas: {}, actions: {} },
+        trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+        sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+      },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('permissions').trustedStoresAppliedAt).toBe('2026-10-10T08:00:00.000Z');
+    expect(manager.get('permissions').sharedAppsAppliedAt).toBe('2026-10-12T08:00:00.000Z');
+    expect(manager.validate()).toEqual({ valid: true });
+  });
+
   it('keeps a login gate across recovery', () => {
     const { dir } = seedInvalidConfig({ auth: { enabled: true } });
     const manager = new ConfigManager(dir);
@@ -716,6 +753,22 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     // Preferences go, as a reset should. The protection stays, whole.
     expect(manager.get('server').port).toBe(4242);
     expect(manager.get('telemetry')).toEqual(OPTED_OUT);
+  });
+
+  it('keeps both Trusted step stamps across a full reset() (DOR-2739)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
+    dirs.push(dir);
+    const manager = new ConfigManager(dir);
+    manager.set('permissions', {
+      ...manager.get('permissions'),
+      trustedStoresAppliedAt: '2026-10-10T08:00:00.000Z',
+      sharedAppsAppliedAt: '2026-10-12T08:00:00.000Z',
+    });
+
+    manager.reset();
+
+    expect(manager.get('permissions').trustedStoresAppliedAt).toBe('2026-10-10T08:00:00.000Z');
+    expect(manager.get('permissions').sharedAppsAppliedAt).toBe('2026-10-12T08:00:00.000Z');
   });
 
   it('still resets telemetry when that section is named outright', () => {

@@ -32,7 +32,6 @@ import {
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
   type ConnectorAppConnections,
-  type ConnectorEveryAgentAccess,
   type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
   type ConnectorCatalogProviderRoute,
@@ -66,7 +65,8 @@ import {
   type ManagedGrantSubjects,
 } from '../execution/managed-agent-access.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
-import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { everyAgentGrantSubject, liveEveryAgentAccess } from '../every-agent-grants.js';
+import { everyAgentLevel } from '../execution/access-levels.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -693,7 +693,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
-      everyAgent: this.everyAgentAccess(connectionId) !== null,
+      everyAgent: liveEveryAgentAccess(this.db, connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,
@@ -902,7 +902,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorEveryAgentGrantsSchema.parse({
       connections: rows
         .flatMap((row) => {
-          const access = this.everyAgentAccess(row.connectionId);
+          const access = liveEveryAgentAccess(this.db, row.connectionId);
           return access
             ? [
                 {
@@ -1155,7 +1155,8 @@ export class ConnectorOperatorQueryService {
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
-      everyAgent: this.everyAgentAccess(row.connectionId),
+      everyAgent: liveEveryAgentAccess(this.db, row.connectionId),
+      everyAgentLevel: everyAgentLevel(this.db, row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
       readiness: deriveConnectionReadiness({
@@ -1327,33 +1328,6 @@ export class ConnectorOperatorQueryService {
    */
   private providerDisplayName(provider: ConnectorProvider): string {
     return connectionWayName(provider.type);
-  }
-
-  /** The live every-agent grant on one connection, or null when there is none. */
-  private everyAgentAccess(connectionId: string): ConnectorEveryAgentAccess | null {
-    const rows = this.db
-      .select({
-        revisionId: connectionOperationGrants.operationRevisionId,
-        classification: connectorOperationRevisions.capabilityClassification,
-      })
-      .from(connectionOperationGrants)
-      .innerJoin(
-        connectorOperationRevisions,
-        eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
-      )
-      .where(
-        and(
-          eq(connectionOperationGrants.connectionId, connectionId),
-          everyAgentGrantSubject(),
-          isNull(connectionOperationGrants.revokedAt)
-        )
-      )
-      .all();
-    if (rows.length === 0) return null;
-    return {
-      operationRevisionIds: [...new Set(rows.map((row) => row.revisionId))].sort(),
-      classifications: [...new Set(rows.map((row) => row.classification))].sort(),
-    };
   }
 
   private connectionNotFound(): never {

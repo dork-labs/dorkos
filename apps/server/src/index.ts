@@ -146,14 +146,13 @@ import {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from './services/connectors/bootstrap.js';
-import { LevelFollower } from './services/connectors/resources/level-follower.js';
 import { SignInRefresher } from './services/connectors/resources/sign-in-refresh.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
 import { ConnectorManagementActionService } from './services/connectors/management-action-service.js';
 import { ConnectorManagementReviewService } from './services/connectors/management-review-service.js';
-import { ConnectorReconciliationService } from './services/connectors/reconciliation-service.js';
+import { createConnectorAccess } from './services/connectors/access/connector-access.js';
 import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
 import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
 import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
@@ -2247,10 +2246,6 @@ async function start() {
     // is, so with spaces off nothing remote is reachable (fail closed). Loaded
     // whatever Mesh did, since the official space's routes do not need Mesh.
     await loadOfficialSpace();
-    // The Trusted defaults that live outside config.json, once per install
-    // (spec `trusted-by-default-flip` §5.3): our agents may message each other
-    // across projects. A person who turns that off later keeps it off.
-    await applyTrustedStoresAtBoot(configManager, meshCore, relayCore !== undefined, logger);
     if (meshStartupReconciled) {
       remoteCommunityRuntime?.start();
       remoteCommunitySubscriptions?.start();
@@ -2955,9 +2950,20 @@ async function start() {
     connectorSignIns.stop();
     connectorBootstrapper.stop();
   };
+  const grantAccess = createConnectorAccess({
+    db,
+    registry: connectorRegistry,
+    bootEpoch: connectorBootEpoch,
+    agents: () => meshCore?.list() ?? [],
+    managedAuthority: managedConnectorAuthority,
+    activity: activityService,
+    config: configManager,
+  });
+  const { reconciliation: connectorReconciliation, levels: connectorLevels } = grantAccess;
   const connectorAuthenticationFlows = new ConnectorAuthenticationFlowService({
     db,
     registry: connectorRegistry,
+    sharing: grantAccess.sharing,
   });
   const interruptedConnectorStarts = connectorAuthenticationFlows.invalidateInterruptedStarts();
   if (interruptedConnectorStarts > 0) {
@@ -2991,37 +2997,22 @@ async function start() {
       return agent ? { displayName: agent.displayName ?? agent.name } : undefined;
     },
   });
-  const connectorReconciliation = new ConnectorReconciliationService({
-    db,
-    registry: connectorRegistry,
-    bootEpoch: connectorBootEpoch,
-    listAgents: () =>
-      (meshCore?.list() ?? []).map((agent) => ({
-        agentId: agent.id,
-        displayName: agent.displayName ?? agent.name,
-      })),
-    managedAuthority: managedConnectorAuthority,
-    activity: activityService,
-    // With login off DorkOS cannot tell the app from a program on this
-    // computer, so the trail says exactly that rather than "You".
-    writer: () =>
-      configManager.get('auth')?.enabled === true
-        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
-        : { actorType: 'user', actorLabel: 'Someone on this computer' },
-  });
-  // A level ("Read") follows its app's actions (ADR 260929-071355): every
-  // leveled app is read at least every 12 hours while the server runs, and
-  // right after an update, which may classify actions differently.
-  const connectorLevels = new LevelFollower({
-    reconciliation: connectorReconciliation,
-    appVersion: SERVER_VERSION,
-  });
+  // A level ("Read") follows its app's actions (ADR 260929-071355).
   connectorLevels.start();
   const stopSignInFreshness = stopConnectorFreshness;
   stopConnectorFreshness = () => {
     stopSignInFreshness?.();
     connectorLevels.stop();
   };
+  // The Trusted defaults that live outside config.json, once per install
+  // (spec `trusted-by-default-flip` §5.3, §5.6): our agents may message each
+  // other across projects, and an app nobody was given is shared with every
+  // agent. A person who narrows either later keeps their choice.
+  await applyTrustedStoresAtBoot(configManager, logger, {
+    mesh: meshCore,
+    relayReady: relayCore !== undefined,
+    connections: grantAccess.sharing,
+  });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
   if (recoveredConnectorAttempts > 0) {

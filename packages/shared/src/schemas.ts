@@ -5155,6 +5155,10 @@ export const ServerConfigSchema = z
           description:
             "The permission preset every area starts from: 'trusted' or 'careful' ('balanced' and 'full' are older choices still read). null reads as 'trusted'",
         }),
+        sharedAtUpgrade: z.array(z.string()).optional().openapi({
+          description:
+            'Connection ids the once-per-install Trusted step shared with every agent because nobody held access to them. The one-time trust notice names them',
+        }),
       })
       .optional()
       .openapi({ description: 'The permission preset; the full picture is GET /api/permissions' }),

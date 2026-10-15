@@ -1019,7 +1019,7 @@ Choosing a preset sets all twelve areas AND moves `runtimes.defaultTrustStop`, t
   }}
 />
 
-DorkOS keeps two more values here; leave both alone. `permissions.upgradeSweptVersion` records which version last carried your old settings across on upgrade. `permissions.trustedStoresAppliedAt` records when DorkOS first let your agents message each other across projects. That happens once: if you turn it off in Team → Access, it stays off.
+DorkOS keeps four more values here; leave them alone. `permissions.upgradeSweptVersion` records which version last carried your old settings across on upgrade. `permissions.trustedStoresAppliedAt` records when DorkOS first let your agents message each other across projects. `permissions.sharedAppsAppliedAt` records when DorkOS shared each connected app no agent could use yet with every agent, and `permissions.sharedAtUpgrade` lists those apps, so the one-time note can name them. Each happens once: if you turn one off afterwards, it stays off.
 
 If DorkOS ever has to replace a damaged config file with a fresh one, it keeps your Careful preset, the areas and actions you set to Ask or Blocked, and any Files & commands stop you set to Ask or Act. A fresh file would otherwise start you on Trusted.
 

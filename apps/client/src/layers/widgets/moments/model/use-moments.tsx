@@ -43,7 +43,12 @@ export function useTrustNoticeMomentDescriptor(): MomentDescriptor | null {
   return {
     id: 'trust-notice',
     priority: MOMENT_PRIORITY.high,
-    render: ({ onClose }) => <TrustNoticeMoment onClose={onClose} />,
+    render: ({ onClose }) => (
+      <TrustNoticeMoment
+        onClose={onClose}
+        sharedConnectionIds={config?.permissions?.sharedAtUpgrade ?? []}
+      />
+    ),
   };
 }
 

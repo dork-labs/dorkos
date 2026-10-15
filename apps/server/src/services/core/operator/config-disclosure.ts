@@ -514,6 +514,10 @@ export const CONFIG_DISCLOSURE = {
   // Machine bookkeeping: when the Trusted defaults outside config.json were
   // applied, once per install.
   'permissions.trustedStoresAppliedAt': 'expose',
+  // Machine bookkeeping: the connection ids that step shared with every agent.
+  'permissions.sharedAtUpgrade': 'expose',
+  // Machine bookkeeping: when that step ran, once per install.
+  'permissions.sharedAppsAppliedAt': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

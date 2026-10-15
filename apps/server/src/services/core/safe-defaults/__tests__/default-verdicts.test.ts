@@ -162,7 +162,13 @@ describe('config default verdicts cover the whole schema', () => {
     // default is a decision the ADR argues in full, both entries carry its
     // reason, and both have a carryover rule, so a Careful install never loses
     // its answer to a wipe.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(18);
+    //
+    // Raised 18 -> 20 for the two once-per-install stamps,
+    // `permissions.trustedStoresAppliedAt` and `permissions.sharedAppsAppliedAt`
+    // (DOR-2739). Each `null` re-arms a step that loosens a default (opens the
+    // mesh, shares apps with every agent), so neither is bookkeeping a wipe
+    // may drop; both carry a reason and a carryover rule.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(20);
   });
 });
 

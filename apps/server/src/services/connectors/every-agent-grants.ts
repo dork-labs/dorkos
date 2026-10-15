@@ -14,12 +14,15 @@ import {
   and,
   connectionOperationGrants,
   connections,
+  connectorOperationRevisions,
   eq,
   EVERY_AGENT_GRANT_SUBJECT_ID,
   inArray,
   isNull,
+  type Db,
   type DbTransaction,
 } from '@dorkos/db';
+import type { ConnectorEveryAgentAccess } from '@dorkos/shared/connector-resource-schemas';
 
 /** SQL predicate matching only owner-wide every-agent grant rows. */
 export function everyAgentGrantSubject() {
@@ -164,4 +167,40 @@ export function liveEveryAgentConnections(
     )
     .all();
   return [...new Map(rows.map((row) => [row.connectionId, row])).values()];
+}
+
+/**
+ * The live every-agent grant on one connection, or null when there is none:
+ * the exact revisions every agent can run now, and their classifications.
+ *
+ * @param db - Canonical connector database.
+ * @param connectionId - The connection.
+ */
+export function liveEveryAgentAccess(
+  db: Db | DbTransaction,
+  connectionId: string
+): ConnectorEveryAgentAccess | null {
+  const rows = db
+    .select({
+      revisionId: connectionOperationGrants.operationRevisionId,
+      classification: connectorOperationRevisions.capabilityClassification,
+    })
+    .from(connectionOperationGrants)
+    .innerJoin(
+      connectorOperationRevisions,
+      eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+    )
+    .where(
+      and(
+        eq(connectionOperationGrants.connectionId, connectionId),
+        everyAgentGrantSubject(),
+        isNull(connectionOperationGrants.revokedAt)
+      )
+    )
+    .all();
+  if (rows.length === 0) return null;
+  return {
+    operationRevisionIds: [...new Set(rows.map((row) => row.revisionId))].sort(),
+    classifications: [...new Set(rows.map((row) => row.classification))].sort(),
+  };
 }

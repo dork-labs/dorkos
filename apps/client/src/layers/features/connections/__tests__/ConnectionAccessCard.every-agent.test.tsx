@@ -183,6 +183,35 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
     ).toBeInTheDocument();
   });
 
+  it('opens on "Only agents you pick" when a link asks, and writes nothing until Save', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview({
+        available: true,
+        operationRevisionIds: ['read-v1', 'send-v1'],
+        level: 'read-write',
+      })
+    );
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue(
+      applied({ operationRevisionIds: [] })
+    );
+    // The trust notice's Choose agents: the app is shared with every agent now.
+    renderCard(transport, { ...PAGE, startWho: 'picked' });
+
+    expect(await screen.findByRole('radio', { name: 'Only agents you pick' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Ada' })).toBeInTheDocument();
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Ada' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith(
+        expect.objectContaining({ everyAgent: { operationRevisionIds: [] } })
+      )
+    );
+  });
+
   it('never reports success when the server did not save the every-agent set that was sent', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

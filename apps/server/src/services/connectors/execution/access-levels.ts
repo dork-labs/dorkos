@@ -75,6 +75,32 @@ export function readAccessLevels(
     }));
 }
 
+/**
+ * The level every agent holds on one connection, or null when it is not
+ * shared with every agent. Read from the owner's intent, not from the grants:
+ * a share whose grants the app has not been read for yet still counts.
+ *
+ * @param db - Canonical connector database.
+ * @param connectionId - The connection.
+ */
+export function everyAgentLevel(
+  db: Db | DbTransaction,
+  connectionId: string
+): ConnectorAccessLevel | null {
+  return (
+    db
+      .select({ level: connectionAccessLevels.level })
+      .from(connectionAccessLevels)
+      .where(
+        and(
+          eq(connectionAccessLevels.connectionId, connectionId),
+          eq(connectionAccessLevels.subjectType, 'every_agent')
+        )
+      )
+      .get()?.level ?? null
+  );
+}
+
 /** Input to {@link recordAccessLevel}. */
 export interface RecordAccessLevelInput {
   /** The connection the level is on. */

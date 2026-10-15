@@ -82,6 +82,7 @@ import { z } from 'zod';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
+import { TRUSTED_CARRYOVERS } from './trusted-carryovers.js';
 
 /**
  * How a stored value is compared against the fresh default to decide which one
@@ -128,9 +129,14 @@ import { logger } from '../../../lib/logger.js';
  * a person made on top of a permission preset. Only the entries whose state is
  * in {@link ProtectiveCarryover.protectiveValues} are carried, merged over the
  * fresh map; an Allowed entry is the permissive side and is left behind.
+ *
+ * `stamped` is for the record that a once-per-install step ran, whose default
+ * `null` means "not yet". When running the step loosens a default, a set stamp
+ * is the protective side: a stored string is carried when the fresh value is
+ * `null`, so a wipe never runs the step a second time.
  */
 export type CarryoverDirection =
-  'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled' | 'oneOf' | 'entries';
+  'boolean' | 'lower' | 'higher' | 'restricted' | 'ruled' | 'oneOf' | 'entries' | 'stamped';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -372,60 +378,9 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
   // for the rule to protect until the person registers the account again, and
   // a row cannot be carried by one leaf without its folder and id. Pinned by
   // `protected-state.test.ts`.
-  // Trusted by default (DOR-2739, ADR 261006-225605): a wipe lands on Trusted,
-  // so every way a person asked agents to ask first has to survive one.
-  {
-    path: 'permissions.preset',
-    direction: 'oneOf',
-    protectiveValues: ['careful'],
-    reason:
-      'The preset ships Trusted, where agents work without asking. A person who chose Careful asked to be asked first, and a wipe that handed Trusted back would stop every one of those questions without a word.',
-  },
-  {
-    path: 'permissions.defaults.areas',
-    direction: 'entries',
-    protectiveValues: ['ask', 'blocked'],
-    reason:
-      'An area a person set to Ask or Blocked on top of the preset. Under Trusted the preset allows it, so losing the change on a wipe would let agents do what the person had stopped.',
-  },
-  {
-    path: 'permissions.defaults.actions',
-    direction: 'entries',
-    protectiveValues: ['ask', 'blocked'],
-    reason:
-      'The same, for one action rather than a whole area: a single thing a person asked to approve, or refused outright.',
-  },
-  {
-    path: 'runtimes.defaultTrustStop',
-    direction: 'oneOf',
-    protectiveValues: ['ask', 'act'],
-    // A Careful install keeps a stop of `null` (each runtime's own default,
-    // which asks), so a stored `null` is carried as Ask, not lost to Full autonomy.
-    nullMeans: 'ask',
-    reason:
-      'The stop a new session starts at ships at Full autonomy. A person who set Ask or Act, or who stayed on Careful with no stop of their own, wanted file edits or commands approved first, and a wipe must not hand Full autonomy back.',
-  },
-  {
-    path: 'runtimes.claudeCode.defaultTrustStop',
-    direction: 'oneOf',
-    protectiveValues: ['ask', 'act'],
-    reason:
-      "Claude Code's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
-  },
-  {
-    path: 'runtimes.codex.defaultTrustStop',
-    direction: 'oneOf',
-    protectiveValues: ['ask', 'act'],
-    reason:
-      "Codex's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
-  },
-  {
-    path: 'runtimes.opencode.defaultTrustStop',
-    direction: 'oneOf',
-    protectiveValues: ['ask', 'act'],
-    reason:
-      "OpenCode's own stop. `null` follows the global stop, which is Full autonomy on a fresh install, so a stop set to Ask or Act here is the only thing keeping that runtime asking.",
-  },
+  // Trusted by default (DOR-2739): every way a person asked agents to ask
+  // first, and the once-per-install step stamps.
+  ...TRUSTED_CARRYOVERS,
   {
     path: 'scheduler.maxConcurrentRuns',
     direction: 'lower',
@@ -699,6 +654,9 @@ function moreProtective(
       const base =
         fresh !== null && typeof fresh === 'object' ? (fresh as Record<string, unknown>) : {};
       return { ...base, ...Object.fromEntries(kept) };
+    }
+    case 'stamped': {
+      return typeof stored === 'string' && fresh === null ? stored : undefined;
     }
     case 'restricted': {
       // See the CarryoverDirection doc: this compares STORED against the fresh

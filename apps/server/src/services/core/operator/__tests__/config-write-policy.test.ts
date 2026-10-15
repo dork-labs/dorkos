@@ -152,6 +152,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'permissions.defaults.actions',
       'permissions.defaults.areas',
       'permissions.preset',
+      'permissions.sharedAppsAppliedAt',
+      'permissions.sharedAtUpgrade',
       'permissions.trustedStoresAppliedAt',
       'permissions.upgradeSweptVersion',
       // The record of WHO wrote the display name, not the name itself — which
