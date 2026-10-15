@@ -298,7 +298,13 @@ export function createDocChannelHttpComposition(deps: {
     })
   );
   return {
-    fileWrites: new InstallationFileWrites(deps.db),
+    fileWrites: new InstallationFileWrites(deps.db, {
+      db: deps.db,
+      documents: deps.documents,
+      channels,
+      authorization,
+      installationId: deps.installationId,
+    }),
     grants,
     downstream,
     channels,

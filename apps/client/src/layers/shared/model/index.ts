@@ -5,6 +5,7 @@
  */
 export { TransportProvider, useOptionalTransport, useTransport } from './TransportContext';
 export { useAppStore, type RecentCwd } from './app-store';
+export { registerCanvasDocumentClosePreparation } from './app-store/canvas-document-close';
 export {
   useAppTabsStore,
   useAppTabs,

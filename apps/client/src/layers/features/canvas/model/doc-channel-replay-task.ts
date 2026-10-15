@@ -14,15 +14,27 @@ interface ReplayEntry {
   settled: boolean;
 }
 /** Reserve the actual old promise before capture or paging can synchronously reenter. */
-export function createDocReplayTask(captureRun: () => ClosedReplayRun) {
+export function createDocReplayTask(
+  captureRun: () => ClosedReplayRun,
+  onPendingChange?: (pending: boolean) => void
+) {
   let active: ReplayEntry | undefined;
   let revision = 0;
+  const notifyPending = (pending: boolean) => {
+    try {
+      onPendingChange?.(pending);
+    } catch {
+      // A non-authoritative view observer cannot own replay progress or settlement.
+    }
+  };
   const release = (entry: ReplayEntry) => {
     if (active === entry) active = undefined;
   };
   const settle = (entry: ReplayEntry, failure?: { cause: unknown }) => {
     if (entry.settled) return;
     entry.settled = true;
+    // A finalizer may already have restarted replay; old settlement cannot report it idle.
+    if (!active) notifyPending(false);
     if (failure) entry.reject(failure.cause);
     else entry.resolve();
   };
@@ -89,6 +101,7 @@ export function createDocReplayTask(captureRun: () => ClosedReplayRun) {
     });
     const entry: ReplayEntry = { revision: ++revision, promise, resolve, reject, settled: false };
     active = entry;
+    notifyPending(true);
     void execute(entry);
     return promise;
   };

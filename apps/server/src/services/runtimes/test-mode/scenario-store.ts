@@ -10,6 +10,7 @@ import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 import { roomReplyScenarios, sayInRoom } from './room-reply-scenarios.js';
 import { localBrowserDrivingScenario } from './local-browser-driving-scenario.js';
 import { browserDrivingScenarios } from './browser-driving-scenarios.js';
+import { fileSaveReceiptScenarios } from './file-save-receipt-scenarios.js';
 
 /**
  * One scripted turn.
@@ -305,6 +306,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   // composing an answer, because the round trip IS the thing under test.
   ...browserDrivingScenarios(),
   'local-browser-driving': localBrowserDrivingScenario,
+  ...fileSaveReceiptScenarios(),
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.

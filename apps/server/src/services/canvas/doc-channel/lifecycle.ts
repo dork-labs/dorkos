@@ -1,3 +1,4 @@
+import { assertDocumentFileSaveCanClose } from './writes/file-save-lifecycle/close-guard.js';
 import {
   CanvasChannelDeclarationSchema,
   type CanvasChannelDeclaration,
@@ -129,6 +130,7 @@ export class DocChannelLifecycle {
 
   /** Revoke authority and retain closure evidence before physical deletion. */
   close(tx: DbTransaction, document: DocChannelDocumentIdentity, reason = 'removed'): void {
+    assertDocumentFileSaveCanClose(tx, document.id);
     this.opened(tx, document);
     const now = this.now();
     this.store.markClosed(document.id, now, { reason, scope: document.scope }, tx);

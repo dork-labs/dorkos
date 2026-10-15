@@ -26,7 +26,11 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import fileEntryRoutes from './file-entries.js';
-import { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import {
+  InstallationFileWrites,
+  saveOriginalDocumentFile,
+} from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 import { CanonicalFileIdentityChangedError } from '../services/canvas/doc-channel/writes/canonical-writer.js';
 
 /** Build confined file routes using the owning installation writer. */
@@ -187,7 +191,9 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
       return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
     }
     try {
-      const result = await writes.save(parsed.data);
+      const result = parsed.data.documentSave
+        ? await saveOriginalDocumentFile(writes, parsed.data, honoRequestFacts(c))
+        : await writes.save(parsed.data);
       return c.json(result.body, result.status);
     } catch (err) {
       const refusal = pathErrorReply(err);
@@ -201,6 +207,12 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
           412
         );
       const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'CANVAS_DOCUMENT_NOT_FOUND')
+        return c.json({ error: 'The document is not available.', code }, 404);
+      if (code === 'DOC_SAVE_ID_CONFLICT' || code === 'DOC_SAVE_FAILED')
+        return c.json({ error: 'Save operation conflicts with its recorded identity.', code }, 412);
+      if (code === 'DOC_SAVE_IN_DOUBT')
+        return c.json({ error: 'The original save needs recovery.', code }, 503);
       if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
       if (code === 'NOT_A_FILE') return c.json({ error: 'Not a regular file', code }, 400);
       if (code === 'ELOOP' || code === 'ENOTDIR')

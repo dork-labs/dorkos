@@ -1,13 +1,20 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
+import type { WriteFileResult } from '@dorkos/shared/transport';
+import type { FileDocumentSaveReceipt } from '@dorkos/shared/schemas';
+import {
+  FileReceiptOperation,
+  RetiredFileSaveError,
+  type FileSaveBinding,
+} from './file-save/receipt-operation';
 
 /** Lifecycle of a file-backed canvas save. */
-export type CanvasSaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+export type CanvasSaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict' | 'uncertain';
 
 /** The server-acknowledged result of one conditional file save. */
 export type CanvasSaveOutcome =
   | { status: 'changed' | 'no_op'; confirmed: { hash: string; content: string } }
-  | { status: 'conflict' | 'error' | 'idle' };
+  | { status: 'conflict' | 'error' | 'idle' | 'uncertain' };
 
 /** The on-disk version surfaced when a save conflicts with an external change. */
 export interface CanvasSaveConflict {
@@ -18,6 +25,8 @@ export interface CanvasSaveConflict {
 interface UseCanvasFileSaveArgs {
   /** Canvas incarnation; changing it retires outstanding work even for the same file. */
   documentId?: string;
+  /** Captured when this operator session edit begins; absent keeps plain file saves. */
+  documentSaveBinding?: FileSaveBinding;
   /** File path backing the canvas, or undefined for generated (read-only) content. */
   sourcePath: string | undefined;
   /** Session working directory the path is resolved within and confined to. */
@@ -45,13 +54,26 @@ export function useCanvasFileSave({
   cwd,
   loadedContent,
   documentId,
+  documentSaveBinding,
 }: UseCanvasFileSaveArgs) {
   const transport = useTransport();
+  const birth = documentSaveBinding?.incarnation;
+  const birthKey = birth
+    ? JSON.stringify([
+        birth.documentId,
+        birth.physicalOpenedAt,
+        birth.channelCreatedAt,
+        birth.generation,
+      ])
+    : undefined;
+  const receiptLane = useRef(new FileReceiptOperation());
   // Rendering a candidate identity has no effect on the committed owner.
   const owner = useMemo(
-    () => ({ sourcePath, cwd, documentId, transport }),
-    [sourcePath, cwd, documentId, transport]
+    () => ({ sourcePath, cwd, documentId, transport, birthKey }),
+    [sourcePath, cwd, documentId, transport, birthKey]
   );
+  // Uncertainty belongs to its exact dispatch owner, not merely a matching birth.
+  const pendingReceiptOwner = useRef<typeof owner | null>(null);
   const ownerRef = useRef<{
     identity: typeof owner;
     baseHash: string | null;
@@ -85,15 +107,23 @@ export function useCanvasFileSave({
     owner: typeof owner;
     status: CanvasSaveStatus;
     conflict: CanvasSaveConflict | null;
+    documentReceipt?: FileDocumentSaveReceipt;
+    confirmedContent?: string;
   }>({ owner, status: 'idle', conflict: null });
   const status = state.owner === owner ? state.status : 'idle';
   const conflict = state.owner === owner ? state.conflict : null;
   const setStatus = useCallback(
-    (next: CanvasSaveStatus) => {
+    (
+      next: CanvasSaveStatus,
+      documentReceipt?: FileDocumentSaveReceipt,
+      confirmedContent?: string
+    ) => {
       if (currentOwner())
         setState((previous) => ({
           owner,
           status: next,
+          documentReceipt,
+          confirmedContent,
           conflict: previous.owner === owner ? previous.conflict : null,
         }));
     },
@@ -113,6 +143,43 @@ export function useCanvasFileSave({
 
   const canSave = Boolean(sourcePath && cwd);
 
+  const acknowledge = useCallback(
+    (
+      record: NonNullable<typeof ownerRef.current>,
+      result: WriteFileResult,
+      fullContent: string,
+      finalDrain = false
+    ): CanvasSaveOutcome => {
+      const visible = () =>
+        currentOwner() &&
+        ownerRef.current === record &&
+        (!documentSaveBinding || documentSaveBinding.current());
+      if (result.ok) {
+        if (
+          typeof result.hash !== 'string' ||
+          !result.hash ||
+          (result.effect !== 'changed' && result.effect !== 'no_op')
+        )
+          throw new Error('Invalid file save acknowledgement');
+        record.baseHash = result.hash;
+        record.baseContent = fullContent;
+        if (!finalDrain && !visible()) return { status: 'idle' };
+        if (!finalDrain) {
+          setConflict(null);
+          setStatus('saved', receiptLane.current.receipt, fullContent);
+        }
+        return { status: result.effect, confirmed: { hash: result.hash, content: fullContent } };
+      }
+      if (!finalDrain && !visible()) return { status: 'idle' };
+      if (!finalDrain) {
+        setConflict(result.conflict);
+        setStatus('conflict');
+      }
+      return { status: 'conflict' };
+    },
+    [currentOwner, documentSaveBinding, setConflict, setStatus]
+  );
+
   const writeThrough = useCallback(
     async (
       fullContent: string,
@@ -120,35 +187,18 @@ export function useCanvasFileSave({
     ): Promise<CanvasSaveOutcome> => {
       if (!currentOwner()) return { status: 'idle' };
       const record = ownerRef.current!;
-      const result = await transport.writeFile(
+      if (documentSaveBinding && !receiptLane.current.pending) pendingReceiptOwner.current = owner;
+      const result = await receiptLane.current.write(
+        transport,
         cwd as string,
         sourcePath as string,
         fullContent,
-        expected
+        expected,
+        documentSaveBinding
       );
-      if (result.ok) {
-        if (
-          typeof result.hash !== 'string' ||
-          result.hash.length === 0 ||
-          (result.effect !== 'changed' && result.effect !== 'no_op')
-        ) {
-          throw new Error('Invalid file save acknowledgement');
-        }
-        // A late ACK may still condition this owner's explicit unmount drain.
-        // It must never advance a replacement owner's base or publish stale UI.
-        record.baseHash = result.hash;
-        record.baseContent = fullContent;
-        if (!currentOwner()) return { status: 'idle' };
-        setConflict(null);
-        setStatus('saved');
-        return { status: result.effect, confirmed: { hash: result.hash, content: fullContent } };
-      }
-      if (!currentOwner()) return { status: 'idle' };
-      setConflict(result.conflict);
-      setStatus('conflict');
-      return { status: 'conflict' };
+      return acknowledge(record, result, fullContent);
     },
-    [transport, cwd, sourcePath, currentOwner, setConflict, setStatus]
+    [currentOwner, transport, cwd, sourcePath, documentSaveBinding, acknowledge, owner]
   );
 
   /**
@@ -169,7 +219,12 @@ export function useCanvasFileSave({
       const next = inFlightRef.current
         .catch(() => {})
         .then(async (): Promise<CanvasSaveOutcome> => {
-          if (!currentOwner()) return { status: 'idle' };
+          if (!currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+            return { status: 'idle' };
+          if (receiptLane.current.pending) {
+            setStatus('uncertain');
+            return { status: 'uncertain' };
+          }
           if (ownerRef.current!.finalToken === admittedFinalToken)
             ownerRef.current!.finalToken = undefined;
           setStatus('saving');
@@ -179,17 +234,20 @@ export function useCanvasFileSave({
                 ? { expectedHash: ownerRef.current!.baseHash }
                 : { expectedContent: ownerRef.current!.baseContent };
             return await writeThrough(fullContent, expected);
-          } catch {
-            if (!currentOwner()) return { status: 'idle' };
-            setStatus('error');
-            return { status: 'error' };
+          } catch (error) {
+            if (error instanceof RetiredFileSaveError) return { status: 'idle' };
+            if (!currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+              return { status: 'idle' };
+            const status = receiptLane.current.pending ? 'uncertain' : 'error';
+            setStatus(status);
+            return { status };
           }
         });
       // The serialization chain stays void; the outcome rides the returned promise.
       inFlightRef.current = next.then(() => {});
       return next;
     },
-    [canSave, writeThrough, currentOwner, setStatus]
+    [canSave, writeThrough, currentOwner, setStatus, documentSaveBinding]
   );
 
   /** Prepare the latest buffered draft for one explicit passive-unmount drain.
@@ -198,7 +256,8 @@ export function useCanvasFileSave({
    */
   const prepareFinalSave = useCallback(
     (fullContent: string) => {
-      if (!canSave || !currentOwner()) return null;
+      if (!canSave || !currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+        return null;
       const record = ownerRef.current!;
       const token = { content: fullContent, id: Symbol('buffered canvas draft') };
       record.finalToken = token;
@@ -219,25 +278,18 @@ export function useCanvasFileSave({
                   record.baseHash !== null
                     ? { expectedHash: record.baseHash }
                     : { expectedContent: record.baseContent };
-                const result = await transport.writeFile(
+                if (documentSaveBinding && !receiptLane.current.pending)
+                  pendingReceiptOwner.current = owner;
+                const result = await receiptLane.current.write(
+                  transport,
                   cwd as string,
                   sourcePath as string,
                   fullContent,
-                  expected
+                  expected,
+                  documentSaveBinding,
+                  true
                 );
-                if (!result.ok) return { status: 'conflict' };
-                if (
-                  typeof result.hash !== 'string' ||
-                  result.hash.length === 0 ||
-                  (result.effect !== 'changed' && result.effect !== 'no_op')
-                )
-                  return { status: 'error' };
-                record.baseHash = result.hash;
-                record.baseContent = fullContent;
-                return {
-                  status: result.effect,
-                  confirmed: { hash: result.hash, content: fullContent },
-                };
+                return acknowledge(record, result, fullContent, true);
               } catch {
                 return { status: 'error' };
               }
@@ -247,8 +299,53 @@ export function useCanvasFileSave({
         },
       };
     },
-    [canSave, currentOwner, transport, cwd, sourcePath]
+    [canSave, currentOwner, transport, cwd, sourcePath, documentSaveBinding, acknowledge, owner]
   );
+
+  /** Observe only an already-admitted passive drain; never dispatch under a retired owner. */
+  const waitForCloseDrain = useCallback(
+    async (content: string): Promise<boolean> => {
+      const record = ownerRef.current;
+      if (!record || record.identity !== owner) return false;
+      await inFlightRef.current.catch(() => {});
+      return (
+        ownerRef.current === record &&
+        !receiptLane.current.pending &&
+        record.baseContent === content
+      );
+    },
+    [owner]
+  );
+
+  /** Recover the exact original operation; newer drafts never replace its uncertain identity. */
+  const retryUnconfirmed = useCallback((): Promise<CanvasSaveOutcome> => {
+    if (!currentOwner() || !documentSaveBinding || pendingReceiptOwner.current !== owner)
+      return Promise.resolve({ status: 'idle' });
+    const record = ownerRef.current!;
+    const next = inFlightRef.current
+      .catch(() => {})
+      .then(async (): Promise<CanvasSaveOutcome> => {
+        if (!currentOwner() || ownerRef.current !== record || pendingReceiptOwner.current !== owner)
+          return { status: 'idle' };
+        try {
+          setStatus('saving');
+          const recovered = await receiptLane.current.retry(transport, documentSaveBinding);
+          return acknowledge(record, recovered.result, recovered.content);
+        } catch (error) {
+          if (
+            error instanceof RetiredFileSaveError ||
+            !currentOwner() ||
+            ownerRef.current !== record
+          )
+            return { status: 'idle' };
+          const status = receiptLane.current.pending ? 'uncertain' : 'error';
+          setStatus(status);
+          return { status };
+        }
+      });
+    inFlightRef.current = next.then(() => {});
+    return next;
+  }, [currentOwner, documentSaveBinding, transport, acknowledge, setStatus, owner]);
 
   /** Reconcile a conflict by overwriting disk with the local draft. */
   const overwrite = useCallback(
@@ -262,22 +359,30 @@ export function useCanvasFileSave({
       const next = inFlightRef.current
         .catch(() => {})
         .then(async (): Promise<CanvasSaveOutcome> => {
-          if (!currentOwner()) return { status: 'idle' };
+          if (!currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+            return { status: 'idle' };
+          if (receiptLane.current.pending) {
+            setStatus('uncertain');
+            return { status: 'uncertain' };
+          }
           if (ownerRef.current!.finalToken === admittedFinalToken)
             ownerRef.current!.finalToken = undefined;
           setStatus('saving');
           try {
             return await writeThrough(fullContent, { expectedHash });
-          } catch {
-            if (!currentOwner()) return { status: 'idle' };
-            setStatus('error');
-            return { status: 'error' };
+          } catch (error) {
+            if (error instanceof RetiredFileSaveError) return { status: 'idle' };
+            if (!currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+              return { status: 'idle' };
+            const status = receiptLane.current.pending ? 'uncertain' : 'error';
+            setStatus(status);
+            return { status };
           }
         });
       inFlightRef.current = next.then(() => {});
       return next;
     },
-    [canSave, conflict, writeThrough, currentOwner, setStatus]
+    [canSave, conflict, writeThrough, currentOwner, setStatus, documentSaveBinding]
   );
 
   /**
@@ -296,7 +401,8 @@ export function useCanvasFileSave({
 
   /** Reconcile a conflict by adopting the on-disk version as the new base. */
   const adoptDisk = useCallback(() => {
-    if (!conflict || !currentOwner()) return null;
+    if (!conflict || !currentOwner() || (documentSaveBinding && !documentSaveBinding.current()))
+      return null;
     ownerRef.current!.finalToken = undefined;
     const adopted = conflict.currentContent;
     ownerRef.current!.baseHash = conflict.currentHash;
@@ -304,7 +410,7 @@ export function useCanvasFileSave({
     setConflict(null);
     setStatus('idle');
     return adopted;
-  }, [conflict, currentOwner, setConflict, setStatus]);
+  }, [conflict, currentOwner, setConflict, setStatus, documentSaveBinding]);
 
   return {
     status,
@@ -315,5 +421,9 @@ export function useCanvasFileSave({
     adoptDisk,
     getConfirmedBase,
     prepareFinalSave,
+    retryUnconfirmed,
+    waitForCloseDrain,
+    documentReceipt: state.owner === owner ? state.documentReceipt : undefined,
+    confirmedContent: state.owner === owner ? state.confirmedContent : undefined,
   };
 }

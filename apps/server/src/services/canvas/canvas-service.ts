@@ -828,11 +828,11 @@ export class CanvasService {
       // Absent — but absent from a listing a degraded runtime did not contribute
       // to says nothing. The mark stays for a healthier pass.
       if (degraded.size > 0) continue;
-      this.orphanedSessions.delete(sessionId);
       const scope = `session:${sessionId}`;
-      const removed = this.documents.identities(scope);
-      deleted += this.documents.removeScope(scope);
+      const removed = this.documents.removeAvailableScope(scope);
+      deleted += removed.length;
       for (const row of removed) this.notifyRemoved(scope, row.id);
+      if (!this.documents.identities(scope, 1).length) this.orphanedSessions.delete(sessionId);
     }
     return deleted;
   }
@@ -1063,12 +1063,12 @@ export class CanvasService {
     // rule belongs HERE now, over the table, so the two sides drop the same row
     // rather than each dropping a different one.
     const onScreen = frontOfViewIds(this.documents.list(scope));
-    const candidates = this.documents
-      .evictionCandidates(scope)
-      .filter(
-        (row) => row.id !== protectedId && !onScreen.has(row.id) && this.lockHolder(row) === null
-      );
-    for (const row of candidates.slice(0, over)) {
+    const candidates = this.documents.evictionCandidates(scope, {
+      limit: over,
+      eligible: (row) =>
+        row.id !== protectedId && !onScreen.has(row.id) && this.lockHolder(row) === null,
+    });
+    for (const row of candidates) {
       this.remove(scope, row.id);
     }
   }

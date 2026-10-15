@@ -1,7 +1,13 @@
+import {
+  DocumentFileSave,
+  type DocumentFileSaveDependencies,
+  type DocumentFileSaveCaller,
+} from './document-file-save.js';
 /** Installation-owned ordinary and checkbox writes share one physical-file gate. */
 import fs from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import type { Db } from '@dorkos/db';
+import { requireDocChannelStoreDatabase, DocChannelStore } from '../store.js';
 import { resolveWithinCwd, sha256 } from '../../../../lib/file-route-guards.js';
 import {
   CanonicalFileWriteCoordinator,
@@ -10,7 +16,6 @@ import {
   type CanonicalWriteLease,
 } from './canonical-writer.js';
 import { DocCheckboxWriteService } from './checkbox-service.js';
-import { DocChannelStore } from '../store.js';
 import { CheckboxWriteFence } from './checkbox-fence.js';
 
 interface FileSaveInput {
@@ -21,18 +26,53 @@ interface FileSaveInput {
   expectedContent?: string;
 }
 
+const originalOwners = new WeakMap<
+  object,
+  { db?: Db; coordinator: CanonicalFileWriteCoordinator; store?: DocChannelStore }
+>();
+/** Validate constructor identities without revealing the coordinator or accepting a callback. */
+export function requireOriginalDocumentFileOwner(
+  owner: InstallationFileWrites,
+  db: Db,
+  store: DocChannelStore,
+  coordinator: CanonicalFileWriteCoordinator
+): void {
+  const own = originalOwners.get(owner);
+  if (!own || own.db !== db || own.store !== store || own.coordinator !== coordinator)
+    throw new Error('Document file owner mismatch');
+  requireDocChannelStoreDatabase(store, db);
+}
+
+const originalDocumentSaves = new WeakMap<
+  object,
+  (raw: unknown, caller: DocumentFileSaveCaller) => ReturnType<DocumentFileSave['save']>
+>();
+/** Invoke only the constructor-captured original method, never a public callback-shaped replacement. */
+export function saveOriginalDocumentFile(
+  owner: InstallationFileWrites,
+  raw: unknown,
+  caller: DocumentFileSaveCaller
+) {
+  const original = originalDocumentSaves.get(owner);
+  if (!original) throw new Error('Document file saves are unavailable');
+  return original(raw, caller);
+}
+
 /** The coordinator never escapes this owner; callers cannot supply a write callback. */
 export class InstallationFileWrites {
-  private readonly coordinator: CanonicalFileWriteCoordinator;
-  private readonly checkboxes = new Set<DocCheckboxWriteService>();
-  private stopped = false;
-  private readonly fence?: CheckboxWriteFence;
+  readonly #coordinator: CanonicalFileWriteCoordinator;
+  readonly #checkboxes = new Set<DocCheckboxWriteService>();
+  #stopped = false;
+  readonly #fence?: CheckboxWriteFence;
+  readonly #documentSaves?: DocumentFileSave;
 
-  constructor(private readonly db?: Db) {
-    if (db) this.fence = new CheckboxWriteFence(db, new DocChannelStore(db));
-    this.coordinator = new CanonicalFileWriteCoordinator({
+  readonly #db?: Db;
+  constructor(db?: Db, document?: DocumentFileSaveDependencies) {
+    this.#db = db;
+    if (db) this.#fence = new CheckboxWriteFence(db, new DocChannelStore(db));
+    this.#coordinator = new CanonicalFileWriteCoordinator({
       assertOutsideTransaction: () => {
-        if (this.db?.$client.inTransaction) throw new Error('Filesystem work inside transaction');
+        if (this.#db?.$client.inTransaction) throw new Error('Filesystem work inside transaction');
       },
       resolve: async (file) => {
         const canonicalPath = await fs.realpath(file);
@@ -42,6 +82,14 @@ export class InstallationFileWrites {
         return { canonicalPath, device: String(info.dev), inode: String(info.ino) };
       },
     });
+    originalOwners.set(this, { db, coordinator: this.#coordinator, store: document?.channels });
+    if (document) {
+      if (document.db !== db || !this.#fence)
+        throw new Error('Document file owner database mismatch');
+      this.#documentSaves = new DocumentFileSave(this, document, this.#coordinator, this.#fence);
+      const save = this.#documentSaves.save.bind(this.#documentSaves);
+      originalDocumentSaves.set(this, save);
+    }
   }
 
   /** Fixed factory retains the existing checkbox authority and completion protocol. */
@@ -51,29 +99,29 @@ export class InstallationFileWrites {
     delivery: ConstructorParameters<typeof DocCheckboxWriteService>[4],
     options?: ConstructorParameters<typeof DocCheckboxWriteService>[5]
   ): DocCheckboxWriteService {
-    if (this.stopped || !this.db) throw new Error('Installation file writes are unavailable');
+    if (this.#stopped || !this.#db) throw new Error('Installation file writes are unavailable');
     const service = new DocCheckboxWriteService(
-      this.db,
+      this.#db,
       store,
-      this.coordinator,
+      this.#coordinator,
       authority,
       delivery,
       options
     );
-    this.checkboxes.add(service);
+    this.#checkboxes.add(service);
     return service;
   }
 
   /** Save existing confined content with the baseline check and replacement under one gate. */
   async save(raw: FileSaveInput) {
     const input = { ...raw };
-    if (this.stopped) throw new Error('Installation file writes are stopped');
+    if (this.#stopped) throw new Error('Installation file writes are stopped');
     const { resolved } = await resolveWithinCwd(input.cwd, input.path);
-    return this.coordinator.withFiles([resolved], async ([identity], lease) => {
+    return this.#coordinator.withFiles([resolved], async ([identity], lease) => {
       const currentPath = await resolveWithinCwd(input.cwd, input.path);
       if (currentPath.resolved !== identity!.canonicalPath)
         throw new CanonicalFileIdentityChangedError();
-      this.fence?.assertAdmission(identity!);
+      this.#fence?.assertAdmission(identity!);
       const current = await fs.readFile(identity!.canonicalPath, 'utf8');
       const currentHash = sha256(current);
       const expected =
@@ -135,7 +183,7 @@ export class InstallationFileWrites {
         sha256(await fs.readFile(target.resolved, 'utf8')) !== currentHash
       )
         throw new CanonicalFileIdentityChangedError();
-      this.fence?.assertAdmission(identity!);
+      this.#fence?.assertAdmission(identity!);
       if (!(await sameTemporary())) throw new CanonicalFileIdentityChangedError();
       await fs.rename(temporary, identity.canonicalPath);
     } catch (error) {
@@ -149,8 +197,12 @@ export class InstallationFileWrites {
 
   /** Close admission synchronously, then drain admitted ordinary and checkbox writes. */
   async stop(): Promise<void> {
-    this.stopped = true;
-    const writes = this.coordinator.stop();
-    await Promise.all([writes, ...[...this.checkboxes].map((service) => service.stop())]);
+    this.#stopped = true;
+    const writes = this.#coordinator.stop();
+    await Promise.all([
+      writes,
+      this.#documentSaves?.stop(),
+      ...[...this.#checkboxes].map((service) => service.stop()),
+    ]);
   }
 }

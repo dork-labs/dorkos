@@ -62,6 +62,9 @@ vi.mock('../ui/BlintzCanvas', () => ({
     />
   ),
 }));
+vi.mock('../model/use-doc-channel', () => ({
+  useDocChannel: () => ({ fileSaveBinding: undefined }),
+}));
 import { CanvasFileContent } from '../ui/CanvasFileContent';
 import { CanvasMarkdownContent } from '../ui/CanvasMarkdownContent';
 
