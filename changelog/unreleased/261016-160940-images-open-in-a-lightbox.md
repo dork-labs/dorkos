@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): pictures in messages open in a lightbox (DOR-2975)'
+  - 'fix(client): lightbox pans on desktop, saves pictures safely, and holds focus (DOR-2975)'
 ---
 
 ### Added
