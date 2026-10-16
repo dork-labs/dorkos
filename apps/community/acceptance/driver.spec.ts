@@ -1083,8 +1083,16 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'Community A subscription was not ready before the live Stop journey'
       );
       const stopMarker = `stop-marker-${crypto.randomUUID()}`;
-      await composer.fill(`@${handle} ${stopMarker}`);
-      await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      // Casey has woken the agent three times since the local server last restarted, and a
+      // teammate (anyone in the space but the installation's owner) gets three wakes per ten
+      // minutes (DOR-2955), so a fourth mention from Casey would rightly be kept as history.
+      // What this journey and the ones after it prove is Stop, a held delivery and ejection,
+      // not who asked: the owner's own mentions, which no budget holds, start their turns.
+      await pageA.goto(env.communityA);
+      const ownerComposer = pageA.getByLabel(/Message #general/i);
+      await expect(ownerComposer).toBeVisible();
+      await ownerComposer.fill(`@${handle} ${stopMarker}`);
+      await pageA.getByRole('button', { name: 'Send' }).click();
       const stopEntry = await eventually(
         () =>
           pageJson<{ entries: Entry[] }>(
@@ -1306,9 +1314,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         restoredAttachmentScenario.ok(),
         `could not restore attachment scenario after Stop: ${await restoredAttachmentScenario.text()}`
       ).toBe(true);
-      const postHumanMarker = async (marker: string) => {
-        await composer.fill(marker);
-        await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      // A post that must start a turn comes from the owner, for the reason the Stop journey gives;
+      // one that must not (an unread marker) still comes from Casey.
+      const postHumanMarker = async (marker: string, from: 'member' | 'owner' = 'member') => {
+        const [page, box] = from === 'owner' ? [pageA, ownerComposer] : [pageMemberA, composer];
+        await box.fill(marker);
+        await page.getByRole('button', { name: 'Send' }).click();
         return eventually(
           () =>
             pageJson<{ entries: Entry[] }>(
@@ -1335,7 +1346,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
             phase: 'before-persist',
           }),
         });
-        const heldParent = await postHumanMarker(`@${handle} ${marker}`);
+        const heldParent = await postHumanMarker(`@${handle} ${marker}`, 'owner');
         await eventually(
           subscriptionBarrier,
           (result) =>
@@ -1382,7 +1393,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (result) => result !== null && result.snapshotComplete && result.replayComplete,
         'Community A subscription was not ready before the fresh post-Stop mention'
       );
-      const postStopParent = await postHumanMarker(`@${handle} ${postStopMarker}`);
+      const postStopParent = await postHumanMarker(`@${handle} ${postStopMarker}`, 'owner');
       expect(postStopParent?.id).toBeTruthy();
       await eventually(
         subscriptionBarrier,
@@ -1447,7 +1458,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // explicit addressed remote message after revocation, then retain the
       // exact remote-agent count through the later owner write below.
       const afterEjectionMarker = `after-held-ejection-${crypto.randomUUID()}`;
-      const afterEjectionParent = await postHumanMarker(`@${handle} ${afterEjectionMarker}`);
+      // From the owner too, so what keeps it from a turn is the ejection, not a budget.
+      const afterEjectionParent = await postHumanMarker(
+        `@${handle} ${afterEjectionMarker}`,
+        'owner'
+      );
       expect(afterEjectionParent?.id).toBeTruthy();
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
       // Ejecting a local agent revokes that agent's membership. The human owner
