@@ -31,7 +31,7 @@ function isWrongPassword(error: AuthError): boolean {
  * The owner signs in before login turns on, for an install that already has an
  * owner account (DOR-2964).
  *
- * Turning on "Require login" with an owner present used to open the create
+ * Turning on "Ask for a password on this computer too" with an owner present used to open the create
  * form, which can only fail there. This asks for the owner's password instead
  * and proves it with a real sign-in, through the same rate limit as the login
  * screen, before the host flips `auth.enabled`. A wrong password leaves login
@@ -39,7 +39,7 @@ function isWrongPassword(error: AuthError): boolean {
  */
 export function OwnerSignInScreen({
   ownerEmail,
-  submitLabel = 'Sign in & require login',
+  submitLabel = 'Sign in & ask here too',
   onVerified,
   onCancel,
 }: OwnerSignInScreenProps) {

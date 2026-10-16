@@ -110,7 +110,7 @@ On a Trusted install, the three with no undo that are not on the always-asks lis
 
 Most settings are preferences, and an agent can change one on your word. A few are not preferences. Most of them protect this DorkOS: they decide who can reach it, what it can reach on your computer, where your keys go, what leaves the machine, and whether you get asked before an agent acts:
 
-- Whether **Require login** is on
+- Whether **Ask for a password on this computer too** is on
 - Your public web address, and the ngrok account it runs through
 - Whether the tool endpoint answers, and the key that guards it
 - Your AI service credentials, and the addresses they get sent to
@@ -139,17 +139,17 @@ The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). T
 Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself — in Settings, in the Control Center, or from the command line, as the lists above say. Three of these settings can still be reached by another route, which the second note below explains.
 
 <Callout type="warn">
-  **How well this holds depends on Require login, and it is worth knowing which half you have.**
+  **How well this holds depends on "Ask for a password on this computer too", and it is worth knowing which half you have.**
 
-With **Require login** on, only a person signed in to DorkOS can change these settings **through the
+With **Ask for a password on this computer too** on, only a person signed in to DorkOS can change these settings **through the
 settings screen**. A program holding one of your API keys is refused there just like an agent,
 because a key proves an account, not a person at the keyboard.
 
-With **Require login** off, which is the default, it holds against any agent that says who it is,
+With **Ask for a password on this computer too** off, which is the default, it holds against any agent that says who it is,
 and that is how agents normally run. It does **not** hold against a program on your computer that
 deliberately hides that it is an agent. That program looks exactly like you clicking a toggle in
 Settings, and with no password anywhere, DorkOS has nothing left to tell the two apart. This is the
-same gap as the one below, and turning on **Require login** is what closes it.
+same gap as the one below, and turning on **Ask for a password on this computer too** is what closes it.
 
 The same is true of `dorkos config set` on your command line. That command is you, at your own
 computer, so it changes any of these settings — and anything else running as you can type it. What
@@ -163,7 +163,7 @@ a quiet log is not proof a setting never moved.
 
 </Callout>
 
-One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. The note just above does not describe it, though: this one is guarded the same way whether **Require login** is on or off, so turning login on does not add a second lock here the way it does for settings. [Marketplace sources](/docs/marketplace#marketplace-sources) explains it, including the part **Require login** does not fix.
+One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. The note just above does not describe it, though: this one is guarded the same way whether **Ask for a password on this computer too** is on or off, so turning login on does not add a second lock here the way it does for settings. [Marketplace sources](/docs/marketplace#marketplace-sources) explains it, including the part **Ask for a password on this computer too** does not fix.
 
 <Callout type="warn">
   **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
@@ -171,9 +171,10 @@ One more thing works the same way, though it is not a setting: **where your pack
   connecting an AI service, starting your public web address, and linking this instance to a DorkOS
   account. Those paths have **no agent check at all**. Not "they accept an API key" — they do not
   ask who is calling in the first place, so an agent that says plainly who it is can use them, with
-  **Require login** on or off. Reaching them still takes a terminal or the ability to make web
-  requests to DorkOS, which is the same access the gap further down describes. So read this as: the
-  settings screen is guarded, those three buttons are not yet. We are closing them separately.
+  **Ask for a password on this computer too** on or off. Reaching them still takes a terminal or the
+  ability to make web requests to DorkOS, which is the same access the gap further down describes.
+  So read this as: the settings screen is guarded, those three buttons are not yet. We are closing
+  them separately.
 </Callout>
 
 ## What about an agent that does not say who it is?
@@ -182,7 +183,7 @@ An agent can tell DorkOS who it is, and most do. One that doesn't is still stopp
 
 This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
 
-There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. On **Careful**, an agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries; on **Trusted**, it runs and is recorded instead, the same as anywhere else an identified agent removes a package. Either way, a program that deliberately drops its identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it: an unidentified caller then gets a card in front of you like any other unattributed risky action, and the command tells you how to try again once you have said yes.
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. On **Careful**, an agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries; on **Trusted**, it runs and is recorded instead, the same as anywhere else an identified agent removes a package. Either way, a program that deliberately drops its identity first looks exactly like you clicking Uninstall in DorkOS, and with **Ask for a password on this computer too** off there is nothing left to tell the two apart. Turning **Ask for a password on this computer too** on is what closes it: an unidentified caller then gets a card in front of you like any other unattributed risky action, and the command tells you how to try again once you have said yes.
 
 Two things stay open even with login on, and both are open on purpose. Adding or removing a package source, and creating or changing a scheduled task, are still things one of your API keys can do, because those are commands you run from your own terminal and DorkOS cannot tell your key apart from a copy of it. Answering an approval is the one thing a key can never do.
 
@@ -191,14 +192,14 @@ Two things stay open even with login on, and both are open on purpose. Adding or
 Saying yes is your half of this. An agent that asks for something is never allowed to answer its own request, and neither is anything else that holds the retry code DorkOS handed the agent. Both get refused, and the request stays at the top of Home, waiting.
 
 <Callout type="warn">
-  **What this protects, and what it doesn't.** With **Require login** off (the default), DorkOS
+  **What this protects, and what it doesn't.** With **Ask for a password on this computer too** off (the default), DorkOS
   runs as you on your own machine, and anything else running as you looks exactly the same to it.
   So the question stops mistakes, and it stops an agent that follows the rules but was talked into
   something it shouldn't do. It does not stop a program that already has full run of your computer
   and is deliberately pretending to be you. Nothing on the same machine can, with no password in
   the way.
 
-Turn on **Require login** (Settings, under Access) and that changes: answering a request then has
+Turn on **Ask for a password on this computer too** (Settings, under Access) and that changes: answering a request then has
 to happen in DorkOS itself, in a browser you are signed in to. An API key is not enough, on purpose.
 Your agents hold one of your keys so they can run `dorkos` commands, and if a key could answer
 requests, an agent could approve its own work. So it cannot. If you run agents you don't fully
@@ -236,10 +237,11 @@ Some things about it are worth knowing before you use it:
 - **Some requests never offer it.** Changing safety limits, and anything that opens this computer to the internet or touches keys and sign-ins, always need your yes, every time. Those cards show Allow and Deny, with a line saying so. A request DorkOS cannot tie to a named agent does not offer it either, because there would be no agent to remember it for.
 
 <Callout type="warn">
-  **With Require login off, DorkOS cannot tell who pressed it.** Always allow works either way, but
-  with login off your history says "Someone on this computer" set it, not "you", because a program
-  running as you on the same computer looks exactly the same to DorkOS. Turning on **Require login**
-  means only a person signed in to DorkOS can answer a card at all.
+  **With "Ask for a password on this computer too" off, DorkOS cannot tell who pressed it.** Always
+  allow works either way, but with login off your history says "Someone on this computer" set it,
+  not "you", because a program running as you on the same computer looks exactly the same to DorkOS.
+  Turning on **Ask for a password on this computer too** means only a person signed in to DorkOS can
+  answer a card at all.
 </Callout>
 
 Standing permissions, the old "Allow, and stop asking about this for 8 hours" button, are gone. Always allow replaced them. Any that were still running when you upgraded were ended rather than turned into something permanent, and your permission history has a line for each.

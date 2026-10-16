@@ -16,9 +16,9 @@
  * All three must hold, and the controller rechecks them on every settings write:
  *
  * 1. The person turned the switch on (`server.lanAccess`).
- * 2. Login is on and an owner account exists (`canExpose`), the same bar the
- *    tunnel meets. Turning login off later turns the switch off, in config too,
- *    so it cannot spring open again when login comes back.
+ * 2. An owner account exists for Wi-Fi devices to sign in as (`canExpose`),
+ *    the same bar the tunnel meets. With no owner the switch turns off, in
+ *    config too, so it cannot spring open again later.
  * 3. Neither `DORKOS_HOST` nor `DORKOS_ALLOW_INSECURE_BIND` is set in the
  *    environment. Either already decides where DorkOS listens and who counts as
  *    local, so Settings names it instead of offering the switch.
@@ -68,7 +68,7 @@ export interface LanAccessDeps {
   readSetting: () => boolean;
   /** Write `server.lanAccess`. */
   writeSetting: (enabled: boolean) => void;
-  /** Login is on and an owner exists (`canExpose`). */
+  /** An owner account exists for other devices to sign in as (`canExpose`). */
   canExpose: () => boolean;
   /**
    * The environment setting that decides where DorkOS listens instead, e.g.

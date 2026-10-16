@@ -3,7 +3,7 @@ import { openFromCommandPalette } from './command-palette';
 
 /**
  * Page Object Model for the local-login (Better Auth) surface:
- * - the Settings → Login & security panel ("Require login" toggle, sign-out),
+ * - the Settings → Login & security panel ("Ask for a password on this computer too" toggle, sign-out),
  * - the owner-setup dialog, and
  * - the full-bleed LoginScreen that the AuthGuard renders when a session is
  *   required.
@@ -32,9 +32,11 @@ export class AuthPage {
     await this.settingsDialog.getByRole('tab', { name: /^login & security$/i }).click();
   }
 
-  /** The "Require login" toggle in Settings → Login & security. */
+  /** The "Ask for a password on this computer too" toggle in Settings → Login & security. */
   get requireLoginSwitch() {
-    return this.settingsDialog.getByRole('switch', { name: /require login/i });
+    return this.settingsDialog.getByRole('switch', {
+      name: /ask for a password on this computer too/i,
+    });
   }
 
   /** The "Sign out" control shown in Settings → Login & security when signed in. */
@@ -104,13 +106,13 @@ export class AuthPage {
 
   /** The dialog that asks the existing owner to sign in before login turns on (DOR-2964). */
   get turnOnLoginDialog() {
-    return this.page.getByRole('dialog', { name: /turn on login/i });
+    return this.page.getByRole('dialog', { name: /ask for a password here too/i });
   }
 
   /** Type the owner's password into the turn-on-login dialog and submit it. */
   async confirmOwnerPassword(password: string) {
     await this.turnOnLoginDialog.getByLabel('Password', { exact: true }).fill(password);
-    await this.turnOnLoginDialog.getByRole('button', { name: /sign in & require login/i }).click();
+    await this.turnOnLoginDialog.getByRole('button', { name: /sign in & ask here too/i }).click();
   }
 
   // ---------- LoginScreen (AuthGuard) ----------

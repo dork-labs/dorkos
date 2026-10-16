@@ -66,7 +66,7 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await expect(basePage.page.locator('[data-testid="app-shell"]')).toBeVisible();
     await expect(authPage.loginHeading).toBeHidden();
 
-    // Progressive disclosure: Login & security shows only the (off) "Require login" toggle.
+    // Progressive disclosure: Login & security shows only the (off) "Ask for a password on this computer too" toggle.
     await authPage.openLoginSecurityTab();
     await expect(authPage.requireLoginSwitch).not.toBeChecked();
   });

@@ -16,9 +16,9 @@
  *
  * One exception, for one release only (rule 11): a browser reaching a container
  * through its published port, under `DORKOS_ALLOW_INSECURE_BIND`, while the
- * container has no owner account yet, keeps today's open posture, so a Docker install is not locked out before it
- * has anyone to sign in as. F5 (DOR-2968) adds the warning and then the setup
- * code that ends it.
+ * container has no owner account yet, keeps today's open posture, so a Docker
+ * install is not locked out before it has anyone to sign in as. F5 (DOR-2968)
+ * adds the warning and then the setup code that ends it.
  *
  * Every gate asks {@link gateAccessFor}: the HTTP session gate (`/api`, SSE
  * streams), the stream socket gate, `/mcp` and A2A, and the caller-authority

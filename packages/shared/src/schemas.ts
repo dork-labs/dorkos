@@ -5007,7 +5007,8 @@ export const ServerConfigSchema = z
     auth: z
       .object({
         enabled: z.boolean().openapi({
-          description: 'Whether local owner login is required to reach the API and MCP endpoints',
+          description:
+            '"Ask for a password on this computer too": whether a request from this computer needs a sign-in. Another device always needs one, whatever this says',
         }),
         ownerEmail: z.string().nullable().optional().openapi({
           description:

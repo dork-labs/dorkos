@@ -127,9 +127,9 @@ That way, any QR code or bookmark you saved keeps working after you restart Dork
   **requires an owner login** before it will start a tunnel. There is no longer a tunnel passcode.
 </Callout>
 
-Starting a tunnel with login off routes you into owner-account creation first (_"Exposing DorkOS
-requires a login."_). Once the owner account exists and **Require login** is on, the tunnel starts and
-remote visitors get the sign-in screen. See [Securing Your Instance](/docs/self-hosting/securing-your-instance)
+Starting a tunnel with no owner account routes you into creating one first (_"Exposing DorkOS
+requires a login."_). Once the owner account exists, the tunnel starts and remote visitors get the
+sign-in screen, whether or not this computer asks for a password too. See [Securing Your Instance](/docs/self-hosting/securing-your-instance)
 for the full flow, per-user API keys, and CLI recovery.
 
 You can optionally add ngrok's own HTTP basic auth on top of the login, as a second gate at the edge:
