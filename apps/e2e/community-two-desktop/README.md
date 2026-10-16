@@ -37,7 +37,7 @@ DORKOS_TWO_DESKTOP_ACCEPTANCE=1 caffeinate -i \
 `--build` builds the Desktop app and the Community server, packages the app
 (`electron-builder --dir`), then puts the native modules back for system Node
 (`pnpm rebuild better-sqlite3 node-pty`). Leave it off to reuse a build you
-already have. A full run takes about four minutes after the build.
+already have. A full run takes about seven minutes after the build.
 
 | Variable                               | Default                                 | What it does                                                                                                                                               |
 | -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -67,15 +67,30 @@ server and window.
 | 17-18  | The switcher works by keyboard (⌘⇧K, arrows, Enter, Escape) and at phone width                                                                   |
 | 19     | Neither app looks up a Community room in its local rooms                                                                                         |
 | 20     | Each person picks an agent from their own app only. The Community allows one agent per member, and B's second agent is refused                   |
+| 20b    | B's app shows A's agent as "Available" in the channel's member list, within 30 seconds of A adding it                                            |
 | 21     | A private channel shows up only for its member. B can't read it and can't add an agent to it                                                     |
 | 22     | A mentions B's agent. B's app answers with the scripted test reply, and both people see it                                                       |
 | 23     | B's app quits and relaunches mid-journey. The connection, switcher order, saved spot and agent all survive, and B reopens where they were        |
+| 23b    | While B's app is closed, the space stops hearing from B's agent, and hears it again once B's app is back. See below                              |
 | 24     | An owner can't leave without handing over ownership. Ownership goes from A to B and back                                                         |
 | 25     | "Disconnect…" in the Manage menu ends only this app's connection and removes its agents there. B stays a member and can connect again            |
 | 26     | "Leave space…" opens the Community's own page. Once B confirms there, B's app loses access, and A is unaffected                                  |
 | 27     | An expired invitation is refused and lets no one in                                                                                              |
 | 28     | B rejoins and connects again. A removes B, and B's app loses access cleanly while A's apps keep working                                          |
 | 29     | Step 19's check again, now including the private channel                                                                                         |
+
+Step 23b does not wait for B's agent to show as "Offline since …". The space
+marks an agent offline six minutes after its last report, which would add up
+to six minutes to the run. Instead, while B's app is closed, A's app reads the
+channel's member list from the space, and the step checks three things:
+
+- B's agent's last report time does not move for a full report interval
+  (about two minutes), long enough that a running app would have reported
+- A's agent, still running, is reported again in that same window
+- once B's app is back, B's agent is reported again and reads as available
+
+That adds up to about two and a half minutes while B's app is closed. The
+receipt records when the space would show B's agent as offline.
 
 Some checks are product contracts, where a failure is the product's fault
 rather than the script's. When one fails, the run still finishes every step,
@@ -120,7 +135,7 @@ In remote mode the script starts no Postgres and no Community server. A is
 the handoff's owner and B its member, who is already in. B signs in on the
 live community first, and the script photographs the sign-in page and the
 channel at desktop width and at phone width (390 x 844), before anything is
-typed. Then it runs steps 5-7, 9-15b, 17-20, 22, 23 and 25. Step 20 adds one
+typed. Then it runs steps 5-7, 9-15b, 17-20b, 22-23b and 25. Step 20 adds one
 agent each and leaves the community's agent limit alone, and its name in the
 receipt says the limit was not tested.
 
