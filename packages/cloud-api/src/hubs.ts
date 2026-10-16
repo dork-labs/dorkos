@@ -172,7 +172,15 @@ export const HubAssignmentSchema = z
 /** Who a hub belongs to, and the keys it serves with. */
 export type HubAssignment = z.infer<typeof HubAssignmentSchema>;
 
-/** `POST /v1/hubs/self/assignment/confirm` — the hub applied this assignment. */
+/**
+ * `POST /v1/hubs/self/assignment/confirm` — the hub applied this assignment.
+ *
+ * A stale `assignmentId` is `conflict`: the hub reads its assignment again. A
+ * `signingPublicKey` different from the one the service already holds for
+ * this hub is `precondition_failed`: the service keeps the key it holds,
+ * refuses the confirmation and raises an alert, and the hub stops serving for
+ * good, since it no longer holds the key its owner's Macs trust.
+ */
 export const HubAssignmentConfirmRequestSchema = z
   .object({
     assignmentId: IdSchema.describe('The assignment the hub now serves with.'),

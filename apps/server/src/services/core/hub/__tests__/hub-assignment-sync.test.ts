@@ -102,6 +102,28 @@ describe('a hub taking its assignment', () => {
     expect(fs.existsSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE))).toBe(false);
   });
 
+  it('stops for good when Cloud holds a different signing key for it', async () => {
+    let calls = 0;
+    initAuth(db, tmpDir);
+    const d = runner.liveHubDeps(dorkHome, {
+      readAssignment: () => read(),
+      confirm: async () => {
+        calls += 1;
+        throw new CloudApiProblemError({
+          type: 'about:blank',
+          code: 'precondition_failed',
+          status: 412,
+          title: 'Different key',
+        } as never);
+      },
+    });
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
+    expect(serving.hubServingState()).toEqual({ state: 'refused' });
+    expect(calls).toBe(1);
+    // No retries: a refused hub's beat stops.
+    expect(runner.nextHubBeatMs({ kind: 'refused' })).toBeNull();
+  });
+
   it('refuses when its signing key file cannot be read', async () => {
     const d = deps();
     await sync.syncHubAssignment(d);

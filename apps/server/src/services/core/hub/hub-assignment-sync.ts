@@ -265,7 +265,20 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   // The front door may switch to the new proof and address the moment Cloud
   // records the confirmation, before its answer arrives here.
   offerHubAssignment(assignment);
-  await deps.confirm(assignment.assignmentId, signingPublicKey);
+  try {
+    await deps.confirm(assignment.assignmentId, signingPublicKey);
+  } catch (err) {
+    if (err instanceof CloudApiProblemError && err.problem.code === 'precondition_failed') {
+      // Cloud holds a different signing key for this hub: it is not the key
+      // its owner's Macs trust. Stop for good; asking again changes nothing.
+      logger.error(
+        '[Hub] DorkOS Cloud holds a different signing key for this hub; it will not serve'
+      );
+      setHubServingState({ state: 'refused' });
+      return { kind: 'refused' };
+    }
+    throw err;
+  }
   setHubServingState({ state: 'serving', assignment });
   return { kind: 'serving', assignmentId: assignment.assignmentId };
 }
