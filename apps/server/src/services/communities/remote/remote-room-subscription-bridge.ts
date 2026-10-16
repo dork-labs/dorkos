@@ -16,6 +16,7 @@ import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js'
 import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
 import type { RemoteWakeGate } from './wake/wake-policy.js';
+import { RECONNECT_FRESH_MS } from './subscription/reconnect-timing.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
 export interface RemoteLiveEntry {
@@ -559,7 +560,7 @@ export class RemoteRoomSubscriptionBridge {
     if (!wasActiveBeforeDisconnect) return false;
     const createdAt = Date.parse(serverCreatedAt);
     const age = this.now() - createdAt;
-    return Number.isFinite(age) && age >= 0 && age <= 30_000;
+    return Number.isFinite(age) && age >= 0 && age <= RECONNECT_FRESH_MS;
   }
 
   private nativeEntry(room: MirrorRoomInput, event: RemoteLiveEntry): NativeMirrorEntry {

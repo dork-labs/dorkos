@@ -11,7 +11,11 @@
  *
  * @module services/communities/remote/subscription/remote-room-frames
  */
-import { CommunityRoomNotFoundError, type CommunityEntry } from '@dorkos/shared/community-adapter';
+import {
+  CommunityRoomNotFoundError,
+  StaleCommunityCursorError,
+  type CommunityEntry,
+} from '@dorkos/shared/community-adapter';
 import { RemoteConnectionAuthorizationError } from '../connection-store.js';
 import { PinnedHttpError } from '../pinned-origin.js';
 import {
@@ -138,6 +142,16 @@ export function endsAccess(error: unknown): boolean {
   if (error instanceof RemoteConnectionAuthorizationError) return true;
   if (error instanceof CommunityRoomNotFoundError) return true;
   return error instanceof PinnedHttpError && (error.status === 401 || error.status === 403);
+}
+
+/**
+ * Whether the next stream must start fresh rather than resume: after a refusal, since a stale
+ * copy keeps only snapshots, and after a cursor the space no longer accepts.
+ *
+ * @param error - What the stream threw.
+ */
+export function restartsFresh(error: unknown): boolean {
+  return endsAccess(error) || error instanceof StaleCommunityCursorError;
 }
 
 /**
