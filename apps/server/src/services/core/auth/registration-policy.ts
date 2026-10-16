@@ -9,9 +9,9 @@
  *   computer, so its person may create the owner.
  * - **`setup-code`**: no account exists yet and the request comes from another
  *   device. Creating the owner from there will need the setup code this
- *   computer prints (F5, DOR-2968). Until F5 ships, the hook still allows it,
- *   which is today's behavior and the "one release of loud warning" that ADR
- *   rule 11 gives existing Docker installs.
+ *   computer prints (`setup-code.ts`, F5 DOR-2968), checked by the hook in
+ *   `setup-code-gate.ts`. A browser at a container's published port is the one
+ *   exception, for one release with a loud warning (ADR rule 11).
  * - **`provisioned`**: a hub with no account yet. Its owner comes from
  *   provisioning (A2, DOR-2934): only code running inside
  *   `withRegistrationCaller('provisioning', …)` may create it, and every
@@ -79,8 +79,8 @@ export function decideRegistration(facts: RegistrationFacts): RegistrationMode {
 
 /**
  * Whether this caller may create the owner under the decided mode.
- * `setup-code` still allows until F5 (DOR-2968) checks the code here;
- * `provisioned` allows hub provisioning only.
+ * `setup-code` passes here and is checked by the hook against the setup code
+ * (`setup-code-gate.ts`); `provisioned` allows hub provisioning only.
  *
  * @param mode - The decided mode.
  * @param caller - Who is signing up.

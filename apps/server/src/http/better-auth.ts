@@ -28,6 +28,7 @@ import { withRegistrationCaller } from '../services/core/auth/registration-polic
 import { AUTH_COOKIES_SECURE } from '../services/core/auth/index.js';
 import { ingressOf } from '../services/core/remote/ingress-mark.js';
 import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
+import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -49,10 +50,18 @@ export interface BetterAuthOptions {
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
   app.all('/api/auth/*', async (c) => {
-    // The sign-up hook asks where this request came from (registration-policy.ts).
-    const response = await withRegistrationCaller(
-      classifyRequest(honoRequestFacts(c), currentServerRole()),
-      () => options.auth.handler(requestForBetterAuth(c))
+    const facts = honoRequestFacts(c);
+    const setupCode = facts.headers[SETUP_CODE_HEADER];
+    // The sign-up hook asks where this request came from (registration-policy.ts)
+    // and, from another device, which setup code it carried (setup-code.ts).
+    const response = await withRegistrationCaller(classifyRequest(facts, currentServerRole()), () =>
+      withSetupCodeAttempt(
+        {
+          code: typeof setupCode === 'string' ? setupCode : undefined,
+          address: facts.peerAddress,
+        },
+        () => options.auth.handler(requestForBetterAuth(c))
+      )
     );
     const secure = options.secureCookies ?? AUTH_COOKIES_SECURE;
     return (secure && explainDroppedSignIn(c, response)) || response;

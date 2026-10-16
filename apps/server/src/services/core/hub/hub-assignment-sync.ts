@@ -40,7 +40,7 @@ import { CloudApiProblemError } from '@dork-labs/cloud-api/client';
 import { z } from 'zod';
 
 import { logger } from '../../../lib/logger.js';
-import { setHubServingState, type LiveHubAssignment } from './hub-serving.js';
+import { offerHubAssignment, setHubServingState, type LiveHubAssignment } from './hub-serving.js';
 
 /** The owner a hub pinned when it first confirmed an assignment. */
 export interface PinnedHubOwner {
@@ -228,6 +228,9 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
     await deps.createOwner({ email: hubOwnerEmail(assignment), name: 'Owner' });
   }
 
+  // The front door may switch to the new proof and address the moment Cloud
+  // records the confirmation, before its answer arrives here.
+  offerHubAssignment(assignment);
   await deps.confirm(assignment.assignmentId);
   setHubServingState({ state: 'serving', assignment });
   return { kind: 'serving', assignmentId: assignment.assignmentId };

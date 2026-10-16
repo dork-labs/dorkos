@@ -52,7 +52,7 @@
     "apps/server/src/services/canvas/doc-channel/store.ts": 549,
     "apps/server/src/services/communities/remote/pairing-service.ts": 704,
     "apps/server/src/services/communities/remote/remote-community-adapter.ts": 1006,
-    "apps/server/src/services/communities/remote/remote-room-subscription-runtime.ts": 579,
+    "apps/server/src/services/communities/remote/remote-room-subscription-runtime.ts": 528,
     "apps/server/src/services/connectors/agent-request-service.ts": 2165,
     "apps/server/src/services/connectors/bootstrap.ts": 704,
     "apps/server/src/services/connectors/connection-store.ts": 821,

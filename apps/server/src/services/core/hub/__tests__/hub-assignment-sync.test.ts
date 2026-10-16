@@ -1,6 +1,6 @@
 /**
  * How a hub takes its assignment: every case in `hub-assignment-sync.ts`, and
- * the gate that refuses requests until it serves. The owner account is made
+ * where each case leaves the hub. The owner account is made
  * through real Better Auth, so the registration policy's `provisioning` seam
  * is exercised rather than assumed.
  */
@@ -68,22 +68,11 @@ describe('a hub taking its assignment', () => {
     });
   }
 
-  it('refuses every request but the health check until it serves', () => {
-    expect(serving.hubRefusesRequest('/api/config')).toBe(true);
-    expect(serving.hubRefusesRequest('/')).toBe(true);
-    expect(serving.hubRefusesRequest('/api/health')).toBe(false);
-  });
-
-  it('never refuses anything on a person`s own computer', () => {
-    role.value = 'computer';
-    expect(serving.hubRefusesRequest('/api/config')).toBe(false);
-  });
-
   it('stays pooled with no owner, and takes Cloud`s wait', async () => {
     read = async () => ({ state: 'pooled', pollAfterSeconds: 7 });
     expect(await sync.syncHubAssignment(deps())).toEqual({ kind: 'pooled', pollAfterSeconds: 7 });
     expect(db.select().from(user).all()).toHaveLength(0);
-    expect(serving.hubRefusesRequest('/api/config')).toBe(true);
+    expect(serving.hubServingState().state).not.toBe('serving');
     expect(runner.nextHubBeatMs({ kind: 'pooled', pollAfterSeconds: 7 })).toBe(7_000);
   });
 
@@ -103,7 +92,7 @@ describe('a hub taking its assignment', () => {
       issuer: 'https://accounts.example.invalid',
     });
     expect(confirmed).toEqual(['asg_1']);
-    expect(serving.hubRefusesRequest('/api/config')).toBe(false);
+    expect(serving.hubServingState().state).toBe('serving');
     expect(serving.hubServingState()).toMatchObject({ state: 'serving' });
   });
 
@@ -134,7 +123,7 @@ describe('a hub taking its assignment', () => {
       await sync.syncHubAssignment(fresh);
       read = async () => ({ ...ASSIGNED, assignmentId: 'asg_3', ...changed });
       expect(await sync.syncHubAssignment(fresh)).toEqual({ kind: 'refused' });
-      expect(serving.hubRefusesRequest('/api/config')).toBe(true);
+      expect(serving.hubServingState().state).not.toBe('serving');
       // It stays refused even if Cloud puts the old owner back.
       read = async () => ASSIGNED;
       await sync.syncHubAssignment(fresh);
@@ -185,7 +174,7 @@ describe('a hub taking its assignment', () => {
       } as never);
     };
     expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'ended' });
-    expect(serving.hubRefusesRequest('/api/config')).toBe(true);
+    expect(serving.hubServingState().state).not.toBe('serving');
     expect(runner.nextHubBeatMs({ kind: 'ended' })).toBeNull();
   });
 
@@ -196,7 +185,7 @@ describe('a hub taking its assignment', () => {
       throw new TypeError('fetch failed');
     };
     expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'unchanged', reason: 'failed' });
-    expect(serving.hubRefusesRequest('/api/config')).toBe(false);
+    expect(serving.hubServingState().state).toBe('serving');
   });
 
   it('stops serving, but not for good, on an answer it does not understand', async () => {
@@ -204,7 +193,7 @@ describe('a hub taking its assignment', () => {
     await sync.syncHubAssignment(d);
     read = async () => ({ state: 'suspended' });
     expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'unchanged', reason: 'unreadable' });
-    expect(serving.hubRefusesRequest('/api/config')).toBe(true);
+    expect(serving.hubServingState().state).not.toBe('serving');
     read = async () => ASSIGNED;
     expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'serving', assignmentId: 'asg_1' });
   });

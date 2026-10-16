@@ -18,12 +18,19 @@ import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 
 const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
+// The setup code is written beside the test's own data, never a real one.
+const home = vi.hoisted(() => ({ dir: '' }));
+vi.mock('../../../../lib/dork-home.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/dork-home.js')>()),
+  resolveDorkHome: () => home.dir,
+}));
 
 const { createAuth } = await import('../index.js');
 const { initConfigManager } = await import('../../config-manager.js');
 const { mountBetterAuth } = await import('../../../../http/better-auth.js');
 const { markIngress } = await import('../../remote/ingress-mark.js');
 const { withRegistrationCaller } = await import('../registration-policy.js');
+const { resetSetupCodeForTests } = await import('../setup-code.js');
 const { env } = await import('../../../../env.js');
 type ApiEnv = import('../../../../http/api-chain.js').ApiEnv;
 type IngressKind = import('../../remote/ingress-mark.js').IngressKind;
@@ -41,7 +48,9 @@ describe('the sign-up hook, through the /api/auth mount', () => {
 
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-registration-'));
+    home.dir = tmpDir;
     initConfigManager(tmpDir);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   });
 
   beforeEach(() => {
@@ -57,6 +66,7 @@ describe('the sign-up hook, through the /api/auth mount', () => {
     target.mount(honoListener(app));
     viaIngress = null;
     role.value = 'computer';
+    resetSetupCodeForTests();
   });
 
   afterAll(() => {
@@ -82,13 +92,32 @@ describe('the sign-up hook, through the /api/auth mount', () => {
     expect(db.select().from(user).get()?.role).toBe('owner');
   });
 
-  // Purpose: today's behavior holds for another device too (setup codes come
-  // in F5), so no existing install loses its first sign-up in this change.
-  it('still lets another device create the owner, until setup codes ship', async () => {
+  // Purpose: an owner-less sign-up from another device needs the setup code
+  // this computer prints (F5, DOR-2968), and creates nothing without it.
+  it('refuses another device without the setup code, and creates no account', async () => {
     viaIngress = 'own-tunnel';
     const res = await signUp('tunnel');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('SETUP_CODE_REQUIRED');
+    expect(db.select().from(user).all()).toHaveLength(0);
+  });
+
+  it('lets another device create the owner with the printed setup code', async () => {
+    viaIngress = 'own-tunnel';
+    await signUp('tunnel');
+    const code = fs.readFileSync(path.join(tmpDir, 'setup-code'), 'utf8').trim();
+
+    const res = await signUp('tunnel').set('X-DorkOS-Setup-Code', code);
     expect(res.status).toBe(200);
     expect(db.select().from(user).all()).toHaveLength(1);
+  });
+
+  it('refuses a wrong setup code', async () => {
+    viaIngress = 'own-tunnel';
+    const res = await signUp('tunnel').set('X-DorkOS-Setup-Code', '00000-00000');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('SETUP_CODE_INVALID');
+    expect(db.select().from(user).all()).toHaveLength(0);
   });
 
   // Purpose: the proof the hook sees the request. A relayed caller is never a

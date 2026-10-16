@@ -107,6 +107,18 @@ function isContainerPortRequest(requestClass: RequestClass, posture: () => GateP
   );
 }
 
+/**
+ * Whether a request is a browser reaching a container through its published
+ * port (see `isContainerPortRequest`), reading the live settings. The sign-up
+ * hook asks it: such a container keeps its open first sign-up for one more
+ * release (ADR 261015-125850 rule 11).
+ *
+ * @param requestClass - The classifier's answer for the request.
+ */
+export function isContainerPortClass(requestClass: RequestClass): boolean {
+  return isContainerPortRequest(requestClass, readGatePosture);
+}
+
 /** Read this install's {@link GatePosture} from live config, env and the user table. */
 export function readGatePosture(): GatePosture {
   return {

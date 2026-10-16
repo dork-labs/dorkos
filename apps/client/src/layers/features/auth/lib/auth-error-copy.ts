@@ -37,6 +37,13 @@ function mismatchedOriginMessage(appOrigin: string | undefined): string {
   return `The server doesn’t trust ${address}, so nothing changed. Add it to DORKOS_CORS_ORIGIN, then restart.`;
 }
 
+/** What each setup-code refusal tells the person, by its server code. */
+const SETUP_CODE_COPY: Record<string, string> = {
+  SETUP_CODE_REQUIRED: 'Enter the setup code from the computer DorkOS runs on.',
+  SETUP_CODE_INVALID: 'That setup code is wrong or expired. Check the newest one.',
+  SETUP_CODE_TOO_MANY_ATTEMPTS: 'Too many wrong setup codes. Wait ten minutes, then try again.',
+};
+
 /**
  * Describe an auth failure in plain language.
  *
@@ -74,6 +81,11 @@ export function describeAuthError(
       detail: error.message,
     };
   }
+
+  // Creating the owner from another device needs the setup code the computer
+  // printed (DOR-2968). The form shows the field; this says what to put in it.
+  const setupCodeCopy = SETUP_CODE_COPY[error.code ?? ''];
+  if (setupCodeCopy) return { message: setupCodeCopy, detail: null };
 
   // The server signed you in, but this browser drops the cookie over plain
   // http at a network address (DOR-2968). Saying so ends the silent loop.
