@@ -19,6 +19,7 @@ export function useFileSaveRecovery(
 ) {
   const latest = useRef(actions),
     active = useRef<object | null>(null);
+  const inspection = useRef<object | null>(null);
   const [state, setState] = useState<State>({
     identity: actions.identity,
     phase: 'pending',
@@ -53,6 +54,7 @@ export function useFileSaveRecovery(
     supportedPort = actions.supported;
   useLayoutEffect(() => {
     const action = latest.current;
+    inspection.current = null;
     active.current = identity;
     let disposed = false;
     if (supportedPort && observation === 'ready') {
@@ -66,6 +68,7 @@ export function useFileSaveRecovery(
     }
     return () => {
       disposed = true;
+      inspection.current = null;
       if (active.current === identity) active.current = null;
     };
   }, [identity, supportedPort, observation, bindingObservation, publish, settleIdle]);
@@ -74,6 +77,7 @@ export function useFileSaveRecovery(
     const action = latest.current,
       identity = action.identity;
     if (active.current !== identity || !action.current()) return;
+    inspection.current = null;
     setState((previous) => ({
       identity,
       phase: 'pending',
@@ -91,6 +95,7 @@ export function useFileSaveRecovery(
       const action = latest.current,
         identity = action.identity;
       if (active.current !== identity || !action.current()) return;
+      inspection.current = null;
       setState((previous) => ({
         identity,
         phase: 'pending',
@@ -119,10 +124,15 @@ export function useFileSaveRecovery(
     const action = latest.current,
       identity = action.identity;
     if (active.current !== identity || !action.current()) return { status: 'idle' } as const;
+    const token = {};
+    inspection.current = token;
     setState((previous) =>
       previous.identity === identity ? { ...previous, phase: 'pending', busy: true } : previous
     );
     const result = await action.inspectCurrent();
+    // A newer observation/action owns the UI and the right to adopt inspected bytes.
+    if (inspection.current !== token) return { status: 'idle' } as const;
+    inspection.current = null;
     if (result.status === 'idle') settleIdle(identity);
     if (
       active.current === identity &&

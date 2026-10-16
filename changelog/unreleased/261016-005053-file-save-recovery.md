@@ -8,8 +8,13 @@ covers:
   - 'test(e2e): wait for the app shell before opening the right panel'
   - 'test(client): avoid parsing files without raw status colours'
   - 'ci(test): split unit file work across six shards'
+  - 'fix(client): keep reopened file recovery responsive'
 ---
 
 ### Added
 
 - Review a document’s previous saves and recover missing confirmations without resending edits.
+
+### Fixed
+
+- Reopened file views stay responsive while older read-only checks finish.
