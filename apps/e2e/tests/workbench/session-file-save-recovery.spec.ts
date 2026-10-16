@@ -19,7 +19,7 @@ import {
   replace,
   cleanup,
 } from '../../fixtures/file-save-recovery';
-test.use({ trace: 'off', video: 'off', screenshot: 'off' });
+test.use({ trace: 'retain-on-failure', video: 'off', screenshot: 'off' });
 test.describe.configure({ mode: 'serial' });
 const hash = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 function effects(page: Page, path: string) {

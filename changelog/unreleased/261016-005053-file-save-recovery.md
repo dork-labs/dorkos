@@ -4,6 +4,7 @@ covers:
   - 'fix(canvas): settle idle file-save recovery work'
   - 'test(client): preserve exact focus-ring audit with fewer parses'
   - 'fix(client): scope recovery discovery to its observed binding'
+  - 'test(e2e): retain failed file-save recovery traces'
 ---
 
 ### Added
