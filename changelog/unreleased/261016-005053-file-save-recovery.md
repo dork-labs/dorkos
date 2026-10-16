@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(canvas): review and recover previous file saves'
+  - 'fix(canvas): settle idle file-save recovery work'
 ---
 
 ### Added

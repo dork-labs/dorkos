@@ -1,13 +1,15 @@
 /** @vitest-environment jsdom */
 import { beforeEach, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
+import type { WriteFileResult } from '@dorkos/shared/transport';
 import type { FileSaveDiscovery } from '@dorkos/shared/file-save/recovery';
 const port = { discover: vi.fn(), recover: vi.fn() };
 const transport = createMockTransport({ originalFileSaveRecovery: port });
 let currentTransport = transport;
 vi.mock('@/layers/shared/model', () => ({ useTransport: () => currentTransport }));
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
+import { useFileSaveRecovery } from '../model/file-save/use-file-save-recovery';
 const birth = {
   v: 1 as const,
   documentId: 'doc-1',
@@ -233,4 +235,119 @@ it('a discovery fence blocks an actual conflict overwrite without changing its c
   });
   expect(transport.writeFile).toHaveBeenCalledTimes(1);
   expect(result.current.getConfirmedBase()).toEqual({ hash: null, content: 'base' });
+});
+
+it('same-owner queued discovery losing currentness settles idle and a later ready observation rediscovers before enabling edit', async () => {
+  let current = true;
+  const observed = { incarnation: birth, current: () => current };
+  let currentObservation = observed;
+  const wire = deferred<WriteFileResult>();
+  vi.mocked(transport.writeFile).mockReturnValue(wire.promise);
+  const { result, rerender } = renderHook(
+    ({
+      recoveryReady,
+      observation,
+    }: {
+      recoveryReady: boolean;
+      observation: 'unavailable' | 'pending' | 'ready';
+    }) => {
+      const save = useCanvasFileSave({
+        ...args,
+        documentSaveBinding: observed,
+        documentRecoveryBinding: recoveryReady ? currentObservation : undefined,
+      });
+      const recovery = useFileSaveRecovery(
+        save.recovery,
+        observation,
+        recoveryReady ? currentObservation : undefined
+      );
+      return { save, recovery };
+    },
+    {
+      initialProps: { recoveryReady: false, observation: 'unavailable' } as {
+        recoveryReady: boolean;
+        observation: 'unavailable' | 'pending' | 'ready';
+      },
+    }
+  );
+  const identity = result.current.save.recovery.identity;
+  let saving!: ReturnType<typeof result.current.save.save>;
+  act(() => {
+    saving = result.current.save.save('already dispatched original');
+  });
+  await waitFor(() => expect(transport.writeFile).toHaveBeenCalledTimes(1));
+  const sent = vi.mocked(transport.writeFile).mock.calls[0]!;
+  rerender({ recoveryReady: true, observation: 'ready' });
+  expect(result.current.save.recovery.identity).toBe(identity);
+  expect(result.current.recovery.editBlocked).toBe(true);
+  current = false;
+  await act(async () => {
+    wire.resolve({
+      ok: true,
+      effect: 'changed',
+      hash: 'b'.repeat(64),
+      documentReceipt: {
+        ...sent[3]!.documentSave!,
+        fileHash: 'b'.repeat(64),
+        docSeq: 1,
+        status: 'accepted',
+      },
+    });
+    await saving;
+    await Promise.resolve();
+  });
+  expect(port.discover).not.toHaveBeenCalled();
+  expect(result.current.recovery.editBlocked).toBe(true);
+  current = true;
+  currentObservation = { incarnation: { ...birth }, current: () => true };
+  rerender({ recoveryReady: true, observation: 'ready' });
+  await waitFor(() => expect(port.discover).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(result.current.recovery.editBlocked).toBe(false));
+  expect(result.current.save.recovery.identity).toBe(identity);
+  expect(result.current.recovery.discovery).toEqual(clear());
+  expect(transport.writeFile).toHaveBeenCalledTimes(1);
+  expect(port.recover).not.toHaveBeenCalled();
+});
+
+it('idle current-file inspection invalidates its exact old observed cache and a same-birth read binding triggers fresh discovery', async () => {
+  let live = true;
+  let observed = { incarnation: birth, current: () => live };
+  const held = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
+  vi.mocked(transport.readFileContent).mockReturnValue(held.promise);
+  const { result, rerender } = renderHook(() => {
+    const save = useCanvasFileSave({ ...args, documentRecoveryBinding: observed });
+    const recovery = useFileSaveRecovery(save.recovery, 'ready', observed);
+    return { save, recovery };
+  });
+  await waitFor(() => expect(result.current.recovery.editBlocked).toBe(false));
+  const identity = result.current.save.recovery.identity;
+  let reading!: ReturnType<typeof result.current.recovery.inspectCurrent>;
+  act(() => {
+    reading = result.current.recovery.inspectCurrent();
+  });
+  await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(1));
+  live = false;
+  await act(async () => {
+    held.resolve({ content: 'must not be adopted', hash: 'c'.repeat(64), encoding: 'utf-8' });
+    expect(await reading).toEqual({ status: 'idle' });
+  });
+  expect(result.current.recovery.editBlocked).toBe(true);
+  expect(result.current.recovery.busy).toBe(false);
+  port.discover.mockResolvedValue({ ...clear(), admission: 'blocked' });
+  observed = { incarnation: { ...birth }, current: () => true };
+  rerender();
+  await waitFor(() => expect(port.discover).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.current.recovery.discovery?.admission).toBe('blocked'));
+  expect(result.current.recovery.editBlocked).toBe(true);
+  expect(result.current.save.recovery.identity).toBe(identity);
+  expect(result.current.save.getConfirmedBase().content).toBe('base');
+  // Only another explicit fresh server observation may clear this genuine blocker.
+  port.discover.mockResolvedValue(clear());
+  await act(async () => {
+    await result.current.recovery.refresh();
+  });
+  expect(port.discover).toHaveBeenCalledTimes(3);
+  expect(result.current.recovery.editBlocked).toBe(false);
+  expect(transport.writeFile).not.toHaveBeenCalled();
+  expect(port.recover).not.toHaveBeenCalled();
 });

@@ -14,7 +14,9 @@ export interface FileSaveRecoveryRecord<Owner> {
   recoveryBinding?: FileSaveBinding;
   recoveryGate: 'unsupported' | 'pending' | 'observed_clear' | 'blocked' | 'unavailable';
   discovery?: Promise<RecoveryCall<FileSaveDiscovery>>;
+  pendingDiscovery?: Promise<RecoveryCall<FileSaveDiscovery>>;
   recoveryBusy?: boolean;
+  recoveryWork?: object;
 }
 /** Build serialized proof-only actions for one committed file-save owner. */
 export function createFileSaveRecoveryActions<Owner extends object>({
@@ -63,22 +65,33 @@ export function createFileSaveRecoveryActions<Owner extends object>({
   const enqueue = <T>(call: () => Promise<T>): Promise<RecoveryCall<T>> => {
     if (!port || !current()) return Promise.resolve({ status: 'idle' });
     const record = getOwner()!;
+    const work = {},
+      priorDiscovery = record.discovery;
+    let observed = false;
+    record.recoveryWork = work;
     record.recoveryGate = 'pending';
     record.recoveryBusy = true;
     const next = readTail()
       .catch(() => {})
       .then(async (): Promise<RecoveryCall<T>> => {
-        if (getOwner() !== record || !current()) return { status: 'idle' };
         try {
+          if (getOwner() !== record || !current()) return { status: 'idle' };
           const value = await call();
           if (getOwner() !== record || !current()) return { status: 'idle' };
+          observed = true;
           return { status: 'observed', value };
         } catch {
           if (getOwner() !== record || !current()) return { status: 'idle' };
           record.recoveryGate = 'unavailable';
           return { status: 'unavailable' };
         } finally {
-          record.recoveryBusy = false;
+          // An old observed cache cannot satisfy a recheck after work lost currentness.
+          if (!observed && record.discovery === priorDiscovery) record.discovery = undefined;
+          // An older settlement cannot release a newer queued operation's busy state.
+          if (record.recoveryWork === work) {
+            record.recoveryBusy = false;
+            record.recoveryWork = undefined;
+          }
         }
       });
     writeTail(next.then(() => {}));
@@ -87,7 +100,12 @@ export function createFileSaveRecoveryActions<Owner extends object>({
   const discover = (fresh = false): Promise<RecoveryCall<FileSaveDiscovery>> => {
     if (!port || !current()) return Promise.resolve({ status: 'idle' });
     const record = getOwner()!;
-    if (record.discovery && (!fresh || record.recoveryBusy)) return record.discovery;
+    if (
+      record.discovery &&
+      (record.pendingDiscovery === record.discovery ||
+        (!fresh && record.recoveryGate === 'observed_clear'))
+    )
+      return record.discovery;
     const request = enqueue(async () => {
       const value = observeDiscovery(await port.discover(documentId!));
       if (getOwner() === record && current())
@@ -95,6 +113,12 @@ export function createFileSaveRecoveryActions<Owner extends object>({
       return value;
     });
     record.discovery = request;
+    record.pendingDiscovery = request;
+    // Idle proves no observation. Keep the gate blocked, but do not cache it as a discovery.
+    void request.then((result) => {
+      if (record.pendingDiscovery === request) record.pendingDiscovery = undefined;
+      if (result.status === 'idle' && record.discovery === request) record.discovery = undefined;
+    });
     return request;
   };
   return {

@@ -95,7 +95,7 @@ export function FileEditor({
     documentRecoveryBinding: recoveryBinding,
   });
 
-  const recovery = useFileSaveRecovery(fileSave.recovery, fileSaveObservation);
+  const recovery = useFileSaveRecovery(fileSave.recovery, fileSaveObservation, recoveryBinding);
   const editorActive = useRef(false);
   const editingRef = useRef(isEditing);
   useLayoutEffect(() => {

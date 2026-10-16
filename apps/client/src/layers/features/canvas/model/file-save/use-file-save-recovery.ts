@@ -2,6 +2,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { FileSaveDiscovery, FileSaveRecoveryEntry } from '@dorkos/shared/file-save/recovery';
 import type { FileSaveRecoveryActions } from './recovery-ui-types';
+import type { FileSaveBinding } from './receipt-operation';
 type Observation = 'pending' | 'ready' | 'unavailable';
 type State = {
   identity: object;
@@ -11,7 +12,11 @@ type State = {
   busy: boolean;
 };
 /** Observe explicit receipt recovery through the existing committed save owner. */
-export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observation: Observation) {
+export function useFileSaveRecovery(
+  actions: FileSaveRecoveryActions,
+  observation: Observation,
+  bindingObservation?: FileSaveBinding
+) {
   const latest = useRef(actions),
     active = useRef<object | null>(null);
   const [state, setState] = useState<State>({
@@ -35,6 +40,15 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
           next.historical ?? (previous.identity === identity ? previous.historical : undefined),
       }));
   }, []);
+  // Idle is not evidence. Clear only this committed view's spinner into a blocked state.
+  const settleIdle = useCallback((identity: object) => {
+    if (active.current !== identity || latest.current.identity !== identity) return;
+    setState((previous) =>
+      previous.identity === identity
+        ? { ...previous, phase: 'unavailable', busy: false }
+        : { identity, phase: 'unavailable', busy: false }
+    );
+  }, []);
   const identity = actions.identity,
     supportedPort = actions.supported;
   useLayoutEffect(() => {
@@ -47,13 +61,14 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
         if (result.status === 'observed')
           publish(identity, { phase: 'ready', discovery: result.value, busy: false });
         else if (result.status !== 'idle') publish(identity, { phase: 'unavailable', busy: false });
+        else settleIdle(identity);
       });
     }
     return () => {
       disposed = true;
       if (active.current === identity) active.current = null;
     };
-  }, [identity, supportedPort, observation, publish]);
+  }, [identity, supportedPort, observation, bindingObservation, publish, settleIdle]);
   const current = state.identity === actions.identity ? state : undefined;
   const refresh = useCallback(async () => {
     const action = latest.current,
@@ -69,7 +84,8 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
     if (result.status === 'observed')
       publish(identity, { phase: 'ready', discovery: result.value, busy: false });
     else if (result.status !== 'idle') publish(identity, { phase: 'unavailable', busy: false });
-  }, [publish]);
+    else settleIdle(identity);
+  }, [publish, settleIdle]);
   const recover = useCallback(
     async (eventId: string) => {
       const action = latest.current,
@@ -95,8 +111,9 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
           phase: result.status === 'local_uncertain' ? 'local_uncertain' : 'unavailable',
           busy: false,
         });
+      else settleIdle(identity);
     },
-    [publish]
+    [publish, settleIdle]
   );
   const inspectCurrent = useCallback(async () => {
     const action = latest.current,
@@ -106,6 +123,7 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
       previous.identity === identity ? { ...previous, phase: 'pending', busy: true } : previous
     );
     const result = await action.inspectCurrent();
+    if (result.status === 'idle') settleIdle(identity);
     if (
       active.current === identity &&
       latest.current.identity === identity &&
@@ -127,7 +145,7 @@ export function useFileSaveRecovery(actions: FileSaveRecoveryActions, observatio
           : previous
       );
     return result;
-  }, []);
+  }, [settleIdle]);
   const supported = actions.supported && observation === 'ready';
   const phase = observation === 'pending' ? 'pending' : (current?.phase ?? 'pending');
   const editBlocked =

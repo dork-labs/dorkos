@@ -443,3 +443,63 @@ it('a fresh-file read admitted by a disposed editor cannot alter a replacement v
   });
   expect(transport.writeFile).not.toHaveBeenCalled();
 });
+
+it('a hidden old read stays held while reopened hash-changing Load settles discovery and permits a newer draft', async () => {
+  const mounted = view();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  const oldRead = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
+  vi.mocked(transport.readFileContent).mockReturnValueOnce(oldRead.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(2));
+  // Hide/unmount the real editor but retain the same query client and stale cached hash.
+  mounted.rerender(<QueryClientProvider client={query}>{null}</QueryClientProvider>);
+  vi.mocked(transport.readFileContent).mockResolvedValue({
+    content: 'fresh reopened bytes',
+    hash: 'd'.repeat(64),
+    encoding: 'utf-8',
+  });
+  mounted.rerender(
+    <QueryClientProvider client={query}>
+      <CanvasFileContent documentId="doc-1" content={{ type: 'file', sourcePath: 'notes.txt' }} />
+    </QueryClientProvider>
+  );
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  expect(screen.getByLabelText('draft')).toHaveValue('base');
+  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await waitFor(() => expect(screen.getByLabelText('draft')).toHaveValue('fresh reopened bytes'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+  const input = screen.getByLabelText('draft') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'newer draft and selection' } });
+  input.focus();
+  input.setSelectionRange(2, 7);
+  await act(async () =>
+    oldRead.resolve({ content: 'retired held bytes', hash: 'c'.repeat(64), encoding: 'utf-8' })
+  );
+  expect(screen.getByLabelText('draft')).toBe(input);
+  expect(input).toHaveValue('newer draft and selection');
+  expect(input.selectionStart).toBe(2);
+  expect(input.selectionEnd).toBe(7);
+  expect(document.activeElement).toBe(input);
+  expect(query.getQueryData(['canvas-file', '/work', 'notes.txt'])).toMatchObject({
+    content: 'fresh reopened bytes',
+    hash: 'd'.repeat(64),
+  });
+  // An ordinary 500ms autosave is legitimate at any point after typing, including on a busy runner.
+  // Finish drains that same real save tail; never require the assertions to beat the debounce.
+  fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  expect(transport.writeFile).toHaveBeenCalled();
+  for (const [cwd, path, text, options] of vi.mocked(transport.writeFile).mock.calls) {
+    expect({ cwd, path, text }).toEqual({
+      cwd: '/work',
+      path: 'notes.txt',
+      text: 'newer draft and selection',
+    });
+    expect(options?.documentSave).toMatchObject({ documentId: 'doc-1', incarnation: birth });
+  }
+  expect(query.getQueryData(['canvas-file', '/work', 'notes.txt'])).toMatchObject({
+    content: 'newer draft and selection',
+  });
+  expect(port.recover).not.toHaveBeenCalled();
+});
