@@ -170,7 +170,10 @@ export async function checkedAddress(
     : await Promise.race([
         resolve(host),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new PinnedOriginError('REMOTE_UNAVAILABLE')), 5_000);
+          timer = setTimeout(
+            () => reject(new PinnedOriginError('REMOTE_UNAVAILABLE')),
+            ADDRESS_LOOKUP_TIMEOUT_MS
+          );
         }),
       ]).finally(() => {
         if (timer) clearTimeout(timer);
@@ -192,6 +195,9 @@ export async function checkedAddress(
     family: 4 | 6;
   };
 }
+
+/** How long looking up a space's address may take, before any request is opened. */
+export const ADDRESS_LOOKUP_TIMEOUT_MS = 5_000;
 
 /** The most of a refused stream's error body read for its code: 16 KB. */
 export const SSE_ERROR_BODY_MAX_BYTES = 16 * 1024;
