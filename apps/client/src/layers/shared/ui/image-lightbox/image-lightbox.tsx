@@ -446,8 +446,8 @@ function ChromeButton({
       onClick={onClick}
       style={fade ? { opacity: fade } : undefined}
       className={cn(
-        'focus-ring bg-background/70 text-foreground ring-border/60 hover:bg-background',
-        'flex size-10 items-center justify-center rounded-full shadow-sm ring-1 backdrop-blur-md',
+        'focus-ring bg-background/70 text-foreground border-border/60 hover:bg-background',
+        'flex size-10 items-center justify-center rounded-full border shadow-sm backdrop-blur-md',
         'transition-colors duration-150 motion-reduce:transition-none',
         className
       )}
