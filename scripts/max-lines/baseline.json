@@ -36,7 +36,7 @@
     "apps/community/src/browser/components/Channel.tsx": 744,
     "apps/community/src/browser/components/CommunityAdministration.tsx": 722,
     "apps/community/src/browser/components/Manage.tsx": 905,
-    "apps/community/src/config.ts": 562,
+    "apps/community/src/config.ts": 548,
     "apps/community/src/erasure/erasure.ts": 534,
     "apps/community/src/routes/community/administration.ts": 644,
     "apps/community/src/routes/community/pairings.ts": 564,

@@ -114,7 +114,9 @@ export function EntryCard({
               variant="outline"
               size="sm"
               type="button"
-              onClick={() => void download(`/api/v1/attachments/${attachment.id}`, attachment.name)}
+              onClick={() =>
+                void download(`/api/v1/attachments/${attachment.id}/link`, attachment.name)
+              }
             >
               <Download size={14} aria-hidden="true" />
               {attachment.name}

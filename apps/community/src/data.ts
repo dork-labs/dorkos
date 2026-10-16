@@ -430,6 +430,8 @@ export async function requireMember(
 ): Promise<Member> {
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
+  // A download link names the sign-in it was made from (user-content/access.ts).
+  c.set('signInSessionId', session.session.id);
   let tenant: CommunityContext;
   try {
     tenant = await resolveCommunityContext(c, pool, options);

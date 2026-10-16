@@ -2,7 +2,7 @@ import { Button, Input, Label, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Shield, X } from 'lucide-react';
 import type { CommunityWireExport } from '@dorkos/shared/community-wire';
-import { RequestError, request, tenantApiPath } from '../api.js';
+import { RequestError, describeError, download, request, tenantApiPath } from '../api.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import {
   availableUntil,
@@ -85,17 +85,16 @@ export function ExportPanel({ scope, idPrefix }: Props) {
     return () => window.clearInterval(timer);
   }, [id, inProgress, ready, refresh]);
 
-  /** Check the export is still there before the browser starts downloading it. */
+  /** Check the export is still there, then download it through a signed link. */
   async function downloadIfStillReady(event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
-    const link = event.currentTarget;
-    if (!(await refresh())) return;
-    const anchor = document.createElement('a');
-    anchor.href = link.href;
-    anchor.download = link.download;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
+    const { download: name } = event.currentTarget;
+    if (!(await refresh()) || !current) return;
+    try {
+      await download(`/api/v1/exports/${current.id}/link`, name);
+    } catch (cause) {
+      setError(describeError(cause));
+    }
   }
 
   async function start() {

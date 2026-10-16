@@ -2548,6 +2548,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /exports': "lists the caller's own exports only",
   'GET /exports/:id/archive': "downloads the caller's own export only; its authority is re-checked",
   'POST /exports/:id/cancel': "cancels the caller's own export only",
+  'POST /exports/:id/link': "a download link for the caller's own export only (DOR-2957)",
   'GET /me/grants': "the caller's own installation grants",
   'DELETE /me/grants': "revokes the caller's own grants",
   'DELETE /me/grants/:id': "revokes one of the caller's own grants",
@@ -2570,6 +2571,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /attention': "the caller's own unread counts",
   'POST /channels/:id/attachments': 'ordinary upload',
   'GET /attachments/:id': 'ordinary reading',
+  'POST /attachments/:id/link': 'ordinary reading, as a download link (DOR-2957)',
   'DELETE /entries/:entryId':
     "the caller's own message, or one ranked below them; content-removal.integration.test.ts",
   'DELETE /attachments/:attachmentId':

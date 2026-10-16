@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseByteRange } from '../routes/community/exports.js';
+import { parseByteRange } from '../routes/community/downloads/export-download.js';
 
 describe('parseByteRange', () => {
   // Purpose: the download serves exactly the bytes RFC 9110 names. Fails if a suffix, an open
