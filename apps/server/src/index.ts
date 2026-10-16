@@ -38,6 +38,10 @@ import { terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { tunnelIngressesFor } from './services/core/remote/tunnel-ingresses.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
+import {
+  closeAllComputerConnections,
+  hubRelayComputerRoute,
+} from './services/core/hub-relay/index.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { shutdownUsageReporter } from './services/core/usage-reporter.js';
 import { flushServerError, captureServerError } from './services/core/error-reporter.js';
@@ -295,7 +299,12 @@ async function start() {
       // `server.on('upgrade')` listener beside this one would not work — every
       // listener sees every upgrade, and any that does not recognize a path
       // destroys the socket out from under the one that does.
-      const upgradeRoutes = [...durableStreamRoutes, terminalUpgradeRoute(refs.terminalManager!)];
+      // A hub's computer relay endpoint refuses everything on a person's own computer.
+      const upgradeRoutes = [
+        ...durableStreamRoutes,
+        terminalUpgradeRoute(refs.terminalManager!),
+        hubRelayComputerRoute(),
+      ];
       attachUpgradeRouter(server, upgradeRoutes, mainRequestAdmission);
       logger.info('[DorkOS] WebSocket upgrade router attached');
       // Wi-Fi access (DOR-2930): a second listener on the network, opened and
@@ -428,6 +437,8 @@ async function shutdownServices() {
   getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   refs.terminalManager?.destroyAll();
+  // A hub's linked computers redial on their next viewer.
+  closeAllComputerConnections();
   // Give back every port an open dev-server preview is holding.
   await previewListeners.close();
   // Cancel any pending managed-MCP OAuth token refresh timers.
