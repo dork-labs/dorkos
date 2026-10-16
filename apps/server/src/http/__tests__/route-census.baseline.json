@@ -384,6 +384,7 @@
     "POST /api/connectors/reviews",
     "POST /api/connectors/reviews/:reviewRequestId/decision",
     "POST /api/connectors/webhooks/:providerInstanceId",
+    "POST /api/desktop/sign-in",
     "POST /api/diff/baseline/advance",
     "POST /api/diff/revert",
     "POST /api/directory",

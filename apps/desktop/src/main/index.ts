@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import log from 'electron-log';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { watchDisplayChanges } from './window-state';
-import { startServer, stopServer, getServerPort } from './server-process';
+import { startServer, stopServer, getServerPort, signInWindowSession } from './server-process';
 import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
@@ -407,6 +407,9 @@ if (!gotTheLock) {
       // window is current, the same way setupAutoUpdater does.
       localBrowserBridge = await startLocalBrowserBridge(getRendererUrl, getMainWindow);
       await startServer(getMainWindow);
+      // Before any window loads: the person at their own Mac never types a
+      // password (F3). Never throws; a failure leaves the sign-in screen.
+      await signInWindowSession();
     } catch (err) {
       await localBrowserBridge?.close();
       localBrowserBridge = undefined;

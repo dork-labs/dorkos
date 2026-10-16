@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import log from 'electron-log';
+import { signInWindow, type WindowSignInOutcome } from './sign-in/window-sign-in';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 import { chooseServerPort } from './server-port';
 import { spawnServer, type ServerChild } from './server-spawn';
@@ -319,6 +320,19 @@ export async function startServer(
   serverPort = port;
   readySince = Date.now();
   return port;
+}
+
+/**
+ * Sign the window's session in as the owner, through the running server (F3,
+ * `window-sign-in.ts`). The app calls this once, before its first window
+ * loads; a restarted server keeps the same accounts, so the cookie it set
+ * still works. Never throws.
+ */
+export async function signInWindowSession(): Promise<WindowSignInOutcome> {
+  if (!child || serverPort === null) return 'failed';
+  const outcome = await signInWindow({ child, port: serverPort });
+  log.info(`[server] Window sign-in: ${outcome}`);
+  return outcome;
 }
 
 /** Is this the child's "I'm serving" handshake message? */
