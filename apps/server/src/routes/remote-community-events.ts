@@ -12,6 +12,7 @@ import type { ServerResponse } from 'node:http';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import { RemoteCommunityEventSchema } from '@dorkos/shared/community-views';
+import { SSE } from '../config/constants.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readQuery } from '../http/request-query.js';
@@ -70,6 +71,13 @@ export async function remoteRoomEvents(c: Context<ApiEnv>): Promise<Response> {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    // A quiet channel still says it is alive, as the session streams do, so a proxy or the phone
+    // tunnel does not close it for idling. The space's own stream to this server now stays open
+    // too (DOR-2973), so nothing else would write here for minutes. The browser skips comments.
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(': keepalive\n\n');
+    }, SSE.HEARTBEAT_INTERVAL_MS);
+    heartbeat.unref?.();
     let sawSnapshot = false;
     const writeDeliveries = () => {
       if (!sawSnapshot || signal.aborted || res.writableEnded) return;
@@ -150,6 +158,7 @@ export async function remoteRoomEvents(c: Context<ApiEnv>): Promise<Response> {
           reason: error instanceof RemoteConnectionAuthorizationError ? 'revoked' : 'unavailable',
         });
     } finally {
+      clearInterval(heartbeat);
       ended.abort();
       removeDeliveryListener();
       if (!res.writableEnded) res.end();
