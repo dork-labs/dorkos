@@ -163,6 +163,7 @@ The terminal, files, settings, connections and previews are never relayed. They 
 ### 2.6 Two hubs (a Mac and a cloud hub) are peers
 
 - They are joined by the account directory. They **do not sync**; syncing would be XL or more.
+- The account directory also remembers the spaces you belong to (name and address only), so every DorkOS you sign in to can offer them (spec P7, added 2026-10-16).
 - The private space lives in the cloud. The Mac's own rooms stay the Mac's and work fully offline.
 - The sidebar is the same everywhere.
 
