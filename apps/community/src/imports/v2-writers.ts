@@ -16,6 +16,7 @@ import {
   type RestoreScope,
 } from './v2-write-helpers.js';
 import { writeBans, writeReports } from './v2-writers-moderation.js';
+import { onlyItsOwnMembers } from './v2-direct-messages.js';
 
 export type { BatchWriter, RestoreScope };
 
@@ -172,6 +173,13 @@ const writeChannelMembers: BatchWriter<'channelMembers'> = async (client, rows, 
     rows.map((row) => derive(row.member_id)),
     scope.communityId
   );
+  // In a direct message, only its own person (DOR-2955).
+  await onlyItsOwnMembers(
+    client,
+    'member',
+    rows.map((row) => ({ channelId: derive(row.channel_id), id: derive(row.member_id) })),
+    scope.communityId
+  );
   const own = rows.filter((membership) => membership.member_id === scope.ownerSourceId);
   if (!own.length) return;
   wroteAll(
@@ -245,6 +253,13 @@ const checkAgentChannelMembers: BatchWriter<'agentChannelMembers'> = async (
     client,
     'agents',
     rows.map((row) => derive(row.agent_id)),
+    scope.communityId
+  );
+  // In a direct message, only its own agent (DOR-2955).
+  await onlyItsOwnMembers(
+    client,
+    'agent',
+    rows.map((row) => ({ channelId: derive(row.channel_id), id: derive(row.agent_id) })),
     scope.communityId
   );
 };

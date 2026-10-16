@@ -36,6 +36,7 @@ import { addressedRoster } from '../../content/roster.js';
 import { attachmentProjection, attachmentsForEntries } from './attachments.js';
 import { enforcePostingRules } from '../../moderation/posting.js';
 import type { DeliveryReceiptGate } from '../../delivery-receipt-gate.js';
+import { refuseClosedDirectMessage } from './agents/direct-messages.js';
 
 /** Entry ids here are UUIDs; any other string names no entry and must not reach a `uuid` cast. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -177,6 +178,8 @@ export function registerEntryRoutes(
             'STATE_CONFLICT',
             "A message can't say only what a deleted message says. Change the text and send it again."
           );
+        // A person's new post into a direct message whose agent stopped taking them (DOR-2955).
+        if (principal.kind === 'human') await refuseClosedDirectMessage(client, channel);
         // Mute, rules and slow mode, by the human the post counts as. A retry of a post that
         // already landed was answered above, so a mute never hides a message that was sent.
         await enforcePostingRules(client, {

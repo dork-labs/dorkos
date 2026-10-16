@@ -51,13 +51,18 @@ interface ReportRow {
 /**
  * Every report a moderator may see, with its message's author and an excerpt. `$1` is the
  * community, `$2` the reading moderator (whose channel seats decide what they may read).
+ *
+ * One exception to the seats (DOR-2955): a message a person reported from a direct message they
+ * are in shows its excerpt and note, because the reporter chose to show it to the moderators;
+ * nothing else of the direct message does. A private channel keeps the rule, and so does a
+ * report the space's own checks filed.
  */
 // member-kind: named-member
 const REPORT_SELECT = `SELECT r.id,r.entry_id,e.channel_id,r.source,r.check_name,r.reason,r.note,
     r.status,r.action,r.reporter_member_id AS reporter_id,reporter.display_name AS reporter_name,
     COALESCE(e.author_member_id,e.author_agent_id) AS author_id,e.author_display_name AS author_name,
     CASE WHEN e.author_agent_id IS NULL THEN 'human' ELSE 'agent' END AS author_kind,e.text,
-    (ch.visibility='public' OR EXISTS(
+    (ch.visibility='public' OR (ch.kind='dm' AND r.source='member') OR EXISTS(
       SELECT 1 FROM channel_members cm WHERE cm.channel_id=ch.id AND cm.member_id=$2)) AS readable,
     r.created_at,r.resolved_at
   FROM reports r
@@ -82,7 +87,8 @@ function project(row: ReportRow, checks: CommunityWireReport['checks'] = []): Co
       ? { memberId: row.reporter_id, displayName: row.reporter_name ?? '' }
       : null,
     author: { memberId: row.author_id, displayName: row.author_name, kind: row.author_kind },
-    // A report never opens a private channel to a moderator outside it.
+    // A report never opens a private channel to a moderator outside it; a direct message's
+    // reported message is shown, as its reporter chose (see REPORT_SELECT).
     excerpt: row.readable ? row.text.slice(0, EXCERPT_LENGTH) : null,
     createdAt: row.created_at.toISOString(),
     resolvedAt: row.resolved_at?.toISOString() ?? null,

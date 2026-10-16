@@ -3,10 +3,12 @@
  *
  * A person starts one with an agent whose owner turned direct messages on, and only that owner
  * can. It holds the person and the agent and nobody else: no one joins, leaves, adds, removes,
- * edits or invites into it, no third person reads it (a space owner or admin included), and the
- * agent's owner reads it only through the agent's own credential. `GET /channels`, which
- * installed apps parse strictly, never lists one. Erasure, takedowns and exports reach it like
- * any channel, and an import brings it back as a direct message.
+ * edits or invites into it, no third person reads it in the space (its owner and admins
+ * included), and the agent's owner reads it only through the agent's own credential. A
+ * moderator sees a message a participant reported, as the reporter chose. `GET /channels` and
+ * `/attention`, which installed apps read, leave it out. Erasure, takedowns and the space owner's
+ * full export reach it like any private channel, and an import brings it back as a direct
+ * message, refusing one that was tampered with.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -19,7 +21,8 @@ import { eraseMembership } from '../erasure/erasure.js';
 import { uuidv5 } from '../imports/derived-id.js';
 import { sweepImports } from '../imports/worker.js';
 import { banEmailKey } from '../moderation/bans.js';
-import { EXPORT_SETTINGS, drainExports } from './export-test-helpers.js';
+import { Zip, ZipDeflate, ZipPassThrough } from 'fflate';
+import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
 import { createImport, issueKey, uploadArchive } from './import-fixture.js';
 import { body, drainCleanup, post } from './member-erasure-fixture.js';
 import {
@@ -121,6 +124,95 @@ async function say(channel: string, auth: Auth, text = `hello ${++keyCounter}`) 
 async function code(response: Response): Promise<{ status: number; code: string | undefined }> {
   const parsed = (await response.json().catch(() => ({}))) as { code?: string };
   return { status: response.status, code: parsed.code };
+}
+
+let importCounter = 0;
+
+/** Import an archive through the host API and run it to the end; its state and failure code. */
+async function importArchive(archive: Buffer) {
+  const key = await issueKey(h, ['communities:import']);
+  const imported = await createImport(
+    h,
+    { bearer: key },
+    { name: `Moved ${++importCounter}`, autoCommit: true }
+  );
+  await expectStatus(
+    await uploadArchive(h, imported.importId, archive, { bearer: imported.uploadToken }),
+    200,
+    'upload'
+  );
+  const limits = {
+    ...h.config.limits,
+    banEmailKey: (email: string) => banEmailKey(email, h.config.authSecret),
+  };
+  const stateOf = async () =>
+    (
+      await h.pool.query<{ state: string; failure_code: string | null }>(
+        'SELECT state,failure_code FROM community_imports WHERE id=$1',
+        [imported.importId]
+      )
+    ).rows[0];
+  // Until the import settles: a sweep can find it briefly leased on a busy machine.
+  for (let round = 0; round < 200; round++) {
+    if (['ready', 'failed'].includes((await stateOf()).state)) break;
+    await h.pool.query(
+      'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
+    );
+    await drainCleanup(h);
+    await sweepImports(h.pool, h.blobStore, limits, new Date());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const settled = await stateOf();
+  return { importId: imported.importId, state: settled.state, failureCode: settled.failure_code };
+}
+
+/** The owner export a later test tampers with, and the direct message in it. */
+let exported: { archive: Buffer; dmId: string; personId: string } | null = null;
+
+type Row = Record<string, unknown>;
+
+/** Write `archive` again with `change` applied to each NDJSON file's rows and to the manifest. */
+async function tampered(
+  archive: Buffer,
+  change: { rows?: (key: string, rows: Row[]) => Row[]; manifest?: (manifest: Row) => void }
+): Promise<Buffer> {
+  const opened = await openArchive(archive);
+  const keyOf = new Map<string, string>();
+  for (const [key, names] of Object.entries(opened.manifest.files))
+    for (const name of names ?? []) keyOf.set(name, key);
+  const chunks: Uint8Array[] = [];
+  const zip = new Zip((error, chunk) => {
+    if (error) throw error;
+    chunks.push(chunk);
+  });
+  for (const name of opened.names) {
+    let bytes = Buffer.from(opened.files.get(name)!);
+    if (name === 'manifest.json' && change.manifest) {
+      const manifest = JSON.parse(bytes.toString('utf8')) as Row;
+      change.manifest(manifest);
+      bytes = Buffer.from(JSON.stringify(manifest));
+    } else if (name.endsWith('.ndjson') && change.rows) {
+      const rows = bytes
+        .toString('utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Row);
+      bytes = Buffer.from(
+        change
+          .rows(keyOf.get(name) ?? '', rows)
+          .map((row) => `${JSON.stringify(row)}\n`)
+          .join('')
+      );
+    }
+    const file =
+      name.startsWith('files/') || name === 'community/icon'
+        ? new ZipPassThrough(name)
+        : new ZipDeflate(name);
+    zip.add(file);
+    file.push(bytes, true);
+  }
+  zip.end();
+  return Buffer.concat(chunks);
 }
 
 beforeAll(async () => {
@@ -309,6 +401,17 @@ describe('a direct message', { timeout: 60_000 }, () => {
         })
       )
     ).toEqual(refused);
+    // A member who may not edit channels at all is told that first, before anything about the
+    // direct message.
+    expect(
+      (
+        await h.call(`${base}/channels/${bobsDm.id}`, {
+          method: 'PATCH',
+          cookie: bob.cookie,
+          body: { name: 'Mine' },
+        })
+      ).status
+    ).toBe(403);
     // And somebody outside it learns nothing about it.
     expect(
       (await h.call(`${base}/channels/${bobsDm.id}/join`, { cookie: carol.cookie, body: {} }))
@@ -340,8 +443,24 @@ describe('a direct message', { timeout: 60_000 }, () => {
     expect((await startDm({ bearer: ana.token }, ana.id)).status).toBe(403);
   });
 
-  it('cannot be started once the owner turns them off, while one already started still reads', async () => {
+  it('takes no new message from its person once the owner turns them off; the agent still reads and replies', async () => {
+    // Purpose: fails if a person keeps reaching the owner's computer through a direct message the
+    // owner closed, or if closing it silences the agent's own reply.
     await expectStatus(await setDms({ cookie: alice.cookie }, ana.id, false), 200, 'turn off');
+    expect(
+      await code(
+        await h.call(`${base}/channels/${bobsDm.id}/entries`, {
+          cookie: bob.cookie,
+          body: { text: 'are you there?', idempotencyKey: `closed-${++keyCounter}` },
+        })
+      )
+    ).toEqual({ status: 409, code: 'AGENT_NOT_TAKING_DMS' });
+    await say(bobsDm.id, { bearer: ana.token }, 'not taking new messages here for now');
+    await expectStatus(
+      await h.call(`${base}/channels/${bobsDm.id}/entries`, { bearer: ana.token }),
+      200,
+      'agent still reads'
+    );
     expect(await code(await startDm({ cookie: carol.cookie }, ana.id))).toEqual({
       status: 409,
       code: 'AGENT_NOT_TAKING_DMS',
@@ -444,31 +563,9 @@ describe('the rest of the space reaches a direct message', { timeout: 120_000 },
       ).arrayBuffer()
     );
 
-    const key = await issueKey(h, ['communities:import']);
-    const imported = await createImport(h, { bearer: key }, { name: 'Moved', autoCommit: true });
-    await expectStatus(
-      await uploadArchive(h, imported.importId, archive, { bearer: imported.uploadToken }),
-      200,
-      'upload'
-    );
-    const limits = {
-      ...h.config.limits,
-      banEmailKey: (email: string) => banEmailKey(email, h.config.authSecret),
-    };
-    const stateOf = () =>
-      h.pool.query<{ state: string }>('SELECT state FROM community_imports WHERE id=$1', [
-        imported.importId,
-      ]);
-    for (let round = 0; round < 200; round++) {
-      if (['ready', 'failed'].includes((await stateOf()).rows[0].state)) break;
-      await h.pool.query(
-        'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
-      );
-      await drainCleanup(h);
-      await sweepImports(h.pool, h.blobStore, limits, new Date());
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect((await stateOf()).rows[0].state).toBe('ready');
+    exported = { archive, dmId: fays.id, personId: fay.memberId };
+    const imported = await importArchive(archive);
+    expect(imported).toMatchObject({ state: 'ready', failureCode: null });
     const derive = (id: string) => uuidv5(imported.importId, id);
     const restored = await h.pool.query(
       `SELECT kind,visibility,auto_join,dm_member_id,dm_agent_id,
@@ -498,5 +595,173 @@ describe('the rest of the space reaches a direct message', { timeout: 120_000 },
       [derive(fays.id), derive(olga.memberId)]
     );
     expect(ownerIn.rowCount).toBe(0);
+  });
+
+  it('refuses an import whose direct message was tampered with', async () => {
+    // Purpose: fails if an import seats anyone in a direct message but its own two, or keeps
+    // one that names someone who is not a person and an agent of the export.
+    const { archive, dmId, personId } = exported!;
+    const dmRow = (rows: Row[]) => rows.find((row) => row.id === dmId)!;
+    const opened = await openArchive(archive);
+    const seats = {
+      channelMembers: opened.rows<Row>('channelMembers').filter((row) => row.channel_id === dmId)
+        .length,
+      agentChannelMembers: opened
+        .rows<Row>('agentChannelMembers')
+        .filter((row) => row.channel_id === dmId).length,
+    };
+    const withoutDmSeats = (key: string, rows: Row[]) =>
+      key === 'channelMembers' || key === 'agentChannelMembers'
+        ? rows.filter((row) => row.channel_id !== dmId)
+        : rows;
+    const dropDmSeatCounts = (manifest: Row) => {
+      const counts = manifest.counts as Record<string, number>;
+      counts.channelMembers -= seats.channelMembers;
+      counts.agentChannelMembers -= seats.agentChannelMembers;
+    };
+    const cases: Array<[string, Parameters<typeof tampered>[1]]> = [
+      [
+        'the space owner planted in it',
+        {
+          rows: (key, rows) =>
+            key === 'channelMembers'
+              ? [
+                  ...rows,
+                  { channel_id: dmId, member_id: olga.memberId, joined_at: rows[0]!.joined_at },
+                ]
+              : rows,
+          manifest: (manifest) => {
+            (manifest.counts as Record<string, number>).channelMembers += 1;
+          },
+        },
+      ],
+      // These two drop the direct message's membership rows too, so only the check that its
+      // two ids name a person and an agent of the export can catch them.
+      [
+        'its person and agent swapped',
+        {
+          rows: (key, rows) => {
+            if (key === 'channels') {
+              const row = dmRow(rows);
+              [row.dm_member_id, row.dm_agent_id] = [row.dm_agent_id, row.dm_member_id];
+            }
+            return withoutDmSeats(key, rows);
+          },
+          manifest: dropDmSeatCounts,
+        },
+      ],
+      [
+        'an agent the export does not hold',
+        {
+          rows: (key, rows) => {
+            if (key === 'channels') dmRow(rows).dm_agent_id = crypto.randomUUID();
+            return withoutDmSeats(key, rows);
+          },
+          manifest: dropDmSeatCounts,
+        },
+      ],
+      [
+        'a public direct message',
+        {
+          rows: (key, rows) => {
+            if (key === 'channels') dmRow(rows).visibility = 'public';
+            return rows;
+          },
+        },
+      ],
+    ];
+    for (const [label, change] of cases) {
+      const outcome = await importArchive(await tampered(archive, change));
+      expect({ label, ...outcome }).toMatchObject({
+        label,
+        state: 'failed',
+        failureCode: 'IMPORT_ARCHIVE_INVALID',
+      });
+    }
+    expect(personId).toBeTruthy();
+  });
+
+  it('places an owner with no channel of their own in every channel but another person’s DM', async () => {
+    // Purpose: fails if the import's rule that gives such an owner every channel also seats them
+    // in somebody else's direct message.
+    const { archive, dmId } = exported!;
+    const opened = await openArchive(archive);
+    const owned = opened
+      .rows<Row>('channelMembers')
+      .filter((row) => row.member_id === olga.memberId).length;
+    const outcome = await importArchive(
+      await tampered(archive, {
+        rows: (key, rows) =>
+          key === 'channelMembers' ? rows.filter((row) => row.member_id !== olga.memberId) : rows,
+        manifest: (manifest) => {
+          (manifest.counts as Record<string, number>).channelMembers -= owned;
+        },
+      })
+    );
+    expect(outcome).toMatchObject({ state: 'ready' });
+    const derive = (id: string) => uuidv5(outcome.importId, id);
+    const seated = async (channel: string) =>
+      (
+        await h.pool.query('SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+          derive(channel),
+          derive(olga.memberId),
+        ])
+      ).rowCount;
+    expect(await seated(channelId)).toBe(1);
+    expect(await seated(dmId)).toBe(0);
+  });
+});
+
+describe('what reaches a direct message from outside it', { timeout: 60_000 }, () => {
+  it('shows moderators a message a participant reported from it, and nothing else of it', async () => {
+    // Purpose: fails if a reported direct-message message stays hidden from the moderators the
+    // reporter asked, or if the rest of the direct message opens to them.
+    const gus = await person('Gus Person');
+    const gusDm = await dm({ cookie: gus.cookie }, ana.id);
+    const reported = await say(gusDm.id, { bearer: ana.token }, 'a message gus reports');
+    await say(gusDm.id, { bearer: ana.token }, 'a message nobody reports');
+    await expectStatus(
+      await h.call(`${base}/entries/${reported}/reports`, {
+        cookie: gus.cookie,
+        body: { reason: 'spam', note: 'look at this one' },
+      }),
+      201,
+      'report'
+    );
+    const queue = await body<{
+      reports: Array<{ entryId: string; excerpt: string | null; note: string | null }>;
+    }>(await h.call(`${base}/reports`, { cookie: ada.cookie }), 200, 'queue');
+    expect(queue.reports.find((report) => report.entryId === reported)).toMatchObject({
+      excerpt: 'a message gus reports',
+      note: 'look at this one',
+    });
+    expect(
+      (await h.call(`${base}/channels/${gusDm.id}/entries`, { cookie: ada.cookie })).status
+    ).toBe(404);
+  });
+
+  it('leaves direct messages out of the attention summary installed apps badge', async () => {
+    // Purpose: fails if an installed app, which cannot open a direct message yet, is told of
+    // unread messages in one.
+    const ivy = await person('Ivy Person');
+    const ivys = await dm({ cookie: ivy.cookie }, ana.id);
+    const attention = async () =>
+      body<{ unreadCount: number; mentionCount: number }>(
+        await h.call(`${base}/attention`, { cookie: ivy.cookie }),
+        200,
+        'attention'
+      );
+    const before = await attention();
+    await say(ivys.id, { bearer: ana.token });
+    await say(ivys.id, { bearer: ana.token });
+    expect(await attention()).toEqual(before);
+  });
+
+  it('lets a person message their own agent', async () => {
+    const own = await dm({ cookie: alice.cookie }, ana.id);
+    expect(own.member.memberId).toBe(alice.memberId);
+    expect(own.agent.ownerMemberId).toBe(alice.memberId);
+    await say(own.id, { cookie: alice.cookie });
+    expect((await listDms({ cookie: alice.cookie })).map((row) => row.id)).toContain(own.id);
   });
 });

@@ -4,7 +4,9 @@
 -- exactly one person (`dm_member_id`) and one agent (`dm_agent_id`, the agent's member row since
 -- 0042), each in the membership table that already gates reading and posting. So entries,
 -- files, read cursors, live streams, reports, removals, erasure, takedowns and exports all work
--- on one unchanged. `GET /channels` leaves them out; `GET /dms` lists them.
+-- on one unchanged. `GET /channels` leaves them out; `GET /dms` lists them. Nobody else can read
+-- one in the space, but like every private channel it is in the space owner's full export and a
+-- host's legal-takedown evidence export.
 --
 -- An agent takes direct messages only when its owner says so: `agents.accepts_dms`, off for
 -- every agent today and every agent enrolled from here.
@@ -14,16 +16,13 @@
 -- their space exists (an erased person keeps a husk), and the routes that create a direct
 -- message check both rows.
 --
--- Additive (D10): a defaulted kind, two nullable ids, a defaulted switch. An older release runs
--- on it and sees a direct message as one more private channel, which only its two members can
--- read; it would not refuse changes to one, so do not run an older release once spaces hold
--- them. Locks as 0039: catalog-only columns, two checks and an index over `channels`, under
--- lock_timeout.
+-- ONE-WAY (D10). An older release would see a direct message as one more private channel and
+-- would not refuse the routes that reshape one (joining, adding members, invitations), so this
+-- raises the compatibility floor (0041) to 46 and no release that knows less will start. Locks
+-- as 0039: catalog-only columns, two checks and an index over `channels`, under lock_timeout.
 --
--- Backout: revert the code first. Then, if wanted, delete the direct messages
--- (`DELETE FROM channels WHERE kind='dm'` after their entries, memberships and cursors) and
--- `ALTER TABLE channels DROP COLUMN kind, DROP COLUMN dm_member_id, DROP COLUMN dm_agent_id;
--- ALTER TABLE agents DROP COLUMN accepts_dms;`.
+-- Backout: the way back is the host's point-in-time restore from before this migration, never
+-- an older image.
 
 SELECT set_config('community_migration.lock_timeout', current_setting('lock_timeout'), true);
 SET LOCAL lock_timeout = '30s';
@@ -44,5 +43,8 @@ CREATE UNIQUE INDEX channels_one_dm ON channels (community_id, dm_member_id, dm_
   WHERE kind = 'dm';
 
 ALTER TABLE agents ADD COLUMN accepts_dms boolean NOT NULL DEFAULT false;
+
+-- No older release may run on this: see the header.
+UPDATE community_compatibility_floor SET min_migration = GREATEST(min_migration, 46);
 
 SELECT set_config('lock_timeout', current_setting('community_migration.lock_timeout'), true);

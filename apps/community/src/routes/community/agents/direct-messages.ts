@@ -3,9 +3,19 @@
  *
  * A direct message is a private channel of kind `dm` holding one person and one agent (0046).
  * It reads, posts, attaches and streams through the ordinary channel routes, whose membership
- * check already admits exactly those two, and the agent's owner through the agent's own
- * credential. Space admins see one only through a report, as with any private channel. What is
- * here is the rest:
+ * check already admits exactly those two. The agent's owner reads it through the agent's own
+ * credential, never their own account, so it is not in the owner's personal export.
+ *
+ * Who else can see one, and how:
+ *
+ * - Nobody can read one in the space itself: not another member, not the space's owner or
+ *   admins.
+ * - A moderator sees a message a person reported from one, its excerpt and note, because the
+ *   reporter chose to share it (`moderation/reports.ts`). Nothing else of it.
+ * - Like every private channel, it is in the space owner's full export (moving a space keeps
+ *   it) and in a host's legal-takedown evidence export.
+ *
+ * What is here is the rest:
  *
  * - `POST /dms {agentId}`: a person starts one, or finds the one already started. Refused unless
  *   the agent's owner turned direct messages on and both are still in the space.
@@ -58,6 +68,30 @@ export const DIRECT_MESSAGE_NAME = 'Direct message';
 export function refuseDirectMessage(channel: { kind: 'channel' | 'dm' }): void {
   if (channel.kind === 'dm')
     throw new ApiError(409, 'STATE_CONFLICT', 'A direct message has only its two members.');
+}
+
+/**
+ * Refuse a person's new post into a direct message whose agent no longer takes them: its owner
+ * turned them off, or the agent or its owner left. What was said stays readable, and the agent
+ * can still read and reply; only the person's next message waits until its owner turns them on.
+ *
+ * @param client - The posting transaction.
+ * @param channel - The channel the route locked.
+ */
+export async function refuseClosedDirectMessage(
+  client: PoolClient,
+  channel: { kind: 'channel' | 'dm'; dm_agent_id: string | null; community_id: string }
+): Promise<void> {
+  if (channel.kind !== 'dm' || channel.dm_agent_id === null) return;
+  const open = await client.query<{ open: boolean }>(
+    // member-kind: agent-owner
+    `SELECT (a.accepts_dms AND a.active AND owner.active) AS open FROM agents a
+     JOIN members owner ON owner.community_id=a.community_id AND owner.id=a.owner_member_id
+     WHERE a.id=$1 AND a.community_id=$2`,
+    [channel.dm_agent_id, channel.community_id]
+  );
+  if (open.rows[0]?.open !== true)
+    throw new ApiError(409, 'AGENT_NOT_TAKING_DMS', 'This agent is not taking direct messages.');
 }
 
 interface DirectMessageRow {

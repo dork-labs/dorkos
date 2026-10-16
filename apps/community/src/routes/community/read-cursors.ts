@@ -32,6 +32,8 @@ export function registerReadCursorRoutes(
     const principal = await requirePrincipal(c, auth, pool, 'read');
     if (principal.kind !== 'human')
       throw new ApiError(403, 'FORBIDDEN', 'Agents do not have personal attention summaries.');
+    // Direct messages (DOR-2955) are left out until the DorkOS app can open them: an installed
+    // app counts this summary into its badge and would show unread messages it cannot reach.
     const result = await pool.query<{ unread_count: string; mention_count: string }>(
       `SELECT
          COALESCE(SUM(GREATEST(channel.last_seq-COALESCE(cursor.seq,0),0)),0)::text AS unread_count,
@@ -42,7 +44,8 @@ export function registerReadCursorRoutes(
        FROM channels channel
        LEFT JOIN channel_members membership ON membership.channel_id=channel.id AND membership.member_id=$1
        LEFT JOIN read_cursors cursor ON cursor.channel_id=channel.id AND cursor.member_id=$1
-       WHERE channel.community_id=$2 AND (channel.visibility='public' OR membership.member_id IS NOT NULL)`,
+       WHERE channel.community_id=$2 AND channel.kind='channel'
+         AND (channel.visibility='public' OR membership.member_id IS NOT NULL)`,
       [principal.id, principal.community_id]
     );
     await assertPrincipalCurrent(c, auth, pool, principal, 'read');

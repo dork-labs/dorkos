@@ -507,6 +507,9 @@ export async function lockChannel(
     created_at: Date;
     /** `dm` for a direct message with an agent (0046), which its routes refuse to reshape. */
     kind: 'channel' | 'dm';
+    /** A direct message's agent (0046); null for a channel. */
+    dm_agent_id: string | null;
+    community_id: string;
   }>(
     // The advisory lock is taken before the row's, in the one statement (see ChannelLockMode).
     mode === 'shared'

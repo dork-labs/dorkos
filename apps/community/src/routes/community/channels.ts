@@ -162,8 +162,8 @@ export function registerChannelRoutes(
     const body = await readJson(c, CommunityWireChannelUpdateRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
-      refuseDirectMessage(channel);
       await requireLiveRole(client, member, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       refusePrivateAutoJoin(channel.visibility, body.autoJoin);
       await client.query(
         `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
@@ -270,8 +270,8 @@ export function registerChannelRoutes(
     const body = await readJson(c, CommunityWireChannelMemberRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
-      refuseDirectMessage(channel);
       await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       const target = await client.query(
         "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
@@ -292,8 +292,8 @@ export function registerChannelRoutes(
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
-      refuseDirectMessage(channel);
       const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       const target = await client.query<{ role: Member['role'] }>(
         "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [c.req.param('memberId'), actor.community_id]

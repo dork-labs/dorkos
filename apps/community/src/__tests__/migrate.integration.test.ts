@@ -2181,7 +2181,7 @@ it('starts across an unknown additive migration and refuses a raised compatibili
     const newest = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
     expect(
       (await db.query('SELECT min_migration FROM community_compatibility_floor')).rows
-    ).toEqual([{ min_migration: 42 }]);
+    ).toEqual([{ min_migration: 46 }]);
     // A newer release added a migration that only adds: this release still starts.
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [newest + 1]);
     await migrate(url.toString());

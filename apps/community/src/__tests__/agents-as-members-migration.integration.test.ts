@@ -292,12 +292,13 @@ it('migrates a real-shaped space completely, once, and refuses the release befor
         .every((row) => row.author_member_id === row.author_agent_id)
     ).toBe(true);
 
-    // One-way: the floor names 42, the release that knows only 41 is refused by name.
+    // One-way: the floor names at least 42 (a later one-way migration, 0046, raises it again),
+    // and the release that knows only 41 is refused by name.
     const floor = (await db.query('SELECT min_migration FROM community_compatibility_floor'))
       .rows[0].min_migration as number;
-    expect(floor).toBe(42);
+    expect(floor).toBeGreaterThanOrEqual(42);
     expect(() => assertCompatibilityFloor(floor, 41)).toThrow(
-      'This database needs a release that knows community migration 42 or later; this release knows up to 41.'
+      `This database needs a release that knows community migration ${floor} or later; this release knows up to 41.`
     );
     // What that release would write is refused, not stored half-shaped: an agent post with no
     // member author.
