@@ -49,6 +49,17 @@ export function setCloudV1Fetch(fetch: FetchLike | undefined): void {
 }
 
 /** Build one contract client, with the replacement `fetch` only when one is set. */
+/**
+ * A `/v1` client bound to `token`, at the configured origin. For a credential
+ * that is not this instance's account link: a hub's own key
+ * (`services/core/hub/hub-assignment-runner.ts`).
+ *
+ * @param token - The bearer token every call presents.
+ */
+export function createCloudV1ClientFor(token: string): CloudApiClient {
+  return buildClient(resolveCloudApiBaseUrl(), token);
+}
+
 function buildClient(baseUrl: string, token: string): CloudApiClient {
   return createCloudApiClient({ baseUrl, token, ...(v1Fetch && { fetch: v1Fetch }) });
 }

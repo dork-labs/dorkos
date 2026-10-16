@@ -7,6 +7,9 @@ describe('serverEnv', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
+    // A hub's key outlives a module reload by design; one case must not hand
+    // it to the next.
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for('dorkos.env.hubInstanceKey')];
   });
 
   it('uses default port when DORKOS_PORT is not set', async () => {
@@ -149,6 +152,32 @@ describe('serverEnv', () => {
     await import('../env.js');
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  it('refuses to boot a hub without its instance key (DOR-2935)', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'hub');
+    vi.stubEnv('DORKOS_HUB_INSTANCE_KEY', undefined as unknown as string);
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    await import('../env.js');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy.mock.calls.flat().join(' ')).toContain('DORKOS_HUB_INSTANCE_KEY');
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('reads a hub`s instance key once, and keeps it from every child process', async () => {
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'hub');
+    vi.stubEnv('DORKOS_HUB_INSTANCE_KEY', 'hub-key-from-the-environment');
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    const { env } = await import('../env.js');
+    expect(env.DORKOS_HUB_INSTANCE_KEY).toBe('hub-key-from-the-environment');
+    expect(process.env.DORKOS_HUB_INSTANCE_KEY).toBeUndefined();
+    // The published CLI loads this file a second time, from the server bundle.
+    vi.resetModules();
+    const second = await import('../env.js');
+    expect(second.env.DORKOS_HUB_INSTANCE_KEY).toBe('hub-key-from-the-environment');
   });
 
   it('rejects a malformed NANGO_BASE_URL at boot (DOR-415 nit)', async () => {

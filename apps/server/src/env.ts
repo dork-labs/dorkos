@@ -247,6 +247,13 @@ export const serverEnvSchema = z.object({
   // on, takes its owner from provisioning, and refuses
   // DORKOS_ALLOW_INSECURE_BIND (below the schema).
   DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
+  // A hub's DorkOS Cloud instance key (DOR-2935), set by Cloud when it boots
+  // the hub image. Required on a hub and read only there, by the assignment
+  // sync (`services/core/hub/hub-assignment-runner.ts`); it is not this
+  // server's account link, so nothing else presents it. Never written to disk,
+  // and removed from `process.env` once read (below the schema), so no child
+  // process (a terminal, an agent, an MCP server) inherits it.
+  DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -428,11 +435,33 @@ export const serverEnvSchema = z.object({
   NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 
+/**
+ * Where a hub's instance key waits once this file has read it, for the life of
+ * the process. The key is removed from `process.env` so no child process
+ * inherits it, but the published CLI evaluates this file twice (once in its
+ * own bundle, once in the server bundle it loads), and the second read has to
+ * find it.
+ */
+const HUB_KEY_SLOT = Symbol.for('dorkos.env.hubInstanceKey');
+const keptKeys = globalThis as typeof globalThis & { [HUB_KEY_SLOT]?: string };
+if (process.env.DORKOS_HUB_INSTANCE_KEY) {
+  keptKeys[HUB_KEY_SLOT] = process.env.DORKOS_HUB_INSTANCE_KEY;
+}
+
 const result = serverEnvSchema
   .superRefine((parsed, ctx) => {
     // A hub keeps login on and owns no network boundary of its own to vouch
     // for, so the escape hatch that switches the locality checks off has no
     // meaning there. Refuse to boot rather than quietly ignore it.
+    // A hub learns who it belongs to only through its instance key, so one
+    // without it could never serve anybody.
+    if (parsed.DORKOS_SERVER_ROLE === 'hub' && !parsed.DORKOS_HUB_INSTANCE_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DORKOS_HUB_INSTANCE_KEY'],
+        message: 'must be set when DORKOS_SERVER_ROLE is hub',
+      });
+    }
     if (parsed.DORKOS_SERVER_ROLE === 'hub' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
       ctx.addIssue({
         code: 'custom',
@@ -441,7 +470,7 @@ const result = serverEnvSchema
       });
     }
   })
-  .safeParse(process.env);
+  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
@@ -451,6 +480,9 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// Read once, above; nothing a child process inherits may carry it.
+delete process.env.DORKOS_HUB_INSTANCE_KEY;
 export type ServerEnv = typeof env;
 
 /**

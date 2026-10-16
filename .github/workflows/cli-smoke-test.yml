@@ -14,6 +14,8 @@ on:
       - 'Dockerfile'
       - '.dockerignore'
       - 'scripts/smoke-test.sh'
+      - 'scripts/hub-smoke/**'
+      - 'scripts/hub-entrypoint.sh'
       - 'pnpm-lock.yaml'
       - '.github/workflows/cli-smoke-test.yml'
   workflow_dispatch:
@@ -184,3 +186,38 @@ jobs:
 
       - name: Run integration tests
         run: docker run --rm dorkos-integration
+
+  # The hub image (DOR-2935): what DorkOS Cloud boots for a person's own
+  # DorkOS in the cloud. Boots it against a stand-in for Cloud
+  # (scripts/hub-smoke/run.mjs).
+  hub-smoke-test:
+    needs: build-tarball
+    runs-on: ubuntu-latest
+    # Measured locally at about 15 seconds of checks after the image builds;
+    # the build matches integration-test's.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            Dockerfile
+            .dockerignore
+            scripts/hub-smoke
+            scripts/hub-entrypoint.sh
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: cli-tarball
+
+      - name: Build hub smoke image
+        run: docker build --target hub-smoke -t dorkos-hub-smoke .
+
+      # DorkOS Cloud mounts a new, empty volume owned by root at the data
+      # folder, so the run gets exactly that.
+      - name: Run hub smoke checks on an empty root-owned data folder
+        run: |
+          data="$RUNNER_TEMP/hub-data"
+          sudo mkdir -p "$data"
+          sudo chown root:root "$data"
+          sudo chmod 755 "$data"
+          docker run --rm -v "$data:/home/node/.dork" dorkos-hub-smoke
