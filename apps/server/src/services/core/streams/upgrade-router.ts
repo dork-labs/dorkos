@@ -31,9 +31,13 @@ import { getLanAccessHosts } from '../lan-access/lan-trust.js';
 import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
 import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
-import { configManager } from '../config-manager.js';
 import { env } from '../../../env.js';
-import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
+import {
+  authorizeStreamUpgrade,
+  upgradeFacts,
+  type StreamUpgradeLocals,
+} from './stream-upgrade-auth.js';
+import { gateAccessFor } from '../auth/gate-policy.js';
 import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
 
@@ -100,8 +104,9 @@ export interface UpgradeRoute {
    * exploit uses — was not. A route now states its posture as data, and
    * `__tests__/upgrade-router.test.ts` pins that `required` really refuses.
    *
-   * - `required` — must present a valid session cookie or per-user API key when
-   *   login is enabled, exactly as the session gate demands of a request. The
+   * - `required` — must present a valid session cookie or per-user API key
+   *   whenever the gate asks this request for one (`gateAccessFor`), exactly as
+   *   the session gate demands of a request. The
    *   durable streams.
    * - `bearer-of-id` — authorized by holding an unguessable id minted by an
    *   already-gated route, and `authorize` checks that id itself. The terminal
@@ -149,8 +154,8 @@ const UPGRADE_ORIGIN_POLICY: BrowserOriginPolicy = {
  */
 function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credential']): boolean {
   const headers = req.headers;
-  // The host pairing stands down ONLY for a credential-gated route with login
-  // on, where an origin-scoped auth cookie already turns a rebound origin away.
+  // The host pairing stands down ONLY for a credential-gated route whose gate
+  // asks this request for a credential, where an origin-scoped auth cookie already turns a rebound origin away.
   //
   // NOT for `DORKOS_ALLOW_INSECURE_BIND`, even though `hostGuard` stands down
   // for it. Both Docker targets set that flag, so honouring it here left the
@@ -163,7 +168,8 @@ function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credent
   // And not for a `bearer-of-id` route under login either: that route skips
   // `authorizeStreamUpgrade`, so the cookie the exemption reasons about is
   // never checked and cannot be doing the work the exemption assumes.
-  const hostCheckInert = credential === 'required' && configManager.get('auth')?.enabled === true;
+  const hostCheckInert =
+    credential === 'required' && gateAccessFor(upgradeFacts(req)) === 'credential';
 
   return isTrustedBrowserOrigin(
     {
@@ -276,7 +282,7 @@ export function attachUpgradeRouter(
         // route cannot forget it — see `UpgradeRoute.credential`.
         let locals: StreamUpgradeLocals = {};
         if (claimed.route.credential === 'required') {
-          const auth = await authorizeStreamUpgrade(req.headers);
+          const auth = await authorizeStreamUpgrade(req);
           if (admission.isClosed) {
             return { ok: false, status: 503, message: 'Service Unavailable' };
           }

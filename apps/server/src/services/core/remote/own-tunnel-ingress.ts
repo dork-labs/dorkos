@@ -10,7 +10,7 @@
  * (`--host-header=rewrite`, or any future option that does the same) would look
  * like a person at this machine. Here every request and upgrade is marked
  * `own-tunnel` (`ingress-mark.ts`) before anything else runs, and the request
- * classifier and `isLocalCaller` read the mark.
+ * classifier and `isAtThisComputer` read the mark.
  *
  * It checks nothing else: an own tunnel has no edge proof, and its requests
  * meet the same host guard, login gate and routes as any other. That is the

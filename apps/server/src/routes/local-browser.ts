@@ -5,18 +5,19 @@ import { LocalBrowserOpenSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { isLocalCaller, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import {
   LocalBrowserError,
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /** Mount owner-only human controls under /api/local-browser. */
 export function createLocalBrowserRoutes(service: LocalBrowserService): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.use('*', async (c, next) => {
     const facts = honoRequestFacts(c);
-    if (!isLocalCaller(facts))
+    if (!isAtThisComputer(facts))
       return c.json(
         { error: 'Use DorkOS on this computer to control its browser.', code: 'local_only' },
         403

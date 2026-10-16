@@ -75,7 +75,7 @@ const NEEDS_LOCAL_TOKEN = z
 const NEEDS_CREDENTIAL = rpcError(
   -32001,
   'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'When login is on, use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
+    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
 );
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
   error: `Origin ${origin} not allowed by CORS`,
@@ -1159,9 +1159,10 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
     );
   });
 
-  it('closes the cards too once login is on, and the local token no longer counts', async () => {
+  it('closes the cards too once login is on, and the local token no longer counts or is named', async () => {
     await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
-    // The refusal still names the token file: the path is read once, at boot.
+    // The refusal names the personal key, not the token file: the local token
+    // works only where this computer asks for no password (DOR-2967).
     // The fleet card counts the caller before the credential check.
     for (const path of ['/.well-known/agent-card.json', '/.well-known/agent.json']) {
       await check(
@@ -1171,7 +1172,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
           expect: {
             status: 401,
             headers: { ...JSON_TYPE, ...NOSNIFF, ...CARD_COUNTED },
-            schema: NEEDS_LOCAL_TOKEN,
+            body: NEEDS_CREDENTIAL,
           },
         },
         known
@@ -1182,7 +1183,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
       server,
       {
         path: `/a2a/agents/${AGENT}/card`,
-        expect: { status: 401, headers: NOT_COUNTED, schema: NEEDS_LOCAL_TOKEN },
+        expect: { status: 401, headers: NOT_COUNTED, body: NEEDS_CREDENTIAL },
       },
       known
     );
@@ -1197,7 +1198,7 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
           expect: {
             status: 401,
             headers: { ...JSON_TYPE, ...NOT_COUNTED },
-            schema: NEEDS_LOCAL_TOKEN,
+            body: NEEDS_CREDENTIAL,
           },
         },
         known

@@ -1,14 +1,14 @@
 /**
- * Session gate — the single request gate that runs when local login is enabled
- * (accounts-and-auth P1, task 1.2).
+ * Session gate — the single request gate for `/api/*` and `/mcp`.
  *
- * When `config.auth.enabled` is `true`, every request to `/api/*` or `/mcp` must
- * present either (a) a valid Better Auth session cookie or (b) a valid per-user
- * API key as `Authorization: Bearer <key>`. When `auth.enabled` is `false` the
- * gate is a zero-overhead pass-through (the flag is read per request, so toggling
- * it needs no restart).
+ * A request that needs a credential ({@link gateAccessFor}: another device
+ * always, this computer when "Ask for a password on this computer too" is on)
+ * must present either (a) a valid Better Auth session cookie or (b) a valid
+ * per-user API key as `Authorization: Bearer <key>`. A person at this computer
+ * with that setting off passes with nothing. Read per request, so changing the
+ * setting needs no restart.
  *
- * ## Exemptions (always reach their handler, even when enabled)
+ * ## Exemptions (always reach their handler)
  *
  * - **Non-API paths** — static SPA assets and `index.html`, so the login screen
  *   can render (only `/api/*` and `/mcp` paths are gated).
@@ -31,13 +31,13 @@
  * @module services/core/auth/session-gate
  */
 import { fromNodeHeaders } from 'better-auth/node';
-import { configManager } from '../config-manager.js';
 import { logger } from '../../../lib/logger.js';
 // `getAuth` is a hoisted accessor called at request time, so this back-import to
 // the auth barrel (which re-exports this module) is a safe function-level cycle.
 import { getAuth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { isSessionGatedPath } from './gated-paths.js';
+import { gateAccessFor, type GateAccess } from './gate-policy.js';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -246,24 +246,26 @@ export type SessionGateDecision =
  * Decide whether a request may pass the session gate, and who it is.
  *
  * The chain (`http/api-chain.ts`) asks it for every request, `/mcp` among
- * them. When login is disabled it decides nothing and costs nothing. Writes bypass the signed
- * cookie cache and check the current server session without renewing it;
- * GET/HEAD/OPTIONS keep cached session reads.
+ * them. What a request needs comes from where it came from
+ * ({@link gateAccessFor}, ADR 261015-125850): a person at this computer passes
+ * with nothing unless "Ask for a password on this computer too" is on; another
+ * device always needs a session cookie or a per-user key; a relayed caller is
+ * never admitted here. Writes bypass the signed cookie cache and check the
+ * current server session without renewing it; GET/HEAD/OPTIONS keep cached
+ * session reads.
  *
  * @param method - The request method.
  * @param path - The path the chain's router matches, without the query string.
- * @param request - The request's facts, for its headers.
+ * @param request - The request's facts: headers, TCP peer and ingress.
+ * @param access - What the request needs; computed from `request` when omitted.
  * @returns The decision.
  */
 export async function decideSessionGate(
   method: string,
   path: string,
-  request: Pick<RequestFacts, 'headers'>
+  request: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
+  access: GateAccess = gateAccessFor(request)
 ): Promise<SessionGateDecision> {
-  // Zero-overhead pass-through when login is disabled. Read per request so the
-  // flag can flip at runtime (enable-login flow) without a server restart.
-  if (!configManager.get('auth')?.enabled) return { allowed: true };
-
   // Normalize case before the gate checks. The router matches case-sensitively
   // today, but the server ran on Express for years, where `/API/sessions`
   // reached the same handler as `/api/sessions`; a gate that trusts the router's
@@ -275,6 +277,9 @@ export async function decideSessionGate(
   // login screen can load. The Better Auth endpoints and the health probe are
   // always reachable.
   if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
+
+  if (access === 'open') return { allowed: true };
+  if (access === 'refused') return { allowed: false };
 
   // A signed cache may outlive a revoked session. Writes must observe the current
   // server row; GET/HEAD/OPTIONS keep the existing cache behavior for stream reads.

@@ -19,7 +19,7 @@
  * 4. **Paths** — `/a2a` and `/.well-known/agent*` are not offered over managed
  *    access (DOR-2085 decides when they are).
  * 5. **Mark** — the request is marked as managed (`ingress-mark.ts`), and
- *    `isLocalCaller` reads that mark, so it can never mistake a managed request
+ *    `isAtThisComputer` reads that mark, so it can never mistake a managed request
  *    for a person at this machine, even though its TCP peer is loopback.
  *
  * WebSocket upgrades take the same checks and are then handed to the main

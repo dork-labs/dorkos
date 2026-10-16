@@ -13,10 +13,34 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/**
+ * A browser session the gate can verify. Managed access is always another
+ * device, so the real gate asks it for a person session whatever "Ask for a
+ * password on this computer too" says (ADR 261015-125850 rule 3).
+ */
+const PERSON_SESSION = 'dorkos-test-session=person';
+
+// Stood in at the gate's verifier step only: a request carrying the test
+// session is the owner's browser session; everything else is the real gate.
+vi.mock('../../auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../auth/session-gate.js')>();
+  return {
+    ...actual,
+    decideSessionGate: async (...args: Parameters<typeof actual.decideSessionGate>) => {
+      const [, , facts, access] = args;
+      const cookie = facts.headers.cookie ?? '';
+      if (access !== 'refused' && cookie.includes(PERSON_SESSION)) {
+        return { allowed: true, user: { userId: 'user_owner', credential: 'cookie' } };
+      }
+      return actual.decideSessionGate(...args);
+    },
+  };
+});
+
 import { initConfigManager } from '../../config-manager.js';
 import { decideSessionGate } from '../../auth/session-gate.js';
 import type { RemoteEventBatch } from '../activity-outbox.js';
-import { noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.js';
+import { ingressOf, noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.js';
 import {
   ACTIVITY_REPORT_INTERVAL_MS,
   ManagedActivity,
@@ -146,7 +170,7 @@ describe('counting through the real ingress and gate', () => {
 
   beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-managed-activity-'));
-    // Login off: the real session gate lets everything through, and says so.
+    // The this-computer password off: managed access still needs a session.
     initConfigManager(tmpDir);
     counted.length = 0;
     setManagedAdmissionListener((req) => counted.push(`${req.method} ${req.url}`));
@@ -161,7 +185,11 @@ describe('counting through the real ingress and gate', () => {
     // The chain's session gate step (`http/api-chain.ts`): the real decision,
     // and the managed-access count once it admits.
     app.use(async (req, res, next) => {
-      const decision = await decideSessionGate(req.method, req.path, { headers: req.headers });
+      const decision = await decideSessionGate(req.method, req.path, {
+        headers: req.headers,
+        peerAddress: req.socket.remoteAddress,
+        ingress: ingressOf(req),
+      });
       if (!decision.allowed) return void res.status(401).end();
       noteGateAdmitted(req, res);
       next();
@@ -188,9 +216,9 @@ describe('counting through the real ingress and gate', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  const good = [`Host: ${HOST}`, `X-DorkOS-Edge: ${PROOF.secret}`];
+  const good = [`Host: ${HOST}`, `X-DorkOS-Edge: ${PROOF.secret}`, `Cookie: ${PERSON_SESSION}`];
 
-  it('counts an admitted request once, and never a refused attempt', async () => {
+  it('counts an admitted request once, and never a refused attempt, the gate refusal included', async () => {
     expect(await send(['GET /api/sessions HTTP/1.1', ...good])).toBe(200);
     expect(await send(['GET /api/a HTTP/1.1', `Host: ${HOST}`])).toBe(403);
     expect(await send(['GET /api/b HTTP/1.1', `Host: ${HOST}`, 'X-DorkOS-Edge: wrong'])).toBe(403);
@@ -203,6 +231,9 @@ describe('counting through the real ingress and gate', () => {
     ).toBe(403);
     expect(await send(['GET /api/d HTTP/1.1', 'Host: other.example', good[1]!])).toBe(421);
     expect(await send(['POST /api/e HTTP/1.1', ...good, 'X-Test-Signed-Out: 1'])).toBe(401);
+    // Past the edge proof with no person session: the real gate refuses it,
+    // with the this-computer password off, and it is never counted.
+    expect(await send(['GET /api/f HTTP/1.1', good[0]!, good[1]!])).toBe(401);
     expect(counted).toEqual(['GET /api/sessions']);
   });
 

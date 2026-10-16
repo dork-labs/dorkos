@@ -65,11 +65,15 @@ import type {
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
-import { configManager } from '../services/core/config-manager.js';
-import { env } from '../env.js';
-import { isLocalRequest } from './trusted-origins.js';
+import { credentialGated, isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
+
+/**
+ * The facts a bar needs to know whether the gate asked this request for a
+ * credential ({@link credentialGated}): its TCP peer, headers and ingress.
+ */
+type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>;
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -85,12 +89,16 @@ import type { RequestFacts } from '../http/request-facts.js';
  * @returns What the caller presented, for `resolveDecisionAuthority`.
  */
 export function readCallerAuthority(
-  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
 ): DecisionAuthorityRequest {
   return {
     agentIdentityPresented: presentsAgentIdentity(facts),
     approvalTokenPresented: facts.headers[APPROVAL_TOKEN_HEADER] !== undefined,
     ...(facts.user ? { user: facts.user } : {}),
+    // Per request, never the global setting: another device always proved a
+    // credential at the gate, and a person at this computer that does not ask
+    // for a password proved nothing because there is nothing to prove.
+    loginEnabled: () => credentialGated(facts),
   };
 }
 
@@ -108,20 +116,6 @@ export interface OperatorCookieRefusal {
   code: string;
   /** One plain sentence explaining the refusal. */
   error: string;
-}
-
-/**
- * Read `auth.enabled` from the live user config, exactly as the session gate does.
- *
- * No defensive branch for an unreadable config: `configManager` is a module
- * singleton that boot initializes long before any router mounts, and a genuine
- * read failure THROWS rather than returning something falsy. The throw propagates,
- * the request never reaches the write, and the caller gets a 500 instead of a
- * decision. A `false` fallback would be wrong: {@link requireOperatorCookieUnderLogin}
- * reads login-off as "no cookie to ask for" and allows.
- */
-function loginEnabledFromConfig(): boolean {
-  return configManager.get('auth')?.enabled === true;
 }
 
 /**
@@ -166,11 +160,11 @@ function loginEnabledFromConfig(): boolean {
  *   cookie. Otherwise the refusal to answer with.
  */
 export function requireOperatorCookieUnderLogin(
-  caller: Pick<RequestFacts, 'user'>,
+  caller: Pick<RequestFacts, 'user'> & GatedFacts,
   subject: string,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
-  if (!(isLoginEnabled ?? loginEnabledFromConfig)()) return undefined;
+  if (!(isLoginEnabled ? isLoginEnabled() : credentialGated(caller))) return undefined;
 
   if (caller.user?.credential === 'cookie') return undefined;
 
@@ -179,94 +173,6 @@ export function requireOperatorCookieUnderLogin(
     code: OPERATOR_COOKIE_REQUIRED_CODE,
     error: `Only a person signed in to DorkOS can change ${subject}`,
   };
-}
-
-/**
- * Whether this request came from a person at this machine.
- *
- * Three surfaces ask, and they are the reason this is one function rather than
- * three: `routes/runtimes.ts` and `routes/mcp-oauth.ts` ask in order to REFUSE a
- * caller that is not local, and `routes/config.ts` asks in order to REPORT the
- * same fact to the app, so a person on their phone is told sign-in needs the
- * computer DorkOS runs on instead of being shown a button that 403s (DOR-1655).
- * The first two held byte-identical private copies before that third caller
- * existed, which is the duplication this removes.
- *
- * A report computed even slightly differently from the refusal — `req.hostname`
- * instead of the raw header, a forgotten `DORKOS_ALLOW_INSECURE_BIND` branch —
- * would give the app a story the endpoint contradicts. One reader is what makes
- * "the app is told exactly what the endpoint would do" true rather than merely
- * intended.
- *
- * ## What the answer rests on
- *
- * Two independent signals, and BOTH must hold, because each one alone admits a
- * different attacker (DOR-532 review):
- *
- * - **The TCP peer must be loopback.** This is the part a caller cannot write.
- *   Header-only checks fell to a raw socket from another host on the LAN:
- *   `Host: localhost` from peer `192.168.86.200` returned 200 and would have run
- *   a Homebrew/winget install. `req.hostname` and `req.ip` are both derived
- *   through `trust proxy` from `X-Forwarded-*` and are caller-controlled, so
- *   neither is usable here; only `req.socket.remoteAddress` is.
- * - **The `Host` header must name loopback.** This is the part that stops a
- *   browser. Under DNS rebinding the peer genuinely IS `127.0.0.1` — the request
- *   comes from the user's own browser — but the page was served from `evil.com`,
- *   and the browser writes that into `Host` and cannot lie about it.
- *
- * Socket alone admits the rebound browser; `Host` alone admits the remote
- * caller. Neither substitutes for the other. A live tunnel is the clearest case:
- * its agent runs on this machine, so the peer IS loopback, and only the `Host`
- * check (which sees the public tunnel domain) turns that traffic away. That same
- * case is why the app has to be TOLD this answer — a phone reaching DorkOS over
- * the tunnel looks local at the socket and is not.
- *
- * ## `DORKOS_ALLOW_INSECURE_BIND` relaxes this, as it does the host guard
- *
- * In a container the browser's request arrives from the bridge gateway rather
- * than loopback, so requiring a loopback peer would refuse runtime provisioning
- * for every Docker operator — a feature that works today, broken for the people
- * the flag already exists to accommodate. The flag's established meaning is
- * "this deployment owns its network boundary", and the official image sets it;
- * `docs/self-hosting/docker.mdx` already states that anyone who reaches the
- * published port has full control. Refusing here would not shrink that blast
- * radius (such a caller can already run agent turns and open shells), so it buys
- * nothing and costs a working feature. Honoring the flag is the same decision
- * `middleware/host-guard.ts` makes, for the same reason.
- *
- * The flag reaches the REPORT too, and that is deliberate rather than
- * incidental: under it the connect endpoints accept, so telling a Docker
- * operator that sign-in needs some other computer would be false. The app is
- * told what the endpoint would actually do, never a stricter story of its own.
- *
- * Unflagged — the default on a normal machine — both signals are still required.
- *
- * A request admitted by the managed remote-access ingress is never local, under
- * any flag: it is someone on another device by construction.
- *
- * One residual remains and is inherent: a reverse proxy on this same host
- * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
- * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its
- * forwarded `Host` normally carries the public name and is refused, but an
- * operator who rewrites `Host` to `localhost` re-opens it.
- *
- * @param request - The request's facts, read for its TCP peer and raw `Host`.
- * @returns True when the request may reach an action reserved for this machine.
- */
-export function isLocalCaller(
-  request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'ingress'>
-): boolean {
-  // Managed remote access arrives from the ngrok agent on loopback, so the
-  // socket half would pass; the ingress marks it so nothing it carries is ever
-  // taken for a person at this machine, whatever its `Host` says. The other
-  // marks (own tunnel, Wi-Fi) change nothing here until F1 (DOR-2967) moves
-  // this question onto the request classifier.
-  if (request.ingress === 'managed') return false;
-  return isLocalRequest({
-    peer: request.peerAddress,
-    hostHeader: request.headers.host,
-    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
-  });
 }
 
 /**
@@ -317,7 +223,7 @@ export function isLocalCaller(
  *   an agent identity nor an approval token presented.
  */
 export function clearsTheAgentBar(
-  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
 ): boolean {
   if (requireOperatorCookieUnderLogin(facts, 'this') !== undefined) return false;
   return resolveDecisionAuthority(readCallerAuthority(facts)).allowed;
@@ -356,10 +262,10 @@ export type AccountOwnerRefusal = 'not-a-person' | 'not-the-owner';
  * @returns `undefined` when the caller may act, otherwise why not.
  */
 export function refuseUnlessAccountOwner(
-  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
 ): AccountOwnerRefusal | undefined {
   if (!clearsTheAgentBar(facts)) return 'not-a-person';
-  if (!loginEnabledFromConfig()) return undefined;
+  if (!credentialGated(facts)) return undefined;
   // Login is on, so the agent bar above has already required a browser
   // session. An install with no owner account to compare against is refused:
   // nobody can be shown to own it.
@@ -393,7 +299,7 @@ export function refuseUnlessAccountOwner(
  * @returns True when the touch should be recorded as yours.
  */
 export function isPersonAtTheApp(
-  caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>,
+  caller: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts,
   isLoginEnabled?: LoginEnabledLookup
 ): boolean {
   if (presentsAgentIdentity(caller)) return false;

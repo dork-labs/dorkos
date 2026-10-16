@@ -13,7 +13,12 @@ vi.mock('../../tunnel-manager.js', () => ({
 vi.mock('../../config-manager.js', () => ({
   configManager: { get: vi.fn(() => ({ enabled: false })) },
 }));
-vi.mock('../stream-upgrade-auth.js', () => ({ authorizeStreamUpgrade: vi.fn() }));
+// Only the credential check is stubbed: `upgradeFacts` stays real, so the
+// router's host pairing reads the same facts the gate does.
+vi.mock('../stream-upgrade-auth.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../stream-upgrade-auth.js')>()),
+  authorizeStreamUpgrade: vi.fn(),
+}));
 vi.mock('../../../../lib/logger.js', () => ({ logger: { warn: vi.fn() } }));
 
 function deferred<T>() {

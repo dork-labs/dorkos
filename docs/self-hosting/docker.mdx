@@ -335,10 +335,12 @@ volumes:
 ### With a reverse proxy
 
 <Callout type="error">
-  **Turn on login before you point a domain at DorkOS.** The Docker image ships with login off, and it
-  binds to every network address so port forwarding works. With login off, anyone who reaches the port
-  gets full control: your chats, your files, and your agents, spending your Claude quota. Create the
-  owner account and require login first:
+  **Create the owner account before you point a domain at DorkOS.** The image binds to every network
+  address so port forwarding works. Until an owner account exists, anyone who reaches the port gets
+  full control: your chats, your files, and your agents, spending your Claude quota. This open start
+  lasts one more release; a later one asks for a one-time setup code instead. Once the owner exists,
+  every browser visit needs a password, and the `dorkos` command inside the container still works
+  without one. Create the owner account first:
 
 ```bash
 docker exec -it dorkos dorkos auth enable

@@ -15,7 +15,10 @@ vi.mock('../../config-manager.js', () => ({
   configManager: { get: vi.fn(() => ({ enabled: false })) },
 }));
 
-vi.mock('../stream-upgrade-auth.js', () => ({
+// Only the credential check is stubbed: `upgradeFacts` stays real, so the
+// router's host pairing reads the same facts the gate does.
+vi.mock('../stream-upgrade-auth.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../stream-upgrade-auth.js')>()),
   authorizeStreamUpgrade: vi.fn(),
 }));
 
@@ -383,8 +386,8 @@ describe('attachUpgradeRouter', () => {
         heard.push(req.url ?? '');
         socket.on('message', () => messages.push(req.url ?? ''));
       });
-      gate.mockImplementation(async (headers) =>
-        headers['x-test-signed-out']
+      gate.mockImplementation(async (req) =>
+        req.headers['x-test-signed-out']
           ? { ok: false, status: 401, message: 'Unauthorized' }
           : { ok: true, locals: {} }
       );
@@ -634,9 +637,14 @@ describe('attachUpgradeRouter', () => {
     );
 
     it(
-      'REFUSES a rebound origin on a durable stream in the container, login off',
+      'REFUSES a rebound origin on a durable stream in the container, login off: it is another device, so the gate asks it to sign in',
       inContainer(async () => {
         loginEnabled(false);
+        // A rebound `Host` is another device even under the container flag
+        // (gate-matrix: "insecure bind, DNS rebinding Host"), so the host
+        // pairing stands down for the credential gate, which a rebound page
+        // cannot pass: its origin carries none of this server's cookies.
+        gate.mockResolvedValue({ ok: false, status: 401, message: 'Unauthorized' });
         await listen([gatedRoute]);
 
         const result = await attempt('/api/gated', {
@@ -644,7 +652,8 @@ describe('attachUpgradeRouter', () => {
           host: 'evil.example',
         });
 
-        expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 403);
+        expect(gate).toHaveBeenCalled();
+        expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
       })
     );
 
@@ -666,19 +675,26 @@ describe('attachUpgradeRouter', () => {
       })
     );
 
-    it('stands down ONLY for a credential-gated route with login on', async () => {
-      // The one case the stated reason covers: the cookie is origin-scoped, so
-      // the rebound page cannot present one and the gate turns it away first.
-      loginEnabled(true);
-      await listen([gatedRoute]);
+    it.each([false, true])(
+      'stands down ONLY for a credential-gated route whose gate asks this request for a credential (password on this computer: %s)',
+      async (askOnThisComputer) => {
+        // The one case the stated reason covers: the cookie is origin-scoped, so
+        // the rebound page cannot present one and the gate turns it away first.
+        // A rebound `Host` is another device, which the gate always asks for a
+        // credential (ADR 261015-125850 rule 2), so this holds with the
+        // this-computer password off too, not only with "login on".
+        loginEnabled(askOnThisComputer);
+        await listen([gatedRoute]);
 
-      const result = await attempt('/api/gated', {
-        origin: 'http://evil.example',
-        host: 'evil.example',
-      });
+        const result = await attempt('/api/gated', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
 
-      expect(result.opened, 'the credential gate is what stops this one').toBe(true);
-    });
+        expect(result.opened, 'the credential gate is what stops this one').toBe(true);
+        expect(gate).toHaveBeenCalledTimes(1);
+      }
+    );
   });
 
   describe('DORKOS_CORS_ORIGIN is honoured no more widely than CORS honours it', () => {

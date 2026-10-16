@@ -11,6 +11,32 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
+/**
+ * A browser session the session gate can verify. Since ADR 261015-125850 rule 3
+ * every request from another device needs a person session at the `/api`
+ * gate, whatever "Ask for a password on this computer too" says; a remote case
+ * presents one so it reaches the route, and the route's own "only on this
+ * computer" rule is what is under test.
+ */
+const PERSON_SESSION = 'dorkos-test-session=person';
+
+// Stood in at the gate's verifier step only: a request carrying the test
+// session is the owner's browser session; everything else is the real gate.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return {
+    ...actual,
+    decideSessionGate: async (...args: Parameters<typeof actual.decideSessionGate>) => {
+      const [, , facts, access] = args;
+      const cookie = facts.headers.cookie ?? '';
+      if (access !== 'refused' && cookie.includes(PERSON_SESSION)) {
+        return { allowed: true, user: { userId: 'user_owner', credential: 'cookie' } };
+      }
+      return actual.decideSessionGate(...args);
+    },
+  };
+});
+
 vi.mock('../../services/runtimes/opencode/providers/provision.js', () => ({
   provisionOpenCode: vi.fn(),
 }));
@@ -930,7 +956,8 @@ describe('runtime connect endpoints', () => {
     it.each(ROUTES)('refuses $name from a non-loopback peer', async (route) => {
       const req = request(appWithPeer(REMOTE_PEER))
         [route.method](route.path)
-        .set('Host', 'localhost');
+        .set('Host', 'localhost')
+        .set('Cookie', PERSON_SESSION);
       const res = await (route.body ? req.send(route.body) : req);
 
       expect(res.status).toBe(403);
@@ -938,6 +965,22 @@ describe('runtime connect endpoints', () => {
       if (route.action) expect(route.action()).not.toHaveBeenCalled();
       if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
     });
+
+    it.each(ROUTES)(
+      'refuses $name from a non-loopback peer with no session at the /api gate',
+      async (route) => {
+        // Another device always needs a person session (ADR 261015-125850
+        // rule 3), with the this-computer password off, as here.
+        const req = request(appWithPeer(REMOTE_PEER))
+          [route.method](route.path)
+          .set('Host', 'localhost');
+        const res = await (route.body ? req.send(route.body) : req);
+
+        expect(res.status).toBe(401);
+        if (route.action) expect(route.action()).not.toHaveBeenCalled();
+        if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
+      }
+    );
 
     it.each(ROUTES)('still admits $name from a loopback peer', async (route) => {
       const req = request(appWithPeer('127.0.0.1'))
@@ -1038,13 +1081,12 @@ describe('DorkOS inference setup', () => {
   it('refuses a remote peer before encrypted setup runs', async () => {
     currentPeer = '203.0.113.10';
     try {
-      expect(
-        (
-          await request(peerServer)
-            .post('/api/runtimes/doe/credential')
-            .send({ inference, secret: SECRET })
-        ).status
-      ).toBe(403);
+      const res = await request(peerServer)
+        .post('/api/runtimes/doe/credential')
+        .set('Cookie', PERSON_SESSION)
+        .send({ inference, secret: SECRET });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/only available on this computer/);
       expect(storeDoeCredential).not.toHaveBeenCalled();
     } finally {
       currentPeer = '127.0.0.1';

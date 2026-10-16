@@ -12,7 +12,8 @@ import {
   RelayMessageIdSchema,
   type RelaySendMessageRequest,
 } from '@dorkos/shared/relay-schemas';
-import { configManager } from '../services/core/config-manager.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { credentialGated } from '../services/core/auth/gate-policy.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
@@ -32,8 +33,9 @@ export interface RelayPublishDeps {
 /** The answer for a client that is gone: nothing more is written to it. */
 const UNANSWERABLE = (): Response => new Response(null);
 
-function loginEnabled(): boolean {
-  return !!configManager.get('auth')?.enabled;
+/** Whether the gate asked this request for a credential (per request, not one switch). */
+function loginEnabled(c: Context<ApiEnv>): boolean {
+  return credentialGated(honoRequestFacts(c));
 }
 function verifiedUserId(c: Context<ApiEnv>): string | null {
   const id: unknown = c.get('user')?.userId;
@@ -54,7 +56,7 @@ export async function publishRelayMessage(
   let messageId: string | undefined;
   let statusUrl: string | undefined;
   const tracked = isDetachedAgentSubject(data.subject);
-  const enabled = loginEnabled();
+  const enabled = loginEnabled(c);
   const userId = verifiedUserId(c);
   if (enabled && !userId) return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
   try {
@@ -105,7 +107,7 @@ export async function publishRelayMessage(
 export function createReceiptStatusHandler(relayCore: RelayCore): Handler<ApiEnv> {
   return (c) => {
     c.header('Cache-Control', 'no-store');
-    const enabled = loginEnabled();
+    const enabled = loginEnabled(c);
     const userId = verifiedUserId(c);
     if (enabled && !userId) {
       return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
