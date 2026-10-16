@@ -49,6 +49,7 @@ import type { ApiEnv } from './api-chain.js';
 import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
 import { markIngress, type IngressKind } from '../services/core/remote/ingress-mark.js';
 import { isLoopbackPeer } from '../lib/trusted-origins.js';
+import { admitHubRequest, trackHubConnection } from '../services/core/hub/hub-serving.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -85,6 +86,15 @@ export function frontDoorListener(app: Hono<ApiEnv>): RequestListener {
     // Host names ignore case, but the adapter refuses a `Host` in capitals.
     const host = incoming.headers.host;
     if (host) incoming.headers.host = host.toLowerCase();
+    // A hub admits only what came through its front door, and removes the
+    // proof before anything else reads the request (`services/core/hub/hub-serving.ts`).
+    const refusal = admitHubRequest(incoming);
+    if (refusal) {
+      outgoing.writeHead(refusal.status, { 'content-type': 'application/json' });
+      outgoing.end(JSON.stringify(refusal.body));
+      return;
+    }
+    trackHubConnection(incoming.socket);
     adaptLanCookies(incoming, outgoing);
     return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
   };
