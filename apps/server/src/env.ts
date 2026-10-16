@@ -247,6 +247,11 @@ export const serverEnvSchema = z.object({
   // on, takes its owner from provisioning, and refuses
   // DORKOS_ALLOW_INSECURE_BIND (below the schema).
   DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
+  // A hub's DorkOS Cloud instance key (DOR-2935), set by Cloud when it boots
+  // the hub image. Required on a hub, read only there, and never written to
+  // disk: a hub that restarts reads it from its environment again. Read by
+  // `services/core/cloud/v1-client.ts`.
+  DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -433,6 +438,15 @@ const result = serverEnvSchema
     // A hub keeps login on and owns no network boundary of its own to vouch
     // for, so the escape hatch that switches the locality checks off has no
     // meaning there. Refuse to boot rather than quietly ignore it.
+    // A hub learns who it belongs to only through its instance key, so one
+    // without it could never serve anybody.
+    if (parsed.DORKOS_SERVER_ROLE === 'hub' && !parsed.DORKOS_HUB_INSTANCE_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DORKOS_HUB_INSTANCE_KEY'],
+        message: 'must be set when DORKOS_SERVER_ROLE is hub',
+      });
+    }
     if (parsed.DORKOS_SERVER_ROLE === 'hub' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
       ctx.addIssue({
         code: 'custom',

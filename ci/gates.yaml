@@ -72,6 +72,9 @@ gates:
   - id: wf.cli-smoke-test.integration-test
     source: .github/workflows/cli-smoke-test.yml
     purpose: Runs the Docker integration image end to end against the packed CLI.
+  - id: wf.cli-smoke-test.hub-smoke-test
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Boots the hub image against a stand-in for DorkOS Cloud and proves it refuses while pooled, takes an assignment, and admits only front-door traffic.
 
   # --- codeql.yml ---
   - id: wf.codeql.analyze

@@ -28,6 +28,7 @@ import { configManager } from '../config-manager.js';
 import { resolveCloudApiBaseUrl } from './cloud-api-origin.js';
 import { getCloudLinkGeneration } from '../auth/cloud-link.js';
 import { env } from '../../../env.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 let v1Fetch: FetchLike | undefined;
 
@@ -79,8 +80,13 @@ function observeTokenChanges(): void {
  * (or was unlinked). Read through the config manager so it stays the single
  * source of truth — the value itself is never logged and never leaves the
  * server.
+ *
+ * A hub is the exception: Cloud gives it its key in the environment when it
+ * boots it (`DORKOS_HUB_INSTANCE_KEY`, DOR-2935), and the config is never
+ * consulted, so nothing a request can change on a hub replaces its key.
  */
 export function readCloudInstanceToken(): string | null {
+  if (currentServerRole() === 'hub') return env.DORKOS_HUB_INSTANCE_KEY ?? null;
   return configManager.get('cloud')?.instanceToken ?? null;
 }
 

@@ -91,6 +91,7 @@ import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRoutes } from './cloud-communities.js';
 import { gateCloudCommunities } from '../middleware/spaces-enabled.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -152,6 +153,22 @@ const OWNER_ONLY = {
  */
 router.use('/communities/*', gateCloudCommunities());
 router.route('/communities', createCloudCommunitiesRoutes());
+
+/**
+ * A hub is linked by DorkOS Cloud when it boots it, with a key from its
+ * environment (`DORKOS_HUB_INSTANCE_KEY`, DOR-2935), so nobody links,
+ * relinks or unlinks it from here. Reads stay open.
+ */
+const HUB_LINKED_BY_CLOUD = {
+  error: 'DorkOS Cloud links this DorkOS. It can’t be linked or unlinked here.',
+  code: 'HUB_LINKED_BY_CLOUD',
+} as const;
+for (const path of ['/link/*', '/unlink']) {
+  router.post(path, async (c, next) => {
+    if (currentServerRole() === 'hub') return c.json(HUB_LINKED_BY_CLOUD, 409);
+    await next();
+  });
+}
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
 router.post('/link/start', async (c) => {
