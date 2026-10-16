@@ -105,18 +105,28 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
  * Create the owner account (first-run sign-up). On success clears the
  * auth-required signal and refetches session state.
  */
-export function useSignUp(): AuthActionState<[email: string, password: string, name: string]> {
+export function useSignUp(): AuthActionState<
+  [email: string, password: string, name: string, setupCode?: string]
+> {
   const client = useAuthClient();
   const queryClient = useQueryClient();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<AuthError | null>(null);
 
   const run = useCallback(
-    async (email: string, password: string, name: string): Promise<AuthActionResult> => {
+    async (
+      email: string,
+      password: string,
+      name: string,
+      setupCode?: string
+    ): Promise<AuthActionResult> => {
       setIsPending(true);
       setError(null);
       invalidateProtectedCommunityState(queryClient);
-      const { error: err } = await client.signUp.email({ email, password, name });
+      const { error: err } = await client.signUp.email(
+        { email, password, name },
+        setupCode ? { setupCode } : undefined
+      );
       setIsPending(false);
       if (err) {
         setError(err);
