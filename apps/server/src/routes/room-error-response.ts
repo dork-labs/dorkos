@@ -1,3 +1,4 @@
+import { DocumentFileSaveCloseBlockedError } from '../services/canvas/doc-channel/writes/file-save-lifecycle/close-guard.js';
 /**
  * How a refusal from the rooms domain becomes an HTTP response
  * (spec `rooms`, ADR 260726-170125).
@@ -219,6 +220,8 @@ export function roomErrorReply(
   context: string,
   ownerAsking: () => boolean
 ): RoomErrorReply {
+  if (err instanceof DocumentFileSaveCloseBlockedError)
+    return { status: 409, body: { error: err.message, code: err.recoveryCode } };
   if (err instanceof RoomError) {
     // Worded before a status is chosen, so nothing can leave a half-written reply.
     return { status: STATUS_BY_CODE[err.code], body: roomRefusalFor(err, ownerAsking) };

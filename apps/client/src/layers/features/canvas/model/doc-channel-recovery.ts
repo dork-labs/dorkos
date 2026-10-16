@@ -8,50 +8,62 @@ import type { DocChannelView } from './doc-channel-view';
 export function createDocChannelRecovery(
   documentId: string,
   transport: Transport,
-  dispatch: Dispatch<SetStateAction<DocChannelView>>
+  dispatch: Dispatch<SetStateAction<DocChannelView>>,
+  onPendingChange?: (pending: boolean) => void
 ) {
   const owner = createDocChannelOwner(documentId, transport, dispatch);
-  const task = createDocReplayTask(() => {
-    const run = owner.beginRun();
-    return {
-      async page(): Promise<'again' | 'done'> {
-        const ticket = await run.readPage();
-        if (!ticket) return 'done';
-        const result = run.consumePage(ticket);
-        if (result.kind !== 'frames') return result.kind;
-        for (let index = 0; index < result.count; index++) {
-          if (!run.advancePageFrame(ticket, index)) return 'done';
-        }
-        return run.finishPage(ticket);
-      },
-      failed: () => run.failed(),
-      beginFinalization: () => {
-        const instruction = run.beginFinalization();
-        if (instruction !== 'drain') run.end();
-        return instruction;
-      },
-      drainOne(): 'again' | 'tail' | 'restart' | 'stop' {
-        if (!run.current()) {
+  let disposed = false;
+  const task = createDocReplayTask(
+    () => {
+      const run = owner.beginRun();
+      return {
+        async page(): Promise<'again' | 'done'> {
+          const ticket = await run.readPage();
+          if (!ticket) return 'done';
+          const result = run.consumePage(ticket);
+          if (result.kind !== 'frames') return result.kind;
+          for (let index = 0; index < result.count; index++) {
+            if (!run.advancePageFrame(ticket, index)) return 'done';
+          }
+          return run.finishPage(ticket);
+        },
+        failed: () => run.failed(),
+        beginFinalization: () => {
+          const instruction = run.beginFinalization();
+          if (instruction !== 'drain') run.end();
+          return instruction;
+        },
+        drainOne(): 'again' | 'tail' | 'restart' | 'stop' {
+          if (!run.current()) {
+            run.end();
+            return 'stop';
+          }
+          const ticket = run.takePending();
+          if (!ticket) return 'tail';
+          if (run.advancePending(ticket)) return 'again';
           run.end();
           return 'stop';
-        }
-        const ticket = run.takePending();
-        if (!ticket) return 'tail';
-        if (run.advancePending(ticket)) return 'again';
-        run.end();
-        return 'stop';
-      },
-      finishFinalization: () => {
-        try {
-          return run.finishFinalization();
-        } finally {
-          run.end();
-        }
-      },
-    };
-  });
+        },
+        finishFinalization: () => {
+          try {
+            return run.finishFinalization();
+          } finally {
+            run.end();
+          }
+        },
+      };
+    },
+    (pending) => {
+      if (!disposed) onPendingChange?.(pending);
+    }
+  );
   owner.start(() => {
     void task.request().catch(() => {});
   });
-  return Object.freeze({ dispose: owner.dispose });
+  return Object.freeze({
+    dispose() {
+      disposed = true;
+      owner.dispose();
+    },
+  });
 }

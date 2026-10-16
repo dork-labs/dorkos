@@ -676,6 +676,31 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       });
     });
 
+    it('restores only original tab metadata after a409 unresolved-save close refusal', async () => {
+      const refusal = Object.assign(
+        new Error(
+          'This document has an unresolved save. Keep it open until the original save is resolved.'
+        ),
+        { status: 409, code: 'DOC_SAVE_RECOVERY_REQUIRED' }
+      );
+      const transport = fakeTransport({
+        closeSessionCanvasDocument: vi.fn().mockRejectedValue(refusal),
+      });
+      setSessionCanvasTransport(transport);
+      useAppStore
+        .getState()
+        .hydrateCanvasFromSnapshot(SESSION, [
+          serverDocument({ id: 'doc-a', content: fileDoc('a.ts') }),
+        ]);
+      const original = useAppStore.getState().openDocuments[0]!;
+      useAppStore.getState().closeCanvasDocument('doc-a');
+      expect(useAppStore.getState().openDocuments).toHaveLength(0);
+      await vi.waitFor(() => expect(useAppStore.getState().openDocuments).toEqual([original]));
+      expect(transport.closeSessionCanvasDocument).toHaveBeenCalledWith(SESSION, 'doc-a');
+      expect(toast.error).toHaveBeenCalled();
+      // Store restoration is not a claim that a disposed editor's draft/UUID was recovered.
+    });
+
     it('takes and releases the edit lock on the server', async () => {
       const transport = fakeTransport();
       setSessionCanvasTransport(transport);

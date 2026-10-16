@@ -206,6 +206,7 @@ it('fails closed on a missing owned current row and rereads state when that read
 it('retains the fence through a genuine SQLite exclusive read lock and rechecks after release', async () => {
   const h = await uncertain();
   const actual = await identity(h.path);
+  const ownedIntent = h.row();
   h.db.$client.pragma('journal_mode = DELETE');
   h.db.$client.pragma('busy_timeout = 1');
   const other = new Database(h.file);
@@ -215,11 +216,18 @@ it('retains the fence through a genuine SQLite exclusive read lock and rechecks 
     expect(() => h.service.writeFence.assertAdmission(actual)).toThrow(
       CheckboxFenceUnavailableError
     );
+    expect(() => h.service.writeFence.assertOwnedIntentAdmission(actual, ownedIntent)).toThrow(
+      CheckboxFenceUnavailableError
+    );
+    expect(() => h.service.writeFence.assertOwnedIntentAdmission(actual, ownedIntent)).toThrow(
+      expect.objectContaining({ reason: 'transient' })
+    );
   } finally {
     other.exec('ROLLBACK');
     other.close();
   }
   expect(() => h.service.writeFence.assertAdmission(actual)).toThrow(CheckboxWriteFencedError);
+  expect(() => h.service.writeFence.assertOwnedIntentAdmission(actual, ownedIntent)).not.toThrow();
 });
 
 it('refuses native SQL admission and checkbox work without resolving any filesystem path', async () => {

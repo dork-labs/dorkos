@@ -7586,7 +7586,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Take a document off this session’s canvas',
   description:
-    'The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.',
+    'When no original file save is unresolved, the row is deleted and every window is told to drop it. An unresolved save refuses closure so the original document identity remains available for settlement. Restoring an optimistically closed tab does not restore a lost local draft or pending request.',
   request: { params: SessionCanvasParams },
   responses: {
     204: { description: 'Closed' },
@@ -7595,6 +7595,14 @@ registry.registerPath({
     403: sessionCanvasPeopleOnly,
     503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
+    409: {
+      description: 'Original save needs settlement; document remains open',
+      content: {
+        'application/json': {
+          schema: z.object({ error: z.string(), code: z.literal('DOC_SAVE_RECOVERY_REQUIRED') }),
+        },
+      },
+    },
   },
 });
 

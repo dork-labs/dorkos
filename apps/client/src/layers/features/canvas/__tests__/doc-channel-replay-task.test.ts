@@ -227,3 +227,40 @@ describe('closed mechanical replay scheduling', () => {
     }
   );
 });
+
+it('keeps observation pending when old finalization restarts a held replacement replay', async () => {
+  const held = deferred<'done'>();
+  let calls = 0;
+  const pending = vi.fn();
+  const task = createDocReplayTask(
+    () =>
+      ++calls === 1
+        ? run({ beginFinalization: () => 'restart' })
+        : run({ page: () => held.promise }),
+    pending
+  );
+  const old = task.request();
+  await old;
+  expect(pending.mock.calls.map(([value]) => value)).toEqual([true, true]);
+  const replacement = task.request();
+  held.resolve('done');
+  await replacement;
+  expect(pending.mock.calls.map(([value]) => value)).toEqual([true, true, false]);
+});
+
+it.each([true, false])(
+  'a throwing pending=%s observer cannot prevent replay progress or promise settlement',
+  async (phase) => {
+    const page = vi.fn(async () => 'done' as const);
+    const capture = vi.fn(() => run({ page }));
+    const observer = vi.fn((pending: boolean) => {
+      if (pending === phase) throw new Error('view observer failed');
+    });
+    const task = createDocReplayTask(capture, observer);
+    await expect(task.request()).resolves.toBeUndefined();
+    await expect(task.request()).resolves.toBeUndefined();
+    expect(capture).toHaveBeenCalledTimes(2);
+    expect(page).toHaveBeenCalledTimes(2);
+    expect(observer.mock.calls.map(([value]) => value)).toEqual([true, false, true, false]);
+  }
+);

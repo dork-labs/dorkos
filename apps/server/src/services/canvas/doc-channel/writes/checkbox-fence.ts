@@ -1,3 +1,4 @@
+import { assertFileSaveAdmission, FileSaveWriteFencedError } from './file-save-intents.js';
 import {
   readPreparedUnresolvedIntentValues,
   unresolvedIntentDecoders,
@@ -67,8 +68,9 @@ export class CheckboxWriteFence {
       return { ready: false, reason: error.reason };
     }
   }
-  assertAdmission(identity: CanonicalFileIdentity): void {
-    if (this.scan(identity)) throw new CheckboxWriteFencedError();
+  assertAdmission(identity: CanonicalFileIdentity, originalFileSaveIntentId?: string): void {
+    if (this.scan(identity, undefined, false, false, originalFileSaveIntentId))
+      throw new CheckboxWriteFencedError();
   }
   /** Trusted owner only: validate its current row while excluding its own recovery fence. */
   assertOwnedIntentAdmission(identity: CanonicalFileIdentity, intent: DocWriteIntentRow): void {
@@ -164,7 +166,8 @@ export class CheckboxWriteFence {
     identity?: CanonicalFileIdentity,
     ownedIntent?: DocWriteIntentRow,
     any = false,
-    evidenceOnly = false
+    evidenceOnly = false,
+    originalFileSaveIntentId?: string
   ): boolean {
     if (this.db.$client.inTransaction) throw new CheckboxFenceUnavailableError('transaction');
     if (identity) {
@@ -176,6 +179,8 @@ export class CheckboxWriteFence {
       }
     }
     try {
+      if (identity && !evidenceOnly)
+        assertFileSaveAdmission(this.db, identity, originalFileSaveIntentId);
       return this.db.$client.transaction(() => {
         if (ownedIntent) {
           const current = this.store.getWriteIntent(ownedIntent.intentId);
@@ -224,7 +229,11 @@ export class CheckboxWriteFence {
         }
       })();
     } catch (error) {
-      if (error instanceof CheckboxFenceUnavailableError) throw error;
+      if (
+        error instanceof CheckboxFenceUnavailableError ||
+        error instanceof FileSaveWriteFencedError
+      )
+        throw error;
       if (error instanceof SyntaxError || error instanceof DocChannelCorruptionError)
         throw new CheckboxFenceUnavailableError('corrupt');
       throw new CheckboxFenceUnavailableError('transient');

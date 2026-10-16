@@ -1,3 +1,4 @@
+import type { WriteFileOptions, WriteFileResult } from './file-save/transport.js';
 import type { DoeCreditsCatalog, DoeInferenceStatus } from './runtime-connect.js';
 import type { DoeInferenceConfig } from './config-schema.js';
 import type {
@@ -604,16 +605,7 @@ export interface ClaudePluginTransport {
   reloadPlugins(): Promise<import('./types.js').ReloadPluginsResult>;
 }
 
-/**
- * Result of {@link Transport.writeFile}. A conflict is normal control flow (the
- * file changed under an optimistic-concurrency write), not an exception, so it
- * is returned rather than thrown — the caller decides whether to reload or
- * force-overwrite. Genuine failures (network, permissions, missing file) still
- * throw.
- */
-export type WriteFileResult =
-  | { ok: true; hash: string; effect: 'changed' | 'no_op' }
-  | { ok: false; conflict: { currentHash: string; currentContent: string } };
+export type { WriteFileOptions, WriteFileResult } from './file-save/transport.js';
 
 /** A single progress frame emitted while a runtime binary is being provisioned on demand. */
 export interface RuntimeProvisionProgress {
@@ -1109,13 +1101,13 @@ export interface Transport extends TransportSlices {
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
    * @param content - Full new file content.
-   * @param options - `expectedHash` or `expectedContent` enable the conflict check.
+   * @param options - Conditional base and optional document receipt correlation.
    */
   writeFile(
     cwd: string,
     filePath: string,
     content: string,
-    options?: { expectedHash?: string; expectedContent?: string }
+    options?: WriteFileOptions
   ): Promise<WriteFileResult>;
   /**
    * Build a same-origin URL that streams a local media file (image or PDF) from

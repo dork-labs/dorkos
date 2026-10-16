@@ -206,6 +206,9 @@ describe('canvas channel production migration', () => {
       canvas_doc_write_intents_event_unique: ['document_id', 'event_id'],
       canvas_doc_write_intents_recovery_idx: ['status', 'updated_at'],
       canvas_doc_write_intents_path_idx: ['canonical_path', 'status'],
+      canvas_doc_file_save_intents_event_unique: ['document_id', 'event_id'],
+      canvas_doc_file_save_intents_recovery_idx: ['status', 'updated_at'],
+      canvas_doc_file_save_intents_active_path_unique: ['canonical_path'],
     };
     const indexes = db.$client
       .prepare(
@@ -229,6 +232,16 @@ describe('canvas channel production migration', () => {
     expect(schemaSql(db, 'canvas_doc_batches_active_unique')).toContain(
       `WHERE "status" in ('accepted', 'dispatching', 'turn_started', 'in_doubt')`
     );
+    expect(schemaSql(db, 'canvas_doc_file_save_intents_active_path_unique')).toContain(
+      `WHERE "status" in ('prepared', 'staged', 'in_doubt')`
+    );
+    expect(
+      db.$client
+        .prepare(
+          "SELECT [unique], partial FROM pragma_index_list('canvas_doc_file_save_intents') WHERE name=?"
+        )
+        .get('canvas_doc_file_save_intents_active_path_unique')
+    ).toEqual({ unique: 1, partial: 1 });
     for (const name of ['canvas_doc_batches_pending_unique', 'canvas_doc_batches_active_unique']) {
       expect(
         db.$client

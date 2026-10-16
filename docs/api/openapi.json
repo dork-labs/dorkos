@@ -2282,6 +2282,111 @@
           "useCredits"
         ]
       },
+      "WriteFileResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "hash": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "no_op"
+            ]
+          },
+          "documentReceipt": {
+            "$ref": "#/components/schemas/FileDocumentSaveReceipt"
+          }
+        },
+        "required": [
+          "ok",
+          "hash"
+        ]
+      },
+      "FileDocumentSaveReceipt": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "eventId": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          },
+          "incarnation": {
+            "type": "object",
+            "properties": {
+              "v": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "physicalOpenedAt": {
+                "type": "string",
+                "maxLength": 64,
+                "format": "date-time"
+              },
+              "channelCreatedAt": {
+                "type": "string",
+                "maxLength": 64,
+                "format": "date-time"
+              },
+              "generation": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "v",
+              "documentId",
+              "physicalOpenedAt",
+              "channelCreatedAt",
+              "generation"
+            ],
+            "additionalProperties": false
+          },
+          "docSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "fileHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "duplicate"
+            ]
+          }
+        },
+        "required": [
+          "documentId",
+          "eventId",
+          "incarnation",
+          "docSeq",
+          "fileHash",
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "WriteFileRequest": {
         "type": "object",
         "properties": {
@@ -2301,6 +2406,9 @@
           },
           "expectedContent": {
             "type": "string"
+          },
+          "documentSave": {
+            "$ref": "#/components/schemas/FileDocumentSaveRequest"
           }
         },
         "required": [
@@ -2308,6 +2416,64 @@
           "path",
           "content"
         ]
+      },
+      "FileDocumentSaveRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "eventId": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          },
+          "incarnation": {
+            "type": "object",
+            "properties": {
+              "v": {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "physicalOpenedAt": {
+                "type": "string",
+                "maxLength": 64,
+                "format": "date-time"
+              },
+              "channelCreatedAt": {
+                "type": "string",
+                "maxLength": 64,
+                "format": "date-time"
+              },
+              "generation": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "v",
+              "documentId",
+              "physicalOpenedAt",
+              "channelCreatedAt",
+              "generation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "documentId",
+          "eventId",
+          "incarnation"
+        ],
+        "additionalProperties": false
       },
       "CancelHeldActionResponse": {
         "type": "object",
@@ -24164,7 +24330,7 @@
           "Files"
         ],
         "summary": "Save an existing file within the working directory",
-        "description": "Confined to cwd. Cooperating ordinary and checkbox writes share the installation file gate. A stale content baseline returns 409 with current content. A replaced physical identity returns 412 FILE_IDENTITY_CHANGED; reload before saving again. This does not create files or produce a document event receipt.",
+        "description": "Confined to cwd. Cooperating ordinary and checkbox writes share the installation file gate. A stale content baseline returns 409 with current content. A replaced physical identity returns 412 FILE_IDENTITY_CHANGED; reload before saving again. This does not create files or produce a document event receipt without optional documentSave metadata. That lane is operator-only and chat-document-only, validates the server-projected incarnation, and returns an original host saved receipt without route-delivery claims. Identical retries never repeat the file effect. A duplicate acknowledges the original operation: its hash is historical, not proof against later writes. A no-op without a prior committed save has no saved receipt.",
         "requestBody": {
           "required": true,
           "content": {
@@ -24177,34 +24343,11 @@
         },
         "responses": {
           "200": {
-            "description": "Content saved or already identical",
+            "description": "Content saved or already identical; a verified original document operation may include its durable receipt",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "hash": {
-                      "type": "string"
-                    },
-                    "effect": {
-                      "type": "string",
-                      "enum": [
-                        "no_op",
-                        "changed"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "hash",
-                    "effect"
-                  ]
+                  "$ref": "#/components/schemas/WriteFileResponse"
                 }
               }
             }
@@ -24318,7 +24461,9 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "FILE_IDENTITY_CHANGED"
+                        "FILE_IDENTITY_CHANGED",
+                        "DOC_SAVE_ID_CONFLICT",
+                        "DOC_SAVE_FAILED"
                       ]
                     }
                   },
@@ -24332,6 +24477,27 @@
           },
           "500": {
             "description": "Save unavailable; includes unresolved checkbox admission evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The original save remains uncertain; no effect is replayed and no receipt is invented",
             "content": {
               "application/json": {
                 "schema": {
@@ -79474,7 +79640,7 @@
           "Sessions"
         ],
         "summary": "Take a document off this session’s canvas",
-        "description": "The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.",
+        "description": "When no original file save is unresolved, the row is deleted and every window is told to drop it. An unresolved save refuses closure so the original document identity remains available for settlement. Restoring an optimistically closed tab does not restore a lost local draft or pending request.",
         "parameters": [
           {
             "schema": {
@@ -79535,6 +79701,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Original save needs settlement; document remains open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "DOC_SAVE_RECOVERY_REQUIRED"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }

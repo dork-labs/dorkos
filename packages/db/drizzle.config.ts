@@ -40,6 +40,7 @@ export default defineConfig({
     './src/schema/connectors/connector-local-state.ts',
     './src/schema/rooms.ts',
     './src/schema/canvas/channel.ts',
+    './src/schema/canvas/file-save-intents.ts',
     './src/schema/room-coordination.ts',
     './src/schema/read-cursors.ts',
     './src/schema/bridges.ts',

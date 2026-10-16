@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import {
+  FileDocumentSaveRequestSchema,
+  FileDocumentSaveReceiptSchema,
+} from '@dorkos/shared/schemas';
 import { RoomRepoSidecarSchema } from '@dorkos/shared/room-repo';
 import { generateOpenAPISpec, LocalRoomRepoSchema } from '../openapi-registry.js';
 
@@ -270,4 +274,87 @@ it('documents the admitted computer routes without exposing private endpoints', 
   expect(document).toContain('additionalProperties');
   expect(document).not.toContain('opencodePassword');
   expect(document).not.toContain('desktopUrl');
+});
+
+it('exports usable file-save UUID and hash constraints through the actual PUT API schema', () => {
+  const spec = generateOpenAPISpec();
+  type ExportedSchema = {
+    $ref?: string;
+    properties?: Record<string, ExportedSchema>;
+    pattern?: string;
+  };
+  type JsonBody = { content: { 'application/json': { schema: ExportedSchema } } };
+  const schemas = spec.components?.schemas as Record<string, ExportedSchema>;
+  const resolve = (raw: ExportedSchema | undefined): ExportedSchema => {
+    let value = raw;
+    for (let count = 0; count < 8; count++) {
+      if (!value) throw new Error('Missing actual exported file-save schema');
+      if (!value.$ref) return value;
+      if (!value.$ref.startsWith('#/components/schemas/'))
+        throw new Error('Unexpected schema reference');
+      value = schemas[value.$ref.slice('#/components/schemas/'.length)];
+    }
+    throw new Error('Unexpected cyclic schema reference');
+  };
+  const at = (raw: ExportedSchema, ...fields: string[]): ExportedSchema => {
+    let value = raw;
+    for (const field of fields) value = resolve(resolve(value).properties?.[field]);
+    return resolve(value);
+  };
+  const operation = spec.paths?.['/api/files/content']?.put;
+  const request = (operation?.requestBody as JsonBody).content['application/json'].schema;
+  const response = (operation?.responses?.['200'] as JsonBody).content['application/json'].schema;
+  const requestMetadata = at(request, 'documentSave');
+  const receipt = at(response, 'documentReceipt');
+  const lowerUuid = 'abcdef01-abcd-abcd-abcd-abcdef012345';
+  const upperUuid = lowerUuid.toUpperCase();
+  const lowerHash = '0123456789abcdef'.repeat(4);
+  const birth = {
+    v: 1,
+    documentId: 'document',
+    physicalOpenedAt: '2026-10-15T00:00:00Z',
+    channelCreatedAt: '2026-10-15T00:00:00Z',
+    generation: lowerHash,
+  };
+  const targets = [
+    { lane: 'request', field: 'eventId', schema: at(requestMetadata, 'eventId') },
+    { lane: 'receipt', field: 'eventId', schema: at(receipt, 'eventId') },
+    {
+      lane: 'request',
+      field: 'generation',
+      schema: at(requestMetadata, 'incarnation', 'generation'),
+    },
+    { lane: 'receipt', field: 'generation', schema: at(receipt, 'incarnation', 'generation') },
+    { lane: 'receipt', field: 'fileHash', schema: at(receipt, 'fileHash') },
+  ];
+  for (const target of targets) {
+    if (typeof target.schema.pattern !== 'string') throw new Error('Exported constraint missing');
+    const pattern = new RegExp(target.schema.pattern);
+    const accepted =
+      target.field === 'eventId' ? [lowerUuid, upperUuid] : [lowerHash, 'a'.repeat(64)];
+    const refused =
+      target.field === 'eventId'
+        ? ['not-a-uuid', lowerUuid + '/iu', lowerUuid.slice(1)]
+        : ['g'.repeat(64), 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), lowerHash + '/u'];
+    const runtime =
+      target.lane === 'request' ? FileDocumentSaveRequestSchema : FileDocumentSaveReceiptSchema;
+    for (const [values, expected] of [
+      [accepted, true],
+      [refused, false],
+    ] as const) {
+      for (const value of values) {
+        const original = { documentId: 'document', eventId: lowerUuid, incarnation: birth };
+        const body =
+          target.lane === 'request'
+            ? original
+            : { ...original, docSeq: 1, fileHash: lowerHash, status: 'accepted' };
+        const input =
+          target.field === 'generation'
+            ? { ...body, incarnation: { ...birth, generation: value } }
+            : { ...body, [target.field]: value };
+        expect(runtime.safeParse(input).success).toBe(expected);
+        expect(pattern.test(value)).toBe(expected);
+      }
+    }
+  }
 });

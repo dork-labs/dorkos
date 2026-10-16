@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, Pencil, RotateCw } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types';
@@ -6,6 +6,10 @@ import { cn } from '@/layers/shared/lib';
 import { useAppStore, useResolvedTheme, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
+import { useCanvasDocumentClosePreparation } from '../model/file-save/use-document-close';
+import { useDocChannel } from '../model/use-doc-channel';
+import type { FileSaveBinding } from '../model/file-save/receipt-operation';
+import { sameCanvasDocIncarnation } from '@dorkos/shared/canvas-doc-frame-wire';
 
 // Lazy: the CodeMirror chunk (editor core + on-demand language grammar) and the
 // Blintz chunk load only when a file document first renders — never for the main
@@ -67,6 +71,8 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
       return 'Saved';
     case 'error':
       return 'Couldn’t save';
+    case 'uncertain':
+      return 'Save not confirmed';
     default:
       return null;
   }
@@ -88,6 +94,8 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
     (s) => s.openDocuments.find((d) => d.id === documentId)?.editing ?? false
   );
   const resolvedTheme = useResolvedTheme();
+  const sessionId = useAppStore((s) => s.canvasSessionId);
+  const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
 
   const { data, error, isLoading } = useQuery({
     queryKey: fileContentQueryKey(cwd as string, content.sourcePath),
@@ -133,8 +141,9 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   // outside cannot leave the key stuck on a hash no editor is showing.
   const mountHash = (editing ? editSession?.pinnedHash : null) ?? data.hash;
 
+  const Editor = sessionId && !roomId ? SessionFileEditor : FileEditor;
   return (
-    <FileEditor
+    <Editor
       key={`${content.sourcePath}:${mountHash}`}
       content={content}
       documentId={documentId}
@@ -148,7 +157,21 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   );
 }
 
+/** Observe the real channel only for the operator's session file-editor lane. */
+function SessionFileEditor(props: FileEditorProps) {
+  const { fileSaveBinding, fileSaveObservation } = useDocChannel(props.documentId);
+  return (
+    <FileEditor
+      {...props}
+      observedBinding={fileSaveBinding}
+      fileSaveObservation={fileSaveObservation}
+    />
+  );
+}
+
 interface FileEditorProps {
+  fileSaveObservation?: 'pending' | 'ready' | 'unavailable';
+  observedBinding?: FileSaveBinding;
   content: Extract<UiCanvasContent, { type: 'file' }>;
   documentId: string;
   cwd: string;
@@ -171,18 +194,26 @@ function FileEditor({
   isEditing,
   onEditingChange,
   setDocumentEditing,
+  observedBinding,
+  fileSaveObservation = 'unavailable',
 }: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState(loaded);
+  const [documentSaveBinding, setDocumentSaveBinding] = useState<FileSaveBinding>();
+  const observedBindingRef = useRef(observedBinding);
+  useLayoutEffect(() => {
+    observedBindingRef.current = observedBinding;
+  }, [observedBinding]);
 
   const fileSave = useCanvasFileSave({
     documentId,
     sourcePath: content.sourcePath,
     cwd,
     loadedContent: loaded,
+    documentSaveBinding,
   });
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,12 +222,32 @@ function FileEditor({
   const finishAttemptRef = useRef(0);
   const saveRef = useRef(fileSave.save);
   const prepareFinalRef = useRef(fileSave.prepareFinalSave);
+  const waitForCloseDrainRef = useRef(fileSave.waitForCloseDrain);
   const finalSaveRef = useRef<ReturnType<typeof fileSave.prepareFinalSave>>(null);
   const onEditingChangeRef = useRef(onEditingChange);
+  const closeOwnerRef = useCanvasDocumentClosePreparation({
+    documentId,
+    sourcePath: content.sourcePath,
+    binding: documentSaveBinding,
+    save: fileSave.save,
+    draftRef,
+    revisionRef: editRevisionRef,
+    finishAttemptRef,
+    timerRef,
+    finalSaveRef,
+    invalidateConfirmedFile: () => {
+      void queryClient
+        .invalidateQueries({
+          queryKey: fileContentQueryKey(cwd, content.sourcePath),
+        })
+        .catch(() => undefined);
+    },
+  });
   useEffect(() => {
     draftRef.current = draft;
     saveRef.current = fileSave.save;
     prepareFinalRef.current = fileSave.prepareFinalSave;
+    waitForCloseDrainRef.current = fileSave.waitForCloseDrain;
     onEditingChangeRef.current = onEditingChange;
   });
 
@@ -214,6 +265,29 @@ function FileEditor({
   }, []);
 
   const enterEdit = () => {
+    if (
+      fileSaveObservation === 'pending' ||
+      (fileSaveObservation === 'ready' && !observedBindingRef.current?.current())
+    )
+      return;
+    // Capture once per edit session. Metadata arriving later cannot retire a draft.
+    const observed = observedBindingRef.current;
+    const incarnation = observed && Object.freeze({ ...observed.incarnation });
+    setDocumentSaveBinding(
+      observed?.current() && incarnation
+        ? {
+            incarnation,
+            current: () => {
+              const latest = observedBindingRef.current;
+              return (
+                !!latest &&
+                sameCanvasDocIncarnation(incarnation, latest.incarnation) &&
+                latest.current()
+              );
+            },
+          }
+        : undefined
+    );
     editRevisionRef.current += 1;
     draftRef.current = loaded;
     setDraft(loaded);
@@ -286,12 +360,17 @@ function FileEditor({
   // clears THIS document's flag even though the active document may already have
   // changed — otherwise the doc would stay locked against agent updates forever.
   useEffect(() => {
+    const closeOwner = closeOwnerRef.current;
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      void finalSaveRef.current?.flush();
+      const drain = finalSaveRef.current?.flush();
+      const content = draftRef.current;
+      closeOwner?.settleRetirement(
+        Promise.resolve(drain).then(() => waitForCloseDrainRef.current(content))
+      );
       finalSaveRef.current = null;
       setDocumentEditing(documentId, false);
       // Unpin the parent's mount key too — without this, an unmount that isn't
@@ -299,9 +378,10 @@ function FileEditor({
       // the parent editing=true and pinned to a hash no editor is showing.
       onEditingChangeRef.current(false);
     };
-    // Both deps are stable for a mounted editor (documentId is fixed per canvas
-    // document; the setter is a stable zustand action), so this runs on unmount.
-  }, [documentId, setDocumentEditing]);
+    // These dependencies are stable: documentId is fixed per document, the
+    // setter is a stable action, and closeOwnerRef is the useRef object returned
+    // by useCanvasDocumentClosePreparation. This cleanup still runs on unmount.
+  }, [documentId, setDocumentEditing, closeOwnerRef]);
 
   const handleReload = () => {
     const adopted = fileSave.adoptDisk();
@@ -311,7 +391,14 @@ function FileEditor({
     void fileSave.overwrite(draftRef.current);
   };
 
-  const statusLabel = saveStatusLabel(fileSave.status);
+  const statusLabel =
+    fileSave.status === 'saved'
+      ? fileSave.confirmedContent !== draft
+        ? 'Unsaved changes'
+        : fileSave.documentReceipt
+          ? 'Save recorded'
+          : 'Saved to file'
+      : saveStatusLabel(fileSave.status);
   const value = isEditing ? draft : loaded;
 
   return (
@@ -329,6 +416,9 @@ function FileEditor({
           >
             {statusLabel}
           </span>
+        )}
+        {!isEditing && fileSaveObservation === 'pending' && (
+          <span role="status">Checking document…</span>
         )}
         {!isEditing && (
           <Button
@@ -350,12 +440,27 @@ function FileEditor({
             className="text-muted-foreground hover:text-foreground mt-2"
             onClick={isEditing ? () => void exitEdit() : enterEdit}
             aria-label={isEditing ? 'Finish editing' : 'Edit file'}
+            disabled={!isEditing && fileSaveObservation === 'pending'}
+            data-document-save-observation={fileSaveObservation}
           >
             {isEditing ? <Check className="size-4" /> : <Pencil className="size-4" />}
           </Button>
         )}
       </div>
 
+      {fileSave.status === 'uncertain' && (
+        <div role="status" className="mx-2 mt-2 flex items-center gap-2 text-sm">
+          <span>Save not confirmed. Retry the original save before saving another draft.</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void fileSave.retryUnconfirmed()}
+          >
+            Retry original save
+          </Button>
+        </div>
+      )}
       {fileSave.status === 'conflict' && (
         <div className="bg-destructive/10 text-destructive mx-2 mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm">
           <span className="flex-1">This file changed on disk since you opened it.</span>

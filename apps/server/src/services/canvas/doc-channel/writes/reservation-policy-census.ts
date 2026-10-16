@@ -1,3 +1,4 @@
+import { requireFileSaveUuidVacant } from './file-save-intents.js';
 import { readPreparedIntentPage } from '../readers/prepared-readers.js';
 /** Complete original-policy accounting; a held reservation never acquires new authority. */
 import { types as utilTypes } from 'node:util';
@@ -296,6 +297,7 @@ export function requireDocEventUuidVacant(
   eventId: string
 ): void {
   tx.get(sql`SELECT 1`);
+  requireFileSaveUuidVacant(tx, documentId, eventId);
   const parsed = CanvasChannelEventIdSchema.safeParse(eventId);
   const census = scanCheckboxReservationPolicies(tx, {
     documentId,

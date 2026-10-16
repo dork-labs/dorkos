@@ -40,6 +40,7 @@
  * @module shared/model/app-store-canvas
  */
 import type { StateCreator } from 'zustand';
+import { closeCanvasDocumentWithSave } from './canvas-document-close';
 import { toast } from 'sonner';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import type {
@@ -239,7 +240,7 @@ export interface CanvasSlice {
    */
   setDocumentContent: (id: string, content: UiCanvasContent) => void;
   /** Close a document by id, activating the most-recently-active one left in ITS view. */
-  closeCanvasDocument: (id: string) => void;
+  closeCanvasDocument: (id: string) => void | Promise<void>;
   /**
    * Record that a person in THIS window put one document in front.
    *
@@ -1032,38 +1033,18 @@ export const createCanvasSlice: StateCreator<
       );
     },
 
-    closeCanvasDocument: (id) => {
-      const before = get();
-      const closed = before.openDocuments.find((d) => d.id === id);
-      if (!closed) return;
-      stopHeartbeat(id);
-      // Before anything else: whatever was waiting to be written for this row is
-      // a promise about a tab that is going away (review round 1, finding 1).
-      cancelHeldWrites(id);
-      writesAwaitingEcho.delete(id);
-      set((s) => {
-        const documents = prunePendingCandidates(s.openDocuments.filter((d) => d.id !== id));
-        // Closing the active document hands that view its most-recently-active
-        // survivor; the other view is untouched.
-        return {
-          openDocuments: documents,
-          ...reconcileActiveIds(documents, s),
-          browserHistories: pruneBrowserHistories(s.browserHistories, documents),
-        };
-      });
-      if (isPendingId(id)) return;
-      writeThrough(
-        before.canvasSessionId,
-        id,
-        (transport, sessionId) => transport.closeSessionCanvasDocument(sessionId, id),
-        () =>
-          set((s) => {
-            if (s.openDocuments.some((d) => d.id === id)) return {};
-            const documents = [...s.openDocuments, closed];
-            return { openDocuments: documents, ...reconcileActiveIds(documents, s) };
-          })
-      );
-    },
+    closeCanvasDocument: (id) =>
+      closeCanvasDocumentWithSave(id, {
+        get,
+        set,
+        getTransport: () => canvasTransport,
+        stopHeartbeat,
+        cancelHeldWrites,
+        writesAwaitingEcho,
+        reconcileActiveIds,
+        pruneBrowserHistories,
+        writeThrough,
+      }),
 
     noteDocumentShownHere: (id) =>
       set((s) => {
