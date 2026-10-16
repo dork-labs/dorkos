@@ -27,9 +27,9 @@ Open **Settings** (gear icon), then the **Login & security** tab, under **This c
 </Step>
 
 <Step>
-### Turn on "Require login"
+### Turn on "Ask for a password on this computer too"
 
-Toggle **Require login**. DorkOS walks you through creating the **owner account**: an email and a password.
+Toggle **Ask for a password on this computer too**. DorkOS walks you through creating the **owner account**: an email and a password.
 
 The email is a **local identifier only**: it is never verified and no email is ever sent.
 
@@ -38,32 +38,32 @@ The email is a **local identifier only**: it is never verified and no email is e
 <Step>
 ### You're signed in
 
-Once the owner account exists, login is required. Your sign-in lasts 7 days and renews each time you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
+Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 7 days and renews each time you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
 
-Turning **Require login** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and the instance goes back to the no-login default.
+Turning **Ask for a password on this computer too** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and this computer opens DorkOS without a password again. Other devices still sign in as the owner.
 
 </Step>
 </Steps>
 
 ## Exposing DorkOS beyond localhost
 
-Want to reach DorkOS from your phone or another computer? Turn on login first. It is the only way in once you leave localhost, whether you get there through a tunnel or by binding to another network interface (any address other than your own machine, like your Wi-Fi IP).
+Want to reach DorkOS from your phone or another computer? Create the owner account first. Every other device signs in as it, whatever this computer asks, whether you get there through a tunnel or by binding to another network interface (any address other than your own machine, like your Wi-Fi IP).
 
 <Callout type="warn">
   **Breaking change:** the 6-digit tunnel passcode is gone. Exposing DorkOS requires an owner
   account. Existing passcode settings are removed automatically on upgrade.
 </Callout>
 
-- **Starting a tunnel** with login off routes you into owner-account creation first, with the copy _"Exposing DorkOS requires a login."_ After the owner exists and login is on, the tunnel starts.
-- **Binding to a non-loopback host** (setting `DORKOS_HOST` to anything other than `localhost` / `127.0.0.1` / `::1`) with login not configured **refuses to start** with an actionable error. Enable login first, then restart.
+- **Starting a tunnel** with no owner account routes you into creating one first, with the copy _"Exposing DorkOS requires a login."_ After the owner exists, the tunnel starts.
+- **Binding to a non-loopback host** (setting `DORKOS_HOST` to anything other than `localhost` / `127.0.0.1` / `::1`) with no owner account **refuses to start** with an actionable error. Create the owner account first, then restart.
 
 ### On your own Wi-Fi
 
 To open DorkOS on a phone or tablet in the same home or office, you don't need a tunnel. On a Mac, in **Settings → Remote access**, turn on **Let devices on my Wi-Fi in**. On other computers, set `DORKOS_HOST` instead (see above).
 
-- With login off, DorkOS walks you into creating the owner account first, the same way the tunnel does.
+- With no owner account yet, DorkOS walks you into creating one first, the same way the tunnel does. Every device on the Wi-Fi then signs in as the owner.
 - It takes effect right away, with no restart. Settings then shows this computer's address, like `http://studio.local:4242`, a QR code to scan, and its current IP address as a backup.
-- Turning it off closes the door at once. Turning login off turns it off too.
+- Turning it off closes the door at once.
 - The connection between the two devices is **not encrypted yet** (plain `http`). Someone else on the same Wi-Fi could read what passes between them, including your sign-in, and use it to get in. So use it on a network you trust, never on café or hotel Wi-Fi. Encrypted connections are planned.
 - Only devices on the same networks as your computer get in, including a VPN it is connected to. A connection from anywhere else is turned away.
 - If `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set, it decides where DorkOS listens, and the switch stays off.
@@ -75,9 +75,9 @@ Remote visitors reaching an exposed instance get the **sign-in screen**: static 
   **Docker operators, this is you.** The official Docker image bakes in
   `DORKOS_ALLOW_INSECURE_BIND=true`. That is what lets the container accept connections through
   Docker's port forwarding, and it skips the bind gate that would otherwise stop a login-off server
-  from listening beyond localhost. It does **not** turn on login. So if you expose the container to
-  anyone else, you are exactly who must [enable login
-  first](/docs/self-hosting/docker#with-a-reverse-proxy).
+  from listening beyond localhost. Until an owner account exists, anyone who reaches the port gets
+  in, for one more release. So if you expose the container to anyone else, you are exactly who must
+  [create the owner account first](/docs/self-hosting/docker#with-a-reverse-proxy).
 </Callout>
 
 <Callout type="info">
@@ -173,10 +173,10 @@ There is no "forgot password" email: the local edition sends no email, and a lap
 dorkos auth reset-password
 ```
 
-You can also create the owner and turn on login entirely from the CLI (useful before you ever open the UI, or when preparing a server to expose):
+You can also create the owner and turn on the setting entirely from the CLI (useful before you ever open the UI, or when preparing a server to expose):
 
 ```bash
-# Create the owner account and require login
+# Create the owner account and ask for a password on this computer too
 dorkos auth enable
 dorkos auth enable --email you@example.com --password '<secret>'
 ```

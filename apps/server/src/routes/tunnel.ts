@@ -104,12 +104,11 @@ router.post('/start', async (c) => {
   }
 
   // Exposure guard (task 1.3): never open a public tunnel without a real login.
-  // Allowed only when login is enabled AND an owner account exists. The
+  // Allowed only when an owner account exists: every request through the tunnel
+  // is another device, which always signs in as it (ADR 261015-125850). The
   // AUTH_REQUIRED_FOR_EXPOSURE code routes the client into owner-account creation.
   if (!canExpose()) {
-    logger.warn(
-      '[Tunnel] Blocked start — exposing DorkOS requires a login (login disabled or no owner account)'
-    );
+    logger.warn('[Tunnel] Blocked start — exposing DorkOS requires an owner account');
     return c.json(
       { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
       409

@@ -23,10 +23,12 @@ type EnableStep = { kind: 'create' } | { kind: 'sign-in'; email: string };
 
 /**
  * Settings › Login & security — the single entry point to local
- * login. Progressive disclosure: when login is off, only the "Require login"
- * toggle shows (no user, no sign-out, no API keys). Enabling it creates the
- * owner account when there is none, or asks the existing owner to sign in when
- * there is one, and flips `auth.enabled` only after that succeeds. An install
+ * login. Other devices always need a password (ADR 261015-125850); the one
+ * switch here is "Ask for a password on this computer too" (`auth.enabled`).
+ * Progressive disclosure: signed out, only the switch shows (no sign-out, no
+ * API keys). Turning it on creates the owner account when there is none, or
+ * asks the existing owner to sign in when there is one, and flips
+ * `auth.enabled` only after that succeeds. An install
  * with an owner used to get the create form, which can only fail there
  * (DOR-2964).
  *
@@ -73,28 +75,29 @@ export function SecurityPanel() {
         {/* No heading here: the Settings dialog draws the panel's own
             ("Login & security"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
-          Ask for a login to open DorkOS. Opening it from another device always does.
+          Other devices always need your password. This computer can ask for it too.
         </p>
       </div>
 
       <FieldCard>
         <FieldCardContent>
           <SettingRow
-            label="Require login"
+            label="Ask for a password on this computer too"
             description={
               authEnabled
-                ? 'DorkOS asks for your login before it opens.'
-                : 'No login. Only this computer can open DorkOS.'
+                ? 'This computer asks for your password before DorkOS opens.'
+                : 'This computer opens DorkOS without a password.'
             }
           >
             <Switch
               checked={authEnabled}
               onCheckedChange={handleToggle}
-              aria-label="Require login"
+              aria-label="Ask for a password on this computer too"
             />
           </SettingRow>
 
-          {authEnabled && (
+          {/* Signed in from any device, not only when this computer asks. */}
+          {currentUser && (
             <SettingRow label="Signed in" description={currentUser?.email ?? 'Owner account'}>
               <Button
                 variant="outline"
@@ -111,7 +114,7 @@ export function SecurityPanel() {
       </FieldCard>
 
       {/* Keys outlive the login flag, so this card must too (DOR-1885). Turning
-          "Require login" off deletes no key, ends no session and stops nothing
+          "Ask for a password on this computer too" off deletes no key, ends no session and stops nothing
           working — `/api/config` still reports `authSource: 'user-keys'` and
           `/mcp` still accepts every one of them. Gating the card on
           `authEnabled` therefore hid live credentials the owner could neither
@@ -131,8 +134,8 @@ export function SecurityPanel() {
           {step?.kind === 'sign-in' ? (
             <>
               <DialogHeader>
-                <DialogTitle>Turn on login</DialogTitle>
-                <DialogDescription>Login turns on once your password checks out.</DialogDescription>
+                <DialogTitle>Ask for a password here too</DialogTitle>
+                <DialogDescription>This turns on once your password checks out.</DialogDescription>
               </DialogHeader>
               <OwnerSignInScreen
                 ownerEmail={step.email}
@@ -144,12 +147,10 @@ export function SecurityPanel() {
             <>
               <DialogHeader>
                 <DialogTitle>Create an owner account</DialogTitle>
-                <DialogDescription>
-                  This becomes the login for DorkOS on this computer.
-                </DialogDescription>
+                <DialogDescription>This becomes your sign-in on every device.</DialogDescription>
               </DialogHeader>
               <OwnerSetupScreen
-                submitLabel="Create account & require login"
+                submitLabel="Create account & ask here too"
                 onCreated={enableLogin}
                 onOwnerExists={signInInstead}
                 onCancel={() => setStep(null)}
