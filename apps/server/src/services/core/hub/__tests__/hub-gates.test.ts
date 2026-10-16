@@ -77,7 +77,9 @@ beforeEach(async () => {
     admission: new MainRequestAdmission(),
     // Before the session gate, so the case needs no signed-in owner.
     beforeBodyParsing: (early) => {
-      early.get('/api/health', (c) => c.json({ ok: true }));
+      early.get('/api/health', (c) =>
+        c.json({ ok: true, proofSeen: c.req.header(PROOF.header) ?? null })
+      );
       early.get('/api/open', (c) => c.json({ proofSeen: c.req.header(PROOF.header) ?? null }));
       early.get('/api/held', () => {
         entered();
@@ -93,7 +95,11 @@ beforeEach(async () => {
         name: 'stream',
         pattern: /^\/api\/stream$/,
         credential: 'bearer-of-id',
-        authorize: () => ({ ok: true, open: (ws) => ws.send('open') }),
+        // Says whether the proof reached it, which it never should.
+        authorize: ({ headers }) => ({
+          ok: true,
+          open: (ws) => ws.send(headers[PROOF.header] === undefined ? 'open' : 'proof leaked'),
+        }),
       },
     ],
     new MainRequestAdmission()
@@ -213,12 +219,62 @@ describe('a hub that serves', () => {
     });
   });
 
-  it('takes the address without regard to case', async () => {
-    const headers: [string, string][] = [
-      ['host', HOST.toUpperCase()],
+  it('takes the address without regard to case, and with an explicit :443', async () => {
+    for (const host of [HOST.toUpperCase(), `${HOST}:443`]) {
+      const headers: [string, string][] = [
+        ['host', host],
+        [PROOF.header, PROOF.secret],
+      ];
+      expect(await status('/api/open', headers), host).toBe(200);
+    }
+  });
+
+  it('removes the proof from the health check too', async () => {
+    expect(await get('/api/health')).toEqual({ status: 200, body: { ok: true, proofSeen: null } });
+  });
+
+  it('accepts a new proof and address before confirming, and both until it confirms', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const next = { header: PROOF.header, secret: 'c'.repeat(40) };
+    const moved = {
+      ...servingWith(next, 'asg_2').assignment,
+      address: 'https://hub-2.example.invalid',
+    };
+    serving.offerHubAssignment(moved);
+    const atNew: [string, string][] = [
+      ['host', 'hub-2.example.invalid'],
+      [next.header, next.secret],
+    ];
+    expect(await status('/api/open', atNew)).toBe(200);
+    // The confirmation failed or its answer was lost: the old keys still work,
+    // however long that lasts.
+    vi.advanceTimersByTime(10 * REMOTE_EDGE_PROOF_OVERLAP_SECONDS * 1000);
+    expect(await status('/api/open')).toBe(200);
+    // Confirmed: the overlap starts now, and the old address goes at once.
+    serving.setHubServingState({ state: 'serving', assignment: moved });
+    expect(await status('/api/open')).toBe(403);
+    const oldProofNewHost: [string, string][] = [
+      ['host', 'hub-2.example.invalid'],
       [PROOF.header, PROOF.secret],
     ];
-    expect(await status('/api/open', headers)).toBe(200);
+    expect(await status('/api/open', oldProofNewHost)).toBe(200);
+    vi.advanceTimersByTime(REMOTE_EDGE_PROOF_OVERLAP_SECONDS * 1000);
+    expect(await status('/api/open', oldProofNewHost)).toBe(403);
+    expect(await status('/api/open', atNew)).toBe(200);
+  });
+
+  it('keeps the overlap deadline when the same assignment is read again', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const next = { header: PROOF.header, secret: 'c'.repeat(40) };
+    const replaced = servingWith(next, 'asg_2');
+    serving.offerHubAssignment(replaced.assignment);
+    serving.setHubServingState(replaced);
+    vi.advanceTimersByTime(REMOTE_EDGE_PROOF_OVERLAP_SECONDS * 500);
+    // The next beat reads and confirms the same assignment again.
+    serving.offerHubAssignment(replaced.assignment);
+    serving.setHubServingState(replaced);
+    vi.advanceTimersByTime(REMOTE_EDGE_PROOF_OVERLAP_SECONDS * 500);
+    expect(await status('/api/open')).toBe(403);
   });
 
   it('accepts the replaced proof for the overlap, then only the new one', async () => {
