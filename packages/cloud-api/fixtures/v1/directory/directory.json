@@ -38,10 +38,11 @@
     },
     {
       "agentId": "agent_0002",
-      "instanceId": "inst_0101",
+      "instanceId": "inst_0100",
       "name": "Writer",
       "availability": "available",
-      "lastSeenAt": "2026-11-03T11:59:00Z"
+      "lastSeenAt": "2026-11-03T11:59:00Z",
+      "worksOn": "cmp_0001"
     }
   ],
   "spaces": [
@@ -52,7 +53,10 @@
       "sources": ["service", "computer"],
       "joinedBy": ["inst_0001"],
       "firstLearnedAt": "2026-10-20T09:00:00Z",
-      "lastConfirmedAt": "2026-11-03T08:00:00Z"
+      "lastConfirmedAt": "2026-11-03T08:00:00Z",
+      "hostSpaceId": "hsp_0001",
+      "role": "admin",
+      "state": "active"
     },
     {
       "spaceId": "dsp_0002",
@@ -61,14 +65,19 @@
       "sources": ["sign-in"],
       "joinedBy": [],
       "firstLearnedAt": "2026-10-28T15:00:00Z",
-      "lastConfirmedAt": "2026-10-28T15:00:00Z"
+      "lastConfirmedAt": "2026-10-28T15:00:00Z",
+      "role": null,
+      "state": null
     }
   ],
   "settings": {
     "timeZone": "America/Chicago",
-    "quietHours": { "start": "22:00", "end": "07:00" },
+    "quietHours": {
+      "start": "22:00",
+      "end": "07:00"
+    },
     "learnSpacesFromSignIn": true,
     "updatedAt": "2026-10-20T09:00:00Z"
   },
-  "reportEverySeconds": 120
+  "reportEverySeconds": 60
 }

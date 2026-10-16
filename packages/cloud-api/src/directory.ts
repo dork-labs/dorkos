@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
-import {
-  HttpsUrlSchema,
-  IdSchema,
-  ServerUrlSchema,
-  TimestampSchema,
-  tolerantEnum,
-} from './primitives.js';
+import { HttpsUrlSchema, IdSchema, TimestampSchema, tolerantEnum } from './primitives.js';
 
 /**
  * The account directory: what one account has, across every DorkOS it uses.
@@ -20,10 +14,19 @@ import {
  *
  * Two rules hold for everything here:
  *
- * - **It is the account's own, and only the account's.** A person's session
- *   reads and writes their own directory. An instance key reads the directory
- *   of the account that linked the instance, and writes only that instance's
- *   own report. Nobody else ever sees it.
+ * - **It is the account's own, and only the account's.** Nobody else ever
+ *   sees it. Who may do what:
+ *
+ *   | Caller                                    | Read | Own report | Settings | Forget a space |
+ *   | ----------------------------------------- | ---- | ---------- | -------- | -------------- |
+ *   | the person's session                      | yes  | no         | yes      | yes            |
+ *   | the person's hub, or a computer of theirs | yes  | yes        | yes      | yes            |
+ *   | a cloud agent computer                    | no   | yes        | no       | no             |
+ *
+ *   An instance key acts for the person who linked the instance. An agent
+ *   computer runs agent code and packages, so it only reports its own agents.
+ *   An instance linked to an organization, and any refused call, gets
+ *   `not_found`.
  * - **It remembers where things are, never how to get in.** No entry carries a
  *   transcript, a message, a sign-in or a credential for anything. A space
  *   entry is a name and an address; a computer entry is a name and whether it
@@ -48,10 +51,17 @@ export type DirectoryInstanceRole = z.infer<typeof DirectoryInstanceRoleSchema>;
 /**
  * Whether something reported recently enough to read as there.
  *
- * `available` reported within the service's window, `offline` reported before
- * it, and `unknown` never reported (an app from before reports existed), which
- * is never shown as offline. The service derives it from `lastSeenAt`; a client
- * renders it rather than recomputing it.
+ * For a person's own computer, `available` reported within the service's
+ * window, `offline` reported before it, and `unknown` never reported (an app
+ * from before reports existed), which is never shown as offline.
+ *
+ * For a hub or a cloud agent computer, the service reads it from the machine's
+ * state, not from reports: asleep but able to wake is `available`, and
+ * `offline` means stopped for credits, a hold or a suspension, or failed. An
+ * idle cloud agent is never shown as away.
+ *
+ * The service derives it either way; a client renders it rather than
+ * recomputing it.
  */
 export const DirectoryAvailabilitySchema = z
   .enum(['available', 'offline', 'unknown'])
@@ -89,6 +99,22 @@ export const DirectorySpaceSourceSchema = z
 /** How the account learned of a space. */
 export type DirectorySpaceSource = z.infer<typeof DirectorySpaceSourceSchema>;
 
+/** What the person is in a space. */
+export const DirectorySpaceRoleSchema = z
+  .enum(['owner', 'admin', 'member'])
+  .describe('What the person is in a space.');
+
+/** What the person is in a space. */
+export type DirectorySpaceRole = z.infer<typeof DirectorySpaceRoleSchema>;
+
+/** Whether a space is open or archived. */
+export const DirectorySpaceStateSchema = z
+  .enum(['active', 'archived'])
+  .describe('Whether a space is open or archived.');
+
+/** Whether a space is open or archived. */
+export type DirectorySpaceState = z.infer<typeof DirectorySpaceStateSchema>;
+
 /** The longest name a report may carry for an agent, a computer or a space. */
 export const DIRECTORY_NAME_MAX_LENGTH = 200 as const;
 
@@ -106,7 +132,14 @@ export const DirectoryAgentSchema = z
     agentId: IdSchema.describe(
       'The agent`s id on the computer that runs it. Unique within that computer, not across the account.'
     ),
-    instanceId: IdSchema.describe('The computer that runs it.'),
+    instanceId: IdSchema.describe(
+      'Where the agent lives: the person`s computer that runs it, or for a cloud agent, the hub.'
+    ),
+    worksOn: IdSchema.nullable()
+      .optional()
+      .describe(
+        'For a cloud agent, the cloud agent computer it works on (`CloudComputerSchema.id`). Null or absent for an agent on a person`s own computer.'
+      ),
     name: z.string().describe('The agent`s name, as its computer last reported it.'),
     availability: tolerantEnum(DirectoryAvailabilitySchema).describe(
       'Whether its computer reported it recently. A value this release does not know reads as unrecognised.'
@@ -148,10 +181,23 @@ export type DirectoryInstance = z.infer<typeof DirectoryInstanceSchema>;
 export const DirectorySpaceSchema = z
   .object({
     spaceId: IdSchema.describe('The directory`s own id for this entry. Opaque.'),
-    name: z.string().describe('The space`s name, as it was last learned.'),
-    address: ServerUrlSchema.describe(
-      'Where the space is. Open it to join from this computer; joining still asks for the space`s own approval.'
+    name: z
+      .string()
+      .describe(
+        'The space`s name. A name from this service`s own servers wins over one from a sign-in, and a sign-in`s over one a computer reported.'
+      ),
+    address: HttpsUrlSchema.describe(
+      'Where the space is, normalised: lower-case scheme and host, no default port, no trailing slash, no query or fragment. One entry per normalised address. Open it to join from this computer; joining still asks for the space`s own approval.'
     ),
+    hostSpaceId: IdSchema.optional().describe(
+      'The id the hosting server gives this space, when this service hosts it. Stays the same when the name or address changes.'
+    ),
+    role: tolerantEnum(DirectorySpaceRoleSchema)
+      .nullable()
+      .describe('What the person is in it, or null when only a computer reported it.'),
+    state: tolerantEnum(DirectorySpaceStateSchema)
+      .nullable()
+      .describe('Whether it is open or archived, or null when only a computer reported it.'),
     sources: z
       .array(tolerantEnum(DirectorySpaceSourceSchema))
       .min(1)
@@ -217,8 +263,9 @@ export type DirectorySettings = z.infer<typeof DirectorySettingsSchema>;
 /**
  * `GET /v1/directory` — the account directory.
  *
- * A person's session, or an instance key (for the account that linked the
- * instance). An account with nothing in it gets empty lists, never a 404.
+ * A person's session, or an instance key (for the person who linked the
+ * instance; one linked to an organization gets `not_found`). An account with
+ * nothing in it gets empty lists, never a 404.
  */
 export const DirectorySchema = z
   .object({
@@ -243,14 +290,26 @@ export type Directory = z.infer<typeof DirectorySchema>;
  *
  * The whole picture each time: the agents it runs, the spaces it joined and
  * how far it lets the web reach it. It never carries a link to itself: the
- * service fills in `remoteAddress` from the address it issued. A report replaces the last one, so an
- * agent or a space it stops naming leaves the directory. Send it every
- * `reportEverySeconds` while on; there is no "I am going off" call, because a
- * computer that loses power cannot make one. The agents' part is the same as
- * the availability report a computer sends its spaces, plus each agent's name.
+ * service fills in `remoteAddress` from the address it issued.
+ *
+ * - **A report replaces the last one, part by part.** A part that is present
+ *   replaces that part: an agent or a space it stops naming leaves the
+ *   directory, and `spaces: []` means none. A part that is absent stays as it
+ *   was, so a build from before a part existed changes nothing there.
+ * - **Older reports lose.** `reportedAt` is when the instance made the report.
+ *   The service keeps the newest and drops one older than the last it kept, so
+ *   a retried report that arrives late never brings stale entries back.
+ * - Send it every `reportEverySeconds` while on. There is no "I am going off"
+ *   call, because a computer that loses power cannot make one.
+ *
+ * The agents' part is the same as the availability report a computer sends its
+ * spaces, plus each agent's name.
  */
 export const DirectoryReportRequestSchema = z
   .object({
+    reportedAt: TimestampSchema.describe(
+      'When this instance made the report. The service drops one older than the last it kept.'
+    ),
     agents: z
       .array(z.object({ agentId: IdSchema, name }))
       .max(DIRECTORY_REPORT_MAX_AGENTS)
@@ -258,14 +317,17 @@ export const DirectoryReportRequestSchema = z
         message: 'Name each agent once.',
       }),
     spaces: z
-      .array(z.object({ address: ServerUrlSchema, name }))
+      .array(z.object({ address: HttpsUrlSchema, name }))
       .max(DIRECTORY_REPORT_MAX_SPACES)
+      .refine((spaces) => new Set(spaces.map((space) => space.address)).size === spaces.length, {
+        message: 'Name each space once.',
+      })
       .optional()
       .describe(
         'The spaces this instance joined: name and address only, never its sign-in for them.'
       ),
     reach: DirectoryReachLevelSchema.optional().describe(
-      'How far its owner lets the web reach it. A hub and an agent computer leave it out.'
+      'How far its owner lets the web reach it. A hub and an agent computer leave it out. Absent keeps the last value.'
     ),
   })
   .describe(
@@ -282,6 +344,9 @@ export const DirectoryReportResponseSchema = z
     reportEverySeconds: z.number().int().positive(),
   })
   .describe('The service recorded the report. Send the next one after `reportEverySeconds`.');
+
+/** What the service did with a report. */
+export type DirectoryReportResponse = z.infer<typeof DirectoryReportResponseSchema>;
 
 /**
  * `PATCH /v1/directory/settings` — change the account's quiet hours, time zone
@@ -315,9 +380,17 @@ export type DirectorySettingsPatch = z.infer<typeof DirectorySettingsPatchSchema
  * owner turned sync off, so its report leaves the directory without unlinking
  * it) and `DELETE /v1/directory/spaces/{spaceId}` (a person forgets a space).
  * Both answer even when there was nothing to remove.
+ *
+ * Forgetting a space sticks. The service keeps a quiet mark, so the next report
+ * or sync does not add it straight back; only something new brings it back: a
+ * fresh sign-in to it, or a computer joining it again. Forgetting never ends the
+ * membership itself.
  */
 export const DirectoryRemovedResponseSchema = z
   .object({
     removedAt: TimestampSchema,
   })
   .describe('When the entry left the directory. Answered even when there was nothing to remove.');
+
+/** When an entry left the directory. */
+export type DirectoryRemovedResponse = z.infer<typeof DirectoryRemovedResponseSchema>;

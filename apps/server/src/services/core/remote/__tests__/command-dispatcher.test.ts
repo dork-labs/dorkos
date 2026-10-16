@@ -136,6 +136,16 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
+  it('acknowledges hub_assignment_changed as a signal only: this build has no hub mode', async () => {
+    const changed: LeasedCommand = {
+      kind: 'hub_assignment_changed',
+      id: 'cmd_hub',
+      leaseToken: 'lt_h',
+    };
+    expect(await w.dispatcher.dispatch(changed, w.link)).toBe('ignored');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
   it('records failed and still acknowledges when the effect throws', async () => {
     w.tunnel.startManaged.mockRejectedValueOnce(new Error('boom'));
     expect(await w.dispatcher.dispatch(open, w.link)).toBe('failed');

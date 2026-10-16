@@ -8,5 +8,5 @@
     "learnSpacesFromSignIn": true,
     "updatedAt": null
   },
-  "reportEverySeconds": 120
+  "reportEverySeconds": 60
 }

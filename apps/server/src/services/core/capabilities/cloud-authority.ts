@@ -34,7 +34,8 @@
  * 2. **The verb is exactly `open | close | rotate | revoke`.** The other
  *    published kinds carry no authority: `inbox_pending` only signals the
  *    seat path, `viewer_open` only asks this computer to dial the hub it
- *    pinned, and `keepalive` is a heartbeat. A verb Cloud adds later is
+ *    pinned, `hub_assignment_changed` only asks a hub to re-read its
+ *    assignment, and `keepalive` is a heartbeat. A verb Cloud adds later is
  *    refused here until this list is changed on purpose, which a test forces.
  *    There is no `enrol`, no mode selection and no ingress configuration:
  *    those are a person's, on this computer, behind their own guards.
@@ -100,7 +101,7 @@ export interface CloudCommandContext extends Pick<CloudV1Context, 'isCurrent'> {
 export type CloudAuthorityRefusal =
   /** The command does not parse against the published schema. */
   | 'malformed-command'
-  /** A published kind that carries no authority (`inbox_pending`, `viewer_open`, `keepalive`). */
+  /** A published kind that carries no authority (`inbox_pending`, `viewer_open`, `hub_assignment_changed`, `keepalive`). */
   | 'not-authorizing'
   /** No lease token to settle it with. */
   | 'no-lease'

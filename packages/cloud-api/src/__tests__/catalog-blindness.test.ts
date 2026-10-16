@@ -199,6 +199,8 @@ const MECHANISM_ENUMS: Record<string, string> = {
   DirectoryAvailabilitySchema: 'whether something reported recently, derived from a timestamp',
   DirectoryReachLevelSchema: 'how far a person let the web reach a computer, set at that computer',
   DirectorySpaceSourceSchema: 'how the account learned of a space, not what it costs',
+  DirectorySpaceRoleSchema: 'what a person may do in a space, not what they bought',
+  DirectorySpaceStateSchema: 'whether a space is open or archived',
 };
 
 /**

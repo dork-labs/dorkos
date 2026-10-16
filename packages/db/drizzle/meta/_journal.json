@@ -1132,8 +1132,8 @@
     {
       "idx": 161,
       "version": "6",
-      "when": 1792161001078,
-      "tag": "20261016143001_remote_command_viewer_open",
+      "when": 1792161664730,
+      "tag": "20261016144104_remote_command_hub_kinds",
       "breakpoints": true
     }
   ]

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e3f7454f-f2b9-415d-93b2-58d62a5a8af2",
+  "id": "f9d599a0-5415-4293-822c-0abd4efdbf09",
   "prevId": "b906ee91-77b7-4d80-9bab-49315c5d6f0e",
   "tables": {
     "a2a_tasks": {
@@ -13871,7 +13871,7 @@
       "checkConstraints": {
         "remote_command_journal_verb": {
           "name": "remote_command_journal_verb",
-          "value": "\"remote_command_journal\".\"verb\" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open')"
+          "value": "\"remote_command_journal\".\"verb\" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open', 'hub_assignment_changed')"
         },
         "remote_command_journal_ack_state": {
           "name": "remote_command_journal_ack_state",

@@ -37,6 +37,22 @@ export const HubAssignmentStateSchema = z
 export type HubAssignmentState = z.infer<typeof HubAssignmentStateSchema>;
 
 /**
+ * An https origin and nothing more: no path, query, fragment or user part.
+ * `https://hub.example.invalid` passes; `https://hub.example.invalid/x` does
+ * not.
+ */
+export const HttpsOriginSchema = HttpsUrlSchema.refine(
+  (value) => {
+    try {
+      return new URL(value).origin === value;
+    } catch {
+      return false;
+    }
+  },
+  { message: 'must be an https origin with no path, query or fragment' }
+).describe('An https origin and nothing more: no path, query, fragment or user part.');
+
+/**
  * The sign-in client this service registered for one hub (the "Continue with
  * DorkOS" button on it).
  *
@@ -60,10 +76,14 @@ export type HubSignInClient = z.infer<typeof HubSignInClientSchema>;
 
 /**
  * `GET /v1/hubs/self/assignment` — who this hub belongs to, and the keys it
- * serves with. Hub instance API key only.
+ * serves with. Hub instance API key only; any other caller is `not_found`.
  *
  * A pooled hub reads `{ state: 'pooled' }` and keeps refusing every sign-in.
- * An assigned hub reads its owner and its keys:
+ * It reads again when a `hub_assignment_changed` command arrives (the service
+ * sends one at assignment), and otherwise every `pollAfterSeconds`. A hub that
+ * cannot read its assignment, or reads a state this release does not know,
+ * acts as pooled: it refuses every sign-in. An assigned hub reads its owner and
+ * its keys:
  *
  * - `ownerAccountId` and `issuer` are the only way the hub knows its owner. A
  *   sign-in is the owner when the issuer is exactly `issuer` and the subject is
@@ -79,23 +99,50 @@ export type HubSignInClient = z.infer<typeof HubSignInClientSchema>;
  * never sends one and never holds one.
  *
  * The keys are new for each assignment, so a hub that was pooled holds nothing
- * a person's traffic could use. `assignmentId` changes with each assignment;
- * the hub confirms the one it applied with
+ * a person's traffic could use. The hub confirms what it applied with
  * `POST /v1/hubs/self/assignment/confirm`, and the front door sends a person's
  * traffic only once it has.
+ *
+ * **The owner never changes.** An assigned hub is never reassigned. Once a hub
+ * has confirmed, `ownerAccountId` and `issuer` stay as they are; a later read
+ * may change only the address, the proof and the sign-in client, under a new
+ * `assignmentId`. A read naming a different owner or issuer is a fault: the
+ * hub refuses it and stops serving, and never serves the new owner from the
+ * old owner's data.
+ *
+ * **Replacing the proof overlaps.** When the service replaces the front-door
+ * proof it sends `hub_assignment_changed`, so an awake hub reads again at
+ * once; a hub that was asleep reads on waking. The front door keeps sending
+ * the old proof until the hub confirms the new `assignmentId`. The hub accepts
+ * the new proof once it has read it, and the old one until
+ * `REMOTE_EDGE_PROOF_OVERLAP_SECONDS` after it confirms. An ended assignment
+ * reads `not_found`: the hub stops serving.
+ *
+ * **The secret can be read again, by this hub alone.** Unlike a remote
+ * credential, this read repeats, because a hub that restarts must serve again.
+ * It still carries the one-time marker: never log it, never relay it, never
+ * return it to a browser.
  */
 export const HubAssignmentSchema = z
   .discriminatedUnion('state', [
     z
       .object({
         state: z.literal('pooled'),
+        pollAfterSeconds: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'How long to wait before reading again when no command arrives. Absent leaves the wait to the hub.'
+          ),
       })
       .describe('Nobody owns this hub yet. Refuse every sign-in.'),
     z
       .object({
         state: z.literal('assigned'),
         assignmentId: IdSchema.describe(
-          'This assignment. Echo it to confirm; a different one means the keys changed.'
+          'This assignment. Echo it to confirm; a different one means the address, proof or sign-in client changed, never the owner.'
         ),
         assignedAt: TimestampSchema,
         ownerAccountId: IdSchema.describe(
@@ -104,7 +151,7 @@ export const HubAssignmentSchema = z
         issuer: HttpsUrlSchema.describe(
           'The one issuer whose sign-ins this hub accepts, compared exactly.'
         ),
-        address: HttpsUrlSchema.describe(
+        address: HttpsOriginSchema.describe(
           'The hub`s one origin, with no path. Answer to this exact host and nothing else.'
         ),
         frontDoorProof: RemoteEdgeProofSchema.describe(
@@ -114,7 +161,9 @@ export const HubAssignmentSchema = z
           'The sign-in client registered for this hub. Absent until the service registers one.'
         ),
       })
-      .describe('This hub is one person`s. Serve only them, at this address, behind this proof.'),
+      .describe(
+        'This hub is one person`s, and never anybody else`s: an assigned hub is never reassigned. Serve only them, at this address, behind this proof.'
+      ),
   ])
   .describe(
     'Who a hub belongs to, and the keys it serves with. Hub instance API key only; never cached by a proxy.'
@@ -132,12 +181,18 @@ export const HubAssignmentConfirmRequestSchema = z
     'Tell the service the hub now serves with this assignment`s owner, address and proof. A stale id is `conflict`.'
   );
 
+/** Tell the service the hub now serves with this assignment. */
+export type HubAssignmentConfirmRequest = z.infer<typeof HubAssignmentConfirmRequestSchema>;
+
 /** When the service recorded the confirmation. */
 export const HubAssignmentConfirmResponseSchema = z
   .object({
     confirmedAt: TimestampSchema,
   })
   .describe('When the service recorded that the hub serves with this assignment.');
+
+/** When the service recorded the confirmation. */
+export type HubAssignmentConfirmResponse = z.infer<typeof HubAssignmentConfirmResponseSchema>;
 
 /**
  * Where a cloud agent computer is in its life.
@@ -157,10 +212,11 @@ export type CloudComputerState = z.infer<typeof CloudComputerStateSchema>;
  *
  * `requested` (its hub or its owner stopped it), `idle` (nothing was due),
  * `out_of_credits` (shown read-only, data kept), `held` (the account is on
- * hold). Names no allowance and no price.
+ * hold), `suspended` (this one computer was switched off by the service; its
+ * `reasonText` says why). Names no allowance and no price.
  */
 export const CloudComputerStopReasonSchema = z
-  .enum(['requested', 'idle', 'out_of_credits', 'held'])
+  .enum(['requested', 'idle', 'out_of_credits', 'held', 'suspended'])
   .describe('Why a cloud agent computer is stopped, in terms the app can show.');
 
 /** Why a cloud agent computer is stopped. */
@@ -180,6 +236,12 @@ export const CloudComputerSchema = z
     stopReason: tolerantEnum(CloudComputerStopReasonSchema)
       .nullable()
       .describe('Why it is stopped, or null when it is not.'),
+    reasonText: z
+      .string()
+      .optional()
+      .describe(
+        'The service`s own words about why it is stopped, to show as given. Absent when there is nothing to add.'
+      ),
     createdAt: TimestampSchema,
     stateChangedAt: TimestampSchema.describe('When `state` last changed.'),
   })
@@ -188,12 +250,22 @@ export const CloudComputerSchema = z
 /** One cloud agent computer the caller's account owns. */
 export type CloudComputer = z.infer<typeof CloudComputerSchema>;
 
-/** `GET /v1/computers` — the caller's account's cloud agent computers. */
+/**
+ * `GET /v1/computers` — the caller's account's cloud agent computers.
+ *
+ * Who may call each computer route: the person, or the account's own hub (its
+ * instance key). Never an agent computer's key, and never a person's own
+ * computer's key: making or starting a computer spends money. Any other caller
+ * is `not_found`. Deleting is the person's alone.
+ */
 export const CloudComputerListResponseSchema = z
   .object({
     items: z.array(CloudComputerSchema),
   })
   .describe('Every cloud agent computer the caller`s account owns. An account with none gets []');
+
+/** Every cloud agent computer the caller's account owns. */
+export type CloudComputerListResponse = z.infer<typeof CloudComputerListResponseSchema>;
 
 /**
  * `POST /v1/computers` — make a cloud agent computer for the caller's account.
@@ -213,6 +285,9 @@ export const CloudComputerCreateRequestSchema = z
   })
   .describe('Make a cloud agent computer for the caller`s account.');
 
+/** Make a cloud agent computer. */
+export type CloudComputerCreateRequest = z.infer<typeof CloudComputerCreateRequestSchema>;
+
 /** The computer a create made, or the one an earlier create with the same key made. */
 export const CloudComputerCreateResponseSchema = z
   .object({
@@ -220,6 +295,9 @@ export const CloudComputerCreateResponseSchema = z
     replayed: z.boolean().describe('True when an earlier request with this key made it.'),
   })
   .describe('The computer a create made, or the one an earlier create with the same key made.');
+
+/** The computer a create made. */
+export type CloudComputerCreateResponse = z.infer<typeof CloudComputerCreateResponseSchema>;
 
 /**
  * The answer to `POST /v1/computers/{computerId}/start` and `/stop`.
@@ -247,13 +325,36 @@ export type CloudComputerTransitionResponse = z.infer<typeof CloudComputerTransi
  * no address: the computer dials only the hub address and key it pinned when
  * its owner turned this on. A computer that is not the caller's account's is
  * `not_found`, so the answer never says whether it exists.
+ *
+ * At most one `viewer_open` waits per computer: asking again while one waits
+ * answers that one, with its `commandId`, rather than queueing another. One
+ * not acknowledged by its `expiresAt` is dropped, never retried.
  */
 export const ViewerOpenResponseSchema = z
   .object({
-    wakeId: IdSchema.describe('The command sent, as the computer will see it.'),
+    commandId: IdSchema.describe(
+      'The command waiting for the computer: the `id` it will see on its stream.'
+    ),
     queuedAt: TimestampSchema,
   })
   .describe('The service queued a viewer-open command for the computer.');
 
 /** The service queued a viewer-open command. */
 export type ViewerOpenResponse = z.infer<typeof ViewerOpenResponseSchema>;
+
+/**
+ * The answer to `DELETE /v1/computers/{computerId}`: the computer, its disk
+ * and its snapshots are gone.
+ *
+ * The person only (never a hub key), with a recent sign-in; an older sign-in
+ * is `forbidden`, and the app asks the person to sign in again. Cannot be
+ * undone. Deleting a computer that is already gone answers the same.
+ */
+export const CloudComputerDeletedResponseSchema = z
+  .object({
+    deletedAt: TimestampSchema,
+  })
+  .describe('When the computer, its disk and its snapshots were deleted. Cannot be undone.');
+
+/** When a computer was deleted. */
+export type CloudComputerDeletedResponse = z.infer<typeof CloudComputerDeletedResponseSchema>;

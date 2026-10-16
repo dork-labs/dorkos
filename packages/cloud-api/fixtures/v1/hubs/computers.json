@@ -17,6 +17,16 @@
       "stopReason": "out_of_credits",
       "createdAt": "2026-11-04T10:00:00Z",
       "stateChangedAt": "2026-11-05T10:00:00Z"
+    },
+    {
+      "id": "cmp_0003",
+      "instanceId": "inst_0103",
+      "displayName": "Third cloud computer",
+      "state": "stopped",
+      "stopReason": "suspended",
+      "reasonText": "This computer was switched off. Contact support to turn it back on.",
+      "createdAt": "2026-11-04T10:00:00Z",
+      "stateChangedAt": "2026-11-06T10:00:00Z"
     }
   ]
 }

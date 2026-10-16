@@ -634,6 +634,15 @@ export const RemoteCommandSchema = z
       ),
     z
       .object({
+        kind: z.literal('hub_assignment_changed'),
+        id: IdSchema,
+        leaseToken: z.string().min(1),
+      })
+      .describe(
+        'For a hub only: read `GET /v1/hubs/self/assignment` again now, because its front-door proof was replaced or it ended. Carries nothing else, and no authority.'
+      ),
+    z
+      .object({
         kind: z.literal('keepalive'),
         id: IdSchema,
         reconnectAfterMs: z

@@ -404,6 +404,14 @@ export const v1Path = {
    */
   communityMoveCancel: (moveId: string) => `/v1/communities/moves/${enc(moveId)}/cancel`,
   /**
+   * Delete one cloud agent computer, its disk and its snapshots, answered with
+   * `CloudComputerDeletedResponseSchema`. The person only, with a recent
+   * sign-in.
+   *
+   * @param computerId - The computer's opaque identifier.
+   */
+  computer: (computerId: string) => `/v1/computers/${enc(computerId)}`,
+  /**
    * Start one cloud agent computer, answered with
    * `CloudComputerTransitionResponseSchema`.
    *

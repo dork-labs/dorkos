@@ -10,7 +10,7 @@ CREATE TABLE `__new_remote_command_journal` (
 	`received_at` text NOT NULL,
 	`settled_at` text,
 	`acked_at` text,
-	CONSTRAINT "remote_command_journal_verb" CHECK("__new_remote_command_journal"."verb" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open')),
+	CONSTRAINT "remote_command_journal_verb" CHECK("__new_remote_command_journal"."verb" IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open', 'hub_assignment_changed')),
 	CONSTRAINT "remote_command_journal_ack_state" CHECK("__new_remote_command_journal"."ack_state" IN ('pending', 'acked', 'rejected', 'unconfirmed'))
 );
 --> statement-breakpoint

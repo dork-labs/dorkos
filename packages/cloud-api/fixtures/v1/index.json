@@ -145,6 +145,8 @@
     "directory/report.json": "DirectoryReportResponseSchema",
     "directory/settings-patch-request.json": "DirectorySettingsPatchSchema",
     "directory/settings.json": "DirectorySettingsSchema",
-    "directory/removed.json": "DirectoryRemovedResponseSchema"
+    "directory/removed.json": "DirectoryRemovedResponseSchema",
+    "hubs/computer-deleted.json": "CloudComputerDeletedResponseSchema",
+    "remote/command-hub-assignment-changed.json": "RemoteCommandSchema"
   }
 }

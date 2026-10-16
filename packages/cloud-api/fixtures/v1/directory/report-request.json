@@ -1,7 +1,16 @@
 {
-  "agents": [{ "agentId": "agent_0001", "name": "Researcher" }],
+  "reportedAt": "2026-11-03T11:59:58Z",
+  "agents": [
+    {
+      "agentId": "agent_0001",
+      "name": "Researcher"
+    }
+  ],
   "spaces": [
-    { "address": "https://spaces.example.invalid/s/example-team", "name": "Example team" }
+    {
+      "address": "https://spaces.example.invalid/s/example-team",
+      "name": "Example team"
+    }
   ],
   "reach": "full-control"
 }

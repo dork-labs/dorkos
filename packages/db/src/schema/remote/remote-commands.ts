@@ -9,6 +9,7 @@ export const REMOTE_COMMAND_JOURNAL_VERBS = [
   'revoke',
   'inbox_pending',
   'viewer_open',
+  'hub_assignment_changed',
 ] as const;
 
 /** Where a journaled command's acknowledgement stands. */
@@ -60,7 +61,7 @@ export const remoteCommandJournal = sqliteTable(
     index('remote_command_journal_ack_idx').on(table.ackState, table.receivedAt),
     check(
       'remote_command_journal_verb',
-      sql`${table.verb} IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open')`
+      sql`${table.verb} IN ('open', 'close', 'rotate', 'revoke', 'inbox_pending', 'viewer_open', 'hub_assignment_changed')`
     ),
     check(
       'remote_command_journal_ack_state',

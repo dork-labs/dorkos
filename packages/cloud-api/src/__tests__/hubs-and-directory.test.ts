@@ -21,6 +21,7 @@ import {
   EntitlementLimitsSchema,
   HubAssignmentConfirmRequestSchema,
   HubAssignmentSchema,
+  HubAssignmentStateSchema,
   ONE_TIME_CREDENTIAL_META,
   RemoteCommandSchema,
   UNRECOGNISED,
@@ -70,6 +71,27 @@ describe('hub assignment', () => {
     }
   });
 
+  it('takes an address that is an origin and nothing more', () => {
+    const full = fixture('hubs/assignment.json');
+    for (const address of [
+      'https://hub.example.invalid/',
+      'https://hub.example.invalid/x',
+      'https://hub.example.invalid?x=1',
+      'https://user@hub.example.invalid',
+    ]) {
+      expect(HubAssignmentSchema.safeParse({ ...full, address }).success, address).toBe(false);
+    }
+  });
+
+  it('publishes exactly the states the assignment union carries, so the two cannot drift', () => {
+    const states = HubAssignmentSchema.options.map((option) => option.shape.state.value).sort();
+    expect(states).toEqual([...HubAssignmentStateSchema.options].sort());
+  });
+
+  it('reads a state this release does not know as a failure, which a hub treats as pooled', () => {
+    expect(HubAssignmentSchema.safeParse({ state: 'archived' }).success).toBe(false);
+  });
+
   it('takes an https issuer and address only', () => {
     const full = fixture('hubs/assignment.json');
     for (const field of ['issuer', 'address']) {
@@ -94,11 +116,28 @@ describe('hub assignment', () => {
 
   it('carries no auth secret: the hub makes its own', () => {
     const names = fieldNames(HubAssignmentSchema, 'HubAssignmentSchema');
-    expect(names.filter((n) => /authSecret|clientSecret|password/i.test(n))).toEqual([]);
+    // Every secret-shaped field anywhere in the assignment, so a new one has to
+    // be added here on purpose.
+    expect(names.filter((n) => /secret|password|key$/i.test(n))).toEqual(['secret']);
+  });
+});
+
+describe('the hub re-read signal', () => {
+  it('carries no key, no address and no assignment: the hub reads those itself', () => {
+    const command = RemoteCommandSchema.parse({
+      ...fixture('remote/command-hub-assignment-changed.json'),
+      frontDoorProof: { header: 'x-a', secret: 'x'.repeat(40) },
+      address: 'https://elsewhere.example.invalid',
+    });
+    expect(Object.keys(command).sort()).toEqual(['id', 'kind', 'leaseToken']);
   });
 });
 
 describe('cloud agent computers', () => {
+  it('deletes a computer at its own route', () => {
+    expect(v1Path.computer('cmp_1')).toBe('/v1/computers/cmp_1');
+  });
+
   it('reads a state or stop reason added later as unrecognised, so one computer cannot fail the list', () => {
     const list = fixture('hubs/computers.json') as { items: Array<Record<string, unknown>> };
     const later = {
@@ -171,6 +210,7 @@ describe('the account directory', () => {
 
   it('drops anything a computer adds to a space beyond its name and address', () => {
     const parsed = DirectoryReportRequestSchema.parse({
+      reportedAt: '2026-11-03T12:00:00Z',
       agents: [],
       spaces: [{ address: 'https://community.example.invalid', name: 'A', token: 'leak' }],
     });
@@ -179,6 +219,7 @@ describe('the account directory', () => {
 
   it('never takes a link to the computer from its own report', () => {
     const parsed = DirectoryReportRequestSchema.parse({
+      reportedAt: '2026-11-03T12:00:00Z',
       agents: [],
       reach: 'full-control',
       remoteAddress: 'https://phish.example.invalid',
@@ -186,8 +227,53 @@ describe('the account directory', () => {
     expect(parsed).not.toHaveProperty('remoteAddress');
   });
 
+  it('says where a cloud agent works, and leaves it out for an agent on a person`s computer', () => {
+    const directory = DirectorySchema.parse(fixture('directory/directory.json'));
+    const cloud = directory.agents.find((agent) => agent.worksOn);
+    expect(cloud?.instanceId).toBe('inst_0100');
+    expect(directory.instances.find((i) => i.instanceId === cloud?.instanceId)?.role).toBe('hub');
+  });
+
+  it('leaves a space`s role and state null when only a computer reported it', () => {
+    const directory = DirectorySchema.parse(fixture('directory/directory.json'));
+    const reported = directory.spaces.find((space) => !space.sources.includes('service'));
+    expect(reported?.role).toBeNull();
+    expect(reported?.state).toBeNull();
+  });
+
+  it('refuses a space address that points at this machine, which means another one elsewhere', () => {
+    for (const address of ['http://localhost:4242', 'http://127.0.0.1:4242']) {
+      const report = {
+        reportedAt: '2026-11-03T12:00:00Z',
+        agents: [],
+        spaces: [{ address, name: 'A' }],
+      };
+      expect(DirectoryReportRequestSchema.safeParse(report).success, address).toBe(false);
+    }
+  });
+
+  it('refuses a report that names one space twice', () => {
+    const space = { address: 'https://community.example.invalid', name: 'A' };
+    const twice = { reportedAt: '2026-11-03T12:00:00Z', agents: [], spaces: [space, space] };
+    expect(DirectoryReportRequestSchema.safeParse(twice).success).toBe(false);
+  });
+
+  it('refuses a report without the time it was made, so a late retry can lose', () => {
+    expect(DirectoryReportRequestSchema.safeParse({ agents: [] }).success).toBe(false);
+  });
+
+  it('keeps an absent part absent rather than turning it into an empty one', () => {
+    const parsed = DirectoryReportRequestSchema.parse({
+      reportedAt: '2026-11-03T12:00:00Z',
+      agents: [],
+    });
+    expect(parsed).not.toHaveProperty('spaces');
+    expect(parsed).not.toHaveProperty('reach');
+  });
+
   it('refuses a report that names one agent twice', () => {
     const twice = {
+      reportedAt: '2026-11-03T12:00:00Z',
       agents: [
         { agentId: 'a', name: 'A' },
         { agentId: 'a', name: 'B' },
@@ -198,6 +284,7 @@ describe('the account directory', () => {
 
   it('refuses a space address that is plain http to anywhere but this machine', () => {
     const plain = {
+      reportedAt: '2026-11-03T12:00:00Z',
       agents: [],
       spaces: [{ address: 'http://community.example.invalid', name: 'A' }],
     };
