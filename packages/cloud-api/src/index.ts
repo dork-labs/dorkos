@@ -31,3 +31,5 @@ export * from './seats.js';
 export * from './remote.js';
 export * from './remote-enrolment.js';
 export * from './communities.js';
+export * from './hubs.js';
+export * from './directory.js';

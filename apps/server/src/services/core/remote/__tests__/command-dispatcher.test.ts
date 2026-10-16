@@ -125,6 +125,17 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
+  it('acknowledges viewer_open as a signal only: this build has no session relay to dial', async () => {
+    const viewer: LeasedCommand = {
+      kind: 'viewer_open',
+      id: 'cmd_viewer',
+      leaseToken: 'lt_v',
+      expiresAt: '2026-11-03T12:02:00Z',
+    };
+    expect(await w.dispatcher.dispatch(viewer, w.link)).toBe('ignored');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
   it('records failed and still acknowledges when the effect throws', async () => {
     w.tunnel.startManaged.mockRejectedValueOnce(new Error('boom'));
     expect(await w.dispatcher.dispatch(open, w.link)).toBe('failed');

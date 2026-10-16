@@ -256,6 +256,9 @@ describe('the surface', () => {
       '/v1/invitations/',
       '/v1/remote/',
       '/v1/communities',
+      '/v1/hubs/',
+      '/v1/computers',
+      '/v1/directory',
     ]) {
       expect(
         paths.some((route) => route.startsWith(group)),

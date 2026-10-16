@@ -52,6 +52,8 @@ body is neither.
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                |
 | Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches |
 | Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                     |
+| Hubs and agent computers  | a hub reads who it belongs to and confirms it (`/v1/hubs/self/assignment`); the account's cloud agent computers: list, make, start and stop; asking a computer to dial its hub (`viewer-open`)                                                                                                              |
+| Account directory         | `GET /v1/directory` (computers, agents and whether they are there, quiet hours and time zone, the spaces the account belongs to), an instance's own report, settings, forgetting a space                                                                                                                    |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                       |
 
 ### What is deliberately not in it
@@ -336,6 +338,70 @@ that server's single-use owner claim; it never owns one itself.
   list and a `not_found` answer mean the same thing: open every page as before.
 
 Every link to a community is a runtime value.
+
+### Hubs: a person's own DorkOS in the cloud
+
+A **hub** is one person's DorkOS run by the service. It runs no agents. The service keeps a pool of
+hubs that belong to nobody, and gives one to a person the first time they open the full app.
+"Hub" is a word for the wire and for code: nothing a person reads says it.
+
+- **A pooled hub has no owner.** `GET /v1/hubs/self/assignment` (hub instance key only) reads
+  `{ state: 'pooled' }`, and the hub refuses every sign-in. Nobody becomes its owner by visiting
+  first.
+- **The owner is an account id at one issuer, never an email.** An assigned hub reads
+  `ownerAccountId`, `issuer`, its one `address`, its `frontDoorProof` and, once registered, its
+  `signIn` client. A sign-in is the owner only when its issuer is exactly `issuer` and its subject
+  is exactly `ownerAccountId`.
+- **The front-door proof works like the remote edge proof.** Refuse any request without exactly
+  one copy of the header carrying the secret, before any other handling, then strip it. The secret
+  carries `ONE_TIME_CREDENTIAL_META`.
+- **The hub makes its own auth secret.** The service never sends one and never holds one.
+- **Keys are new for each assignment.** Confirm the one applied with
+  `POST /v1/hubs/self/assignment/confirm`, naming its `assignmentId`; the front door sends a
+  person's traffic only after that.
+- **A hub never holds a hosting supplier's credentials.** It asks the service to start or stop
+  its own account's agent computers (`v1Path.computerStart`, `v1Path.computerStop`), and the
+  service makes the call. Starting a running computer, or stopping a stopped one, answers the
+  computer as it is.
+- **Asking a computer to dial in.** `POST /v1/instances/{instanceId}/viewer-open` (the account's
+  hub) sends a `viewer_open` command on that computer's command stream. The command carries no
+  address, on purpose: a computer dials only the hub address and key it pinned. It carries no
+  authority either. A command read after its `expiresAt` is acknowledged `ignored`. Builds from
+  before this command fail to read it and never acknowledge it, so the service lets an
+  unacknowledged one expire rather than retrying it.
+- **Full control from the web is an entitlement.** `limits.fullControl` says whether the account
+  may open a linked computer's terminal, files and settings from the web; absent reads as no.
+  `limits.cloudComputers` says how many cloud agent computers it may have.
+
+### The account directory
+
+`GET /v1/directory` is what one account has across every DorkOS it uses: its computers (with
+`role`: `computer`, `hub` or `agent-computer`), the agents on each and whether they are there, its
+quiet hours and time zone, and the spaces it belongs to. A person's session reads their own; an
+instance key reads the directory of the account that linked it. An empty account gets empty lists,
+never a 404.
+
+- **It remembers where things are, never how to get in.** A space is a name, an address, how the
+  account learned of it (`service`, `sign-in` or `computer`) and which computers joined it. No
+  entry carries a sign-in, a token, a transcript or a message.
+- **Each computer sends its whole picture.** `PUT /v1/directory/instances/self` (instance key)
+  replaces the last report: its agents (id and name), the spaces it joined (name and address) and
+  how far its owner lets the web reach it (`reach`: `off`, `chat` or `full-control`). An agent or
+  a space it stops naming leaves the directory. Send it every `reportEverySeconds` while on.
+  `DELETE` the same route when its owner turns sync off.
+- **A link to a computer never comes from the computer.** `remoteAddress` is filled in by the
+  service from the managed remote address it issued, and only when `reach` is `full-control`. A
+  report has no field for it.
+- **Availability is the service's.** `available`, `offline` or `unknown` is derived from
+  `lastSeenAt`; render it rather than recomputing it. `unknown` is never shown as offline.
+- **Settings belong to the account.** `PATCH /v1/directory/settings` changes the time zone, quiet
+  hours (which may cross midnight) and `learnSpacesFromSignIn`. `onlyIfUnset: true` is for a
+  computer moving its own quiet hours up once: it applies only while the account has none.
+- **Forgetting a space** is `DELETE /v1/directory/spaces/{spaceId}`. It removes the entry, never
+  the membership.
+- **New values do not break a page.** `role`, `availability`, `reach`, a space's `sources`, and a
+  computer's `state` and `stopReason` are tolerant: a value added later reads as `unrecognised`.
+  Generate their JSON Schema with `{ io: 'input' }`, as for the communities shapes.
 
 ### Money is never a number
 

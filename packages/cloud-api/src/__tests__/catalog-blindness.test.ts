@@ -192,6 +192,13 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
   CommunityMoveStateSchema: 'the stages of reading an owner export into a new community',
   CommunityMoveFailureCodeSchema: 'what went wrong with an export, in terms a person can act on',
+  HubAssignmentStateSchema: 'whether a hub belongs to a person yet; names no allowance',
+  CloudComputerStateSchema: 'where an agent computer is in its life, not what anybody bought',
+  CloudComputerStopReasonSchema: 'why an agent computer is stopped, in terms the app can show',
+  DirectoryInstanceRoleSchema: 'which of three program roles an instance plays; a structural fact',
+  DirectoryAvailabilitySchema: 'whether something reported recently, derived from a timestamp',
+  DirectoryReachLevelSchema: 'how far a person let the web reach a computer, set at that computer',
+  DirectorySpaceSourceSchema: 'how the account learned of a space, not what it costs',
 };
 
 /**

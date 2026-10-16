@@ -1,0 +1,74 @@
+{
+  "instances": [
+    {
+      "instanceId": "inst_0001",
+      "role": "computer",
+      "displayName": "Example laptop",
+      "availability": "offline",
+      "lastSeenAt": "2026-11-03T08:00:00Z",
+      "reach": "full-control",
+      "remoteAddress": "https://example-instance.remote.invalid"
+    },
+    {
+      "instanceId": "inst_0100",
+      "role": "hub",
+      "displayName": "Private",
+      "availability": "available",
+      "lastSeenAt": "2026-11-03T12:00:00Z",
+      "reach": null,
+      "remoteAddress": null
+    },
+    {
+      "instanceId": "inst_0101",
+      "role": "agent-computer",
+      "displayName": "Cloud computer",
+      "availability": "available",
+      "lastSeenAt": "2026-11-03T11:59:00Z",
+      "reach": null,
+      "remoteAddress": null
+    }
+  ],
+  "agents": [
+    {
+      "agentId": "agent_0001",
+      "instanceId": "inst_0001",
+      "name": "Researcher",
+      "availability": "offline",
+      "lastSeenAt": "2026-11-03T08:00:00Z"
+    },
+    {
+      "agentId": "agent_0002",
+      "instanceId": "inst_0101",
+      "name": "Writer",
+      "availability": "available",
+      "lastSeenAt": "2026-11-03T11:59:00Z"
+    }
+  ],
+  "spaces": [
+    {
+      "spaceId": "dsp_0001",
+      "name": "Example team",
+      "address": "https://spaces.example.invalid/s/example-team",
+      "sources": ["service", "computer"],
+      "joinedBy": ["inst_0001"],
+      "firstLearnedAt": "2026-10-20T09:00:00Z",
+      "lastConfirmedAt": "2026-11-03T08:00:00Z"
+    },
+    {
+      "spaceId": "dsp_0002",
+      "name": "A self-hosted space",
+      "address": "https://community.example.invalid",
+      "sources": ["sign-in"],
+      "joinedBy": [],
+      "firstLearnedAt": "2026-10-28T15:00:00Z",
+      "lastConfirmedAt": "2026-10-28T15:00:00Z"
+    }
+  ],
+  "settings": {
+    "timeZone": "America/Chicago",
+    "quietHours": { "start": "22:00", "end": "07:00" },
+    "learnSpacesFromSignIn": true,
+    "updatedAt": "2026-10-20T09:00:00Z"
+  },
+  "reportEverySeconds": 120
+}

@@ -128,6 +128,23 @@
     "remote/credential-issue-request.json": "RemoteCredentialIssueRequestSchema",
     "remote/credential-with-edge-proof.json": "RemoteCredentialSchema",
     "problem/remote-credential-already-delivered.json": "ProblemSchema",
-    "remote/credential-revoke.json": "RemoteCredentialRevokeResponseSchema"
+    "remote/credential-revoke.json": "RemoteCredentialRevokeResponseSchema",
+    "hubs/assignment-pooled.json": "HubAssignmentSchema",
+    "hubs/assignment.json": "HubAssignmentSchema",
+    "hubs/assignment-confirm-request.json": "HubAssignmentConfirmRequestSchema",
+    "hubs/assignment-confirm.json": "HubAssignmentConfirmResponseSchema",
+    "hubs/computers.json": "CloudComputerListResponseSchema",
+    "hubs/computer-create-request.json": "CloudComputerCreateRequestSchema",
+    "hubs/computer-create.json": "CloudComputerCreateResponseSchema",
+    "hubs/computer-stop.json": "CloudComputerTransitionResponseSchema",
+    "hubs/viewer-open.json": "ViewerOpenResponseSchema",
+    "remote/command-viewer-open.json": "RemoteCommandSchema",
+    "directory/directory.json": "DirectorySchema",
+    "directory/directory-empty.json": "DirectorySchema",
+    "directory/report-request.json": "DirectoryReportRequestSchema",
+    "directory/report.json": "DirectoryReportResponseSchema",
+    "directory/settings-patch-request.json": "DirectorySettingsPatchSchema",
+    "directory/settings.json": "DirectorySettingsSchema",
+    "directory/removed.json": "DirectoryRemovedResponseSchema"
   }
 }

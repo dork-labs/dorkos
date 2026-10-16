@@ -28,9 +28,10 @@
  * journaled, and a command already under way is refused `refused:shutting-down`
  * at its next re-check, so no effect races the tunnel being torn down.
  *
- * Commands run one at a time, in the order they arrived. `inbox_pending`
- * carries no authority and this build has no seat path to signal, so it is
- * acknowledged `ignored`; `keepalive` never reaches here.
+ * Commands run one at a time, in the order they arrived. `inbox_pending` and
+ * `viewer_open` carry no authority, and this build has no seat path to signal
+ * and no session relay to dial, so both are acknowledged `ignored`;
+ * `keepalive` never reaches here.
  *
  * Nothing here logs a value: lines name command ids, kinds and outcomes.
  *
@@ -258,8 +259,9 @@ export class CommandDispatcher {
   }
 
   private async apply(command: LeasedCommand, link: CommandLink): Promise<RemoteCommandOutcome> {
-    // A signal only: no authority, and no seat path in this build to wake.
-    if (command.kind === 'inbox_pending') return 'ignored';
+    // Signals only: no authority, and no seat path or session relay in this
+    // build to wake.
+    if (command.kind === 'inbox_pending' || command.kind === 'viewer_open') return 'ignored';
     const minted = mintCloudAuthority(command, {
       isCurrent: () => link.context.isCurrent(),
       instanceId: link.instanceId,

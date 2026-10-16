@@ -622,6 +622,18 @@ export const RemoteCommandSchema = z
       .describe('There is mail waiting for a seat.'),
     z
       .object({
+        kind: z.literal('viewer_open'),
+        id: IdSchema,
+        leaseToken: z.string().min(1),
+        expiresAt: TimestampSchema.describe(
+          'Dial before this. A command read after it is acknowledged `ignored`.'
+        ),
+      })
+      .describe(
+        'Somebody opened a chat of this computer`s on its hub: dial the hub address and key this computer pinned. Carries no address, on purpose.'
+      ),
+    z
+      .object({
         kind: z.literal('keepalive'),
         id: IdSchema,
         reconnectAfterMs: z
