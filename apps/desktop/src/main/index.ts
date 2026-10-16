@@ -4,6 +4,7 @@ import log from 'electron-log';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort, signInWindowSession } from './server-process';
+import { WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
 import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
@@ -409,7 +410,9 @@ if (!gotTheLock) {
       await startServer(getMainWindow);
       // Before any window loads: the person at their own Mac never types a
       // password (F3). Never throws; a failure leaves the sign-in screen.
+      // Again twice a day, so a window left open keeps a live session.
       await signInWindowSession();
+      setInterval(() => void signInWindowSession(), WINDOW_SIGN_IN_REFRESH_MS);
     } catch (err) {
       await localBrowserBridge?.close();
       localBrowserBridge = undefined;

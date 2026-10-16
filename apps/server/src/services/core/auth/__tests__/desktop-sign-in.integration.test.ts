@@ -13,7 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { honoListener, listeningServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations } from '@dorkos/db';
+import { createDb, runMigrations, session as sessionTable } from '@dorkos/db';
 
 const managed = vi.hoisted(() => ({ by: 'desktop' as 'desktop' | undefined }));
 vi.mock('../../../../env.js', async (importOriginal) => {
@@ -37,6 +37,7 @@ const { mountDesktopSignIn } = await import('../../../../http/desktop-sign-in.js
 const LOCAL = 'localhost:4242';
 let root: string;
 let auth: ReturnType<typeof initAuth>;
+let db: ReturnType<typeof createDb>;
 
 // Better Auth is made in beforeAll; the route reads it per request.
 const app = new Hono();
@@ -54,7 +55,7 @@ beforeAll(async () => {
   vi.stubEnv('BETTER_AUTH_SECRET', undefined);
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-desktop-sign-in-'));
   initConfigManager(root);
-  const db = createDb(path.join(root, 'auth.db'));
+  db = createDb(path.join(root, 'auth.db'));
   runMigrations(db);
   auth = initAuth(db, root);
   const origin = 'http://localhost:4242';
@@ -108,13 +109,21 @@ describe('minting', () => {
   it('hands the desktop entry its mint through the process, and only on the desktop', () => {
     const slot = signIn.DESKTOP_SIGN_IN_MINT;
     delete (globalThis as Record<symbol, unknown>)[slot];
+    let asks = false;
+    const sources = {
+      ownerId: () => readOwnerAccount()?.id ?? null,
+      asksOnThisComputer: () => asks,
+    };
     managed.by = undefined;
-    signIn.exposeDesktopSignInMint(() => 'user');
+    signIn.exposeDesktopSignInMint(sources);
     expect((globalThis as Record<symbol, unknown>)[slot]).toBeUndefined();
     managed.by = 'desktop';
-    signIn.exposeDesktopSignInMint(() => readOwnerAccount()?.id ?? null);
+    signIn.exposeDesktopSignInMint(sources);
     const mintFromEntry = (globalThis as Record<symbol, unknown>)[slot] as () => string | null;
     expect(mintFromEntry()).toEqual(expect.any(String));
+    // The owner asked for a password on this computer too: the window asks.
+    asks = true;
+    expect(mintFromEntry()).toBeNull();
   });
 });
 
@@ -129,13 +138,34 @@ describe('redeeming', () => {
     const pairs = cookies.map((c) => c.split(';')[0]).join('; ');
     const who = await auth.api.getSession({ headers: new Headers({ cookie: pairs }) });
     expect(who?.user.email).toBe('owner@example.invalid');
+    // The server keeps the ordinary lifetime, so a window left open for a day
+    // stays signed in.
+    const twoDays = 2 * 24 * 60 * 60 * 1000;
+    expect(who!.session.expiresAt.getTime() - Date.now()).toBeGreaterThan(twoDays);
+  });
+
+  it('ends the last desktop session when the window signs in again', async () => {
+    await redeem(mint());
+    const before = db.select().from(sessionTable).all().length;
+    await redeem(mint());
+    expect(db.select().from(sessionTable).all()).toHaveLength(before);
+  });
+
+  it('survives a few wrong guesses from another program, then gives up', async () => {
+    const code = mint();
+    for (let i = 1; i < signIn.DESKTOP_SIGN_IN_MAX_MISSES; i++) {
+      expect((await redeem(`guess-${i}`)).status).toBe(401);
+    }
+    expect((await redeem(code)).status).toBe(200);
+    const spoiled = mint();
+    for (let i = 0; i < signIn.DESKTOP_SIGN_IN_MAX_MISSES; i++) await redeem(`guess-${i}`);
+    expect((await redeem(spoiled)).status).toBe(401);
   });
 
   it('takes a code once, and refuses a wrong or expired one', async () => {
     const code = mint();
     expect((await redeem(code)).status).toBe(200);
     expect((await redeem(code)).status).toBe(401);
-    mint();
     expect((await redeem('not-the-code')).status).toBe(401);
     const late = signIn.mintDesktopSignInCode(readOwnerAccount()!.id, Date.now() - 61_000);
     expect((await redeem(late!)).status).toBe(401);

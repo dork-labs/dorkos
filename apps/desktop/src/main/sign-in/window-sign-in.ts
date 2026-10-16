@@ -8,8 +8,11 @@
  * window's session keeps it in memory only, and every launch signs in afresh.
  * The person at their own Mac never types a password.
  *
- * Nothing here can stop the app: when there is no owner yet, or anything
- * fails, the window opens exactly as it did before, sign-in screen and all.
+ * Nothing here can stop the app: when there is no owner yet, when the owner
+ * asks for a password on this computer too, or when anything fails, the window
+ * opens exactly as it did before, sign-in screen and all. The shell signs in
+ * again every {@link WINDOW_SIGN_IN_REFRESH_MS}, so a window left open does not
+ * outlive its session.
  * The server side is `apps/server/src/services/core/auth/desktop-sign-in.ts`.
  *
  * @module main/sign-in/window-sign-in
@@ -28,8 +31,14 @@ export const MINT_SIGN_IN_CODE = 'mint-sign-in-code';
 /** What the server answers with. */
 export const SIGN_IN_CODE = 'sign-in-code';
 
-/** How a sign-in went. */
-export type WindowSignInOutcome = 'signed-in' | 'no-owner' | 'failed';
+/** How often the shell signs the window in again while the app runs. */
+export const WINDOW_SIGN_IN_REFRESH_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * How a sign-in went. `skipped`: the server minted no code, because nobody has
+ * an account yet or the owner asks for a password on this computer too.
+ */
+export type WindowSignInOutcome = 'signed-in' | 'skipped' | 'failed';
 
 /** What {@link signInWindow} needs. */
 export interface WindowSignInDeps {
@@ -41,7 +50,7 @@ export interface WindowSignInDeps {
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
-/** Ask the server for a code: the code, `null` with no owner, `undefined` on no answer. */
+/** Ask the server for a code: the code, `null` when it mints none, `undefined` on no answer. */
 function askForCode(child: WindowSignInDeps['child']): Promise<string | null | undefined> {
   return new Promise((resolve) => {
     let settled = false;
@@ -74,7 +83,7 @@ function isSignInCode(msg: unknown): msg is { type: string; code: string | null 
 export async function signInWindow(deps: WindowSignInDeps): Promise<WindowSignInOutcome> {
   try {
     const code = await askForCode(deps.child);
-    if (code === null) return 'no-owner';
+    if (code === null) return 'skipped';
     if (code === undefined) {
       log.warn('[sign-in] The server did not answer with a sign-in code.');
       return 'failed';

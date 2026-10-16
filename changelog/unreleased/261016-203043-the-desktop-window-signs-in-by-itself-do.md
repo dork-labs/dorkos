@@ -6,4 +6,4 @@ covers:
 
 ### Changed
 
-- The Mac app signs you in by itself. If you turned on "Ask for a password on this computer too", the app's own window no longer asks; browsers on this computer and your other devices still do. The sign-in lasts until you quit the app and is never saved to disk (DOR-2966)
+- The Mac app now signs you in by itself, so the things only you can do at your Mac work without a password. If you turned on "Ask for a password on this computer too", the app still asks, as before. The sign-in lasts until you quit the app and is never saved to disk (DOR-2966)

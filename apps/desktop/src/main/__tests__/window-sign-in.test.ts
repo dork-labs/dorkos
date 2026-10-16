@@ -51,9 +51,9 @@ describe('the desktop window signing in by itself', () => {
     });
   });
 
-  it('does nothing when nobody has an account yet', async () => {
+  it('does nothing when the server mints no code', async () => {
     const fetch = vi.fn();
-    expect(await signInWindow({ ...fakeServer(null), port: 1, fetch })).toBe('no-owner');
+    expect(await signInWindow({ ...fakeServer(null), port: 1, fetch })).toBe('skipped');
     expect(fetch).not.toHaveBeenCalled();
   });
 

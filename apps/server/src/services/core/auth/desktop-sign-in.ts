@@ -8,18 +8,21 @@
  *
  * 1. **Mint.** The desktop shell asks over its process channel, never over
  *    HTTP and never through an environment variable. The server mints a code
- *    only when the desktop app runs it and an owner exists: random, single
- *    use, good for {@link DESKTOP_SIGN_IN_TTL_MS}, held in memory only. Nothing
- *    reachable over HTTP or a DorkOS tool mints one.
+ *    only when the desktop app runs it, an owner exists, and the owner has not
+ *    asked for a password on this computer too (then the window asks, as
+ *    before): random, single use, good for {@link DESKTOP_SIGN_IN_TTL_MS},
+ *    held in memory only as a hash. Nothing reachable over HTTP or a DorkOS
+ *    tool mints one.
  * 2. **Redeem.** The shell posts the code to `POST /api/desktop/sign-in`
  *    through the window's own session. Only a request from this computer
  *    (F0's classifier: loopback peer and `Host`, no forwarding headers, no
  *    other site's page) that no other site's page sent (`Sec-Fetch-Site`) may
  *    redeem it.
  * 3. **Sign in.** A Better Auth endpoint only server code can call creates
- *    the owner's session and sets an ordinary session cookie with no expiry,
- *    so the browser keeps it in memory only and it never reaches disk. The
- *    shell mints a new code on every launch.
+ *    the owner's session, with the ordinary lifetime, and sets its cookie with
+ *    no expiry, so the browser keeps it in memory only and it never reaches
+ *    disk. Each new desktop sign-in ends the one before it. The shell signs
+ *    in at every launch, and again twice a day while it runs.
  *
  * @module services/core/auth/desktop-sign-in
  */
@@ -35,8 +38,14 @@ import { env } from '../../../env.js';
 /** How long a minted code may wait to be redeemed. */
 export const DESKTOP_SIGN_IN_TTL_MS = 60_000;
 
+/** How many wrong codes the waiting code survives. */
+export const DESKTOP_SIGN_IN_MAX_MISSES = 5;
+
 /** The one code waiting to be redeemed, by its hash; a new mint replaces it. */
-let pending: { hash: Buffer; userId: string; expiresAt: number } | null = null;
+let pending: { hash: Buffer; userId: string; expiresAt: number; misses: number } | null = null;
+
+/** The session the last desktop sign-in made, ended by the next one. */
+let lastDesktopSession: string | null = null;
 
 /** SHA-256 of a code, so the code itself is never held. */
 function hashCode(code: string): Buffer {
@@ -54,23 +63,38 @@ function hashCode(code: string): Buffer {
 export function mintDesktopSignInCode(ownerId: string | null, now = Date.now()): string | null {
   if (env.DORKOS_MANAGED_BY !== 'desktop' || !ownerId) return null;
   const code = randomBytes(32).toString('base64url');
-  pending = { hash: hashCode(code), userId: ownerId, expiresAt: now + DESKTOP_SIGN_IN_TTL_MS };
+  pending = {
+    hash: hashCode(code),
+    userId: ownerId,
+    expiresAt: now + DESKTOP_SIGN_IN_TTL_MS,
+    misses: 0,
+  };
   return code;
 }
 
 /**
  * Take a code: the account it signs in, or `null` when it is wrong, used or
- * expired. A code is good once, and a wrong one spends the waiting code too,
- * so a guess costs the shell a fresh mint rather than leaving a target.
+ * expired. A code is good once. A wrong one leaves it waiting, so another
+ * program on this computer cannot spoil the window's sign-in with a guess,
+ * up to {@link DESKTOP_SIGN_IN_MAX_MISSES} guesses, after which it is gone.
  *
  * @param code - The code the shell posted.
  * @param now - The current time, for tests.
  */
 export function takeDesktopSignInCode(code: string, now = Date.now()): string | null {
   const waiting = pending;
-  pending = null;
-  if (!waiting || now >= waiting.expiresAt) return null;
-  return timingSafeEqual(hashCode(code), waiting.hash) ? waiting.userId : null;
+  if (!waiting) return null;
+  if (now >= waiting.expiresAt) {
+    pending = null;
+    return null;
+  }
+  if (timingSafeEqual(hashCode(code), waiting.hash)) {
+    pending = null;
+    return waiting.userId;
+  }
+  waiting.misses += 1;
+  if (waiting.misses >= DESKTOP_SIGN_IN_MAX_MISSES) pending = null;
+  return null;
 }
 
 /**
@@ -80,15 +104,25 @@ export function takeDesktopSignInCode(code: string, now = Date.now()): string | 
  */
 export const DESKTOP_SIGN_IN_MINT = Symbol.for('dorkos.desktop.mintSignInCode');
 
+/** What the mint reads at mint time. */
+export interface DesktopSignInSources {
+  /** The owner account's id, or `null` when nobody has an account yet. */
+  ownerId: () => string | null;
+  /** Whether the owner asked for a password on this computer too. */
+  asksOnThisComputer: () => boolean;
+}
+
 /**
- * Give the desktop entry its mint, when the desktop app runs this server.
+ * Give the desktop entry its mint, when the desktop app runs this server. It
+ * mints nothing while the owner asks for a password on this computer too: the
+ * window asks then, as every browser on this computer does.
  *
- * @param readOwnerId - Reads the owner account's id at mint time.
+ * @param sources - See {@link DesktopSignInSources}.
  */
-export function exposeDesktopSignInMint(readOwnerId: () => string | null): void {
+export function exposeDesktopSignInMint(sources: DesktopSignInSources): void {
   if (env.DORKOS_MANAGED_BY !== 'desktop') return;
   (globalThis as Record<symbol, unknown>)[DESKTOP_SIGN_IN_MINT] = () =>
-    mintDesktopSignInCode(readOwnerId());
+    sources.asksOnThisComputer() ? null : mintDesktopSignInCode(sources.ownerId());
 }
 
 /**
@@ -105,9 +139,14 @@ export function desktopSignInPlugin() {
         async (ctx) => {
           const user = await ctx.context.internalAdapter.findUserById(ctx.body.userId);
           if (!user) throw ctx.error('NOT_FOUND', { message: 'No such account.' });
-          // `dontRememberMe`: a session cookie with no expiry, kept in memory.
-          const session = await ctx.context.internalAdapter.createSession(user.id, true);
+          // The ordinary lifetime on the server, and a cookie with no expiry
+          // (`dontRememberMe`) in the window, kept in memory only.
+          const session = await ctx.context.internalAdapter.createSession(user.id, false);
           await setSessionCookie(ctx, { session, user }, true);
+          // One desktop session at a time: the window's last one ends now.
+          const previous = lastDesktopSession;
+          lastDesktopSession = session.token;
+          if (previous) await ctx.context.internalAdapter.deleteSession(previous);
           return ctx.json({ ok: true });
         }
       ),
@@ -122,4 +161,5 @@ export function desktopSignInPlugin() {
  */
 export function resetDesktopSignInForTests(): void {
   pending = null;
+  lastDesktopSession = null;
 }
