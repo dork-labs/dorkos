@@ -68,7 +68,11 @@ import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
-import { HUB_NOT_SERVING_BODY, hubRefusesRequest } from '../services/core/hub/hub-serving.js';
+import {
+  HUB_NOT_SERVING_BODY,
+  hubRefusesRequest,
+  trackHubConnection,
+} from '../services/core/hub/hub-serving.js';
 
 /** What the chain puts on `c.var` for the routes behind it. */
 export interface ApiVariables extends RequestFactsVariables {
@@ -143,9 +147,11 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     await next();
   });
   // A hub serves nobody until it has confirmed its owner, and nobody again
-  // once its assignment ends (`services/core/hub/hub-serving.ts`).
+  // once its assignment ends, including on a stream it opened while it served
+  // (`services/core/hub/hub-serving.ts`).
   app.use(async (c, next) => {
     if (hubRefusesRequest(c.req.path)) return c.json(HUB_NOT_SERVING_BODY, 503);
+    trackHubConnection(c.env.incoming.socket);
     await next();
   });
   const noteFirstApiRequest = createFirstContactMarker('[Client] first API request');

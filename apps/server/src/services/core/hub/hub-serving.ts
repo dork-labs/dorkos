@@ -14,6 +14,8 @@
  *
  * @module services/core/hub/hub-serving
  */
+import type { Duplex } from 'node:stream';
+
 import type { HubAssignment } from '@dork-labs/cloud-api';
 
 import { currentServerRole } from '../../../lib/server-role.js';
@@ -25,7 +27,8 @@ export type LiveHubAssignment = Extract<HubAssignment, { state: 'assigned' }>;
  * Where a hub is:
  *
  * - `starting` — it has not read its assignment yet;
- * - `pooled` — nobody owns it yet;
+ * - `pooled` — nobody owns it yet, or its last answer from Cloud made no
+ *   sense to this release;
  * - `serving` — it serves its owner with `assignment`;
  * - `ended` — Cloud ended its assignment;
  * - `refused` — Cloud named a different owner than the one it serves. It
@@ -40,6 +43,13 @@ export type HubServingState =
 
 let current: HubServingState = { state: 'starting' };
 
+/**
+ * Every connection open to this hub. A hub that stops serving drops them all,
+ * so a stream opened while it served carries nothing more once it no longer
+ * does.
+ */
+const openConnections = new Set<Duplex>();
+
 /** Where this hub is. Meaningful only on a hub; see {@link hubRefusesRequest}. */
 export function hubServingState(): HubServingState {
   return current;
@@ -53,7 +63,27 @@ export function hubServingState(): HubServingState {
  */
 export function setHubServingState(next: HubServingState): void {
   if (current.state === 'ended' || current.state === 'refused') return;
+  const wasServing = current.state === 'serving';
   current = next;
+  if (wasServing && next.state !== 'serving') dropOpenConnections();
+}
+
+/**
+ * Track one connection, an HTTP request's or a stream upgrade's, so it is
+ * dropped if this hub stops serving. Does nothing on a person's own computer.
+ *
+ * @param socket - The connection's socket.
+ */
+export function trackHubConnection(socket: Duplex): void {
+  if (currentServerRole() !== 'hub' || socket.destroyed || openConnections.has(socket)) return;
+  openConnections.add(socket);
+  socket.once('close', () => openConnections.delete(socket));
+}
+
+/** Drop every tracked connection. */
+function dropOpenConnections(): void {
+  for (const socket of openConnections) socket.destroy();
+  openConnections.clear();
 }
 
 /** The body a hub answers with while it does not serve. */
@@ -83,4 +113,5 @@ export function hubRefusesRequest(path: string): boolean {
  */
 export function resetHubServingStateForTests(): void {
   current = { state: 'starting' };
+  openConnections.clear();
 }

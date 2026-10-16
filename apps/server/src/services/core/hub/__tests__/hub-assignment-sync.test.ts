@@ -11,12 +11,12 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudApiProblemError } from '@dork-labs/cloud-api/client';
 import type { HubAssignment } from '@dork-labs/cloud-api';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 
-const { createAuth } = await import('../../auth/index.js');
+const { createAuth, initAuth } = await import('../../auth/index.js');
 const { initConfigManager } = await import('../../config-manager.js');
 const { withRegistrationCaller } = await import('../../auth/registration-policy.js');
 const sync = await import('../hub-assignment-sync.js');
@@ -37,7 +37,7 @@ describe('a hub taking its assignment', () => {
   let tmpDir: string;
   let db: Db;
   let dorkHome: string;
-  let read: () => Promise<HubAssignment | null>;
+  let read: () => Promise<unknown>;
   let confirmed: string[];
 
   beforeAll(() => {
@@ -59,19 +59,13 @@ describe('a hub taking its assignment', () => {
     confirmed = [];
   });
 
-  /** The live wiring, over this case's database, data dir and fake Cloud. */
+  /** The live wiring over this case's database and data dir, with a fake Cloud. */
   function deps(): import('../hub-assignment-sync.js').HubAssignmentSyncDeps {
-    const auth = createAuth(db, tmpDir);
-    return {
+    initAuth(db, tmpDir);
+    return runner.liveHubDeps(dorkHome, {
       readAssignment: () => read(),
       confirm: async (id) => void confirmed.push(id),
-      ownerExists: () => db.select().from(user).all().length > 0,
-      createOwner: async (body) => {
-        await withRegistrationCaller('provisioning', () => auth.api.signUpEmail({ body }));
-      },
-      readPin: () => sync.readHubOwnerPin(dorkHome),
-      writePin: (pin) => sync.writeHubOwnerPin(dorkHome, pin),
-    };
+    });
   }
 
   it('refuses every request but the health check until it serves', () => {
@@ -102,6 +96,8 @@ describe('a hub taking its assignment', () => {
     expect(owners).toHaveLength(1);
     expect(owners[0]?.role).toBe('owner');
     expect(owners[0]?.email).toBe('owner@hub-1.example.invalid');
+    // Nobody signed in: the owner only ever signs in with their DorkOS account.
+    expect(db.select().from(session).all()).toHaveLength(0);
     expect(sync.readHubOwnerPin(dorkHome)).toMatchObject({
       ownerAccountId: 'acct_1',
       issuer: 'https://accounts.example.invalid',
@@ -201,6 +197,25 @@ describe('a hub taking its assignment', () => {
     };
     expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'unchanged', reason: 'failed' });
     expect(serving.hubRefusesRequest('/api/config')).toBe(false);
+  });
+
+  it('stops serving, but not for good, on an answer it does not understand', async () => {
+    const d = deps();
+    await sync.syncHubAssignment(d);
+    read = async () => ({ state: 'suspended' });
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'unchanged', reason: 'unreadable' });
+    expect(serving.hubRefusesRequest('/api/config')).toBe(true);
+    read = async () => ASSIGNED;
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'serving', assignmentId: 'asg_1' });
+  });
+
+  it('leaves no pin behind a write that never finished', () => {
+    sync.writeHubOwnerPin(dorkHome, {
+      ownerAccountId: 'acct_1',
+      issuer: 'https://accounts.example.invalid',
+      pinnedAt: '2026-11-03T09:00:00Z',
+    });
+    expect(fs.readdirSync(dorkHome)).toEqual([sync.HUB_OWNER_PIN_FILE]);
   });
 
   it('refuses when the pin file cannot be read, rather than taking a new owner', async () => {

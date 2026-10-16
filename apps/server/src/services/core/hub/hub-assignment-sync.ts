@@ -5,10 +5,12 @@
  * One read of `GET /v1/hubs/self/assignment` decides what happens:
  *
  * - **pooled** — nobody owns this hub yet. It refuses every request but the
- *   health check, and reads again later.
+ *   health check, and reads again later. An answer this release does not
+ *   understand counts as pooled too, as the contract says: the hub stops
+ *   serving until a later read makes sense again.
  * - **assigned, first time** — it pins the owner's account id and issuer to
- *   disk, creates the owner account through the one caller the registration
- *   policy lets in on a hub (`provisioning`), keeps the address and front-door
+ *   disk, creates the owner account (no password, no session) through the one
+ *   caller the registration policy lets in on a hub (`provisioning`), keeps the address and front-door
  *   proof in memory, confirms the assignment, and starts serving. A hub that
  *   already holds an account but no pin is not a fresh one, and refuses.
  * - **assigned, same owner** — the address, proof or sign-in client may have
@@ -19,24 +21,23 @@
  * - **not_found after an owner was pinned** — the assignment ended; it stops
  *   serving for good.
  *
- * An answer it cannot read, or a failed request, changes nothing: a hub that
- * was serving keeps serving, and one that was not keeps refusing. The owner is
+ * A failed request changes nothing: a hub that was serving keeps serving, and
+ * one that was not keeps refusing. The owner is
  * matched by account id at one issuer, never by email.
  *
  * @module services/core/hub/hub-assignment-sync
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
 
 import {
   HubAssignmentConfirmResponseSchema,
   HubAssignmentSchema,
   V1_ROUTES,
-  type HubAssignment,
 } from '@dork-labs/cloud-api';
 
 import { CloudApiProblemError } from '@dork-labs/cloud-api/client';
+import { z } from 'zod';
 
 import { logger } from '../../../lib/logger.js';
 import { setHubServingState, type LiveHubAssignment } from './hub-serving.js';
@@ -61,14 +62,18 @@ export type HubSyncOutcome =
 
 /** What a sync needs from the rest of the server. */
 export interface HubAssignmentSyncDeps {
-  /** Read the assignment; `null` when this hub holds no Cloud credential. */
-  readAssignment: () => Promise<HubAssignment | null>;
+  /**
+   * Read the assignment, unchecked; `null` when this hub holds no Cloud
+   * credential. The sync checks the answer, so one it does not understand is
+   * treated as the contract says rather than as a failed request.
+   */
+  readAssignment: () => Promise<unknown>;
   /** Confirm the assignment the hub now serves with. */
   confirm: (assignmentId: string) => Promise<void>;
   /** Whether the owner account exists yet. */
   ownerExists: () => boolean;
   /** Create the owner account. Runs only while none exists. */
-  createOwner: (input: { email: string; password: string; name: string }) => Promise<void>;
+  createOwner: (input: { email: string; name: string }) => Promise<void>;
   /** The pinned owner, or `null` before the first assignment. */
   readPin: () => PinnedHubOwner | null;
   /** Persist the pinned owner. */
@@ -108,7 +113,9 @@ export function readHubOwnerPin(dorkHome: string): PinnedHubOwner | null {
 
 /**
  * Write the pinned owner to `<dorkHome>/hub-owner.json`, readable only by this
- * user. It holds no secret, but nothing else has a reason to read it.
+ * user. It holds no secret, but nothing else has a reason to read it. The
+ * write is atomic: a crash part-way leaves no pin rather than a torn one,
+ * which would lock the hub out for good.
  *
  * @param dorkHome - The DorkOS data directory.
  * @param pin - The owner to pin.
@@ -116,8 +123,15 @@ export function readHubOwnerPin(dorkHome: string): PinnedHubOwner | null {
 export function writeHubOwnerPin(dorkHome: string, pin: PinnedHubOwner): void {
   fs.mkdirSync(dorkHome, { recursive: true });
   const file = path.join(dorkHome, HUB_OWNER_PIN_FILE);
-  fs.writeFileSync(file, JSON.stringify(pin, null, 2), { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  const partial = `${file}.${process.pid}.tmp`;
+  const fd = fs.openSync(partial, 'w', 0o600);
+  try {
+    fs.writeFileSync(fd, JSON.stringify(pin, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(partial, file);
 }
 
 /**
@@ -148,7 +162,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
     return { kind: 'refused' };
   }
 
-  let read: HubAssignment | null;
+  let read: unknown;
   try {
     read = await deps.readAssignment();
   } catch (err) {
@@ -165,7 +179,13 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   if (read === null) return { kind: 'unchanged', reason: 'unlinked' };
 
   const parsed = HubAssignmentSchema.safeParse(read);
-  if (!parsed.success) return { kind: 'unchanged', reason: 'unreadable' };
+  if (!parsed.success) {
+    // A state a later Cloud added, or a broken answer. The contract says act as
+    // pooled: stop serving, and read again soon.
+    logger.warn('[Hub] Could not understand this hub`s assignment; it stops serving for now');
+    setHubServingState({ state: 'pooled' });
+    return { kind: 'unchanged', reason: 'unreadable' };
+  }
   const assignment = parsed.data;
 
   if (assignment.state === 'pooled') {
@@ -205,13 +225,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
     });
   }
   if (!deps.ownerExists()) {
-    await deps.createOwner({
-      email: hubOwnerEmail(assignment),
-      // Never used: the owner signs in with their DorkOS account. A random
-      // value nobody holds keeps the account store's required field filled.
-      password: randomBytes(32).toString('base64url'),
-      name: 'Owner',
-    });
+    await deps.createOwner({ email: hubOwnerEmail(assignment), name: 'Owner' });
   }
 
   await deps.confirm(assignment.assignmentId);
@@ -226,7 +240,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
  */
 export function cloudHubCalls(
   client: {
-    get: (path: string, schema: typeof HubAssignmentSchema) => Promise<HubAssignment>;
+    get: (path: string, schema: z.ZodUnknown) => Promise<unknown>;
     post: (
       path: string,
       schema: typeof HubAssignmentConfirmResponseSchema,
@@ -235,8 +249,7 @@ export function cloudHubCalls(
   } | null
 ): Pick<HubAssignmentSyncDeps, 'readAssignment' | 'confirm'> {
   return {
-    readAssignment: async () =>
-      client ? client.get(V1_ROUTES.hubAssignment, HubAssignmentSchema) : null,
+    readAssignment: async () => (client ? client.get(V1_ROUTES.hubAssignment, z.unknown()) : null),
     confirm: async (assignmentId) => {
       if (!client) throw new Error('This hub holds no DorkOS Cloud credential.');
       await client.post(V1_ROUTES.hubAssignmentConfirm, HubAssignmentConfirmResponseSchema, {

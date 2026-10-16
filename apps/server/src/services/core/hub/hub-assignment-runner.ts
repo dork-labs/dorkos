@@ -12,7 +12,7 @@
  */
 import { logger } from '../../../lib/logger.js';
 import { withRegistrationCaller } from '../auth/registration-policy.js';
-import { getAuth, hasAnyUser } from '../auth/index.js';
+import { getAuth, hasAnyUser, type Auth } from '../auth/index.js';
 import { createCloudV1Client } from '../cloud/v1-client.js';
 import {
   cloudHubCalls,
@@ -51,19 +51,47 @@ export function nextHubBeatMs(outcome: HubSyncOutcome): number | null {
 }
 
 /**
- * The real dependencies: this hub's own Cloud key, its data directory, and
- * Better Auth for the owner account.
+ * Create a hub's owner account: no password and no session, since the owner
+ * only ever signs in with their DorkOS account. It still passes the
+ * registration hook, which lets the `provisioning` caller in on a hub, makes
+ * the account the owner, and writes it to the audit log.
+ *
+ * @param auth - Better Auth.
+ * @param input - The owner's placeholder email and display name.
+ */
+export async function createHubOwner(
+  auth: Auth,
+  input: { email: string; name: string }
+): Promise<void> {
+  const context = await auth.$context;
+  await withRegistrationCaller('provisioning', () =>
+    context.internalAdapter.createUser(
+      { ...input, emailVerified: false },
+      { method: 'dorkos-cloud-assignment' }
+    )
+  );
+}
+
+/**
+ * The real dependencies: this hub's data directory and Better Auth, and Cloud
+ * through this hub's own key unless `cloud` replaces it.
  *
  * @param dorkHome - The DorkOS data directory.
+ * @param cloud - Replaces the Cloud calls, for tests.
  */
-function liveDeps(dorkHome: string): HubAssignmentSyncDeps {
+export function liveHubDeps(
+  dorkHome: string,
+  cloud: Pick<HubAssignmentSyncDeps, 'readAssignment' | 'confirm'> = cloudHubCalls(
+    createCloudV1Client()
+  )
+): HubAssignmentSyncDeps {
   return {
-    ...cloudHubCalls(createCloudV1Client()),
+    ...cloud,
     ownerExists: hasAnyUser,
-    createOwner: async (body) => {
+    createOwner: async (input) => {
       const auth = getAuth();
       if (!auth) throw new Error('Sign-in is not ready yet.');
-      await withRegistrationCaller('provisioning', () => auth.api.signUpEmail({ body }));
+      await createHubOwner(auth, input);
     },
     readPin: () => readHubOwnerPin(dorkHome),
     writePin: (pin) => writeHubOwnerPin(dorkHome, pin),
@@ -77,7 +105,7 @@ function liveDeps(dorkHome: string): HubAssignmentSyncDeps {
  * @param deps - Replaces the live dependencies, for tests.
  */
 export function startHubAssignmentSync(dorkHome: string, deps?: HubAssignmentSyncDeps): void {
-  const resolved = deps ?? liveDeps(dorkHome);
+  const resolved = deps ?? liveHubDeps(dorkHome);
   const beat = async (): Promise<void> => {
     let outcome: HubSyncOutcome;
     try {

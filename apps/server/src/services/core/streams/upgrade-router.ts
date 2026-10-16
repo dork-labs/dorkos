@@ -36,7 +36,7 @@ import { env } from '../../../env.js';
 import { authorizeStreamUpgrade, type StreamUpgradeLocals } from './stream-upgrade-auth.js';
 import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
-import { hubRefusesRequest } from '../hub/hub-serving.js';
+import { hubRefusesRequest, trackHubConnection } from '../hub/hub-serving.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -244,6 +244,7 @@ export function attachUpgradeRouter(
       refuse(socket, 503, 'Service Unavailable');
       return;
     }
+    trackHubConnection(socket);
     const claimed = routes
       .map((route) => ({ route, match: route.pattern.exec(url.pathname) }))
       .find((candidate): candidate is { route: UpgradeRoute; match: RegExpExecArray } =>
