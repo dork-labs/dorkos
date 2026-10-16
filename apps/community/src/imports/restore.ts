@@ -145,7 +145,8 @@ export async function insertImportedRows(
       id: derive(entry.id),
       channel_id: derive(entry.channel_id),
       seq: sequences.get(entry.id),
-      author_member_id: entry.author_member_id && derive(entry.author_member_id),
+      // An agent's message is authored by the agent's own member row, which has its id (0042).
+      author_member_id: derive((entry.author_member_id ?? entry.author_agent_id)!),
       author_agent_id: entry.author_agent_id && derive(entry.author_agent_id),
       author_display_name: entry.author_display_name,
       text: entry.text,

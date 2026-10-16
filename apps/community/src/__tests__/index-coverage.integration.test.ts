@@ -366,14 +366,15 @@ describe('per-job and per-post queries', () => {
     expect(roster.filter((row) => row.kind === 'human')).toHaveLength(245);
     expect(roster.filter((row) => row.kind === 'agent')).toHaveLength(20);
     expect(await channelRoster(db, channel, seeded('b'))).toEqual([]);
-    // Community a has 300 members and 30 agents; the host has 20,300 and 2,030. Whichever join
-    // the planner picks, the roster reads within community a: about 314 member rows by probes,
-    // or a's 300 members twice (once for people, once for agents' owners) by hashing. A join on
-    // id alone, without the community, reads all 20,300 once the planner hashes it.
+    // Community a has 300 members and 30 agents, and each agent has its own member row (0042),
+    // so a holds 330 member rows; the host has 22,330. Whichever join the planner picks, the
+    // roster reads within community a: about 314 member rows by probes, or a's 330 rows twice
+    // (once for people, once for agents' owners) by hashing. A join on id alone, without the
+    // community, reads all 22,330 once the planner hashes it.
     for (const hashJoins of [false, true]) {
       expect(
         await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'members', hashJoins)
-      ).toBeLessThanOrEqual(2 * 300);
+      ).toBeLessThanOrEqual(2 * 330);
       expect(
         await rowsRead(CHANNEL_ROSTER_SQL, [channel, community], 'agents', hashJoins)
       ).toBeLessThanOrEqual(30);

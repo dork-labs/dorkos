@@ -886,6 +886,12 @@ export const agents = pgTable(
       columns: [table.communityId, table.ownerMemberId],
       foreignColumns: [members.communityId, members.id],
     }),
+    // Every agent has its own member row, with its id (0042).
+    foreignKey({
+      name: 'agents_member_fk',
+      columns: [table.communityId, table.id],
+      foreignColumns: [members.communityId, members.id],
+    }),
   ]
 );
 /** Agent bearer records contain only token hashes. */
@@ -974,7 +980,8 @@ export const entries = pgTable(
       .references(() => communities.id),
     channelId: uuid('channel_id').notNull(),
     seq: bigint('seq', { mode: 'number' }).notNull(),
-    authorMemberId: uuid('author_member_id'),
+    /** Always set: an agent's message names the agent's own member row (0042). */
+    authorMemberId: uuid('author_member_id').notNull(),
     authorAgentId: uuid('author_agent_id'),
     authorDisplayName: text('author_display_name').notNull(),
     text: text('text').notNull(),
@@ -1001,9 +1008,10 @@ export const entries = pgTable(
     uniqueIndex('entries_agent_key_unique')
       .on(table.authorAgentId, table.channelId, table.idempotencyKey)
       .where(sql`${table.authorAgentId} IS NOT NULL`),
+    // One author, a member; an agent author is that same member (0042).
     check(
-      'entries_exactly_one_author',
-      sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
+      'entries_one_author',
+      sql`${table.authorMemberId} IS NOT NULL AND (${table.authorAgentId} IS NULL OR ${table.authorAgentId} = ${table.authorMemberId})`
     ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
     // Serve the reply and thread-root foreign key checks when a message is deleted.
@@ -1796,33 +1804,7 @@ export const releasedShortNames = pgTable(
   ]
 );
 
-/**
- * A removed file whose bytes are queued but not yet swept, so a later host takedown of its
- * message can hold them again as evidence (0020). The sweep deletes the row with the bytes.
- */
-export const removedFileBlobs = pgTable(
-  'removed_file_blobs',
-  {
-    blobKey: text('blob_key').primaryKey(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
-    entryId: uuid('entry_id').notNull(),
-    attachmentId: uuid('attachment_id').notNull(),
-    displayName: text('display_name').notNull(),
-    contentType: text('content_type').notNull(),
-    byteSize: integer('byte_size').notNull(),
-    checksum: text('checksum').notNull(),
-    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull(),
-    uploaderMemberId: uuid('uploader_member_id'),
-    uploaderAgentId: uuid('uploader_agent_id'),
-  },
-  (table) => [
-    index('removed_file_blobs_entry_idx').on(table.communityId, table.entryId),
-    check('removed_file_blobs_byte_size_check', sql`${table.byteSize} > 0`),
-    check('removed_file_blobs_checksum_check', sql`${table.checksum} ~ '^[a-f0-9]{64}$'`),
-  ]
-);
+// `removed_file_blobs` lives in `schema/removed-file-blobs.ts` (0020).
 
 /**
  * Notices waiting to be mailed, or already resolved. Never an address: the worker reads the

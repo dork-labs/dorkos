@@ -93,7 +93,13 @@ const TEARDOWN_PASSES: readonly (readonly [string, string])[] = IMPORTED_TABLES.
           [table, 'AND parent_entry_id IS NOT NULL'],
           [table, 'AND parent_entry_id IS NULL'],
         ]
-      : [[table, '']]
+      : // An agent's member row names its owner's (0042), so it goes first.
+        table === 'members'
+        ? [
+            [table, "AND kind='agent'"],
+            [table, ''],
+          ]
+        : [[table, '']]
 );
 
 /** Rows one teardown transaction deletes at most, so a large import never holds its lock long. */

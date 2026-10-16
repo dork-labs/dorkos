@@ -1,20 +1,28 @@
 /**
- * Agents as members, step 1 of 2 (specs/server-merge/03-agents-as-members.md, PR 1; DOR-2876).
+ * Agents as members (specs/server-merge/03-agents-as-members.md; DOR-2876).
  *
- * The next step gives every agent its own `members` row, with the agent's id, and copies the
- * agent's id into `author_member_id` of each message it wrote. This file builds that shape by
- * hand on a real server (one row per enrolled agent, and the backfill with the old
- * one-author check dropped) and pins that nothing a person sees changes: no list of people shows
- * an agent, an agent's id answers every member route as it does today, no count a host reads
- * includes agents, a message an agent wrote still counts as its owner's, and the version 2
- * export still names one author per message.
+ * Every agent has its own `members` row with the agent's id, written by migration 0042's trigger
+ * when the agent is enrolled, and every message an agent writes names that row as its
+ * `author_member_id`. This file runs on a real server with those rows in place and pins that
+ * nothing a person sees changes: no list of people shows an agent, an agent's id answers every
+ * member route as it did before, no count a host reads includes agents, a message an agent wrote
+ * still counts as its owner's, and the version 2 export still names one author per message. It
+ * also pins how the rows follow their agents: enrolment, removal, a person leaving or being
+ * erased, a version 2 import, and takedown evidence.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommunityWireMemberListResponseSchema } from '@dorkos/shared/community-wire';
 import { inspectBackout } from '../backout.js';
 import { checkNewPosts } from '../decisions/worker.js';
 import { readUsage } from '../host/limits.js';
+import { ERASED_AGENT_NAME, eraseMembership } from '../erasure/erasure.js';
+import { uuidv5 } from '../imports/derived-id.js';
+import { sweepImports } from '../imports/worker.js';
+import { banEmailKey } from '../moderation/bans.js';
+import { readEvidenceAuthor } from '../takedown/evidence/record.js';
 import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
+import { createImport, issueKey, uploadArchive } from './import-fixture.js';
+import { drainCleanup } from './member-erasure-fixture.js';
 import { body, post } from './member-erasure-fixture.js';
 import {
   TENANCY_PASSWORD,
@@ -100,36 +108,7 @@ async function enroll(who: TenancyMember, label: string, displayName = `Bot ${la
     200,
     `place ${label}`
   );
-  const agent = { id: enrolled.agent.memberId, token: enrolled.token, grant };
-  await seedAgentMember(agent.id);
-  return agent;
-}
-
-/**
- * Give an agent the member row the next step's migration writes for it: the agent's own id, no
- * account and no handle, the plain member role, linked to its owner.
- */
-async function seedAgentMember(agentId: string) {
-  await h.pool.query(
-    `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,
-       kind,owner_member_id)
-     SELECT a.id,a.community_id,NULL,a.display_name,NULL,'member',a.active,a.created_at,
-       'agent',a.owner_member_id
-     FROM agents a WHERE a.id=$1`,
-    [agentId]
-  );
-}
-
-/**
- * Copy each agent message's author into `author_member_id`, as the next step's migration does.
- * Today's one-author check refuses that shape, so this drops it first, as that migration does.
- */
-async function backfill() {
-  await h.pool.query('ALTER TABLE entries DROP CONSTRAINT IF EXISTS entries_exactly_one_author');
-  await h.pool.query(
-    `UPDATE entries SET author_member_id=author_agent_id
-     WHERE author_agent_id IS NOT NULL AND author_member_id IS NULL`
-  );
+  return { id: enrolled.agent.memberId, token: enrolled.token, grant };
 }
 
 async function say(auth: { cookie?: string; bearer?: string }, text = `hello ${++keyCounter}`) {
@@ -306,7 +285,6 @@ describe(
     it('ranks a removal by the agent’s owner', async () => {
       const mine = await say({ bearer: moAgent.token });
       const abes = await say({ bearer: abeAgent.token });
-      await backfill();
       expect(
         (await h.pool.query('SELECT author_member_id FROM entries WHERE id=$1', [mine])).rows[0]
       ).toEqual({ author_member_id: moAgent.id });
@@ -341,7 +319,6 @@ describe(
       };
       const ownerMessage = await say({ bearer: ownerAgent.token });
       const moMessage = await say({ bearer: moAgent.token });
-      await backfill();
 
       const ownersReport = await reportOn(ownerMessage);
       const refused = await h.call(`${base}/reports/${ownersReport}/resolve`, {
@@ -410,7 +387,6 @@ describe(
         { bearer: piaAgent.token },
         'Pia bot says buy the thing now'
       );
-      await backfill();
       await sweep();
       expect(await checkReports(fromAgent)).toBe(0);
 
@@ -421,7 +397,6 @@ describe(
         { bearer: quinnAgent.token },
         'Quinn bot says buy the thing now'
       );
-      await backfill();
       await sweep();
       expect(await checkReports(agentFirst)).toBe(5);
       const personAfter = await sevenCopies(
@@ -436,7 +411,6 @@ describe(
     // people as members, so every version 2 importer still reads it.
     it('exports version 2 with one author per message and only people as members', async () => {
       const entryId = await say({ bearer: moAgent.token });
-      await backfill();
       await drainExports(h.pool, h.blobStore);
       const created = await body<{ export: { id: string } }>(
         await h.call(`${base}/owner/export`, {
@@ -482,5 +456,223 @@ describe('agents as members: no count a host reads includes agents', { timeout: 
     );
     await person('Last Seat');
     await expect(person('One Too Many')).rejects.toThrow(/got 409 .*MEMBER_LIMIT_REACHED/);
+    await h.pool.query('DELETE FROM community_limits WHERE community_id=$1', [communityId]);
+  });
+});
+
+/** The agent's member row, as the trigger keeps it. */
+async function memberRowOf(agentId: string) {
+  const result = await h.pool.query(
+    `SELECT kind,owner_member_id,user_id,handle,role,display_name,active,
+       removed_at IS NOT NULL AS removed,erased_at IS NOT NULL AS erased
+     FROM members WHERE id=$1`,
+    [agentId]
+  );
+  return result.rows[0] as Record<string, unknown> | undefined;
+}
+
+describe('agents as members: the member row follows its agent', { timeout: 120_000 }, () => {
+  // Purpose: enrolment writes the agent's member row (0042's trigger), with the agent's id, its
+  // owner's membership, no account and no handle; every message it writes names that row.
+  it('gives an enrolled agent its own member row, and its messages that author', async () => {
+    expect(await memberRowOf(moAgent.id)).toEqual({
+      kind: 'agent',
+      owner_member_id: mo.memberId,
+      user_id: null,
+      handle: null,
+      role: 'member',
+      display_name: 'Bot mo',
+      active: true,
+      removed: false,
+      erased: false,
+    });
+    const entryId = await say({ bearer: moAgent.token });
+    expect(
+      (
+        await h.pool.query('SELECT author_member_id,author_agent_id FROM entries WHERE id=$1', [
+          entryId,
+        ])
+      ).rows
+    ).toEqual([{ author_member_id: moAgent.id, author_agent_id: moAgent.id }]);
+  });
+
+  // Purpose: removing an agent, enrolling it again under a new name, and an availability report
+  // each reach the member row as they should: the first two copy over, the report writes nothing.
+  it('follows removal and return, and ignores availability reports', async () => {
+    const rex = await person('Rex Person');
+    const agent = await enroll(rex, 'rex');
+    await expectStatus(
+      await h.call(`${base}/agents/${agent.id}`, { method: 'DELETE', cookie: rex.cookie }),
+      204,
+      'remove agent'
+    );
+    expect(await memberRowOf(agent.id)).toMatchObject({ active: false, removed: true });
+    const back = await body<{ agent: { memberId: string } }>(
+      await h.call(`${base}/agents`, {
+        bearer: agent.grant,
+        body: { localAgentId: 'local-rex', displayName: 'Rex again' },
+      }),
+      201,
+      're-enroll'
+    );
+    expect(back.agent.memberId).toBe(agent.id);
+    expect(await memberRowOf(agent.id)).toMatchObject({
+      active: true,
+      removed: false,
+      display_name: 'Rex again',
+    });
+    const version = async () =>
+      (await h.pool.query('SELECT xmin::text AS v FROM members WHERE id=$1', [agent.id])).rows[0].v;
+    const before = await version();
+    await expectStatus(
+      await h.call(`${base}/agents/availability`, {
+        bearer: agent.grant,
+        body: { agents: [{ agentId: agent.id, runsOn: 'computer' }] },
+      }),
+      200,
+      'report'
+    );
+    expect(await version()).toBe(before);
+  });
+
+  // Purpose: a person leaving the space, or being removed, takes their agents' member rows with
+  // their agents, as removing their agents always has.
+  it("ends a removed person's agent rows with their agents", async () => {
+    const sid = await person('Sid Person');
+    const agent = await enroll(sid, 'sid');
+    await expectStatus(
+      await h.call(`${base}/members/${sid.memberId}`, { method: 'DELETE', cookie: owner.cookie }),
+      204,
+      'remove person'
+    );
+    expect(await memberRowOf(agent.id)).toMatchObject({ active: false, removed: true });
+  });
+
+  // Purpose: erasing a person erases their agents' member rows too: the name goes, the row is
+  // marked erased, and nothing of it stays active.
+  it("erases a person's agent rows with them", async () => {
+    const eve = await person('Eve Person');
+    const agent = await enroll(eve, 'eve');
+    await say({ bearer: agent.token });
+    expect(await eraseMembership(h.pool, communityId, eve.memberId, { log: () => undefined })).toBe(
+      'erased'
+    );
+    expect(await memberRowOf(agent.id)).toMatchObject({
+      display_name: ERASED_AGENT_NAME,
+      active: false,
+      removed: true,
+      erased: true,
+    });
+  });
+
+  // Purpose: takedown evidence names the person an agent's message counts as, with the agent
+  // beside them; an agent's own member row is never read as a person, even alone.
+  it('records takedown evidence for an agent message against its owner', async () => {
+    const client = await h.pool.connect();
+    try {
+      const both = await readEvidenceAuthor(client, communityId, {
+        memberId: moAgent.id,
+        agentId: moAgent.id,
+      });
+      expect(both.subjectMemberId).toBe(mo.memberId);
+      expect(both.author).toMatchObject({
+        memberId: mo.memberId,
+        kind: 'agent',
+        agent: expect.objectContaining({ id: moAgent.id }),
+      });
+      const alone = await readEvidenceAuthor(client, communityId, {
+        memberId: moAgent.id,
+        agentId: null,
+      });
+      expect(alone.author).toBeNull();
+    } finally {
+      client.release();
+    }
+  });
+
+  // Purpose: a version 2 import of a space with agents writes each agent's member row through
+  // the trigger, and still binds a mention of an agent to the agent: with both rows under one id,
+  // the resolver must read only people from members, or the mention names both and the import
+  // fails.
+  it('imports a version 2 export whose message mentions an agent', async () => {
+    const handle = (
+      await h.pool.query<{ handle: string }>('SELECT handle FROM agents WHERE id=$1', [moAgent.id])
+    ).rows[0].handle;
+    const mentioning = await say({ cookie: owner.cookie }, `over to you @${handle}`);
+    expect(
+      (
+        await h.pool.query('SELECT mentioned_agent_id FROM entry_mentions WHERE entry_id=$1', [
+          mentioning,
+        ])
+      ).rows
+    ).toEqual([{ mentioned_agent_id: moAgent.id }]);
+    await drainExports(h.pool, h.blobStore);
+    await h.pool.query(
+      "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE state='ready'"
+    );
+    const created = await body<{ export: { id: string } }>(
+      await h.call(`${base}/owner/export`, {
+        cookie: owner.cookie,
+        body: { password: TENANCY_PASSWORD },
+      }),
+      202,
+      'owner export'
+    );
+    await drainExports(h.pool, h.blobStore, { settings: EXPORT_SETTINGS });
+    const archive = Buffer.from(
+      await (
+        await h.call(`${base}/exports/${created.export.id}/archive`, { cookie: owner.cookie })
+      ).arrayBuffer()
+    );
+
+    const key = await issueKey(h, ['communities:import']);
+    const imported = await createImport(h, { bearer: key }, { name: 'Moved', autoCommit: true });
+    await expectStatus(
+      await uploadArchive(h, imported.importId, archive, { bearer: imported.uploadToken }),
+      200,
+      'upload'
+    );
+    const limits = {
+      ...h.config.limits,
+      banEmailKey: (email: string) => banEmailKey(email, h.config.authSecret),
+    };
+    // Until the import settles: a sweep can find it briefly leased on a busy machine.
+    const stateOf = () =>
+      h.pool.query<{ state: string }>('SELECT state FROM community_imports WHERE id=$1', [
+        imported.importId,
+      ]);
+    for (let round = 0; round < 200; round++) {
+      if (['ready', 'failed'].includes((await stateOf()).rows[0].state)) break;
+      await h.pool.query(
+        'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
+      );
+      await drainCleanup(h);
+      await sweepImports(h.pool, h.blobStore, limits, new Date());
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const state = await stateOf();
+    expect(state.rows[0].state).toBe('ready');
+    const derive = (id: string) => uuidv5(imported.importId, id);
+    expect(
+      (
+        await h.pool.query(
+          'SELECT mentioned_member_id,mentioned_agent_id FROM entry_mentions WHERE entry_id=$1',
+          [derive(mentioning)]
+        )
+      ).rows
+    ).toEqual([{ mentioned_member_id: null, mentioned_agent_id: derive(moAgent.id) }]);
+    expect(await memberRowOf(derive(moAgent.id))).toMatchObject({
+      kind: 'agent',
+      owner_member_id: derive(mo.memberId),
+      active: false,
+    });
+    expect(
+      (
+        await h.pool.query(
+          'SELECT author_member_id FROM entries WHERE community_id=$1 AND author_agent_id=$2 LIMIT 1',
+          [imported.communityId, derive(moAgent.id)]
+        )
+      ).rows
+    ).toEqual([{ author_member_id: derive(moAgent.id) }]);
   });
 });

@@ -472,11 +472,12 @@ async function applyHusk(
         'UPDATE community_handles SET handle=$3 WHERE community_id=$1 AND agent_id=$2',
         [target.communityId, agent.id, agentHandle]
       );
+      // The agent's own member row (0042) follows the agent by trigger, and is erased with it.
       await client.query(
-        `UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,enrolled_by_grant_id=NULL,
-           active=false,runs_on=NULL,last_seen_at=NULL,
-           revoked_at=COALESCE(revoked_at,now())
-         WHERE id=$2 AND community_id=$1`,
+        `WITH husk AS (UPDATE agents SET display_name=$3,handle=$4,local_agent_id=NULL,enrolled_by_grant_id=NULL,
+           active=false,runs_on=NULL,last_seen_at=NULL,revoked_at=COALESCE(revoked_at,now()) WHERE id=$2 AND community_id=$1 RETURNING id)
+         UPDATE members SET display_name=$3,active=false,removed_at=COALESCE(removed_at,now()),erased_at=now()
+           WHERE id IN (SELECT id FROM husk) AND community_id=$1 AND kind='agent'`,
         [target.communityId, agent.id, ERASED_AGENT_NAME, agentHandle]
       );
     }

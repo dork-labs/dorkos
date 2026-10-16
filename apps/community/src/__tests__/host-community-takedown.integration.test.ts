@@ -414,7 +414,8 @@ describe('a whole-community takedown with an evidence store', () => {
     const counts = (
       await h.pool.query<{ entries: number; members: number; channels: number }>(
         `SELECT (SELECT count(*) FROM entries WHERE community_id=$1)::int AS entries,
-                (SELECT count(*) FROM members WHERE community_id=$1)::int AS members,
+                -- A version 2 export lists people as members; agents travel as agents (0042).
+                (SELECT count(*) FROM members WHERE community_id=$1 AND kind='person')::int AS members,
                 (SELECT count(*) FROM channels WHERE community_id=$1)::int AS channels`,
         [s.communityId]
       )

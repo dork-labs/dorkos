@@ -700,7 +700,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     );
     await pool.query(
       `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,author_display_name,text,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
-       VALUES($1,$2,$3,NULL,$4,'Owner worker','private correlation',NULL,NULL,'owner-wire-key','test-hash')`,
+       VALUES($1,$2,$3,$4,$4,'Owner worker','private correlation',NULL,NULL,'owner-wire-key','test-hash')`,
       [communityId, id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
     );
 

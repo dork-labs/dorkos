@@ -772,7 +772,11 @@ it('reports usage equal to independently computed sums, and nothing that names a
   expect(report).toEqual({
     communityId: a,
     measuredAt: expect.any(String),
-    activeMembers: await count('SELECT 1 FROM members WHERE community_id=$1 AND active', [a]),
+    // People only: an agent's own member row (0042) is counted in activeAgents.
+    activeMembers: await count(
+      "SELECT 1 FROM members WHERE community_id=$1 AND kind='person' AND active",
+      [a]
+    ),
     activeAgents: await count('SELECT 1 FROM agents WHERE community_id=$1 AND active', [a]),
     storage: {
       attachmentBytes,

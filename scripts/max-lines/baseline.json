@@ -40,7 +40,7 @@
     "apps/community/src/erasure/erasure.ts": 534,
     "apps/community/src/routes/community/administration.ts": 644,
     "apps/community/src/routes/community/pairings.ts": 564,
-    "apps/community/src/schema.ts": 1868,
+    "apps/community/src/schema.ts": 1850,
     "apps/desktop/scripts/smoke-packaged.ts": 641,
     "apps/e2e/capture/config.ts": 562,
     "apps/server/src/routes/relay-adapters.ts": 543,

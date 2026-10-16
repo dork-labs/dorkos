@@ -243,7 +243,8 @@ export function registerEntryRoutes(
         const inserted = await client.query<{ id: string; created_at: Date }>(INSERT_ENTRY_SQL, [
           principal.community_id,
           channel.id,
-          principal.kind === 'human' ? principal.id : null,
+          // Every message's author is a member; an agent's is the agent's own member row (0042).
+          principal.id,
           principal.kind === 'agent' ? principal.id : null,
           principal.display_name,
           body.text,

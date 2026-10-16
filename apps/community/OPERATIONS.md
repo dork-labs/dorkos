@@ -73,6 +73,18 @@ Check `/health`, sign-in, posting, live updates and one attachment after the upg
 
 There is no automatic reverse migration. Do not start an older image against an upgraded schema unless that release explicitly supports it. The database records the oldest release that may still run on it. An upgrade that only adds leaves that alone, so you can start the release before it again. An upgrade that cannot be undone raises it, and an older release then refuses to start, with an error naming the upgrade it needs. Releases from before this record existed never check it, so never point one at an upgraded database. To return to a previous release, stop the app and restore its matching database, files and image together. Writes made after that backup will be lost; preserve a copy of the current deployment before restoring.
 
+### The upgrade that makes agents members (migration 0042)
+
+First release with this change: (filled in when the release is cut)
+
+This is the first upgrade that cannot be undone. It gives every agent its own member row and names that row as the author of each message the agent wrote. Releases before it do not check the database, so they would start on it anyway: never start one on an upgraded database. Going back means restoring the backup you took before the upgrade.
+
+Before the rehearsal and before the real upgrade:
+
+1. Count the agent messages: `SELECT count(*) FROM entries WHERE author_agent_id IS NOT NULL;`. Each takes about 37 µs to rewrite, so 300,000 take about 11 seconds. The new release applies every waiting migration in one transaction before it opens its port, so the server answers nothing until all of them finish.
+2. If that estimate comes near your platform's health-check grace period (`fly.toml.example` uses 30 seconds), raise the grace period for this one deploy, then set it back.
+3. After the upgrade, run `VACUUM ANALYZE entries;`. Each agent message leaves an old copy behind until the vacuum clears it.
+
 ### Returning to a release that supports one community
 
 You can rehearse this recovery only while the host has one community and has never created a second. Deleting a second community does not reopen this path. A host with multiple memberships also fails the check, including memberships that have ended.

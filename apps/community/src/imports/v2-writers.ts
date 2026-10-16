@@ -267,7 +267,8 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
       id: scope.derive(entry.id),
       channel_id: channelId,
       seq,
-      author_member_id: entry.author_member_id && scope.derive(entry.author_member_id),
+      // An agent's message is authored by the agent's own member row, which has its id (0042).
+      author_member_id: scope.derive((entry.author_member_id ?? entry.author_agent_id)!),
       author_agent_id: entry.author_agent_id && scope.derive(entry.author_agent_id),
       author_display_name: shown.authorName,
       text: shown.text,
