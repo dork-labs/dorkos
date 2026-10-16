@@ -5,6 +5,7 @@ covers:
   - 'test(client): preserve exact focus-ring audit with fewer parses'
   - 'fix(client): scope recovery discovery to its observed binding'
   - 'test(e2e): retain failed file-save recovery traces'
+  - 'test(e2e): wait for the app shell before opening the right panel'
 ---
 
 ### Added

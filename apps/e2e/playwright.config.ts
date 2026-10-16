@@ -973,6 +973,10 @@ export default defineConfig({
       // reasons: its rename leg drives turns, and its sync test opens a second
       // context.
       name: 'chromium-browser-driving',
+      // These five specs share the test-mode scenario store and tracked sessions.
+      // Their global reset must not erase another file's active conversation.
+      // CI already uses one worker; keep local runs isolated the same way.
+      workers: 1,
       metadata: { fileSaveRecoveryHome: MOCK_DORK_HOME },
       use: {
         ...devices['Desktop Chrome'],
