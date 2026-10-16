@@ -121,9 +121,12 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
 /** Every non-test, non-playground source file under `src/`. */
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
-  for (const name of readdirSync(dir)) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const name = entry.name;
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) {
+    // Preserve the original follow-link behavior without stating every ordinary entry.
+    const directory = entry.isSymbolicLink() ? statSync(path).isDirectory() : entry.isDirectory();
+    if (directory) {
       if (name === '__tests__' || name === 'dev' || name === 'node_modules') continue;
       out.push(...sourceFiles(path));
     } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
@@ -145,7 +148,7 @@ function sourceFiles(dir: string): string[] {
  * @param source - The file's text.
  * @param fileName - Its name; the extension picks TS or TSX parsing.
  */
-function countRaw(source: string, fileName = 'probe.tsx'): number {
+function countRawAst(source: string, fileName = 'probe.tsx'): number {
   const file = ts.createSourceFile(
     fileName,
     source,
@@ -169,6 +172,19 @@ function countRaw(source: string, fileName = 'probe.tsx'): number {
   };
   visit(file);
   return count;
+}
+
+/** Skip only text that cannot contain a raw class, decoded escape or JSX entity. */
+function countRaw(source: string, fileName = 'probe.tsx'): number {
+  if (
+    !source.includes('text-') &&
+    !source.includes('fill-') &&
+    !source.includes('stroke-') &&
+    !source.includes('\\') &&
+    !source.includes('&')
+  )
+    return 0;
+  return countRawAst(source, fileName);
 }
 
 /** How many raw status colours each file paints, keyed by its path under `src/`. */
@@ -245,6 +261,42 @@ describe('raw status colours', () => {
     // A `//` in a template piece.
     expect(countRaw('const c = `${a}//x text-red-500`;')).toBe(1);
     expect(countRaw('const c = `${a} text-red-500 ${b} text-green-500`;')).toBe(2);
+  });
+
+  it.each([
+    { name: 'ordinary strings', source: "const label = 'plain text';", expected: 0 },
+    {
+      name: 'hex string escape',
+      source: String.raw`const colour = 'text\x2dred-500';`,
+      expected: 1,
+    },
+    {
+      name: 'Unicode string escapes',
+      source: String.raw`const colour = 'text\u002damber\u002d600';`,
+      expected: 1,
+    },
+    {
+      name: 'unsubstituted template escape',
+      source: 'const colour = `fill\\u002dgreen-500`;',
+      expected: 1,
+    },
+    {
+      name: 'interpolated template pieces',
+      source: 'const colour = `text\\u002dred-500 ${value} stroke\\u002damber-600`;',
+      expected: 2,
+    },
+    { name: 'JSX attribute entity', source: '<span className="text&#45;red-500" />' },
+    { name: 'JSX text entity', source: '<span>fill&#x2d;green-500</span>' },
+    {
+      name: 'escaped-looking comments',
+      source: String.raw`// text\u002dred-500
+const n = 1;`,
+      expected: 0,
+    },
+  ])('preserves the original AST count for $name', ({ source, expected }) => {
+    const original = countRawAst(source);
+    if (expected !== undefined) expect(original).toBe(expected);
+    expect(countRaw(source)).toBe(original);
   });
 
   it('the ratchet fails on an inflated entry, an unlisted file and a stale one', () => {

@@ -2282,34 +2282,6 @@
           "useCredits"
         ]
       },
-      "WriteFileResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "hash": {
-            "type": "string"
-          },
-          "effect": {
-            "type": "string",
-            "enum": [
-              "changed",
-              "no_op"
-            ]
-          },
-          "documentReceipt": {
-            "$ref": "#/components/schemas/FileDocumentSaveReceipt"
-          }
-        },
-        "required": [
-          "ok",
-          "hash"
-        ]
-      },
       "FileDocumentSaveReceipt": {
         "type": "object",
         "properties": {
@@ -2386,6 +2358,34 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "WriteFileResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "hash": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "no_op"
+            ]
+          },
+          "documentReceipt": {
+            "$ref": "#/components/schemas/FileDocumentSaveReceipt"
+          }
+        },
+        "required": [
+          "ok",
+          "hash"
+        ]
       },
       "WriteFileRequest": {
         "type": "object",
@@ -24317,6 +24317,726 @@
                     "error"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/file-saves": {
+      "get": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Discover current-owner original save evidence",
+        "description": "Ordinary authenticated operator, current chat FILE only. Latest25 current-owner/full-birth summaries, explicit truncation; no draft, path, credentials or foreign operation identifiers. Admission result is a momentary observation, never a write capability or proof of global vacancy.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded historical evidence; no filesystem effects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "incarnation": {
+                      "type": "object",
+                      "properties": {
+                        "v": {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "physicalOpenedAt": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "format": "date-time"
+                        },
+                        "channelCreatedAt": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "format": "date-time"
+                        },
+                        "generation": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "v",
+                        "documentId",
+                        "physicalOpenedAt",
+                        "channelCreatedAt",
+                        "generation"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "eventId": {
+                                "type": "string",
+                                "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "receipt"
+                                ]
+                              },
+                              "receipt": {
+                                "$ref": "#/components/schemas/FileDocumentSaveReceipt"
+                              },
+                              "historical": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              },
+                              "currentFileMatch": {
+                                "type": "string",
+                                "enum": [
+                                  "same_saved_replacement",
+                                  "different",
+                                  "not_checked"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "eventId",
+                              "createdAt",
+                              "updatedAt",
+                              "state",
+                              "receipt",
+                              "historical",
+                              "currentFileMatch"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "eventId": {
+                                "type": "string",
+                                "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "no_op"
+                                ]
+                              },
+                              "historical": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              }
+                            },
+                            "required": [
+                              "eventId",
+                              "createdAt",
+                              "updatedAt",
+                              "state",
+                              "historical"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "eventId": {
+                                "type": "string",
+                                "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "failed"
+                                ]
+                              },
+                              "historical": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              }
+                            },
+                            "required": [
+                              "eventId",
+                              "createdAt",
+                              "updatedAt",
+                              "state",
+                              "historical"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "eventId": {
+                                "type": "string",
+                                "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "review"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "prepared_without_replacement",
+                                  "replacement_not_proven",
+                                  "proof_unavailable"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "eventId",
+                              "createdAt",
+                              "updatedAt",
+                              "state",
+                              "reason"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "maxItems": 25
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "window": {
+                      "type": "string",
+                      "enum": [
+                        "latest_25_current_owner_birth"
+                      ]
+                    },
+                    "admission": {
+                      "type": "string",
+                      "enum": [
+                        "blocked",
+                        "not_observed_blocked"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "incarnation",
+                    "entries",
+                    "hasMore",
+                    "window",
+                    "admission"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid recovery input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Current owning chat document or original operation unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Evidence, authority or storage unavailable; no fence is cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/canvas/docs/{id}/file-saves/{eventId}/recover": {
+      "post": {
+        "tags": [
+          "Canvas"
+        ],
+        "summary": "Inspect or complete one original save receipt without repeating its file effect",
+        "description": "Accepts only expected full incarnation. Exact owner/source/path/replacement inode+hash and canonical gate are required for original staged completion. Prepared-without-replacement remains manual. A returned receipt is historical; current match is a separately observed classification. Existing history-only routing stays history-only; frozen original routes are never reselected.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "eventId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedIncarnation": {
+                    "type": "object",
+                    "properties": {
+                      "v": {
+                        "type": "number",
+                        "enum": [
+                          1
+                        ]
+                      },
+                      "documentId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "physicalOpenedAt": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "format": "date-time"
+                      },
+                      "channelCreatedAt": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "format": "date-time"
+                      },
+                      "generation": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    },
+                    "required": [
+                      "v",
+                      "documentId",
+                      "physicalOpenedAt",
+                      "channelCreatedAt",
+                      "generation"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "expectedIncarnation"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Historical receipt, no-op, proven failed or unresolved review; no rename/write",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "documentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "incarnation": {
+                      "type": "object",
+                      "properties": {
+                        "v": {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "physicalOpenedAt": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "format": "date-time"
+                        },
+                        "channelCreatedAt": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "format": "date-time"
+                        },
+                        "generation": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "v",
+                        "documentId",
+                        "physicalOpenedAt",
+                        "channelCreatedAt",
+                        "generation"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "entry": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "eventId": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "receipt"
+                              ]
+                            },
+                            "receipt": {
+                              "$ref": "#/components/schemas/FileDocumentSaveReceipt"
+                            },
+                            "historical": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "currentFileMatch": {
+                              "type": "string",
+                              "enum": [
+                                "same_saved_replacement",
+                                "different",
+                                "not_checked"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "eventId",
+                            "createdAt",
+                            "updatedAt",
+                            "state",
+                            "receipt",
+                            "historical",
+                            "currentFileMatch"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "eventId": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "no_op"
+                              ]
+                            },
+                            "historical": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            }
+                          },
+                          "required": [
+                            "eventId",
+                            "createdAt",
+                            "updatedAt",
+                            "state",
+                            "historical"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "eventId": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "failed"
+                              ]
+                            },
+                            "historical": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            }
+                          },
+                          "required": [
+                            "eventId",
+                            "createdAt",
+                            "updatedAt",
+                            "state",
+                            "historical"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "eventId": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "review"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "enum": [
+                                "prepared_without_replacement",
+                                "replacement_not_proven",
+                                "proof_unavailable"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "eventId",
+                            "createdAt",
+                            "updatedAt",
+                            "state",
+                            "reason"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "documentId",
+                    "incarnation",
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid recovery input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Current owning chat document or original operation unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Evidence, authority or storage unavailable; no fence is cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }

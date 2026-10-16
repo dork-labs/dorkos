@@ -1,6 +1,21 @@
 /** Original operator file-save protocol. No page event, route authority or write callback is accepted. */
 import {
+  inspectOriginalFileSaveEvidence,
+  projectOriginalFileSaveEvidence,
+} from './file-save-recovery/inspect-original.js';
+import { replaceOriginalDocumentFile } from './file-save-recovery/replace-original.js';
+import {
+  FileSaveDiscoverySchema,
+  FileSaveRecoverResultSchema,
+  FileSaveRecoveryLookupSchema,
+} from '@dorkos/shared/file-save/recovery';
+import { z } from 'zod';
+import {
   captureDocumentSaveOperator,
+  captureDocumentSaveBinding,
+  resolveCurrentDocumentSaveSource,
+  readOriginalDocumentFile,
+  requireOriginalDocumentFileEffect,
   captureDocumentSaveSource,
   requireCurrentDocumentSaveSource,
   type DocumentFileSaveDependencies,
@@ -12,7 +27,7 @@ import {
   type InstallationFileWrites,
 } from './installation-file-writes.js';
 import fs from 'node:fs/promises';
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import {
   and,
   eq,
@@ -31,6 +46,7 @@ import { StoredPageEventSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { resolveWithinCwd, sha256 } from '../../../../lib/file-route-guards.js';
 import { parseScope } from '../../scopes.js';
 import { DocChannelNotFoundError } from '../authorization.js';
+import { sameOriginalFileSaveSource } from './file-save-recovery/applied-source.js';
 import { sameDocOwnerAuthority } from '../doc-source-policy.js';
 import { envelopeIdentity } from '../envelope.js';
 import { documentTransaction } from '../store-transaction.js';
@@ -42,13 +58,10 @@ import {
 import {
   CanonicalFileWriteCoordinator,
   CanonicalFileIdentityChangedError,
-  type CanonicalFileIdentity,
-  type CanonicalWriteLease,
 } from './canonical-writer.js';
 import type { CheckboxWriteFence } from './checkbox-fence.js';
 import { readFileSaveIntent, type FileSaveIntentRow } from './file-save-intents.js';
 import { requireDocEventUuidVacant } from './reservation-policy-census.js';
-import { sameOriginalFileSaveSource } from './file-save-recovery/applied-source.js';
 
 export type {
   DocumentFileSaveDependencies,
@@ -71,9 +84,6 @@ export function consumeOriginalFileSaveAppend(
 function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
-function matches(info: { dev: bigint; ino: bigint }, device: string, inode: string): boolean {
-  return String(info.dev) === device && String(info.ino) === inode;
-}
 function uncertain(): never {
   throw Object.assign(new Error('The original save needs recovery.'), {
     code: 'DOC_SAVE_IN_DOUBT',
@@ -85,6 +95,7 @@ function uncertain(): never {
 export class DocumentFileSave {
   #stopped = false;
   readonly #active = new Set<Promise<unknown>>();
+  readonly #owner: InstallationFileWrites;
   readonly #deps: DocumentFileSaveDependencies;
   readonly #coordinator: CanonicalFileWriteCoordinator;
   readonly #fence: CheckboxWriteFence;
@@ -96,6 +107,7 @@ export class DocumentFileSave {
   ) {
     requireOriginalDocumentFileOwner(owner, deps.db, deps.channels, coordinator);
     requireDocChannelStoreDatabase(deps.channels, deps.db);
+    this.#owner = owner;
     this.#deps = Object.freeze({ ...deps });
     this.#coordinator = coordinator;
     this.#fence = fence;
@@ -117,6 +129,99 @@ export class DocumentFileSave {
       () => this.#active.delete(operation)
     );
     return operation;
+  }
+
+  /** Discover only this current operator/birth's bounded evidence; no write readiness is granted. */
+  discover(documentId: unknown, caller: Caller) {
+    if (this.#stopped) return Promise.reject(new Error('Document file saves are stopped'));
+    const id = z.string().min(1).max(200).parse(documentId);
+    return this.#track(
+      this.#inspect(id, undefined, this.#caller(caller)).then((result) =>
+        FileSaveDiscoverySchema.parse(result)
+      )
+    );
+  }
+  /** Explicit proof-only conversion of the original receipt, never another filesystem command. */
+  recover(raw: unknown, caller: Caller) {
+    if (this.#stopped) return Promise.reject(new Error('Document file saves are stopped'));
+    const lookup = FileSaveRecoveryLookupSchema.parse(raw);
+    return this.#track(
+      this.#inspect(lookup.documentId, lookup, this.#caller(caller)).then((result) =>
+        FileSaveRecoverResultSchema.parse(result)
+      )
+    );
+  }
+  #caller(caller: Caller): Caller {
+    return Object.freeze({
+      headers: Object.freeze({ ...caller.headers }),
+      agentIdentity: caller.agentIdentity,
+      user: caller.user ? Object.freeze({ ...caller.user }) : undefined,
+    });
+  }
+  #track<T>(operation: Promise<T>): Promise<T> {
+    this.#active.add(operation);
+    void operation.then(
+      () => this.#active.delete(operation),
+      () => this.#active.delete(operation)
+    );
+    return operation;
+  }
+  async #inspect(
+    documentId: string,
+    lookup: import('zod').infer<typeof FileSaveRecoveryLookupSchema> | undefined,
+    caller: Caller
+  ) {
+    const initial = await resolveCurrentDocumentSaveSource(this.#deps, documentId, caller);
+    const expected = lookup?.expectedIncarnation ?? initial.captured.incarnation;
+    return this.#coordinator.withFiles([initial.canonicalPath], async ([identity]) => {
+      const captured = await captureDocumentSaveBinding(
+        this.#deps,
+        { documentId, incarnation: expected },
+        caller,
+        identity!
+      );
+      const plan = await inspectOriginalFileSaveEvidence(
+        this.#deps,
+        this.#fence,
+        captured,
+        identity!,
+        lookup?.eventId
+      );
+      this.#current(captured);
+      if (plan.kind === 'discovery') {
+        const entries = plan.rows.map((row) =>
+          projectOriginalFileSaveEvidence(
+            row,
+            row.status === 'committed'
+              ? this.#complete(row, captured, true).body.documentReceipt
+              : undefined
+          )
+        );
+        return FileSaveDiscoverySchema.parse({
+          documentId,
+          incarnation: captured.incarnation,
+          entries,
+          hasMore: plan.hasMore,
+          window: 'latest_25_current_owner_birth',
+          admission: plan.admission,
+        });
+      }
+      const receipt =
+        plan.row.status === 'committed' || plan.verifiedReplacement
+          ? this.#complete(plan.row, captured, true).body.documentReceipt
+          : undefined;
+      const retained = receipt
+        ? readFileSaveIntent(this.#deps.db, documentId, plan.row.eventId)
+        : plan.row;
+      if (!retained) throw new Error('Original save evidence disappeared');
+      const entry = projectOriginalFileSaveEvidence(retained, receipt, plan.currentFileMatch);
+      this.#current(captured);
+      return FileSaveRecoverResultSchema.parse({
+        documentId,
+        incarnation: captured.incarnation,
+        entry,
+      });
+    });
   }
 
   /** Stop new admission before draining already tracked continuations. */
@@ -173,7 +278,7 @@ export class DocumentFileSave {
         return this.#replay(existing, captured);
       }
       this.#fence.assertAdmission(identity!);
-      const before = await this.#readOriginal(identity!);
+      const before = await readOriginalDocumentFile(identity!);
       const beforeHash = sha256(before);
       if (beforeHash !== expected)
         return {
@@ -219,13 +324,25 @@ export class DocumentFileSave {
         return { status: 200 as const, body: { ok: true, hash: afterHash, effect: 'no_op' } };
       const attempt = { renameStarted: false, cleanupComplete: true };
       try {
-        await this.#replace(row, captured, identity!, lease, input.content, attempt);
+        await replaceOriginalDocumentFile(
+          this.#owner,
+          this.#deps,
+          this.#coordinator,
+          this.#fence,
+          row,
+          captured,
+          identity!,
+          lease,
+          input.content,
+          attempt
+        );
         return this.#complete(row, captured, false);
       } catch (error) {
         let status: 'failed' | 'in_doubt' = 'in_doubt';
         if (!attempt.renameStarted && attempt.cleanupComplete) {
           try {
-            if (sha256(await this.#readOriginal(identity!)) === row.beforeHash) status = 'failed';
+            if (sha256(await readOriginalDocumentFile(identity!)) === row.beforeHash)
+              status = 'failed';
           } catch {
             /* Keep uncertainty. */
           }
@@ -254,131 +371,6 @@ export class DocumentFileSave {
     });
   }
 
-  async #readOriginal(identity: CanonicalFileIdentity): Promise<string> {
-    const handle = await fs.open(identity.canonicalPath, 'r');
-    try {
-      const info = await handle.stat({ bigint: true });
-      if (!info.isFile() || !matches(info, identity.device, identity.inode))
-        throw new CanonicalFileIdentityChangedError();
-      const content = await handle.readFile('utf8');
-      const named = await fs.lstat(identity.canonicalPath, { bigint: true });
-      if (!named.isFile() || !matches(named, identity.device, identity.inode))
-        throw new CanonicalFileIdentityChangedError();
-      return content;
-    } finally {
-      await handle.close();
-    }
-  }
-
-  async #replace(
-    row: FileSaveIntentRow,
-    captured: Capture,
-    identity: CanonicalFileIdentity,
-    lease: CanonicalWriteLease,
-    content: string,
-    attempt: { renameStarted: boolean; cleanupComplete: boolean }
-  ): Promise<void> {
-    this.#current(captured);
-    const temporary = `${row.canonicalPath}.${randomBytes(6).toString('hex')}.tmp`;
-    const handle = await fs.open(temporary, 'wx');
-    attempt.cleanupComplete = false;
-    const owned = await handle.stat({ bigint: true }).catch(async (error: unknown) => {
-      await handle.close();
-      throw error;
-    });
-    let renamed = false;
-    const ownedTemporary = async () => {
-      const current = await fs.lstat(temporary, { bigint: true });
-      return current.isFile() && current.dev === owned.dev && current.ino === owned.ino;
-    };
-    try {
-      this.#current(captured);
-      await handle.writeFile(content, 'utf8');
-      await handle.sync();
-      const reserved = await lease.reserveReplacement(temporary);
-      if (
-        reserved.canonicalPath !== temporary ||
-        !matches(owned, reserved.device, reserved.inode) ||
-        !(await ownedTemporary())
-      )
-        throw new CanonicalFileIdentityChangedError();
-      documentTransaction(this.#deps.db, (tx) => {
-        this.#current(captured, tx);
-        const changed = tx
-          .update(canvasDocFileSaveIntents)
-          .set({
-            status: 'staged',
-            replacementDevice: String(owned.dev),
-            replacementInode: String(owned.ino),
-            updatedAt: new Date().toISOString(),
-          })
-          .where(
-            and(
-              eq(canvasDocFileSaveIntents.intentId, row.intentId),
-              eq(canvasDocFileSaveIntents.status, 'prepared')
-            )
-          )
-          .run().changes;
-        if (changed !== 1) throw new Error('Original save staging changed');
-      });
-      row.status = 'staged';
-      row.replacementDevice = String(owned.dev);
-      row.replacementInode = String(owned.ino);
-      this.#current(captured);
-      const currentPath = await resolveWithinCwd(
-        captured.source.resolvedCwd!,
-        captured.source.sourcePath!
-      );
-      const before = await fs.stat(currentPath.resolved, { bigint: true });
-      if (
-        currentPath.resolved !== row.canonicalPath ||
-        !matches(before, identity.device, identity.inode) ||
-        sha256(await fs.readFile(row.canonicalPath, 'utf8')) !== row.beforeHash
-      )
-        throw new CanonicalFileIdentityChangedError();
-      this.#fence.assertAdmission(identity, row.intentId);
-      if (!(await ownedTemporary())) throw new CanonicalFileIdentityChangedError();
-      this.#current(captured);
-      attempt.renameStarted = true;
-      await fs.rename(temporary, row.canonicalPath);
-      renamed = true;
-      await this.#effect(row, captured);
-    } finally {
-      let closed = false;
-      try {
-        await handle.close();
-        closed = true;
-      } finally {
-        if (!renamed && (await ownedTemporary().catch(() => false))) await fs.unlink(temporary);
-        attempt.cleanupComplete = closed;
-      }
-    }
-  }
-
-  async #effect(row: FileSaveIntentRow, captured: Capture): Promise<void> {
-    this.#current(captured);
-    const path = await resolveWithinCwd(captured.source.resolvedCwd!, captured.source.sourcePath!);
-    const handle = await fs.open(path.resolved, 'r');
-    try {
-      const info = await handle.stat({ bigint: true });
-      if (
-        path.resolved !== row.canonicalPath ||
-        !info.isFile() ||
-        !row.replacementDevice ||
-        !row.replacementInode ||
-        !matches(info, row.replacementDevice, row.replacementInode) ||
-        sha256(await handle.readFile('utf8')) !== row.afterHash
-      )
-        uncertain();
-      const named = await fs.lstat(path.resolved, { bigint: true });
-      if (!named.isFile() || !matches(named, row.replacementDevice, row.replacementInode))
-        uncertain();
-      this.#current(captured);
-    } finally {
-      await handle.close();
-    }
-  }
-
   async #replay(row: FileSaveIntentRow, captured: Capture) {
     if (row.status === 'committed') return this.#complete(row, captured, true);
     if (row.status === 'no_op') {
@@ -393,7 +385,7 @@ export class DocumentFileSave {
         status: 412,
       });
     if (row.status === 'staged' || row.status === 'in_doubt') {
-      await this.#effect(row, captured);
+      await requireOriginalDocumentFileEffect(this.#deps, row, captured);
       return this.#complete(row, captured, true);
     }
     uncertain(); // Never replay a prepared/failed command or repeat its filesystem effect.

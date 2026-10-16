@@ -7,7 +7,9 @@ import {
   type CanvasDocIncarnation,
 } from '@dorkos/shared/canvas-channel-schemas';
 import type { RequestFacts } from '../../../../http/request-facts.js';
-import { resolveWithinCwd } from '../../../../lib/file-route-guards.js';
+import { resolveWithinCwd, sha256 } from '../../../../lib/file-route-guards.js';
+import { CanonicalFileIdentityChangedError } from './canonical-writer.js';
+import type { FileSaveIntentRow } from './file-save-intents.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { parseScope } from '../../scopes.js';
 import {
@@ -53,7 +55,12 @@ export function captureDocumentSaveOperator(
   deps: DocumentFileSaveDependencies,
   caller: DocumentFileSaveCaller
 ) {
-  if (caller.agentIdentity || Object.hasOwn(caller.headers, 'x-dorkos-agent'))
+  if (
+    caller.agentIdentity ||
+    Object.hasOwn(caller.headers, 'x-dorkos-agent') ||
+    (typeof caller.headers.authorization === 'string' &&
+      /^Bearer\s+dct_/iu.test(caller.headers.authorization))
+  )
     throw new DocChannelNotFoundError();
   const owner = docInstallationOwner(deps.installationId);
   if (caller.user && (owner.kind !== 'user' || owner.userId !== caller.user.userId))
@@ -65,26 +72,25 @@ export function captureDocumentSaveOperator(
   return { owner, actor };
 }
 
-/** Observe the actual confined session source. Main session control_ui records its sole tree as null; both forms still require the registered session root, physical cwd and confined file to agree. */
-export async function captureDocumentSaveSource(
+/** Derive a current source from the installed operator and registered session, never a caller path. */
+export async function resolveCurrentDocumentSaveSource(
   deps: DocumentFileSaveDependencies,
-  input: WriteFileRequest,
-  caller: DocumentFileSaveCaller,
-  identity: CanonicalFileIdentity
-): Promise<Capture> {
-  if (!input.documentSave) throw new DocChannelNotFoundError();
+  documentId: string,
+  caller: DocumentFileSaveCaller
+) {
   const { owner, actor } = captureDocumentSaveOperator(deps, caller);
-  const authorized = await deps.authorization.require(input.documentSave.documentId, actor, true);
+  const authorized = await deps.authorization.require(documentId, actor, true);
   if (parseScope(authorized.scope).kind !== 'session') throw new DocChannelNotFoundError();
-  const source = readSessionDocSourceDescriptor(deps, input.documentSave.documentId);
+  const source = readSessionDocSourceDescriptor(deps, documentId);
   if (
     parseScope(source.scope).kind !== 'session' ||
     (source.treeKind !== 'agent-cwd' && source.treeKind !== null) ||
     !source.resolvedCwd ||
-    !source.sourcePath
+    !source.sourcePath ||
+    !source.rootCandidate ||
+    !source.matchRoot
   )
     throw new DocChannelNotFoundError();
-  if (!source.rootCandidate || !source.matchRoot) throw new DocChannelNotFoundError();
   const root = await fs.realpath(source.rootCandidate);
   if (
     (await fs.realpath(source.resolvedCwd)) !== root ||
@@ -92,7 +98,6 @@ export async function captureDocumentSaveSource(
   )
     throw new DocChannelNotFoundError();
   const actual = await resolveWithinCwd(source.resolvedCwd, source.sourcePath);
-  if (actual.resolved !== identity.canonicalPath) throw new DocChannelNotFoundError();
   const channel = deps.channels.getChannel(source.id);
   if (!channel) throw new DocChannelNotFoundError();
   const incarnation: CanvasDocIncarnation = {
@@ -102,11 +107,34 @@ export async function captureDocumentSaveSource(
     channelCreatedAt: channel.createdAt,
     generation: docDocumentGeneration(source, channel),
   };
-  if (!sameCanvasDocIncarnation(incarnation, input.documentSave.incarnation))
-    throw new DocChannelNotFoundError();
-  const captured = { actor, source, incarnation, owner };
+  const captured: Capture = { actor, source, incarnation, owner };
   requireCurrentDocumentSaveSource(deps, captured);
-  return captured;
+  return { captured, canonicalPath: actual.resolved };
+}
+/** Fixed binding-only capture supports receipt recovery without fabricating a content-bearing PUT. */
+export async function captureDocumentSaveBinding(
+  deps: DocumentFileSaveDependencies,
+  binding: { documentId: string; incarnation: CanvasDocIncarnation },
+  caller: DocumentFileSaveCaller,
+  identity: CanonicalFileIdentity
+): Promise<Capture> {
+  const current = await resolveCurrentDocumentSaveSource(deps, binding.documentId, caller);
+  if (
+    current.canonicalPath !== identity.canonicalPath ||
+    !sameCanvasDocIncarnation(current.captured.incarnation, binding.incarnation)
+  )
+    throw new DocChannelNotFoundError();
+  return current.captured;
+}
+/** Existing save keeps the identical current session/root/path/incarnation checks. */
+export async function captureDocumentSaveSource(
+  deps: DocumentFileSaveDependencies,
+  input: WriteFileRequest,
+  caller: DocumentFileSaveCaller,
+  identity: CanonicalFileIdentity
+): Promise<Capture> {
+  if (!input.documentSave) throw new DocChannelNotFoundError();
+  return captureDocumentSaveBinding(deps, input.documentSave, caller, identity);
 }
 
 /** Recheck only synchronous authoritative rows; safe inside the owning SQLite transaction. */
@@ -127,4 +155,58 @@ export function requireCurrentDocumentSaveSource(
     channel.createdAt !== captured.incarnation.channelCreatedAt
   )
     throw new DocChannelNotFoundError();
+}
+
+function matches(info: { dev: bigint; ino: bigint }, device: string, inode: string) {
+  return String(info.dev) === device && String(info.ino) === inode;
+}
+function uncertain(): never {
+  throw Object.assign(new Error('The original save needs recovery.'), {
+    code: 'DOC_SAVE_IN_DOUBT',
+    status: 503,
+  });
+}
+/** Mechanically extracted original named-inode read; no receipt or write authority. */
+export async function readOriginalDocumentFile(identity: CanonicalFileIdentity): Promise<string> {
+  const handle = await fs.open(identity.canonicalPath, 'r');
+  try {
+    const info = await handle.stat({ bigint: true });
+    if (!info.isFile() || !matches(info, identity.device, identity.inode))
+      throw new CanonicalFileIdentityChangedError();
+    const content = await handle.readFile('utf8');
+    const named = await fs.lstat(identity.canonicalPath, { bigint: true });
+    if (!named.isFile() || !matches(named, identity.device, identity.inode))
+      throw new CanonicalFileIdentityChangedError();
+    return content;
+  } finally {
+    await handle.close();
+  }
+}
+/** Mechanically extracted exact original replacement verification, without repeating any file effect. */
+export async function requireOriginalDocumentFileEffect(
+  deps: DocumentFileSaveDependencies,
+  row: FileSaveIntentRow,
+  captured: Capture
+): Promise<void> {
+  requireCurrentDocumentSaveSource(deps, captured);
+  const path = await resolveWithinCwd(captured.source.resolvedCwd!, captured.source.sourcePath!);
+  const handle = await fs.open(path.resolved, 'r');
+  try {
+    const info = await handle.stat({ bigint: true });
+    if (
+      path.resolved !== row.canonicalPath ||
+      !info.isFile() ||
+      !row.replacementDevice ||
+      !row.replacementInode ||
+      !matches(info, row.replacementDevice, row.replacementInode) ||
+      sha256(await handle.readFile('utf8')) !== row.afterHash
+    )
+      uncertain();
+    const named = await fs.lstat(path.resolved, { bigint: true });
+    if (!named.isFile() || !matches(named, row.replacementDevice, row.replacementInode))
+      uncertain();
+    requireCurrentDocumentSaveSource(deps, captured);
+  } finally {
+    await handle.close();
+  }
 }

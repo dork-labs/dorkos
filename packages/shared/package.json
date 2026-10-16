@@ -536,6 +536,10 @@
     "./transport-local-browser": {
       "types": "./src/transport-local-browser.ts",
       "default": "./dist/transport-local-browser.js"
+    },
+    "./file-save/recovery": {
+      "types": "./src/file-save/recovery.ts",
+      "default": "./dist/file-save/recovery.js"
     }
   },
   "scripts": {

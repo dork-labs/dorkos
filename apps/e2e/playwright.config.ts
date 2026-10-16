@@ -822,6 +822,7 @@ export default defineConfig({
         // that route nor be free.
         '**/workbench/session-canvas-sync.spec.ts',
         '**/workbench/session-file-save-receipts.spec.ts',
+        '**/workbench/session-file-save-recovery.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -972,6 +973,11 @@ export default defineConfig({
       // reasons: its rename leg drives turns, and its sync test opens a second
       // context.
       name: 'chromium-browser-driving',
+      // These five specs share the test-mode scenario store and tracked sessions.
+      // Their global reset must not erase another file's active conversation.
+      // CI already uses one worker; keep local runs isolated the same way.
+      workers: 1,
+      metadata: { fileSaveRecoveryHome: MOCK_DORK_HOME },
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
@@ -981,6 +987,7 @@ export default defineConfig({
         '**/workbench/browser-recording.spec.ts',
         '**/workbench/session-canvas-sync.spec.ts',
         '**/workbench/session-file-save-receipts.spec.ts',
+        '**/workbench/session-file-save-recovery.spec.ts',
       ],
     },
     {

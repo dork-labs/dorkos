@@ -58,6 +58,34 @@ export function saveOriginalDocumentFile(
   return original(raw, caller);
 }
 
+const originalDocumentRecovery = new WeakMap<
+  object,
+  {
+    discover: DocumentFileSave['discover'];
+    recover: DocumentFileSave['recover'];
+  }
+>();
+/** Dispatch only the original installed operation; properties on the public owner are not consulted. */
+export function discoverOriginalDocumentFileSaves(
+  owner: InstallationFileWrites,
+  documentId: unknown,
+  caller: DocumentFileSaveCaller
+) {
+  const original = originalDocumentRecovery.get(owner);
+  if (!original) throw new Error('Document file recovery is unavailable');
+  return original.discover(documentId, caller);
+}
+/** Dispatch receipt recovery through the operation captured by the owning installation. */
+export function recoverOriginalDocumentFileSave(
+  owner: InstallationFileWrites,
+  raw: unknown,
+  caller: DocumentFileSaveCaller
+) {
+  const original = originalDocumentRecovery.get(owner);
+  if (!original) throw new Error('Document file recovery is unavailable');
+  return original.recover(raw, caller);
+}
+
 /** The coordinator never escapes this owner; callers cannot supply a write callback. */
 export class InstallationFileWrites {
   readonly #coordinator: CanonicalFileWriteCoordinator;
@@ -89,6 +117,10 @@ export class InstallationFileWrites {
       this.#documentSaves = new DocumentFileSave(this, document, this.#coordinator, this.#fence);
       const save = this.#documentSaves.save.bind(this.#documentSaves);
       originalDocumentSaves.set(this, save);
+      originalDocumentRecovery.set(this, {
+        discover: this.#documentSaves.discover.bind(this.#documentSaves),
+        recover: this.#documentSaves.recover.bind(this.#documentSaves),
+      });
     }
   }
 
