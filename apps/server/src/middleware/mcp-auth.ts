@@ -118,9 +118,9 @@ export async function decideMcpAuth(
   if (envKey && token && constantTimeEquals(token, envKey)) return { allowed: true };
 
   // Acceptor 4's own test, hoisted so acceptor 2 can be told what this bearer
-  // is — same `!asksForKey` gate and same cached read (`getMcpLocalToken()`
-  // returns a value, never touching the filesystem), so it can only be true
-  // where acceptor 4 would itself have matched.
+  // is — same `!asksForKey` gate and same read (`getMcpLocalToken()` reads
+  // the file once, on first use, then answers from its cache, and never
+  // throws), so it can only be true where acceptor 4 would itself have matched.
   const localToken = asksForKey ? null : getMcpLocalToken();
   const bearerIsLocalToken = !!localToken && !!token && constantTimeEquals(token, localToken);
 
