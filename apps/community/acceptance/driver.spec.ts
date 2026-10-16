@@ -1465,6 +1465,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(afterEjectionParent?.id).toBeTruthy();
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
+      // That was the owner's last post here. Take her space tab off #general: an open channel
+      // marks each live message read for its reader, and she is the member the local app reads
+      // as, so left there it would read Casey's unread marker below before the local app shows
+      // it. A plain page on the same origin keeps her signed-in reads (`pageJson`) working.
+      await pageA.goto(`${env.communityA}/health`);
       // Ejecting a local agent revokes that agent's membership. The human owner
       // still owns this room and must remain able to read and post through the
       // qualified local Community surface.
