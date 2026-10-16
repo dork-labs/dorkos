@@ -55,6 +55,14 @@ export type TurnOrigin =
    */
   | { readonly kind: 'interactive' }
   /**
+   * The owner sent this from their own DorkOS on the web, through the session
+   * relay (`services/core/session-relay/`): a viewer holds the chat's stream
+   * open through the relay, the way `interactive`'s person holds it open here.
+   * The relay is the owner, never an outsider, so the words are the owner's
+   * own typing.
+   */
+  | { readonly kind: 'session-relay' }
+  /**
    * A room turn — unattended, because a room triggers a turn into the dark.
    *
    * `externalAuthor` says whether the message that triggered it came from
@@ -243,6 +251,13 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // one that may also claim a row their own settings change created.
     case 'interactive':
       return 'configured-stop';
+    // The owner on the web, with the chat's stream open through the relay. The
+    // chat runs at its own trust level, the same as at this computer (the
+    // operator's decision on spec `everything-is-a-space` B2, option 1). To make
+    // a relayed chat ask before every tool instead (option 2), return 'none'
+    // here; the relay already refuses approvals until B4's passkey proof.
+    case 'session-relay':
+      return 'configured-stop';
     // Nobody is watching a room turn either, and that is the reason it follows
     // the operator's level rather than the reason it may not (ADR
     // 260822-235802 as amended by 260908-170643, DOR-1917). On a NEW row only
@@ -362,6 +377,7 @@ const BINDING_SENDER_PREFIXES = ['relay.human.', 'relay.webhook.'] as const;
 export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 'participants' {
   switch (kind) {
     case 'interactive':
+    case 'session-relay':
     case 'relay-binding':
       return 'participants';
     case 'room':

@@ -1,14 +1,15 @@
 /**
  * The session relay on this computer, wired to the live pieces: the pin and
  * key in the data folder, the owner check, a real WebSocket, and the request
- * server that answers relayed requests.
+ * server that answers relayed requests as the `relayed` caller
+ * (`relay-request-server.ts`).
  *
- * The request server here serves no features yet: the relayed caller's
- * adapter (chats, the session stream, send, interrupt) is the next step of
- * DOR-2945. Until it lands, a hub that dials in is told this computer needs an
- * update for everything, and nothing on this computer can be reached. No
- * computer has a pin before the owner turns the relay on (B3), so nothing
- * dials yet either.
+ * Nothing is built at import: the dialer and its request server are made on
+ * first use, and the request server reads Mesh, the origin lookups and the
+ * room port from {@link wireSessionRelay}, which the server calls once they
+ * exist. Before that there are no agents, so every request is answered as not
+ * found. No computer has a pin before the owner turns the relay on (B3), so
+ * nothing dials yet either.
  *
  * @module services/core/session-relay
  */
@@ -17,26 +18,23 @@ import { SESSION_RELAY_MAX_FRAME_LENGTH } from '@dorkos/shared/session-relay';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { canExpose } from '../auth/exposure-guard.js';
 import { computerSigningKey, readRelayPin } from './pin-store.js';
-import { RelayDialer, type RelayRequestServer, type RelaySocket } from './relay-dialer.js';
+import { liveRelayDeps, type SessionRelayWiring } from './live-deps.js';
+import { RelayDialer, type RelaySocket } from './relay-dialer.js';
+import { SessionRelayRequestServer } from './relay-request-server.js';
 
-/** A request server with no features: every request waits on the adapter. */
-const NO_FEATURES: RelayRequestServer = {
-  features: () => [],
-  handle: (frame, emit) => {
-    if (frame.type !== 'request') return;
-    emit({
-      type: 'error',
-      id: frame.id,
-      ok: false,
-      error: {
-        status: 501,
-        code: 'needs_update',
-        message: 'This computer needs an update to serve this over the relay.',
-      },
-    });
-  },
-  closeAll: () => undefined,
-};
+export type { SessionRelayWiring } from './live-deps.js';
+
+let wiring: SessionRelayWiring | null = null;
+
+/**
+ * Hand the relay the server's startup pieces. Called once, after the session
+ * routes' origin lookups and the room port are set up; read on every request.
+ *
+ * @param pieces - See {@link SessionRelayWiring}.
+ */
+export function wireSessionRelay(pieces: SessionRelayWiring): void {
+  wiring = pieces;
+}
 
 let dialer: RelayDialer | null = null;
 
@@ -48,7 +46,7 @@ export function sessionRelayDialer(): RelayDialer {
     ownerExists: () => canExpose(),
     computerKey: () => computerSigningKey(),
     appVersion: SERVER_VERSION,
-    server: NO_FEATURES,
+    server: new SessionRelayRequestServer(liveRelayDeps(() => wiring)),
     connect: (url, headers) =>
       new WebSocket(url, {
         headers,

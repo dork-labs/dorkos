@@ -198,6 +198,7 @@ describe('carryOverAllowed', () => {
       'agent-launch',
       'extension-start',
       'interactive',
+      'session-relay',
     ]);
     for (const kind of CARRY_OVER_ORIGINS) expect(carryOverAllowed(kind)).toBe(true);
   });

@@ -46,6 +46,12 @@ describe('askEntitlement', () => {
     expect(askEntitlement(program, roomBound)).toBe('see');
   });
 
+  it('lets the session relay see, so the web can draw an Ask, and never answer', () => {
+    const relayed: CallerPrincipal = { kind: 'relayed' };
+    expect(askEntitlement(relayed, unbound)).toBe('see');
+    expect(askEntitlement(relayed, roomBound)).toBe('see');
+  });
+
   it('lets an allowlisted approver answer a room-bound Ask', () => {
     expect(askEntitlement(bridged('tg_deputy'), roomBound)).toBe('answer');
   });
