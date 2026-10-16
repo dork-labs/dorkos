@@ -125,6 +125,17 @@ export const REFUSAL_REASONS = {
    * names who.
    */
   agent_paused: 'the agent is paused',
+  /**
+   * A teammate's turn (a space member who is not the owner, DOR-2955) reached
+   * for a tool outside what it may use: another room, a chat, a write, the web.
+   */
+  teammate_fence: 'a teammate’s turn may not use this tool',
+  /**
+   * A teammate's post in a space started no turn: they had started enough for
+   * now, or the agent runs on a program that cannot hold their turn to its
+   * limits yet (DOR-2955). The post stays in the space as history.
+   */
+  teammate_wake_held: 'a teammate’s post was kept as history and woke nobody',
   /** A prompt only a person can answer expired, and was denied by the clock. */
   interaction_expired: 'nobody answered the prompt in time',
   /**

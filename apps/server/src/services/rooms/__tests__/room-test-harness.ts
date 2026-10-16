@@ -126,6 +126,8 @@ export interface RecordedTurn {
   externalAuthor?: boolean;
   /** The per-turn ceiling the dispatcher set (spec `trusted-by-default-flip` §4). */
   permissionCeiling?: RoomTurnRequest['permissionCeiling'];
+  /** Set when a teammate's message started the turn (DOR-2955). */
+  teammate?: true;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
   /**
@@ -309,6 +311,7 @@ export function outcomeRunner(
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.teammate ? { teammate: request.teammate } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -486,6 +489,7 @@ export function gatedRunner({
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.teammate ? { teammate: request.teammate } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });

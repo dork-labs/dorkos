@@ -128,6 +128,32 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
   });
 
+  it('registers the teammate fence on every tool, read from the session as each call is made', async () => {
+    // DOR-2955. A fence that is never registered fails nothing anywhere: a
+    // teammate's turn would simply reach every room the agent is in again.
+    const session = makeSession();
+    const options = await captureSdkOptions(undefined, session);
+    const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(unmatched).toHaveLength(1);
+    const hook = unmatched[0]!.hooks[0]!;
+    const call = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'mcp__dorkos__read_room_history',
+      tool_input: { roomId: 'room-of-the-owner' },
+      tool_use_id: 'tool-1',
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(call, 'tool-1', signal)).toEqual({});
+    session.teammateFence = { roomId: 'room-answered' };
+    expect(await hook(call, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
   it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {
     // Spec `auto-mode-classifier-context`. Nothing else can catch this: a hook
     // that was never registered produces no error, no log line and no failing

@@ -12,6 +12,7 @@ import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
 import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
+import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
 import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
@@ -115,6 +116,10 @@ export async function runOneInDispatch(
       // And the turn itself is held to the strictest of its senders' levels,
       // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
       ...ceilingForEntries(self.deps.authors, target.answers ?? [entry]),
+      // And whether any of them is a teammate's — a space member who is not
+      // the owner — which takes away asking and every room but this one
+      // (DOR-2955).
+      ...teammateOf(self.deps.authors, target.answers ?? [entry]),
       // The message, unchanged. A trigger asks the agent exactly what was
       // said; only the welcome-back offer below asks something else.
       prompt: entry.body.text,
