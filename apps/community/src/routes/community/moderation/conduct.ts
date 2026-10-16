@@ -308,6 +308,7 @@ export function registerConductRoutes(
     const agent = principal.kind === 'agent';
     // Readable exactly when the channel is: public to a member, joined for an agent or private.
     const row = await pool.query<{ slow_mode_seconds: number }>(
+      // member-kind: no-members-table
       `SELECT c.slow_mode_seconds FROM channels c
        WHERE c.id=$1 AND c.community_id=$2 AND (
          ${agent ? 'FALSE' : "c.visibility='public'"} OR EXISTS(

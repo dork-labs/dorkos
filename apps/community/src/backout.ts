@@ -22,7 +22,7 @@ export async function inspectBackout(pool: Pool): Promise<BackoutReadiness> {
     multiple_used: boolean;
   }>(`SELECT
     (SELECT count(*)::int FROM communities) AS community_count,
-    EXISTS(SELECT 1 FROM members WHERE kind='person' AND user_id IS NOT NULL
+    EXISTS(SELECT 1 FROM members WHERE kind='person'
       GROUP BY user_id HAVING count(*) > 1) AS multiple_memberships,
     (SELECT count(*)::int FROM community_backout_fence) AS history_count,
     EXISTS(SELECT 1 FROM community_backout_fence f JOIN communities c ON c.id=f.first_community_id) AS first_matches,

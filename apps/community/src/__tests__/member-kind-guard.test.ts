@@ -19,47 +19,118 @@ import { describe, expect, it } from 'vitest';
 const SOURCE_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const ALLOWLIST_PATH = fileURLToPath(new URL('./member-kind-allowlist.json', import.meta.url));
 const MARKER = /^\s*\/\/\s*member-kind:\s*(\S*)\s*$/;
-/** A read or write of the `members` table, quoted, schema-qualified or not. */
-const TOUCHES_MEMBERS =
-  /\b(?:FROM|JOIN|UPDATE|INTO)\s+(?:ONLY\s+)?(?:"?public"?\s*\.\s*)?"?members"?(?![\w"])/i;
+/** Where a table name starts: after a keyword that names a table, or after a comma join. */
+const TABLE_START = String.raw`(?:\b(?:FROM|JOIN|UPDATE|INTO|USING)\s+(?:ONLY\s+)?|,\s*)`;
 /**
- * The statement names a member kind: `kind='person'`, `m.kind<>'agent'`, `kind IN ('person',…)`.
- * Only the two values count, so another table's `kind` column (an erasure request's) does not.
+ * One reference to the `members` table, quoted, schema-qualified or not, and the alias after it
+ * when there is one. Group 1 is the alias, or a keyword {@link NOT_AN_ALIAS} rules out.
  */
-const NAMES_KIND = /(?:^|[^\w])(?:\w+\.)?kind\s*(?:(?:=|<>|!=)\s*|IN\s*\(\s*)'(?:person|agent)'/i;
+const MEMBERS_REF = new RegExp(
+  String.raw`${TABLE_START}(?:"?public"?\s*\.\s*)?"?members"?(?![\w"])(?:\s+(?:AS\s+)?"?([a-z_]\w*)"?)?`,
+  'gi'
+);
+/** Words that may follow a table name but are never its alias. */
+const NOT_AN_ALIAS =
+  /^(?:WHERE|ON|SET|GROUP|ORDER|LEFT|RIGHT|INNER|FULL|CROSS|JOIN|USING|LIMIT|FOR|RETURNING|UNION|VALUES|HAVING|OFFSET|AND|OR|WINDOW|EXCEPT|INTERSECT)$/i;
+/** A statement part that ends where a table name would start, so the table is named at run time. */
+const TABLE_AT_RUN_TIME = /\b(?:FROM|JOIN|UPDATE|INTO|USING)\s+(?:ONLY\s+)?$/i;
 
-/** One string or template that touches `members`, by the line it starts on. */
+/**
+ * Whether the statement filters `alias` by member kind: `m.kind='person'`, `m.kind<>'agent'`,
+ * `m.kind IN ('person',…)`. Only the two values count, so another table's `kind` column (an
+ * erasure request's) does not. An unaliased `members` is filtered by a bare `kind=…` too.
+ */
+function filtersKind(statement: string, alias: string | null): boolean {
+  const owner = alias === null ? String.raw`(?:members\.)?` : String.raw`${alias}\.`;
+  return new RegExp(
+    String.raw`(?:^|[^\w.])${owner}kind\s*(?:(?:=|<>|!=)\s*|IN\s*\(\s*)'(?:person|agent)'`,
+    'i'
+  ).test(statement);
+}
+
+/** Every alias `statement` gives the `members` table, `null` for an unaliased reference. */
+function membersAliases(statement: string): Array<string | null> {
+  return [...statement.matchAll(MEMBERS_REF)].map(([, alias]) =>
+    alias && !NOT_AN_ALIAS.test(alias) ? alias : null
+  );
+}
+
+/**
+ * One string, template or concatenation that touches `members`, by the line it starts on.
+ * `dynamic` means a table is named at run time, so the guard cannot tell whether it is
+ * `members` and asks for a marker.
+ */
 interface Found {
   line: number;
   statement: string;
+  aliases: Array<string | null>;
+  dynamic: boolean;
 }
 
-/** Every string literal or template in `text` that touches `members`. */
+/** The text of a string or template node, with each substitution as a placeholder. */
+function literalText(node: ts.Node): string | undefined {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node))
+    return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(' ${…} ');
+  return undefined;
+}
+
+/**
+ * Every string literal, template or `+` concatenation in `text` that touches `members` or names
+ * a table at run time. SQL `--` comments are dropped first, so a kind named in one never counts.
+ */
 function findMemberStatements(text: string): Found[] {
   const source = ts.createSourceFile('fixture.ts', text, ts.ScriptTarget.Latest, true);
   const found: Found[] = [];
+  const add = (node: ts.Node, raw: string, dynamic: boolean) => {
+    const statement = raw.replace(/--[^\n]*/g, '');
+    const aliases = membersAliases(statement);
+    if (!aliases.length && !dynamic) return;
+    const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+    found.push({ line: line + 1, statement, aliases, dynamic });
+  };
   const visit = (node: ts.Node) => {
-    let statement: string | undefined;
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) statement = node.text;
-    else if (ts.isTemplateExpression(node))
-      statement = [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(
-        ' ${…} '
+    if (ts.isTemplateExpression(node)) {
+      const parts = [node.head.text, ...node.templateSpans.map((span) => span.literal.text)];
+      // Every part but the last is followed by a substitution.
+      add(
+        node,
+        literalText(node)!,
+        parts.slice(0, -1).some((part) => TABLE_AT_RUN_TIME.test(part))
       );
-    if (statement !== undefined && TOUCHES_MEMBERS.test(statement)) {
-      const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-      found.push({ line: line + 1, statement });
+      node.templateSpans.forEach((span) => ts.forEachChild(span, visit));
+      return;
     }
-    // A template's own spans are strings too; the template as a whole was checked above.
-    if (!ts.isTemplateExpression(node)) ts.forEachChild(node, visit);
-    else node.templateSpans.forEach((span) => ts.forEachChild(span, visit));
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken &&
+      TABLE_AT_RUN_TIME.test(literalText(node.left) ?? '')
+    )
+      add(node, literalText(node.left)!, true);
+    const text = literalText(node);
+    if (text !== undefined) add(node, text, false);
+    ts.forEachChild(node, visit);
   };
   visit(source);
   return found;
 }
 
 /**
- * Check one file: every statement names a kind or carries a marker, directly above the line it
- * starts on, naming a key the allowlist gives a non-empty reason for.
+ * The marker in the run of `//` comment lines directly above line `line` (1-based), so it can sit
+ * beside another guard's marker (`// content-change: …`, which must be the line right above).
+ */
+function markerAbove(lines: readonly string[], line: number): RegExpExecArray | null {
+  for (let index = line - 2; index >= 0 && /^\s*\/\//.test(lines[index]); index--) {
+    const marker = MARKER.exec(lines[index]);
+    if (marker) return marker;
+  }
+  return null;
+}
+
+/**
+ * Check one file: in every statement each `members` alias is filtered by kind, or the line
+ * comments directly above the statement carry a marker naming a key the allowlist gives a non-empty
+ * reason for. A statement that names a table at run time always needs the marker.
  */
 function checkFile(
   path: string,
@@ -69,12 +140,16 @@ function checkFile(
   const lines = text.split('\n');
   const problems: string[] = [];
   const used: string[] = [];
-  for (const { line, statement } of findMemberStatements(text)) {
-    if (NAMES_KIND.test(statement)) continue;
-    const marker = MARKER.exec(lines[line - 2] ?? '');
+  for (const { line, statement, aliases, dynamic } of findMemberStatements(text)) {
+    if (!dynamic && aliases.every((alias) => filtersKind(statement, alias))) continue;
+    const marker = markerAbove(lines, line);
     const where = `${path}:${line} (${statement.replace(/\s+/g, ' ').slice(0, 90)})`;
     if (!marker) {
-      problems.push(`${where} reads members without a kind or a "// member-kind: <key>" marker`);
+      problems.push(
+        dynamic
+          ? `${where} names a table at run time without a "// member-kind: <key>" marker`
+          : `${where} reads members without a kind or a "// member-kind: <key>" marker`
+      );
       continue;
     }
     const key = marker[1];
@@ -123,6 +198,22 @@ describe('member-kind guard (DOR-2876)', () => {
     ['an insert', "query('INSERT INTO members(id) VALUES($1)')"],
     ['a template with a value in it', 'query(`SELECT id FROM members WHERE ${where}`)'],
     ['a constant', "const SQL = 'SELECT 1 FROM members m WHERE m.id=$1';"],
+    // The probe shapes a review got past the first version of this guard.
+    ['a comma join', "query('SELECT 1 FROM agents a, members m WHERE m.id=a.owner_member_id')"],
+    [
+      'a delete using members',
+      "query('DELETE FROM bans b USING members m WHERE m.id=b.member_id')",
+    ],
+    [
+      'a kind only in a SQL comment',
+      "query(`SELECT id FROM members -- kind='person'\n WHERE id=$1`)",
+    ],
+    [
+      'a second alias without its own filter',
+      "query(`SELECT 1 FROM members m JOIN members o ON o.id=m.id WHERE m.kind='person'`)",
+    ],
+    ['a table named by concatenation', "query('SELECT id FROM ' + table + ' WHERE id=$1')"],
+    ['a table named by interpolation', 'query(`SELECT id FROM ${table} WHERE id=$1`)'],
   ])('catches %s', (_, source) => {
     expect(findMemberStatements(source)).toHaveLength(1);
     expect(checkFile('fixture.ts', source, ALLOWLIST).problems).toHaveLength(1);
@@ -134,6 +225,12 @@ describe('member-kind guard (DOR-2876)', () => {
     ['a similarly named table', "query('SELECT 1 FROM channel_members WHERE member_id=$1')"],
     ['a column list naming the table', "const tables = ['members', 'agents'];"],
     ['a statement that names a kind', "query(`SELECT id FROM members m WHERE m.kind='person'`)"],
+    [
+      'a filter for every alias',
+      "query(`SELECT 1 FROM members m JOIN members o ON o.kind='agent' WHERE m.kind='person'`)",
+    ],
+    ['an unaliased filter', 'query("UPDATE members SET active=false WHERE kind=\'person\'")'],
+    ['a substitution that is not a table', 'query(`SELECT a,${COLUMNS} FROM agents WHERE id=$1`)'],
   ])('passes %s', (_, source) => {
     expect(checkFile('fixture.ts', source, ALLOWLIST).problems).toEqual([]);
   });

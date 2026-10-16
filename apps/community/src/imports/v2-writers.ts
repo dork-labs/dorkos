@@ -114,7 +114,8 @@ const writeAgents: BatchWriter<'agents'> = async (client, rows, scope) => {
   const ids = rows.map((agent) => scope.derive(agent.id));
   // No ID is both a member and an agent, so a mention resolves to exactly one author.
   const clash = await client.query(
-    "SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2) AND kind IN ('person','agent')",
+    // member-kind: import-check
+    'SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2)',
     [scope.communityId, ids]
   );
   invalid(Boolean(clash.rowCount));

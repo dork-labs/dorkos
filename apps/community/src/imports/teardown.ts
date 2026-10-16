@@ -121,6 +121,7 @@ async function deleteRestoredRows(
       if (community.rows[0]?.lifecycle !== 'pending_owner') return 'done' as const;
       for (const [table, only] of TEARDOWN_PASSES) {
         const deleted = await client.query(
+          // member-kind: whole-space
           // content-change: import-teardown
           `DELETE FROM ${table} WHERE ctid IN (
              SELECT ctid FROM ${table} WHERE community_id=$1 ${only} LIMIT $2)`,
@@ -179,6 +180,7 @@ export async function teardownImport(
       // Restored rows went in batches above; this catches any written since, children before
       // parents, so every file below is unreferenced.
       for (const table of IMPORTED_TABLES) {
+        // member-kind: whole-space
         // content-change: import-teardown
         await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
       }

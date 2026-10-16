@@ -1,9 +1,11 @@
 {
   "by-account": "Keyed by an account (user_id). An agent's member row has no account, so these only ever reach people.",
   "by-grant": "Keyed by the caller's own membership: a person's connection grant, session, or the id requireMember/requirePerson already resolved. An agent principal never reaches these.",
-  "agent-owner": "Joins members on an agent's owner_member_id. The owner is always a person.",
+  "agent-owner": "Joins members on an agent's owner_member_id. Enrolment only ever records a person's membership as an owner; from the next step the trigger on agents enforces it.",
   "owner-role": "Filters role to owner or admin. An agent row's role is fixed at member by members_agent_shape (0040).",
   "person-write": "Inserts or updates a row the same transaction already found or created as a person.",
-  "whole-space": "Asks whether any member row exists, or deletes every row of a space being deleted. Kind does not matter.",
-  "named-member": "Reads one member a person-only record already names: an admission receipt, an owner replacement, a report's reporter."
+  "whole-space": "Asks whether any member row exists, or deletes every row of a space being deleted or of an import being torn down. Kind does not matter.",
+  "named-member": "Reads one member a person-only record already names: an admission receipt, an owner replacement, a report's reporter.",
+  "no-members-table": "Names its table at run time, and every table it can name is spelled out beside it: channel_members or agent_channel_members, never members.",
+  "import-check": "Checks rows an import just wrote, or is about to, by their ids: that each went in, or that no member of any kind already has an agent's id. Kind does not matter."
 }

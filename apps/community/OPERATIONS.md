@@ -71,7 +71,7 @@ Record the running image and source revision. Take and verify a database-and-fil
 
 Check `/health`, sign-in, posting, live updates and one attachment after the upgrade. `/health` checks the process; it does not prove that the database, storage or owner account works.
 
-There is no automatic reverse migration. Do not start an older image against an upgraded schema unless that release explicitly supports it. A release refuses to start on a database a newer release already upgraded, and its error names the upgrade it found (releases before this check existed do not refuse, so never point one at an upgraded database). To return to a previous release, stop the app and restore its matching database, files and image together. Writes made after that backup will be lost; preserve a copy of the current deployment before restoring.
+There is no automatic reverse migration. Do not start an older image against an upgraded schema unless that release explicitly supports it. The database records the oldest release that may still run on it. An upgrade that only adds leaves that alone, so you can start the release before it again. An upgrade that cannot be undone raises it, and an older release then refuses to start, with an error naming the upgrade it needs. Releases from before this record existed never check it, so never point one at an upgraded database. To return to a previous release, stop the app and restore its matching database, files and image together. Writes made after that backup will be lost; preserve a copy of the current deployment before restoring.
 
 ### Returning to a release that supports one community
 

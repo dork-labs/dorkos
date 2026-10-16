@@ -75,6 +75,7 @@ export async function refuseAgentName(
 ): Promise<void> {
   const wanted = new Set(names.map(comparableName));
   const taken = await client.query<{ name: string }>(
+    // member-kind: owner-role
     `SELECT unnest(c.reserved_names) AS name FROM communities c
        WHERE c.id=$1 AND NOT EXISTS(SELECT 1 FROM members m
          WHERE m.id=$2 AND m.community_id=$1 AND m.role IN ('owner','admin'))

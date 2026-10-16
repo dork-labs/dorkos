@@ -2117,11 +2117,13 @@ it('adds member kinds without touching rows, and v0.117.0 still runs', async () 
   }
 });
 
-// Purpose: a release refuses to start on a database a newer release already migrated, and names
-// the version, rather than running quietly on a schema it does not understand (D10). The
-// database is left as it was.
-it('refuses to start on a schema a newer release migrated', async () => {
-  const name = `community_newer_${randomUUID().replaceAll('-', '')}`;
+// Purpose: the compatibility floor (0041, server-merge D10). A migration this release does not
+// know but that left the floor alone (any additive one) still lets it start, so rolling the
+// image back across an additive change keeps working. A floor raised past what this release
+// knows (a one-way change) refuses it with a message naming the migration needed, and leaves
+// the database as it was.
+it('starts across an unknown additive migration and refuses a raised compatibility floor', async () => {
+  const name = `community_floor_${randomUUID().replaceAll('-', '')}`;
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
   await admin.query(`CREATE DATABASE ${name}`);
@@ -2129,13 +2131,27 @@ it('refuses to start on a schema a newer release migrated', async () => {
   try {
     await migrate(url.toString());
     const newest = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
+    expect(
+      (await db.query('SELECT min_migration FROM community_compatibility_floor')).rows
+    ).toEqual([{ min_migration: 0 }]);
+    // A newer release added a migration that only adds: this release still starts.
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [newest + 1]);
+    await migrate(url.toString());
+    // A newer release made a one-way change and raised the floor to it: refused, by name.
+    await db.query('UPDATE community_compatibility_floor SET min_migration=$1', [newest + 1]);
     await expect(migrate(url.toString())).rejects.toThrow(
-      `This database was upgraded by a newer release (community migration ${newest + 1}; this release knows up to ${newest})`
+      `This database needs a release that knows community migration ${newest + 1} or later; this release knows up to ${newest}.`
     );
     expect(
       (await db.query('SELECT max(version)::int AS v FROM community_migrations')).rows
     ).toEqual([{ v: newest + 1 }]);
+    // The floor is one row and never negative.
+    await expect(
+      db.query('INSERT INTO community_compatibility_floor(singleton,min_migration) VALUES(false,1)')
+    ).rejects.toThrow(/check/);
+    await expect(
+      db.query('UPDATE community_compatibility_floor SET min_migration=-1')
+    ).rejects.toThrow(/check/);
   } finally {
     await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);

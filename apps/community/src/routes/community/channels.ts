@@ -62,6 +62,7 @@ function refusePrivateAutoJoin(visibility: string, autoJoin: boolean | undefined
 async function channelProjection(pool: Pool, id: string, member: Member | Principal) {
   const agent = 'kind' in member && member.kind === 'agent';
   const result = await pool.query<ChannelRow>(
+    // member-kind: no-members-table
     `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
       EXISTS(SELECT 1 FROM ${agent ? 'agent_channel_members' : 'channel_members'} cm WHERE cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$2) AS joined,
       GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
@@ -85,6 +86,7 @@ export function registerChannelRoutes(
     const member = await requirePrincipal(c, auth, pool, 'read');
     const agent = member.kind === 'agent';
     const result = await pool.query<ChannelRow>(
+      // member-kind: no-members-table
       `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
         (cm.${agent ? 'agent_id' : 'member_id'} IS NOT NULL) AS joined,
         GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count

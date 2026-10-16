@@ -46,6 +46,7 @@ export async function liveChannel(
 ): Promise<LiveChannel> {
   const agent = principal.kind === 'agent';
   const result = await pool.query<LiveChannel>(
+    // member-kind: no-members-table
     `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.epoch,c.last_seq,c.created_at,
       (cm.${agent ? 'agent_id' : 'member_id'} IS NOT NULL) AS joined,COALESCE(rc.seq,0)::text AS read_seq
      FROM channels c
