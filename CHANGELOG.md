@@ -13,6 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.118.0] - 2026-10-16
+
+> DorkOS 0.118.0 lets you drag files onto the message box in the desktop app again, lets you share a live browser page with your agent, shows whether each agent in a space is there, and makes space pages harder to attack.
+
+### Added
+
+- Share a live page with your agent inside DorkOS or in a new browser window. Pause the agent while you use the page. Separate browser choices keep their own saved sign-ins (DOR-2929).
+- Spaces (experimental): a space's channel members list can now show whether each agent is there, as "Available" or "Offline since" a time. The DorkOS app that runs the agent tells the space. An agent shows no status, never "Offline", until its app reports it (DOR-2877)
+- Show recorded save confirmation and safe retry for session file edits, and wait for the current save before removing the document.
+- Spaces (experimental): while your computer is on, DorkOS tells each space your agents belong to that they are there. A space's member list in the app then shows each agent as "Available" or "Offline since" a time. Removing an agent from a space, or disconnecting the space, stops it. A space that does not track this yet gets nothing new, and shows no status (DOR-2878)
+
+### Changed
+
+- When an app can't be connected because its sign-in setup in DorkOS has a problem, the connect dialog now says so and drops the retry button. Before, it said the app "isn't available right now" and asked you to try again in a few minutes, which never helped.
+- The "What should I call you?" card and the "What kind of work do you do?" card in the sidebar now show the DorkOS logo larger, on its own line at the top. The question and its explanation sit under it at full width, so they no longer squeeze into a narrow column.
+- If you run your own space server or move a space between servers: exports from this release use a new format, version 3, that lists each agent as a member beside the people, and says which member wrote every message. This release still imports exports from older releases. An older release cannot import an export from this one; it says the export's version is not supported (DOR-2876)
+- Space pages are harder to attack. A page now runs only the space server's own code, never code written into the page or loaded from another site. No other site can show a space page inside its own. A file opened straight from a space can't run anything (DOR-2957)
+
+### Removed
+
+- Replace the former hidden-browser setup with the two live-page choices. Existing custom browser tools and saved sign-ins stay available (DOR-2929).
+
+### Fixed
+
+- In the desktop app, dragging files onto the message box now attaches them, the same as the paperclip does. Before, the app quietly refused to read a dropped file, so nothing happened. (DOR-2870)
+
+### Note for people upgrading
+
+- If you run your own space server, take a backup before you upgrade. This release makes a one-way change to the space's database when it starts. Nothing changes for the people and agents using the space. Earlier releases do not check for this change and will start on the upgraded database anyway, so never start one on it: going back means restoring the backup (DOR-2876)
+
 ## [0.117.0] - 2026-10-15
 
 > DorkOS 0.117.0 shares the apps you connect with every agent on Trusted, holds an agent's irreversible action in a connected app for 60 seconds so anyone can cancel it, and fixes Gmail sends, turning on login and long chats.
@@ -422,71 +452,10 @@ save also made DorkOS reload that file. Now it writes only when something actual
 
 - This release is 0.103.0, not 0.102.0. Two settings updates were made for 0.102.0 and 0.103.0, and a release has to reach their number for them to run on your computer. One removes the old Full-autonomy confirmation date. The other raises how long a channel keeps you talking to the same agent, unless you set your own numbers.
 
-## [0.101.0] - 2026-10-08
+Older releases (v0.1.0 – v0.101.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.101.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.101.0.md).
 
-> DorkOS 0.101.0 lets an agent ask to summarize its own chat when it gets full, keeps your computer awake while agents work, and starts a lasting record of who did what. Codex now asks before it changes things and takes a message mid-reply, and spaces are now an experiment you switch on.
-
-### Added
-
-- Your computer stays awake while agents work, then sleeps as normal. A small cup in the top bar shows when, and Settings → Tools → Sleep turns it off. Closing the lid on battery, or a low battery, still puts it to sleep, and staying awake uses more battery. (DOR-2718)
-- After you connect an account through your DorkOS account, the page that finishes it can send you straight back to Connections, in the desktop app or the same browser address you started from (DOR-2721)
-- Spaces, an experiment you switch on in Settings, can now email you a password reset link, a sign-in link, and a link to confirm your email. A space without mail set up still asks its host for help (DOR-2710)
-- Codex can ask before it changes things, and you can steer it mid-reply (DOR-2719). In Ask first, Codex asks before every change; it still runs read-only commands, and tools marked read-only, without asking. In Workspace write, it asks before it reaches outside your project or goes online. You approve or deny from a card in the chat. Questions Codex asks you, and forms from its tools, show up as cards too. A question that asks for a password or other secret is skipped for now, and the chat says so. A message you send while Codex is replying joins that reply instead of waiting for the next one.
-- Background commands Codex starts keep running after its reply, and the chat picks up when they finish: Codex reads the result and carries on (DOR-2719). It does this only after a reply that ended normally, and never for a command that runs until you stop it, like a dev server. After three pickups in a row with no message from you, the chat waits for you. In a room, a finished command shows in the chat and the room carries on at its next turn. You can stop one from the task bar above the chat box, and DorkOS stops one that is still running four hours after its reply.
-- An agent whose chat is nearly full can now ask for it to be summarized, instead of waiting for you to type `/compact`. The summary happens after its current reply ends, never in the middle of one, and the chat shows a line like "Summarized at 89% (asked by the agent)". An agent can ask at most once an hour, and only for its own chat. You can turn this off for any agent on its Permissions page, under Own chat. Works in Claude Code, Codex and OpenCode (DOR-2732)
-- When a chat passes 80% of its room, the agent gets one short note on its next reply suggesting it save its notes and ask for a summary. It is told once, and again only after the chat has been summarized. This works in Claude Code, Codex and OpenCode (DOR-2732)
-- `/compact` now works in Codex chats, and so does an agent asking for its own chat to be summarized. The chat shows the summary while it runs and draws the same line afterwards as in Claude Code and OpenCode. Codex doesn't take instructions for a summary, so words you add after `/compact` are ignored there. Codex set to its older `exec` mode still can't do this (DOR-2732)
-- DorkOS now keeps a permanent record of what happened on your computer: who did what, to what, and when, for you, your agents and DorkOS itself. Everything that shows in Activity goes into it, and nothing in DorkOS can change or remove a line once it is written. Anyone, you or any agent, can check it with `dorkos call audit.verify`, which names the first line that was changed or taken out of the middle. Lines taken off the end can't be caught yet (DOR-2738)
-- `@dork-labs/cloud-api` describes how a computer asks a person to approve DorkOS remote access: it shows a short code, the person approves it on a web page, and the computer checks back for the answer (DOR-2763)
-- `@dork-labs/cloud-api` tells a computer how to check that a visit really came through DorkOS remote access, and refuse any that did not (DOR-2763)
-- `@dork-labs/cloud-api` lets a computer cut off its own remote access, and explains how to recover when a new access key goes missing on the way (DOR-2763)
-- Three new pages at dorkos.ai/compare: Paperclip, ChatGPT Space and Slack Code. Every row on them was checked on October 7, 2026, mostly against each product's own docs, and each one links its source
-- Each page says plainly where the other product is ahead. Paperclip's budgets pause an agent when it hits its spending limit, which goes further than anything DorkOS has. ChatGPT Space's agents keep working on their own cloud computer with your laptop shut. Slack Code lets a whole team watch and pause a coding agent in a channel they already use
-- Each page also says where DorkOS is different: your agents build you mini apps that open inside DorkOS once you say yes, it is built for founders, and it runs on your computer with your real files, free and open source
-- The record now also holds actions that used to leave no trace: DorkOS tools an agent ran after you approved them, every setting change with its old and new value, packages installed, updated or removed, work merged into a room (and who merged it), API keys created or revoked, sign-ins, and updates that failed. Any other change made through the app or its API is recorded too: who did it, what kind of change, and whether it worked. Lines about sign-ins note where they came from, and are marked as the owner's alone (DOR-2738)
-- Choose DorkOS as an agent runtime in Settings → Runtimes. Use your API key, a local model or DorkOS credits. Chats keep their chosen inference source across restarts; tool approvals, search and coding helpers work through the app.
-
-### Changed
-
-- Scheduled tasks that ran late now say so, and very late ones are skipped instead of running at odd hours. A run that wakes up under an hour late, and less than halfway to the next scheduled time, still runs, and anything under a minute late counts as on time. Its history row says how late it was and how many runs were missed while the computer slept (DOR-2718)
-- Codex now asks before it changes things, and takes a message you send mid-reply, in every Codex chat (DOR-2719). This was opt-in before. To go back to the old way, set `runtimes.codex.transport` to `exec` and restart DorkOS.
-- A Claude Code chat in Default, Accept edits or Auto can now start a Codex chat in Ask first (DOR-2719). Starting one in Workspace write or Full access still needs a chat in Full access. A chat in Plan can no longer start a Codex chat at all, because every Codex level can now make changes once you approve them.
-- Keep local folder paths out of new conversation links.
-- Spaces are now an experiment, and they are off unless you turn them on. Open Settings, then Advanced, then Experiments, and switch on Spaces to join, start or move a space. While it is off, the space menu, space channels and space hosting are hidden. Your own channels and #team are not spaces and work the same either way (DOR-2740)
-- If you already joined a space: while Spaces is off, your agents there stop answering new messages, and nothing is deleted. Turn it back on and everything is where you left it (DOR-2740)
-- `dorkos community deploy` now says it is experimental each time it runs (DOR-2740)
-- Activity now keeps a year of history instead of 30 days. Change it with `dorkos config set activity.retentionDays <days>`; the new number applies the next time DorkOS starts (DOR-2738)
-- `@dork-labs/cloud-api` now says plainly that asking for a remote access key twice with the same request key is refused, instead of sending the key again. A computer that lost the answer asks again with a new request key (DOR-2763)
-- Agents now know they are co-workers on your team, not assistants. They do the job in their description, work toward the goals your team sets, and finish routine work without asking first. Approvals still apply (DOR-2736)
-- A newly set up DorkBot describes DorkOS as a workspace for people and agents, built for founders, and asks to add the agents it finds to your team (DOR-2736)
-- The welcome screen now says what DorkOS is for: build and run your business with an agent team. Its three previews are now building your team, asking for tools and connecting services
-- The installed app's description reads "Build and run your business with an agent team."
-- `dorkos --help` and the Mac app's About window now describe DorkOS the same way the website does: build and run your business with an agent team. The help for `dorkos marketplace install`, `update` and `uninstall` now uses a real package, `flow`, in its examples
-
-### Fixed
-
-- Stop a scheduled task from running twice after the computer wakes, and from being filed under the wrong time (DOR-2718)
-- A message that needs the agent to switch folders, instructions or settings no longer stops the helpers, Monitors or background commands it is still running. The message waits in the queue and says what it is waiting on. Press **Switch now** to run it anyway and stop that work. After four hours it runs on its own.
-- When a connection can't start, the dialog now says why and what to do, and offers to try again only when that could work. An app that can't be connected yet says so plainly (DOR-2713)
-- If you deleted or archived a Codex conversation in Codex itself, your next message in DorkOS starts a fresh one and tells you so. Before, a deleted one started fresh without a word, and an archived one failed the message (DOR-2719).
-- Open conversations by session ID across Claude Code, Codex and OpenCode, including accessible conversations started outside DorkOS.
-- Keep new conversations in their chosen folder and runtime after reloads and tab switches.
-- OpenCode chats now say how much room is left. DorkOS reads each model's size from OpenCode's model list, so an OpenCode agent also gets the note at 80% full. The token count now includes the part of the conversation OpenCode had cached, which it used to leave out (DOR-2732)
-- A message from someone in a bridged Telegram or Slack chat in a room, or from another company's agent, now gets an answer at the level a brand-new chat starts at. That holds even in a conversation you set to Full autonomy, and when such a message arrives in the same moment as yours. Your own next message runs at the level you chose (DOR-2739)
-- When one of your agents asks another for help in a room, the second agent works with no more power than the first one had at that moment (DOR-2739)
-
-### Security
-
-- A reset or sign-in link to an account whose email was never confirmed removes every old way in first, so someone who made an account with your email loses it the first time you use your mail (DOR-2710)
-
-### Note for people upgrading
-
-- A Codex chat in Ask first can now make changes. It still asks you first, every time. Before, it could only read.
-- If your own Codex settings (`~/.codex/config.toml`) name a model your account can't use, Codex chats stop at once with a message saying that model isn't available. Pick another model in the chat's model menu.
-
-Older releases (v0.1.0 – v0.98.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.98.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.98.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.117.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.118.0...HEAD
+[0.118.0]: https://github.com/dork-labs/dorkos/compare/v0.117.0...v0.118.0
 [0.117.0]: https://github.com/dork-labs/dorkos/compare/v0.116.0...v0.117.0
 [0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
@@ -496,4 +465,3 @@ Older releases (v0.1.0 – v0.98.0) are archived in [changelog/archive/CHANGELOG
 [0.110.0]: https://github.com/dork-labs/dorkos/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/dork-labs/dorkos/compare/v0.103.0...v0.109.0
 [0.103.0]: https://github.com/dork-labs/dorkos/compare/v0.101.0...v0.103.0
-[0.101.0]: https://github.com/dork-labs/dorkos/compare/v0.98.0...v0.101.0
