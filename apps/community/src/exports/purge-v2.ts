@@ -5,7 +5,7 @@ import { dropSegments } from './store.js';
 
 /**
  * Backout for background exports (specs/community-export-any-size): cancel every open job and
- * delete every version 2 export, queueing their segments for the pending-deletion sweep, so the
+ * delete every version 2 or 3 export, queueing their segments for the pending-deletion sweep, so the
  * code from before can run on a database that only holds version 1 archives. Idempotent.
  *
  * @returns how many version 2 exports were removed.
@@ -15,7 +15,7 @@ export async function purgeVersionTwoExports(pool: Pool): Promise<number> {
   while (true) {
     const batch = await transaction(pool, async (client) => {
       const rows = await client.query<{ id: string; community_id: string }>(
-        `SELECT id,community_id FROM export_archives WHERE format_version=2
+        `SELECT id,community_id FROM export_archives WHERE format_version>=2
          ORDER BY id LIMIT 100 FOR UPDATE`
       );
       for (const row of rows.rows) {

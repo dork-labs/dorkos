@@ -184,12 +184,13 @@ export async function validateV2(
   const fitsStorageLimit = maxStorageBytes === null || countedBytes <= maxStorageBytes;
   if (!fitsStorageLimit) throw new ImportFailure('STORAGE_LIMIT_REACHED');
   return {
-    manifestVersion: 2,
+    manifestVersion: opened.manifest.version,
     sourceLifecycle: opened.manifest.community.lifecycle,
     channels: tally.counts.channels,
     entries: tally.counts.entries,
     attachments: tally.counts.attachments,
-    historicalMembers: tally.counts.members,
+    // People only: a version 3 export also lists each agent's own member row.
+    historicalMembers: tally.counts.members - tally.agentMembers,
     historicalAgents: tally.counts.agents,
     auditEvents: tally.counts.auditEvents,
     attachmentBytes: tally.attachmentBytes,

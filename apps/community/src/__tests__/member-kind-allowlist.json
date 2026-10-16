@@ -7,5 +7,6 @@
   "whole-space": "Asks whether any member row exists, or deletes every row of a space being deleted or of an import being torn down. Kind does not matter.",
   "named-member": "Reads one member a person-only record already names: an admission receipt, an owner replacement, a report's reporter.",
   "no-members-table": "Names its table at run time, and every table it can name is spelled out beside it: channel_members or agent_channel_members, never members.",
-  "import-check": "Checks rows an import just wrote, or is about to, by their ids: that each went in, or that no member of any kind already has an agent's id. Kind does not matter."
+  "import-check": "Checks rows an import just wrote, or is about to, by their ids: that each went in, or that no member of any kind already has an agent's id. Kind does not matter.",
+  "export-with-kind": "An export's member rows: format 3 carries every row with its kind, so an import can tell people from agents; format 2 filters to people inside the statement."
 }

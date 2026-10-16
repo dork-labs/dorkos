@@ -28,6 +28,8 @@ export interface EntryRange {
  */
 export interface EntryScope {
   communityId: string;
+  /** The archive format the job writes: 3, or 2 for a job started before format 3 existed. */
+  format: ExportFormat;
   /** Personal scope: the requester. Owner scope: null. */
   authorMemberId: string | null;
   /** Watermarked channels, sorted, and the highest exported `seq` in each. */
@@ -39,11 +41,13 @@ export interface EntryScope {
 export function entryScope(
   communityId: string,
   authorMemberId: string | null,
-  watermark: Record<string, number>
+  watermark: Record<string, number>,
+  format: ExportFormat
 ): EntryScope {
   const channelIds = Object.keys(watermark).sort();
   return {
     communityId,
+    format,
     authorMemberId,
     channelIds,
     seqs: channelIds.map((channelId) => watermark[channelId]),
@@ -187,10 +191,21 @@ interface EntrySqlRow {
   payload_hash: string;
 }
 
-// Format 2 names exactly one author: an agent's message carries only the agent, even once the
-// agent has its own member row with the same id (specs/server-merge/03-agents-as-members.md).
-const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq::text AS seq,
-  CASE WHEN e.author_agent_id IS NULL THEN e.author_member_id END AS author_member_id,e.author_agent_id,
+/**
+ * The format an export job writes. 3 lists agents as members and names a member as every
+ * message's author (specs/server-merge/03-agents-as-members.md). A job queued before format 3
+ * existed finishes in format 2, so its segments already written still match; every new job is 3.
+ */
+export type ExportFormat = 2 | 3;
+
+/** The format a job's row says it writes. Version 1 archives are never built by the worker. */
+export const exportFormatOf = (formatVersion: number): ExportFormat =>
+  formatVersion === 2 ? 2 : 3;
+
+// Format 2 names exactly one author: an agent's message carries only the agent. Format 3 names
+// the agent's own member row too, which has the agent's id.
+const entryColumns = (format: ExportFormat) => `e.id,e.channel_id,e.seq::text AS seq,
+  ${format === 2 ? 'CASE WHEN e.author_agent_id IS NULL THEN e.author_member_id END' : 'e.author_member_id'} AS author_member_id,e.author_agent_id,
   e.author_display_name,e.text,
   COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position)
             FROM entry_mentions em WHERE em.entry_id=e.id AND em.community_id=$1),'{}'::uuid[]) AS mentions,
@@ -372,7 +387,12 @@ export async function* dataSegmentEntries(
     name: `entries/${number}.ndjson`,
     method: 'deflated',
     source: (async function* () {
-      for await (const page of entryPages<EntrySqlRow>(db, scope, range, ENTRY_COLUMNS)) {
+      for await (const page of entryPages<EntrySqlRow>(
+        db,
+        scope,
+        range,
+        entryColumns(scope.format)
+      )) {
         const lines: string[] = [];
         for (const row of page) {
           digestEntry(digest, row);

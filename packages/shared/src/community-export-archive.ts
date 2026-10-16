@@ -57,6 +57,29 @@ export const CommunityExportMemberRowSchema = z.strictObject({
   /** Absent from archives written before rules existed; reads as 0. */
   rules_accepted_version: z.int().nonnegative().optional(),
 });
+/**
+ * One `members/NNNNNN.ndjson` line of a version 3 export: a person, or an agent's own member row
+ * (specs/server-merge D3). A person's row is the version 2 row; an agent's has its agent's id,
+ * its owner's membership, no handle and no email, the plain member role, and no mute or rules
+ * acceptance of its own. Its agent is in `agents/` with the same id.
+ */
+export const CommunityExportMemberRowV3Schema = CommunityExportMemberRowSchema.extend({
+  handle: z.string().nullable(),
+  kind: z.enum(['person', 'agent']),
+  owner_member_id: nullableId,
+}).refine(
+  (row) =>
+    row.kind === 'person'
+      ? row.handle !== null && row.owner_member_id === null
+      : row.handle === null &&
+        row.owner_member_id !== null &&
+        row.owner_member_id !== row.id &&
+        row.role === 'member' &&
+        row.email === null &&
+        (row.muted_until ?? null) === null &&
+        (row.rules_accepted_version ?? 0) === 0,
+  { message: 'A person has a handle and no owner; an agent row has an owner and nothing else.' }
+);
 /** One `agents/NNNNNN.ndjson` line. */
 export const CommunityExportAgentRowSchema = z.strictObject({
   id,
@@ -163,6 +186,15 @@ export const CommunityExportEntryRowSchema = z.strictObject({
   created_at: timestamp,
   removal: z.enum(['author', 'moderator', 'host', 'erased']).nullable(),
 });
+/**
+ * One `entries/NNNNNN.ndjson` line of a version 3 export. Every message names a member as its
+ * author; an agent's message names the agent's own member row, so both ids are the agent's.
+ */
+export const CommunityExportEntryRowV3Schema = CommunityExportEntryRowSchema.extend({
+  author_member_id: id,
+}).refine((row) => row.author_agent_id === null || row.author_agent_id === row.author_member_id, {
+  message: "An agent's message names the agent's own member row as its author.",
+});
 /** One `attachments/NNNNNN.ndjson` line: a file's metadata; its bytes are at `archivePath`. */
 export const CommunityExportAttachmentRowSchema = z.strictObject({
   id,
@@ -195,76 +227,88 @@ const exportFileKeys = {
 const count = z.int().nonnegative();
 
 /**
- * `manifest.json` of an export archive, version 2: the last entry before the central directory.
- * Rows live in the NDJSON files it lists, each line parsed by its row schema above.
+ * `manifest.json` of an export archive, version 2 or 3: the last entry before the central
+ * directory. Rows live in the NDJSON files it lists, each line parsed by its row schema above.
+ * The two versions share a manifest; they differ in their member and message rows, where
+ * version 3 lists agents as members and always names a member as a message's author.
  *
  * `evidence` is the copy of a whole community a host takedown preserves for the authorities:
  * nobody asked for it, so it has no requester, and it records the community's lifecycle as it
  * was before the takedown. It is written only to the host's evidence store, never offered for
  * download, and is not something an owner or member can import.
  */
-export const CommunityExportManifestV2Schema = z
-  .strictObject({
-    version: z.literal(2),
-    scope: z.enum(['personal', 'owner', 'evidence']),
-    exportId: id,
-    /** Null only for an `evidence` archive. */
-    requesterMemberId: id.nullable(),
-    createdAt: timestamp,
-    completedAt: timestamp,
-    community: z.strictObject({
-      id,
-      name: z.string().min(1).max(80),
-      description: z.string().max(1_000).nullable(),
-      admissionPolicy: CommunityAdminAdmissionPolicySchema,
-      /**
-       * Owner and personal archives read a held community as `archived`, as version 1 did. An
-       * evidence archive records the state before the takedown as it was.
-       */
-      lifecycle: z.enum(['active', 'archived', 'held', 'suspended', 'deletion_pending']),
-      lifecycleVersion: z.int().positive(),
-      settingsVersion: z.int().positive(),
-      icon: z
-        .strictObject({
-          path: z.literal('community/icon'),
-          contentType: z.string().min(1),
-          byteSize: z.int().positive(),
-          checksum: z.string().regex(/^[a-f0-9]{64}$/),
-        })
-        .nullable(),
-      /** The rules and their version; absent from archives written before rules existed. */
-      rules: CommunityExportRulesSchema.nullable().optional(),
-      /** Display names reserved for the space; absent from older archives. */
-      reservedNames: CommunityExportReservedNamesSchema.optional(),
-    }),
-    files: z.strictObject(exportFileKeys),
-    counts: z.strictObject({
-      channels: count,
-      members: count,
-      agents: count,
-      channelMembers: count,
-      agentChannelMembers: count,
-      auditEvents: count,
-      entries: count,
-      attachments: count,
-      /** Absent from archives written before bans existed. */
-      bans: count.optional(),
-      /** Absent from archives written before reports existed. */
-      reports: count.optional(),
-    }),
-  })
-  .refine(
-    (manifest) =>
-      manifest.scope === 'evidence' ||
-      manifest.community.lifecycle === 'active' ||
-      manifest.community.lifecycle === 'archived',
-    { message: 'Only an evidence archive records held, suspended, or deletion_pending.' }
-  )
-  .refine((manifest) => (manifest.scope === 'evidence') === (manifest.requesterMemberId === null), {
-    message: 'An evidence archive, and only one, has no requester.',
-  });
+const manifestSchema = <V extends 2 | 3>(version: V) =>
+  z
+    .strictObject({
+      version: z.literal(version),
+      scope: z.enum(['personal', 'owner', 'evidence']),
+      exportId: id,
+      /** Null only for an `evidence` archive. */
+      requesterMemberId: id.nullable(),
+      createdAt: timestamp,
+      completedAt: timestamp,
+      community: z.strictObject({
+        id,
+        name: z.string().min(1).max(80),
+        description: z.string().max(1_000).nullable(),
+        admissionPolicy: CommunityAdminAdmissionPolicySchema,
+        /**
+         * Owner and personal archives read a held community as `archived`, as version 1 did. An
+         * evidence archive records the state before the takedown as it was.
+         */
+        lifecycle: z.enum(['active', 'archived', 'held', 'suspended', 'deletion_pending']),
+        lifecycleVersion: z.int().positive(),
+        settingsVersion: z.int().positive(),
+        icon: z
+          .strictObject({
+            path: z.literal('community/icon'),
+            contentType: z.string().min(1),
+            byteSize: z.int().positive(),
+            checksum: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .nullable(),
+        /** The rules and their version; absent from archives written before rules existed. */
+        rules: CommunityExportRulesSchema.nullable().optional(),
+        /** Display names reserved for the space; absent from older archives. */
+        reservedNames: CommunityExportReservedNamesSchema.optional(),
+      }),
+      files: z.strictObject(exportFileKeys),
+      counts: z.strictObject({
+        channels: count,
+        members: count,
+        agents: count,
+        channelMembers: count,
+        agentChannelMembers: count,
+        auditEvents: count,
+        entries: count,
+        attachments: count,
+        /** Absent from archives written before bans existed. */
+        bans: count.optional(),
+        /** Absent from archives written before reports existed. */
+        reports: count.optional(),
+      }),
+    })
+    .refine(
+      (manifest) =>
+        manifest.scope === 'evidence' ||
+        manifest.community.lifecycle === 'active' ||
+        manifest.community.lifecycle === 'archived',
+      { message: 'Only an evidence archive records held, suspended, or deletion_pending.' }
+    )
+    .refine(
+      (manifest) => (manifest.scope === 'evidence') === (manifest.requesterMemberId === null),
+      {
+        message: 'An evidence archive, and only one, has no requester.',
+      }
+    );
+/** `manifest.json` of a version 2 export. */
+export const CommunityExportManifestV2Schema = manifestSchema(2);
 /** Version 2 export manifest. */
 export type CommunityExportManifestV2 = z.infer<typeof CommunityExportManifestV2Schema>;
+/** `manifest.json` of a version 3 export, the version this release writes. */
+export const CommunityExportManifestV3Schema = manifestSchema(3);
+/** Version 3 export manifest. */
+export type CommunityExportManifestV3 = z.infer<typeof CommunityExportManifestV3Schema>;
 
 /** A lowercase UUID, as Postgres writes one. Import derives new IDs from these strings. */
 const exportId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);

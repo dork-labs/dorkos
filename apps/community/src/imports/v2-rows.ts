@@ -8,14 +8,16 @@ import {
   CommunityExportChannelMemberRowSchema,
   CommunityExportChannelRowSchema,
   CommunityExportEntryRowSchema,
+  CommunityExportEntryRowV3Schema,
   CommunityExportMemberRowSchema,
+  CommunityExportMemberRowV3Schema,
   CommunityWireAgentSchema,
   CommunityWireAttachmentSchema,
   CommunityWireChannelSchema,
   CommunityWireEntrySchema,
   CommunityWireMemberSchema,
-  type CommunityExportManifestV2,
 } from '@dorkos/shared/community-wire';
+import { createHash } from 'node:crypto';
 import type { z, ZodType } from 'zod';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import {
@@ -25,12 +27,33 @@ import {
   type ImportLimits,
 } from './manifest.js';
 import { parseRow } from './ndjson.js';
-import { ICON_SOURCE_ID, type V2Collection } from './v2-archive.js';
+import { ICON_SOURCE_ID, type DataExportManifest, type V2Collection } from './v2-archive.js';
 
-/** One row of each version 2 collection, as its strict schema parses it. */
+/**
+ * An agent's own member row in a version 3 export. The importer never writes it: the agents
+ * collection is the agent, and restoring an agent writes its member row (migration 0042's
+ * trigger). The row is checked against the agents collection instead (`V2Tally`).
+ */
+export interface AgentMemberRow {
+  kind: 'agent';
+  id: string;
+  owner_member_id: string;
+  created_at: string;
+  removed_at: string | null;
+}
+
+/** A person's member row, the same in versions 2 and 3. */
+export type PersonMemberRow = z.infer<typeof CommunityExportMemberRowSchema> & { kind?: 'person' };
+
+/**
+ * One row of each data-file collection, as its strict schema parses it. Version 3 rows are read
+ * into the version 2 shape: a person's member row as it was, an agent's as an
+ * {@link AgentMemberRow}, and an agent's message with only the agent as its author, so every
+ * writer reads one shape.
+ */
 export type V2Row = {
   channels: z.infer<typeof CommunityExportChannelRowSchema>;
-  members: z.infer<typeof CommunityExportMemberRowSchema>;
+  members: PersonMemberRow | AgentMemberRow;
   agents: z.infer<typeof CommunityExportAgentRowSchema>;
   channelMembers: z.infer<typeof CommunityExportChannelMemberRowSchema>;
   agentChannelMembers: z.infer<typeof CommunityExportAgentChannelMemberRowSchema>;
@@ -41,7 +64,7 @@ export type V2Row = {
   reports: z.infer<typeof CommunityExportReportRowSchema>;
 };
 
-const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
+const ROW_SCHEMAS: { [K in V2Collection]: ZodType } = {
   channels: CommunityExportChannelRowSchema,
   members: CommunityExportMemberRowSchema,
   agents: CommunityExportAgentRowSchema,
@@ -53,6 +76,35 @@ const ROW_SCHEMAS: { [K in V2Collection]: ZodType<V2Row[K]> } = {
   bans: CommunityExportBanRowSchema,
   reports: CommunityExportReportRowSchema,
 };
+
+/** A version 3 export's member and message rows; every other collection is as in version 2. */
+const V3_ROW_SCHEMAS: { [K in V2Collection]: ZodType } = {
+  ...ROW_SCHEMAS,
+  members: CommunityExportMemberRowV3Schema,
+  entries: CommunityExportEntryRowV3Schema,
+};
+
+/** Read a version 3 member or message row into the version 2 shape (see {@link V2Row}). */
+function fromV3<K extends V2Collection>(key: K, row: Record<string, unknown>): V2Row[K] {
+  if (key === 'members') {
+    const { kind, owner_member_id: owner, ...person } = row;
+    if (kind === 'person') return { ...person, kind } as V2Row[K];
+    return {
+      kind,
+      id: row.id,
+      owner_member_id: owner,
+      created_at: row.created_at,
+      removed_at: row.removed_at,
+    } as V2Row[K];
+  }
+  if (key === 'entries' && row.author_agent_id !== null)
+    return { ...row, author_member_id: null } as V2Row[K];
+  return row as V2Row[K];
+}
+
+/** Whether a member row is an agent's own (version 3), which the importer does not write. */
+export const isAgentMemberRow = (row: V2Row['members']): row is AgentMemberRow =>
+  row.kind === 'agent';
 
 /**
  * The longest NDJSON line an import reads. The longest real row is a message: its text within
@@ -85,7 +137,7 @@ export class V2RowRules {
   private readonly latest: number;
 
   constructor(
-    readonly manifest: CommunityExportManifestV2,
+    readonly manifest: DataExportManifest,
     private readonly limits: ImportLimits,
     receivedAt: Date
   ) {
@@ -94,7 +146,10 @@ export class V2RowRules {
 
   /** Parse and check one line of `key`'s files. */
   parse<K extends V2Collection>(key: K, line: Uint8Array): V2Row[K] {
-    const row = parseRow(line, ROW_SCHEMAS[key]);
+    const row =
+      this.manifest.version === 3
+        ? fromV3(key, parseRow(line, V3_ROW_SCHEMAS[key]) as Record<string, unknown>)
+        : (parseRow(line, ROW_SCHEMAS[key]) as V2Row[K]);
     this.check(key, row);
     return row;
   }
@@ -123,6 +178,8 @@ export class V2RowRules {
       case 'members': {
         const member = value as V2Row['members'];
         this.notFuture(member.created_at, member.removed_at);
+        // An agent's own row: its schema checked its shape, and the tally checks its agent.
+        if (isAgentMemberRow(member)) return;
         readable(CommunityWireMemberSchema, {
           memberId: member.id,
           kind: 'human',
@@ -222,6 +279,16 @@ export class V2RowRules {
 }
 
 /**
+ * One (agent id, owner) pair as a number, so two collections' pairs compare as multisets by sum
+ * in constant memory. A plain sum is not collision-proof: a crafted set of pairs could add up to
+ * the same total. That is harmless here, because an agent's member row is never written from the
+ * export; the trigger builds it from the agents collection, so a disguised row changes nothing.
+ */
+function agentKey(id: string, owner: string): bigint {
+  return BigInt(`0x${createHash('sha256').update(`${id}:${owner}`).digest('hex')}`);
+}
+
+/**
  * Checks across the rows of one pass over the export, in manifest order: how many rows each
  * collection holds, that exactly one member is the active owner and made the export, and that
  * messages come in channel then sequence order (the order the exporter writes and the restore
@@ -242,21 +309,33 @@ export class V2Tally {
   };
   shortened = 0;
   attachmentBytes = 0;
+  /** Version 3: the agents' own member rows among `counts.members`. */
+  agentMembers = 0;
   private owners = 0;
   private lastEntry: { channel: string; seq: number } | null = null;
+  /** Version 3: (id, owner) of every agent member row and of every agent, as multisets. */
+  private readonly agentRows = { members: 0n, agents: 0n };
 
-  constructor(private readonly manifest: CommunityExportManifestV2) {}
+  constructor(private readonly manifest: DataExportManifest) {}
 
   /** Count one checked row of `key`. */
   add<K extends V2Collection>(key: K, row: V2Row[K]): void {
     this.counts[key]++;
     if (key === 'channels') this.shortened += importedChannel(row as V2Row['channels']).shortened;
-    if (key === 'members') {
-      const member = row as V2Row['members'];
+    if (key === 'members' && isAgentMemberRow(row as V2Row['members'])) {
+      const member = row as AgentMemberRow;
+      this.agentMembers++;
+      this.agentRows.members += agentKey(member.id, member.owner_member_id);
+    } else if (key === 'members') {
+      const member = row as PersonMemberRow;
       if (member.role === 'owner' && member.active) {
         this.owners++;
         invalid(member.id !== this.manifest.requesterMemberId);
       }
+    }
+    if (key === 'agents') {
+      const agent = row as V2Row['agents'];
+      this.agentRows.agents += agentKey(agent.id, agent.owner_member_id);
     }
     if (key === 'entries') {
       const entry = row as V2Row['entries'];
@@ -277,5 +356,10 @@ export class V2Tally {
       // An archive from before bans existed lists none.
       invalid(count !== (this.manifest.counts[key] ?? 0));
     invalid(this.owners !== 1);
+    // Version 3: exactly one member row per agent, with the agent's id and owner, and no other.
+    if (this.manifest.version === 3) {
+      invalid(this.agentMembers !== this.counts.agents);
+      invalid(this.agentRows.members !== this.agentRows.agents);
+    }
   }
 }

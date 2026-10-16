@@ -2,7 +2,9 @@ import type { Pool } from 'pg';
 import { expect } from 'vitest';
 import {
   CommunityExportManifestV2Schema,
+  CommunityExportManifestV3Schema,
   type CommunityExportManifestV2,
+  type CommunityExportManifestV3,
 } from '@dorkos/shared/community-wire';
 import { bufferReader, readWithOurReader } from '../archive/__tests__/archive-test-helpers.js';
 import { runNextExport, type ExportWorkerOptions } from '../exports/worker.js';
@@ -30,9 +32,9 @@ export async function drainExports(
   throw new Error('Export jobs did not settle');
 }
 
-/** A downloaded version 2 archive, read through the Community's own zip reader. */
+/** A downloaded version 2 or 3 archive, read through the Community's own zip reader. */
 export interface OpenedArchive {
-  manifest: CommunityExportManifestV2;
+  manifest: CommunityExportManifestV2 | CommunityExportManifestV3;
   /** Every entry's bytes, by name. */
   files: Map<string, Buffer>;
   /** Entry names in archive order. */
@@ -46,9 +48,10 @@ export async function openArchive(bytes: Buffer): Promise<OpenedArchive> {
   const { entries, contents } = await readWithOurReader(bufferReader(bytes));
   const manifestBytes = contents.get('manifest.json');
   expect(manifestBytes, 'manifest.json is in the archive').toBeDefined();
-  const manifest = CommunityExportManifestV2Schema.parse(
-    JSON.parse(manifestBytes!.toString('utf8'))
-  );
+  const raw = JSON.parse(manifestBytes!.toString('utf8')) as { version?: unknown };
+  const manifest = (
+    raw.version === 2 ? CommunityExportManifestV2Schema : CommunityExportManifestV3Schema
+  ).parse(raw);
   return {
     manifest,
     files: contents,

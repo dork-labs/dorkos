@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
   CommunityExportManifestV2Schema,
+  CommunityExportManifestV3Schema,
   type CommunityExportManifestV2,
+  type CommunityExportManifestV3,
 } from '@dorkos/shared/community-wire';
 import type { RangeReader } from '../archive/segmented-source.js';
 import { collectBytes } from '../archive/streams.js';
@@ -80,17 +82,24 @@ export function isV2EntryName(name: string): boolean {
  * takedown's evidence archive, which has no requester and may record any lifecycle; an owner
  * export always names its requester and records an active or archived community.
  */
-export type OwnerExportManifestV2 = CommunityExportManifestV2 & {
+export type OwnerExportManifestV2 = DataExportManifest & {
   scope: 'owner';
   requesterMemberId: string;
-  community: CommunityExportManifestV2['community'] & { lifecycle: 'active' | 'archived' };
+  community: DataExportManifest['community'] & { lifecycle: 'active' | 'archived' };
 };
+
+/**
+ * The manifest of an export in data files: version 2, or version 3, which lists agents as
+ * members and names a member as every message's author. One importer reads both; only the
+ * member and message rows differ (`v2-rows.ts`).
+ */
+export type DataExportManifest = CommunityExportManifestV2 | CommunityExportManifestV3;
 
 /**
  * A type narrowing, never false at run time: the scope check before the schema and the schema's
  * refines are what enforce it.
  */
-function isOwnerManifest(manifest: CommunityExportManifestV2): manifest is OwnerExportManifestV2 {
+function isOwnerManifest(manifest: DataExportManifest): manifest is OwnerExportManifestV2 {
   return (
     manifest.scope === 'owner' &&
     manifest.requesterMemberId !== null &&
@@ -165,7 +174,7 @@ export async function openExportV2(
       throw new ImportFailure('IMPORT_TOO_LARGE');
     const raw = parseManifestJson(await collectBytes(archive.openEntry(manifestEntry)));
     const { version, scope } = raw as { version?: unknown; scope?: unknown };
-    if (version !== 2)
+    if (version !== 2 && version !== 3)
       throw new ImportFailure(
         Number.isInteger(version) ? 'IMPORT_VERSION_UNSUPPORTED' : 'IMPORT_ARCHIVE_INVALID'
       );
@@ -173,7 +182,9 @@ export async function openExportV2(
     // version adds) is refused by name, before the schema, whatever scopes the schema knows.
     if (typeof scope === 'string' && scope !== 'owner')
       throw new ImportFailure('IMPORT_NOT_OWNER_EXPORT');
-    const parsed = CommunityExportManifestV2Schema.safeParse(raw);
+    const parsed = (
+      version === 2 ? CommunityExportManifestV2Schema : CommunityExportManifestV3Schema
+    ).safeParse(raw);
     if (!parsed.success || !isOwnerManifest(parsed.data))
       throw new ImportFailure('IMPORT_ARCHIVE_INVALID');
     const manifest = parsed.data;

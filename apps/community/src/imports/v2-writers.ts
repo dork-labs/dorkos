@@ -6,7 +6,7 @@ import { ERASED_AGENT_NAME, ERASED_MEMBER_NAME } from '../erasure/erasure.js';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { ImportFailure, importedChannel } from './manifest.js';
 import type { V2Collection } from './v2-archive.js';
-import type { V2Row } from './v2-rows.js';
+import { isAgentMemberRow, type PersonMemberRow, type V2Row } from './v2-rows.js';
 import {
   allRestored,
   insertRows,
@@ -70,7 +70,9 @@ async function writeHandles(
   );
 }
 
-const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
+const writeMembers: BatchWriter<'members'> = async (client, batch, scope) => {
+  // An agent's own member row (version 3) is written when its agent is (0042's trigger).
+  const rows = batch.filter((row): row is PersonMemberRow => !isAgentMemberRow(row));
   wroteAll(
     await insertRows(
       client,
@@ -314,6 +316,18 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
     [scope.communityId, entries.map((entry) => entry.id)]
   );
   invalid(Boolean(badParent.rowCount));
+  // A message names only a member as its author when that member is a person. An export that
+  // names an agent's own member row without the agent would show the agent's words as a
+  // person's. (Live posts cannot: the post route sets both from the poster.)
+  const agentAsPerson = await client.query(
+    `SELECT 1 FROM entries e
+     JOIN members m ON m.community_id=e.community_id AND m.id=e.author_member_id
+     WHERE e.community_id=$1 AND e.id=ANY($2::uuid[]) AND e.author_agent_id IS NULL
+       AND m.kind<>'person'
+     LIMIT 1`,
+    [scope.communityId, entries.map((entry) => entry.id)]
+  );
+  invalid(Boolean(agentAsPerson.rowCount));
   await client.query(
     `UPDATE channels c SET last_seq=v.last_seq
      FROM jsonb_to_recordset($1::jsonb) AS v(id uuid,last_seq bigint)

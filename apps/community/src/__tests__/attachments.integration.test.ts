@@ -1454,9 +1454,18 @@ describe('private archives and recoverable leave', () => {
       ).rows
     ).toEqual([{ state: 'committed', community_id: communityId, purpose: 'export' }]);
     const archive = await openArchive(await downloadExport(personalId, ownerCookie));
-    expect(archive.manifest.version).toBe(2);
+    expect(archive.manifest.version).toBe(3);
     expect(archive.manifest.scope).toBe('personal');
-    expect(archive.rows<{ id: string }>('members').map((member) => member.id)).toEqual([ownerId]);
+    // A personal export lists the requester and, in format 3, their agents' own member rows.
+    const ownAgents = (
+      await pool.query<{ id: string }>('SELECT id FROM agents WHERE owner_member_id=$1', [ownerId])
+    ).rows.map((row) => row.id);
+    expect(
+      archive
+        .rows<{ id: string; kind: string }>('members')
+        .map((member) => member.id)
+        .sort()
+    ).toEqual([ownerId, ...ownAgents].sort());
     const texts = archive.rows<{ text: string }>('entries').map((entry) => entry.text);
     expect(texts).not.toContain('Bob private sentence');
     expect(texts).toContain('attached');
@@ -1483,7 +1492,12 @@ describe('private archives and recoverable leave', () => {
     ).toBe(404);
     const fullArchive = await openArchive(await downloadExport(fullId, ownerCookie));
     expect(fullArchive.manifest.scope).toBe('owner');
-    expect(fullArchive.rows('members')).toHaveLength(2);
+    // Format 3: the two people, and each agent's own member row beside its agent.
+    const fullMembers = fullArchive.rows<{ kind: string }>('members');
+    expect(fullMembers.filter((member) => member.kind === 'person')).toHaveLength(2);
+    expect(fullMembers.filter((member) => member.kind === 'agent')).toHaveLength(
+      fullArchive.rows('agents').length
+    );
     expect(fullArchive.rows<{ text: string }>('entries').map((entry) => entry.text)).toContain(
       'Bob private sentence'
     );

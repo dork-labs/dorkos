@@ -1,4 +1,7 @@
-import type { CommunityExportManifestV2 } from '@dorkos/shared/community-wire';
+import type {
+  CommunityExportManifestV2,
+  CommunityExportManifestV3,
+} from '@dorkos/shared/community-wire';
 import { encodeEntriesIndex } from '../archive/zip-format.js';
 import {
   writeZipTail,
@@ -20,7 +23,7 @@ import {
   type CollectionFile,
   type CollectionTallies,
 } from './collections.js';
-import { fileNumber, SegmentChangedError } from './data-segments.js';
+import { exportFormatOf, fileNumber, SegmentChangedError } from './data-segments.js';
 import { JobFailedError, type ExportJob } from './job.js';
 import { dropSegments } from './store.js';
 
@@ -65,6 +68,7 @@ export async function writeCollections(job: ExportJob): Promise<Collected> {
         scope: job.job.scope,
         memberId: job.job.requester_member_id,
         channelIds: job.requester.channelIds,
+        format: exportFormatOf(job.job.format_version),
       },
       tallies,
       Math.max(1, Math.min(COLLECTION_FILE_BYTES, Math.floor(job.target / 4)))
@@ -165,8 +169,8 @@ export async function writeTail(job: ExportJob, collected: Collected): Promise<b
           checksum: community.icon_checksum,
         }
       : null;
-  const manifest: CommunityExportManifestV2 = {
-    version: 2,
+  const manifest: CommunityExportManifestV2 | CommunityExportManifestV3 = {
+    version: exportFormatOf(job.job.format_version),
     scope: job.job.scope,
     exportId: job.job.id,
     requesterMemberId: job.job.requester_member_id,
