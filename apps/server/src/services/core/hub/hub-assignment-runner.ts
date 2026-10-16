@@ -13,7 +13,8 @@
 import { logger } from '../../../lib/logger.js';
 import { withRegistrationCaller } from '../auth/registration-policy.js';
 import { getAuth, hasAnyUser, type Auth } from '../auth/index.js';
-import { createCloudV1Client } from '../cloud/v1-client.js';
+import { createCloudV1ClientFor } from '../cloud/v1-client.js';
+import { env } from '../../../env.js';
 import {
   cloudHubCalls,
   readHubOwnerPin,
@@ -74,7 +75,9 @@ export async function createHubOwner(
 
 /**
  * The real dependencies: this hub's data directory and Better Auth, and Cloud
- * through this hub's own key unless `cloud` replaces it.
+ * through this hub's own key (`DORKOS_HUB_INSTANCE_KEY`) unless `cloud`
+ * replaces it. The key is the hub's alone: the hub is not linked to an account
+ * the way a person's computer is, so no account feature presents it.
  *
  * @param dorkHome - The DorkOS data directory.
  * @param cloud - Replaces the Cloud calls, for tests.
@@ -82,7 +85,7 @@ export async function createHubOwner(
 export function liveHubDeps(
   dorkHome: string,
   cloud: Pick<HubAssignmentSyncDeps, 'readAssignment' | 'confirm'> = cloudHubCalls(
-    createCloudV1Client()
+    env.DORKOS_HUB_INSTANCE_KEY ? createCloudV1ClientFor(env.DORKOS_HUB_INSTANCE_KEY) : null
   )
 ): HubAssignmentSyncDeps {
   return {

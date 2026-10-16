@@ -14,15 +14,21 @@
  * installed. `DORKOS_HUB_SMOKE_BIN` replaces the command, for example
  * `node packages/cli/dist/bin/cli.js` from a checkout. Plain Node, no
  * dependencies: the image carries nothing else.
+ *
+ * In the image (`DORKOS_HUB_SMOKE_ISOLATE=0`) the hub runs with the image's
+ * own settings: its bind address and its data folder. Anywhere else it gets a
+ * throwaway home, loopback, and a free port unless `DORKOS_HUB_SMOKE_PORT`
+ * names one.
  */
 import { spawn } from 'node:child_process';
 import { createServer, request } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const CLOUD_PORT = 9311;
-const HUB_PORT = Number(process.env.DORKOS_HUB_SMOKE_PORT ?? 4242);
+const ISOLATE = process.env.DORKOS_HUB_SMOKE_ISOLATE !== '0';
+let CLOUD_PORT = 0;
+let HUB_PORT = Number(process.env.DORKOS_HUB_SMOKE_PORT ?? 0);
 const KEY = 'hub-smoke-instance-key-0123456789';
 const ADDRESS_HOST = 'hub-smoke.example.invalid';
 const PROOF = { header: 'x-hub-smoke-proof', secret: 'p'.repeat(48) };
@@ -38,7 +44,7 @@ function check(name, ok, detail = '') {
 }
 
 // ── The stand-in for Cloud ────────────────────────────────────────────────
-const cloud = { assigned: false, confirmed: null, reads: 0, wrongKey: 0 };
+const cloud = { assigned: false, confirmed: null, reads: 0, wrongKey: 0, unexpected: [] };
 
 const cloudServer = createServer((req, res) => {
   if (req.headers.authorization !== `Bearer ${KEY}`) {
@@ -79,9 +85,34 @@ const cloudServer = createServer((req, res) => {
     });
     return;
   }
+  // A hub calls Cloud for its assignment and nothing else.
+  cloud.unexpected.push(`${req.method} ${req.url}`);
   res.writeHead(404, { 'content-type': 'application/problem+json' });
   res.end(JSON.stringify({ type: 'about:blank', code: 'not_found', status: 404, title: 'No' }));
 });
+
+/** A port nothing is listening on right now. */
+function freePort() {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/** Every log file under `dir`, read whole. */
+function readLogs(dir) {
+  if (!existsSync(dir)) return '';
+  let text = '';
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (entry.isFile() && entry.name.endsWith('.log')) {
+      text += readFileSync(join(entry.parentPath ?? entry.path, entry.name), 'utf8');
+    }
+  }
+  return text;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -113,14 +144,13 @@ async function waitFor(test, ms) {
 
 /** Start the hub with `extraEnv`; resolves to the child and its output so far. */
 function startHub(extraEnv) {
-  const home = mkdtempSync(join(tmpdir(), 'hub-smoke-'));
-  const out = { text: '', home };
+  const home = ISOLATE ? mkdtempSync(join(tmpdir(), 'hub-smoke-')) : null;
+  const dorkHome = home ? join(home, '.dork') : (process.env.DORK_HOME ?? join(homedir(), '.dork'));
+  const out = { text: '', home, dorkHome };
   const env = {
     ...process.env,
-    HOME: home,
-    DORK_HOME: join(home, '.dork'),
+    ...(home ? { HOME: home, DORK_HOME: dorkHome, DORKOS_HOST: '127.0.0.1' } : {}),
     DORKOS_SERVER_ROLE: 'hub',
-    DORKOS_HOST: '127.0.0.1',
     DORKOS_PORT: String(HUB_PORT),
     DORKOS_CLOUD_API_URL: `http://127.0.0.1:${CLOUD_PORT}`,
     ...extraEnv,
@@ -153,6 +183,8 @@ function cleanup() {
 
 // ── The run ───────────────────────────────────────────────────────────────
 async function main() {
+  CLOUD_PORT = await freePort();
+  if (!HUB_PORT) HUB_PORT = ISOLATE ? await freePort() : 4242;
   await new Promise((r) => cloudServer.listen(CLOUD_PORT, '127.0.0.1', r));
 
   // 1. No key, no boot.
@@ -170,7 +202,7 @@ async function main() {
         !out.text.includes('DORKOS_ALLOW_INSECURE_BIND'),
       out.text.slice(-400)
     );
-    rmSync(out.home, { recursive: true, force: true });
+    if (out.home) rmSync(out.home, { recursive: true, force: true });
   }
 
   // 2. Pooled.
@@ -185,6 +217,9 @@ async function main() {
   );
   check('the health check answers on any Host, with no proof', up, out.text.slice(-2000));
   if (!up) return;
+  // Something else on the port would answer too; the hub must be the one.
+  check('the hub is the one answering', child.exitCode === null, out.text.slice(-2000));
+  if (child.exitCode !== null) return;
   const pooled = await get('/api/config', [
     ['host', ADDRESS_HOST],
     [PROOF.header, PROOF.secret],
@@ -242,13 +277,21 @@ async function main() {
     [PROOF.header, PROOF.secret],
   ]);
   check('another address: 403', wrongHost.status === 403, `${wrongHost.status}`);
-  check('the proof secret is never logged', !out.text.includes(PROOF.secret));
-  check('the instance key is never logged', !out.text.includes(KEY));
+  check('it presented no other key, ever', cloud.wrongKey === 0);
+  check(
+    'it called Cloud for nothing but its assignment',
+    cloud.unexpected.length === 0,
+    cloud.unexpected.join(', ')
+  );
+  const logged = out.text + readLogs(join(out.dorkHome, 'logs'));
+  check('its logs were read', readLogs(join(out.dorkHome, 'logs')).length > 0, out.dorkHome);
+  check('the proof secret is never logged', !logged.includes(PROOF.secret));
+  check('the instance key is never logged', !logged.includes(KEY));
 
   done = true;
   child.kill('SIGTERM');
   check('it shuts down on SIGTERM', (await exitWithin(child, 20_000)) !== null);
-  rmSync(out.home, { recursive: true, force: true });
+  if (out.home) rmSync(out.home, { recursive: true, force: true });
 }
 
 let done = false;

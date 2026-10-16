@@ -248,9 +248,11 @@ export const serverEnvSchema = z.object({
   // DORKOS_ALLOW_INSECURE_BIND (below the schema).
   DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
   // A hub's DorkOS Cloud instance key (DOR-2935), set by Cloud when it boots
-  // the hub image. Required on a hub, read only there, and never written to
-  // disk: a hub that restarts reads it from its environment again. Read by
-  // `services/core/cloud/v1-client.ts`.
+  // the hub image. Required on a hub and read only there, by the assignment
+  // sync (`services/core/hub/hub-assignment-runner.ts`); it is not this
+  // server's account link, so nothing else presents it. Never written to disk,
+  // and removed from `process.env` once read (below the schema), so no child
+  // process (a terminal, an agent, an MCP server) inherits it.
   DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
@@ -433,6 +435,19 @@ export const serverEnvSchema = z.object({
   NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 
+/**
+ * Where a hub's instance key waits once this file has read it, for the life of
+ * the process. The key is removed from `process.env` so no child process
+ * inherits it, but the published CLI evaluates this file twice (once in its
+ * own bundle, once in the server bundle it loads), and the second read has to
+ * find it.
+ */
+const HUB_KEY_SLOT = Symbol.for('dorkos.env.hubInstanceKey');
+const keptKeys = globalThis as typeof globalThis & { [HUB_KEY_SLOT]?: string };
+if (process.env.DORKOS_HUB_INSTANCE_KEY) {
+  keptKeys[HUB_KEY_SLOT] = process.env.DORKOS_HUB_INSTANCE_KEY;
+}
+
 const result = serverEnvSchema
   .superRefine((parsed, ctx) => {
     // A hub keeps login on and owns no network boundary of its own to vouch
@@ -455,7 +470,7 @@ const result = serverEnvSchema
       });
     }
   })
-  .safeParse(process.env);
+  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
@@ -465,6 +480,9 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// Read once, above; nothing a child process inherits may carry it.
+delete process.env.DORKOS_HUB_INSTANCE_KEY;
 export type ServerEnv = typeof env;
 
 /**

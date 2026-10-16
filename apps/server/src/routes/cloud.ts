@@ -155,15 +155,16 @@ router.use('/communities/*', gateCloudCommunities());
 router.route('/communities', createCloudCommunitiesRoutes());
 
 /**
- * A hub is linked by DorkOS Cloud when it boots it, with a key from its
- * environment (`DORKOS_HUB_INSTANCE_KEY`, DOR-2935), so nobody links,
- * relinks or unlinks it from here. Reads stay open.
+ * A hub belongs to DorkOS Cloud's assignment, through a key from its
+ * environment (`DORKOS_HUB_INSTANCE_KEY`, DOR-2935), and is never linked to an
+ * account the way a person's computer is: nobody links or unlinks it from
+ * here. Reads, and the link check, stay open and report it unlinked.
  */
 const HUB_LINKED_BY_CLOUD = {
-  error: 'DorkOS Cloud links this DorkOS. It can’t be linked or unlinked here.',
+  error: 'DorkOS Cloud manages this DorkOS. It can’t be linked or unlinked here.',
   code: 'HUB_LINKED_BY_CLOUD',
 } as const;
-for (const path of ['/link/*', '/unlink']) {
+for (const path of ['/link/start', '/link/cancel', '/unlink']) {
   router.post(path, async (c, next) => {
     if (currentServerRole() === 'hub') return c.json(HUB_LINKED_BY_CLOUD, 409);
     await next();

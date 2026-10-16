@@ -176,6 +176,8 @@ ENV DORKOS_SERVER_ROLE=hub
 # assignment, and the front-door checks (scripts/hub-smoke/run.mjs).
 FROM hub AS hub-smoke
 COPY scripts/hub-smoke/ /opt/hub-smoke/
+# Boot the hub with this image's own bind address and data folder.
+ENV DORKOS_HUB_SMOKE_ISOLATE=0
 HEALTHCHECK NONE
 ENTRYPOINT ["tini", "--", "node", "/opt/hub-smoke/run.mjs"]
 

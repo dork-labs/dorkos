@@ -1,8 +1,8 @@
 /**
- * A hub is linked by DorkOS Cloud when it boots (DOR-2935): its key comes
- * from its environment, so the link, relink and unlink writes refuse there,
- * before reaching the link manager. On a person's own computer they still
- * reach it.
+ * A hub is never linked to an account (DOR-2935): its key comes from its
+ * environment and is its own, so the link, relink and unlink writes refuse
+ * there, before reaching the link manager. The reads and the link check stay
+ * open. On a person's own computer the writes still reach it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
@@ -24,7 +24,8 @@ const manager = vi.hoisted(() => ({
   getStatus: vi.fn(() => ({ state: 'idle' })),
   unlink: vi.fn(async () => undefined),
   cancelLink: vi.fn(async () => ({ state: 'idle' })),
-  getSummary: vi.fn(() => ({ linked: true, accountLabel: null, lastHeartbeatAt: null })),
+  getSummary: vi.fn(() => ({ linked: false, accountLabel: null, lastHeartbeatAt: null })),
+  checkLink: vi.fn(async () => ({ linked: false, accountLabel: null, lastHeartbeatAt: null })),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkManager: () => manager,
@@ -71,9 +72,14 @@ describe('linking on a hub', () => {
     expect(effect).not.toHaveBeenCalled();
   });
 
-  it('keeps the reads open', async () => {
-    const res = await request(server).get('/api/cloud/link/status').set('Host', 'localhost:4242');
-    expect(res.status).toBe(200);
+  it('keeps the reads and the link check open', async () => {
+    for (const path of ['/api/cloud/link/status', '/api/cloud/status']) {
+      const res = await request(server).get(path).set('Host', 'localhost:4242');
+      expect(res.status, path).toBe(200);
+    }
+    const check = await request(server).post('/api/cloud/link/check').set('Host', 'localhost:4242');
+    expect(check.status).toBe(200);
+    expect(manager.checkLink).toHaveBeenCalledTimes(1);
   });
 
   it.each(WRITES)(
