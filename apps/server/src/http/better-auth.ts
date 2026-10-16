@@ -25,6 +25,9 @@ import { honoRequestFacts } from './request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
+import { AUTH_COOKIES_SECURE } from '../services/core/auth/index.js';
+import { ingressOf } from '../services/core/remote/ingress-mark.js';
+import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 
 /** Options for {@link mountBetterAuth}. */
@@ -33,6 +36,8 @@ export interface BetterAuthOptions {
   auth: Auth;
   /** Sign-in and sign-up attempts per address per window (`DORKOS_AUTH_SIGNIN_RATE_LIMIT`). */
   maxAttempts?: number;
+  /** Whether sign-in cookies are `Secure`; defaults to `AUTH_COOKIES_SECURE`. For tests. */
+  secureCookies?: boolean;
 }
 
 /**
@@ -44,12 +49,12 @@ export interface BetterAuthOptions {
  */
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
-  app.all('/api/auth/*', (c) => {
+  app.all('/api/auth/*', async (c) => {
     const facts = honoRequestFacts(c);
     const setupCode = facts.headers[SETUP_CODE_HEADER];
     // The sign-up hook asks where this request came from (registration-policy.ts)
     // and, from another device, which setup code it carried (setup-code.ts).
-    return withRegistrationCaller(classifyRequest(facts, currentServerRole()), () =>
+    const response = await withRegistrationCaller(classifyRequest(facts, currentServerRole()), () =>
       withSetupCodeAttempt(
         {
           code: typeof setupCode === 'string' ? setupCode : undefined,
@@ -58,7 +63,90 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
         () => options.auth.handler(requestForBetterAuth(c))
       )
     );
+    const secure = options.secureCookies ?? AUTH_COOKIES_SECURE;
+    return (secure && explainDroppedSignIn(c, response)) || response;
   });
+}
+
+/** Refusal code when a sign-in worked but the browser will drop its cookie. */
+export const SIGN_IN_NEEDS_HTTPS = 'SIGN_IN_NEEDS_HTTPS';
+
+/**
+ * Turn a sign-in the browser is about to throw away into a refusal that says
+ * why (F5, DOR-2968).
+ *
+ * A built DorkOS marks its sign-in cookie `Secure` (`AUTH_COOKIES_SECURE`).
+ * Over plain `http` at any address but this computer's own, a browser drops a
+ * `Secure` cookie without a word, so the sign-in "works" and the person lands
+ * back on the sign-in screen, forever. This sees that case on the way out: a
+ * response that sets a session cookie, for a plain-http request to a
+ * non-loopback `Host`. The Wi-Fi listener is the exception, since it rewrites
+ * the cookie for plain `http` itself (`lan-cookies.ts`).
+ *
+ * The account or session the request made stays; only the answer changes, so
+ * the person reads what to do instead of looping.
+ *
+ * Only called when the cookies are `Secure`.
+ *
+ * @param c - The Hono context.
+ * @param response - What Better Auth answered.
+ * @returns The refusal to send instead, or `undefined` to send `response`.
+ */
+function explainDroppedSignIn(c: Context<ApiEnv>, response: Response): Response | undefined {
+  if (!response.ok) return undefined;
+  // Only a NEW sign-in: a session refresh (`get-session` renews the cookie)
+  // carries a cookie the browser already kept, so it is never the loop.
+  if (!/^\/api\/auth\/sign-(in|up)\//.test(c.req.path)) return undefined;
+  const { incoming } = c.env;
+  if (ingressOf(incoming) === 'wifi') return undefined;
+  if (requestScheme(incoming) === 'https') return undefined;
+  // The page itself says https: a proxy that forgot X-Forwarded-Proto, not a
+  // plain-http browser. Never refuse a sign-in the browser would keep.
+  if (pageIsHttps(incoming.headers.origin)) return undefined;
+  if (isBrowserSecureHost(incoming.headers.host)) return undefined;
+  const setsSession = response.headers
+    .getSetCookie()
+    .some((cookie) => /session_token=[^;]/.test(cookie));
+  if (!setsSession) return undefined;
+  return c.json(
+    {
+      code: SIGN_IN_NEEDS_HTTPS,
+      message:
+        'Your browser won’t keep a sign-in over plain http at this address. Open DorkOS over https, or on the computer it runs on.',
+    },
+    409
+  );
+}
+
+/** Whether an `Origin` names an https page. */
+function pageIsHttps(origin: string | undefined): boolean {
+  return typeof origin === 'string' && origin.toLowerCase().startsWith('https://');
+}
+
+/**
+ * Whether a browser treats a plain-http page at this `Host` as secure, and so
+ * keeps a `Secure` cookie there: `localhost`, any `*.localhost`, all of
+ * `127.0.0.0/8` and `[::1]`.
+ */
+function isBrowserSecureHost(host: string | undefined): boolean {
+  if (!host) return false;
+  if (isLoopbackHostHeader(host)) return true;
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.split(':')[0]!;
+  const lower = name.toLowerCase();
+  return (
+    lower === 'localhost' ||
+    lower.endsWith('.localhost') ||
+    /^127(\.\d{1,3}){3}$/.test(lower) ||
+    lower === '[::1]'
+  );
+}
+
+/** The scheme the person's browser used: what a proxy says, else the socket. */
+function requestScheme(incoming: ApiEnv['Bindings']['incoming']): string {
+  const forwarded = incoming.headers['x-forwarded-proto'];
+  const named = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (named) return named.split(',')[0]!.trim().toLowerCase();
+  return (incoming.socket as TLSSocket | undefined)?.encrypted ? 'https' : 'http';
 }
 
 /**

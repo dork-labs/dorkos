@@ -54,6 +54,10 @@ If you create the owner account from a phone or another computer, DorkOS asks fo
 - Creating the owner on the computer itself never needs a code.
 - A Docker container with no owner yet doesn't ask, for one more release. It logs a warning instead.
 
+### "This browser can't keep the sign-in over plain http"
+
+A sign-in cookie in a built DorkOS is marked secure, and browsers throw secure cookies away over plain `http`, except at `localhost`. So signing in at an address like `http://192.168.1.5:4242` used to bring you straight back to the sign-in screen. DorkOS now says so instead. Reach DorkOS over `https` (a [reverse proxy](/docs/self-hosting/reverse-proxy) or [your tunnel](/docs/self-hosting/tunnel-setup)), or use **Let devices on my Wi-Fi in**, which handles plain `http` on your own network.
+
 ## Exposing DorkOS beyond localhost
 
 Want to reach DorkOS from your phone or another computer? Create the owner account first. Every other device signs in as it, whatever this computer asks, whether you get there through a tunnel or by binding to another network interface (any address other than your own machine, like your Wi-Fi IP).

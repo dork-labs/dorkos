@@ -62,6 +62,19 @@ describe('describeAuthError', () => {
     expect(copy?.detail).toBe('Missing or null Origin');
   });
 
+  it('says why a sign-in over plain http did not stick (DOR-2968)', () => {
+    // The code the server sends (`SIGN_IN_NEEDS_HTTPS` in `http/better-auth.ts`).
+    const copy = describeAuthError({
+      message: 'Your browser won’t keep a sign-in over plain http at this address.',
+      status: 409,
+      code: 'SIGN_IN_NEEDS_HTTPS',
+    });
+    expect(copy).toEqual({
+      message: 'This browser can’t keep the sign-in over plain http. Open DorkOS over https.',
+      detail: null,
+    });
+  });
+
   it('keeps the rate-limit copy the login screen used to own', () => {
     expect(
       describeAuthError({ message: 'Too many requests', status: 429, retryAfter: 30 })
