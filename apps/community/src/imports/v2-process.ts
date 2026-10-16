@@ -355,11 +355,11 @@ export async function restoreV2(
     );
     invalid(!owner.rowCount);
     // An owner export that gave its owner no channel membership still leaves them in every
-    // channel, as version 1 does.
+    // channel, as version 1 does; never in a direct message, which holds its own two (DOR-2955).
     await client.query(
       `INSERT INTO channel_members(community_id,channel_id,member_id)
        SELECT $1,c.id,$2 FROM channels c
-       WHERE c.community_id=$1 AND NOT EXISTS(
+       WHERE c.community_id=$1 AND c.kind='channel' AND NOT EXISTS(
          SELECT 1 FROM channel_members cm WHERE cm.community_id=$1 AND cm.member_id=$2)`,
       [communityId, ownerId]
     );

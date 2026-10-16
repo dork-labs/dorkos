@@ -27,11 +27,12 @@ const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
       client,
       // A channel's last_seq grows as its messages are restored, batch by batch.
       `INSERT INTO channels(id,community_id,name,description,visibility,archived,last_seq,epoch,
-         created_at,auto_join,slow_mode_seconds)
+         created_at,auto_join,slow_mode_seconds,kind,dm_member_id,dm_agent_id)
        SELECT r.id,$2,r.name,r.description,r.visibility,r.archived,0,1,r.created_at,r.auto_join,
-         r.slow_mode_seconds
+         r.slow_mode_seconds,r.kind,r.dm_member_id,r.dm_agent_id
        FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,name text,description text,visibility text,
-         archived boolean,created_at timestamptz,auto_join boolean,slow_mode_seconds integer)
+         archived boolean,created_at timestamptz,auto_join boolean,slow_mode_seconds integer,
+         kind text,dm_member_id uuid,dm_agent_id uuid)
        ON CONFLICT DO NOTHING`,
       rows.map(importedChannel).map((channel) => ({
         id: scope.derive(channel.id),
@@ -43,6 +44,10 @@ const writeChannels: BatchWriter<'channels'> = async (client, rows, scope) => {
         // Only a public channel is joined on arrival, whatever the export says.
         auto_join: channel.auto_join === true && channel.visibility === 'public',
         slow_mode_seconds: channel.slow_mode_seconds ?? 0,
+        // A direct message comes back as one, with its two members' new ids (DOR-2955).
+        kind: channel.kind ?? 'channel',
+        dm_member_id: channel.dm_member_id ? scope.derive(channel.dm_member_id) : null,
+        dm_agent_id: channel.dm_agent_id ? scope.derive(channel.dm_agent_id) : null,
       })),
       scope.communityId
     ),

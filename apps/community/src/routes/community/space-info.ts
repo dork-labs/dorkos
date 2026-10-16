@@ -34,6 +34,8 @@ export function registerSpaceInfoRoutes(api: Hono, { pool }: { pool: Pool }) {
   });
   // The same answer for every space on this server: it describes the server, not the space.
   api.get('/features', (c) =>
-    json(c, CommunityWireSpaceFeaturesResponseSchema, { features: { agentAvailability: true } })
+    json(c, CommunityWireSpaceFeaturesResponseSchema, {
+      features: { agentAvailability: true, agentDms: true },
+    })
   );
 }

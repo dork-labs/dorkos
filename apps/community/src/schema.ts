@@ -809,10 +809,23 @@ export const channels = pgTable(
     autoJoin: boolean('auto_join').notNull().default(false),
     /** Seconds each person waits between posts here; 0 is off (0034). */
     slowModeSeconds: integer('slow_mode_seconds').notNull().default(0),
+    /** `channel`, or `dm` for a direct message between one person and one agent (0046). */
+    kind: text('kind').notNull().default('channel'),
+    /** A direct message's person, and its agent's member row; null for a channel (0046). */
+    dmMemberId: uuid('dm_member_id'),
+    dmAgentId: uuid('dm_agent_id'),
   },
   (table) => [
     uniqueIndex('channels_community_id_unique').on(table.communityId, table.id),
     check('channels_slow_mode_seconds_check', sql`${table.slowModeSeconds} BETWEEN 0 AND 21600`),
+    check('channels_kind', sql`${table.kind} IN ('channel','dm')`),
+    check(
+      'channels_dm_shape',
+      sql`(${table.kind} = 'channel' AND ${table.dmMemberId} IS NULL AND ${table.dmAgentId} IS NULL) OR (${table.kind} = 'dm' AND ${table.dmMemberId} IS NOT NULL AND ${table.dmAgentId} IS NOT NULL AND ${table.dmMemberId} <> ${table.dmAgentId} AND ${table.visibility} = 'private' AND NOT ${table.autoJoin})`
+    ),
+    uniqueIndex('channels_one_dm')
+      .on(table.communityId, table.dmMemberId, table.dmAgentId)
+      .where(sql`${table.kind} = 'dm'`),
   ]
 );
 /** Explicit human channel membership. */
@@ -866,6 +879,8 @@ export const agents = pgTable(
     runsOn: text('runs_on'),
     /** When its app last reported it; NULL reads as unknown, never offline (0039). */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /** Whether its owner lets people send it direct messages; off until they do (0046). */
+    acceptsDms: boolean('accepts_dms').notNull().default(false),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -1762,47 +1777,7 @@ export const entryRedactions = pgTable(
   ]
 );
 
-/** A community's short names: one current, and retired ones that still lead to it. */
-export const communityShortNames = pgTable(
-  'community_short_names',
-  {
-    shortName: text('short_name').primaryKey(),
-    communityId: uuid('community_id')
-      .notNull()
-      .references(() => communities.id),
-    state: text('state').notNull(),
-    createdAt: time('created_at'),
-    retiredAt: timestamp('retired_at', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('community_short_names_one_current')
-      .on(table.communityId)
-      .where(sql`${table.state} = 'current'`),
-    index('community_short_names_community_idx').on(table.communityId),
-    check(
-      'community_short_names_short_name_check',
-      sql`${table.shortName} ~ '^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){2,31}$'`
-    ),
-    check('community_short_names_state_check', sql`${table.state} IN ('current','retired')`),
-    check(
-      'community_short_names_retired',
-      sql`(${table.state} = 'retired') = (${table.retiredAt} IS NOT NULL)`
-    ),
-  ]
-);
-
-/** Cool-off holds on released short names, keyed by an HMAC so no name is kept in clear. */
-export const releasedShortNames = pgTable(
-  'released_short_names',
-  {
-    nameHmac: text('name_hmac').primaryKey(),
-    availableAt: timestamp('available_at', { withTimezone: true }).notNull(),
-  },
-  (table) => [
-    index('released_short_names_available_idx').on(table.availableAt),
-    check('released_short_names_name_hmac_check', sql`${table.nameHmac} ~ '^[a-f0-9]{64}$'`),
-  ]
-);
+// `community_short_names` and `released_short_names` live in `schema/short-names.ts` (0015).
 
 // `removed_file_blobs` lives in `schema/removed-file-blobs.ts` (0020).
 

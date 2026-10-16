@@ -25,6 +25,8 @@ import { agentLimitReached, effectiveAgentLimit } from '../../../host/limits.js'
 import { hashSecret, randomToken } from '../../../security.js';
 import { notifyLive } from '../../../live/notices.js';
 import { refuseAgentName } from '../../../moderation/display-names.js';
+import { grantActsOn, grantScope } from './agent-scope.js';
+import { refuseDirectMessage } from './direct-messages.js';
 
 const uuid = z.uuid();
 interface AgentRow {
@@ -39,21 +41,6 @@ interface ScopedAgentRow extends AgentRow {
   local_agent_id: string | null;
   /** Whether the grant making this request may act on the row (see {@link grantScope}). */
   in_scope: boolean;
-}
-
-/**
- * SQL that is true when a request made with the grant in `grantParam` may act on the agent row
- * aliased `alias`: the grant's own agent; a legacy one (NULL: enrolled before the Community
- * recorded grants, member-scoped as it always was); or an orphaned one, whose enrolling grant
- * was since revoked or deleted, so no installation holds it any more. The last is how an
- * installation that reconnects under a new grant gets its agent, handle and channels back. An
- * agent whose enrolling grant is still live belongs to another installation and is out of
- * scope. The caller also matches the agent's owner to the grant's member.
- */
-export function grantScope(alias: string, grantParam: string): string {
-  return `(${alias}.enrolled_by_grant_id=${grantParam} OR ${alias}.enrolled_by_grant_id IS NULL
-    OR NOT EXISTS (SELECT 1 FROM connection_grants live WHERE live.id=${alias}.enrolled_by_grant_id
-      AND live.community_id=${alias}.community_id AND live.revoked_at IS NULL))`;
 }
 
 /**
@@ -85,11 +72,6 @@ async function adoptAgent(
 
 const SCOPED_COLUMNS =
   'id,display_name,handle,owner_member_id,active,enrolled_by_grant_id,local_agent_id';
-
-/** Whether a grant of `memberId` may act on this agent: in the grant's scope, and its member's. */
-function grantActsOn(row: { owner_member_id: string; in_scope: boolean }, memberId: string) {
-  return row.in_scope && row.owner_member_id === memberId;
-}
 
 function project(row: AgentRow) {
   return {
@@ -444,6 +426,7 @@ export function registerAgentRoutes(
     const { agentId } = await readJson(c, CommunityWireAgentChannelMembershipRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      refuseDirectMessage(channel);
       if (grant)
         await assertConnectionGrantCurrent(
           client,
@@ -481,6 +464,7 @@ export function registerAgentRoutes(
     const agentId = uuid.parse(c.req.param('agentId'));
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      refuseDirectMessage(channel);
       if (grant)
         await assertConnectionGrantCurrent(
           client,

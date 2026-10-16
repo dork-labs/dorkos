@@ -23,11 +23,15 @@ import {
   CommunityWireSlowModeSecondsSchema,
 } from './community-moderation-wire.js';
 import { CommunityWireMemberAvailabilityFields } from './community-agent-wire.js';
+import { COMMUNITY_DM_ERROR_CODES, COMMUNITY_DM_ROUTES } from './community-dm-wire.js';
 
 // Bans, mutes, slow mode, rules, display names and reports live in their own module.
 export * from './community-moderation-wire.js';
 // Agents, and where each runs and whether it is there, live in their own module.
 export * from './community-agent-wire.js';
+// Direct messages with an agent, and what a space's server understands, likewise.
+export * from './community-dm-wire.js';
+export * from './community-features-wire.js';
 
 export * from './community-export-archive.js';
 
@@ -75,6 +79,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   ban: '/api/v1/bans/:id',
   memberBan: '/api/v1/members/:id/ban',
   ...COMMUNITY_MODERATION_ROUTES,
+  ...COMMUNITY_DM_ROUTES,
   channelAutoJoin: '/api/v1/channels/auto-join',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
@@ -1132,25 +1137,6 @@ export const CommunityConnectionAccessSchema = z
   });
 /** Current effective access and the most recently verified Community authority. */
 export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccessSchema>;
-/**
- * What this space's server understands beyond the version 1 contract, read with
- * `GET /api/v1/features` (tenant-qualified too; no credential needed). An app asks beside its
- * connection-access check and acts on a feature only when it is `true`; a space from before
- * this read answers 404, which means none. A separate read rather than a field on a response an
- * app already parses, because those are strict: an installed app would reject the whole answer.
- *
- * Not strict, so a later space can add a feature without breaking apps built now.
- */
-export const CommunityWireSpaceFeaturesResponseSchema = z.object({
-  features: z.object({
-    /** It records `POST /api/v1/agents/availability` and shows agents as available or offline. */
-    agentAvailability: z.boolean().optional(),
-  }),
-});
-/** What a space's server understands beyond the version 1 contract. */
-export type CommunityWireSpaceFeaturesResponse = z.infer<
-  typeof CommunityWireSpaceFeaturesResponseSchema
->;
 /** Bearer-bound access for the exact installation grant making the request. */
 export const CommunityWireConnectionAccessResponseSchema = z.strictObject({
   access: CommunityConnectionAccessSchema,
@@ -1455,6 +1441,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'SIGN_IN_REFUSED',
   // Mute, slow mode and rules (0034); older readers see an unknown code.
   ...COMMUNITY_MODERATION_ERROR_CODES,
+  // Direct messages with an agent (DOR-2955); older readers see an unknown code.
+  ...COMMUNITY_DM_ERROR_CODES,
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

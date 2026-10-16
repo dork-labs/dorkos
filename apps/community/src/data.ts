@@ -505,6 +505,8 @@ export async function lockChannel(
     last_seq: string;
     epoch: number;
     created_at: Date;
+    /** `dm` for a direct message with an agent (0046), which its routes refuse to reshape. */
+    kind: 'channel' | 'dm';
   }>(
     // The advisory lock is taken before the row's, in the one statement (see ChannelLockMode).
     mode === 'shared'
