@@ -10,7 +10,7 @@
  *
  * @vitest-environment node
  */
-import { createServer, request as httpRequest, type Server } from 'node:http';
+import { request as httpRequest, type Server } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 
@@ -39,7 +39,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 const { createApiApp } = await import('../../../../http/api-chain.js');
-const { frontDoorListener } = await import('../../../../http/front-door.js');
+const { createFrontDoorServer } = await import('../../../../http/front-door.js');
 const { MainRequestAdmission } = await import('../../lifecycle/main-request-admission.js');
 const { attachUpgradeRouter } = await import('../../streams/upgrade-router.js');
 const serving = await import('../hub-serving.js');
@@ -98,7 +98,8 @@ beforeEach(async () => {
       });
     },
   });
-  server = createServer(frontDoorListener(app));
+  // Built as the server builds its own listeners, upgrade hooks included.
+  server = createFrontDoorServer(app);
   attachUpgradeRouter(
     server,
     [
@@ -110,6 +111,16 @@ beforeEach(async () => {
         authorize: ({ headers }) => ({
           ok: true,
           open: (ws) => ws.send(headers[PROOF.header] === undefined ? 'open' : 'proof leaked'),
+        }),
+      },
+      {
+        name: 'cookie-stream',
+        pattern: /^\/api\/cookie-stream$/,
+        credential: 'bearer-of-id',
+        // Says which sign-in cookie the stream's authorization would read.
+        authorize: ({ headers }) => ({
+          ok: true,
+          open: (ws) => ws.send(String(headers.cookie ?? '(none)')),
         }),
       },
     ],
@@ -369,6 +380,19 @@ describe('a serving hub, against other sites (A5)', () => {
   it('lets a plain read through from a link anywhere, and a caller that is not a browser', async () => {
     expect(await status('/api/open', through(['sec-fetch-site', 'cross-site']))).toBe(200);
     expect(await status('/api/change', through(), 'POST')).toBe(200);
+  });
+
+  it('hands a stream the sign-in cookie under the name the auth stack set', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/api/cookie-stream`, {
+      headers: {
+        ...THROUGH_FRONT_DOOR,
+        origin: OWN,
+        cookie: '__Secure-better-auth.session_token=planted; __Host-better-auth.session_token=real',
+      },
+    });
+    const [message] = await once(ws, 'message');
+    ws.terminate();
+    expect(String(message)).toBe('__Secure-better-auth.session_token=real');
   });
 
   it('gives sign-in cookies the __Host- prefix and believes only that one', async () => {
