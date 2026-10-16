@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(server): every gate decides by where a request came from, not one switch (DOR-2967 part 1)'
+  - 'feat(server): every gate decides by where a request came from, not one switch (DOR-2967 part 1, wip)'
+  - "fix(server): the container exception and locality read only a container's own port; token reveal only at this computer (DOR-2967 part 1)"
 ---
 
 ### Changed
