@@ -1,4 +1,11 @@
 import type { Context } from 'hono';
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    /** The browser sign-in `requireMember` resolved for this request, if any. */
+    signInSessionId?: string;
+  }
+}
 import type { Pool } from 'pg';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
@@ -19,8 +26,11 @@ export async function signLinkForSession(
   { auth, config, now }: { auth: CommunityAuth; config: CommunityConfig; now: Date },
   target: { kind: UserContentKind; id: string; member: Pick<Member, 'id' | 'community_id'> }
 ): Promise<{ url: string; expiresAt: Date }> {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
+  // The route already resolved this sign-in through `requireMember`; ask again only if not.
+  const sessionId =
+    c.get('signInSessionId') ??
+    (await auth.api.getSession({ headers: c.req.raw.headers }))?.session.id;
+  if (!sessionId) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
   return signUserContentLink(
     config,
     {
@@ -28,7 +38,7 @@ export async function signLinkForSession(
       id: target.id,
       communityId: target.member.community_id,
       memberId: target.member.id,
-      sessionId: session.session.id,
+      sessionId,
     },
     now
   );

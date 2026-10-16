@@ -23,10 +23,12 @@ export function parseOrigin(name: string, raw: string): URL {
  * so a file never opens on the space's own address, where its page's sign-in lives. Unset, files
  * download from the space's own address, with the same headers.
  *
- * It must be another host than the space's, and not one under it: the space's cookies are
- * host-only, and a file's address must not even look like the space's. It should be a registrable
- * domain of its own (on the Public Suffix List when it serves several spaces); that is the
- * operator's to arrange, since this server cannot check it.
+ * It must be another host than the space's, neither under it nor a parent of it: the space's
+ * cookies are host-only, and a file's address must not even look like the space's, or be one
+ * the space's address could set cookies for. A trailing dot names the same host, so it is
+ * ignored when the two are compared. It should be a registrable domain of its own (on the
+ * Public Suffix List when it serves several spaces); that is the operator's to arrange, since
+ * this server cannot check it.
  *
  * @param raw - The setting's value, if set.
  * @param publicUrl - The space's own address, already parsed.
@@ -35,9 +37,16 @@ export function parseOrigin(name: string, raw: string): URL {
 export function parseUserContentUrl(raw: string | undefined, publicUrl: URL): string | null {
   if (raw === undefined) return null;
   const url = parseOrigin('COMMUNITY_USER_CONTENT_URL', raw);
-  if (url.hostname === publicUrl.hostname || url.hostname.endsWith(`.${publicUrl.hostname}`))
+  const files = withoutTrailingDot(url.hostname);
+  const space = withoutTrailingDot(publicUrl.hostname);
+  if (files === space || files.endsWith(`.${space}`) || space.endsWith(`.${files}`))
     throw new Error(
-      'COMMUNITY_USER_CONTENT_URL must be another host than COMMUNITY_PUBLIC_URL, and not under it'
+      'COMMUNITY_USER_CONTENT_URL must be another host than COMMUNITY_PUBLIC_URL, neither under it nor above it'
     );
   return url.origin;
+}
+
+/** A host name without the trailing dot that names the same host fully qualified. */
+function withoutTrailingDot(hostname: string): string {
+  return hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
 }

@@ -24,12 +24,17 @@ export function registerUserContentRoutes(
   }: { pool: Pool; config: CommunityConfig; blobStore: BlobStore; now?: () => Date }
 ): void {
   const fileHost = config.userContentUrl ? new URL(config.userContentUrl).host : null;
+  // With a user-content address, the split is an allow-list: links answer only on the files
+  // host, and the files host answers nothing else. A link on any other host (the space's own,
+  // an IP, a stray name) is not found. The space's other routes keep answering whatever host
+  // reaches them, so a platform health check by internal address still works. Unset, the
+  // space's own address serves links itself, so local and test setups need nothing.
   app.use('*', async (c, next) => {
-    if (
-      fileHost !== null &&
-      (new URL(c.req.url).host === fileHost) !== c.req.path.startsWith('/u/')
-    )
-      throw new ApiError(404, 'NOT_FOUND', 'Not found.');
+    if (fileHost !== null) {
+      const onFileHost = new URL(c.req.url).host === fileHost;
+      const isLink = c.req.path.startsWith('/u/');
+      if (isLink ? !onFileHost : onFileHost) throw new ApiError(404, 'NOT_FOUND', 'Not found.');
+    }
     await next();
   });
   app.get('/u/:token', async (c) => {
