@@ -1,0 +1,12 @@
+{
+  "instances": [],
+  "agents": [],
+  "spaces": [],
+  "settings": {
+    "timeZone": null,
+    "quietHours": null,
+    "learnSpacesFromSignIn": true,
+    "updatedAt": null
+  },
+  "reportEverySeconds": 60
+}

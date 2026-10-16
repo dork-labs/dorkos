@@ -1,0 +1,12 @@
+{
+  "computer": {
+    "id": "cmp_0001",
+    "instanceId": null,
+    "displayName": "Cloud computer",
+    "state": "starting",
+    "stopReason": null,
+    "createdAt": "2026-11-03T09:05:00Z",
+    "stateChangedAt": "2026-11-03T09:05:00Z"
+  },
+  "replayed": false
+}
