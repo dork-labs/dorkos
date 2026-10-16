@@ -11,6 +11,7 @@ import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js'
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 import { minimumAgeSetting } from './sign-up/minimum-age.js';
 import { allowedCountriesSetting, countryHeaderSetting } from './sign-up/allowed-countries.js';
+import { parseOidcScopes } from './sign-in/oidc-scopes.js';
 import { parseOrigin, parseUserContentUrl } from './user-content/origin.js';
 
 export type { CommunityMailConfig } from './mail/config.js';
@@ -80,9 +81,6 @@ export type CommunityOidcConfig = {
   linkVerifiedEmail: boolean;
 };
 
-// RFC 6749 section 3.3 scope-token characters.
-const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/u;
-
 /**
  * Read the OpenID Connect settings: all of issuer, client ID and client secret, or none of them.
  * The label and scopes are optional and only allowed alongside an issuer.
@@ -138,20 +136,13 @@ function parseOidc(value: {
   const buttonLabel = label?.trim() ?? 'Single sign-on';
   if (buttonLabel.length < 1 || buttonLabel.length > 40)
     throw new Error('COMMUNITY_OIDC_LABEL must be 1 to 40 characters');
-  const scopeList = (scopes ?? 'openid email profile').split(/\s+/u).filter(Boolean);
-  if (
-    !scopeList.includes('openid') ||
-    scopeList.length > 16 ||
-    scopeList.some((scope) => !SCOPE_TOKEN.test(scope))
-  )
-    throw new Error('COMMUNITY_OIDC_SCOPES must be space-separated scopes that include openid');
   return {
     issuer: issuer.href.replace(/\/+$/u, ''),
     clientId,
     clientSecret,
     label: buttonLabel,
     mark: mark === 'dorkos' ? 'dorkos' : null,
-    scopes: [...new Set(scopeList)],
+    scopes: parseOidcScopes(scopes, mark === 'dorkos'),
     linkVerifiedEmail: linkVerifiedEmail === '1',
   };
 }

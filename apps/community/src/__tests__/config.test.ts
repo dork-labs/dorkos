@@ -433,6 +433,41 @@ describe('community startup config', () => {
       );
   });
 
+  it('asks a DorkOS account only who someone is (DOR-2957)', () => {
+    // Purpose: fails if a space signing people in with a DorkOS account can ask for any scope
+    // beyond openid, email and profile, which could give it power in their account outside the
+    // space; another issuer keeps any scopes its host chooses.
+    const dorkos = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+      COMMUNITY_OIDC_MARK: 'dorkos',
+    };
+    expect(parseConfig({ ...valid, ...dorkos }).oidc?.scopes).toEqual([
+      'openid',
+      'email',
+      'profile',
+    ]);
+    expect(
+      parseConfig({ ...valid, ...dorkos, COMMUNITY_OIDC_SCOPES: 'openid email' }).oidc?.scopes
+    ).toEqual(['openid', 'email']);
+    for (const scopes of [
+      'openid email profile offline_access',
+      'openid agents:run',
+      'openid computers',
+    ])
+      expect(
+        () => parseConfig({ ...valid, ...dorkos, COMMUNITY_OIDC_SCOPES: scopes }),
+        scopes
+      ).toThrow(
+        'COMMUNITY_OIDC_SCOPES may ask a DorkOS account only for openid, email and profile'
+      );
+    const { COMMUNITY_OIDC_MARK: _mark, ...other } = dorkos;
+    expect(
+      parseConfig({ ...valid, ...other, COMMUNITY_OIDC_SCOPES: 'openid email groups' }).oidc?.scopes
+    ).toEqual(['openid', 'email', 'groups']);
+  });
+
   it('refuses an incomplete, non-HTTPS or malformed OpenID Connect setting', () => {
     // Purpose: fails if the issuer can be plain HTTP off loopback, carry credentials, or if a
     // missing piece, a label outside 1 to 40 characters, or scopes without openid pass.
