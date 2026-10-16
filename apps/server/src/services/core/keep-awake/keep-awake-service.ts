@@ -35,6 +35,7 @@ import { outsideAuditScope } from '../../audit/audit-context.js';
 import { createKeepAwake, type Hold, type KeepAwake } from '@dorkos/keep-awake';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 /** The hold a turn keeps open while its stream runs. */
 export interface TurnAwakeHold {
@@ -359,10 +360,13 @@ export class KeepAwakeService {
       if (record.room) rooms += 1;
       else chats += 1;
     }
+    // A hub never starts this service: it runs in a container with nothing of
+    // its own to keep awake, so Settings must not offer a working switch.
+    const hub = currentServerRole() === 'hub';
     return {
       enabled: this.enabled,
-      supported: packageStatus?.supported ?? true,
-      reason: packageStatus?.reason ?? null,
+      supported: hub ? false : (packageStatus?.supported ?? true),
+      reason: hub ? 'container' : (packageStatus?.reason ?? null),
       asserted: packageStatus?.asserted ?? false,
       working: { chats, rooms, tasks, waking: false },
       wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },

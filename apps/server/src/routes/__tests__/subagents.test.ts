@@ -37,6 +37,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getNativeSessionCwd: vi.fn(() => null),
     getDefault: vi.fn(() => claudeRuntime),
     getDefaultType: vi.fn(() => 'claude-code'),
+    has: vi.fn(() => true),
     getAllCapabilities: vi.fn(() => ({})),
     resolveForSession: vi.fn(async (sessionId: string) => {
       if (sessionId === TEST_MODE_SESSION) return testModeRuntime;
@@ -70,6 +71,14 @@ const testServer = listeningServer(composedListener(admission));
 describe('Subagents Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('answers an empty list when no runtime is registered (a hub), never a 500', async () => {
+    vi.mocked(runtimeRegistry.has).mockReturnValueOnce(false);
+    const res = await request(testServer).get('/api/subagents');
+    expect(res.status).toBe(200);
+    expect(res.body.subagents).toEqual([]);
+    expect(runtimeRegistry.getDefault).not.toHaveBeenCalled();
   });
 
   it('GET /api/subagents with no sessionId falls back to default runtime (cold discovery)', async () => {

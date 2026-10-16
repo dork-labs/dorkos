@@ -116,6 +116,7 @@ export {
   ConfigMigrationFailedError,
 } from './config/boot-errors.js';
 import { browserSettingRefusal } from './config/browser-setting.js';
+import { hubPinnedRead, hubSettingRefusal } from './config/hub-settings.js';
 import { restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { readStoredConfigForSalvage } from './config/salvage-read.js';
@@ -716,7 +717,8 @@ export class ConfigManager {
    * @param value - The section as `conf` handed it over.
    */
   private readable<K extends keyof UserConfig>(key: K, value: UserConfig[K]): UserConfig[K] {
-    return repairWidenedLeaves(key as string, value, WIDENED_LEAF_POLICY).value as UserConfig[K];
+    const repaired = repairWidenedLeaves(key as string, value, WIDENED_LEAF_POLICY).value;
+    return hubPinnedRead(key as string, repaired) as UserConfig[K];
   }
 
   /** Get a top-level config section */
@@ -750,8 +752,8 @@ export class ConfigManager {
    * leaves, so such a read simply matches nothing and passes straight through.
    */
   getDot(key: string): unknown {
-    return repairWidenedLeaves(key, this.store.get(key as keyof UserConfig), WIDENED_LEAF_POLICY)
-      .value;
+    const stored = this.store.get(key as keyof UserConfig);
+    return hubPinnedRead(key, repairWidenedLeaves(key, stored, WIDENED_LEAF_POLICY).value);
   }
 
   /** Set a top-level config section */
@@ -786,6 +788,8 @@ export class ConfigManager {
   private write(keyPath: string, value: unknown): void {
     const browserRefusal = browserSettingRefusal(keyPath, value);
     if (browserRefusal) throw new Error(browserRefusal);
+    const hubRefusal = hubSettingRefusal(keyPath, value);
+    if (hubRefusal) throw new Error(hubRefusal);
     const stored = this.store.get(keyPath as keyof UserConfig);
     const { skewed } = repairWidenedLeaves(keyPath, stored, WIDENED_LEAF_POLICY);
     const kept = preserveWidenedLeaves(skewed, keyPath, value);
@@ -874,7 +878,10 @@ export class ConfigManager {
     const canonical = ui === stored.ui ? stored : { ...stored, ui };
     let repaired: Record<string, unknown> | undefined;
     for (const [key, value] of Object.entries(canonical)) {
-      const readable = repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).value;
+      const readable = hubPinnedRead(
+        key,
+        repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).value
+      );
       if (readable === value) continue;
       repaired ??= { ...canonical };
       repaired[key] = readable;

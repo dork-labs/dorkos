@@ -183,6 +183,13 @@ describe('Models Routes', () => {
     __resetCreditsModelsForTests({ storePath: CREDITS_STORE });
   });
 
+  it('answers no models when no runtime is registered (a hub), never a 500', async () => {
+    vi.mocked(runtimeRegistry.has).mockReturnValueOnce(false);
+    const res = await request(testServer).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual([]);
+  });
+
   it('GET /api/models with no sessionId falls back to default runtime (cold discovery)', async () => {
     const res = await request(testServer).get('/api/models');
     expect(res.status).toBe(200);

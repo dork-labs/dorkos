@@ -31,6 +31,7 @@ import { SERVER_VERSION } from '../../lib/version.js';
 import { createDb, databaseHoldsUserData, snapshotBeforeMigrations, type Db } from '@dorkos/db';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
+import { currentServerRole } from '../../lib/server-role.js';
 
 /** What {@link openConfigAndDatabase} reads from the startup steps before it. */
 export interface OpenConfigAndDatabaseInput {
@@ -107,12 +108,15 @@ export async function openConfigAndDatabase(
   // Keep this computer awake while agents work (spec `keep-awake`). Started
   // right after config, before any runtime is registered, so the holder exists
   // for the first turn; the registry wrapper counts turns from there. The
-  // setting is read live, so a toggle needs no restart.
-  keepAwakeService.start({
-    readSettings: () => configManager.get('keepAwake'),
-    onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),
-    broadcast: (status) => eventFanOut.broadcast('keep_awake_status', status),
-  });
+  // setting is read live, so a toggle needs no restart. A hub runs no agents
+  // and has no computer of its own to keep awake, so it never starts.
+  if (currentServerRole() !== 'hub') {
+    keepAwakeService.start({
+      readSettings: () => configManager.get('keepAwake'),
+      onSettingsChange: (listener) => configManager.onChange((change) => listener(change.sections)),
+      broadcast: (status) => eventFanOut.broadcast('keep_awake_status', status),
+    });
+  }
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.

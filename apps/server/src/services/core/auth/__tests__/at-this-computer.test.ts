@@ -21,7 +21,10 @@ import { honoListener, listeningServer } from '@dorkos/test-utils/listening-serv
 // Mutable stand-in so the container flag can be moved one test at a time — the
 // reader consults it per request, which is the behaviour under test. Same shape
 // `middleware/__tests__/host-guard.test.ts` uses for the same variable.
-const mockEnv = vi.hoisted(() => ({ DORKOS_ALLOW_INSECURE_BIND: false }));
+const mockEnv = vi.hoisted(() => ({
+  DORKOS_ALLOW_INSECURE_BIND: false,
+  DORKOS_SERVER_ROLE: 'computer' as 'computer' | 'hub',
+}));
 vi.mock('../../../../env.js', () => ({ env: mockEnv }));
 // The gate policy's other inputs. `isAtThisComputer` reads neither: whether
 // this computer asks for a password, or an owner exists, never changes WHERE a
@@ -61,6 +64,7 @@ const server = listeningServer(honoListener(honoApp));
 
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+  mockEnv.DORKOS_SERVER_ROLE = 'computer';
   currentPeer = '127.0.0.1';
   viaIngress = null;
 });
@@ -150,4 +154,12 @@ describe('isAtThisComputer', () => {
       expect(await probe('abc.ngrok.app')).toBe(false);
     }
   );
+
+  it('is never true on a hub, even from loopback with a loopback Host (DOR-2934)', async () => {
+    expect(await probe('localhost:4242')).toBe(true);
+    mockEnv.DORKOS_SERVER_ROLE = 'hub';
+    expect(await probe('localhost:4242')).toBe(false);
+    mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+    expect(await probe('localhost:4242')).toBe(false);
+  });
 });

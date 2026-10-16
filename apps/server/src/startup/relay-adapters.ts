@@ -28,6 +28,7 @@ import type { createRoomSubsystem } from '../services/rooms/index.js';
 import { createRelayRefusedAskEmitter } from '../services/tasks/run-activity.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { RegisteredRuntimes } from './runtimes.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 /** The rooms the bridge writes through, as `createRoomSubsystem` built them. */
 type Rooms = ReturnType<typeof createRoomSubsystem>;
@@ -284,6 +285,16 @@ export async function startRelayAdapters(
       // Adapters (including ClaudeCodeAdapter) will be unavailable.
       adapterManager = undefined;
     }
+  } else if (
+    relayEnabled &&
+    relayCore &&
+    adapterRegistry &&
+    traceStore &&
+    currentServerRole() === 'hub'
+  ) {
+    // A hub runs no agents, so nothing on it can answer a chat app. Its
+    // connections reach agents on the computers it starts instead.
+    logger.info('[Relay] Hub mode: chat app connections do not start on this server');
   } else if (relayEnabled && relayCore && adapterRegistry && traceStore) {
     // Reachable only if a future branch registers runtimes without assigning
     // `relayAgentRuntime`. Silence here would look exactly like a relay that

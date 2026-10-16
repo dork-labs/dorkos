@@ -109,6 +109,9 @@ describe('the sign-up hook, through the /api/auth mount', () => {
     role.value = 'hub';
     const res = await signUp('hub');
     expect(res.status).toBe(403);
+    // Not REGISTRATION_CLOSED: the client reads that as "an owner exists",
+    // and a pooled hub has no owner.
+    expect(res.body.code).toBe('REGISTRATION_PROVISIONED');
     expect(db.select().from(user).all()).toHaveLength(0);
   });
 
