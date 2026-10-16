@@ -77,6 +77,7 @@ export async function requireRemovalPrincipal(
     scopes: string[];
     history_only: boolean;
   }>(
+    // member-kind: by-grant
     `SELECT m.id,m.display_name,m.community_id,g.scopes,g.history_only FROM connection_grants g
      JOIN members m ON m.id=g.member_id WHERE g.token_hash=$1
        AND g.community_id=$2 AND m.community_id=$2 AND g.revoked_at IS NULL AND m.active`,
@@ -103,6 +104,7 @@ export async function requireRemovalPrincipal(
     community_id: string;
     owner_member_id: string;
   }>(
+    // member-kind: agent-owner
     `SELECT a.id,a.display_name,a.community_id,a.owner_member_id FROM agent_credentials ac
      JOIN agents a ON a.id=ac.agent_id JOIN members m ON m.id=a.owner_member_id
      WHERE ac.token_hash=$1 AND ac.community_id=$2 AND a.community_id=$2
@@ -148,8 +150,8 @@ export async function lockRemovalAuthority(
   const current = lifecycle.rows[0]?.lifecycle ?? 'unavailable';
   if (!REMOVAL_LIFECYCLES.has(current)) throw lifecycleError(current);
   const members = await client.query<RankedMember & { id: string; user_id: string | null }>(
-    `SELECT id,role,active,user_id FROM members WHERE community_id=$1 AND id=ANY($2::uuid[])
-     ORDER BY id FOR SHARE`,
+    `SELECT id,role,active,user_id FROM members
+     WHERE community_id=$1 AND id=ANY($2::uuid[]) AND kind='person' ORDER BY id FOR SHARE`,
     [principal.community_id, [principal.ownerMemberId, contentHumanId]]
   );
   const ranked = new Map(members.rows.map((row) => [row.id, row]));
@@ -213,7 +215,8 @@ async function authorize(
   author: ContentAuthor,
   messages: { notFound: string; refusal: string }
 ): Promise<Authorized> {
-  const humanId = author.member_id ?? author.agent_owner_member_id!;
+  // An agent's content counts as its owner's, whether or not its author is also a member row.
+  const humanId = author.agent_id ? author.agent_owner_member_id! : author.member_id!;
   const ranked = await lockRemovalAuthority(client, principal, humanId);
   const membership = await client.query(
     principal.kind === 'agent'

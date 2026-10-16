@@ -31,6 +31,7 @@ const COLUMNS = `ch.archived,ch.epoch,co.lifecycle,(co.takedown_id IS NOT NULL) 
  * nothing (its credential sees nothing) has no row, exactly as one stream's own query has none.
  */
 const SQL: Record<Kind, string> = {
+  // member-kind: agent-owner
   agent: `SELECT r.i,(a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,${COLUMNS},
       NULL::timestamptz AS expires_at
     FROM unnest($1::text[],$2::text[],$3::text[],$4::text[],$5::text[])
@@ -43,6 +44,7 @@ const SQL: Record<Kind, string> = {
     LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
     WHERE EXISTS (SELECT 1 FROM agent_credentials ac WHERE ac.agent_id=a.id
       AND ac.token_hash=r.token_hash AND ac.revoked_at IS NULL)`,
+  // member-kind: by-grant
   grant: `SELECT r.i,m.active,(cm.member_id IS NOT NULL) AS joined,${COLUMNS},
       NULL::timestamptz AS expires_at
     FROM unnest($1::text[],$2::text[],$3::text[],$4::text[])
@@ -54,6 +56,7 @@ const SQL: Record<Kind, string> = {
     WHERE EXISTS (SELECT 1 FROM connection_grants g WHERE g.member_id=m.id
       AND g.token_hash=r.token_hash AND g.revoked_at IS NULL
       AND g.scopes @> ARRAY['read']::text[] AND NOT g.history_only)`,
+  // member-kind: by-grant
   cookie: `SELECT r.i,m.active,(cm.member_id IS NOT NULL) AS joined,${COLUMNS},s."expiresAt" AS expires_at
     FROM unnest($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::text[])
       WITH ORDINALITY AS r(member_id,channel_id,community_id,session_id,user_id,token,i)

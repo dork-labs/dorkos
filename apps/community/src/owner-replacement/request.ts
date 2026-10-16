@@ -167,6 +167,7 @@ export async function requestOwnerReplacement(
   // round here would deadlock with it. The member lock is enough, because the erasure re-reads
   // this row under its own lock and refuses an owner.
   const owner = await client.query<{ id: string; user_id: string | null }>(
+    // member-kind: owner-role
     `SELECT id,user_id FROM members WHERE community_id=$1 AND role='owner' AND active
      ORDER BY id FOR UPDATE`,
     [input.communityId]

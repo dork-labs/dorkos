@@ -81,6 +81,7 @@ export function registerAccountPasswordRoutes(
     // Recorded in every community this account belongs to, as password recovery is.
     await transaction(pool, (client) =>
       client.query(
+        // member-kind: by-account
         `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id)
          SELECT community_id,id,'account.password_set',id FROM members
          WHERE user_id=$1 ORDER BY community_id,id`,

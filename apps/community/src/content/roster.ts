@@ -23,12 +23,15 @@ const AGENT_AVAILABILITY_SQL = `CASE WHEN a.last_seen_at IS NULL THEN 'unknown'
  * measured scale, to answer for a channel of 1,000, once per post and once per roster view
  * (DOR-2572).
  */
-export const CHANNEL_ROSTER_SQL = `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
+export const CHANNEL_ROSTER_SQL =
+  // member-kind: agent-owner
+  `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,
     NULL::text AS owner_display_name,'human'::text AS kind,cm.joined_at,
     NULL::text AS runs_on,NULL::timestamptz AS last_seen_at,NULL::text AS availability
   FROM channel_members cm
   JOIN members m ON m.community_id=cm.community_id AND m.id=cm.member_id
   WHERE cm.channel_id=$1 AND cm.community_id=$2 AND m.community_id=$2 AND m.active
+    AND m.kind='person'
   UNION ALL
   SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
     owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at,

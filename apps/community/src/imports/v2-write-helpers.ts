@@ -47,6 +47,7 @@ export async function allRestored(
   const distinct = [...new Set(ids)];
   if (!distinct.length) return;
   const found = await client.query<{ n: number }>(
+    // member-kind: import-check
     `SELECT count(*)::int AS n FROM ${table} WHERE community_id=$1 AND id=ANY($2::uuid[])`,
     [communityId, distinct]
   );

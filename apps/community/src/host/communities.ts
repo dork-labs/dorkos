@@ -86,6 +86,7 @@ export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
  * `ended_at`). With `FOR UPDATE OF c` only the community is locked, so that row is read as of
  * the statement's snapshot and may be stale once the lock is granted.
  */
+// member-kind: owner-role
 export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c.lifecycle_version,
   c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
   c.legal_hold_at,c.legal_hold_reference,c.takedown_id,

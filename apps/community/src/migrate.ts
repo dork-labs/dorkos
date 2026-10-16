@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 
 /** Every migration, in order. Versions are contiguous from 1; a test keeps them so. */
 export const COMMUNITY_MIGRATIONS = [
@@ -43,6 +43,8 @@ export const COMMUNITY_MIGRATIONS = [
   [37, '0037_entry_number_at_commit.sql'],
   [38, '0038_reserved_name_grants.sql'],
   [39, '0039_agent_availability.sql'],
+  [40, '0040_member_kinds.sql'],
+  [41, '0041_compatibility_floor.sql'],
 ] as const;
 
 /**
@@ -62,6 +64,34 @@ export function assertNoMigrationGap(applied: ReadonlySet<number>): void {
     );
 }
 
+/**
+ * Refuse to run on a database whose compatibility floor (0041) is above every migration this
+ * release knows: a newer release made a one-way change this release cannot run on, so the way
+ * back is restoring a backup taken before it (specs/server-merge D10). An additive migration this
+ * release does not know leaves the floor alone, so a rollback across it still starts.
+ *
+ * @param floor - The database's `min_migration`, or null before 0041 has run.
+ */
+export function assertCompatibilityFloor(floor: number | null): void {
+  const known = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
+  if (floor !== null && floor > known)
+    throw new Error(
+      `This database needs a release that knows community migration ${floor} or later; this release knows up to ${known}. Start a newer release, or restore a backup taken before the upgrade.`
+    );
+}
+
+/** The database's compatibility floor, or null when migration 0041 has not created it yet. */
+async function readCompatibilityFloor(client: PoolClient): Promise<number | null> {
+  const table = await client.query<{ present: boolean }>(
+    "SELECT to_regclass('community_compatibility_floor') IS NOT NULL AS present"
+  );
+  if (!table.rows[0].present) return null;
+  const row = await client.query<{ min_migration: number }>(
+    'SELECT min_migration FROM community_compatibility_floor'
+  );
+  return row.rows[0]?.min_migration ?? null;
+}
+
 /** Apply versioned community SQL migrations in a single database transaction. */
 export async function migrate(databaseUrl: string): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
@@ -77,6 +107,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
         await client.query<{ version: number }>('SELECT version FROM community_migrations')
       ).rows.map((row) => row.version)
     );
+    assertCompatibilityFloor(await readCompatibilityFloor(client));
     assertNoMigrationGap(applied);
     for (const [version, filename] of COMMUNITY_MIGRATIONS) {
       if (applied.has(version)) continue;

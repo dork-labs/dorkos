@@ -443,7 +443,7 @@ async function lockMentioned(
   const agents = mentions.filter((id) => kindsById.get(id) === 'agent');
   if (humans.length)
     await client.query(
-      'SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR KEY SHARE',
+      "SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2::uuid[]) AND kind='person' ORDER BY id FOR KEY SHARE",
       [communityId, humans]
     );
   if (agents.length)

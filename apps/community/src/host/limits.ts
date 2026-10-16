@@ -72,13 +72,14 @@ export async function assertMemberRoom(
   if (maxActiveMembers === null) return;
   if (options.userId) {
     const already = await db.query(
+      // member-kind: by-account
       'SELECT 1 FROM members WHERE community_id=$1 AND user_id=$2 AND active',
       [communityId, options.userId]
     );
     if (already.rowCount) return;
   }
   const active = await db.query<{ n: number }>(
-    'SELECT count(*)::int AS n FROM members WHERE community_id=$1 AND active',
+    "SELECT count(*)::int AS n FROM members WHERE community_id=$1 AND kind='person' AND active",
     [communityId]
   );
   if (active.rows[0].n >= maxActiveMembers) throw memberLimitReached();
@@ -199,7 +200,8 @@ export async function readUsage(
     last_post_date: string | null;
   }>(
     `SELECT c.id,now() AS measured_at,
-       (SELECT count(*)::int FROM members m WHERE m.community_id=c.id AND m.active) AS active_members,
+       (SELECT count(*)::int FROM members m
+         WHERE m.community_id=c.id AND m.kind='person' AND m.active) AS active_members,
        (SELECT count(*)::int FROM agents a WHERE a.community_id=c.id AND a.active) AS active_agents,
        b.attachment,b.icon,b.export,b.import_staging,b.pending_delete,b.counted,
        l.max_active_members,l.max_storage_bytes::text,l.limits_version,

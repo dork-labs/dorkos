@@ -159,6 +159,7 @@ export function registerSignInLinkRoutes(
       const refusal = await signInRefusal(client, pending.user_id);
       if (refusal) throw new ApiError(403, 'FORBIDDEN', refusal);
       const members = await client.query<{ id: string }>(
+        // member-kind: by-account
         'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id FOR UPDATE',
         [pending.user_id]
       );

@@ -22,6 +22,7 @@ type Queryable = Pick<Pool | PoolClient, 'query'>;
  * Channels a member can read now: a channel they belong to, or one an active agent of theirs
  * belongs to while they are active. A personal export covers exactly these, chosen when it starts.
  */
+// member-kind: agent-owner
 export const READABLE_CHANNEL_SQL = `(
   EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$1)
   OR EXISTS (
@@ -126,6 +127,7 @@ export async function hasExportAuthority(
       : lifecycle === 'active';
   if (!allowed) return false;
   const member = await db.query<{ role: string }>(
+    // member-kind: by-grant
     `SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active${share}`,
     [requester.memberId, requester.communityId]
   );

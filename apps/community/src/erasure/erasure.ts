@@ -90,7 +90,7 @@ async function lockMember(client: PoolClient, target: Target): Promise<MemberRow
   if (!community.rowCount) return null;
   const member = await client.query<MemberRow>(
     `SELECT id,community_id,user_id,handle,role,active,erased_at FROM members
-     WHERE id=$1 AND community_id=$2 FOR UPDATE`,
+     WHERE id=$1 AND community_id=$2 AND kind='person' FOR UPDATE`,
     [target.memberId, target.communityId]
   );
   return member.rows[0] ?? null;
@@ -288,7 +288,7 @@ async function addressTargets(
   target: Target
 ): Promise<{ handles: string[]; agentIds: string[] } | null> {
   const member = await db.query<{ handle: string; erased_at: Date | null }>(
-    'SELECT handle,erased_at FROM members WHERE id=$1 AND community_id=$2',
+    "SELECT handle,erased_at FROM members WHERE id=$1 AND community_id=$2 AND kind='person'",
     [target.memberId, target.communityId]
   );
   if (!member.rows[0] || member.rows[0].erased_at) return null;
@@ -460,7 +460,7 @@ async function applyHusk(
     await client.query(
       `UPDATE members SET display_name=$3,handle=$4,user_id=NULL,active=false,
          removed_at=COALESCE(removed_at,now()),erased_at=now(),muted_until=NULL
-       WHERE id=$2 AND community_id=$1`,
+       WHERE id=$2 AND community_id=$1 AND kind='person'`,
       [target.communityId, target.memberId, ERASED_MEMBER_NAME, handle]
     );
     await notifyLive(client, { k: 'member', c: target.communityId, m: target.memberId });
@@ -595,6 +595,7 @@ export async function eraseAccount(
 ): Promise<'erased' | 'gone'> {
   for (let round = 0; round < ACCOUNT_ROUNDS; round++) {
     const memberships = await pool.query<{ id: string; community_id: string }>(
+      // member-kind: by-account
       'SELECT id,community_id FROM members WHERE user_id=$1 ORDER BY community_id,id',
       [userId]
     );
@@ -631,6 +632,7 @@ export async function eraseAccount(
         [userId]
       );
       if (!account.rows[0]) return 'gone' as const;
+      // member-kind: by-account
       const linked = await client.query('SELECT 1 FROM members WHERE user_id=$1 LIMIT 1', [userId]);
       if (linked.rowCount) return 'again' as const;
       const operator = await client.query('SELECT 1 FROM host_operators WHERE user_id=$1', [

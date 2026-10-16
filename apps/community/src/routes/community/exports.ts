@@ -80,6 +80,7 @@ async function lockExportAuthority(
   if (!(OWNER_EXPORT_LIFECYCLES as readonly string[]).includes(lifecycle))
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space cannot be exported now.');
   const live = await client.query<{ role: Member['role'] }>(
+    // member-kind: by-grant
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [member.id, member.community_id]
   );
@@ -123,6 +124,7 @@ export function registerExportRoutes(
    */
   const create = async (member: Member, scope: ExportScope) => {
     const current = await pool.query<Member>(
+      // member-kind: by-grant
       'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
       [member.id, member.community_id]
     );

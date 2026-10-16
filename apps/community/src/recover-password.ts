@@ -46,6 +46,7 @@ export async function recoverPassword(
     const userId = account.rows[0]?.id;
     if (!userId) throw new Error('No server account has that email address.');
     const memberships = await client.query<{ id: string; community_id: string }>(
+      // member-kind: by-account
       `SELECT id,community_id FROM members WHERE user_id=$1
        ORDER BY community_id,id FOR UPDATE`,
       [userId]
@@ -72,6 +73,7 @@ export async function recoverPassword(
       'offline'
     );
     await client.query(
+      // member-kind: by-account
       `INSERT INTO audit_events(community_id,action,subject_id)
        SELECT community_id,'member.password_recovery',id FROM members
        WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,

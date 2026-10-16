@@ -348,6 +348,7 @@ export async function restoreV2(
   await finishRestore(pool, job, communityId, expectedFiles, async (client) => {
     const ownerId = scope.derive(manifest.requesterMemberId);
     const owner = await client.query(
+      // member-kind: owner-role
       "SELECT 1 FROM members WHERE community_id=$1 AND id=$2 AND role='owner'",
       [communityId, ownerId]
     );
@@ -375,7 +376,7 @@ export async function restoreV2(
          rules_text=$8,reserved_names=$10,
          -- Never below an acceptance a restored member holds, so new rules always need a new one.
          rules_version=GREATEST($9::int,(SELECT COALESCE(MAX(rules_accepted_version),0)
-           FROM members WHERE community_id=$1))
+           FROM members WHERE community_id=$1 AND kind='person'))
        WHERE id=$1`,
       [
         communityId,

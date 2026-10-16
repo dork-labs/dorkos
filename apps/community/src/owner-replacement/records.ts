@@ -177,6 +177,7 @@ export async function currentOwnerAccount(
   communityId: string
 ): Promise<string | null> {
   const owner = await client.query<{ user_id: string | null }>(
+    // member-kind: owner-role
     "SELECT user_id FROM members WHERE community_id=$1 AND role='owner' AND active",
     [communityId]
   );

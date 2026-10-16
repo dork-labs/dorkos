@@ -62,6 +62,7 @@ function refusePrivateAutoJoin(visibility: string, autoJoin: boolean | undefined
 async function channelProjection(pool: Pool, id: string, member: Member | Principal) {
   const agent = 'kind' in member && member.kind === 'agent';
   const result = await pool.query<ChannelRow>(
+    // member-kind: no-members-table
     `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
       EXISTS(SELECT 1 FROM ${agent ? 'agent_channel_members' : 'channel_members'} cm WHERE cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$2) AS joined,
       GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
@@ -85,6 +86,7 @@ export function registerChannelRoutes(
     const member = await requirePrincipal(c, auth, pool, 'read');
     const agent = member.kind === 'agent';
     const result = await pool.query<ChannelRow>(
+      // member-kind: no-members-table
       `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
         (cm.${agent ? 'agent_id' : 'member_id'} IS NOT NULL) AS joined,
         GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
@@ -264,7 +266,7 @@ export function registerChannelRoutes(
       await requireLiveRole(client, actor, ['owner', 'admin']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       const target = await client.query(
-        'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+        "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [body.memberId, actor.community_id]
       );
       if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
@@ -284,7 +286,7 @@ export function registerChannelRoutes(
       const channel = await lockChannel(client, c.req.param('id'), actor);
       const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
       const target = await client.query<{ role: Member['role'] }>(
-        'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+        "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [c.req.param('memberId'), actor.community_id]
       );
       if (!target.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
@@ -321,7 +323,8 @@ export function registerChannelRoutes(
         role: Member['role'];
         joined_at: Date;
       }>(
-        `UPDATE members SET role=$1 WHERE id=$2 AND community_id=$3 AND active AND role<>'owner'
+        `UPDATE members SET role=$1
+         WHERE id=$2 AND community_id=$3 AND kind='person' AND active AND role<>'owner'
          RETURNING id,display_name,handle,role,created_at AS joined_at`,
         [body.role, c.req.param('id'), actor.community_id]
       );

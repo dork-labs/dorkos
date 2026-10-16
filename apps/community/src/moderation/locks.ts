@@ -11,6 +11,7 @@ export async function lockOwnMembership(
   member: { id: string; community_id: string }
 ): Promise<void> {
   await client.query('SELECT 1 FROM communities WHERE id=$1 FOR SHARE', [member.community_id]);
+  // member-kind: by-grant
   await client.query('SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR UPDATE', [
     member.id,
     member.community_id,

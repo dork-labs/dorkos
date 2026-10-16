@@ -134,6 +134,7 @@ export async function settleTrustedLink(
     // trusted link does it here, by SQL, once its row exists.
     await client.query('UPDATE "user" SET "emailVerified"=true WHERE id=$1', [pending.userId]);
     const members = await client.query<{ id: string }>(
+      // member-kind: by-account
       'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id',
       [pending.userId]
     );
@@ -189,6 +190,7 @@ async function lockAccount(client: PoolClient, userId: string) {
     [userId]
   );
   const members = await client.query<{ id: string }>(
+    // member-kind: by-account
     'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id FOR UPDATE',
     [userId]
   );

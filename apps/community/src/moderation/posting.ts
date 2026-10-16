@@ -28,6 +28,7 @@ export async function enforcePostingRules(
     has_rules: boolean;
     slow_mode_seconds: number;
   }>(
+    // member-kind: by-grant
     `SELECT m.role,CASE WHEN m.muted_until>now() AND m.role<>'owner' THEN m.muted_until END AS muted_until,
             m.rules_accepted_version,c.rules_version,c.rules_text IS NOT NULL AS has_rules,
             ch.slow_mode_seconds

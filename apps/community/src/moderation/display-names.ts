@@ -75,11 +75,12 @@ export async function refuseAgentName(
 ): Promise<void> {
   const wanted = new Set(names.map(comparableName));
   const taken = await client.query<{ name: string }>(
+    // member-kind: owner-role
     `SELECT unnest(c.reserved_names) AS name FROM communities c
        WHERE c.id=$1 AND NOT EXISTS(SELECT 1 FROM members m
          WHERE m.id=$2 AND m.community_id=$1 AND m.role IN ('owner','admin'))
      UNION ALL SELECT unnest(ARRAY[display_name,handle]) FROM members
-       WHERE community_id=$1 AND active AND id<>$2`,
+       WHERE community_id=$1 AND kind='person' AND active AND id<>$2`,
     [owner.community_id, owner.id]
   );
   if (taken.rows.some((row) => wanted.has(comparableName(row.name))))
@@ -98,6 +99,7 @@ export async function recheckReturningName(
   { staff }: { staff: boolean }
 ): Promise<void> {
   const row = await client.query<{ display_name: string }>(
+    // member-kind: person-write
     'SELECT display_name FROM members WHERE id=$1 AND community_id=$2',
     [memberId, communityId]
   );
@@ -106,6 +108,7 @@ export async function recheckReturningName(
     name !== undefined &&
     (await isRefusedDisplayName(client, communityId, name, { staff, memberId }))
   )
+    // member-kind: person-write
     await client.query('UPDATE members SET display_name=$3 WHERE id=$1 AND community_id=$2', [
       memberId,
       communityId,

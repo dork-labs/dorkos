@@ -117,6 +117,7 @@ async function readMemberAccounts(
   communityId: string
 ): Promise<NonNullable<EvidenceRecord['accounts']>> {
   const members = await client.query<{ id: string; user_id: string; active: boolean }>(
+    // member-kind: by-account
     `SELECT m.id,m.user_id,m.active FROM members m
      WHERE m.community_id=$1 AND m.user_id IS NOT NULL
        AND (m.active OR EXISTS (

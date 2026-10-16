@@ -47,6 +47,7 @@ export async function requirePerson(
   if (principal.kind !== 'human')
     throw new ApiError(403, 'FORBIDDEN', 'Only a person can do this, not an agent.');
   const row = await pool.query<Member>(
+    // member-kind: by-grant
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
     [principal.id, principal.community_id]
   );

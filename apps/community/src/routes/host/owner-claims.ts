@@ -151,6 +151,7 @@ export function registerOwnerClaimRoutes(
   app.post('/owner-claims/preflight', async (c) => {
     const body = await readJson(c, CommunityWireOwnerClaimPreflightRequestSchema);
     const claim = await pool.query<{ community_id: string; expires_at: Date }>(
+      // member-kind: owner-role
       `SELECT g.community_id,g.expires_at FROM bootstrap_grants g
        JOIN communities c ON c.id=g.community_id
        WHERE g.token_hash=$1 AND g.purpose='owner_claim' AND g.consumed_at IS NULL
@@ -222,6 +223,7 @@ export function registerOwnerClaimRoutes(
       await assertImportReady(client, community.rows[0].id);
       const autoJoin = await lockAutoJoinChannels(client, community.rows[0].id);
       const owner = await client.query(
+        // member-kind: owner-role
         "SELECT 1 FROM members WHERE community_id=$1 AND role='owner' AND active",
         [community.rows[0].id]
       );
@@ -240,6 +242,7 @@ export function registerOwnerClaimRoutes(
       // An imported community's owner adopts the row of the owner who made the export, so
       // their own history stays theirs; every other past author stays historical.
       const adopted = await client.query<{ id: string }>(
+        // member-kind: person-write
         `UPDATE members m SET user_id=$2,active=true,removed_at=NULL
          FROM community_imports i
          WHERE i.community_id=$1 AND i.state='ready' AND m.id=i.adopt_member_id
@@ -252,6 +255,7 @@ export function registerOwnerClaimRoutes(
         : await (async () => {
             const handle = await mintHandle(client, community.rows[0].id, user.name);
             const inserted = await client.query<{ id: string }>(
+              // member-kind: person-write
               `INSERT INTO members(community_id,user_id,display_name,handle,role)
                VALUES($1,$2,$3,$4,'owner') RETURNING id`,
               [community.rows[0].id, user.id, user.name, handle]

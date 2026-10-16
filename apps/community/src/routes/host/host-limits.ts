@@ -96,7 +96,7 @@ export function registerHostLimitRoutes(
       if (!community.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Space not found.');
       // The member row's lock orders this against agent enrollment, which locks it too.
       const member = await client.query(
-        'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE',
+        "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' FOR SHARE",
         [memberId.data, communityId]
       );
       if (!member.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');

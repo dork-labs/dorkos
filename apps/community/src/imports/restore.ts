@@ -67,6 +67,7 @@ export async function insertImportedRows(
     }))
   );
   await insert(
+    // member-kind: person-write
     `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,removed_at,origin)
      SELECT r.id,$2,NULL,r.display_name,r.handle,r.role,false,r.created_at,r.removed_at,'imported'
      FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,display_name text,handle text,role text,

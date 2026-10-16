@@ -86,6 +86,7 @@ async function lockMember(
   roles: readonly Member['role'][]
 ): Promise<Member> {
   const current = await client.query<Member>(
+    // member-kind: by-grant
     `SELECT id,user_id,display_name,role,community_id FROM members
      WHERE id=$1 AND community_id=$2 AND active FOR SHARE`,
     [actor.id, actor.community_id]
@@ -331,6 +332,7 @@ export function registerAdministrationRoutes(
     const user = await requireSessionUser(c, auth);
     const tenant = await resolveCommunityContext(c, pool);
     const authorized = await pool.query(
+      // member-kind: by-account
       `SELECT 1 FROM members WHERE community_id=$1 AND user_id=$2 AND active
        UNION ALL
        SELECT 1 FROM host_operators WHERE user_id=$2 AND revoked_at IS NULL LIMIT 1`,

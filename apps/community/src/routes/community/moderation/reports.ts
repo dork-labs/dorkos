@@ -52,6 +52,7 @@ interface ReportRow {
  * Every report a moderator may see, with its message's author and an excerpt. `$1` is the
  * community, `$2` the reading moderator (whose channel seats decide what they may read).
  */
+// member-kind: named-member
 const REPORT_SELECT = `SELECT r.id,r.entry_id,e.channel_id,r.source,r.check_name,r.reason,r.note,
     r.status,r.action,r.reporter_member_id AS reporter_id,reporter.display_name AS reporter_name,
     COALESCE(e.author_member_id,e.author_agent_id) AS author_id,e.author_display_name AS author_name,
@@ -118,13 +119,14 @@ async function lockReport(
       [communityId, target.rows[0].entry_id]
     );
   const result = await client.query<ReportedAuthor>(
+    // An agent's message counts as its owner's, whether or not its author is also a member row.
     `SELECT r.entry_id,e.author_member_id,e.author_agent_id,
-       COALESCE(e.author_member_id,a.owner_member_id) AS human_id,m.role AS human_role,
-       m.active AS human_active
+       m.id AS human_id,m.role AS human_role,m.active AS human_active
      FROM reports r
      JOIN entries e ON e.id=r.entry_id AND e.community_id=r.community_id
      LEFT JOIN agents a ON a.id=e.author_agent_id
-     JOIN members m ON m.id=COALESCE(e.author_member_id,a.owner_member_id)
+     JOIN members m ON m.kind='person'
+       AND m.id=CASE WHEN e.author_agent_id IS NULL THEN e.author_member_id ELSE a.owner_member_id END
      WHERE r.id=$1 AND r.community_id=$2 AND r.status='open'`,
     [reportId, communityId]
   );

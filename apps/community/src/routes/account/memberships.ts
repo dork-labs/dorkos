@@ -25,6 +25,7 @@ export function registerMembershipRoutes(
       role: 'owner' | 'admin' | 'member';
       removed_by_host: boolean;
     }>(
+      // member-kind: by-account
       `SELECT c.id AS community_id,c.name,c.description,c.lifecycle,
               CASE WHEN c.lifecycle='held' THEN c.deletion_notice_at END AS deletion_notice_at,
               (SELECT n.short_name FROM community_short_names n

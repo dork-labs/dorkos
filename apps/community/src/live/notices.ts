@@ -74,6 +74,7 @@ export async function notifyLive(
  */
 export async function notifyAccountAccess(db: LiveNoticeTarget, userId: string): Promise<void> {
   await db.query(
+    // member-kind: by-account
     `SELECT pg_notify($1, notice) FROM (
        SELECT json_build_object('k','user','u',$2::text)::text AS notice
        UNION

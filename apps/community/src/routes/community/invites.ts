@@ -112,6 +112,7 @@ async function validInvite(
     if (!issuer.rows[0])
       throw new ApiError(403, 'FORBIDDEN', 'This invitation is invalid or expired.');
     // Issuer authority is stable until this transaction commits; role changes take its row lock.
+    // member-kind: by-grant
     await client.query('SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE', [
       issuer.rows[0].issuer_member_id,
       communityId,
@@ -120,6 +121,7 @@ async function validInvite(
   const result = await client.query<
     InviteRow & { issuer_name: string; channel_name: string | null }
   >(
+    // member-kind: owner-role
     `SELECT i.*,m.display_name AS issuer_name,c.name AS channel_name
      FROM invites i JOIN members m ON m.id=i.issuer_member_id
      LEFT JOIN channels c ON c.id=i.channel_id
@@ -303,6 +305,7 @@ export function registerInviteRoutes(
       inviter_name: string;
       channel_name: string | null;
     }>(
+      // member-kind: owner-role
       `SELECT p.expires_at,p.account_id,community.name AS community_name,
               issuer.display_name AS inviter_name,channel.name AS channel_name
        FROM pending_admissions p
@@ -324,6 +327,7 @@ export function registerInviteRoutes(
     } | null = null;
     if (session) {
       const member = await pool.query<{ active: boolean }>(
+        // member-kind: by-account
         'SELECT active FROM members WHERE community_id=$1 AND user_id=$2',
         [tenant.communityId, session.user.id]
       );
@@ -351,6 +355,7 @@ export function registerInviteRoutes(
       await lockActiveCommunity(client, tenant.communityId);
       await assertAdmissionOpen(client, tenant.communityId, true);
       const result = await client.query<{ account_id: string | null }>(
+        // member-kind: owner-role
         `SELECT p.account_id FROM pending_admissions p
          JOIN invites i ON i.id=p.invite_id AND i.community_id=p.community_id
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
@@ -390,6 +395,7 @@ export function registerInviteRoutes(
         member_id: string | null;
         member_active: boolean | null;
       }>(
+        // member-kind: named-member
         `SELECT p.id,p.community_id,p.invite_id,p.account_id,p.consumed_at,r.member_id,
                 receipt_member.active AS member_active
          FROM pending_admissions p
@@ -435,6 +441,7 @@ export function registerInviteRoutes(
       // The channels everyone joins on arrival, under the same rule.
       const autoJoin = await lockAutoJoinChannels(client, grant.community_id);
       const inviteResult = await client.query<InviteRow>(
+        // member-kind: owner-role
         `SELECT i.* FROM invites i
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
          WHERE i.id=$1 AND i.community_id=$2 AND i.expires_at>now() AND i.revoked_at IS NULL
@@ -458,6 +465,7 @@ export function registerInviteRoutes(
       // admissions racing for the last seat, and an active member is not counted twice.
       await assertMemberRoom(client, invite.community_id, { lock: true, userId: user.id });
       let member = await client.query<{ id: string; active: boolean }>(
+        // member-kind: by-account
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [invite.community_id, user.id]
       );
@@ -469,6 +477,7 @@ export function registerInviteRoutes(
       if (!member.rows[0]) {
         const { handle, name } = await admittedIdentity(client, invite.community_id, user.name);
         member = await client.query(
+          // member-kind: person-write
           'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,$5) RETURNING id,active',
           [invite.community_id, user.id, name, handle, 'member']
         );
@@ -480,6 +489,7 @@ export function registerInviteRoutes(
       } else if (!member.rows[0].active) {
         await clearFormerMembership(client, member.rows[0].id, invite.community_id);
         await client.query(
+          // member-kind: person-write
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]
         );

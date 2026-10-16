@@ -46,6 +46,7 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
     if (links.rows.some((row) => row.providerId !== 'credential'))
       throw new Error('That account signs in through another service, so it is kept.');
     const ties = await client.query<{ memberships: number; operator: number; uses: number }>(
+      // member-kind: by-account
       `SELECT (SELECT count(*)::int FROM members WHERE user_id=$1) AS memberships,
               (SELECT count(*)::int FROM host_operators WHERE user_id=$1) AS operator,
               (SELECT count(*)::int FROM invite_uses WHERE user_id=$1) AS uses`,

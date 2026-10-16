@@ -24,7 +24,8 @@ interface BanRow {
 }
 
 const BAN_SELECT = `SELECT b.id,b.member_id,m.display_name,m.handle,b.reason,b.created_at
-  FROM bans b LEFT JOIN members m ON m.id=b.member_id AND m.community_id=b.community_id`;
+  FROM bans b LEFT JOIN members m
+    ON m.id=b.member_id AND m.community_id=b.community_id AND m.kind='person'`;
 
 function project(row: BanRow): CommunityWireBan {
   return {
@@ -107,7 +108,8 @@ export function registerBanRoutes(
       // A removed member keeps the role they had, so a banned admin still reads as one here.
       const standing = await client.query<{ target_role: Member['role'] | null }>(
         `SELECT m.role AS target_role FROM bans b
-         LEFT JOIN members m ON m.id=b.member_id AND m.community_id=b.community_id
+         LEFT JOIN members m
+           ON m.id=b.member_id AND m.community_id=b.community_id AND m.kind='person'
          WHERE b.id=$1 AND b.community_id=$2 AND b.lifted_at IS NULL FOR UPDATE OF b`,
         [banId, actor.community_id]
       );
@@ -201,7 +203,8 @@ async function lockTarget(
     `SELECT m.id,m.community_id,m.user_id,m.role,m.active,u.email,
             u."emailVerified" AS email_verified
      FROM members m LEFT JOIN "user" u ON u.id=m.user_id
-     WHERE m.id=$1 AND m.community_id=$2 AND m.erased_at IS NULL FOR UPDATE OF m`,
+     WHERE m.id=$1 AND m.community_id=$2 AND m.kind='person' AND m.erased_at IS NULL
+     FOR UPDATE OF m`,
     [id, communityId]
   );
   return result.rows[0];

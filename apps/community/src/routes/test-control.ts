@@ -126,6 +126,7 @@ export function registerCommunityTestControlRoutes(
         [ownerUserId, 'Load test owner', `load-${runId}-owner@load.test.invalid`]
       );
       await client.query(
+        // member-kind: person-write
         `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active)
          VALUES($1,$2,$3,'Load test owner',$4,'owner',true)`,
         [ownerMemberId, communityId, ownerUserId, `lt-owner-${runId}`]
@@ -152,6 +153,7 @@ export function registerCommunityTestControlRoutes(
           [principals.userIds, principals.userEmails]
         );
         await client.query(
+          // member-kind: person-write
           `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active)
            SELECT id,$1,user_id,'Load test agent',handle,'member',true
            FROM unnest($2::uuid[],$3::text[],$4::text[]) AS t(id,user_id,handle)`,
