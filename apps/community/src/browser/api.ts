@@ -135,20 +135,26 @@ export function describeError(cause: unknown) {
   return cause instanceof Error ? cause.message : 'Something went wrong. Try again.';
 }
 
-/** Download an authorized response using the browser save flow. */
-export async function download(path: string, fallbackName: string) {
-  const response = await fetch(tenantApiPath(path), { credentials: 'same-origin' });
-  if (!response.ok)
-    throw new RequestError(response.status, 'DOWNLOAD_FAILED', recovery(response.status));
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+/**
+ * Download a file or an export through a signed link (DOR-2957): ask the space for a link at
+ * `linkPath`, then open it. The link is on the space's user-content address when it has one, so the
+ * file never opens on the space's own address, and the server says it is a download.
+ *
+ * @param linkPath - Where the link is asked for, such as `/api/v1/attachments/<id>/link`.
+ * @param fallbackName - The name a same-address download is saved under.
+ */
+export async function download(linkPath: string, fallbackName: string) {
+  const { url } = await request<{ url: string }>(linkPath, 'POST');
+  const target = new URL(url, window.location.origin);
+  if (target.protocol !== 'https:' && target.protocol !== 'http:')
+    throw new RequestError(0, 'DOWNLOAD_FAILED', recovery(0));
   const anchor = document.createElement('a');
-  anchor.href = url;
+  anchor.href = target.href;
   anchor.download = fallbackName;
+  anchor.rel = 'noopener noreferrer';
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 /** Stream one attachment with progress and a stable retry key. */

@@ -246,14 +246,14 @@ describe('Config MCP endpoints', () => {
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
 
-    it('409s when login is on (per-user keys are the credential)', async () => {
+    it('409s when this computer asks for a password (per-user keys are the credential)', async () => {
       // Purpose: with login on the local token is inactive (ADR-0320), so a
       // rotate request is refused.
       vi.mocked(configManager.get).mockImplementation((key: string) =>
         key === 'auth' ? { enabled: true } : undefined
       );
       const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(409);
-      expect(res.body.error).toMatch(/login is on/i);
+      expect(res.body.error).toMatch(/works only on this computer/i);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
   });
@@ -277,7 +277,7 @@ describe('Config MCP endpoints', () => {
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
 
-    it('409s when login is on (per-user keys are the credential)', async () => {
+    it('409s when this computer asks for a password (per-user keys are the credential)', async () => {
       // Purpose: with login on the local token is inactive (ADR-0320), so a
       // reveal request is refused and never leaks the value.
       vi.mocked(configManager.get).mockImplementation((key: string) =>
@@ -285,7 +285,7 @@ describe('Config MCP endpoints', () => {
       );
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
       const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(409);
-      expect(res.body.error).toMatch(/login is on/i);
+      expect(res.body.error).toMatch(/works only on this computer/i);
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
 

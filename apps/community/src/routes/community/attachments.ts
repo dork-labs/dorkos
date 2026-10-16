@@ -34,6 +34,9 @@ import {
   lockCommunityFiles,
 } from '../../storage/pending-deletions.js';
 import { queueBlobs } from '../../content-removal.js';
+import { signLinkForSession } from '../../user-content/access.js';
+import { UserContentLinkResponseSchema } from '../../user-content/links.js';
+import { readableAttachment, streamAttachment } from './downloads/attachment-download.js';
 
 interface AttachmentRow {
   id: string;
@@ -383,73 +386,50 @@ export function registerAttachmentRoutes(
   });
 
   app.get('/attachments/:id', async (c) => {
-    const principal = await requirePrincipal(c, auth, pool, 'read');
-    const row = await pool.query<AttachmentRow>(
-      'SELECT * FROM attachments WHERE id=$1 AND community_id=$2 AND entry_id IS NOT NULL',
-      [c.req.param('id'), principal.community_id]
-    );
-    const attachment = row.rows[0];
-    if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
-    const authorize = async () => {
-      const current = await requirePrincipal(c, auth, pool, 'read', false);
-      if (current.kind !== principal.kind || current.id !== principal.id)
-        throw new ApiError(403, 'FORBIDDEN', 'File access has ended.');
-      const client = await pool.connect();
-      try {
-        const channel = await lockChannel(client, attachment.channel_id, current, 'read', 'shared');
-        requireJoined(channel);
-        await lockPrincipalAuthority(client, current, 'read');
-        // A file removed or taken down while it downloads stops at the next chunk: a held file's
-        // bytes stay in storage for the evidence copy, so the stream alone would not end.
-        const present = await client.query(
-          'SELECT 1 FROM attachments WHERE id=$1 AND community_id=$2 AND entry_id IS NOT NULL',
-          [attachment.id, principal.community_id]
-        );
-        if (!present.rowCount) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
-      } finally {
-        client.release();
-      }
-    };
-    await authorize();
-    let blob;
-    try {
-      blob = await blobStore.get(attachment.blob_key, { signal: c.req.raw.signal });
-    } catch (error) {
-      mapBlobError(error);
+    const first = await requirePrincipal(c, auth, pool, 'read');
+    // A browser's sign-in downloads from the user-content address once one is set (DOR-2957):
+    // the file never opens on the space's own address. A bearer caller reads the bytes here.
+    if (config.userContentUrl && first.credentialKind === undefined) {
+      const link = await signLinkForSession(
+        c,
+        { auth, config, now: new Date() },
+        { kind: 'attachment', id: c.req.param('id'), member: first }
+      );
+      c.header('Cache-Control', 'no-store');
+      return c.redirect(link.url, 303);
     }
-    const iterator = blob.body[Symbol.asyncIterator]();
-    const body = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        try {
-          const next = await iterator.next();
-          // The end of the stream carries no bytes, so access that ends after the last one went
-          // out is not refused here. Refusing it errored a response the client had already read
-          // in full (its content-length was met) and reset the connection under the client's
-          // next request on it. Every chunk is still checked after it is read from storage and
-          // before it is queued, so no chunk is read out after a failed check. The stream queues
-          // one chunk ahead, so a chunk that passed its check just before access ended can still go.
-          if (next.done) return controller.close();
-          await authorize();
-          controller.enqueue(next.value);
-        } catch (error) {
-          blob.body.destroy();
-          controller.error(error);
-        }
-      },
-      async cancel() {
-        blob.body.destroy();
-        await iterator.return?.();
-      },
-    });
-    return new Response(body, {
-      headers: {
-        ...downloadHeaders({
-          displayName: attachment.display_name,
-          contentType: attachment.content_type,
-        }),
-        'content-length': String(blob.byteSize),
-        'cache-control': 'private, no-store',
-      },
+    let fresh = true;
+    return streamAttachment(
+      { pool, blobStore },
+      {
+        attachmentId: c.req.param('id'),
+        communityId: first.community_id,
+        current: async () => {
+          if (!fresh) return requirePrincipal(c, auth, pool, 'read', false);
+          fresh = false;
+          return first;
+        },
+        signal: c.req.raw.signal,
+      }
+    );
+  });
+
+  // A signed link a browser downloads the file from (DOR-2957). Checked as a download is, so a
+  // link is only ever made for a file its reader can open now.
+  app.post('/attachments/:id/link', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'read');
+    if (principal.credentialKind !== undefined)
+      throw new ApiError(403, 'FORBIDDEN', 'Download links are for a browser sign-in.');
+    await readableAttachment(pool, c.req.param('id'), principal);
+    const link = await signLinkForSession(
+      c,
+      { auth, config, now: new Date() },
+      { kind: 'attachment', id: c.req.param('id'), member: principal }
+    );
+    c.header('Cache-Control', 'no-store');
+    return json(c, UserContentLinkResponseSchema, {
+      url: link.url,
+      expiresAt: link.expiresAt.toISOString(),
     });
   });
 }

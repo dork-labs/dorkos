@@ -4,12 +4,12 @@
  * login work reads the same one (ADR 261015-125850, rule 1; spec
  * `specs/request-classifier`).
  *
- * ## How it differs from `isLocalCaller`
+ * ## What makes it tighter than the old `isLocalCaller`
  *
- * `isLocalCaller` (`lib/caller-authority.ts`) is today's gate question and keeps
- * its meaning until F1 (DOR-2967) moves the gate onto this classifier. This one
- * is strictly tighter. Everything it calls `this-computer`, `isLocalCaller`
- * calls local too, but not the reverse:
+ * Every gate decides from this answer (`services/core/auth/gate-policy.ts`,
+ * F1 DOR-2967). It replaced `isLocalCaller`, which read only the socket and
+ * `Host`. Everything this calls `this-computer`, the old check called local
+ * too, but not the reverse:
  *
  * - **No `DORKOS_ALLOW_INSECURE_BIND` shortcut.** A browser reaching a Docker
  *   install arrives from the bridge gateway, and it is another device.
@@ -24,9 +24,11 @@
  *
  * ## What it does not close
  *
- * A same-host proxy that forwards no headers, carrying a request with neither
- * `Origin` nor `Referer` (a same-origin GET stream), still reads as this
- * computer. Writes are caught by the `Origin` rule.
+ * A same-host proxy that forwards no headers and rewrites `Host` to loopback
+ * (nginx's default `proxy_pass`) carries any request with neither `Origin` nor
+ * `Referer` as this computer: a browser's same-origin GET, and every request
+ * from a non-browser client. A browser's writes are caught by the `Origin`
+ * rule. The docs name this (`docs/self-hosting/threat-model.mdx`).
  *
  * Pure: it takes resolved facts, never a framework request, so any surface
  * that can build them (an HTTP route today; a WebSocket upgrade once F1 moves
@@ -150,9 +152,8 @@ let warnedForeignOrigin = false;
  * Log one warning, once per process, the first time a direct, loopback request
  * names a page somewhere else. That is what a reverse proxy that forwards no
  * headers looks like, though a browser extension or a `file://` page reads the
- * same, so the line names the page and suggests rather than concludes. It
- * changes no answer. F1 (DOR-2967) adds the banner and the "Ask for a password
- * on this computer too" setting it points toward.
+ * same, so the line names the page and suggests rather than concludes. The
+ * request itself is already another device, so the gate asks it to sign in.
  *
  * @param facts - The request's headers, for the page it names.
  * @param requestClass - The request's class.
@@ -166,8 +167,8 @@ export function noteForeignOrigin(
   warnedForeignOrigin = true;
   logger.warn(
     '[DorkOS] A request on this computer came from a page on another site. If DorkOS is ' +
-      'behind a reverse proxy, that proxy sends no forwarding headers. Once sign-in is ' +
-      'decided per device, such requests will count as another device.',
+      'behind a reverse proxy, that proxy sends no forwarding headers, and such ' +
+      'requests count as another device, which must sign in.',
     { page: pageOrigin(facts.headers.origin ?? facts.headers.referer) }
   );
 }

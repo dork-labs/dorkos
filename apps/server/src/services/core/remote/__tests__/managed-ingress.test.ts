@@ -12,7 +12,7 @@ import type { Duplex } from 'node:stream';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
-import { isLocalCaller } from '../../../../lib/caller-authority.js';
+import { isAtThisComputer } from '../../auth/gate-policy.js';
 import { createManagedIngress, type ManagedIngress } from '../managed-ingress.js';
 import { ingressOf, isManagedIngress } from '../ingress-mark.js';
 
@@ -69,7 +69,7 @@ beforeEach(async () => {
   });
   app.get('/whoami', (req, res) => {
     res.json({
-      local: isLocalCaller({
+      local: isAtThisComputer({
         headers: req.headers,
         peerAddress: req.socket.remoteAddress,
         ingress: ingressOf(req),

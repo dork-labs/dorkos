@@ -69,6 +69,12 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     detail:
       'Close someone’s account, for example a person under your minimum age or by legal order. They are signed out at once and their account is erased 72 hours later, unless the closure is cancelled first. See “Closing someone’s account” in OPERATIONS.md.',
   },
+  {
+    scope: 'accounts:read',
+    label: 'List an account’s spaces',
+    detail:
+      'Find an account by its single sign-on identity and list the spaces it belongs to: each space’s name, address, the person’s role, and whether it is open or archived. Never anything anyone wrote.',
+  },
 ];
 
 function describeState(key: HostApiKey, now: number): string {

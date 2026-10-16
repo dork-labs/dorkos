@@ -11,6 +11,8 @@ import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js'
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 import { minimumAgeSetting } from './sign-up/minimum-age.js';
 import { allowedCountriesSetting, countryHeaderSetting } from './sign-up/allowed-countries.js';
+import { parseOidcScopes } from './sign-in/oidc-scopes.js';
+import { parseOrigin, parseUserContentUrl } from './user-content/origin.js';
 
 export type { CommunityMailConfig } from './mail/config.js';
 
@@ -79,9 +81,6 @@ export type CommunityOidcConfig = {
   linkVerifiedEmail: boolean;
 };
 
-// RFC 6749 section 3.3 scope-token characters.
-const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/u;
-
 /**
  * Read the OpenID Connect settings: all of issuer, client ID and client secret, or none of them.
  * The label and scopes are optional and only allowed alongside an issuer.
@@ -137,20 +136,13 @@ function parseOidc(value: {
   const buttonLabel = label?.trim() ?? 'Single sign-on';
   if (buttonLabel.length < 1 || buttonLabel.length > 40)
     throw new Error('COMMUNITY_OIDC_LABEL must be 1 to 40 characters');
-  const scopeList = (scopes ?? 'openid email profile').split(/\s+/u).filter(Boolean);
-  if (
-    !scopeList.includes('openid') ||
-    scopeList.length > 16 ||
-    scopeList.some((scope) => !SCOPE_TOKEN.test(scope))
-  )
-    throw new Error('COMMUNITY_OIDC_SCOPES must be space-separated scopes that include openid');
   return {
     issuer: issuer.href.replace(/\/+$/u, ''),
     clientId,
     clientSecret,
     label: buttonLabel,
     mark: mark === 'dorkos' ? 'dorkos' : null,
-    scopes: [...new Set(scopeList)],
+    scopes: parseOidcScopes(scopes, mark === 'dorkos'),
     linkVerifiedEmail: linkVerifiedEmail === '1',
   };
 }
@@ -197,6 +189,7 @@ const schema = z.object({
   ),
   COMMUNITY_BOOTSTRAP_SECRET: z.string().min(32),
   COMMUNITY_PUBLIC_URL: z.url(),
+  COMMUNITY_USER_CONTENT_URL: z.url().optional(),
   COMMUNITY_STORAGE_DRIVER: z.enum(['filesystem', 's3']).default('filesystem'),
   COMMUNITY_STORAGE_PATH: z.string().min(1).optional(),
   COMMUNITY_S3_BUCKET: z.string().min(3).max(63).optional(),
@@ -411,24 +404,7 @@ export function parseConfig(env: Record<string, unknown>) {
       );
     }
   }
-  const publicUrl = new URL(value.COMMUNITY_PUBLIC_URL);
-  if (
-    publicUrl.protocol !== 'https:' &&
-    !(publicUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(publicUrl.hostname))
-  ) {
-    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS, or HTTP on localhost');
-  }
-  if (
-    publicUrl.username ||
-    publicUrl.password ||
-    publicUrl.pathname !== '/' ||
-    publicUrl.search ||
-    publicUrl.hash
-  ) {
-    throw new Error(
-      'COMMUNITY_PUBLIC_URL must be a bare origin without credentials, path, query or fragment'
-    );
-  }
+  const publicUrl = parseOrigin('COMMUNITY_PUBLIC_URL', value.COMMUNITY_PUBLIC_URL);
   if (value.COMMUNITY_ERASURE_JOURNAL && !isAbsolute(value.COMMUNITY_ERASURE_JOURNAL)) {
     throw new Error('COMMUNITY_ERASURE_JOURNAL must be an absolute path');
   }
@@ -558,6 +534,7 @@ export function parseConfig(env: Record<string, unknown>) {
     invitePreviousSecret: value.COMMUNITY_INVITE_PREVIOUS_SECRET,
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
+    userContentUrl: parseUserContentUrl(value.COMMUNITY_USER_CONTENT_URL, publicUrl),
     storage,
     /** Where takedowns copy removed content, outside the API; null when the host set none. */
     evidence,

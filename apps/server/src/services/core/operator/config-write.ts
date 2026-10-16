@@ -164,10 +164,11 @@ export const CLOUD_SETTINGS_OWNER_ONLY_MESSAGE =
  *
  * Those settings carry the account link's credential and which work runs on
  * DorkOS credits, which the owner of this DorkOS alone may change everywhere
- * else (`/api/cloud/*`, `PATCH /api/config`). With login on, a yes from any
- * other signed-in account, or a yes nobody can be shown to have given, does
- * not change them. With login off there are no accounts to tell apart, and the
- * person bar that decided the card is the whole answer, as before.
+ * else (`/api/cloud/*`, `PATCH /api/config`). A yes from any other signed-in
+ * account never changes them, and with "Ask for a password on this computer
+ * too" on neither does a yes nobody can be shown to have given. A yes from a
+ * person at this computer that does not ask has no account to tell apart, and
+ * the person bar that decided the card is the whole answer, as before.
  *
  * @param decidedByUserId - The signed-in account that said yes, as the
  *   approval recorded it; absent when nobody was signed in.
@@ -177,7 +178,11 @@ export const CLOUD_SETTINGS_OWNER_ONLY_MESSAGE =
  */
 export function personApprovedAuthority(
   decidedByUserId: string | undefined,
-  isLoginEnabled: () => boolean = () => configManager.get('auth')?.enabled === true,
+  // A yes a signed-in account gave is always held to the owner bar: another
+  // device always signs in, so an account that said yes is not proof the
+  // install asks everyone for a password (ADR 261015-125850).
+  isLoginEnabled: () => boolean = () =>
+    decidedByUserId !== undefined || configManager.get('auth')?.enabled === true,
   isOwner: (userId: string | undefined) => boolean = (userId) =>
     isInstallOwner(userId === undefined ? undefined : { userId })
 ): ConfigWriteAuthority {

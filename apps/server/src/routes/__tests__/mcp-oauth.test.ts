@@ -20,6 +20,30 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
+/**
+ * A browser session the session gate can verify. A request from another
+ * device (managed access among them) must prove a person session at the `/api`
+ * gate (ADR 261015-125850 rule 3) before the route's own check is reached.
+ */
+const PERSON_SESSION = 'dorkos-test-session=person';
+
+// Stood in at the gate's verifier step only: a request carrying the test
+// session is the owner's browser session; everything else is the real gate.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return {
+    ...actual,
+    decideSessionGate: async (...args: Parameters<typeof actual.decideSessionGate>) => {
+      const [, , facts, access] = args;
+      const cookie = facts.headers.cookie ?? '';
+      if (access !== 'refused' && cookie.includes(PERSON_SESSION)) {
+        return { allowed: true, user: { userId: 'user_owner', credential: 'cookie' } };
+      }
+      return actual.decideSessionGate(...args);
+    },
+  };
+});
+
 const fixtureTarget = swappableServer();
 
 /** A minimal engine stub exposing only the method the route calls. */
@@ -102,16 +126,23 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
 
   it('refuses managed remote access even with a local Host, on the route itself', async () => {
     // The Host above is refused by the `/api` chain's host guard before the
-    // route runs. This request clears every chain step (a loopback peer and a
-    // local Host) and is only marked as having come through the managed
-    // ingress, so the 403 can come from nowhere but the route's own check.
+    // route runs. This request clears every chain step (a loopback peer, a
+    // local Host and a person session) and is only marked as having come
+    // through the managed ingress, so the 403 can come from nowhere but the
+    // route's own check.
     const spy = vi.fn();
     const listener = appWith(stubOAuth({ connected: true }, spy));
     const server = fixtureTarget.mount((req, res) => {
       markIngress(req, 'managed');
       listener(req, res);
     });
-    const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
+    const unsigned = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
+    // With no session the `/api` gate turns managed access away first.
+    expect(unsigned.status).toBe(401);
+
+    const res = await request(server)
+      .get('/api/agents/mcp-oauth/callback?state=s1&code=c1')
+      .set('Cookie', PERSON_SESSION);
 
     expect(res.status).toBe(403);
     expect(res.text).toBe('Not available.');

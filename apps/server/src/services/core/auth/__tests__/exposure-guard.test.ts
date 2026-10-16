@@ -38,46 +38,45 @@ describe('exposure-guard', () => {
     vi.clearAllMocks();
   });
 
-  describe('isExposureAllowed (pure predicate — all four combinations)', () => {
-    it('blocks when auth is off and no users exist', () => {
-      expect(isExposureAllowed({ authEnabled: false, hasUsers: false })).toBe(false);
+  describe('isExposureAllowed (pure predicate)', () => {
+    // ADR 261015-125850 rule 3: exposure needs an owner account, not "Ask for a
+    // password on this computer too". The gate asks every other device for a
+    // person session whatever that setting says, so what exposure needs is an
+    // account those devices can sign in as.
+    it('blocks when no owner account exists', () => {
+      expect(isExposureAllowed({ hasUsers: false })).toBe(false);
     });
-    it('blocks when auth is off even if users exist', () => {
-      expect(isExposureAllowed({ authEnabled: false, hasUsers: true })).toBe(false);
-    });
-    it('blocks when auth is on but no users exist', () => {
-      expect(isExposureAllowed({ authEnabled: true, hasUsers: false })).toBe(false);
-    });
-    it('allows only when auth is on and an owner exists', () => {
-      expect(isExposureAllowed({ authEnabled: true, hasUsers: true })).toBe(true);
+    it('allows once an owner account exists', () => {
+      expect(isExposureAllowed({ hasUsers: true })).toBe(true);
     });
   });
 
-  describe('readExposureState + canExpose (wire config + user count)', () => {
-    it('reads authEnabled from config.auth.enabled and hasUsers from hasAnyUser', () => {
-      setAuthEnabled(true);
+  describe('readExposureState + canExpose (wire the user count)', () => {
+    it('reads hasUsers from hasAnyUser', () => {
       mockHasAnyUser.mockReturnValue(true);
-      expect(readExposureState()).toEqual({ authEnabled: true, hasUsers: true });
+      expect(readExposureState()).toEqual({ hasUsers: true });
       expect(canExpose()).toBe(true);
     });
 
-    it('canExpose is false when login is enabled but no owner exists', () => {
+    it('canExpose is false when no owner exists, even with the password asked on this computer', () => {
       setAuthEnabled(true);
       mockHasAnyUser.mockReturnValue(false);
       expect(canExpose()).toBe(false);
     });
 
-    it('canExpose is false when an owner exists but login is disabled', () => {
+    it('canExpose is true when an owner exists with the this-computer password off', () => {
+      // Under the old switch this blocked; other devices are now asked for a
+      // session per request, so the owner alone is enough.
       setAuthEnabled(false);
       mockHasAnyUser.mockReturnValue(true);
-      expect(canExpose()).toBe(false);
+      expect(canExpose()).toBe(true);
     });
 
-    it('treats a missing auth config section as disabled', () => {
+    it('does not read the auth config section at all', () => {
       mockConfigGet.mockReturnValue(undefined);
       mockHasAnyUser.mockReturnValue(true);
-      expect(readExposureState().authEnabled).toBe(false);
-      expect(canExpose()).toBe(false);
+      expect(canExpose()).toBe(true);
+      expect(mockConfigGet).not.toHaveBeenCalledWith('auth');
     });
   });
 
@@ -164,7 +163,7 @@ describe('exposure-guard', () => {
       ).toEqual({ allowed: true });
     });
 
-    it('refuses a non-loopback host with no auth, naming both fixes', () => {
+    it('refuses a non-loopback host with no auth, naming both fixes (env key or owner account)', () => {
       const result = checkA2aExposure({
         host: '0.0.0.0',
         authConfigured: false,
@@ -173,7 +172,7 @@ describe('exposure-guard', () => {
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('0.0.0.0');
       expect(result.reason).toContain('MCP_API_KEY');
-      expect(result.reason).toContain('enable login');
+      expect(result.reason).toContain('create an owner account');
       expect(result.reason).toContain('DORKOS_ALLOW_INSECURE_BIND');
     });
 

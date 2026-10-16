@@ -19,7 +19,7 @@ import { FirstRunRequestSchema } from '@dorkos/shared/onboarding-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { isLocalCaller, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { configManager } from '../services/core/config-manager.js';
@@ -42,6 +42,7 @@ import { DORKBOT_AGENT_NAME } from '../services/mesh/ensure-dorkbot.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials.js';
 import type { PresetFetch } from '../services/runtimes/doe/presets.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /** What the routes build their deps from, per request. */
 export interface OnboardingRouterDeps {
@@ -124,7 +125,7 @@ export function createOnboardingRoutes(deps: OnboardingRouterDeps): Hono<ApiEnv>
   const router = new Hono<ApiEnv>();
 
   router.post('/first-run', async (c) => {
-    if (!isLocalCaller(honoRequestFacts(c))) {
+    if (!isAtThisComputer(honoRequestFacts(c))) {
       return c.json({ error: 'Setup is only available on this computer.' }, 403);
     }
     const refused = refuseUnlessOwner(c);

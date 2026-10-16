@@ -10,14 +10,15 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { isLocalCaller } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /**
  * Refuse non-local requests with 403: the refusal to return, or `undefined`
  * when the request may go on.
  *
- * The locality question itself lives in `lib/caller-authority.ts`, because
+ * The locality question itself lives in `services/core/auth/gate-policy.ts`
+ * (`isAtThisComputer`), because
  * `GET /api/config` now asks it too — to TELL the app what this refusal would
  * do, so a phone over the tunnel is given honest guidance instead of a button
  * that 403s (DOR-1655). Read that module for what the answer rests on; the two
@@ -27,7 +28,7 @@ import { logger } from '../lib/logger.js';
  * @returns The 403, or `undefined` for a caller at this computer.
  */
 export function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
-  if (isLocalCaller(honoRequestFacts(c))) return undefined;
+  if (isAtThisComputer(honoRequestFacts(c))) return undefined;
   return c.json({ error: 'Runtime connect actions are only available locally' }, 403);
 }
 
@@ -43,7 +44,7 @@ export function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
  * @returns The 403, or `undefined` for a caller at this computer.
  */
 export function refuseNonLocalProvisioning(c: Context<ApiEnv>): Response | undefined {
-  if (isLocalCaller(honoRequestFacts(c))) return undefined;
+  if (isAtThisComputer(honoRequestFacts(c))) return undefined;
   return c.json({ error: 'Runtime provisioning is only available locally' }, 403);
 }
 

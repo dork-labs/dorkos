@@ -3,7 +3,7 @@ import { Streamdown } from 'streamdown';
 import type { Components } from 'streamdown';
 import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
-import { MarkdownErrorBoundary, MarkdownLink } from '@/layers/shared/ui';
+import { MarkdownErrorBoundary, MarkdownImage, MarkdownLink } from '@/layers/shared/ui';
 import { WidgetFence, WIDGET_FENCE_LANGUAGE } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
@@ -33,9 +33,10 @@ interface StreamingTextProps {
  * through {@link MarkdownLink} instead of Streamdown's own anchor, so it
  * stays a real `<a href>` (hover preview, cmd/middle-click into a tab, "Copy
  * Link Address" all keep working) while an unmodified left click still opens
- * the shared link-safety modal first.
+ * the shared link-safety modal first. A Markdown picture opens the lightbox
+ * through {@link MarkdownImage}, the same as every other picture in a message.
  */
-const streamdownComponents: Components = { a: MarkdownLink };
+const streamdownComponents: Components = { a: MarkdownLink, img: MarkdownImage };
 
 /** The message-scoped values a `dorkos-ui` fence needs beyond its own code. */
 interface FenceContextValue {

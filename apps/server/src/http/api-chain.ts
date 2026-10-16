@@ -64,6 +64,7 @@ import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-
 import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
 import { classifyRequest, noteForeignOrigin } from '../lib/request-classifier.js';
+import { decideGateAccess, readGatePosture } from '../services/core/auth/gate-policy.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
@@ -199,9 +200,10 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   });
   app.use(async (c, next) => {
     const facts = honoRequestFacts(c);
-    // Reads the class for one log line only; the gate does not use it yet (F1, DOR-2967).
-    noteForeignOrigin(facts, classifyRequest(facts, currentServerRole()));
-    const decision = await decideSessionGate(c.req.method, c.req.path, facts);
+    const requestClass = classifyRequest(facts, currentServerRole());
+    noteForeignOrigin(facts, requestClass);
+    const access = decideGateAccess(requestClass, readGatePosture());
+    const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
     if (!decision.allowed) return c.json(AUTH_REQUIRED_BODY, 401);
     if (decision.user) c.set('user', decision.user);
     noteGateAdmitted(c.env.incoming, c.env.outgoing);

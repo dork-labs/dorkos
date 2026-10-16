@@ -6,63 +6,21 @@ import {
   CommunityWireOwnerExportRequestSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
+import type { CommunityConfig } from '../../config.js';
 import { lockActiveCommunity, requireMember, transaction, type Member } from '../../data.js';
 import type { ConfirmPassword } from '../../password-confirmation.js';
 import { ApiError, json, readJson } from '../../http.js';
-import { downloadHeaders, type BlobStore } from '../../storage/index.js';
-import { SegmentedBlobSource, type ArchiveBlob } from '../../archive/segmented-source.js';
-import {
-  exportRequesterOf,
-  hasExportAuthority,
-  OWNER_EXPORT_LIFECYCLES,
-  type ExportRequester,
-  type ExportScope,
-} from '../../exports/authority.js';
+import type { BlobStore } from '../../storage/index.js';
+import { OWNER_EXPORT_LIFECYCLES, type ExportScope } from '../../exports/authority.js';
 import { endExportJob, EXPORT_COLUMNS, toWireExport, type ExportRow } from '../../exports/store.js';
-
-/** A download re-checks the requester's authority after at most this many bytes... */
-export const DOWNLOAD_RECHECK_BYTES = 16 * 1024 * 1024;
-/** ...or this much time, whichever comes first. */
-export const DOWNLOAD_RECHECK_MS = 10_000;
-/**
- * A download re-checks that its archive still exists after at most this many bytes... A
- * takedown or an erasure that deletes the archive stops the download within this window, while
- * a fast download makes one database round trip per window rather than one per chunk.
- */
-export const ARCHIVE_RECHECK_BYTES = 256 * 1024;
-/** ...or this much time, whichever comes first. */
-export const ARCHIVE_RECHECK_MS = 250;
+import { signLinkForSession } from '../../user-content/access.js';
+import { UserContentLinkResponseSchema } from '../../user-content/links.js';
+import { streamExportArchive } from './downloads/export-download.js';
 
 /** Exports still open, or ended within the last week, are listed. */
 const LISTED = `(state IN ('queued','building')
   OR (state='ready' AND COALESCE(deleted_at,expires_at)>now()-interval '7 days')
   OR (state IN ('failed','cancelled') AND ended_at>now()-interval '7 days'))`;
-
-/**
- * Parse one `Range: bytes=...` header against a representation of `size` bytes (RFC 9110
- * §14.1.2). Returns the inclusive range, `'unsatisfiable'` (answer 416), or null to serve the
- * whole representation: no header, a syntax this server does not serve (several ranges, another
- * unit), or an invalid one.
- */
-export function parseByteRange(
-  header: string | undefined,
-  size: number
-): { start: number; end: number } | 'unsatisfiable' | null {
-  if (!header) return null;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match || (match[1] === '' && match[2] === '')) return null;
-  if (match[1] === '') {
-    const suffix = Number(match[2]);
-    if (!Number.isSafeInteger(suffix)) return null;
-    if (suffix === 0 || size === 0) return 'unsatisfiable';
-    return { start: Math.max(0, size - suffix), end: size - 1 };
-  }
-  const start = Number(match[1]);
-  const last = match[2] === '' ? Number.MAX_SAFE_INTEGER : Number(match[2]);
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(last) || last < start) return null;
-  if (start >= size) return 'unsatisfiable';
-  return { start, end: Math.min(last, size - 1) };
-}
 
 // Lock lifecycle before membership, matching administration mutations. Archived authority is
 // specific to owner exports; ordinary mutations remain active-only.
@@ -88,32 +46,19 @@ async function lockExportAuthority(
     throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
 }
 
-async function requesterOf(pool: Pool, row: ExportRow): Promise<ExportRequester> {
-  const channels =
-    row.scope === 'personal'
-      ? await pool.query<{ channel_id: string }>(
-          `SELECT channel_id FROM export_archive_channels
-           WHERE export_archive_id=$1 AND community_id=$2 ORDER BY position`,
-          [row.id, row.community_id]
-        )
-      : { rows: [] };
-  return exportRequesterOf(
-    row,
-    channels.rows.map((channel) => channel.channel_id)
-  );
-}
-
 /** Register export jobs, their status and cancellation, and the resumable archive download. */
 export function registerExportRoutes(
   app: Hono,
   {
     pool,
     auth,
+    config,
     blobStore,
     confirmPassword,
   }: {
     pool: Pool;
     auth: CommunityAuth;
+    config: CommunityConfig;
     blobStore: BlobStore;
     confirmPassword: ConfirmPassword;
   }
@@ -236,112 +181,54 @@ export function registerExportRoutes(
 
   app.get('/exports/:id/archive', async (c) => {
     const member = await requireMember(c, auth, pool);
-    const id = c.req.param('id');
-    const readyRow = async (): Promise<ExportRow | null> => {
-      const result = await pool.query<ExportRow>(
-        `SELECT ${EXPORT_COLUMNS} FROM export_archives
-         WHERE id=$1 AND requester_member_id=$2 AND community_id=$3
-           AND state='ready' AND deleted_at IS NULL AND expires_at>now()`,
-        [id, member.id, member.community_id]
+    // A browser downloads from the user-content address once one is set (DOR-2957).
+    if (config.userContentUrl) {
+      if (!(await readyExport(pool, c.req.param('id'), member)))
+        throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
+      const link = await signLinkForSession(
+        c,
+        { auth, config, now: new Date() },
+        { kind: 'export', id: c.req.param('id'), member }
       );
-      return result.rows[0] ?? null;
-    };
-    const archive = await readyRow();
-    if (!archive) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
-    const requester = await requesterOf(pool, archive);
-    if (!(await hasExportAuthority(pool, requester)))
-      throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-    const blobs: ArchiveBlob[] = archive.blob_key
-      ? [{ key: archive.blob_key, byteSize: Number(archive.byte_size) }]
-      : (
-          await pool.query<{ blob_key: string; byte_size: string }>(
-            `SELECT blob_key,byte_size::text FROM export_segments
-             WHERE export_id=$1 AND community_id=$2 ORDER BY segment_no`,
-            [archive.id, archive.community_id]
-          )
-        ).rows.map((row) => ({ key: row.blob_key, byteSize: Number(row.byte_size) }));
-    const source = new SegmentedBlobSource(blobStore, blobs);
-    // Strong: a ready archive never changes, and a rebuilt one is a different export.
-    const etag = `"${archive.id}.${(archive.ready_at ?? archive.created_at).getTime()}"`;
-    const headers: Record<string, string> = {
-      ...downloadHeaders({
-        displayName: archive.scope === 'owner' ? 'community-export.zip' : 'my-community-data.zip',
-        contentType: 'application/zip',
-      }),
-      'accept-ranges': 'bytes',
-      etag,
-      'cache-control': 'private, no-store',
-    };
-    const ifRange = c.req.header('if-range');
-    const range =
-      ifRange === undefined || ifRange === etag
-        ? parseByteRange(c.req.header('range'), source.size)
-        : null;
-    if (range === 'unsatisfiable') {
-      return new Response(null, {
-        status: 416,
-        headers: { ...headers, 'content-range': `bytes */${source.size}` },
-      });
+      c.header('Cache-Control', 'no-store');
+      return c.redirect(link.url, 303);
     }
-    const start = range?.start ?? 0;
-    const end = range?.end ?? source.size - 1;
-    // The requester's authority is re-checked every few megabytes or seconds.
-    const stillAllowed = async () => {
-      const current = await requireMember(c, auth, pool).catch(() => null);
-      return (
-        current !== null && current.id === member.id && (await hasExportAuthority(pool, requester))
-      );
-    };
-    const iterator = source.read(start, end, { signal: c.req.raw.signal })[Symbol.asyncIterator]();
-    let sinceCheck = 0;
-    let checkedAt = Date.now();
-    let sinceArchiveCheck = 0;
-    let archiveCheckedAt = checkedAt;
-    const body = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        try {
-          const next = await iterator.next();
-          // As a file download does, the end carries no bytes and is not refused, and a check runs
-          // after a chunk is read and before it is queued. The archive row goes before its bytes
-          // do, so an erasure or takedown that deletes the export stops the download here, within
-          // one window, even while its segments still wait for the cleanup sweep.
-          if (next.done) return controller.close();
-          if (
-            sinceArchiveCheck + next.value.length > ARCHIVE_RECHECK_BYTES ||
-            Date.now() - archiveCheckedAt >= ARCHIVE_RECHECK_MS
-          ) {
-            if (!(await readyRow())) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
-            sinceArchiveCheck = 0;
-            archiveCheckedAt = Date.now();
-          }
-          sinceArchiveCheck += next.value.length;
-          if (
-            sinceCheck + next.value.length > DOWNLOAD_RECHECK_BYTES ||
-            Date.now() - checkedAt >= DOWNLOAD_RECHECK_MS
-          ) {
-            if (!(await stillAllowed()))
-              throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-            sinceCheck = 0;
-            checkedAt = Date.now();
-          }
-          sinceCheck += next.value.length;
-          controller.enqueue(next.value);
-        } catch (error) {
-          await iterator.return?.(undefined);
-          controller.error(error);
-        }
-      },
-      async cancel() {
-        await iterator.return?.(undefined);
-      },
-    });
-    return new Response(body, {
-      status: range ? 206 : 200,
-      headers: {
-        ...headers,
-        'content-length': String(end - start + 1),
-        ...(range ? { 'content-range': `bytes ${start}-${end}/${source.size}` } : {}),
-      },
+    return streamExportArchive(
+      { pool, blobStore },
+      {
+        id: c.req.param('id'),
+        member,
+        stillMember: async () =>
+          (await requireMember(c, auth, pool).catch(() => null))?.id === member.id,
+        request: c.req.raw,
+      }
+    );
+  });
+
+  // A signed link a browser downloads the export from (DOR-2957), for a ready one of its own.
+  app.post('/exports/:id/link', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    if (!(await readyExport(pool, c.req.param('id'), member)))
+      throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
+    const link = await signLinkForSession(
+      c,
+      { auth, config, now: new Date() },
+      { kind: 'export', id: c.req.param('id'), member }
+    );
+    c.header('Cache-Control', 'no-store');
+    return json(c, UserContentLinkResponseSchema, {
+      url: link.url,
+      expiresAt: link.expiresAt.toISOString(),
     });
   });
+}
+
+/** Whether `member` asked for this export and it is ready to download. */
+async function readyExport(pool: Pool, id: string, member: Member): Promise<boolean> {
+  const ready = await pool.query(
+    `SELECT 1 FROM export_archives WHERE id=$1 AND requester_member_id=$2 AND community_id=$3
+       AND state='ready' AND deleted_at IS NULL AND expires_at>now()`,
+    [id, member.id, member.community_id]
+  );
+  return Boolean(ready.rowCount);
 }

@@ -68,6 +68,7 @@ export const CENSUS_GROUPS = [
   'community',
   'host',
   'page',
+  'user-content',
   'test-only',
   'mounts',
 ] as const;
@@ -90,6 +91,8 @@ function groupOf(method: string, path: string): CensusGroup {
   if (path.startsWith('/api/v1/communities/:communityId/')) return 'community';
   if (path.startsWith('/api/v1/host/') || path === '/api/v1/host-links') return 'host';
   if (path.startsWith('/api/')) return 'api';
+  // Signed download links (DOR-2957): the one route the user-content address answers.
+  if (path.startsWith('/u/')) return 'user-content';
   return 'page';
 }
 

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, act, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { MarkdownEditorProps, MarkdownSourcePort } from 'blintz';
 
@@ -50,12 +50,44 @@ function themeWrapper(): HTMLElement {
   return wrapper;
 }
 
+// jsdom has no layout. Only the genuine editor cursor plugin needs this
+// placeholder geometry; these tests assert logical source offsets, not pixels.
+// Real browser caret geometry remains a separate acceptance gate.
+let rangeClientRectsDescriptor: PropertyDescriptor | undefined;
+let rangeClientRectsFixtureInstalled = false;
+
 beforeEach(() => {
+  rangeClientRectsFixtureInstalled = false;
+  rangeClientRectsDescriptor = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects');
+  if (typeof Range.prototype.getClientRects !== 'function') {
+    Object.defineProperty(Range.prototype, 'getClientRects', {
+      configurable: true,
+      value() {
+        const rect = new DOMRect(0, 0, 1, 1);
+        return Object.assign([rect], {
+          item: (index: number) => (index === 0 ? rect : null),
+        });
+      },
+    });
+    rangeClientRectsFixtureInstalled = true;
+  }
   editorControl.real = false;
   editorControl.props = undefined;
   act(() => useThemeStore.getState().setTheme('light'));
 });
-afterEach(cleanup);
+afterEach(() => {
+  try {
+    cleanup();
+  } finally {
+    if (rangeClientRectsFixtureInstalled) {
+      if (rangeClientRectsDescriptor) {
+        Object.defineProperty(Range.prototype, 'getClientRects', rangeClientRectsDescriptor);
+      } else {
+        Reflect.deleteProperty(Range.prototype, 'getClientRects');
+      }
+    }
+  }
+});
 
 describe('BlintzCanvas theme forwarding', () => {
   it('forwards a resolved light theme as data-theme="light"', () => {
@@ -154,26 +186,65 @@ describe('BlintzCanvas public source callbacks', () => {
     mounted.unmount();
     expect(originalPort.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'disposed' });
   });
-  it('preserves the genuine package unavailable result for model-mismatched heading input', async () => {
+  it.each([
+    { text: '# raw', start: 2, end: 5 },
+    { text: '# raw 😀', start: 2, end: 8 },
+  ])('maps genuine heading source and UTF-16 selection for $text', async ({ text, start, end }) => {
     editorControl.real = true;
     let port: MarkdownSourcePort | undefined;
+    const changed = vi.fn();
     const onSourceReady: NonNullable<MarkdownEditorProps['onSourceReady']> = (next) => {
       port = next;
     };
-    render(
+    const mounted = render(
       <BlintzCanvas
-        value="# raw"
-        editable={false}
+        value={text}
+        editable
+        onChange={changed}
         sourceRevision="heading-1"
         onSourceReady={onSourceReady}
       />
     );
-    await waitFor(() => expect(port).toBeDefined());
-    expect(port!.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'unmapped' });
-    let rebound: ReturnType<MarkdownSourcePort['bindSource']> | undefined;
+    await waitFor(() =>
+      expect(port?.snapshot()).toMatchObject({ kind: 'mapped', value: { text } })
+    );
+    const editor = mounted.container.querySelector<HTMLElement>('.ProseMirror');
+    if (!editor) throw new Error('Expected the genuine published editor');
+    editor.focus();
+    // Keyboard input selects; only the public port supplies original-source offsets.
+    fireEvent.keyDown(editor, { key: 'a', code: 'KeyA', ctrlKey: true });
+    await waitFor(() =>
+      expect(port!.selection()).toMatchObject({
+        kind: 'mapped',
+        value: { ranges: [{ start, end }] },
+      })
+    );
+    const selected = port!.selection();
+    if (selected.kind !== 'mapped') throw new Error('Expected genuine mapped selection');
+    expect(selected.value.ranges).toHaveLength(1);
+    expect(text.slice(selected.value.ranges[0]!.start, selected.value.ranges[0]!.end)).toBe(
+      text.slice(2)
+    );
+    const generation = port!.generation();
+    const focused = document.activeElement;
+    const renderedText = editor.textContent;
     act(() => {
-      rebound = port!.bindSource('# raw', port!.generation());
+      expect(port!.bindSource(text, generation)).toMatchObject({ kind: 'mapped', value: { text } });
     });
-    expect(rebound).toMatchObject({ kind: 'unavailable', reason: 'model-mismatch' });
+    expect(document.activeElement).toBe(focused);
+    expect(editor.textContent).toBe(renderedText);
+    expect(port!.selection()).toMatchObject({
+      kind: 'mapped',
+      value: { ranges: selected.value.ranges },
+    });
+    expect(port!.selection(generation)).toMatchObject({ kind: 'unavailable', reason: 'stale' });
+    let mismatch: ReturnType<MarkdownSourcePort['bindSource']> | undefined;
+    act(() => {
+      mismatch = port!.bindSource('# genuinely different', port!.generation());
+    });
+    expect(mismatch).toMatchObject({ kind: 'unavailable', reason: 'model-mismatch' });
+    expect(changed).not.toHaveBeenCalled();
+    mounted.unmount();
+    expect(port!.snapshot()).toMatchObject({ kind: 'unavailable', reason: 'disposed' });
   });
 });

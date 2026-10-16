@@ -101,9 +101,20 @@ const CALLERS: ProbeCaller[] = [
   },
 ];
 
-/** The request's facts, carrying only what these seams read off them. */
-function factsFor(caller: ProbeCaller): Pick<RequestFacts, 'user'> {
-  return { user: caller.user };
+/**
+ * The request's facts, carrying what these seams read off them. Every caller
+ * is at this computer; the posture each seam reads is injected per caller, so
+ * where the request came from never decides the comparison.
+ */
+function factsFor(
+  caller: ProbeCaller
+): Pick<RequestFacts, 'user' | 'headers' | 'peerAddress' | 'ingress'> {
+  return {
+    user: caller.user,
+    headers: { host: 'localhost:4242' },
+    peerAddress: '127.0.0.1',
+    ingress: 'direct',
+  };
 }
 
 const SEAMS: PersonProofSeam[] = [

@@ -560,18 +560,23 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'GET /api/projects/resolve refuses a cross-site request before reading anything',
+    // A page on another site names itself in `Referer`, which makes the request
+    // another device (ADR 261015-125850 rule 1): the session gate asks it for a
+    // person session, with login off, before the route reads anything.
+    name: 'GET /api/projects/resolve refuses a cross-site request at the session gate before reading anything',
     path: `/api/projects/resolve?cwd=${q(REPO_ROOT)}`,
     headers: { ...CROSS_SITE, Referer: 'https://elsewhere.example/page' },
+    expect: { status: 401, body: { error: 'Unauthorized', code: 'AUTH_REQUIRED' } },
+  },
+  {
+    // The route's own refusal still stands for a cross-site request the gate
+    // cannot tell apart from this computer: one that names no page.
+    name: 'GET /api/projects/resolve refuses a cross-site request that names no page before reading anything',
+    path: `/api/projects/resolve?cwd=${q(REPO_ROOT)}`,
+    headers: CROSS_SITE,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can look up a project.',
-        code: 'project_lookup_person_required',
-        message:
-          'DorkOS looked nothing up. This request came from https://elsewhere.example/page, which is not DorkOS. ' +
-          'Only a person using DorkOS can look up a project.',
-      },
+      schema: z.object({ code: z.literal('project_lookup_person_required') }).loose(),
     },
   },
   {

@@ -46,9 +46,9 @@ Manage it from **Settings → Advanced → Tools → Connect other apps to DorkO
 
 ### Authentication
 
-How you authenticate depends on whether you've turned on login.
+How you authenticate depends on whether you've turned on login, and on where your client runs. A client on another device (through your tunnel, over Wi-Fi or through a proxy) always needs a per-user API key; the local token and the no-token checks below are for clients on this computer.
 
-**Login off (the default).** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
+**Login off (the default), on this computer.** DorkOS protects the tools that change things on your machine with a **local token** it makes for you. You paste this token into your MCP client once, as a Bearer header. Read-only checks (listing tools, `ping`, `get_server_info`) still work with no token, so a quick health probe needs no setup:
 
 ```bash
 # Read-only: no token needed

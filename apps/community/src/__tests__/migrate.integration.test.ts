@@ -865,9 +865,10 @@ it('serves a populated version-four community through the current HTTP contract 
 
     await migrate(upgradeUrl.toString());
 
-    // One change is deliberate: agents as members (0042) gives each agent its own member row,
+    // Two changes are deliberate. Agents as members (0042) gives each agent its own member row,
     // with its id, name and standing, and names that row as the author of each agent message.
-    // Everything else in a version-four table is exactly as it was.
+    // And a space keeps no sign-in provider's tokens (0045, DOR-2957), so the account row loses
+    // them and keeps everything else. Everything else in a version-four table is exactly as it was.
     const after = await snapshotRows(db, versionFourShapes);
     type Row = Record<string, unknown>;
     const agentsBefore = before.agents as Row[];
@@ -878,7 +879,17 @@ it('serves a populated version-four community through the current HTTP contract 
       entries: (after.entries as Row[]).map((row) =>
         row.author_agent_id ? { ...row, author_member_id: null } : row
       ),
-    }).toEqual(before);
+    }).toEqual({
+      ...before,
+      account: (before.account as Row[]).map((row) => ({
+        ...row,
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        accessTokenExpiresAt: null,
+        refreshTokenExpiresAt: null,
+      })),
+    });
     expect((after.members as Row[]).filter((row) => agentIds.has(row.id))).toEqual(
       agentsBefore.map((agent) => ({
         id: agent.id,

@@ -9,6 +9,8 @@ import {
   CommunityAdminAccountIdSchema,
   CommunityAdminAccountLookupRequestSchema,
   CommunityAdminAccountLookupResponseSchema,
+  CommunityAdminAccountSpacesRequestSchema,
+  CommunityAdminAccountSpacesResponseSchema,
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityConfig } from '../../config.js';
 import { transaction } from '../../data.js';
@@ -19,6 +21,7 @@ import {
   findAccountBySignOn,
   readAccountClosure,
 } from '../../host/account-closures.js';
+import { accountSpacesLogLine, listAccountSpaces } from '../../host/account-spaces.js';
 import type { HostAuthority } from '../../host/authority.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { OIDC_PROVIDER_ID } from '../../oidc.js';
@@ -38,12 +41,16 @@ function accountIdOf(value: string | undefined): string {
  * ids, states, dates, the reason, and the host's own reference. Each actor may close at most
  * `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY` accounts in any 24 hours, and every closure and every
  * refused closure logs one warning line with ids only, for the host's alerting.
+ *
+ * Beside them, `POST /host/accounts/spaces` (DOR-2954) lists the spaces an account belongs to,
+ * found by the same sign-on identity. It needs `accounts:read`, which `accounts:close` does not
+ * grant, and answers ids, names, addresses, roles and states only.
  */
 export function registerHostAccountClosureRoutes(
   app: Hono,
   deps: {
     pool: Pool;
-    config: Pick<CommunityConfig, 'oidc' | 'limits'>;
+    config: Pick<CommunityConfig, 'oidc' | 'limits' | 'publicUrl'>;
     authority: HostAuthority;
     now: () => Date;
     confirmPassword: ConfirmPassword;
@@ -54,18 +61,42 @@ export function registerHostAccountClosureRoutes(
   const { pool, config, authority, now, confirmPassword, hasPassword } = deps;
   const warn = (line: string) => console.warn(line);
 
-  // A POST, so the person's sign-in identity never lands in a URL or an access log.
-  app.post('/host/accounts/lookup', async (c) => {
-    await authority.require(c, 'accounts:close');
-    const body = await readJson(c, CommunityAdminAccountLookupRequestSchema);
+  /** The account that signs in with this host's single sign-on as `subject`; 409 off this host. */
+  async function accountBySignOn(body: { issuer: string; subject: string }) {
     if (!config.oidc)
       throw new ApiError(409, 'STATE_CONFLICT', 'This server has no single sign-on to look up.');
     if (body.issuer.replace(/\/+$/, '') !== config.oidc.issuer)
       throw new ApiError(409, 'STATE_CONFLICT', 'That is not this server’s sign-in service.');
-    const accountId = await findAccountBySignOn(pool, OIDC_PROVIDER_ID, body.subject);
+    return findAccountBySignOn(pool, OIDC_PROVIDER_ID, body.subject);
+  }
+
+  // A POST, so the person's sign-in identity never lands in a URL or an access log.
+  app.post('/host/accounts/lookup', async (c) => {
+    await authority.require(c, 'accounts:close');
+    const body = await readJson(c, CommunityAdminAccountLookupRequestSchema);
+    const accountId = await accountBySignOn(body);
     if (!accountId)
       throw new ApiError(404, 'NOT_FOUND', 'No account here signs in with that identity.');
     return json(c, CommunityAdminAccountLookupResponseSchema, { accountId });
+  });
+
+  // A POST for the same reason. An identity no account signs in with is an empty list, not a 404.
+  app.post('/host/accounts/spaces', async (c) => {
+    const actor = await authority.require(c, 'accounts:read');
+    const body = await readJson(c, CommunityAdminAccountSpacesRequestSchema);
+    const accountId = await accountBySignOn(body);
+    const result = accountId
+      ? await listAccountSpaces(pool, accountId, config.publicUrl)
+      : { spaces: [], truncated: false };
+    console.log(
+      accountSpacesLogLine({
+        accountId,
+        actor,
+        count: result.spaces.length,
+        truncated: result.truncated,
+      })
+    );
+    return json(c, CommunityAdminAccountSpacesResponseSchema, result);
   });
 
   app.get('/host/accounts/:accountId/closure', async (c) => {
