@@ -51,12 +51,14 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function ceilingForEntry(
   authors: AuthorRegistry,
-  entry: Pick<RoomEntry, 'id' | 'authorId'>
+  entry: Pick<RoomEntry, 'id' | 'authorId'>,
+  inSpaceRoom = false
 ): { permissionCeiling?: TurnPermissionCeiling } {
-  if (isTeammateEntry(authors, entry)) {
+  if (isTeammateEntry(authors, entry, inSpaceRoom)) {
     return { permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] };
   }
   if (isEntryAuthorExternal(authors, entry.authorId)) {
@@ -74,13 +76,15 @@ export function ceilingForEntry(
  *
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function ceilingForEntries(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  inSpaceRoom = false
 ): { permissionCeiling?: TurnPermissionCeiling } {
   const bounds = entries.flatMap((entry): TurnPermissionBound[] => {
-    const one = ceilingForEntry(authors, entry).permissionCeiling;
+    const one = ceilingForEntry(authors, entry, inSpaceRoom).permissionCeiling;
     if (one === undefined) return [];
     return Array.isArray(one) ? [...one] : [one as TurnPermissionBound];
   });

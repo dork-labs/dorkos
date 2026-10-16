@@ -79,6 +79,7 @@ function officialGate(
 ): RemoteWakeGate {
   return {
     wakes: (_ref, _owner, memberId) => memberId === OWNER_MEMBER,
+    isOwnerPost: (_ref, _owner, memberId) => memberId === OWNER_MEMBER,
     answersIn: (ref, _owner, channel) =>
       ref === REF && answerIn.includes(answerInChannelName(channel)),
     takeAnswerInWake: (ref, owner, channel, author) =>

@@ -4,10 +4,17 @@
  *
  * Every author a space mirror imports is an outside author on the `community` platform. The
  * stream bridge knows which of them is this install's owner, and VOUCHES for each owner post it
- * imports ({@link vouchOwnerSpaceEntry}). Everything else from a space is a teammate's, so a
- * post the bridge never saw (one cached before a restart, say) is held to the teammate rules
+ * imports ({@link vouchOwnerSpaceEntry}). In a space's local copy EVERYTHING else that is not
+ * from this machine is a teammate's: an author on any platform, and one with no record at all,
+ * so a post the bridge never saw (one cached before a restart, say) is held to the teammate rules
  * rather than given the owner's. A wrong answer the strict way costs one quiet turn; the other
  * way it hands a teammate the owner's power.
+ *
+ * **Why keying the vouch by local entry id is safe.** The id is minted HERE, when the post is
+ * imported into one owner's copy of one space, never taken from the space. Each pairing with a
+ * space mints a fresh `communityRef`, so its copy, and every entry in it, is new: a vouch cannot
+ * outlive the pairing it was made under, cross to another owner's copy, or be named by a space
+ * that wants one.
  *
  * In memory and bounded, like `turn-levels.ts`, and for the same reason: forgetting fails closed.
  *
@@ -41,22 +48,27 @@ export function vouchOwnerSpaceEntry(entryId: string): void {
 
 /**
  * Whether this entry is a teammate's: written in a space by anyone the bridge did not vouch for
- * as the owner. A person on this machine, an agent here, or a bridged chat is never a teammate.
+ * as the owner. In a space's local copy that is every entry not from this machine, an
+ * unresolvable author included; anywhere else, only a space member's (a person here, an agent
+ * here, or a bridged chat is never a teammate).
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - An entry a turn answers.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function isTeammateEntry(
   authors: AuthorRegistry,
-  entry: Pick<RoomEntry, 'id' | 'authorId'>
+  entry: Pick<RoomEntry, 'id' | 'authorId'>,
+  inSpaceRoom = false
 ): boolean {
+  if (vouched.has(entry.id)) return false;
   const naturalKey = authors.getMany([entry.authorId]).get(entry.authorId)?.naturalKey;
-  // An author with no record is already held to a stranger's ceiling (`turn-ceiling.ts`); a
-  // space mirror resolves every author it imports, so none of its posts reaches here unresolved.
-  if (naturalKey === undefined) return false;
+  // Outside a space's copy an author with no record is already held to a stranger's ceiling
+  // (`turn-ceiling.ts`); inside one it is a teammate, since nothing vouched for it.
+  if (naturalKey === undefined) return inSpaceRoom;
   const origin = authorOrigin(naturalKey);
-  if (origin === 'local' || origin.platform !== SPACE_PLATFORM) return false;
-  return !vouched.has(entry.id);
+  if (origin === 'local') return false;
+  return inSpaceRoom || origin.platform === SPACE_PLATFORM;
 }
 
 /**
@@ -65,10 +77,14 @@ export function isTeammateEntry(
  *
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function teammateOf(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  inSpaceRoom = false
 ): { teammate?: true } {
-  return entries.some((entry) => isTeammateEntry(authors, entry)) ? { teammate: true } : {};
+  return entries.some((entry) => isTeammateEntry(authors, entry, inSpaceRoom))
+    ? { teammate: true }
+    : {};
 }

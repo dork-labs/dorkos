@@ -1,6 +1,6 @@
 /**
- * What a teammate's turn may use: reads of the agent's own folder, and the DorkOS tools that
- * reach only the room it answers (DOR-2955). Everything else is refused, unasked.
+ * What a teammate's turn may use: the DorkOS tools that reach only the room it answers, and a
+ * to-do list (DOR-2955). Everything else is refused, unasked, files included.
  *
  * ## Why a fence, on top of "nobody is asked" and "read-only"
  *
@@ -14,6 +14,16 @@
  * It is enforced where nothing can skip it: a hook that sees every call before the runtime's own
  * permission rules, so a rule the owner once saved ("Always allow" on a tool) does not carry a
  * teammate past it either (`runtimes/claude-code/teammate-fence-hook.ts`).
+ *
+ * ## No files, at any path
+ *
+ * Claude Code reads without asking inside the agent's folder AND inside every extra directory a
+ * person's settings grant, which on a real machine can be another private repository or the
+ * whole transcript store. A name-only allowance for `Read` therefore let a teammate read
+ * whatever those grants covered. So until the teammate tier brings scoped reads (C7: "the shared
+ * project and public notes only"), a teammate's turn reads no files at all, and it may not attach
+ * one to a post either: the agent's own folder can hold `.env` files, keys, its memory file and
+ * MCP tokens.
  *
  * ## Built to be extended by the teammate tier, not replaced
  *
@@ -35,11 +45,12 @@ export interface TeammateFence {
 /**
  * What a teammate turn may do with one tool:
  *
- * - `this-room`: run, when its `roomId` argument is the room the turn answers, and then only as
- *   the rest of the gate decides;
+ * - `this-room`: run, when its `roomId` argument is the room the turn answers and it carries
+ *   none of the `without` arguments, and then only as the rest of the gate decides;
  * - `refuse`: never, with the reason kept for the reviewer reading this table.
  */
-export type TeammateToolRule = { kind: 'this-room' } | { kind: 'refuse'; why: string };
+export type TeammateToolRule =
+  { kind: 'this-room'; without?: readonly string[] } | { kind: 'refuse'; why: string };
 
 const THIS_ROOM: TeammateToolRule = { kind: 'this-room' };
 const refuse = (why: string): TeammateToolRule => ({ kind: 'refuse', why });
@@ -51,7 +62,8 @@ const refuse = (why: string): TeammateToolRule => ({ kind: 'refuse', why });
  */
 export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> = {
   // The room it answers: replying and reading are the whole point of being asked.
-  post_to_room: THIS_ROOM,
+  // A post may carry no file: an attachment is a file read under another name.
+  post_to_room: { kind: 'this-room', without: ['attachments'] },
   react_to_room_entry: THIS_ROOM,
   read_room_history: THIS_ROOM,
   search_room_history: THIS_ROOM,
@@ -92,18 +104,11 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
 };
 
 /**
- * The runtime's own tools a teammate turn may use: reading and searching files, which the runtime
- * still keeps to the agent's folder, and a to-do list that stays in the turn. No shell, no writes,
- * no web (a fetch can carry what was read to anywhere).
+ * The runtime's own tools a teammate turn may use: a to-do list that stays in the turn. No file
+ * reads at any path (see "No files, at any path" above; C7 brings scoped ones), no shell, no
+ * writes, no web (a fetch can carry what was read to anywhere).
  */
-export const TEAMMATE_BUILT_IN_TOOLS: ReadonlySet<string> = new Set([
-  'Read',
-  'Grep',
-  'Glob',
-  'LS',
-  'NotebookRead',
-  'TodoWrite',
-]);
+export const TEAMMATE_BUILT_IN_TOOLS: ReadonlySet<string> = new Set(['TodoWrite']);
 
 /** One tool call, as the fence sees it. */
 export interface TeammateFenceCall {
@@ -117,8 +122,8 @@ export interface TeammateFenceCall {
 
 /** The reason the model is handed when the fence refuses a call. */
 export const TEAMMATE_FENCE_DENIAL =
-  'Refused: a teammate in a shared space started this turn, so it can read files here and use ' +
-  'this room only. Tell them what you could not do.';
+  'Refused: a teammate in a shared space started this turn, so it can only read and post in ' +
+  'this room, with no files. Tell them what you could not do.';
 
 /**
  * Whether a teammate turn may make this call: `null` to let the rest of the gate decide, or the
@@ -136,6 +141,15 @@ export function teammateFenceRefusal(fence: TeammateFence, call: TeammateFenceCa
   const rule = Object.hasOwn(TEAMMATE_DORKOS_TOOLS, call.name)
     ? TEAMMATE_DORKOS_TOOLS[call.name]!
     : undefined;
-  if (rule?.kind === 'this-room' && call.input.roomId === fence.roomId) return null;
-  return TEAMMATE_FENCE_DENIAL;
+  if (rule?.kind !== 'this-room' || call.input.roomId !== fence.roomId)
+    return TEAMMATE_FENCE_DENIAL;
+  const carries = (rule.without ?? []).some((arg) => present(call.input[arg]));
+  return carries ? TEAMMATE_FENCE_DENIAL : null;
+}
+
+/** Whether an argument was actually given: an empty list or string carries nothing. */
+function present(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value) || typeof value === 'string') return value.length > 0;
+  return true;
 }

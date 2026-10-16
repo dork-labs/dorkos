@@ -22,6 +22,7 @@ import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
 } from '../remote-room-subscription-bridge.js';
+import { AnswerInBudget, ANSWER_IN_LIMITS } from '../wake/answer-in.js';
 import type { RemoteWakeGate } from '../wake/wake-policy.js';
 
 const REF = 'remote_team_space' as CommunityRef;
@@ -85,8 +86,8 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean } = {}
   };
   const localRoom = mirrors.ensureRoom(room);
 
-  /** Post one fresh live frame mentioning Ana, and let every turn it starts finish. */
-  async function post(author: RemoteLiveEntry['author']) {
+  /** Post one fresh live frame (mentioning Ana unless told), and let every turn it starts finish. */
+  async function post(author: RemoteLiveEntry['author'], mentions: string[] = ['remote-ana']) {
     seq += 1;
     const at = new Date(clock.now).toISOString();
     const entry: CommunityEntry = {
@@ -95,7 +96,7 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean } = {}
       id: `team-entry-${seq}`,
       authorId: author.memberId,
       text: `@ana message ${seq}`,
-      mentions: ['remote-ana'],
+      mentions,
       parentEntryId: null,
       threadRootEntryId: null,
       depth: 0,
@@ -105,7 +106,7 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean } = {}
     bridge.importLive(room, { entry, remoteSeq: seq, author, serverCreatedAt: at }, LIVE);
     await harness.service.triggersIdle();
   }
-  return { harness, clock, localRoom, post };
+  return { harness, clock, localRoom, agent, post };
 }
 
 describe('a teammate’s mention', () => {
@@ -153,6 +154,65 @@ describe('a teammate’s mention', () => {
     clock.now += 10 * 60_000 + 1;
     await post(TEAMMATE);
     expect(harness.runner.turns).toHaveLength(5);
+  });
+});
+
+describe('in the space’s local copy', () => {
+  it('holds a message whose author resolves to nobody to the teammate rules', async () => {
+    // Review should-fix 3: in a space's copy, only a vouch or this machine keeps the owner's power.
+    const { harness, localRoom, agent, post } = space({ gate: members, runsTeammateTurns: false });
+    await post(TEAMMATE); // kept as history: no agent here may take a teammate's turn
+    const kept = harness.store.listEntriesAfter(localRoom.id, 0)[0]!;
+
+    harness.service.dispatchImportedRemoteEntry(localRoom.id, {
+      ...kept,
+      id: 'entry-of-nobody',
+      authorId: 'author-nobody-knows',
+      mentions: [agent.id],
+    });
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0]!.teammate).toBe(true);
+  });
+
+  it('never holds the owner’s own message here to them', async () => {
+    const { harness, localRoom } = space({ gate: members });
+
+    harness.service.post(localRoom.id, { authorId: harness.human, text: '@ana what is new?' });
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns[0]!.teammate).toBeUndefined();
+  });
+});
+
+describe('one budget per person', () => {
+  /** `members`, answering every post in General too, with the space's own budget or none. */
+  function answeringGate(budget?: AnswerInBudget): RemoteWakeGate {
+    return {
+      ...members,
+      answersIn: (ref, _owner, channel) => ref === REF && channel === 'General',
+      ...(budget
+        ? {
+            takeAnswerInWake: (ref, owner, channel, author) =>
+              budget.take(`${owner}\0${ref}`, channel, author),
+          }
+        : {}),
+    };
+  }
+
+  it.each([
+    ['the space’s answer-in budget', () => new AnswerInBudget(ANSWER_IN_LIMITS, () => START)],
+    ['the bridge’s own, when the gate keeps none', () => undefined],
+  ])('counts mentions and answer-in posts together, from %s', async (_name, budget) => {
+    const { harness, post } = space({ gate: answeringGate(budget()) });
+
+    await post(TEAMMATE);
+    await post(TEAMMATE, []);
+    await post(TEAMMATE);
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(3);
   });
 });
 

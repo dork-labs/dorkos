@@ -12,9 +12,11 @@
  *   raise approval cards, so there is no card to click by habit and no "Always allow" to win.
  * - **Read-only.** The turn is held to the runtime's default AND to read access
  *   (`READ_ONLY_LEVEL`); see `turn-ceiling.ts`.
- * - **This room only.** The DorkOS tools it may use reach only the room it answers
- *   (`core/turn-power/teammate-fence.ts`), so it cannot read the owner's other rooms and chats and
- *   post them back.
+ * - **This room only, and no files.** The DorkOS tools it may use reach only the room it answers,
+ *   and it reads no files at all (`core/turn-power/teammate-fence.ts`), so it cannot read the
+ *   owner's other rooms, chats or files and post them back.
+ * - **None of the owner's notes.** Its prompt leaves the agent's memory out
+ *   (`core/turn-power/teammate-turn-context.ts`).
  * - **Only on a runtime that honours all three** ({@link TEAMMATE_TURN_RUNTIMES}). Elsewhere the
  *   post stays history and starts no turn.
  *

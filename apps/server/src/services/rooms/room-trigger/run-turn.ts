@@ -84,6 +84,8 @@ export async function runOneInDispatch(
       // rest (DOR-1231).
       gathered: target.gathered,
     });
+    // A space's local copy, where every message nobody vouched for is a teammate's (DOR-2955).
+    const inSpaceRoom = self.deps.isSpaceRoom?.(room.id) === true;
     const result = await self.deps.runner.run({
       room,
       authorId: target.authorId,
@@ -115,11 +117,11 @@ export async function runOneInDispatch(
       ),
       // And the turn itself is held to the strictest of its senders' levels,
       // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
-      ...ceilingForEntries(self.deps.authors, target.answers ?? [entry]),
+      ...ceilingForEntries(self.deps.authors, target.answers ?? [entry], inSpaceRoom),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).
-      ...teammateOf(self.deps.authors, target.answers ?? [entry]),
+      ...teammateOf(self.deps.authors, target.answers ?? [entry], inSpaceRoom),
       // The message, unchanged. A trigger asks the agent exactly what was
       // said; only the welcome-back offer below asks something else.
       prompt: entry.body.text,

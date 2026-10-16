@@ -132,6 +132,13 @@ export interface RoomTriggerDeps {
    */
   bridgedFraming(roomId: string): BridgedRoomFraming | null;
   /**
+   * Whether this room is a local copy of a channel in a shared space (DOR-2955). Every message
+   * in one that the space bridge did not vouch for as the owner's is a teammate's, whoever its
+   * author resolves to, or whether it resolves at all (`limits/space-teammates.ts`). Optional so
+   * a hand-built test dependency set still fits; absent answers no.
+   */
+  isSpaceRoom?(roomId: string): boolean;
+  /**
    * The stored forum-topic name for a batch of entries. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
    */

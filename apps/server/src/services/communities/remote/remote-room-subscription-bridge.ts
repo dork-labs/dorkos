@@ -9,7 +9,7 @@ import {
   type CommunityEntry,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
-import { logger } from '../../../lib/logger.js';
+import { logRefusal } from '../../observability/refusals.js';
 import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
@@ -277,32 +277,35 @@ export class RemoteRoomSubscriptionBridge {
     // Paid for only once the claim is won, so a post that reaches this bridge twice (one stream
     // per enrolled agent, or a frame repeated after a reconnect) is charged once. A post past the
     // budget stays claimed: it is handled, with no turn, and never starts one later.
-    if (
-      answerIn &&
-      this.wakeGate?.takeAnswerInWake?.(
-        room.communityRef,
-        room.ownerAuthorId,
-        room.title,
-        event.author.memberId
-      ) !== true
-    ) {
-      // Ids only, never a name or a body: what an operator watching a flood needs.
-      logger.info('[RemoteRoomSubscriptionBridge] answer-in budget spent; post kept as history', {
-        communityRef: room.communityRef,
-        remoteRoomId: room.remoteRoomId,
-        entryId: event.entry.id,
-      });
-      return;
-    }
-    // A teammate's mention pays from its own budget, also only once the claim is won (DOR-2955).
-    // An answer-in wake has just paid from that budget; the owner pays from neither.
-    const connection = `${room.communityRef}\0${room.ownerAuthorId}`;
-    if (
-      !owner &&
-      !answerIn &&
-      !this.teammates.take(connection, room.remoteRoomId, event.author.memberId, saved.id)
-    ) {
-      return;
+    //
+    // ONE budget per person and per channel (DOR-2955): a teammate's every wake pays from it,
+    // whether their post named the agent or landed in a channel the owner answers in, and so does
+    // the owner's own answer-in post, as before. Two budgets would give each person twice the
+    // wakes. It is the space's answer-in budget; a gate without one falls back to this bridge's,
+    // which holds the same numbers.
+    if (!owner || answerIn) {
+      const paid = this.wakeGate?.takeAnswerInWake
+        ? this.wakeGate.takeAnswerInWake(
+            room.communityRef,
+            room.ownerAuthorId,
+            room.title,
+            event.author.memberId
+          )
+        : this.teammates.take(
+            `${room.communityRef}\0${room.ownerAuthorId}`,
+            room.remoteRoomId,
+            event.author.memberId
+          );
+      if (!paid) {
+        // Ids only, never a name or a body: what an operator watching a flood needs.
+        logRefusal('[RemoteRoomSubscriptionBridge] wake budget spent; post kept as history', {
+          reason: 'space_wake_budget',
+          visibility: 'silent',
+          entryId: saved.id,
+          detail: { communityRef: room.communityRef, teammate: !owner },
+        });
+        return;
+      }
     }
     this.service.dispatchImportedRemoteEntry(target.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;

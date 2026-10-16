@@ -95,6 +95,7 @@ import type { MessageSenderOpts } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createTeammateFenceHook } from '../teammate-fence-hook.js';
+import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -276,18 +277,26 @@ export async function resolveLaunch(args: {
   // The four switchable tool-doc blocks follow the same resolution: a Blocked
   // area's docs go with its tools.
   const toolConfig = toolDocGates(toolVisibility.blockedAreas);
+  // A teammate's turn (DOR-2955) is shown none of the agent's notes, and is told what it may
+  // do. The block rides BOTH halves below, so it is in the relaunch digest: a warm process
+  // launched with the owner's notes is never reused for a teammate, nor the other way round.
+  const teammate = messageOpts?.roomTurn?.teammate === true;
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
+    ...(teammate ? { memory: false } : {}),
   });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
   // base — onto BOTH halves, so the caller's own per-run instructions are
   // digested by the relaunch pin exactly as they were before agent memory
   // existed. Only the `<agent_memory>` block is out of the digest; nothing else
   // moved, and a caller append that changed used to relaunch and still does.
-  const callerAppend = messageOpts?.systemPromptAppend;
+  const callerAppend =
+    [teammate ? TEAMMATE_TURN_CONTEXT : '', messageOpts?.systemPromptAppend ?? '']
+      .filter(Boolean)
+      .join('\n\n') || undefined;
   const systemPromptAppend = callerAppend
     ? `${baseAppend.text}\n\n${callerAppend}`
     : baseAppend.text;

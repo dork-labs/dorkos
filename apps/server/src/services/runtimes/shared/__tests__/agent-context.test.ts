@@ -901,6 +901,24 @@ describe('<agent_memory>', () => {
     expect(block.indexOf('the operator ships on Fridays')).toBeLessThan(end);
   });
 
+  // DOR-2955. Red when: a teammate's turn is shown the owner's notes, or the
+  // notes are read at all for it, or an ordinary turn loses them.
+  it('leaves the notes out, unread, for a teammate’s turn, and keeps them for the rest', async () => {
+    memoryReads({ status: 'present', content: NOTES, bytes: NOTES.length, truncated: false });
+
+    const teammate = await buildAgentContextAppend('/test', '/cwd', { memory: false });
+    expect(teammate.text).not.toContain('<agent_memory>');
+    expect(teammate.text).not.toContain('the operator ships on Fridays');
+    expect(teammate.memory).toBe('');
+    expect(vi.mocked(getMemoryProvider)().getSnapshot).not.toHaveBeenCalled();
+
+    const owner = await buildAgentContextAppend('/test', '/cwd');
+    expect(owner.text).toContain('the operator ships on Fridays');
+    // The digested half is the same either way: the fingerprint tells the two
+    // apart by the teammate block the launcher adds, not by the notes.
+    expect(teammate.stable).toBe(owner.stable);
+  });
+
   // Red when: the notice stops appearing once a backend is benched, or appears
   // when nothing is benched. Drives a REAL bench through the real registry
   // (`registerMemoryProvider` / `configManager.getDot`), independent of the

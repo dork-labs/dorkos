@@ -474,9 +474,13 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
  *
  * @param home - The agent's registered home — the only folder its manifest and
  *   convention files are read from (spec `agent-home-desk` I1).
+ * @param options - What to leave out; see {@link AgentContextOptions}.
  * @returns XML block string, or empty string if no manifest.
  */
-async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
+async function buildAgentBlock(
+  home: AgentHome,
+  options: AgentContextOptions = {}
+): Promise<AgentContextAppend> {
   const manifest = await readHomeManifest(home);
   if (!manifest) return EMPTY_APPEND;
 
@@ -540,7 +544,12 @@ async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
   blocks.push(buildWorkingRulesBlock());
 
   // --- Agent memory block (default ON) ---
-  const memory = conventions?.memory !== false ? await buildMemoryBlock(manifest.id, home) : '';
+  // Left out, unread, for a turn a teammate started (DOR-2955): the notes are the owner's
+  // conversations' memory, and a teammate's turn must not be shown them.
+  const memory =
+    options.memory !== false && conventions?.memory !== false
+      ? await buildMemoryBlock(manifest.id, home)
+      : '';
 
   // --- Everything after the memory block ---
   const tail: string[] = [];
@@ -595,6 +604,15 @@ export interface AgentContextAppend {
   readonly memory: string;
 }
 
+/** What a caller may leave out of the append. */
+export interface AgentContextOptions {
+  /**
+   * `false` to leave the `<agent_memory>` block out, without reading it: a turn a teammate
+   * started in a shared space (DOR-2955). Default on.
+   */
+  readonly memory?: boolean;
+}
+
 /** What every form of the append is when there is nothing to say. */
 const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
 
@@ -621,14 +639,16 @@ const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
  *   convention files — never from `cwd`, whose committed `.dork/` may be a
  *   stale branch's or another agent's (spec `agent-home-desk` I1, I2).
  * @param cwd - The session's working directory, for the `<env>` block.
+ * @param options - What to leave out; see {@link AgentContextOptions}.
  * @returns The joined blocks, or `''` when nothing could be built.
  */
 export async function buildAgentContextAppend(
   home: AgentHome | undefined,
-  cwd: string
+  cwd: string,
+  options: AgentContextOptions = {}
 ): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
-    home ? settle(buildAgentBlock(home), EMPTY_APPEND) : EMPTY_APPEND,
+    home ? settle(buildAgentBlock(home, options), EMPTY_APPEND) : EMPTY_APPEND,
     settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
     settle(buildEnvBlock(cwd), ''),
   ]);

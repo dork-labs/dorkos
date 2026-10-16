@@ -131,9 +131,15 @@ export const REFUSAL_REASONS = {
    */
   teammate_fence: 'a teammate’s turn may not use this tool',
   /**
-   * A teammate's post in a space started no turn: they had started enough for
-   * now, or the agent runs on a program that cannot hold their turn to its
-   * limits yet (DOR-2955). The post stays in the space as history.
+   * A space post started no turn because its author had already started their
+   * share for now: three per person and twenty per channel every ten minutes,
+   * one budget for mentions and answer-in posts alike (DOR-2955).
+   */
+  space_wake_budget: 'the person had already woken the agent enough for now',
+  /**
+   * A teammate's post in a space started no turn because the agent runs on a
+   * program that cannot hold their turn to its limits yet (DOR-2955, DOR-2978).
+   * The post stays in the space as history.
    */
   teammate_wake_held: 'a teammate’s post was kept as history and woke nobody',
   /** A prompt only a person can answer expired, and was denied by the clock. */

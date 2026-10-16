@@ -87,7 +87,8 @@ describe('the teammate fence hook', () => {
     for (const tool of ['mcp__dorkos__search_member_rooms', 'mcp__dorkos__chat_read', 'Bash']) {
       expect(await decide(session, call(tool, { roomId: 'room-a' }))).toEqual(DENY);
     }
-    expect(await decide(session, call('Read', { file_path: 'notes.md' }))).toEqual({});
+    expect(await decide(session, call('Read', { file_path: 'notes.md' }))).toEqual(DENY);
+    expect(await decide(session, call('TodoWrite', { todos: [] }))).toEqual({});
   });
 
   it('treats a configured server calling itself dorkos as another server, and refuses it', async () => {

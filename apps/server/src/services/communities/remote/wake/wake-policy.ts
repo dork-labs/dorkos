@@ -52,7 +52,8 @@ export interface RemoteWakeGate {
   answersIn?(communityRef: CommunityRef, ownerAuthorId: string, channelName: string): boolean;
   /**
    * Spend one wake of the answer-in budget for this author in this channel, or refuse once the
-   * author's or the channel's share is spent. Absent refuses every one.
+   * author's or the channel's share is spent. Since DOR-2955 it is also the ONE budget every
+   * teammate wake pays from, mention or not. Absent, the bridge holds teammates to its own.
    *
    * @param communityRef - The local connection ref.
    * @param ownerAuthorId - The local owner the connection belongs to.

@@ -1,6 +1,6 @@
 /**
- * The teammate fence's decisions (DOR-2955): a teammate's turn reaches the room it answers and
- * the agent's own files, and nothing else.
+ * The teammate fence's decisions (DOR-2955): a teammate's turn reaches the room it answers, with
+ * no files, and nothing else.
  */
 import { describe, expect, it } from 'vitest';
 import { DORKOS_AGENT_TOOLS } from '../../../runtimes/claude-code/messaging/interactive-handlers.js';
@@ -65,15 +65,41 @@ describe('the teammate fence', () => {
     expect(dorkos('__proto__')).toBe(TEAMMATE_FENCE_DENIAL);
   });
 
-  it('lets the runtime’s own reads through and nothing else it has', () => {
-    for (const name of ['Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'TodoWrite']) {
-      expect(teammateFenceRefusal(FENCE, { source: 'built-in', name, input: {} })).toBeNull();
-    }
+  // The review's BLOCKER: a name-only allowance let these reach every directory the owner's
+  // settings grant, a private repository and the transcript store included.
+  it.each([
+    ['Read', { file_path: '/Users/x/Keep/dork-os/dorkos-cloud/secrets.ts' }],
+    ['Read', { file_path: 'MEMORY.md' }],
+    ['Read', { file_path: '.env' }],
+    ['Grep', { pattern: 'token', path: '/Users/x' }],
+    ['Glob', { pattern: '~/.claude/projects/**/*.jsonl' }],
+    ['LS', { path: '/' }],
+    ['NotebookRead', { notebook_path: 'analysis.ipynb' }],
+  ])('refuses %s at any path (%o)', (name, input) => {
+    expect(teammateFenceRefusal(FENCE, { source: 'built-in', name, input })).toBe(
+      TEAMMATE_FENCE_DENIAL
+    );
+  });
+
+  it('lets the to-do list through and nothing else the runtime has', () => {
+    expect(
+      teammateFenceRefusal(FENCE, { source: 'built-in', name: 'TodoWrite', input: {} })
+    ).toBeNull();
     for (const name of ['Bash', 'Edit', 'Write', 'WebFetch', 'WebSearch', 'Task', 'Agent']) {
       expect(teammateFenceRefusal(FENCE, { source: 'built-in', name, input: {} })).toBe(
         TEAMMATE_FENCE_DENIAL
       );
     }
+  });
+
+  it('refuses a post to the room that carries a file, and lets one without through', () => {
+    expect(
+      dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: ['.env'] })
+    ).toBe(TEAMMATE_FENCE_DENIAL);
+    expect(
+      dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: [] })
+    ).toBeNull();
+    expect(dorkos('post_to_room', { roomId: 'room-answered', text: 'here' })).toBeNull();
   });
 
   it('refuses every tool another MCP server serves, the owner’s connected apps included', () => {

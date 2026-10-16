@@ -14,6 +14,12 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
+import { buildSystemPromptAppend } from '../context-builder.js';
+import { resolveLaunch } from '../launch-resolver.js';
+import {
+  captureLaunchFingerprint,
+  compareLaunchFingerprints,
+} from '../../sessions/launch-fingerprint.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -151,6 +157,56 @@ describe('the launch options every Claude Code turn is given', () => {
     session.teammateFence = { roomId: 'room-answered' };
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
+  it('shows a teammate’s turn no notes, says what it may do, and never shares its process with the owner’s', async () => {
+    // DOR-2955. The notes are left out of the prompt, which the digest does not
+    // see, so the teammate block must be IN the digest: without it a warm
+    // process launched with the owner's notes would serve the teammate's turn.
+    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => ({
+      text:
+        options?.memory === false
+          ? '<env>mock</env>'
+          : '<env>mock</env>\n\n<agent_memory>x</agent_memory>',
+      stable: '<env>mock</env>',
+    }));
+    const session = makeSession();
+    const resolve = (messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session,
+        opts: makeOpts(),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const append = (launch: Awaited<ReturnType<typeof resolve>>) =>
+      (launch.sdkOptions.systemPrompt as { append: string }).append;
+    const pin = (launch: Awaited<ReturnType<typeof resolve>>) =>
+      captureLaunchFingerprint(launch.launch);
+
+    const owner = await resolve();
+    const teammate = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+    const ownerAgain = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' },
+    });
+
+    expect(append(teammate)).not.toContain('<agent_memory>');
+    expect(append(teammate)).not.toContain('<relay_connections>');
+    expect(append(teammate)).toContain('<teammate_turn>');
+    expect(append(ownerAgain)).toContain('<agent_memory>');
+    expect(append(ownerAgain)).not.toContain('<teammate_turn>');
+    expect(compareLaunchFingerprints(pin(owner), pin(teammate)).action).toBe('relaunch');
+    expect(compareLaunchFingerprints(pin(teammate), pin(ownerAgain)).action).toBe('relaunch');
+    // And an ordinary turn after an ordinary turn relaunches for none of this.
+    expect(compareLaunchFingerprints(pin(owner), pin(ownerAgain)).action).not.toBe('relaunch');
+    // Back to the file's own stub, which `clearAllMocks` would not restore.
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>mock</env>',
+      stable: '<env>mock</env>',
     });
   });
 

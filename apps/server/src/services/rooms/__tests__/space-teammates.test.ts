@@ -63,6 +63,28 @@ describe('isTeammateEntry', () => {
   });
 });
 
+describe('in a space’s local copy', () => {
+  // Review should-fix 3: fail closed. Nothing but a vouch or this machine keeps the owner's power.
+  it('reads every author nobody vouched for as a teammate, unresolvable ones included', () => {
+    const { registry, member, telegram } = authors();
+    expect(isTeammateEntry(registry, { id: 'gone-2', authorId: 'no-such-author' }, true)).toBe(
+      true
+    );
+    expect(isTeammateEntry(registry, { id: 'tg-3', authorId: telegram }, true)).toBe(true);
+    expect(isTeammateEntry(registry, { id: 'space-4', authorId: member }, true)).toBe(true);
+    expect(
+      ceilingForEntries(registry, [{ id: 'gone-3', authorId: 'no-such-author' }], true)
+    ).toEqual({ permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] });
+  });
+
+  it('keeps a person or an agent on this machine, and a vouched post, out of it', () => {
+    const { registry, human, member } = authors();
+    vouchOwnerSpaceEntry('space-owner-2');
+    expect(isTeammateEntry(registry, { id: 'local-4', authorId: human }, true)).toBe(false);
+    expect(isTeammateEntry(registry, { id: 'space-owner-2', authorId: member }, true)).toBe(false);
+  });
+});
+
 describe('a teammate’s ceiling', () => {
   it('is a stranger’s and read access, both at once', () => {
     const { registry, member, telegram } = authors();
