@@ -14,7 +14,6 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { credentialGated } from '../services/core/auth/gate-policy.js';
-import { configManager } from '../services/core/config-manager.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';

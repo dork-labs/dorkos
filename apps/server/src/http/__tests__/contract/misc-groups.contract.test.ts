@@ -85,6 +85,8 @@ const CONFIG = z
   .loose();
 const LOCAL_CALLER = CONFIG.and(z.object({ isLocalCaller: z.literal(true) }).loose());
 const REMOTE_CALLER = CONFIG.and(z.object({ isLocalCaller: z.literal(false) }).loose());
+/** The session gate's 401, for another device that presents no session. */
+const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const SAVED = z.object({ success: z.literal(true), config: z.object({}).loose() }).strict();
 const OPERATOR_ONLY = (paths: string[]) =>
   z
@@ -197,10 +199,13 @@ contractSuite(
       expect: { status: 200, headers: { 'cache-control': 'no-store' }, body: '' },
     },
     {
-      name: 'GET /api/config tells a caller at another name it is not at this computer',
+      // Another device needs a person session even with the this-computer
+      // password off (ADR 261015-125850 rule 3); the signed-in answer is in the
+      // login-on suite below.
+      name: 'GET /api/config asks a caller at another name to sign in, with login off',
       path: '/api/config',
       headers: { host: REMOTE_HOST },
-      expect: { status: 200, schema: REMOTE_CALLER },
+      expect: { status: 401, headers: JSON_TYPE, schema: GATE_REFUSED },
     },
     {
       name: 'GET /api/config refuses a foreign host',
@@ -322,16 +327,12 @@ contractSuite(
     },
     // onboarding
     {
-      name: 'POST /api/onboarding/first-run refuses a caller at another name',
+      name: 'POST /api/onboarding/first-run asks a caller at another name to sign in, with login off',
       method: 'POST',
       path: '/api/onboarding/first-run',
       headers: { host: REMOTE_HOST },
       body: {},
-      expect: {
-        status: 403,
-        headers: JSON_TYPE,
-        body: { error: 'Setup is only available on this computer.' },
-      },
+      expect: { status: 401, headers: JSON_TYPE, schema: GATE_REFUSED },
     },
     {
       name: 'POST /api/onboarding/first-run refuses an agent',
@@ -1571,6 +1572,25 @@ describe('contract: the same groups with login on', () => {
         },
       });
     }
+  });
+
+  it('tells the owner signed in at another name it is not at this computer, and keeps setup here', async () => {
+    await check(server, {
+      path: '/api/config',
+      headers: { ...cookie, host: REMOTE_HOST },
+      expect: { status: 200, schema: REMOTE_CALLER },
+    });
+    await check(server, {
+      method: 'POST',
+      path: '/api/onboarding/first-run',
+      headers: { ...cookie, host: REMOTE_HOST, origin: `http://${REMOTE_HOST}` },
+      body: {},
+      expect: {
+        status: 403,
+        headers: JSON_TYPE,
+        body: { error: 'Setup is only available on this computer.' },
+      },
+    });
   });
 
   it('keeps document metrics and setup to the owner’s cookie', async () => {

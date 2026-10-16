@@ -2,7 +2,6 @@
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../../../lib/caller-authority.js';
 import { readOwnerAccount } from '../auth/index.js';
-import { configManager } from '../config-manager.js';
 import { getRoomService } from '../../rooms/index.js';
 import { resolveOperatorAuthor } from '../../rooms/operator-author.js';
 import { credentialGated, isAtThisComputer } from '../auth/gate-policy.js';

@@ -88,8 +88,12 @@ default upgrade;
 </Tabs>
 
 <Callout type="warn">
-  **Running a proxy with login off?** Name your domain, or every API call comes back `403
-  Forbidden`. DorkOS answers only to addresses it trusts, and your proxy passes its own address
+  **Every visit through your proxy needs a sign-in.** A proxy adds forwarding headers, and DorkOS
+  counts a request that carries them as another device, never as this computer. So create your
+  owner account on the computer itself before you open the proxy (`dorkos auth enable`).
+
+  **Running a proxy with "Require login" off?** Name your domain too, or every API call comes back
+  `403 Forbidden`. DorkOS answers only to addresses it trusts, and your proxy passes its own address
   through. Add it:
 
 ```bash
@@ -103,6 +107,14 @@ rather than by your sign-in, so it always checks the address — with login on a
 works and the terminal will not open.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
+</Callout>
+
+<Callout type="warn">
+  **Keep your proxy's forwarding headers on.** A proxy on the same computer that sends no
+  `X-Forwarded-For`, `Forwarded`, `X-Real-IP`, `Via` or `X-Forwarded-Host`, and rewrites `Host` to
+  `localhost`, looks like this computer for a page load or a live stream with no `Origin`. Changes
+  are still caught, because a browser names the page it is on. The proxy configs above all send
+  `X-Forwarded-For`; keep it. See the [threat model](/docs/self-hosting/threat-model).
 </Callout>
 
 <Callout type="info">

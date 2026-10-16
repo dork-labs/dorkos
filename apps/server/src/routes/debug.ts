@@ -57,7 +57,6 @@ import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { configManager } from '../services/core/config-manager.js';
 import {
   DocChannelMetricsUnavailableError,
   type DocChannelMetrics,
