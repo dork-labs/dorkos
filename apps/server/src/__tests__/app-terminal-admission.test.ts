@@ -297,7 +297,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/lan-access');
     // 72 -> 73: the scoped local browser routes (DOR-2929).
     expect(mounts).toContain('/api/local-browser');
-    expect(mounts).toHaveLength(73);
+    // 73 -> 74: a hub's routes for its owner's linked computers (DOR-2944).
+    expect(mounts).toContain('/api/hub/computers');
+    expect(mounts).toHaveLength(74);
     const byHand = [
       '/',
       '/x/fixture',
