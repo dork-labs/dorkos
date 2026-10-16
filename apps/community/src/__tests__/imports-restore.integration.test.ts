@@ -267,7 +267,8 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
     }).toEqual({
       channel: derive(entry.channel_id),
       seq: String(sequences.get(entry.id)),
-      member: entry.author_member_id && derive(entry.author_member_id),
+      // An agent's message names the agent's own member row, with the agent's id (0042).
+      member: derive((entry.author_member_id ?? entry.author_agent_id)!),
       agent: entry.author_agent_id && derive(entry.author_agent_id),
       name: entry.author_display_name,
       text: entry.text,

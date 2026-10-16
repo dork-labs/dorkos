@@ -561,7 +561,8 @@ beforeAll(async () => {
   marked.agentMention = general[21].id;
   marked.agentFile = files[0].id;
   await h.pool.query(
-    `UPDATE entries SET author_member_id=NULL,author_agent_id=$2,author_display_name='Pat Bot'
+    // An agent's message names the agent's own member row, with the agent's id (0042).
+    `UPDATE entries SET author_member_id=$2,author_agent_id=$2,author_display_name='Pat Bot'
      WHERE id=$1`,
     [marked.byAgent, marked.agent]
   );
@@ -811,7 +812,7 @@ it('restores a version 2 export uploaded in parts, across a cut-off upload and a
         derive(marked.byAgent),
       ])
     ).rows
-  ).toEqual([{ author_member_id: null, author_agent_id: derive(marked.agent) }]);
+  ).toEqual([{ author_member_id: derive(marked.agent), author_agent_id: derive(marked.agent) }]);
   expect(
     (
       await h.pool.query(

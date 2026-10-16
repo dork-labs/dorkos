@@ -45,6 +45,7 @@ export const COMMUNITY_MIGRATIONS = [
   [39, '0039_agent_availability.sql'],
   [40, '0040_member_kinds.sql'],
   [41, '0041_compatibility_floor.sql'],
+  [42, '0042_agents_as_members.sql'],
 ] as const;
 
 /**
@@ -71,9 +72,12 @@ export function assertNoMigrationGap(applied: ReadonlySet<number>): void {
  * release does not know leaves the floor alone, so a rollback across it still starts.
  *
  * @param floor - The database's `min_migration`, or null before 0041 has run.
+ * @param known - The newest migration the release knows; this release's by default.
  */
-export function assertCompatibilityFloor(floor: number | null): void {
-  const known = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
+export function assertCompatibilityFloor(
+  floor: number | null,
+  known = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version))
+): void {
   if (floor !== null && floor > known)
     throw new Error(
       `This database needs a release that knows community migration ${floor} or later; this release knows up to ${known}. Start a newer release, or restore a backup taken before the upgrade.`

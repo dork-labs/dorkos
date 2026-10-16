@@ -342,7 +342,8 @@ describe('residue scan (AC-1, AC-10)', () => {
     for (const row of [before.qCode, before.qFreeText, before.qEmailShaped, before.adminChannelId])
       expect(leftoverRows).toContain(row);
     // The member id survives only where the husk must be pointed at: the husk itself, its
-    // entries, agents and handle, the audit trail, the erasure request, and the erasure journal.
+    // entries, agents and handle, its agents' own member rows (0042), the audit trail, the
+    // erasure request, and the erasure journal.
     expect(await scanUuidColumns(h.pool, communityA, pA.memberId)).toEqual([
       'agents.owner_member_id',
       'audit_events.actor_member_id',
@@ -351,6 +352,7 @@ describe('residue scan (AC-1, AC-10)', () => {
       'erasure_journal.member_id',
       'erasure_requests.member_id',
       'members.id',
+      'members.owner_member_id',
     ]);
     // The unused pairing request is gone once the sweep reaches it.
     await sweepAbandonedPairings(h, [communityA]);
@@ -577,6 +579,7 @@ describe('residue scan (AC-1, AC-10)', () => {
       'erasure_journal.member_id',
       'erasure_requests.member_id',
       'members.id',
+      'members.owner_member_id',
     ]);
     // The only object left holding any needle is the owner export made after the first
     // erasure, which copies the named leftovers and nothing else.

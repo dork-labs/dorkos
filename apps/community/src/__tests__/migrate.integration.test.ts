@@ -865,7 +865,38 @@ it('serves a populated version-four community through the current HTTP contract 
 
     await migrate(upgradeUrl.toString());
 
-    expect(await snapshotRows(db, versionFourShapes)).toEqual(before);
+    // One change is deliberate: agents as members (0042) gives each agent its own member row,
+    // with its id, name and standing, and names that row as the author of each agent message.
+    // Everything else in a version-four table is exactly as it was.
+    const after = await snapshotRows(db, versionFourShapes);
+    type Row = Record<string, unknown>;
+    const agentsBefore = before.agents as Row[];
+    const agentIds = new Set(agentsBefore.map((agent) => agent.id));
+    expect({
+      ...after,
+      members: (after.members as Row[]).filter((row) => !agentIds.has(row.id)),
+      entries: (after.entries as Row[]).map((row) =>
+        row.author_agent_id ? { ...row, author_member_id: null } : row
+      ),
+    }).toEqual(before);
+    expect((after.members as Row[]).filter((row) => agentIds.has(row.id))).toEqual(
+      agentsBefore.map((agent) => ({
+        id: agent.id,
+        community_id: agent.community_id,
+        user_id: null,
+        display_name: agent.display_name,
+        handle: null,
+        role: 'member',
+        active: agent.active,
+        created_at: agent.created_at,
+        removed_at: agent.revoked_at,
+      }))
+    );
+    expect(
+      (after.entries as Row[])
+        .filter((row) => row.author_agent_id)
+        .every((row) => row.author_member_id === row.author_agent_id)
+    ).toBe(true);
     // The two columns that moved into tables of their own kept every value, in order.
     expect(
       (
@@ -2133,7 +2164,7 @@ it('starts across an unknown additive migration and refuses a raised compatibili
     const newest = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
     expect(
       (await db.query('SELECT min_migration FROM community_compatibility_floor')).rows
-    ).toEqual([{ min_migration: 0 }]);
+    ).toEqual([{ min_migration: 42 }]);
     // A newer release added a migration that only adds: this release still starts.
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [newest + 1]);
     await migrate(url.toString());
