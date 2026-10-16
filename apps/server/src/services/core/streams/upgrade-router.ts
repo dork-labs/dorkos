@@ -40,6 +40,7 @@ import {
 import { gateAccessFor } from '../auth/gate-policy.js';
 import { logger } from '../../../lib/logger.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
+import { hubRefusesRequest, trackHubConnection } from '../hub/hub-serving.js';
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -243,6 +244,13 @@ export function attachUpgradeRouter(
     // `req.url` is origin-form (`/api/...`); the base only satisfies the parser
     // and is never read.
     const url = new URL(req.url ?? '/', 'http://localhost');
+    // A hub that does not serve anybody yet, or any more, opens no stream
+    // either (`services/core/hub/hub-serving.ts`).
+    if (hubRefusesRequest(url.pathname)) {
+      refuse(socket, 503, 'Service Unavailable');
+      return;
+    }
+    trackHubConnection(socket);
     const claimed = routes
       .map((route) => ({ route, match: route.pattern.exec(url.pathname) }))
       .find((candidate): candidate is { route: UpgradeRoute; match: RegExpExecArray } =>
