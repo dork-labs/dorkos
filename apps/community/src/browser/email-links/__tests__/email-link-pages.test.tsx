@@ -12,6 +12,8 @@ import { ForgotPassword } from '../ForgotPassword.js';
 import { clearLine, confirmBannerHidden } from '../links.js';
 import { ResetPassword } from '../ResetPassword.js';
 import { LinkWithPassword } from '../../sign-up/LinkWithPassword.js';
+import { captureLinkSecret } from '../../page-start/read-link-secret.js';
+import { LINK_SECRET_SCRIPT } from '../../../headers/link-secret-script.js';
 
 const TOKEN = 'T'.repeat(43);
 const PEEK = 'POST /api/v1/email-links/peek';
@@ -365,7 +367,6 @@ describe('the link-with-password panel with mail', () => {
 
 describe('the page bootstrap', () => {
   const html = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
-  const inline = /<script>([\s\S]*?)<\/script>/u.exec(html)![1];
 
   it('takes the token out of the address bar on all three pages before anything loads (T20)', () => {
     // Purpose: fails if a mailed link's token stays in the address bar or history, where it
@@ -373,8 +374,11 @@ describe('the page bootstrap', () => {
     expect(html).toContain('<meta name="referrer" content="no-referrer" />');
     for (const page of ['/reset-password', '/email-sign-in', '/confirm-email']) {
       window.history.replaceState(null, '', `${page}#${TOKEN}`);
-      new Function(inline)();
+      // The page's inline script runs first, while the page parses: the address is clean
+      // before the bundle has loaded at all.
+      new Function(LINK_SECRET_SCRIPT)();
       expect(window.location.hash).toBe('');
+      captureLinkSecret();
       expect(window.location.pathname).toBe(page);
       expect(window.__readDorkosEmailLinkFragment?.()).toBe(TOKEN);
       window.__clearDorkosEmailLinkFragment?.();

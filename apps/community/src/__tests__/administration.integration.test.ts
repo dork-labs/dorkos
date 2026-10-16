@@ -12,6 +12,7 @@ import { migrate } from '../migrate.js';
 import { hashSecret, randomToken, signValue } from '../security.js';
 import { bootstrapFirstHost } from './bootstrap-test-helper.js';
 import { drainExports, openArchive } from './export-test-helpers.js';
+import { headerGroupOf } from './promises/headers-census.js';
 import { runNextExport } from '../exports/worker.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
 
@@ -467,6 +468,7 @@ it('stores private raster icons with ETags and queues replaced bytes', async () 
   });
   expect(download.status).toBe(200);
   expect(download.headers.get('content-type')).toBe('image/png');
+  expect(headerGroupOf(download)).toBe('locked');
   expect(Buffer.from(await download.arrayBuffer())).toEqual(png);
 
   const firstKey = (

@@ -7,6 +7,7 @@ import { createCommunityApp } from '../app.js';
 import { createCommunityAuth } from '../auth.js';
 import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
+import { headerGroupOf } from './promises/headers-census.js';
 
 // specs/spaces-email §1 and T17 (DOR-2710): every HTTP route the Better Auth instance answers is
 // one somebody reviewed. The allowlist check needs no database, so it runs with the route census
@@ -115,6 +116,33 @@ describe('Better Auth routes', () => {
       await expect(
         auth.api.verifyPassword({ headers, body: { password: 'wrong-password-1' } })
       ).rejects.toThrow();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("sends Better Auth's own error page under the locked policy, never the page's (DOR-2957)", async () => {
+    // Purpose: fails if a route outside the space page gets the page's policy because it answers
+    // HTML, which would let a library's page run script as the space page.
+    const app = createCommunityApp({ config: parseConfig(env), pool });
+    const server = serve({ fetch: app.fetch, port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
+    try {
+      const response = await fetch(
+        `http://localhost:${address.port}/api/auth/error?error=state_mismatch`
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toMatch(/^text\/html\b/u);
+      expect(headerGroupOf(response)).toBe('locked');
+      expect(response.headers.get('cross-origin-opener-policy')).toBeNull();
+      // It still reads as a page: its text needs no script, only its inline styles, which the
+      // locked policy drops.
+      const html = await response.text();
+      expect(html).toContain('<title>Error</title>');
+      expect(html).toContain('state_mismatch');
+      expect(html).not.toMatch(/<script\b/iu);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

@@ -13,6 +13,7 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../../app.js';
 import { parseConfig } from '../../config.js';
 import { registerPages } from '../../pages/register.js';
+import { PAGE_CSP } from '../../headers/security-headers.js';
 import { contractSuite, type ContractCase, type ContractServer } from './contract.js';
 import { CENSUS_ENV } from './route-census.js';
 
@@ -69,7 +70,8 @@ contractSuite('pages', startPages, [
     path,
     expect: {
       status: 200,
-      headers: { 'content-type': /^text\/html\b/u },
+      // The page's content security policy (DOR-2957): only its own script, nothing inline.
+      headers: { 'content-type': /^text\/html\b/u, 'content-security-policy': PAGE_CSP },
       text: /^<!doctype html><title>space page<\/title>$/u,
     },
   })),

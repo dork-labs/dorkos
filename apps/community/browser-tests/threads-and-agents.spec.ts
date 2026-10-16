@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { servePage } from '../src/headers/security-headers.js';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -30,7 +31,6 @@ const dbName = `community_browser_threads_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
@@ -58,7 +58,7 @@ async function shot(page: Page, name: string) {
 
 /** Run axe's WCAG A/AA rules on the page as it stands. */
 async function axeViolations(page: Page) {
-  await page.addScriptTag({ path: AXE_BUNDLE });
+  await injectAxe(page);
   const results = (await page.evaluate(() =>
     (
       window as unknown as {
@@ -106,10 +106,7 @@ test.beforeAll(async () => {
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   for (const path of ['/', '/c/:communityId'])
-    app.get(
-      path,
-      serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-    );
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
 });

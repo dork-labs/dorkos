@@ -1,18 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import {
-  test,
-  expect,
-  type Browser,
-  type BrowserContext,
-  type Locator,
-  type Page,
-} from '@playwright/test';
+import { type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { servePage } from '../src/headers/security-headers.js';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -61,7 +55,6 @@ const dbName = `community_browser_replace_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 const DAY = 24 * 60 * MINUTE;
 // Each test audits several states at two widths, which takes longer than the default.
 test.setTimeout(120_000);
@@ -100,7 +93,7 @@ async function audit(page: Page, name: string, subject?: Locator, shotOf?: Locat
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await subject?.scrollIntoViewIfNeeded();
-    await page.addScriptTag({ path: AXE_BUNDLE });
+    await injectAxe(page);
     const results = (await page.evaluate(() =>
       (
         window as unknown as {
@@ -282,10 +275,7 @@ test.beforeAll(async () => {
     '/c/:communityId',
     '/c/:communityId/*',
   ])
-    app.get(
-      path,
-      serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-    );
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
 

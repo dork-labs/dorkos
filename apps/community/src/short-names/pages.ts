@@ -1,5 +1,5 @@
 import type { Hono, MiddlewareHandler } from 'hono';
-import { serveStatic } from '@hono/node-server/serve-static';
+import { servePage } from '../headers/security-headers.js';
 import { parseShortNamePath } from './path.js';
 
 /**
@@ -12,7 +12,7 @@ export function registerShortNamePages(
   app: Hono,
   options: { indexPath: string; reservedNames: ReadonlySet<string> }
 ): void {
-  const page = serveStatic({ path: options.indexPath });
+  const page = servePage(options.indexPath);
   const serve: MiddlewareHandler = async (c, next) => {
     const url = new URL(c.req.url);
     const named = parseShortNamePath(url.pathname, options.reservedNames);

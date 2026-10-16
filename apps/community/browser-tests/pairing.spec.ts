@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { request as playwrightRequest } from '@playwright/test';
+import { servePage } from '../src/headers/security-headers.js';
+import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
@@ -81,13 +83,10 @@ test.beforeAll(async () => {
   const app = createCommunityApp({ config, pool });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
-  app.get(
-    '/pairing',
-    serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-  );
+  app.get('/pairing', servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   app.get(
     '/c/:communityId/pairing',
-    serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
+    servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url)))
   );
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));

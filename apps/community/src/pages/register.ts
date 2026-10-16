@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { servePage } from '../headers/security-headers.js';
 import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { registerShortNamePages } from '../short-names/pages.js';
@@ -12,7 +13,7 @@ import { registerShortNamePages } from '../short-names/pages.js';
  */
 export function registerPages(app: Hono, { distDir }: { distDir: string }): void {
   const indexPath = join(distDir, 'index.html');
-  const page = () => serveStatic({ path: indexPath });
+  const page = () => servePage(indexPath);
   app.use('/assets/*', serveStatic({ root: distDir }));
   app.get('/', page());
   app.get('/host', page());

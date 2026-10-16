@@ -94,7 +94,7 @@ function groupOf(method: string, path: string): CensusGroup {
 }
 
 /** A census app and the pool to end once it has been read. */
-interface CensusApp {
+export interface CensusApp {
   app: Hono;
   pool: Pool;
 }
@@ -102,8 +102,14 @@ interface CensusApp {
 /**
  * Compose the app as `main.ts` does, with the mail composers `main.ts` passes, against a database
  * it never reaches.
+ *
+ * @param testRuntime - Compose the test runtime's app, which adds the test-only routes.
+ * @param distDir - The built page folder; the census reads routes only, so it need not exist.
  */
-function composeApp(testRuntime: boolean): CensusApp {
+export function composeCensusApp(
+  testRuntime: boolean,
+  distDir = join(tmpdir(), 'community-route-census-dist')
+): CensusApp {
   const config = parseConfig({
     ...FULL_ENV,
     ...(testRuntime
@@ -120,7 +126,7 @@ function composeApp(testRuntime: boolean): CensusApp {
     ...emailLinkComposers(config),
   };
   const app = createCommunityApp({ config, pool, noticeComposers });
-  registerPages(app, { distDir: join(tmpdir(), 'community-route-census-dist') });
+  registerPages(app, { distDir });
   return { app, pool };
 }
 
@@ -137,8 +143,8 @@ function routesOf(app: Hono): Set<string> {
  *   sees a change.
  */
 export async function readRouteCensus(extend?: (app: Hono) => void): Promise<RouteCensus> {
-  const production = composeApp(false);
-  const testing = composeApp(true);
+  const production = composeCensusApp(false);
+  const testing = composeCensusApp(true);
   try {
     extend?.(production.app);
     const served = routesOf(production.app);
