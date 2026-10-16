@@ -46,7 +46,6 @@ import {
 import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
-  isLocalCaller,
   readCallerAuthority,
   refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
@@ -63,6 +62,7 @@ import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -107,7 +107,7 @@ router.get('/', async (c) => {
   }).config;
   const latestVersion = await getLatestVersion();
 
-  // This response is per-CALLER, not per-server, since `isLocalCaller` below
+  // This response is per-CALLER, not per-server, since `isAtThisComputer` below
   // answers for the request that asked. A shared cache between DorkOS and a
   // browser — a reverse proxy, or the tunnel provider's edge — could otherwise
   // hand a phone the answer it computed for a request from the machine itself,
@@ -125,7 +125,7 @@ router.get('/', async (c) => {
     // Sign in button that could only ever 403 (DOR-1655). Answered by the same
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
-    isLocalCaller: isLocalCaller(honoRequestFacts(c)),
+    isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],

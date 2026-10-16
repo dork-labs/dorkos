@@ -87,6 +87,7 @@ import {
   type RoomBindingTranscriptDeps,
 } from '../services/rooms/session-bindings/room-binding-transcripts.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
+import { credentialGated } from '../services/core/auth/gate-policy.js';
 
 /**
  * The live reads this router needs that are not reachable through a module
@@ -349,7 +350,7 @@ export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<Api
     try {
       const caller = honoRequestFacts(c);
       const user = caller.user;
-      const loginOn = configManager.get('auth')?.enabled === true;
+      const loginOn = credentialGated(caller);
       const owner = loginOn ? readOwnerAccount() : null;
       if (
         !clearsTheAgentBar(caller) ||

@@ -72,11 +72,7 @@ import {
 } from '../services/core/operator/config-write-policy.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
-import {
-  isLocalCaller,
-  readCallerAuthority,
-  requireOperatorCookieUnderLogin,
-} from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -91,6 +87,7 @@ import {
   streamSseAction,
 } from './runtimes-http.js';
 import { createDoeSetupRoutes } from './runtimes-doe-setup.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 const SecretBodySchema = z.object({ secret: z.string().min(1) });
 const OpenRouterKeyBodySchema = z.object({ key: z.string().min(1) });
@@ -263,7 +260,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * the user to return to DorkOS. Loopback-only (the user's own browser hits it).
    */
   router.get('/opencode/openrouter/oauth/callback', async (c) => {
-    if (!isLocalCaller(honoRequestFacts(c))) {
+    if (!isAtThisComputer(honoRequestFacts(c))) {
       return c.body('Not available.', 403, { 'Content-Type': HTML_TYPE });
     }
     const query = readQuery(c);

@@ -16,7 +16,7 @@
  */
 import type { Context, MiddlewareHandler } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
-import { honoRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
@@ -29,8 +29,13 @@ import type { ConnectorRegistry } from '../services/connectors/registry.js';
 export interface ConnectorOwnerBoundaryDeps {
   /** Resolve the current deployment's owner from verified server state. */
   readonly resolveOwner: (user: RequestUser | undefined) => ConnectorOwnerAuthority | undefined;
-  /** Read the live login posture; injected for deterministic route evidence. */
-  readonly loginEnabled: () => boolean;
+  /**
+   * Whether the gate asked this request for a credential (`credentialGated`);
+   * injected for deterministic route evidence.
+   */
+  readonly loginEnabled: (
+    facts: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>
+  ) => boolean;
   /** Exact DorkOS browser origins; defaults to the server-owned static set. */
   readonly trustedOrigins?: () => readonly string[];
   /**
@@ -113,7 +118,8 @@ export function resolveConnectorOperator(
     );
   }
   const user = requestUser(c);
-  if (deps.loginEnabled() && user?.credential !== 'cookie') {
+  const gated = deps.loginEnabled(honoRequestFacts(c));
+  if (gated && user?.credential !== 'cookie') {
     return ownerRefusal(
       c,
       'operator_cookie_required',
@@ -123,7 +129,7 @@ export function resolveConnectorOperator(
   // Connections reach their apps through this computer's DorkOS account, so
   // with login on they are the owner's alone, never another signed-in
   // account's (DOR-2678) — the same owner `/api/cloud/*` asks for.
-  if (deps.loginEnabled() && !(deps.isAccountOwner ?? isInstallOwner)(user)) {
+  if (gated && !(deps.isAccountOwner ?? isInstallOwner)(user)) {
     return ownerRefusal(
       c,
       'owner_only',
