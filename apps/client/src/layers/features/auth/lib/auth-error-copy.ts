@@ -75,6 +75,15 @@ export function describeAuthError(
     };
   }
 
+  // The server signed you in, but this browser drops the cookie over plain
+  // http at a network address (DOR-2968). Saying so ends the silent loop.
+  if (error.code === 'SIGN_IN_NEEDS_HTTPS') {
+    return {
+      message: 'This browser can’t keep the sign-in over plain http. Open DorkOS over https.',
+      detail: null,
+    };
+  }
+
   // Better Auth rate-limits the credential endpoints. `retryAfter` is the header
   // it sends with the refusal, so either signal alone means the same thing.
   if (error.status === 429 || error.retryAfter !== undefined) {
