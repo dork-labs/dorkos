@@ -1,18 +1,16 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
-  test,
-  expect,
   request as playwrightRequest,
   type BrowserContext,
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults, Result } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -35,7 +33,6 @@ dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
 const password = 'password1234';
 const operatorEmail = 'operator@access.test';
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 /** The phone touch-target floor the DorkOS design system uses for rows and controls. */
 const TOUCH_TARGET = 44;
 let pool: Pool;
@@ -205,7 +202,7 @@ async function audit(page: Page, surface: string, exclude?: string) {
           .filter((animation) => animation instanceof CSSTransition)
           .every((animation) => animation.playState !== 'running')
       );
-      await page.addScriptTag({ path: AXE_BUNDLE });
+      await injectAxe(page);
       const results = (await page.evaluate(
         (outside) =>
           (

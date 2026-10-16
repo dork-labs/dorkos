@@ -1,18 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
-  test,
-  expect,
   request as playwrightRequest,
   type Browser,
   type Locator,
   type Page,
 } from '@playwright/test';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -35,7 +33,6 @@ const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
 const password = 'password1234';
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 const leftovers =
   'People who already saw it may have a copy, and exports made before now still contain it until they expire.';
 let pool: Pool;
@@ -195,7 +192,7 @@ async function assertAccessible(page: Page, label: string) {
     await page.waitForFunction(() =>
       document.getAnimations().every((animation) => animation.playState !== 'running')
     );
-    await page.addScriptTag({ path: AXE_BUNDLE });
+    await injectAxe(page);
     const results = (await page.evaluate(() =>
       (
         window as unknown as {

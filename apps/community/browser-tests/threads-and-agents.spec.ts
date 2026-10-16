@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -30,7 +30,6 @@ const dbName = `community_browser_threads_${randomUUID().replaceAll('-', '')}`;
 const dbUrl = new URL(adminUrl);
 dbUrl.pathname = `/${dbName}`;
 const admin = new Pool({ connectionString: adminUrl });
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
@@ -58,7 +57,7 @@ async function shot(page: Page, name: string) {
 
 /** Run axe's WCAG A/AA rules on the page as it stands. */
 async function axeViolations(page: Page) {
-  await page.addScriptTag({ path: AXE_BUNDLE });
+  await injectAxe(page);
   const results = (await page.evaluate(() =>
     (
       window as unknown as {

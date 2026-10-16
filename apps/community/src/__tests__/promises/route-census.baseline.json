@@ -306,6 +306,7 @@
     "POST /api/test/load-fixture"
   ],
   "mounts": [
+    "ALL /*",
     "ALL /api/*",
     "ALL /api/auth/*",
     "ALL /api/auth/email-link/*",

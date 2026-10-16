@@ -2,7 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { type Page, type Route } from '@playwright/test';
+import { securityHeaders } from '../src/headers/security-headers.js';
+import { test, expect } from './csp.js';
 
 // Exercise the real built admission page with requests controlled at the browser boundary.
 // No database or live account is involved; missing controls and missing generated CSS fail.
@@ -10,7 +12,8 @@ let server: ReturnType<typeof serve>;
 let baseURL: string;
 test.beforeAll(async () => {
   const root = fileURLToPath(new URL('../dist/', import.meta.url));
-  const app = new Hono();
+  // The page's real security headers, as the space server sends them (DOR-2957).
+  const app = new Hono().use('*', securityHeaders());
   app.use('*', serveStatic({ root }));
   app.get('*', serveStatic({ root, path: 'index.html' }));
   await new Promise<void>((resolve) => {

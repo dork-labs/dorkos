@@ -20,6 +20,7 @@ import {
   TENANCY_PASSWORD,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
+import { headerGroupOf } from './promises/headers-census.js';
 
 const MIB = 1024 * 1024;
 /** One chunk as the filesystem store reads it. */
@@ -138,6 +139,7 @@ describe('resumable download', () => {
     expect(full.headers.get('accept-ranges')).toBe('bytes');
     expect(full.headers.get('cache-control')).toBe('private, no-store');
     expect(full.headers.get('content-disposition')).toContain('community-export.zip');
+    expect(headerGroupOf(full)).toBe('locked');
     const etag = full.headers.get('etag')!;
     expect(etag).toMatch(new RegExp(`^"${id}\\.\\d+"$`));
     const whole = Buffer.from(await full.arrayBuffer());

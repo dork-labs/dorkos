@@ -5,13 +5,12 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
-  test,
-  expect,
   request as playwrightRequest,
   type BrowserContext,
   type Locator,
   type Page,
 } from '@playwright/test';
+import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';

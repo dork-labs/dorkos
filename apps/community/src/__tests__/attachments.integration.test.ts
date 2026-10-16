@@ -18,6 +18,7 @@ import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { hashSecret } from '../security.js';
 import { bootstrapFirstHost, seedCredentialAccount } from './bootstrap-test-helper.js';
 import { drainExports, expireReadyExports, openArchive } from './export-test-helpers.js';
+import { headerGroupOf } from './promises/headers-census.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for attachment HTTP tests');
@@ -380,6 +381,8 @@ describe('attachments over real HTTP and Postgres', () => {
     expect(download.status).toBe(200);
     expect(await download.text()).toBe('hello');
     expect(download.headers.get('content-disposition')).toContain('attachment;');
+    // Opened in a tab, a file must be inert: no script, no framing (DOR-2957).
+    expect(headerGroupOf(download)).toBe('locked');
     expect(
       (await request(`/api/v1/attachments/${metadata.id}`, { headers: { cookie: bobCookie } }))
         .status

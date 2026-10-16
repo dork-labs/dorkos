@@ -1,19 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
-  test,
-  expect,
   request as playwrightRequest,
   type Browser,
   type BrowserContext,
   type Locator,
   type Page,
 } from '@playwright/test';
+import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -40,7 +38,6 @@ const admin = new Pool({ connectionString: adminUrl });
 const password = 'password1234';
 const operator = { email: 'owner@takedown.test', password };
 const REPORT = 'https://example.com/report';
-const AXE_BUNDLE = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
 // Evidence must live outside the temporary folder, so it goes where the server tests put theirs.
 const evidenceDirectory = join(
   fileURLToPath(new URL('../.test-evidence/', import.meta.url)),
@@ -236,7 +233,7 @@ async function assertAccessible(page: Page, label: string) {
     await page.waitForFunction(() =>
       document.getAnimations().every((animation) => animation.playState !== 'running')
     );
-    await page.addScriptTag({ path: AXE_BUNDLE });
+    await injectAxe(page);
     const results = (await page.evaluate(() =>
       (
         window as unknown as {

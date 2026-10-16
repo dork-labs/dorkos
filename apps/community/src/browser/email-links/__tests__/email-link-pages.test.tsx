@@ -12,6 +12,7 @@ import { ForgotPassword } from '../ForgotPassword.js';
 import { clearLine, confirmBannerHidden } from '../links.js';
 import { ResetPassword } from '../ResetPassword.js';
 import { LinkWithPassword } from '../../sign-up/LinkWithPassword.js';
+import { captureLinkSecret } from '../../page-start/read-link-secret.js';
 
 const TOKEN = 'T'.repeat(43);
 const PEEK = 'POST /api/v1/email-links/peek';
@@ -365,15 +366,16 @@ describe('the link-with-password panel with mail', () => {
 
 describe('the page bootstrap', () => {
   const html = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
-  const inline = /<script>([\s\S]*?)<\/script>/u.exec(html)![1];
 
   it('takes the token out of the address bar on all three pages before anything loads (T20)', () => {
     // Purpose: fails if a mailed link's token stays in the address bar or history, where it
     // could reach a log, a screenshot or a referrer.
     expect(html).toContain('<meta name="referrer" content="no-referrer" />');
+    // The page's content security policy refuses inline script, so the page must carry none.
+    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/u);
     for (const page of ['/reset-password', '/email-sign-in', '/confirm-email']) {
       window.history.replaceState(null, '', `${page}#${TOKEN}`);
-      new Function(inline)();
+      captureLinkSecret();
       expect(window.location.hash).toBe('');
       expect(window.location.pathname).toBe(page);
       expect(window.__readDorkosEmailLinkFragment?.()).toBe(TOKEN);

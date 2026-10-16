@@ -15,6 +15,7 @@ import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
 import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
+import { securityHeaders } from './headers/security-headers.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
@@ -143,7 +144,8 @@ export function createCommunityApp({
     live = createLiveHub(config);
     stopLiveWithPool(live, pool);
   }
-  const app = new Hono();
+  // Every response, refusals and pages included, carries the security headers (DOR-2957).
+  const app = new Hono().use('*', securityHeaders()).onError(handleError);
   // A notice is queued only where mail is set up and the worker can compose its kind.
   const canSendNotice = (kind: NoticeKind) =>
     config.mail !== null && noticeComposers[kind] !== undefined;
@@ -157,7 +159,6 @@ export function createCommunityApp({
     beforeSessionInsert: hooks?.beforeSessionInsert,
   });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
-  app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
   const { limitAttempts } = createAttemptLimiter();
   // Password guesses keep their own map, keyed by account: a flood of made-up callers on the
