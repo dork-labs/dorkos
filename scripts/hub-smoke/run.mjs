@@ -22,7 +22,7 @@
  */
 import { spawn } from 'node:child_process';
 import { createServer, request } from 'node:http';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -100,6 +100,18 @@ function freePort() {
       probe.close(() => resolve(port));
     });
   });
+}
+
+/** A line of `/proc/<pid>/status`, where there is one (Linux), else null. */
+function procStatus(pid, field) {
+  try {
+    const line = readFileSync(`/proc/${pid}/status`, 'utf8')
+      .split('\n')
+      .find((l) => l.startsWith(`${field}:`));
+    return line ? line.slice(field.length + 1).trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Every log file under `dir`, read whole. */
@@ -220,6 +232,21 @@ async function main() {
   // Something else on the port would answer too; the hub must be the one.
   check('the hub is the one answering', child.exitCode === null, out.text.slice(-2000));
   if (child.exitCode !== null) return;
+  if (!ISOLATE) {
+    // In the image: started as root, through the image's entrypoint.
+    const uid = procStatus(child.pid, 'Uid')?.split(/\s+/)[0];
+    check(
+      'DorkOS runs as the node user, never root',
+      uid !== undefined && uid !== '0',
+      `uid ${uid}`
+    );
+    const owner = statSync(out.dorkHome).uid;
+    check(
+      'the data folder is the node user`s',
+      String(owner) === uid,
+      `owner ${owner}, hub ${uid}`
+    );
+  }
   const pooled = await get('/api/config', [
     ['host', ADDRESS_HOST],
     [PROOF.header, PROOF.secret],
@@ -289,8 +316,18 @@ async function main() {
   check('the instance key is never logged', !logged.includes(KEY));
 
   done = true;
-  child.kill('SIGTERM');
-  check('it shuts down on SIGTERM', (await exitWithin(child, 20_000)) !== null);
+  const rss = procStatus(child.pid, 'VmRSS');
+  if (rss) console.log(`INFO  memory while serving: ${rss}`);
+
+  // Cloud stops a sleeping hub with SIGINT and a 5-second grace period.
+  const stopStarted = Date.now();
+  child.kill('SIGINT');
+  const stopCode = await exitWithin(child, 5_000);
+  check(
+    'it stops cleanly within 5 seconds of SIGINT',
+    stopCode === 0,
+    `exit ${stopCode} after ${Date.now() - stopStarted} ms`
+  );
   if (out.home) rmSync(out.home, { recursive: true, force: true });
 }
 

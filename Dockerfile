@@ -166,18 +166,33 @@ ENTRYPOINT ["tini", "--", "dorkos"]
 # DORKOS_ALLOW_INSECURE_BIND here: a hub refuses to boot with it, and needs no
 # escape hatch, because login is always on. The health check answers on any
 # Host without the front-door proof, from the moment the hub listens.
+#
+# Cloud mounts a new volume at the data folder owned by root, so the image
+# starts as root, and scripts/hub-entrypoint.sh gives the folder to node and
+# drops to node before DorkOS starts. DorkOS itself never runs as root. Cloud
+# stops a sleeping hub with SIGINT and a 5-second grace period; tini passes it
+# on.
 FROM served AS hub
 LABEL org.opencontainers.image.description="DorkOS hub: a person's own DorkOS in the cloud"
 ENV DORKOS_SERVER_ROLE=hub
+# USER root below would otherwise point HOME at /root; DorkOS runs as node.
+ENV HOME=/home/node
+USER root
+COPY --chmod=755 scripts/hub-entrypoint.sh /usr/local/bin/hub-entrypoint
+ENTRYPOINT ["tini", "--", "hub-entrypoint", "dorkos"]
 
 # ── hub-smoke ──────────────────────────────────────────────────────────────
 # Boots the hub image against a stand-in for Cloud and checks what Cloud
 # relies on: the health check, the refusals while pooled, taking an
-# assignment, and the front-door checks (scripts/hub-smoke/run.mjs).
+# assignment, and the front-door checks (scripts/hub-smoke/run.mjs). It runs as
+# root, as the hub image does, and starts the hub through the image's own
+# entrypoint, so a root-owned data folder is part of what it checks (mount an
+# empty root-owned folder at /home/node/.dork).
 FROM hub AS hub-smoke
 COPY scripts/hub-smoke/ /opt/hub-smoke/
-# Boot the hub with this image's own bind address and data folder.
+# Boot the hub with this image's own bind address, data folder and entrypoint.
 ENV DORKOS_HUB_SMOKE_ISOLATE=0
+ENV DORKOS_HUB_SMOKE_BIN="hub-entrypoint dorkos"
 HEALTHCHECK NONE
 ENTRYPOINT ["tini", "--", "node", "/opt/hub-smoke/run.mjs"]
 

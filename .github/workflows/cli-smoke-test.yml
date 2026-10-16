@@ -15,6 +15,7 @@ on:
       - '.dockerignore'
       - 'scripts/smoke-test.sh'
       - 'scripts/hub-smoke/**'
+      - 'scripts/hub-entrypoint.sh'
       - 'pnpm-lock.yaml'
       - '.github/workflows/cli-smoke-test.yml'
   workflow_dispatch:
@@ -202,6 +203,7 @@ jobs:
             Dockerfile
             .dockerignore
             scripts/hub-smoke
+            scripts/hub-entrypoint.sh
 
       - uses: actions/download-artifact@v8
         with:
@@ -210,5 +212,12 @@ jobs:
       - name: Build hub smoke image
         run: docker build --target hub-smoke -t dorkos-hub-smoke .
 
-      - name: Run hub smoke checks
-        run: docker run --rm dorkos-hub-smoke
+      # DorkOS Cloud mounts a new, empty volume owned by root at the data
+      # folder, so the run gets exactly that.
+      - name: Run hub smoke checks on an empty root-owned data folder
+        run: |
+          data="$RUNNER_TEMP/hub-data"
+          sudo mkdir -p "$data"
+          sudo chown root:root "$data"
+          sudo chmod 755 "$data"
+          docker run --rm -v "$data:/home/node/.dork" dorkos-hub-smoke

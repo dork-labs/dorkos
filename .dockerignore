@@ -4,3 +4,4 @@
 !dorkos-*.tgz
 !scripts/smoke-test.sh
 !scripts/hub-smoke/**
+!scripts/hub-entrypoint.sh
