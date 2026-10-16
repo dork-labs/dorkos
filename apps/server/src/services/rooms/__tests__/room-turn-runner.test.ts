@@ -2859,6 +2859,24 @@ describe('what power a room turn runs at (DOR-1917)', () => {
       }
     });
 
+    // Review B1/B2: Claude Code runs a leading `/name` and reads `@path` before any
+    // tool gate. Anyone's words but a person here's are marked so it never does.
+    it('marks the words untrusted for anyone but a person here, bridged strangers included', async () => {
+      await createSessionRoomTurnRunner().run(
+        request({ externalAuthor: true, permissionCeiling: 'runtime-default' })
+      );
+      await createSessionRoomTurnRunner().run(
+        request({ permissionCeiling: { asks: 'when-risky', reach: 'edit' } })
+      );
+      await createSessionRoomTurnRunner().run(request());
+
+      expect(triggered.map((call) => call.roomTurn?.untrustedText)).toEqual([
+        true,
+        true,
+        undefined,
+      ]);
+    });
+
     it.each(['codex', 'opencode'])('is refused on %s before anything starts', async (runtime) => {
       agentManifest = { runtime };
 

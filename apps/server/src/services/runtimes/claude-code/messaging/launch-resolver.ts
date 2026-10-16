@@ -96,6 +96,7 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createTeammateFenceHook } from '../teammate-fence-hook.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
+import { defuseFileReferences, defuseUntrustedPrompt } from '../prompt-defuse.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -235,7 +236,13 @@ export async function resolveLaunch(args: {
   // command when `/` starts the message (DOR-107). Verify the name against the
   // known command list; a cold SDK cache (null) can't rule out built-ins, so
   // command-shaped content passes through and the CLI rejects unknown names.
-  const commandName = detectSlashCommandName(content);
+  //
+  // Never for words somebody other than the person here wrote (DOR-2955): a
+  // stranger's `/name` would run that command, with the shell its definition
+  // allows, before any tool gate sees it. Their text goes out defused below.
+  const teammate = messageOpts?.roomTurn?.teammate === true;
+  const untrustedText = teammate || messageOpts?.roomTurn?.untrustedText === true;
+  const commandName = untrustedText ? null : detectSlashCommandName(content);
   let isCommandDispatch = false;
   if (commandName && opts.getKnownCommands) {
     const knownCommands = await opts.getKnownCommands();
@@ -280,7 +287,6 @@ export async function resolveLaunch(args: {
   // A teammate's turn (DOR-2955) is shown none of the agent's notes, and is told what it may
   // do. The block rides BOTH halves below, so it is in the relaunch digest: a warm process
   // launched with the owner's notes is never reused for a teammate, nor the other way round.
-  const teammate = messageOpts?.roomTurn?.teammate === true;
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
@@ -309,18 +315,23 @@ export async function resolveLaunch(args: {
   // preserve prompt cache hits on the static prefix. The user's `content` is
   // NEVER mutated: the prepend produces a separate `enrichedContent` and the
   // tags are stripped on render (ADR-0273).
-  let enrichedContent = content;
+  let enrichedContent: string;
   if (isCommandDispatch) {
     // DOR-107: a `/`-prefixed prompt must reach the CLI bare (leading whitespace
     // also breaks command parsing). NO context prepend on command turns. Retained.
     enrichedContent = content.trim();
   } else {
+    // Context blocks carry other people's words (a room's recent messages,
+    // their names), and Claude Code reads an `@path` anywhere in the message, so
+    // every block is defused; nobody types into one. The message itself is
+    // defused only when somebody other than the person here wrote it (DOR-2955).
     const contextBlocks = (messageOpts?.additionalContext ?? [])
       .map(renderContextEntry)
-      .filter(Boolean);
-    if (contextBlocks.length > 0) {
-      enrichedContent = `${contextBlocks.join('\n\n')}\n\n${content}`;
-    }
+      .filter(Boolean)
+      .map(defuseFileReferences);
+    const prompt = untrustedText ? defuseUntrustedPrompt(content) : content;
+    enrichedContent =
+      contextBlocks.length > 0 ? `${contextBlocks.join('\n\n')}\n\n${prompt}` : prompt;
   }
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
@@ -405,7 +416,11 @@ export async function resolveLaunch(args: {
     // can watch what a subagent is doing, not just a progress spinner. Mapped to
     // `subagent_text_delta` events in sdk-event-mapper.ts (SDK 0.2.119+).
     forwardSubagentText: true,
-    settingSources: ['local', 'project', 'user'],
+    // A teammate's turn (DOR-2955) loads no settings layer: each one would add
+    // the owner's CLAUDE.md files (and their @imports) to the prompt. Nothing
+    // that bounds the turn comes from them: the mode, the hooks (the teammate
+    // fence) and the tool gate are all options of this launch.
+    settingSources: teammate ? [] : ['local', 'project', 'user'],
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
@@ -452,6 +467,10 @@ export async function resolveLaunch(args: {
         // fixtures keep supplying the blocks a real model would have stopped
         // sending — so this is verified by one live turn per bump.
         CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+        // And none of Claude Code's own auto-memory for the folder, which it
+        // reads from the account whatever the setting layers say (DOR-2955).
+        // In the env, so it is in the relaunch digest with the layers above.
+        ...(teammate ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {}),
         // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
         // untouched. DorkOS used to raise it to the approval hold's cap, because
         // the variable governs every MCP server in the subprocess and a low value

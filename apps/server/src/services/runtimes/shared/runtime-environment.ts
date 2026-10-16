@@ -91,6 +91,8 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
     // resolver's own note for why the env var and not `allowedTools`.
     names.add('CLAUDE_CODE_ENABLE_TODO_TOOLS');
     if (input.purpose === 'turn') names.add('DORKOS_AGENT_TOKEN');
+    // A teammate's turn is launched without Claude Code's own auto-memory (DOR-2955).
+    if (input.purpose === 'turn') names.add('CLAUDE_CODE_DISABLE_AUTO_MEMORY');
   }
   if (input.runtime === 'codex' && input.purpose === 'turn') names.add('DORKOS_AGENT_TOKEN');
   if (input.runtime === 'opencode' && input.purpose === 'turn') {

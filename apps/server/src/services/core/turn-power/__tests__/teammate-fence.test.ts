@@ -92,6 +92,19 @@ describe('the teammate fence', () => {
     }
   });
 
+  it('lists the room’s canvas but reads no document on it, which can be a file off disk', () => {
+    expect(dorkos('read_canvas', { roomId: 'room-answered' })).toBeNull();
+    expect(dorkos('read_canvas', { roomId: 'room-answered', documentId: 'doc-1' })).toBe(
+      TEAMMATE_FENCE_DENIAL
+    );
+  });
+
+  it('counts any attachments value but an empty list as a file', () => {
+    expect(dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: '' })).toBe(
+      TEAMMATE_FENCE_DENIAL
+    );
+  });
+
   it('refuses a post to the room that carries a file, and lets one without through', () => {
     expect(
       dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: ['.env'] })

@@ -14,7 +14,7 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
-import { buildSystemPromptAppend } from '../context-builder.js';
+import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
 import {
   captureLaunchFingerprint,
@@ -208,6 +208,92 @@ describe('the launch options every Claude Code turn is given', () => {
       text: '<env>mock</env>',
       stable: '<env>mock</env>',
     });
+  });
+
+  // DOR-2955, review B1/B2: Claude Code reads `@path` and runs a leading `/name`
+  // before any tool gate sees them. Measured on the pinned binary; these pin the
+  // launcher half.
+  describe('words somebody other than the person here wrote', () => {
+    const ZW = '\u200B';
+    const resolveWith = (content: string, messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content,
+        session: makeSession(),
+        opts: makeOpts({ getKnownCommands: async () => ['/leak', '/compact'] }),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const stranger: MessageOpts = {
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', untrustedText: true },
+    };
+
+    it('never run as a command, and never read as a file', async () => {
+      const slash = await resolveWith('/leak', stranger);
+      expect(slash.enrichedContent).toBe(`${ZW}/leak`);
+      const at = await resolveWith('see @/etc/hosts', stranger);
+      expect(at.enrichedContent).toBe(`see ${ZW}@/etc/hosts`);
+    });
+
+    it('is the same for a teammate’s turn', async () => {
+      const launched = await resolveWith('/compact', {
+        roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+      });
+      expect(launched.enrichedContent).toBe(`${ZW}/compact`);
+    });
+
+    it('leaves the person here exactly as today: commands run bare, files are read', async () => {
+      expect((await resolveWith('/leak')).enrichedContent).toBe('/leak');
+      expect((await resolveWith('  /leak  ')).enrichedContent).toBe('/leak');
+      expect((await resolveWith('see @notes.md')).enrichedContent).toBe('see @notes.md');
+    });
+
+    it('defuses every context block, whoever wrote the message', async () => {
+      vi.mocked(renderContextEntry).mockReturnValueOnce(
+        '<room_context>bo: @/etc/hosts</room_context>'
+      );
+      const launched = await resolveWith('see @notes.md', {
+        additionalContext: [{ kind: 'room_context' } as never],
+      });
+      expect(launched.enrichedContent).toBe(
+        `<room_context>bo: ${ZW}@/etc/hosts</room_context>\n\nsee @notes.md`
+      );
+    });
+  });
+
+  it('launches a teammate’s turn with no setting layers and no auto-memory, in its own process', async () => {
+    // DOR-2955, review B3: every setting layer adds the owner's CLAUDE.md files, and
+    // Claude Code adds its own auto-memory for the folder whatever the layers say.
+    const session = makeSession();
+    const resolve = (messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session,
+        opts: makeOpts(),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const owner = await resolve();
+    const teammate = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+
+    expect(teammate.sdkOptions.settingSources).toEqual([]);
+    expect(teammate.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    expect(owner.sdkOptions.settingSources).toEqual(['local', 'project', 'user']);
+    expect(owner.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    // What bounds the turn is an option of the launch, never a setting layer.
+    expect(teammate.sdkOptions.hooks?.PreToolUse?.length).toBeGreaterThan(0);
+    expect(teammate.sdkOptions.canUseTool).toBeTypeOf('function');
+    const moved = compareLaunchFingerprints(
+      captureLaunchFingerprint(owner.launch),
+      captureLaunchFingerprint(teammate.launch)
+    );
+    expect(moved.action).toBe('relaunch');
+    if (moved.action === 'relaunch') {
+      expect(moved.changed).toEqual(expect.arrayContaining(['settingSources', 'env']));
+    }
   });
 
   it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {

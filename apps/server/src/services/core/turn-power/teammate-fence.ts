@@ -68,7 +68,8 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   read_room_history: THIS_ROOM,
   search_room_history: THIS_ROOM,
   get_room: THIS_ROOM,
-  read_canvas: THIS_ROOM,
+  // The list of what is on the room's canvas, but no document: one can be a file read off disk.
+  read_canvas: { kind: 'this-room', without: ['documentId'] },
   // Every other room the agent is in is the owner's business.
   list_member_rooms: refuse('lists every room the agent is in, the owner’s private ones included'),
   search_member_rooms: refuse('searches every room the agent is in'),
@@ -147,9 +148,8 @@ export function teammateFenceRefusal(fence: TeammateFence, call: TeammateFenceCa
   return carries ? TEAMMATE_FENCE_DENIAL : null;
 }
 
-/** Whether an argument was actually given: an empty list or string carries nothing. */
+/** Whether an argument was given at all: only an absent one, or an empty list, carries nothing. */
 function present(value: unknown): boolean {
   if (value === undefined || value === null) return false;
-  if (Array.isArray(value) || typeof value === 'string') return value.length > 0;
-  return true;
+  return !Array.isArray(value) || value.length > 0;
 }

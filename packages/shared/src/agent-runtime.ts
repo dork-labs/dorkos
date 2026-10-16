@@ -1084,6 +1084,14 @@ export interface MessageOpts extends SessionSettings {
      * Assigned with the rest of this marker, on every send.
      */
     teammate?: true;
+    /**
+     * True when a message this turn answers was written by anyone but a person
+     * on this machine: a stranger in a bridged chat, a space member, another
+     * agent (DOR-2955). The words then reach the model as words only: a
+     * runtime that honours it never runs them as a command and never expands a
+     * file reference in them.
+     */
+    untrustedText?: true;
   };
   /**
    * The home of the agent this turn is dispatched AS, when a server path names
