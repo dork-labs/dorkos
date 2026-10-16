@@ -1,0 +1,9 @@
+{
+  "by-account": "Keyed by an account (user_id). An agent's member row has no account, so these only ever reach people.",
+  "by-grant": "Keyed by the caller's own membership: a person's connection grant, session, or the id requireMember/requirePerson already resolved. An agent principal never reaches these.",
+  "agent-owner": "Joins members on an agent's owner_member_id. The owner is always a person.",
+  "owner-role": "Filters role to owner or admin. An agent row's role is fixed at member by members_agent_shape (0040).",
+  "person-write": "Inserts or updates a row the same transaction already found or created as a person.",
+  "whole-space": "Asks whether any member row exists, or deletes every row of a space being deleted. Kind does not matter.",
+  "named-member": "Reads one member a person-only record already names: an admission receipt, an owner replacement, a report's reporter."
+}

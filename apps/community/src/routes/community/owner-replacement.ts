@@ -46,6 +46,7 @@ async function noticeReader(
   if (principal.credentialKind === 'agent')
     throw new ApiError(403, 'FORBIDDEN', 'This connection cannot perform that action.');
   const member = await pool.query<Pick<Member, 'id' | 'user_id' | 'role' | 'community_id'>>(
+    // member-kind: by-grant
     'SELECT id,user_id,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
     [principal.id, principal.community_id]
   );
@@ -132,6 +133,7 @@ export function registerOwnerReplacementRoutes(
       ended_at: Date;
       was_yours: boolean;
     }>(
+      // member-kind: named-member
       `SELECT r.id,m.display_name,r.ended_at,r.prior_owner_member_id=$4 AS was_yours
        FROM owner_replacements r
        JOIN members m ON m.community_id=r.community_id AND m.id=r.new_owner_member_id
@@ -167,6 +169,7 @@ export function registerOwnerReplacementRoutes(
       if (!OBJECTION_LIFECYCLES.includes(lifecycle)) throw lifecycleError(lifecycle);
       const replacement = await lockReplacement(client, actor.community_id, body.replacementId);
       const current = await client.query<{ role: string }>(
+        // member-kind: by-grant
         'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
         [actor.id, actor.community_id]
       );

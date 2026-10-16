@@ -220,10 +220,12 @@ export function createCommunityApp({
     await transaction(pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(77281503)');
       const owner = await client.query(
+        // member-kind: owner-role
         "SELECT 1 FROM members WHERE role='owner' AND active LIMIT 1"
       );
       const communities = await client.query('SELECT 1 FROM communities LIMIT 1');
       const operators = await client.query('SELECT 1 FROM host_operators LIMIT 1');
+      // member-kind: whole-space
       const members = await client.query('SELECT 1 FROM members LIMIT 1');
       const users = await client.query('SELECT 1 FROM "user" LIMIT 1');
       if (
@@ -272,6 +274,7 @@ export function createCommunityApp({
       await client.query('SELECT pg_advisory_xact_lock(77281503)');
       const grantId = await bootstrapGrant(c, client, config);
       const occupied = await client.query(
+        // member-kind: whole-space
         `SELECT
            EXISTS(SELECT 1 FROM "user") OR
            EXISTS(SELECT 1 FROM communities) OR
@@ -309,6 +312,7 @@ export function createCommunityApp({
       const communityId = community.rows[0].id;
       const handle = await mintHandle(client, communityId, body.accountName);
       const member = await client.query<{ id: string }>(
+        // member-kind: person-write
         `INSERT INTO members(community_id,user_id,display_name,handle,role)
          VALUES($1,$2,$3,$4,'owner') RETURNING id`,
         [communityId, userId, body.accountName, handle]

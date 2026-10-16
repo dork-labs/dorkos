@@ -33,7 +33,7 @@ async function live(
 ) {
   await lockActiveCommunity(client, communityId, options);
   const result = await client.query<Member>(
-    'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    "SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR UPDATE",
     [id, communityId]
   );
   return result.rows[0];
@@ -50,6 +50,7 @@ export async function remove(
   action: string
 ) {
   await client.query(
+    // member-kind: person-write
     'UPDATE members SET active=false,removed_at=now() WHERE id=$1 AND community_id=$2',
     [target.id, target.community_id]
   );
@@ -161,6 +162,7 @@ export function registerMemberRoutes(
   app.get('/me', async (c) => {
     const actor = await requireMember(c, auth, pool);
     const result = await pool.query<Member & { handle: string; created_at: Date }>(
+      // member-kind: by-grant
       'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND community_id=$2 AND active',
       [actor.id, actor.community_id]
     );
@@ -191,7 +193,7 @@ export function registerMemberRoutes(
       await requireLiveRole(client, actor, ['owner', 'admin']);
       return client.query<Member & { handle: string; created_at: Date }>(
         `SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members
-         WHERE community_id=$1 AND active AND ($2::uuid IS NULL OR id>$2::uuid)
+         WHERE community_id=$1 AND kind='person' AND active AND ($2::uuid IS NULL OR id>$2::uuid)
          ORDER BY id LIMIT $3`,
         [actor.community_id, query.cursor ?? null, limit + 1]
       );
@@ -268,7 +270,8 @@ export function registerMemberRoutes(
         throw new ApiError(409, 'STATE_CONFLICT', 'Space lifecycle changed.');
       const lockedMembers = await client.query<Member>(
         `SELECT id,user_id,display_name,role,community_id FROM members
-         WHERE community_id=$1 AND id=ANY($2::uuid[]) AND active ORDER BY id FOR UPDATE`,
+         WHERE community_id=$1 AND id=ANY($2::uuid[]) AND kind='person' AND active
+         ORDER BY id FOR UPDATE`,
         [actor.community_id, [actor.id, body.successorMemberId]]
       );
       const current = lockedMembers.rows.find((member) => member.id === actor.id);
@@ -282,8 +285,10 @@ export function registerMemberRoutes(
         throw new ApiError(409, 'STATE_CONFLICT', 'That member already owns this space.');
       if (await memberIsLeaving(client, successor))
         throw new ApiError(409, 'STATE_CONFLICT', 'That member is leaving this space.');
+      // member-kind: person-write
       await client.query("UPDATE members SET role='member' WHERE id=$1", [current.id]);
       // Nobody can lift a mute on the owner, so becoming the owner ends one (0034).
+      // member-kind: person-write
       await client.query("UPDATE members SET role='owner',muted_until=NULL WHERE id=$1", [
         successor.id,
       ]);

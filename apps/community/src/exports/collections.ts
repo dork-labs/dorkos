@@ -100,7 +100,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
       select: `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email,
           m.muted_until,m.rules_accepted_version
         FROM members m LEFT JOIN "user" u ON u.id=m.user_id
-        WHERE m.community_id=$1 ${owner ? '' : 'AND m.id=$2'}`,
+        WHERE m.community_id=$1 AND m.kind='person' ${owner ? '' : 'AND m.id=$2'}`,
       keys: [uuidKey('m.id', 'id')],
       line: (row) =>
         JSON.stringify({

@@ -143,6 +143,7 @@ export function registerHostRoutes(
         );
       }
       const unsafe = await client.query(
+        // member-kind: whole-space
         `SELECT 1 WHERE
           EXISTS(SELECT 1 FROM members WHERE community_id=$1)
           OR EXISTS(SELECT 1 FROM channels WHERE community_id=$1)

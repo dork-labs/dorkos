@@ -333,6 +333,7 @@ export function registerAgentRoutes(
         owner_member_id: string;
         owner_role: Member['role'];
       }>(
+        // member-kind: agent-owner
         `SELECT actor.role AS actor_role,a.owner_member_id,owner.role AS owner_role
          FROM members actor
          JOIN agents a ON a.id=$1 AND a.community_id=actor.community_id AND a.active
@@ -368,6 +369,7 @@ export function registerAgentRoutes(
         owner_role: Member['role'];
         in_scope: boolean;
       }>(
+        // member-kind: agent-owner
         `SELECT a.owner_member_id,m.role AS owner_role,${grantScope('a', '$3::uuid')} AS in_scope
          FROM agents a JOIN members m ON m.id=a.owner_member_id
          WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active`,
@@ -388,6 +390,7 @@ export function registerAgentRoutes(
       const owner =
         role === 'admin' && isOtherMember
           ? await client.query<{ role: Member['role'] }>(
+              // member-kind: agent-owner
               'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
               [found.owner_member_id, actor.community_id]
             )

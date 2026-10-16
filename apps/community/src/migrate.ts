@@ -43,6 +43,7 @@ export const COMMUNITY_MIGRATIONS = [
   [37, '0037_entry_number_at_commit.sql'],
   [38, '0038_reserved_name_grants.sql'],
   [39, '0039_agent_availability.sql'],
+  [40, '0040_member_kinds.sql'],
 ] as const;
 
 /**
@@ -62,6 +63,21 @@ export function assertNoMigrationGap(applied: ReadonlySet<number>): void {
     );
 }
 
+/**
+ * Refuse to run on a database a newer release already migrated. This release does not know what
+ * those migrations changed: an older release reads agents as people once agents are members
+ * (specs/server-merge D10), and the way back from a newer schema is restoring a backup taken
+ * before it, never starting an older image on it.
+ */
+export function assertNotNewerSchema(applied: ReadonlySet<number>): void {
+  const known = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
+  const newest = Math.max(0, ...applied);
+  if (newest > known)
+    throw new Error(
+      `This database was upgraded by a newer release (community migration ${newest}; this release knows up to ${known}). Start that release, or restore a backup taken before the upgrade.`
+    );
+}
+
 /** Apply versioned community SQL migrations in a single database transaction. */
 export async function migrate(databaseUrl: string): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
@@ -77,6 +93,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
         await client.query<{ version: number }>('SELECT version FROM community_migrations')
       ).rows.map((row) => row.version)
     );
+    assertNotNewerSchema(applied);
     assertNoMigrationGap(applied);
     for (const [version, filename] of COMMUNITY_MIGRATIONS) {
       if (applied.has(version)) continue;

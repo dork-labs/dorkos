@@ -72,6 +72,7 @@ export async function lockRevocationMember(
   if (!community.rowCount)
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This space is unavailable.');
   const member = await client.query(
+    // member-kind: by-grant
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]
   );

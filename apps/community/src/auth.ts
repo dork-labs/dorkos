@@ -79,6 +79,7 @@ export function createCommunityAuth(
     const grant = verifyValue(readCookie(cookieHeader, 'community_bootstrap'), config.authSecret);
     if (grant) {
       const result = await pool.query(
+        // member-kind: owner-role
         `SELECT 1 FROM bootstrap_grants g
          WHERE g.token_hash=$1 AND g.consumed_at IS NULL AND g.expires_at>now()
            AND (
@@ -99,6 +100,7 @@ export function createCommunityAuth(
     const pending = verifyValue(readCookie(cookieHeader, 'community_admission'), config.authSecret);
     if (pending) {
       const result = await pool.query<{ community_id: string }>(
+        // member-kind: named-member
         `SELECT i.community_id FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
          JOIN members m ON m.id=i.issuer_member_id
          JOIN communities c ON c.id=i.community_id

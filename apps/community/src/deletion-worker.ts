@@ -422,6 +422,7 @@ export async function sweepCommunityDeletions(
     await client.query('DELETE FROM community_deletion_blob_progress WHERE community_id=$1', [
       job.community_id,
     ]);
+    // member-kind: whole-space
     await client.query('DELETE FROM members WHERE community_id=$1', [job.community_id]);
     await client.query(
       `UPDATE tenant_reconciliation SET community_id=NULL,state='dirty',validated_generation=NULL,

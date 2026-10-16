@@ -32,6 +32,7 @@ export async function recordSignInLinked(
   }
 ): Promise<void> {
   const audited = await client.query<{ id: string; community_id: string; member_id: string }>(
+    // member-kind: by-account
     `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,changed_fields)
      SELECT community_id,id,'member.sign_in_linked',id,$2::text[] FROM members
      WHERE id=ANY($1::uuid[]) ORDER BY community_id,id
@@ -40,6 +41,7 @@ export async function recordSignInLinked(
   );
   if (!input.notice || !audited.rowCount) return;
   const earliest = await client.query<{ id: string }>(
+    // member-kind: by-account
     `SELECT id FROM members WHERE id=ANY($1::uuid[]) AND active
      ORDER BY created_at,id LIMIT 1`,
     [input.memberIds]

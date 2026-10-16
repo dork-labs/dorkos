@@ -130,7 +130,8 @@ async function candidates(
 ): Promise<Candidate[]> {
   const result = await pool.query<Candidate>(
     `SELECT e.id,e.community_id,e.text,e.author_member_id,e.author_agent_id,
-       COALESCE(e.author_member_id,a.owner_member_id) AS owner_member_id,
+       CASE WHEN e.author_agent_id IS NULL THEN e.author_member_id ELSE a.owner_member_id END
+         AS owner_member_id,
        e.parent_entry_id,(ch.visibility='public') AS public,c.rules_text
      FROM entries e
      JOIN communities c ON c.id=e.community_id AND c.lifecycle='active'

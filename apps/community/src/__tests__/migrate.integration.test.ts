@@ -1918,3 +1918,226 @@ it('adds agent availability without touching rows, and the release before still 
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);
   }
 });
+
+// Purpose: the member-kinds migration (DOR-2876, server-merge D10, PR 1 of agents as members) is
+// additive. Every existing row becomes a person and is otherwise unchanged, and the member
+// statements v0.117.0 ships, copied here verbatim, still run on the new schema: admitting and
+// re-admitting, the directory, the member cap, the host's usage count, muting, erasure's husk,
+// the owner export's member rows and the import's member writer. So the release before can still
+// run on it. The new checks then refuse every agent row the next step must never write.
+it('adds member kinds without touching rows, and v0.117.0 still runs', async () => {
+  const name = `community_member_kinds_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    // Found by name, so renumbering the migration at merge time needs no change here.
+    await applyBefore(
+      db,
+      COMMUNITY_MIGRATIONS.find(([, filename]) => filename.endsWith('_member_kinds.sql'))![1]
+    );
+    const one = async (sql: string, params: unknown[] = []): Promise<string> =>
+      (await db.query<{ id: string }>(sql, params)).rows[0].id;
+    const community = await one(
+      "INSERT INTO communities(name,lifecycle) VALUES('Kinds','pending_owner') RETURNING id"
+    );
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES
+         ('u-p','P','p@kinds.test',true),('u-q','Q','q@kinds.test',true),('u-r','R','r@kinds.test',true)`
+    );
+    const person = await one(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,'u-p','Person','person','member') RETURNING id`,
+      [community]
+    );
+    const husk = await one(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role,active,erased_at)
+       VALUES($1,NULL,'Erased','erased-1','member',false,now()) RETURNING id`,
+      [community]
+    );
+    const imported = await one(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role,active,origin)
+       VALUES($1,NULL,'Imported','imported-1','admin',false,'imported') RETURNING id`,
+      [community]
+    );
+    const snapshot = async () =>
+      (await db.query('SELECT * FROM members ORDER BY id')).rows as Array<Record<string, unknown>>;
+    const before = await snapshot();
+
+    await migrate(url.toString());
+
+    expect(await snapshot()).toEqual(
+      before.map((row) => ({ ...row, kind: 'person', owner_member_id: null }))
+    );
+    expect([person, husk, imported]).toHaveLength(3);
+
+    // v0.117.0's member statements, verbatim, on the new schema.
+    const admitted = (
+      await db.query<{ id: string; active: boolean }>(
+        'INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,$5) RETURNING id,active',
+        [community, 'u-q', 'Q', 'q', 'member']
+      )
+    ).rows[0];
+    expect(admitted.active).toBe(true);
+    await db.query('UPDATE members SET active=false,removed_at=now() WHERE id=$1', [admitted.id]);
+    await db.query("UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1", [
+      admitted.id,
+    ]);
+    const directory = await db.query(
+      `SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members
+         WHERE community_id=$1 AND active AND ($2::uuid IS NULL OR id>$2::uuid)
+         ORDER BY id LIMIT $3`,
+      [community, null, 51]
+    );
+    expect(directory.rows.map((row) => row.id).sort()).toEqual([person, admitted.id].sort());
+    expect(
+      (
+        await db.query('SELECT count(*)::int AS n FROM members WHERE community_id=$1 AND active', [
+          community,
+        ])
+      ).rows
+    ).toEqual([{ n: 2 }]);
+    expect(
+      (
+        await db.query(
+          `SELECT (SELECT count(*)::int FROM members m WHERE m.community_id=c.id AND m.active) AS active_members
+           FROM communities c WHERE c.id=$1`,
+          [community]
+        )
+      ).rows
+    ).toEqual([{ active_members: 2 }]);
+    await db.query(
+      `UPDATE members SET muted_until=now()+make_interval(mins => $3)
+     WHERE id=$1 AND community_id=$2 RETURNING muted_until`,
+      [person, community, 5]
+    );
+    await db.query(
+      `UPDATE members SET display_name=$3,handle=$4,user_id=NULL,active=false,
+         removed_at=COALESCE(removed_at,now()),erased_at=now(),muted_until=NULL
+       WHERE id=$2 AND community_id=$1`,
+      [community, admitted.id, 'Erased member', 'erased-2']
+    );
+    const exported = await db.query(
+      `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email,
+          m.muted_until,m.rules_accepted_version
+        FROM members m LEFT JOIN "user" u ON u.id=m.user_id
+        WHERE m.community_id=$1`,
+      [community]
+    );
+    expect(exported.rows).toHaveLength(4);
+    await db.query(
+      `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,removed_at,
+         origin,muted_until,rules_accepted_version)
+       SELECT r.id,$2,NULL,r.display_name,r.handle,r.role,false,r.created_at,r.removed_at,'imported',
+         r.muted_until,r.rules_accepted_version
+       FROM jsonb_to_recordset($1::jsonb) AS r(id uuid,display_name text,handle text,role text,
+         created_at timestamptz,removed_at timestamptz,muted_until timestamptz,
+         rules_accepted_version integer)`,
+      [
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            display_name: 'From an export',
+            handle: 'from-export',
+            role: 'member',
+            created_at: new Date().toISOString(),
+            removed_at: null,
+            muted_until: null,
+            rules_accepted_version: 0,
+          },
+        ]),
+        community,
+      ]
+    );
+    expect(
+      (await db.query("SELECT count(*)::int AS n FROM members WHERE kind<>'person'")).rows
+    ).toEqual([{ n: 0 }]);
+
+    // The shape an agent row must take, and every way the checks refuse one.
+    const agentRow = (fields: Record<string, unknown>) => {
+      const row = {
+        id: randomUUID(),
+        user_id: null,
+        display_name: 'Agent',
+        handle: null,
+        role: 'member',
+        muted_until: null,
+        rules_accepted_version: 0,
+        kind: 'agent',
+        owner_member_id: person,
+        ...fields,
+      };
+      return db.query(
+        `INSERT INTO members(id,community_id,user_id,display_name,handle,role,muted_until,
+           rules_accepted_version,kind,owner_member_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          row.id,
+          community,
+          row.user_id,
+          row.display_name,
+          row.handle,
+          row.role,
+          row.muted_until,
+          row.rules_accepted_version,
+          row.kind,
+          row.owner_member_id,
+        ]
+      );
+    };
+    await agentRow({});
+    for (const [field, value] of [
+      ['user_id', 'u-r'],
+      ['handle', 'agent-handle'],
+      ['role', 'admin'],
+      ['muted_until', new Date()],
+      ['rules_accepted_version', 1],
+      ['owner_member_id', null],
+    ] as const)
+      await expect(agentRow({ [field]: value }), field).rejects.toThrow(/members_agent_shape/);
+    const self = randomUUID();
+    await expect(agentRow({ id: self, owner_member_id: self })).rejects.toThrow(
+      /members_agent_shape/
+    );
+    await expect(agentRow({ owner_member_id: randomUUID() })).rejects.toThrow(
+      /members_owner_tenant_fk/
+    );
+    await expect(agentRow({ kind: 'robot' })).rejects.toThrow(/members_(kind|agent_shape)/);
+    // A person still needs a handle and has no owner.
+    await expect(agentRow({ kind: 'person', user_id: 'u-r', handle: 'r' })).rejects.toThrow(
+      /members_agent_shape/
+    );
+    await expect(
+      agentRow({ kind: 'person', user_id: 'u-r', handle: null, owner_member_id: null })
+    ).rejects.toThrow(/members_agent_shape/);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+// Purpose: a release refuses to start on a database a newer release already migrated, and names
+// the version, rather than running quietly on a schema it does not understand (D10). The
+// database is left as it was.
+it('refuses to start on a schema a newer release migrated', async () => {
+  const name = `community_newer_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    await migrate(url.toString());
+    const newest = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
+    await db.query('INSERT INTO community_migrations(version) VALUES($1)', [newest + 1]);
+    await expect(migrate(url.toString())).rejects.toThrow(
+      `This database was upgraded by a newer release (community migration ${newest + 1}; this release knows up to ${newest})`
+    );
+    expect(
+      (await db.query('SELECT max(version)::int AS v FROM community_migrations')).rows
+    ).toEqual([{ v: newest + 1 }]);
+  } finally {
+    await db.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});

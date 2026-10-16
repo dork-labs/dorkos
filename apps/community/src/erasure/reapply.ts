@@ -74,6 +74,7 @@ export async function reapplyErasures(
       members++;
     } else {
       const communities = await pool.query<{ community_id: string }>(
+        // member-kind: by-account
         'SELECT DISTINCT community_id FROM members WHERE user_id=$1',
         [record.userId]
       );

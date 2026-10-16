@@ -145,6 +145,7 @@ export function registerOpenAdmissionRoutes(
       const channels = await lockAutoJoinChannels(client, tenant.communityId);
       await assertMemberRoom(client, tenant.communityId, { lock: true, userId: user.id });
       let member = await client.query<{ id: string; active: boolean }>(
+        // member-kind: by-account
         'SELECT id,active FROM members WHERE community_id=$1 AND user_id=$2 FOR UPDATE',
         [tenant.communityId, user.id]
       );
@@ -154,6 +155,7 @@ export function registerOpenAdmissionRoutes(
       if (!member.rows[0]) {
         const { handle, name } = await admittedIdentity(client, tenant.communityId, user.name);
         member = await client.query(
+          // member-kind: person-write
           "INSERT INTO members(community_id,user_id,display_name,handle,role) VALUES($1,$2,$3,$4,'member') RETURNING id,active",
           [tenant.communityId, user.id, name, handle]
         );
@@ -164,6 +166,7 @@ export function registerOpenAdmissionRoutes(
       } else {
         await clearFormerMembership(client, member.rows[0].id, tenant.communityId);
         await client.query(
+          // member-kind: person-write
           "UPDATE members SET active=true,removed_at=NULL,role='member' WHERE id=$1",
           [member.rows[0].id]
         );

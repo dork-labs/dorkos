@@ -95,10 +95,10 @@ export async function readEvidenceAuthor(
     handle: string;
     role: Author['role'];
     user_id: string | null;
-  }>('SELECT id,display_name,handle,role,user_id FROM members WHERE id=$1 AND community_id=$2', [
-    memberId,
-    communityId,
-  ]);
+  }>(
+    "SELECT id,display_name,handle,role,user_id FROM members WHERE id=$1 AND community_id=$2 AND kind='person'",
+    [memberId, communityId]
+  );
   const row = member.rows[0];
   if (!row) return { author: null, account: null, subjectMemberId: memberId };
   return {

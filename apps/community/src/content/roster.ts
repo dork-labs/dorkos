@@ -29,6 +29,7 @@ export const CHANNEL_ROSTER_SQL = `SELECT m.id,m.display_name,m.handle,m.role,NU
   FROM channel_members cm
   JOIN members m ON m.community_id=cm.community_id AND m.id=cm.member_id
   WHERE cm.channel_id=$1 AND cm.community_id=$2 AND m.community_id=$2 AND m.active
+    AND m.kind='person'
   UNION ALL
   SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,
     owner.display_name AS owner_display_name,'agent'::text AS kind,acm.joined_at,

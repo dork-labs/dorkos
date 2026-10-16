@@ -167,6 +167,7 @@ async function readClosureById(client: PoolClient, id: string): Promise<AccountC
 async function endAccess(client: PoolClient, userId: string): Promise<void> {
   await client.query('DELETE FROM session WHERE "userId"=$1', [userId]);
   await notifyAccountAccess(client, userId);
+  // member-kind: by-account
   const mine = 'SELECT id FROM members WHERE user_id=$1';
   await client.query(
     `UPDATE connection_grants SET revoked_at=now()
@@ -261,6 +262,7 @@ export async function closeAccount(
       'This account has operated this server, so it cannot be closed.'
     );
   const memberships = await client.query<{ community_id: string; role: string; active: boolean }>(
+    // member-kind: by-account
     `SELECT community_id,role,active FROM members WHERE user_id=$1
      ORDER BY community_id,id FOR UPDATE`,
     [input.accountId]

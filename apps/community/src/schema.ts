@@ -482,7 +482,8 @@ export const members = pgTable(
       .references(() => communities.id),
     userId: text('user_id').references(() => users.id),
     displayName: text('display_name').notNull(),
-    handle: text('handle').notNull(),
+    /** A person's typeable address; null for an agent, whose handle lives in `agents` (0040). */
+    handle: text('handle'),
     role: text('role').notNull(),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
@@ -494,13 +495,27 @@ export const members = pgTable(
     mutedUntil: timestamp('muted_until', { withTimezone: true }),
     /** The rules version this person accepted; 0 for none (0034). */
     rulesAcceptedVersion: integer('rules_accepted_version').notNull().default(0),
+    /** `person`, or `agent` for an agent's own membership row (0040, specs/server-merge D3). */
+    kind: text('kind').notNull().default('person'),
+    /** The person an agent row belongs to; null for a person (0040). */
+    ownerMemberId: uuid('owner_member_id'),
   },
   (table) => [
     check('members_rules_accepted_version_check', sql`${table.rulesAcceptedVersion} >= 0`),
     check(
       'members_user_presence',
-      sql`${table.userId} IS NOT NULL OR ${table.erasedAt} IS NOT NULL OR (${table.origin} = 'imported' AND NOT ${table.active})`
+      sql`${table.kind} = 'agent' OR ${table.userId} IS NOT NULL OR ${table.erasedAt} IS NOT NULL OR (${table.origin} = 'imported' AND NOT ${table.active})`
     ),
+    check('members_kind', sql`${table.kind} IN ('person','agent')`),
+    check(
+      'members_agent_shape',
+      sql`(${table.kind} = 'person' AND ${table.ownerMemberId} IS NULL AND ${table.handle} IS NOT NULL) OR (${table.kind} = 'agent' AND ${table.ownerMemberId} IS NOT NULL AND ${table.ownerMemberId} <> ${table.id} AND ${table.userId} IS NULL AND ${table.handle} IS NULL AND ${table.role} = 'member' AND ${table.mutedUntil} IS NULL AND ${table.rulesAcceptedVersion} = 0)`
+    ),
+    foreignKey({
+      columns: [table.communityId, table.ownerMemberId],
+      foreignColumns: [table.communityId, table.id],
+      name: 'members_owner_tenant_fk',
+    }),
     check('members_origin', sql`${table.origin} IN ('native','imported')`),
     check(
       'members_erased_husk',
@@ -509,7 +524,10 @@ export const members = pgTable(
     uniqueIndex('members_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('members_community_user_unique').on(table.communityId, table.userId),
     uniqueIndex('members_handle_unique').on(table.communityId, table.handle),
-    index('members_community_active_idx').on(table.communityId, table.active),
+    index('members_community_kind_active_idx').on(table.communityId, table.kind, table.active),
+    index('members_owner_idx')
+      .on(table.ownerMemberId)
+      .where(sql`${table.ownerMemberId} IS NOT NULL`),
     index('members_user_idx')
       .on(table.userId)
       .where(sql`${table.userId} IS NOT NULL`),
@@ -1550,50 +1568,7 @@ export const ownerQuotaWindows = pgTable(
 );
 // `audit_events` lives in `schema/audit-events.ts`, beside the watch-only checks it records (0036).
 
-/** Host-set caps for one community. A community without a row has no limit. */
-export const communityLimits = pgTable(
-  'community_limits',
-  {
-    communityId: uuid('community_id')
-      .primaryKey()
-      .references(() => communities.id),
-    maxActiveMembers: integer('max_active_members'),
-    maxStorageBytes: bigint('max_storage_bytes', { mode: 'number' }),
-    limitsVersion: integer('limits_version').notNull().default(1),
-    updatedAt: time('updated_at'),
-  },
-  (table) => [
-    check(
-      'community_limits_max_active_members_check',
-      sql`${table.maxActiveMembers} BETWEEN 1 AND 1000000`
-    ),
-    check('community_limits_max_storage_bytes_check', sql`${table.maxStorageBytes} >= 0`),
-    check('community_limits_limits_version_check', sql`${table.limitsVersion} > 0`),
-  ]
-);
-
-/** Host-set agents-per-person override for one member of one community. */
-export const memberLimitOverrides = pgTable(
-  'member_limit_overrides',
-  {
-    communityId: uuid('community_id').notNull(),
-    memberId: uuid('member_id').notNull(),
-    agentsPerMember: integer('agents_per_member').notNull(),
-    updatedAt: time('updated_at'),
-  },
-  (table) => [
-    primaryKey({ columns: [table.communityId, table.memberId] }),
-    foreignKey({
-      name: 'member_limit_overrides_member_tenant_fk',
-      columns: [table.communityId, table.memberId],
-      foreignColumns: [members.communityId, members.id],
-    }),
-    check(
-      'member_limit_overrides_agents_per_member_check',
-      sql`${table.agentsPerMember} BETWEEN 1 AND 1000`
-    ),
-  ]
-);
+// `community_limits` and `member_limit_overrides` live in `schema/limits.ts` (0012).
 
 /** A person's request to erase one membership or their whole account after 72 hours. */
 export const erasureRequests = pgTable(

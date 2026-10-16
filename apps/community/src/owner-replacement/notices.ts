@@ -48,6 +48,7 @@ interface NoticeSubject {
 
 async function readSubject(pool: Pool, notice: ClaimedNotice): Promise<NoticeSubject | null> {
   const row = await pool.query<NoticeSubject>(
+    // member-kind: named-member
     `SELECT r.state,r.reason,r.after_objection,r.after_withdrawal,r.claimable_after,
        r.notice_promised_at,
        c.name AS community_name,c.lifecycle,m.display_name AS new_owner_name

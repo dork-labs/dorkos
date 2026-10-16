@@ -123,6 +123,7 @@ export async function requireConnectionGrant(
   const result = await pool.query<
     Member & { scopes: string[]; grant_id: string; history_only: boolean }
   >(
+    // member-kind: by-grant
     `SELECT m.id,m.user_id,m.display_name,m.role,m.community_id,g.scopes,g.id AS grant_id,g.history_only
      FROM connection_grants g JOIN members m ON m.id=g.member_id
      WHERE g.token_hash=$1 AND g.community_id=$2 AND m.community_id=$2
@@ -181,6 +182,7 @@ export async function assertConnectionGrantCurrent(
   // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
   // mention each other's owners.
   const owner = await client.query(
+    // member-kind: by-grant
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [memberId, communityId]
   );
@@ -230,6 +232,7 @@ export async function requirePrincipal(
     scopes: string[];
     history_only: boolean;
   }>(
+    // member-kind: by-grant
     `SELECT m.id,m.display_name,m.community_id,g.scopes,g.history_only FROM connection_grants g
      JOIN members m ON m.id=g.member_id WHERE g.token_hash=$1
        AND g.community_id=$2 AND m.community_id=$2 AND g.revoked_at IS NULL AND m.active`,
@@ -266,6 +269,7 @@ export async function requirePrincipal(
     community_id: string;
     owner_member_id: string;
   }>(
+    // member-kind: agent-owner
     `SELECT a.id,a.display_name,a.community_id,a.owner_member_id FROM agent_credentials ac
      JOIN agents a ON a.id=ac.agent_id JOIN members m ON m.id=a.owner_member_id
      WHERE ac.token_hash=$1 AND ac.community_id=$2 AND a.community_id=$2
@@ -328,6 +332,7 @@ export async function assertPrincipalCurrentInTransaction(
     throw lifecycleError(lifecycle ?? 'unavailable');
   if (principal.kind === 'agent') {
     const current = await client.query(
+      // member-kind: agent-owner
       `SELECT 1 FROM agent_credentials ac JOIN agents a ON a.id=ac.agent_id
        JOIN members owner ON owner.id=a.owner_member_id
        WHERE ac.agent_id=$1 AND ac.token_hash=$2 AND ac.revoked_at IS NULL
@@ -338,6 +343,7 @@ export async function assertPrincipalCurrentInTransaction(
     if (current.rowCount) return;
   } else if (principal.credentialKind === 'grant') {
     const current = await client.query(
+      // member-kind: by-grant
       `SELECT 1 FROM connection_grants g JOIN members m ON m.id=g.member_id
        WHERE g.member_id=$1 AND g.token_hash=$2 AND g.revoked_at IS NULL
          AND g.community_id=$3 AND m.community_id=$3
@@ -351,6 +357,7 @@ export async function assertPrincipalCurrentInTransaction(
     // Member removal locks M then deletes S. Take those row locks in the same
     // order; a joined FOR SHARE can lock S first and deadlock with removal.
     const member = await client.query<{ user_id: string }>(
+      // member-kind: by-grant
       'SELECT user_id FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
       [principal.id, principal.community_id]
     );
@@ -385,6 +392,7 @@ export async function lockPrincipalAuthority(
   // post holds the channel's sequence, so FOR UPDATE here could deadlock two posts that
   // mention each other's owners.
   const owner = await client.query(
+    // member-kind: agent-owner
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR NO KEY UPDATE',
     [principal.ownerMemberId, principal.community_id]
   );
@@ -432,6 +440,7 @@ export async function requireMember(
     throw error;
   }
   const result = await pool.query<Member>(
+    // member-kind: by-account
     'SELECT id,user_id,display_name,role,community_id FROM members WHERE user_id=$1 AND community_id=$2 AND active',
     [session.user.id, tenant.communityId]
   );
@@ -540,6 +549,7 @@ export async function refuseIfClearedSinceStart(
 /** The account behind a membership, read without a lock, for {@link refuseIfClearedSinceStart}. */
 async function memberUserId(client: PoolClient, memberId: string): Promise<string | null> {
   const row = await client.query<{ user_id: string | null }>(
+    // member-kind: by-grant
     'SELECT user_id FROM members WHERE id=$1',
     [memberId]
   );
@@ -560,6 +570,7 @@ export async function requireLiveRole(
   await lockActiveCommunity(client, member.community_id, options);
   await refuseIfClearedSinceStart(client, member.user_id);
   const result = await client.query<{ role: Member['role'] }>(
+    // member-kind: by-grant
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [member.id, member.community_id]
   );

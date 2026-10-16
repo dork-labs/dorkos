@@ -82,6 +82,7 @@ export async function clearAccountAccess(
   const links = [...removed].filter((provider) => provider !== 'credential').sort();
   if (links.length)
     await client.query(
+      // member-kind: by-account
       `INSERT INTO audit_events(community_id,action,subject_id,changed_fields)
        SELECT community_id,'member.sign_in_links_removed',id,$2::text[] FROM members
        WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,

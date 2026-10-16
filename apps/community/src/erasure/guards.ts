@@ -60,6 +60,7 @@ export async function readmissionBlocked(
   userId: string
 ): Promise<boolean> {
   const result = await client.query(
+    // member-kind: by-account
     `SELECT 1 FROM erasure_requests r
      WHERE r.state='running' AND (
        (r.kind='account' AND r.user_id=$2)
@@ -79,6 +80,7 @@ export async function readmissionBlocked(
  * belongs to, for an account erasure). Such an erasure waits, so the copy for the authorities is
  * what was there at the takedown.
  */
+// member-kind: by-account
 export const ERASURE_WAITS_ON_TAKEDOWN_SQL = `EXISTS (
   SELECT 1 FROM community_takedowns t
   WHERE t.target_kind='community'
@@ -97,6 +99,7 @@ export const ERASURE_WAITS_ON_TAKEDOWN_SQL = `EXISTS (
  * waits until the hold is released. A person's own request is not held: a legal hold does not
  * stop anyone erasing themselves (OPERATIONS.md, "Legal holds").
  */
+// member-kind: by-account
 export const ERASURE_WAITS_ON_LEGAL_HOLD_SQL = `(EXISTS (
   SELECT 1 FROM account_closures ac
   WHERE ac.erasure_request_id=COALESCE(r.parent_request_id,r.id)

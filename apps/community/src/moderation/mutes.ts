@@ -22,7 +22,7 @@ export async function muteMember(
 ): Promise<Date> {
   const { actor } = input;
   const target = await client.query<{ id: string; role: Member['role'] }>(
-    'SELECT id,role FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+    "SELECT id,role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR UPDATE",
     [input.targetId, actor.communityId]
   );
   const row = target.rows[0];
@@ -31,6 +31,7 @@ export async function muteMember(
   if (!outranks(actor.role, row.role))
     throw new ApiError(403, 'FORBIDDEN', 'This member cannot be muted by your role.');
   const updated = await client.query<{ muted_until: Date }>(
+    // member-kind: person-write
     `UPDATE members SET muted_until=now()+make_interval(mins => $3)
      WHERE id=$1 AND community_id=$2 RETURNING muted_until`,
     [row.id, actor.communityId, input.minutes]

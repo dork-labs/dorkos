@@ -74,6 +74,7 @@ const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
   wroteAll(
     await insertRows(
       client,
+      // member-kind: person-write
       `INSERT INTO members(id,community_id,user_id,display_name,handle,role,active,created_at,removed_at,
          origin,muted_until,rules_accepted_version)
        SELECT r.id,$2,NULL,r.display_name,r.handle,r.role,false,r.created_at,r.removed_at,'imported',
@@ -112,10 +113,10 @@ const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
 const writeAgents: BatchWriter<'agents'> = async (client, rows, scope) => {
   const ids = rows.map((agent) => scope.derive(agent.id));
   // No ID is both a member and an agent, so a mention resolves to exactly one author.
-  const clash = await client.query('SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2)', [
-    scope.communityId,
-    ids,
-  ]);
+  const clash = await client.query(
+    "SELECT 1 FROM members WHERE community_id=$1 AND id=ANY($2) AND kind IN ('person','agent')",
+    [scope.communityId, ids]
+  );
   invalid(Boolean(clash.rowCount));
   wroteAll(
     await insertRows(
@@ -333,7 +334,7 @@ const writeEntries: BatchWriter<'entries'> = async (client, rows, scope) => {
       `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)
        SELECT r.entry_id,r.position,$2,m.id,a.id
        FROM jsonb_to_recordset($1::jsonb) AS r(entry_id uuid,position integer,target uuid)
-       LEFT JOIN members m ON m.community_id=$2 AND m.id=r.target
+       LEFT JOIN members m ON m.community_id=$2 AND m.id=r.target AND m.kind='person'
        LEFT JOIN agents a ON a.community_id=$2 AND a.id=r.target
        ON CONFLICT DO NOTHING`,
       mentions,

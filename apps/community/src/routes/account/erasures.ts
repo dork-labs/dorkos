@@ -160,6 +160,7 @@ export function registerAccountErasureRoutes(
       removed_at: Date | null;
       erasure_id: string | null;
     }>(
+      // member-kind: by-account
       `SELECT c.id AS community_id,c.name,m.removed_at,r.id AS erasure_id
        FROM members m JOIN communities c ON c.id=m.community_id
        LEFT JOIN erasure_requests r ON r.kind='membership' AND r.community_id=m.community_id
@@ -189,6 +190,7 @@ export function registerAccountErasureRoutes(
     const recent = `(r.state IN ('scheduled','running')
       OR (r.state='cancelled' AND r.cancelled_at>now()-interval '30 days'))`;
     const result = await pool.query<ErasureRow>(
+      // member-kind: by-account
       `SELECT ${ERASURE_COLUMNS},NULL::text AS community_name FROM erasure_requests r
        WHERE r.kind='account' AND r.user_id=$1 AND ${recent}
        UNION ALL
@@ -227,6 +229,7 @@ export function registerAccountErasureRoutes(
         role: 'owner' | 'admin' | 'member';
         active: boolean;
       }>(
+        // member-kind: by-account
         `SELECT m.id,m.community_id,c.name AS community_name,m.role,m.active
          FROM members m JOIN communities c ON c.id=m.community_id
          WHERE m.user_id=$1 ORDER BY m.community_id,m.id FOR UPDATE OF m`,
@@ -292,6 +295,7 @@ export function registerAccountErasureRoutes(
     if (!id.success) throw new ApiError(404, 'NOT_FOUND', 'Erasure not found.');
     const row = await transaction(pool, async (client) => {
       const found = await client.query<ErasureRow & { due: boolean }>(
+        // member-kind: by-account
         `SELECT ${ERASURE_COLUMNS},c.name AS community_name,r.execute_after<=now() AS due
          FROM erasure_requests r
          LEFT JOIN members m ON m.id=r.member_id AND m.community_id=r.community_id

@@ -186,6 +186,7 @@ export async function claimOwnerReplacement(
       "This account is being deleted, so it can't take ownership."
     );
   const members = await client.query<LockedMember>(
+    // member-kind: owner-role
     `SELECT id,community_id,user_id,role,active FROM members
      WHERE community_id=$1 AND ((role='owner' AND active) OR user_id=$2)
      ORDER BY id FOR UPDATE`,
@@ -207,14 +208,17 @@ export async function claimOwnerReplacement(
     );
 
   // The swap, as a transfer does it: the one-owner index needs the old owner demoted first.
+  // member-kind: person-write
   await client.query("UPDATE members SET role='member' WHERE id=$1", [owner.id]);
   let memberId: string;
   if (own?.active) {
+    // member-kind: person-write
     await client.query("UPDATE members SET role='owner',muted_until=NULL WHERE id=$1", [own.id]);
     memberId = own.id;
   } else if (own) {
     await clearFormerMembership(client, own.id, found.community_id, { staff: true });
     await client.query(
+      // member-kind: person-write
       "UPDATE members SET active=true,removed_at=NULL,role='owner',muted_until=NULL WHERE id=$1",
       [own.id]
     );
@@ -223,6 +227,7 @@ export async function claimOwnerReplacement(
   } else {
     const handle = await mintHandle(client, found.community_id, claimant.name);
     const inserted = await client.query<{ id: string }>(
+      // member-kind: person-write
       `INSERT INTO members(community_id,user_id,display_name,handle,role)
        VALUES($1,$2,$3,$4,'owner') RETURNING id`,
       [found.community_id, claimant.userId, claimant.name, handle]

@@ -63,13 +63,14 @@ export function registerConductRoutes(
     await transaction(pool, async (client) => {
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
       const target = await client.query<{ role: Member['role'] }>(
-        'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
+        "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR UPDATE",
         [targetId, actor.community_id]
       );
       if (!target.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
       if (!outranks(role, target.rows[0].role))
         throw new ApiError(403, 'FORBIDDEN', 'This member cannot be unmuted by your role.');
       const cleared = await client.query(
+        // member-kind: person-write
         'UPDATE members SET muted_until=NULL WHERE id=$1 AND muted_until>now() RETURNING id',
         [targetId]
       );
@@ -94,7 +95,8 @@ export function registerConductRoutes(
         muted_until: Date;
       }>(
         `SELECT id,display_name,handle,muted_until FROM members
-         WHERE community_id=$1 AND active AND muted_until>now() AND role<>'owner'
+         WHERE community_id=$1 AND kind='person' AND active AND muted_until>now()
+           AND role<>'owner'
          ORDER BY muted_until,id LIMIT 500`,
         [actor.community_id]
       );
@@ -114,6 +116,7 @@ export function registerConductRoutes(
   app.get('/me/standing', async (c) => {
     const { member: actor } = await requirePerson(c, auth, pool, 'read');
     const row = await pool.query<{ muted_until: Date | null }>(
+      // member-kind: by-grant
       `SELECT CASE WHEN muted_until>now() AND role<>'owner' THEN muted_until END AS muted_until
        FROM members WHERE id=$1 AND community_id=$2`,
       [actor.id, actor.community_id]
@@ -131,6 +134,7 @@ export function registerConductRoutes(
       rules_version: number;
       accepted: number;
     }>(
+      // member-kind: by-grant
       `SELECT c.rules_text,c.rules_version,m.rules_accepted_version AS accepted
        FROM communities c JOIN members m ON m.community_id=c.id
        WHERE c.id=$1 AND m.id=$2`,
@@ -166,6 +170,7 @@ export function registerConductRoutes(
       const version = updated.rows[0].rules_version;
       // The editor accepts their own rules: they wrote them.
       await client.query(
+        // member-kind: by-grant
         'UPDATE members SET rules_accepted_version=$2 WHERE id=$1 AND community_id=$3',
         [actor.id, version, actor.community_id]
       );
@@ -198,6 +203,7 @@ export function registerConductRoutes(
       if (!current?.rules_text || current.rules_version !== body.version)
         throw new ApiError(409, 'STATE_CONFLICT', 'The rules changed. Read them again first.');
       await client.query(
+        // member-kind: by-grant
         'UPDATE members SET rules_accepted_version=$2 WHERE id=$1 AND community_id=$3',
         [actor.id, body.version, actor.community_id]
       );
@@ -270,6 +276,7 @@ export function registerConductRoutes(
         role: Member['role'];
         created_at: Date;
       }>(
+        // member-kind: by-grant
         `UPDATE members SET display_name=$3 WHERE id=$1 AND community_id=$2
          RETURNING id,display_name,handle,role,created_at`,
         [actor.id, actor.community_id, displayName]

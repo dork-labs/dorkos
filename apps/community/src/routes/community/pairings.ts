@@ -117,6 +117,7 @@ async function requirePairingMember(
   }
   await refuseIfClearedSinceStart(client, actor.user_id);
   const member = await client.query(
+    // member-kind: by-grant
     'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
     [actor.id, actor.community_id]
   );
@@ -431,6 +432,7 @@ export function registerPairingRoutes(
       );
       const approverId = approver.rows[0]?.member_id ?? null;
       if (approverId)
+        // member-kind: by-grant
         await client.query('SELECT 1 FROM members WHERE id=$1 AND community_id=$2 FOR SHARE', [
           approverId,
           community.communityId,
@@ -458,6 +460,7 @@ export function registerPairingRoutes(
       if (row.member_id !== approverId)
         throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request changed. Try again.');
       const member = await client.query(
+        // member-kind: by-grant
         'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
         [row.member_id, community.communityId]
       );

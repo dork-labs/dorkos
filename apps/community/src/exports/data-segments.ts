@@ -187,7 +187,10 @@ interface EntrySqlRow {
   payload_hash: string;
 }
 
-const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq::text AS seq,e.author_member_id,e.author_agent_id,
+// Format 2 names exactly one author: an agent's message carries only the agent, even once the
+// agent has its own member row with the same id (specs/server-merge/03-agents-as-members.md).
+const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq::text AS seq,
+  CASE WHEN e.author_agent_id IS NULL THEN e.author_member_id END AS author_member_id,e.author_agent_id,
   e.author_display_name,e.text,
   COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position)
             FROM entry_mentions em WHERE em.entry_id=e.id AND em.community_id=$1),'{}'::uuid[]) AS mentions,

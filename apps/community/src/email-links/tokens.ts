@@ -164,6 +164,7 @@ export async function lockLinkAccount(
   const user = await client.query('SELECT 1 FROM "user" WHERE id=$1 FOR UPDATE', [userId]);
   if (!user.rowCount) return null;
   const members = await client.query<{ id: string }>(
+    // member-kind: by-account
     'SELECT id FROM members WHERE user_id=$1 ORDER BY community_id,id FOR UPDATE',
     [userId]
   );
@@ -209,6 +210,7 @@ export async function auditAccount(
   changedFields: readonly string[]
 ): Promise<void> {
   await client.query(
+    // member-kind: by-account
     `INSERT INTO audit_events(community_id,actor_member_id,action,subject_id,changed_fields)
      SELECT community_id,id,$2,id,$3::text[] FROM members
      WHERE id=ANY($1::uuid[]) ORDER BY community_id,id`,

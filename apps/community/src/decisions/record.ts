@@ -168,7 +168,8 @@ export async function fileCheckReport(
          JOIN entries re ON re.id=r.entry_id AND re.community_id=r.community_id
          LEFT JOIN agents ra ON ra.id=re.author_agent_id
          WHERE r.community_id=$1 AND r.status='open' AND r.source='check' AND r.check_name=$3
-           AND COALESCE(re.author_member_id,ra.owner_member_id)=$6) < $7
+           AND CASE WHEN re.author_agent_id IS NULL THEN re.author_member_id
+             ELSE ra.owner_member_id END=$6) < $7
      ON CONFLICT (entry_id,check_name) WHERE source='check' DO NOTHING
      RETURNING id`,
     [

@@ -264,7 +264,7 @@ export function registerChannelRoutes(
       await requireLiveRole(client, actor, ['owner', 'admin']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       const target = await client.query(
-        'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+        "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [body.memberId, actor.community_id]
       );
       if (!target.rowCount) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
@@ -284,7 +284,7 @@ export function registerChannelRoutes(
       const channel = await lockChannel(client, c.req.param('id'), actor);
       const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
       const target = await client.query<{ role: Member['role'] }>(
-        'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+        "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [c.req.param('memberId'), actor.community_id]
       );
       if (!target.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
@@ -321,7 +321,8 @@ export function registerChannelRoutes(
         role: Member['role'];
         joined_at: Date;
       }>(
-        `UPDATE members SET role=$1 WHERE id=$2 AND community_id=$3 AND active AND role<>'owner'
+        `UPDATE members SET role=$1
+         WHERE id=$2 AND community_id=$3 AND kind='person' AND active AND role<>'owner'
          RETURNING id,display_name,handle,role,created_at AS joined_at`,
         [body.role, c.req.param('id'), actor.community_id]
       );
