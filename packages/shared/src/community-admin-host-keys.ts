@@ -35,6 +35,12 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
    * other scope implies it.
    */
   'communities:reserved_names',
+  /**
+   * List the spaces an account belongs to, found by its single sign-on identity: each space's id,
+   * name, address, the person's role and whether it is open or archived. Never anything anyone
+   * wrote. No other scope implies it, `accounts:close` included.
+   */
+  'accounts:read',
 ]);
 /** A key holds each scope at most once, so it can hold at most every scope there is. */
 const hostApiKeyScopes = z

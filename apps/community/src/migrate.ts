@@ -47,6 +47,7 @@ export const COMMUNITY_MIGRATIONS = [
   [41, '0041_compatibility_floor.sql'],
   [42, '0042_agents_as_members.sql'],
   [43, '0043_export_format_3.sql'],
+  [44, '0044_accounts_read_scope.sql'],
 ] as const;
 
 /**

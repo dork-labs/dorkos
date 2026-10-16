@@ -1,5 +1,5 @@
 /**
- * Contract for host API keys (specs/server-merge step 1, DOR-2875): the key format, the ten
+ * Contract for host API keys (specs/server-merge step 1, DOR-2875): the key format, the eleven
  * scopes, who may issue, rotate and revoke a key (only a host operator's session, never a key),
  * and the refusals a caller sees. The host API's callers hold these keys, so a deliberate change
  * updates this file in the same PR, says so in the PR description, and is agreed with Cloud first.
@@ -16,7 +16,7 @@ import { TENANCY_PASSWORD } from '../tenancy-test-harness.js';
 import { contractSuite } from './contract.js';
 import { asOperator, startSpace, withKey, type SpaceFixture } from './space-fixture.js';
 
-/** The ten scopes a key can hold, as the host API's callers name them. */
+/** The eleven scopes a key can hold, as the host API's callers name them. */
 const SCOPES = [
   'communities:read',
   'communities:write',
@@ -28,6 +28,7 @@ const SCOPES = [
   'communities:erasure_journal',
   'accounts:close',
   'communities:reserved_names',
+  'accounts:read',
 ] as const;
 
 // Status and code only: a caller acts on those, never on the English message.
@@ -44,7 +45,7 @@ const issue = (scopes: readonly string[], password = TENANCY_PASSWORD) => ({
 });
 
 describe('host API key format', () => {
-  it('is dkh_ and 43 base64url characters, with the ten scopes', () => {
+  it('is dkh_ and 43 base64url characters, with the eleven scopes', () => {
     // Purpose: fails if the key format or the scope list changes under the host API's callers.
     expect(HOST_API_KEY_PATTERN.source).toBe('^dkh_[A-Za-z0-9_-]{43}$');
     expect(CommunityAdminHostApiKeyScopeSchema.options).toEqual(SCOPES);

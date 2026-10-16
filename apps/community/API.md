@@ -103,6 +103,7 @@ Host routes manage communities as records. They never return channels, messages,
 | Owner replacement     | `POST`, `GET /api/v1/host/communities/:id/owner-replacements`; `POST /api/v1/host/communities/:id/owner-replacements/:replacementId/cancel`, `/claim-token`                                                                                                                         | `communities:ownership`, which no other permission includes      |
 | Account closure       | `POST /api/v1/host/accounts/lookup`; `GET`, `POST /api/v1/host/accounts/:accountId/closure`; `POST /api/v1/host/accounts/:accountId/closure/cancel`                                                                                                                                 | `accounts:close`, which no other permission includes             |
 | Reserved web address  | `POST /api/v1/host/communities/reserved-name`                                                                                                                                                                                                                                       | `communities:reserved_names`, which no other permission includes |
+| Account's spaces      | `POST /api/v1/host/accounts/spaces`                                                                                                                                                                                                                                                 | `accounts:read`, which no other permission includes              |
 
 A key is `dkh_` followed by 43 random characters. The server keeps only its SHA-256 hash, so the full key is shown once, in the response that creates it, with `Cache-Control: no-store`. The first 10 characters are kept as a `prefix` so people can tell keys apart.
 
@@ -263,6 +264,34 @@ Each close and cancel writes one host audit row, `account.close` or `account.clo
 | `409`  | `STATE_CONFLICT`         | The account operates this host, is already closed, or is already being erased; or the erasure has started, so it cannot be cancelled |
 | `409`  | `IDEMPOTENCY_CONFLICT`   | The key was used for a different request                                                                                             |
 | `429`  | `RATE_LIMITED`           | This person or key has reached `COMMUNITY_ACCOUNT_CLOSURES_PER_DAY`                                                                  |
+
+### List the spaces an account belongs to
+
+`POST /api/v1/host/accounts/spaces` lists the spaces an account belongs to, so a host's own account service can show a person where they are a member. It needs `accounts:read`, which no other permission includes (`accounts:close` does not), or a host operator's session. It takes `{ issuer, subject }`, the same single sign-on identity as [finding an account](#close-someones-account), as a `POST` so the identity never lands in a URL or an access log. A host without single sign-on, or another issuer, is `409 STATE_CONFLICT`. An identity no account here signs in with answers an empty list, never `404`.
+
+It answers (`CommunityAdminAccountSpacesResponseSchema`):
+
+```json
+{
+  "spaces": [
+    {
+      "communityId": "…",
+      "name": "…",
+      "url": "https://…/c/…",
+      "role": "owner",
+      "state": "active"
+    }
+  ],
+  "truncated": false
+}
+```
+
+- Only the account's own memberships as a person count, never an agent's, and only current ones: a membership that was removed, banned or erased is left out.
+- Only a space that is `active` or `archived` is listed. A space that is held, suspended, waiting to be deleted or still waiting for an owner is left out.
+- `role` is `owner`, `admin` or `member`. `url` is the space's address on this server, `/c/<communityId>`.
+- Spaces are sorted by name. At most 500 are listed; `truncated` is `true` when the account belongs to more.
+
+Nothing else is sent: no counts, no other members, nothing anyone wrote. Each answer logs one line, `{"event":"community.account.spaces","accountId","actorKind","actorId","count","truncated"}`, with `accountId` `null` when no account matched. The identity itself is never logged.
 
 ### Replace an owner who has left
 

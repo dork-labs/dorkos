@@ -555,6 +555,7 @@ describe('the communities:ownership scope', () => {
     'communities:erasure_journal',
     'accounts:close',
     'communities:reserved_names',
+    'accounts:read',
   ];
 
   // Purpose: fails if the database refuses the new scope, accepts an unknown one, or does not

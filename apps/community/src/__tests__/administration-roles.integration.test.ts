@@ -1026,6 +1026,17 @@ const actions: Action<unknown>[] = [
       body: { issuer: 'https://issuer.example.test', subject: 'someone' },
     }),
   }),
+  define({
+    rule: 'List the spaces an account belongs to: host operator only; no single sign-on here',
+    route: 'POST /host/accounts/spaces',
+    allowed: HOST_ROLES,
+    status: 409,
+    call: () => ({
+      method: 'POST',
+      path: '/api/v1/host/accounts/spaces',
+      body: { issuer: 'https://issuer.example.test', subject: 'someone' },
+    }),
+  }),
   define<{ id: string }>({
     rule: 'Close an account: host operator with their password; no community role',
     route: 'POST /host/accounts/:accountId/closure',
