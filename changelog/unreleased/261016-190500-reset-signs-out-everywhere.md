@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): reset-password signs out everywhere, sign-ins last 30 days, the MCP token loads on first use (DOR-2968 part 1)'
+  - 'fix(server): a broken MCP token file answers as no token instead of failing Settings (DOR-2968 part 1)'
 ---
 
 ### Changed

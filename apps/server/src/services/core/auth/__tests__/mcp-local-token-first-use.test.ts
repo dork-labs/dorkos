@@ -86,4 +86,15 @@ describe('the local MCP token on first use', () => {
     state.askOnThisComputer = false;
     expect(getMcpLocalToken()).toMatch(/^dork_mcp_local_[0-9a-f]{64}$/);
   });
+
+  it('answers null, once and quietly, for a blank token file instead of failing every request', async () => {
+    fs.writeFileSync(path.join(state.dorkHome, 'mcp-local-token'), '   \n', { mode: 0o600 });
+    const { getMcpLocalToken, getMcpLocalTokenPath } = await import('../mcp-local-token.js');
+    const { logger } = await import('../../../../lib/logger.js');
+
+    expect(() => getMcpLocalToken()).not.toThrow();
+    expect(getMcpLocalToken()).toBeNull();
+    expect(() => getMcpLocalTokenPath()).not.toThrow();
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+  });
 });

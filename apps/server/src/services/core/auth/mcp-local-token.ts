@@ -72,6 +72,9 @@ let cachedToken: string | null = null;
 /** The resolved token file path, cached so a helpful 401 can name it. */
 let cachedPath: string | null = null;
 
+/** Set once a first-use resolve failed, so a broken file is not retried per request. */
+let lazyResolveFailed = false;
+
 /**
  * Resolve this instance's local MCP token.
  *
@@ -156,6 +159,7 @@ export function rotateMcpLocalToken(dorkHome: string): string {
   logger.info('[MCP] Rotated the per-instance local MCP token', { path: tokenPath });
   cachedToken = generated;
   cachedPath = tokenPath;
+  lazyResolveFailed = false;
   return generated;
 }
 
@@ -175,10 +179,21 @@ export function getMcpLocalToken(): string | null {
   // works in. Asked while it does ask, there is nothing to mint.
   if (
     cachedToken === null &&
+    !lazyResolveFailed &&
     !env.MCP_API_KEY?.trim() &&
     configManager.get('auth')?.enabled !== true
   ) {
-    resolveMcpLocalToken(resolveDorkHome());
+    try {
+      resolveMcpLocalToken(resolveDorkHome());
+    } catch (err) {
+      // A blank or unreadable token file, or a data folder DorkOS cannot
+      // write: answer as "no token" (Settings already says so) rather than
+      // failing `/api/config` and every `/mcp` call. Said once, not per request.
+      lazyResolveFailed = true;
+      logger.warn('[MCP] Could not load the local MCP token; apps on this computer need a key', {
+        error: (err as Error).message,
+      });
+    }
   }
   return cachedToken;
 }
