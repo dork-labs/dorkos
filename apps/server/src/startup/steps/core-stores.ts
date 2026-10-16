@@ -49,6 +49,8 @@ import {
   readOwnerAccount,
 } from '../../services/core/auth/index.js';
 import { setRemoteCommunityDb } from '../../services/communities/remote/state.js';
+import { exposeDesktopSignInMint } from '../../services/core/auth/desktop-sign-in.js';
+import { readGatePosture } from '../../services/core/auth/gate-policy.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
@@ -206,6 +208,12 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // (and, on first boot, persists into) a 0600 file there — a fresh install
   // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
   initAuth(db, dorkHome);
+  // The desktop window signs in by itself (F3): its shell mints a code here
+  // over the process channel (`services/core/auth/desktop-sign-in.ts`).
+  exposeDesktopSignInMint({
+    ownerId: () => readOwnerAccount()?.id ?? null,
+    asksOnThisComputer: () => readGatePosture().askOnThisComputer,
+  });
   setRemoteCommunityDb(db);
 
   // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned

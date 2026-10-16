@@ -29,6 +29,7 @@ vi.mock('../server-process', () => ({
   startServer: vi.fn(async () => 4242),
   stopServer: vi.fn(async () => undefined),
   getServerPort: vi.fn(() => 4242),
+  signInWindowSession: vi.fn(async () => 'signed-in'),
 }));
 vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));

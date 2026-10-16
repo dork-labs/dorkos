@@ -47,6 +47,7 @@ import {
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
@@ -79,7 +80,7 @@ import { discardSetupCode } from './setup-code.js';
  */
 type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
-  plugins: [ReturnType<typeof apiKey>];
+  plugins: [ReturnType<typeof apiKey>, ReturnType<typeof desktopSignInPlugin>];
 };
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
@@ -227,7 +228,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // backfill. The columns in `packages/db/src/schema/auth.ts` keep their
     // now-inert defaults on purpose: rewriting a SQLite column default means
     // rebuilding the table for zero behavior change.
-    plugins: [apiKey({ rateLimit: { enabled: false } })],
+    // The desktop window's own sign-in (F3, `desktop-sign-in.ts`): one
+    // endpoint, server code only.
+    plugins: [apiKey({ rateLimit: { enabled: false } }), desktopSignInPlugin()],
     // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
     // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
     // list, so the origins this server already answers over HTTP and over the
