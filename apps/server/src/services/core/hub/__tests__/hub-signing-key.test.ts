@@ -14,6 +14,21 @@ const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 
 const key = await import('../hub-signing-key.js');
+const serving = await import('../hub-serving.js');
+
+/** A serving state, as after a confirmed assignment. */
+const SERVING = {
+  state: 'serving',
+  assignment: {
+    state: 'assigned',
+    assignmentId: 'asg_1',
+    assignedAt: '2026-11-03T09:00:00Z',
+    ownerAccountId: 'acct_1',
+    issuer: 'https://accounts.example.invalid',
+    address: 'https://hub.example.invalid',
+    frontDoorProof: { header: 'x-example-proof', secret: 's'.repeat(40) },
+  },
+} as const;
 
 /** A relay transcript, as `@dorkos/shared` builds one. */
 const TRANSCRIPT = new TextEncoder().encode(
@@ -32,6 +47,8 @@ let home: string;
 beforeEach(() => {
   role.value = 'hub';
   key.resetHubSigningKeyForTests();
+  serving.resetHubServingStateForTests();
+  serving.setHubServingState(SERVING);
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-hub-key-'));
 });
 
@@ -53,7 +70,7 @@ describe('the hub signing key', () => {
   });
 
   it('is made once, as raw 32-byte base64url, and kept for this user only', () => {
-    const publicKey = key.ensureHubSigningKey(home);
+    const publicKey = key.ensureHubSigningKey(home)!;
     expect(publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(key.hubSigningPublicKey()).toBe(publicKey);
     const file = path.join(home, key.HUB_SIGNING_KEY_FILE);
@@ -66,7 +83,7 @@ describe('the hub signing key', () => {
   });
 
   it('signs a relay transcript, and the signature checks against the public half', () => {
-    const publicKey = key.ensureHubSigningKey(home);
+    const publicKey = key.ensureHubSigningKey(home)!;
     const signature = key.signWithHubKey(TRANSCRIPT);
     expect(signature).toHaveLength(64);
     expect(verifies(publicKey, TRANSCRIPT, signature)).toBe(true);
@@ -91,6 +108,21 @@ describe('the hub signing key', () => {
     role.value = 'computer';
     expect(() => key.hubSigningPublicKey()).toThrow(/Only a hub/);
     expect(() => key.signWithHubKey(TRANSCRIPT)).toThrow(/Only a hub/);
+  });
+
+  it('never makes a key when it may not, and leaves no stray partial file', () => {
+    expect(key.ensureHubSigningKey(home, false)).toBeNull();
+    expect(fs.readdirSync(home)).toEqual([]);
+    fs.writeFileSync(path.join(home, `${key.HUB_SIGNING_KEY_FILE}.999.tmp`), 'half a key');
+    key.ensureHubSigningKey(home);
+    expect(fs.readdirSync(home)).toEqual([key.HUB_SIGNING_KEY_FILE]);
+  });
+
+  it('signs nothing once the hub stops serving', () => {
+    key.ensureHubSigningKey(home);
+    serving.setHubServingState({ state: 'ended' });
+    expect(() => key.signWithHubKey(TRANSCRIPT)).toThrow(/does not serve/);
+    expect(() => key.hubSigningPublicKey()).toThrow(/does not serve/);
   });
 
   it('refuses a key file that does not hold an Ed25519 key', () => {

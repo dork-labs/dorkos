@@ -92,6 +92,25 @@ describe('a hub taking its assignment', () => {
     expect(sent[1]).toBe(sent[0]);
   });
 
+  it('refuses, rather than make a new key, when a pinned hub has lost its own', async () => {
+    const d = deps();
+    await sync.syncHubAssignment(d);
+    fs.rmSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE));
+    signingKey.resetHubSigningKeyForTests();
+    serving.resetHubServingStateForTests();
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
+    expect(fs.existsSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE))).toBe(false);
+  });
+
+  it('refuses when its signing key file cannot be read', async () => {
+    const d = deps();
+    await sync.syncHubAssignment(d);
+    fs.writeFileSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE), 'not a key');
+    signingKey.resetHubSigningKeyForTests();
+    serving.resetHubServingStateForTests();
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
+  });
+
   it('pins the owner, makes the owner account, confirms, then serves', async () => {
     expect(await sync.syncHubAssignment(deps())).toEqual({
       kind: 'serving',
@@ -166,6 +185,9 @@ describe('a hub taking its assignment', () => {
   });
 
   it('makes the owner account on the next sync if it crashed after pinning', async () => {
+    // What a crash right after pinning leaves: the key, made first, and the pin.
+    signingKey.ensureHubSigningKey(dorkHome);
+    signingKey.resetHubSigningKeyForTests();
     sync.writeHubOwnerPin(dorkHome, {
       ownerAccountId: 'acct_1',
       issuer: 'https://accounts.example.invalid',

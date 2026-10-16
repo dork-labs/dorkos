@@ -97,7 +97,7 @@ export function liveHubDeps(
       if (!auth) throw new Error('Sign-in is not ready yet.');
       await createHubOwner(auth, input);
     },
-    signingPublicKey: () => ensureHubSigningKey(dorkHome),
+    signingPublicKey: (mayCreate) => ensureHubSigningKey(dorkHome, mayCreate),
     readPin: () => readHubOwnerPin(dorkHome),
     writePin: (pin) => writeHubOwnerPin(dorkHome, pin),
   };
@@ -111,7 +111,12 @@ export function liveHubDeps(
  */
 export function startHubAssignmentSync(dorkHome: string, deps?: HubAssignmentSyncDeps): void {
   // A hub that restarts signs relay handshakes before its next confirmation.
-  loadHubSigningKey(dorkHome);
+  // A key file it cannot read is caught by the first sync, which refuses.
+  try {
+    loadHubSigningKey(dorkHome);
+  } catch {
+    // Left for the sync: it reads the key again and refuses with the reason.
+  }
   const resolved = deps ?? liveHubDeps(dorkHome);
   const beat = async (): Promise<void> => {
     let outcome: HubSyncOutcome;

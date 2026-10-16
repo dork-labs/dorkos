@@ -75,10 +75,10 @@ export interface HubAssignmentSyncDeps {
    */
   confirm: (assignmentId: string, signingPublicKey: string) => Promise<void>;
   /**
-   * The public half of the hub's signing key, making the pair the first time
-   * (`hub-signing-key.ts`).
+   * The public half of the hub's signing key (`hub-signing-key.ts`), making
+   * the pair only when `mayCreate`; `null` when there is none and it may not.
    */
-  signingPublicKey: () => string;
+  signingPublicKey: (mayCreate: boolean) => string | null;
   /** Whether the owner account exists yet. */
   ownerExists: () => boolean;
   /** Create the owner account. Runs only while none exists. */
@@ -141,6 +141,13 @@ export function writeHubOwnerPin(dorkHome: string, pin: PinnedHubOwner): void {
     fs.closeSync(fd);
   }
   fs.renameSync(partial, file);
+  // The rename itself reaches disk only once the folder's entries do.
+  const dir = fs.openSync(dorkHome, 'r');
+  try {
+    fs.fsyncSync(dir);
+  } finally {
+    fs.closeSync(dir);
+  }
 }
 
 /**
@@ -226,6 +233,24 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
     setHubServingState({ state: 'refused' });
     return { kind: 'refused' };
   }
+  // The signing key comes before the pin: a hub with an owner pinned always
+  // has the key its owner's Macs pin, and one that has lost it never makes
+  // another, which would break every Mac that pinned the first.
+  let signingPublicKey: string | null;
+  try {
+    signingPublicKey = deps.signingPublicKey(!pin);
+  } catch (err) {
+    logger.error('[Hub] This hub`s signing key cannot be read; it will not serve', {
+      error: (err as Error).message,
+    });
+    setHubServingState({ state: 'refused' });
+    return { kind: 'refused' };
+  }
+  if (!signingPublicKey) {
+    logger.error('[Hub] This hub lost the signing key its owner`s Macs pin; it will not serve');
+    setHubServingState({ state: 'refused' });
+    return { kind: 'refused' };
+  }
   if (!pin) {
     deps.writePin({
       ownerAccountId: assignment.ownerAccountId,
@@ -240,7 +265,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   // The front door may switch to the new proof and address the moment Cloud
   // records the confirmation, before its answer arrives here.
   offerHubAssignment(assignment);
-  await deps.confirm(assignment.assignmentId, deps.signingPublicKey());
+  await deps.confirm(assignment.assignmentId, signingPublicKey);
   setHubServingState({ state: 'serving', assignment });
   return { kind: 'serving', assignmentId: assignment.assignmentId };
 }

@@ -5,9 +5,13 @@
  * signs each relay handshake with it, so the Mac knows it is talking to its
  * own hub and not to anything that sits between them, Cloud included.
  *
- * - **Made once**, the first time the hub confirms an assignment: never while
+ * - **Made once**, just before the hub pins its first owner: never while
  *   pooled, so a hub nobody owns holds no key. It is never replaced after
- *   that: a new key would break every Mac that pinned the old one.
+ *   that, not even when the file is lost: a new key would break every Mac
+ *   that pinned the old one, so such a hub refuses instead
+ *   (`hub-assignment-sync.ts`).
+ * - **Signs only while the hub serves**: an ended or refused hub signs
+ *   nothing.
  * - **The private half** stays in `<dorkHome>/hub-signing-key.pem`, readable
  *   by this user only, written atomically. Never in the environment or the
  *   config, never logged, never sent anywhere.
@@ -32,6 +36,7 @@ import {
 } from 'node:crypto';
 
 import { currentServerRole } from '../../../lib/server-role.js';
+import { hubServingState } from './hub-serving.js';
 
 /** The file the private half lives in, under the data directory. */
 export const HUB_SIGNING_KEY_FILE = 'hub-signing-key.pem';
@@ -76,18 +81,28 @@ export function loadHubSigningKey(dorkHome: string): boolean {
 }
 
 /**
- * The hub's public key, making the pair first when there is none on disk.
- * Called just before the hub confirms an assignment.
+ * The hub's public key, loading it from disk, or making the pair when there is
+ * none and `mayCreate`. Called just before the hub confirms an assignment.
  *
  * @param dorkHome - The DorkOS data directory.
+ * @param mayCreate - Whether a missing key may be made: only before the hub
+ *   pins its first owner.
+ * @returns The public key, or `null` when there is none and it may not make one.
  */
-export function ensureHubSigningKey(dorkHome: string): string {
+export function ensureHubSigningKey(dorkHome: string, mayCreate = true): string | null {
   if (loaded) return loaded.publicKey;
   if (loadHubSigningKey(dorkHome)) return loaded!.publicKey;
+  if (!mayCreate) return null;
   const { privateKey } = generateKeyPairSync('ed25519');
   const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
   fs.mkdirSync(dorkHome, { recursive: true });
   const file = path.join(dorkHome, HUB_SIGNING_KEY_FILE);
+  // A write a crash cut short leaves a partial file behind; it is never used.
+  for (const name of fs.readdirSync(dorkHome)) {
+    if (name.startsWith(`${HUB_SIGNING_KEY_FILE}.`) && name.endsWith('.tmp')) {
+      fs.rmSync(path.join(dorkHome, name), { force: true });
+    }
+  }
   const partial = `${file}.${process.pid}.tmp`;
   const fd = fs.openSync(partial, 'w', 0o600);
   try {
@@ -96,28 +111,45 @@ export function ensureHubSigningKey(dorkHome: string): string {
   } finally {
     fs.closeSync(fd);
   }
-  // `wx`-like: never replace a key another writer already put there.
-  if (fs.existsSync(file)) {
-    fs.rmSync(partial);
+  try {
+    // A hard link fails if a key is already there, so it is never replaced.
+    fs.linkSync(partial, file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    fs.rmSync(partial, { force: true });
     loadHubSigningKey(dorkHome);
     return loaded!.publicKey;
   }
-  fs.renameSync(partial, file);
+  fs.rmSync(partial, { force: true });
+  syncDirectory(dorkHome);
   loaded = { privateKey, publicKey: publicHalf(privateKey) };
   return loaded.publicKey;
+}
+
+/** Flush a directory's entries to disk, so a new file survives a power cut. */
+function syncDirectory(dir: string): void {
+  const fd = fs.openSync(dir, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** The loaded key, or a throw that says why there is none. */
 function requireKey(): { privateKey: KeyObject; publicKey: string } {
   if (currentServerRole() !== 'hub') throw new Error('Only a hub has a hub signing key.');
   if (!loaded) throw new Error('This hub has no signing key yet: it has not confirmed an owner.');
+  if (hubServingState().state !== 'serving')
+    throw new Error('This hub does not serve anybody now.');
   return loaded;
 }
 
 /**
  * The hub's public key: base64url of the raw 32 bytes (43 characters).
  *
- * @throws On a person's own computer, or on a hub with no key yet.
+ * @throws On a person's own computer, on a hub with no key yet, or on a
+ *   hub that does not serve anybody now.
  */
 export function hubSigningPublicKey(): string {
   return requireKey().publicKey;
@@ -129,8 +161,9 @@ export function hubSigningPublicKey(): string {
  * @param data - The transcript's exact bytes; must start with
  *   {@link HUB_KEY_SIGNS_ONLY}.
  * @returns The 64-byte Ed25519 signature.
- * @throws On a person's own computer, on a hub with no key yet, or for data
- *   that is not a relay transcript.
+ * @throws On a person's own computer, on a hub with no key yet, on a hub
+ *   that does not serve anybody now, or for data that is not a relay
+ *   transcript.
  */
 export function signWithHubKey(data: Uint8Array): Buffer {
   const { privateKey } = requireKey();
