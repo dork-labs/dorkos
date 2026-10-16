@@ -25,7 +25,15 @@ vi.mock('../../config-manager.js', () => ({
   },
 }));
 vi.mock('../index.js', () => ({
-  getAuth: () => null,
+  // One session exists: the cookie `session=owner`. Everything else verifies
+  // as nobody, so a cell admits a credential only when it presents that one.
+  getAuth: () => ({
+    api: {
+      getSession: async ({ headers }: { headers: Headers }) =>
+        headers.get('cookie') === 'session=owner' ? { user: { id: 'owner' } } : null,
+      verifyApiKey: async () => ({ valid: false }),
+    },
+  }),
   hasAnyUser: () => posture.owner,
   verifyRequestAuth: async () => null,
 }));
@@ -66,6 +74,8 @@ interface CallerKind {
   /** Under `DORKOS_ALLOW_INSECURE_BIND`, as the container image runs. */
   insecureBind?: boolean;
   expected: (cell: { ask: boolean; exposure: boolean }) => GateAccess;
+  /** Whether it counts as a person at this computer, with no owner and no session. */
+  atThisComputer: boolean;
 }
 
 const LOCAL_HEADERS = { host: 'localhost:4242' };
@@ -73,26 +83,31 @@ const LOCAL_HEADERS = { host: 'localhost:4242' };
 const CALLERS: CallerKind[] = [
   {
     name: 'local (this computer)',
+    atThisComputer: true,
     facts: { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'direct' },
     expected: ({ ask }) => (ask ? 'credential' : 'open'),
   },
   {
     name: 'Wi-Fi',
+    atThisComputer: false,
     facts: { headers: { host: '192.168.1.20:4243' }, peerAddress: '192.168.1.31', ingress: 'wifi' },
     expected: () => 'credential',
   },
   {
     name: 'own tunnel',
+    atThisComputer: false,
     facts: { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'own-tunnel' },
     expected: () => 'credential',
   },
   {
     name: 'managed remote',
+    atThisComputer: false,
     facts: { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'managed' },
     expected: () => 'credential',
   },
   {
     name: 'relayed',
+    atThisComputer: false,
     facts: { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'relay' },
     expected: () => 'refused',
   },
@@ -100,12 +115,14 @@ const CALLERS: CallerKind[] = [
     // A browser reaching a container through its published port. With no owner
     // yet it keeps today's open posture for one release (rule 11, F5 ends it).
     name: 'insecure bind (container)',
+    atThisComputer: true,
     facts: { headers: { host: '192.168.1.5:4242' }, peerAddress: '172.17.0.1', ingress: 'direct' },
     insecureBind: true,
     expected: ({ exposure }) => (exposure ? 'credential' : 'open'),
   },
   {
     name: 'same-host proxy with forwarding headers',
+    atThisComputer: false,
     facts: {
       headers: { ...LOCAL_HEADERS, 'x-forwarded-for': '203.0.113.9' },
       peerAddress: '127.0.0.1',
@@ -117,17 +134,40 @@ const CALLERS: CallerKind[] = [
     // The named residual: indistinguishable from this computer for a
     // same-origin GET with neither Origin nor Referer.
     name: 'same-host proxy without forwarding headers (GET, no Origin)',
+    atThisComputer: true,
     facts: { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'direct' },
     expected: ({ ask }) => (ask ? 'credential' : 'open'),
   },
   {
     // A write through the same proxy names its public page, which catches it.
     name: 'same-host proxy without forwarding headers (write with Origin)',
+    atThisComputer: false,
     facts: {
       headers: { ...LOCAL_HEADERS, origin: 'https://dorkos.example.com' },
       peerAddress: '127.0.0.1',
       ingress: 'direct',
     },
+    expected: () => 'credential',
+  },
+  {
+    // The container flag never opens a proxy in front of it: its forwarding
+    // headers make it another device first.
+    name: 'insecure bind behind a proxy with forwarding headers',
+    atThisComputer: false,
+    facts: {
+      headers: { host: '192.168.1.5:4242', 'x-forwarded-for': '203.0.113.9' },
+      peerAddress: '172.17.0.1',
+      ingress: 'direct',
+    },
+    insecureBind: true,
+    expected: () => 'credential',
+  },
+  {
+    // Nor a page that rebound a name onto this computer's address.
+    name: 'insecure bind, DNS rebinding Host',
+    atThisComputer: false,
+    facts: { headers: { host: 'evil.example:4242' }, peerAddress: '127.0.0.1', ingress: 'direct' },
+    insecureBind: true,
     expected: () => 'credential',
   },
 ];
@@ -226,11 +266,7 @@ describe('who counts as at this computer', () => {
 
   it.each(CALLERS.map((caller) => [caller.name, caller]))('%s', (_label, caller) => {
     posture.insecureBind = caller.insecureBind === true;
-    const atThisComputer =
-      caller.name.startsWith('local') ||
-      caller.name.includes('(GET, no Origin)') ||
-      caller.name.startsWith('insecure bind');
-    expect(isAtThisComputer(caller.facts)).toBe(atThisComputer);
+    expect(isAtThisComputer(caller.facts)).toBe(caller.atThisComputer);
   });
 
   it('never counts a tunnel, Wi-Fi, managed or relayed request, even under the container flag', () => {
@@ -249,5 +285,47 @@ describe('who counts as at this computer', () => {
     const cli: Facts = { headers: LOCAL_HEADERS, peerAddress: '127.0.0.1', ingress: 'direct' };
     expect(isAtThisComputer(cli)).toBe(true);
     expect(gateAccessFor(cli)).toBe('open');
+  });
+
+  it('once a container has an owner, counts a browser session at its port, never an API key', () => {
+    posture.insecureBind = true;
+    posture.owner = true;
+    const port: Facts = {
+      headers: { host: '192.168.1.5:4242' },
+      peerAddress: '172.17.0.1',
+      ingress: 'direct',
+    };
+    expect(isAtThisComputer({ ...port, user: { userId: 'owner', credential: 'cookie' } })).toBe(
+      true
+    );
+    expect(isAtThisComputer({ ...port, user: { userId: 'owner', credential: 'api-key' } })).toBe(
+      false
+    );
+    expect(isAtThisComputer(port)).toBe(false);
+  });
+});
+
+describe('a credential lets another device in', () => {
+  beforeEach(() => {
+    posture.ask = false;
+    posture.owner = true;
+    posture.insecureBind = false;
+  });
+
+  it.each(
+    CALLERS.filter(
+      (caller) => caller.expected({ ask: false, exposure: true }) === 'credential'
+    ).map((caller) => [caller.name, caller])
+  )('%s, with the owner session', async (_label, caller) => {
+    posture.insecureBind = caller.insecureBind === true;
+    const facts = {
+      ...caller.facts,
+      headers: { ...caller.facts.headers, cookie: 'session=owner' },
+    };
+    expect(await decideSessionGate('POST', '/api/sessions', facts)).toEqual({
+      allowed: true,
+      user: { userId: 'owner', credential: 'cookie' },
+    });
+    expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({ ok: true });
   });
 });

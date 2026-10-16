@@ -17,7 +17,8 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
  * Refuse non-local requests with 403: the refusal to return, or `undefined`
  * when the request may go on.
  *
- * The locality question itself lives in `lib/caller-authority.ts`, because
+ * The locality question itself lives in `services/core/auth/gate-policy.ts`
+ * (`isAtThisComputer`), because
  * `GET /api/config` now asks it too — to TELL the app what this refusal would
  * do, so a phone over the tunnel is given honest guidance instead of a button
  * that 403s (DOR-1655). Read that module for what the answer rests on; the two

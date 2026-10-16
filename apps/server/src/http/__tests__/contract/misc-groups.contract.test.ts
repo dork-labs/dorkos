@@ -1567,7 +1567,7 @@ describe('contract: the same groups with login on', () => {
           status: 409,
           body: {
             error:
-              'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+              'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
           },
         },
       });

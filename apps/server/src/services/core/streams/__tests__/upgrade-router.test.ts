@@ -637,9 +637,14 @@ describe('attachUpgradeRouter', () => {
     );
 
     it(
-      'REFUSES a rebound origin on a durable stream in the container, login off',
+      'REFUSES a rebound origin on a durable stream in the container, login off: it is another device, so the gate asks it to sign in',
       inContainer(async () => {
         loginEnabled(false);
+        // A rebound `Host` is another device even under the container flag
+        // (gate-matrix: "insecure bind, DNS rebinding Host"), so the host
+        // pairing stands down for the credential gate, which a rebound page
+        // cannot pass: its origin carries none of this server's cookies.
+        gate.mockResolvedValue({ ok: false, status: 401, message: 'Unauthorized' });
         await listen([gatedRoute]);
 
         const result = await attempt('/api/gated', {
@@ -647,7 +652,8 @@ describe('attachUpgradeRouter', () => {
           host: 'evil.example',
         });
 
-        expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 403);
+        expect(gate).toHaveBeenCalled();
+        expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
       })
     );
 

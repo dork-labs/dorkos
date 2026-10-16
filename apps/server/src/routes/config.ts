@@ -62,7 +62,7 @@ import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -693,9 +693,10 @@ router.put('/agents/defaultAgent', (c) => {
  * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
  * token (DOR-278).
  *
- * Only applies in login-off mode with no `MCP_API_KEY` override — those are the
- * only conditions under which the local token gates the surface. When an env
- * override is set or login is on, the local token does not apply, so this 409s
+ * Only applies to a caller the gate leaves open (this computer, asking for no
+ * password) with no `MCP_API_KEY` override — the only conditions under which
+ * the local token gates the surface. Anywhere else the token does not apply,
+ * so this 409s
  * rather than silently minting a token that nothing would honor. On success it
  * writes a fresh `0600` token, refreshes the cached value the middleware and the
  * config DTO read, and returns it so the settings tab can show the new value.
@@ -712,11 +713,14 @@ router.post('/mcp/rotate-token', (c) => {
         409
       );
     }
-    if (configManager.get('auth')?.enabled === true) {
+    // The token works only for a caller the gate leaves open: this computer,
+    // not asking for a password. Anyone else (another device, or this computer
+    // when it asks) has no use for it, so it is neither shown nor replaced.
+    if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
       return c.json(
         {
           error:
-            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
         },
         409
       );
@@ -738,8 +742,8 @@ router.post('/mcp/rotate-token', (c) => {
  * The token deliberately does not ride `GET /api/config`: a POST-only reveal
  * never lands in GET caches or logs, and the settings tab fetches it on demand
  * instead of every config read carrying the secret. Same applicability rules as
- * rotate: 409 when an `MCP_API_KEY` override is set or login is on (the local
- * token does not apply there).
+ * rotate: 409 when an `MCP_API_KEY` override is set or the caller is not one the
+ * gate leaves open (the local token does not apply there).
  *
  * Honest scope note: in login-off mode this endpoint sits behind the same
  * loopback trust boundary as the cockpit, so any local process with socket
@@ -759,11 +763,14 @@ router.post('/mcp/reveal-token', (c) => {
         409
       );
     }
-    if (configManager.get('auth')?.enabled === true) {
+    // The token works only for a caller the gate leaves open: this computer,
+    // not asking for a password. Anyone else (another device, or this computer
+    // when it asks) has no use for it, so it is neither shown nor replaced.
+    if (gateAccessFor(honoRequestFacts(c)) !== 'open') {
       return c.json(
         {
           error:
-            'The local MCP token does not apply while login is on — clients authenticate with their personal API keys.',
+            'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
         },
         409
       );

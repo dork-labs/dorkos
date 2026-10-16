@@ -55,7 +55,7 @@ export interface LanAccessRouteDeps {
   lanAccess: Pick<LanAccess, 'status' | 'reconcile'>;
   /** Write the `server.lanAccess` setting. */
   writeSetting: (enabled: boolean) => void;
-  /** Login is on and an owner exists (`canExpose`). */
+  /** An owner account exists for other devices to sign in as (`canExpose`). */
   canExpose: () => boolean;
 }
 

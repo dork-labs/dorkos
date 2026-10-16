@@ -14,9 +14,9 @@
  *   The relay serves its own chat-only requests on its own path (B2).
  * - **On a hub** every request is remote, so every one needs a credential.
  *
- * One exception, for one release only (rule 11): a container that binds
- * `0.0.0.0` under `DORKOS_ALLOW_INSECURE_BIND` and has no owner account yet
- * keeps today's open posture, so a Docker install is not locked out before it
+ * One exception, for one release only (rule 11): a browser reaching a container
+ * through its published port, under `DORKOS_ALLOW_INSECURE_BIND`, while the
+ * container has no owner account yet, keeps today's open posture, so a Docker install is not locked out before it
  * has anyone to sign in as. F5 (DOR-2968) adds the warning and then the setup
  * code that ends it.
  *
@@ -36,6 +36,7 @@ import {
 import { currentServerRole } from '../../../lib/server-role.js';
 import { configManager } from '../config-manager.js';
 import { hasAnyUser } from './index.js';
+import type { RequestUser } from './session-gate.js';
 
 /**
  * What a request needs at a gated surface.
@@ -87,7 +88,23 @@ function isOwnerlessContainer(
   requestClass: Extract<RequestClass, { kind: 'other-device' }>,
   posture: GatePosture
 ): boolean {
-  return requestClass.route === 'network' && posture.insecureBind && !posture.ownerExists();
+  return isContainerPortRequest(requestClass, () => posture) && !posture.ownerExists();
+}
+
+/**
+ * Whether a request reached a container through its published port: under
+ * `DORKOS_ALLOW_INSECURE_BIND`, a direct request whose only other-device mark is
+ * the bridge gateway it arrived from. A proxy's forwarding headers, a `Host`
+ * that names somewhere else (DNS rebinding) and a page on another site all
+ * still count as another device, flag or not.
+ */
+function isContainerPortRequest(requestClass: RequestClass, posture: () => GatePosture): boolean {
+  return (
+    requestClass.kind === 'other-device' &&
+    requestClass.route === 'network' &&
+    requestClass.reason === 'peer-not-loopback' &&
+    posture().insecureBind
+  );
 }
 
 /** Read this install's {@link GatePosture} from live config, env and the user table. */
@@ -130,21 +147,26 @@ export function credentialGated(facts: ClassifierFacts): boolean {
  * one: signing a runtime in, finishing an MCP sign-in, remote-access settings,
  * the local browser, onboarding. Replaces `isLocalCaller`.
  *
- * True for a `this-computer` request. Also true, under
- * `DORKOS_ALLOW_INSECURE_BIND`, for a direct network request: the container is
- * the computer, its published port is how its owner reaches it, and the gate
- * has already asked that request for a password whenever an owner exists
- * (`docs/self-hosting/docker.mdx`). Never for Wi-Fi, a tunnel, managed remote,
- * the relay or a hub, under any flag.
+ * True for a `this-computer` request. Under `DORKOS_ALLOW_INSECURE_BIND` it is
+ * also true for a browser reaching the container through its published port
+ * (`docs/self-hosting/docker.mdx`): the container is the computer, and that
+ * port is how its owner reaches it. Once an owner exists, only with a browser
+ * session, since an API key is not a person (ADR 261015-125850 rule 11). Never
+ * for Wi-Fi, a tunnel, managed remote, the relay, a hub, a proxy's forwarding
+ * headers, a `Host` that names somewhere else or a page on another site.
  *
- * @param facts - The request's TCP peer, raw headers and ingress.
+ * @param facts - The request's TCP peer, raw headers, ingress and, when the
+ *   gate proved one, its user.
+ * @param posture - Override for tests; defaults to {@link readGatePosture}.
  */
-export function isAtThisComputer(facts: ClassifierFacts): boolean {
+export function isAtThisComputer(
+  facts: ClassifierFacts & { readonly user?: RequestUser },
+  posture?: GatePosture
+): boolean {
   const requestClass = classifyRequest(facts, currentServerRole());
   if (requestClass.kind === 'this-computer') return true;
-  return (
-    requestClass.kind === 'other-device' &&
-    requestClass.route === 'network' &&
-    env.DORKOS_ALLOW_INSECURE_BIND === true
-  );
+  // Read the settings only for a request that could be a container's port.
+  const live = () => (posture ??= readGatePosture());
+  if (!isContainerPortRequest(requestClass, live)) return false;
+  return facts.user?.credential === 'cookie' || !live().ownerExists();
 }

@@ -104,8 +104,9 @@ export interface UpgradeRoute {
    * exploit uses — was not. A route now states its posture as data, and
    * `__tests__/upgrade-router.test.ts` pins that `required` really refuses.
    *
-   * - `required` — must present a valid session cookie or per-user API key when
-   *   login is enabled, exactly as the session gate demands of a request. The
+   * - `required` — must present a valid session cookie or per-user API key
+   *   whenever the gate asks this request for one (`gateAccessFor`), exactly as
+   *   the session gate demands of a request. The
    *   durable streams.
    * - `bearer-of-id` — authorized by holding an unguessable id minted by an
    *   already-gated route, and `authorize` checks that id itself. The terminal
