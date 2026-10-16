@@ -20,6 +20,7 @@
 import type { ReactNode } from 'react';
 import { File as FileIcon } from 'lucide-react';
 import type { RoomAttachment } from '@dorkos/shared/room-schemas';
+import { ImageLightboxTrigger } from '@/layers/shared/ui';
 
 /** What the attachment block draws. */
 export interface MessageAttachmentsProps {
@@ -78,23 +79,20 @@ export function attachmentsSummary(attachments: readonly RoomAttachment[]): stri
  * One attachment: a thumbnail where the bytes were verified as an image, and a
  * chip you can download everywhere else.
  *
- * Both are links to `attachment.url` exactly as the server wrote it, never a URL
- * rebuilt from ids — today it is server-relative, and a remote store would
- * answer an absolute one with no change here. Neither carries `download`: what
- * happens on a click is decided by the `Content-Disposition` the server sends,
- * which is the only place that decision can be made safely, and a `download`
- * attribute is ignored cross-origin anyway.
+ * Both use `attachment.url` exactly as the server wrote it, never a URL rebuilt
+ * from ids — today it is server-relative, and a remote store would answer an
+ * absolute one with no change here. A thumbnail opens the message's lightbox,
+ * which saves under the attachment's own name. The chip is a plain link without
+ * `download`: what happens on a click is decided by the `Content-Disposition`
+ * the server sends, which is the only place that decision can be made safely,
+ * and a `download` attribute is ignored cross-origin anyway.
  */
 function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
   if (attachment.preview === 'image') {
     return (
-      // `focus-ring` on the link, matching every other interactive element in
-      // this widget: a thumbnail is reachable by keyboard and has to say so.
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noreferrer"
-        className="focus-ring inline-block rounded-md"
+      <ImageLightboxTrigger
+        image={{ src: attachment.url, alt: attachment.name, downloadName: attachment.name }}
+        className="inline-block"
       >
         <img
           src={attachment.url}
@@ -102,7 +100,7 @@ function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
           loading="lazy"
           className="max-h-64 max-w-full rounded-md border"
         />
-      </a>
+      </ImageLightboxTrigger>
     );
   }
 

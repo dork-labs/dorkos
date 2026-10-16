@@ -75,6 +75,7 @@ export { SIDEBAR_MODEL_SECTIONS } from './sections/sidebar-model-sections';
 export { SIDEBAR_BOOT_SECTIONS } from './sections/sidebar-boot-sections';
 export { MARKDOWN_SECTIONS } from './sections/content/markdown-sections';
 export { ONE_BAR_SECTIONS } from './sections/one-bar-sections';
+export { IMAGE_LIGHTBOX_SECTIONS } from './sections/content/image-lightbox-sections';
 
 import { MARKDOWN_SECTIONS as markdown } from './sections/content/markdown-sections';
 
@@ -103,6 +104,7 @@ import { TOUR_SPOTLIGHT_SECTIONS as tourSpotlight } from './sections/tour-spotli
 import { SIDEBAR_MODEL_SECTIONS as sidebarModel } from './sections/sidebar-model-sections';
 import { SIDEBAR_BOOT_SECTIONS as sidebarBoot } from './sections/sidebar-boot-sections';
 import { ONE_BAR_SECTIONS as oneBar } from './sections/one-bar-sections';
+import { IMAGE_LIGHTBOX_SECTIONS as imageLightbox } from './sections/content/image-lightbox-sections';
 
 /**
  * Full playground registry combining all page-level section arrays.
@@ -135,4 +137,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...sidebarBoot,
   ...oneBar,
   ...markdown,
+  ...imageLightbox,
 ];

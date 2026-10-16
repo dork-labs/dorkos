@@ -21,14 +21,15 @@ function attachment(overrides: Partial<RoomAttachment> = {}): RoomAttachment {
 }
 
 describe('MessageAttachments — a verified image', () => {
-  it('draws a thumbnail named after the file, linked to the file', () => {
+  it('draws a thumbnail named after the file, opening the lightbox', () => {
     render(<MessageAttachments items={[attachment()]} />);
 
     const image = screen.getByRole('img', { name: 'screenshot.png' });
     expect(image).toHaveAttribute('src', '/api/rooms/room-1/attachments/att-1');
     expect(image).toHaveAttribute('loading', 'lazy');
-    // The link is the way to open the file at full size.
-    expect(image.closest('a')).toHaveAttribute('href', '/api/rooms/room-1/attachments/att-1');
+    // The thumbnail opens the file at full size in the message's lightbox.
+    expect(image.closest('a')).toBeNull();
+    expect(image.closest('button')).toHaveAttribute('aria-haspopup', 'dialog');
   });
 
   it('renders the server’s URL verbatim, including an absolute one', () => {
