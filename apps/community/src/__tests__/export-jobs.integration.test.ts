@@ -6,8 +6,8 @@ import {
   CommunityExportAuditEventRowSchema,
   CommunityExportChannelMemberRowSchema,
   CommunityExportChannelRowSchema,
-  CommunityExportEntryRowSchema,
-  CommunityExportMemberRowSchema,
+  CommunityExportEntryRowV3Schema,
+  CommunityExportMemberRowV3Schema,
   CommunityWireExportListSchema,
 } from '@dorkos/shared/community-wire';
 import { bufferReader, readWithYauzl } from '../archive/__tests__/archive-test-helpers.js';
@@ -53,7 +53,7 @@ const PNG = Buffer.concat([
   Buffer.from('0000000d49484452000000010000000108060000001f15c489', 'hex'),
 ]);
 
-describe('version 2 archive', () => {
+describe('version 3 archive', () => {
   // Purpose (AC-9): the archive a job writes is version 2 end to end. Fails if manifest.json is
   // not the last entry, if any row does not parse with its strict schema, if counts disagree
   // with the rows, if the community's settings or icon are missing, if memberships differ from
@@ -140,7 +140,7 @@ describe('version 2 archive', () => {
     const archive = await openArchive(bytes);
     expect(archive.names.at(-1)).toBe('manifest.json');
     expect(archive.manifest).toMatchObject({
-      version: 2,
+      version: 3,
       scope: 'owner',
       exportId: requested.export.id,
       requesterMemberId: community.owner.memberId,
@@ -158,12 +158,12 @@ describe('version 2 archive', () => {
 
     const schemas = {
       channels: CommunityExportChannelRowSchema,
-      members: CommunityExportMemberRowSchema,
+      members: CommunityExportMemberRowV3Schema,
       agents: CommunityExportAgentRowSchema,
       channelMembers: CommunityExportChannelMemberRowSchema,
       agentChannelMembers: CommunityExportAgentChannelMemberRowSchema,
       auditEvents: CommunityExportAuditEventRowSchema,
-      entries: CommunityExportEntryRowSchema,
+      entries: CommunityExportEntryRowV3Schema,
       attachments: CommunityExportAttachmentRowSchema,
     } as const;
     for (const [key, schema] of Object.entries(schemas) as [
@@ -222,8 +222,13 @@ describe('version 2 archive', () => {
     expect(evilPath.slice(`files/${evil.id}/`.length)).not.toContain('/');
     expect(evilPath).toBe(`files/${evil.id}/_.._evil`);
     expect(archive.files.get(evilPath)?.toString()).toBe('evil bytes');
-    // Members keep their email in an owner export; no credential or storage key leaks.
-    expect(archive.rows<{ email: string | null }>('members').every((row) => row.email)).toBe(true);
+    // People keep their email in an owner export, and an agent's own member row has none; no
+    // credential or storage key leaks.
+    const memberRows = archive.rows<{ email: string | null; kind: string }>('members');
+    expect(memberRows.filter((row) => row.kind === 'person').every((row) => row.email)).toBe(true);
+    expect(memberRows.filter((row) => row.kind === 'agent')).toEqual([
+      expect.objectContaining({ email: null, handle: null }),
+    ]);
     const everything = [...archive.files.values()]
       .map((value) => value.toString('latin1'))
       .join('');

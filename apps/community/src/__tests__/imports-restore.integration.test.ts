@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import {
   CommunityExportManifestV1Schema,
-  CommunityExportMemberRowSchema,
+  CommunityExportMemberRowV3Schema,
 } from '@dorkos/shared/community-wire';
 import { uuidv5 } from '../imports/derived-id.js';
 import { renumberedSequences } from '../imports/manifest.js';
@@ -397,13 +397,26 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
   );
   expect((await notice.json()).importedAt).toEqual(expect.any(String));
 
-  // A re-export of the imported community (this server writes version 2) keeps every
-  // historical author, with no email: only the claimant has an account.
+  // A re-export of the imported community (this server writes version 3) keeps every
+  // historical author, with no email: only the claimant has an account. Each agent is listed as a
+  // member of kind agent too, with the agent's id.
   const again = await ownerExport(h, communityId, claimant.cookie, TENANCY_PASSWORD);
-  const members = again.rows('members').map((row) => CommunityExportMemberRowSchema.parse(row));
-  expect(members.length).toBe(manifest.members.length);
-  expect(members.filter((member) => member.email === null)).toHaveLength(
+  const members = again.rows('members').map((row) => CommunityExportMemberRowV3Schema.parse(row));
+  const people = members.filter((member) => member.kind === 'person');
+  expect(people.length).toBe(manifest.members.length);
+  expect(people.filter((member) => member.email === null)).toHaveLength(
     manifest.members.length - 1
+  );
+  expect(
+    members
+      .filter((member) => member.kind === 'agent')
+      .map((member) => member.id)
+      .sort()
+  ).toEqual(
+    again
+      .rows<{ id: string }>('agents')
+      .map((agent) => agent.id)
+      .sort()
   );
 });
 
@@ -610,8 +623,8 @@ describe('a tampered export fails with its named code and leaves nothing', () =>
       'IMPORT_NOT_OWNER_EXPORT',
     ],
     [
-      'version 3',
-      () => tampered((manifest) => Object.assign(manifest, { version: 3 })),
+      'version 4',
+      () => tampered((manifest) => Object.assign(manifest, { version: 4 })),
       'IMPORT_VERSION_UNSUPPORTED',
     ],
     [

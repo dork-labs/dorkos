@@ -383,7 +383,7 @@ An owner can export the whole community and any member can export their own mess
 - **Changes while it runs.** Messages posted after an export starts are not in it. A message removed while it is being prepared is rewritten in the pieces already written, so the finished export never holds what was removed. A community that keeps changing that way may make an export give up after five rounds; the person can try again later. When someone erases their data, every export still being prepared in that community starts again from the beginning, and the pieces it had written are deleted straight away.
 - **Erasure.** Erasing a member deletes every finished export in that community, including one being downloaded, which stops within a few seconds.
 
-To return to a release from before background exports, first run `pnpm --filter @dorkos/community exports:purge-v2` with `COMMUNITY_DATABASE_URL` set. It cancels exports in progress and deletes every export made by this release, queuing their files for cleanup, so the older release only sees exports it can read.
+To return to a release from before background exports, first run `pnpm --filter @dorkos/community exports:purge-v2` with `COMMUNITY_DATABASE_URL` set. It cancels exports in progress and deletes every export made by this release or a later one (format 2 or 3), queuing their files for cleanup, so the older release only sees exports it can read.
 
 ## Imports
 

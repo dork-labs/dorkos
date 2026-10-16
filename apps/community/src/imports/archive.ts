@@ -26,14 +26,14 @@ export interface OpenedExport {
  * The `version` of an archive's `manifest.json`, read under the names either version allows
  * and nothing else, so each version's own rules then apply in full.
  *
- * `1` and `2` are the versions this host reads. Any other integer fails as
+ * `1`, `2` and `3` are the versions this host reads. Any other integer fails as
  * `IMPORT_VERSION_UNSUPPORTED`; an archive with no readable manifest, or a version that is not
  * an integer, as `IMPORT_ARCHIVE_INVALID`.
  */
 export async function readManifestVersion(
   source: RangeReader,
   signal?: AbortSignal
-): Promise<1 | 2> {
+): Promise<1 | 2 | 3> {
   try {
     const archive = await openZipArchive(source, {
       allowName: (name) =>
@@ -49,7 +49,7 @@ export async function readManifestVersion(
     if (manifestEntry.uncompressedSize > MAX_MANIFEST_BYTES)
       throw new ImportFailure('IMPORT_TOO_LARGE');
     const { version } = parseManifestJson(await collectBytes(archive.openEntry(manifestEntry)));
-    if (version === 1 || version === 2) return version;
+    if (version === 1 || version === 2 || version === 3) return version;
     throw new ImportFailure(
       Number.isInteger(version) ? 'IMPORT_VERSION_UNSUPPORTED' : 'IMPORT_ARCHIVE_INVALID'
     );

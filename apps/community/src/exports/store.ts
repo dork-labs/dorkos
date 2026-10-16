@@ -15,7 +15,7 @@ export interface ExportRow {
   scope: ExportJobScope;
   /** The takedown an evidence export preserves; null for every other scope. */
   evidence_takedown_id: string | null;
-  format_version: 1 | 2;
+  format_version: 1 | 2 | 3;
   state: 'queued' | 'building' | 'ready' | 'failed' | 'cancelled';
   blob_key: string | null;
   byte_size: string | null;

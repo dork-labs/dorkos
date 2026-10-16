@@ -7,6 +7,7 @@ import {
   dataSegmentEntries,
   digestDataRange,
   entryScope,
+  exportFormatOf,
   planDataSegment,
   SegmentChangedError,
   START_CURSOR,
@@ -269,7 +270,12 @@ class ExportRun extends ExportJob {
     // holds the whole community.
     const author = this.job.scope === 'personal' ? this.job.requester_member_id : null;
     if (this.job.watermark) {
-      this.scope = entryScope(this.job.community_id, author, this.job.watermark);
+      this.scope = entryScope(
+        this.job.community_id,
+        author,
+        this.job.watermark,
+        exportFormatOf(this.job.format_version)
+      );
       return;
     }
     await this.checkpoint();
@@ -301,7 +307,12 @@ class ExportRun extends ExportJob {
         'SELECT COALESCE(max(id),0)::text AS id FROM entry_redactions WHERE community_id=$1',
         [this.job.community_id]
       );
-      const scope = entryScope(this.job.community_id, author, watermark);
+      const scope = entryScope(
+        this.job.community_id,
+        author,
+        watermark,
+        exportFormatOf(this.job.format_version)
+      );
       const total = await countScope(client, scope);
       if (this.job.scope === 'personal') {
         await client.query(

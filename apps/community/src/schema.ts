@@ -1208,7 +1208,7 @@ export const exportArchives = pgTable(
       'export_archives_evidence',
       sql`(${table.scope} = 'evidence') = (${table.requesterMemberId} IS NULL) AND (${table.scope} = 'evidence') = (${table.evidenceTakedownId} IS NOT NULL)`
     ),
-    check('export_archives_format_version', sql`${table.formatVersion} IN (1,2)`),
+    check('export_archives_format_version', sql`${table.formatVersion} IN (1,2,3)`),
     check(
       'export_archives_state',
       sql`${table.state} IN ('queued','building','ready','failed','cancelled')`
@@ -1223,7 +1223,7 @@ export const exportArchives = pgTable(
     ),
     check(
       'export_archives_version_one_ready',
-      sql`${table.formatVersion} = 2 OR ${table.state} = 'ready'`
+      sql`${table.formatVersion} >= 2 OR ${table.state} = 'ready'`
     ),
     check(
       'export_archives_ended',

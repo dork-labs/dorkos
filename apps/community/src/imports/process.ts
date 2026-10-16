@@ -80,7 +80,8 @@ async function validate(
   const source = await importSource(pool, blobStore, row);
   const version = await readManifestVersion(source);
   let report: ImportReport;
-  if (version === 2) {
+  // Versions 2 and 3 share one importer: data files, restored in batches.
+  if (version !== 1) {
     report = await validateV2(pool, job, row, source, limits);
   } else {
     const opened = await openExport(source);
@@ -139,7 +140,7 @@ async function restore(
   if (!row?.community_id) throw new LeaseLost();
   const communityId = row.community_id;
   const source = await importSource(pool, blobStore, row);
-  if (row.manifest_version === 2) {
+  if (row.manifest_version !== 1) {
     await restoreV2(pool, blobStore, job, row, source, limits, hooks);
     return;
   }

@@ -276,7 +276,13 @@ describe('opening a version 2 export', () => {
       (p) => Object.assign(p.manifest, { scope: 'personal' }),
       'IMPORT_NOT_OWNER_EXPORT',
     ],
-    ['version 3', (p) => Object.assign(p.manifest, { version: 3 }), 'IMPORT_VERSION_UNSUPPORTED'],
+    ['version 4', (p) => Object.assign(p.manifest, { version: 4 }), 'IMPORT_VERSION_UNSUPPORTED'],
+    // Version 3 rows carry a kind on every member: version 2 rows under a version 3 label fail.
+    [
+      'version 2 rows labelled 3',
+      (p) => Object.assign(p.manifest, { version: 3 }),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
     [
       'a manifest field the schema does not know',
       (p) => Object.assign(p.manifest, { extra: true }),
@@ -455,8 +461,10 @@ describe('opening a version 2 export', () => {
   // Purpose: an archive whose manifest version is neither 1 nor 2 is named as unsupported
   // before either version's rules run, and one with no manifest as damaged.
   it('dispatches on the manifest version', async () => {
+    const v4 = build((p) => Object.assign(p.manifest, { version: 4 }));
+    expect(await failure(readManifestVersion(bufferReader(v4)))).toBe('IMPORT_VERSION_UNSUPPORTED');
     const v3 = build((p) => Object.assign(p.manifest, { version: 3 }));
-    expect(await failure(readManifestVersion(bufferReader(v3)))).toBe('IMPORT_VERSION_UNSUPPORTED');
+    expect(await readManifestVersion(bufferReader(v3))).toBe(3);
     const none = zip(pieces().entries);
     expect(await failure(readManifestVersion(bufferReader(none)))).toBe('IMPORT_ARCHIVE_INVALID');
     const text = build((p) => Object.assign(p.manifest, { version: '2' }));

@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { CommunityEvidenceRecordV1Schema } from '@dorkos/shared/community-admin-wire';
 import { releaseHeldBlobs } from '../content-removal.js';
 import { transaction } from '../data.js';
+import { exportFormatOf } from '../exports/data-segments.js';
 import { serializeEvidenceRecord, type EvidenceRecord } from './evidence/record.js';
 import { dropEvidenceExport, queueEvidenceExport } from './evidence-export.js';
 import { EvidenceSinkError, evidenceAttemptFolder, type EvidenceSink } from './evidence/sink.js';
@@ -224,8 +225,8 @@ async function copyEvidenceArchive(
   claim: { community_id: string; evidence_export_id: string | null },
   folder: string
 ): Promise<NonNullable<EvidenceRecord['archive']>> {
-  const exported = await pool.query<{ state: string }>(
-    `SELECT state FROM export_archives
+  const exported = await pool.query<{ state: string; format_version: number }>(
+    `SELECT state,format_version FROM export_archives
      WHERE id=$1 AND community_id=$2 AND scope='evidence'`,
     [claim.evidence_export_id, claim.community_id]
   );
@@ -262,7 +263,7 @@ async function copyEvidenceArchive(
   if (!written.length) throw new EvidenceSinkError('EVIDENCE_EXPORT_FAILED');
   return {
     format: 'zip64',
-    manifestVersion: 2,
+    manifestVersion: exportFormatOf(exported.rows[0].format_version),
     segments: written,
     byteSize: written.reduce((sum, segment) => sum + segment.byteSize, 0),
     note: 'Concatenate the segments in order to get one .zip file.',

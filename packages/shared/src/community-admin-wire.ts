@@ -597,8 +597,11 @@ export const CommunityAdminImportCreateRequestSchema = z.strictObject({
 });
 /** What an owner export holds, measured before anything is restored. Counts and sizes only. */
 export const CommunityAdminImportReportSchema = z.strictObject({
-  /** The export's format: version 1 (one manifest), or version 2 (any size, in data files). */
-  manifestVersion: z.union([z.literal(1), z.literal(2)]),
+  /**
+   * The export's format: version 1 (one manifest), or version 2 or 3 (any size, in data files;
+   * version 3 lists agents as members).
+   */
+  manifestVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   sourceLifecycle: z.enum(['active', 'archived']),
   channels: z.int().nonnegative(),
   entries: z.int().nonnegative(),
@@ -889,7 +892,8 @@ export const CommunityEvidenceRecordV1Schema = z.strictObject({
   archive: z
     .strictObject({
       format: z.literal('zip64'),
-      manifestVersion: z.literal(2),
+      /** 3 from the release that lists agents as members; records written before carry 2. */
+      manifestVersion: z.union([z.literal(2), z.literal(3)]),
       segments: z.array(
         z.strictObject({
           /** Relative to the attempt folder: `archive.zip.000001` and on. */

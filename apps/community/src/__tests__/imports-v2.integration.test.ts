@@ -612,6 +612,11 @@ beforeAll(async () => {
 
   // Small segments, so the archive holds many data files and the files span several of them.
   const requested = await requestOwnerExport(h, source);
+  // This suite reads format 2: a job queued before format 3 existed still writes it, which is
+  // what an archive from an older release holds. export-format-3 covers format 3.
+  await h.pool.query('UPDATE export_archives SET format_version=2 WHERE id=$1', [
+    requested.export.id,
+  ]);
   await runExport(h, { segmentBytes: 256 * KIB });
   archive = await downloadArchive(h, source, requested.export.id);
   opened = await openArchive(archive);
@@ -1622,14 +1627,25 @@ describe('a tampered version 2 export fails with its named code and leaves nothi
       'IMPORT_ARCHIVE_INVALID',
     ],
     [
-      'version 3',
+      'version 4',
+      () =>
+        rebuilt(
+          withManifest((manifest) => {
+            manifest.version = 4;
+          })
+        ),
+      'IMPORT_VERSION_UNSUPPORTED',
+    ],
+    [
+      // Version 3 rows carry a kind on every member and a member author on every message.
+      'a version 2 archive that says it is version 3',
       () =>
         rebuilt(
           withManifest((manifest) => {
             manifest.version = 3;
           })
         ),
-      'IMPORT_VERSION_UNSUPPORTED',
+      'IMPORT_ARCHIVE_INVALID',
     ],
     [
       'a personal export',

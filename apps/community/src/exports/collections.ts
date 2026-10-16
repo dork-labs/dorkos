@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { ExportJobScope } from './authority.js';
-import { fileNumber } from './data-segments.js';
+import { fileNumber, type ExportFormat } from './data-segments.js';
 
 /** Most rows in one collection file. */
 export const COLLECTION_FILE_ROWS = 100_000;
@@ -49,6 +49,8 @@ export interface CollectionScope {
   memberId: string | null;
   /** Personal scope: the exported channels. */
   channelIds: readonly string[];
+  /** The archive format the job writes (see `ExportFormat`). */
+  format: ExportFormat;
 }
 
 interface KeyColumn {
@@ -69,7 +71,7 @@ interface CollectionSpec {
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : null);
 const uuidKey = (column: string, field: string): KeyColumn => ({ column, type: 'uuid', field });
 
-function specs(scope: ExportJobScope): CollectionSpec[] {
+function specs(scope: ExportJobScope, format: ExportFormat): CollectionSpec[] {
   // An evidence export holds the whole community, as an owner export does.
   const owner = scope !== 'personal';
   const list: CollectionSpec[] = [
@@ -96,11 +98,15 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
       key: 'members',
       prefix: 'members',
       // LEFT JOIN: an erased member keeps their husk row, with no account and so no email. A
-      // personal export holds only the requester's own row.
+      // personal export holds only the requester's own row, and in format 3 their agents' rows,
+      // as their own export holds their agents. Format 2 lists people only; format 3 lists every
+      // member row with its kind, so an import can tell people from agents.
+      // member-kind: export-with-kind
       select: `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email,
-          m.muted_until,m.rules_accepted_version
+          m.muted_until,m.rules_accepted_version,m.kind,m.owner_member_id
         FROM members m LEFT JOIN "user" u ON u.id=m.user_id
-        WHERE m.community_id=$1 AND m.kind='person' ${owner ? '' : 'AND m.id=$2'}`,
+        WHERE m.community_id=$1 ${format === 2 ? "AND m.kind='person'" : ''}
+          ${owner ? '' : format === 2 ? 'AND m.id=$2' : 'AND (m.id=$2 OR m.owner_member_id=$2)'}`,
       keys: [uuidKey('m.id', 'id')],
       line: (row) =>
         JSON.stringify({
@@ -114,6 +120,7 @@ function specs(scope: ExportJobScope): CollectionSpec[] {
           email: row.email ?? null,
           muted_until: iso(row.muted_until),
           rules_accepted_version: row.rules_accepted_version,
+          ...(format === 3 ? { kind: row.kind, owner_member_id: row.owner_member_id } : {}),
         }),
     },
     {
@@ -310,7 +317,7 @@ export async function* collectionFiles(
   tallies: CollectionTallies,
   fileBytes: number
 ): AsyncGenerator<CollectionFile> {
-  for (const spec of specs(scope.scope)) {
+  for (const spec of specs(scope.scope, scope.format)) {
     const pages = collectionPages(client, scope, spec);
     let buffered: Record<string, unknown>[] = [];
     let offset = 0;

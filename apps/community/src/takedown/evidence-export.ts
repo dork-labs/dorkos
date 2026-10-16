@@ -15,7 +15,7 @@ export async function queueEvidenceExport(
   const inserted = await client.query<{ id: string }>(
     `INSERT INTO export_archives(community_id,requester_member_id,scope,format_version,state,
        evidence_takedown_id)
-     VALUES($1,NULL,'evidence',2,'queued',$2) RETURNING id`,
+     VALUES($1,NULL,'evidence',3,'queued',$2) RETURNING id`,
     [takedown.communityId, takedown.id]
   );
   await client.query('UPDATE community_takedowns SET evidence_export_id=$2 WHERE id=$1', [

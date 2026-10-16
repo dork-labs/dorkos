@@ -414,8 +414,8 @@ describe('a whole-community takedown with an evidence store', () => {
     const counts = (
       await h.pool.query<{ entries: number; members: number; channels: number }>(
         `SELECT (SELECT count(*) FROM entries WHERE community_id=$1)::int AS entries,
-                -- A version 2 export lists people as members; agents travel as agents (0042).
-                (SELECT count(*) FROM members WHERE community_id=$1 AND kind='person')::int AS members,
+                -- A version 3 export lists every member row: people and each agent's own (0042).
+                (SELECT count(*) FROM members WHERE community_id=$1)::int AS members,
                 (SELECT count(*) FROM channels WHERE community_id=$1)::int AS channels`,
         [s.communityId]
       )
@@ -587,6 +587,8 @@ describe('a whole-community takedown with an evidence store', () => {
     expect(pAccount.sessions).toContainEqual(
       expect.objectContaining({ ipAddress: '198.51.100.9', userAgent: 'whole-agent/2.0' })
     );
+    // The record names the archive's own format: 3 since agents are members (DOR-2876).
+    expect(record.archive!.manifestVersion).toBe(3);
     const segments = record.archive!.segments;
     expect(segments.map((segment) => segment.path)).toEqual(
       segments.map((_, index) => `archive.zip.${String(index + 1).padStart(6, '0')}`)
@@ -599,7 +601,7 @@ describe('a whole-community takedown with an evidence store', () => {
       )
     );
     expect(archive.manifest).toMatchObject({
-      version: 2,
+      version: 3,
       scope: 'evidence',
       requesterMemberId: null,
       community: { id: s.communityId, lifecycle: 'active' },

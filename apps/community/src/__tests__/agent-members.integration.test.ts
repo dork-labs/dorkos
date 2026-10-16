@@ -407,8 +407,9 @@ describe(
       expect(await checkReports(personAfter)).toBe(0);
     });
 
-    // Purpose: a version 2 export names exactly one author per message, the agent, and lists only
-    // people as members, so every version 2 importer still reads it.
+    // Purpose: a version 2 export (a job queued before format 3 existed finishes in it) names
+    // exactly one author per message, the agent, and lists only people as members, so every
+    // version 2 importer still reads it.
     it('exports version 2 with one author per message and only people as members', async () => {
       const entryId = await say({ bearer: moAgent.token });
       await drainExports(h.pool, h.blobStore);
@@ -420,12 +421,16 @@ describe(
         202,
         'owner export'
       );
+      await h.pool.query('UPDATE export_archives SET format_version=2 WHERE id=$1', [
+        created.export.id,
+      ]);
       await drainExports(h.pool, h.blobStore, { settings: EXPORT_SETTINGS });
       const response = await h.call(`${base}/exports/${created.export.id}/archive`, {
         cookie: owner.cookie,
       });
       expect(response.status).toBe(200);
       const archive = await openArchive(Buffer.from(await response.arrayBuffer()));
+      expect(archive.manifest.version).toBe(2);
       const members = archive.rows<{ id: string }>('members').map((row) => row.id);
       for (const id of agentIds()) expect(members).not.toContain(id);
       expect(members).toContain(mo.memberId);

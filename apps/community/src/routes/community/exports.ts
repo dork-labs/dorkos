@@ -164,7 +164,7 @@ export function registerExportRoutes(
       }
       const inserted = await client.query<ExportRow>(
         `INSERT INTO export_archives(community_id,requester_member_id,scope,format_version,state)
-         VALUES($1,$2,$3,2,'queued') RETURNING ${EXPORT_COLUMNS}`,
+         VALUES($1,$2,$3,3,'queued') RETURNING ${EXPORT_COLUMNS}`,
         [member.community_id, member.id, scope]
       );
       return { row: inserted.rows[0], created: true };

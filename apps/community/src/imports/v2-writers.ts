@@ -6,7 +6,7 @@ import { ERASED_AGENT_NAME, ERASED_MEMBER_NAME } from '../erasure/erasure.js';
 import { sanitizeDisplayName } from '../storage/blob-store.js';
 import { ImportFailure, importedChannel } from './manifest.js';
 import type { V2Collection } from './v2-archive.js';
-import type { V2Row } from './v2-rows.js';
+import { isAgentMemberRow, type PersonMemberRow, type V2Row } from './v2-rows.js';
 import {
   allRestored,
   insertRows,
@@ -70,7 +70,9 @@ async function writeHandles(
   );
 }
 
-const writeMembers: BatchWriter<'members'> = async (client, rows, scope) => {
+const writeMembers: BatchWriter<'members'> = async (client, batch, scope) => {
+  // An agent's own member row (version 3) is written when its agent is (0042's trigger).
+  const rows = batch.filter((row): row is PersonMemberRow => !isAgentMemberRow(row));
   wroteAll(
     await insertRows(
       client,
