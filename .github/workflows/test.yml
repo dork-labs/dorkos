@@ -309,7 +309,7 @@ jobs:
   # `test` check, so a missing database or a skipped suite cannot merge green.
   community-pg:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine

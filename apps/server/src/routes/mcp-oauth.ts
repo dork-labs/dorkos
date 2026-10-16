@@ -14,10 +14,10 @@
 import { Hono } from 'hono';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
 import { getLocalCockpitOrigin } from '../lib/trusted-origins.js';
-import { isLocalCaller } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /** HTTP status for a completed callback vs. any failure (used for the rendered page). */
 const OK = 200;
@@ -112,7 +112,7 @@ export function createMcpOAuthRoutes(oauth: AgentMcpOAuthService): Hono<ApiEnv> 
   const router = new Hono<ApiEnv>();
 
   router.get('/callback', async (c) => {
-    if (!isLocalCaller(honoRequestFacts(c))) {
+    if (!isAtThisComputer(honoRequestFacts(c))) {
       return c.body('Not available.', 403, HTML);
     }
     // A repeated key is an array, and reads as absent, as it did on Express.

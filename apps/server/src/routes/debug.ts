@@ -57,7 +57,6 @@ import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { configManager } from '../services/core/config-manager.js';
 import {
   DocChannelMetricsUnavailableError,
   type DocChannelMetrics,
@@ -87,6 +86,7 @@ import {
   type RoomBindingTranscriptDeps,
 } from '../services/rooms/session-bindings/room-binding-transcripts.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
+import { credentialGated } from '../services/core/auth/gate-policy.js';
 
 /**
  * The live reads this router needs that are not reachable through a module
@@ -349,7 +349,7 @@ export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<Api
     try {
       const caller = honoRequestFacts(c);
       const user = caller.user;
-      const loginOn = configManager.get('auth')?.enabled === true;
+      const loginOn = credentialGated(caller);
       const owner = loginOn ? readOwnerAccount() : null;
       if (
         !clearsTheAgentBar(caller) ||

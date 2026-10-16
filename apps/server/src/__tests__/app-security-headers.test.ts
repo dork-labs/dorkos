@@ -319,8 +319,11 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
         .set('Origin', 'https://dorkos.example.com')
         .send({ message: 'boom' });
 
-      expect(res.status).toBe(202);
+      // CORS lets the listed origin through (a refusal there is a 500). A page
+      // on another site is another device, though, so with no session the
+      // request gate answers next (ADR 261015-125850 rule 3).
       expect(res.headers['access-control-allow-origin']).toBe('https://dorkos.example.com');
+      expect(res.status).toBe(401);
     });
   });
 });

@@ -83,7 +83,13 @@ const NO_CONNECTION = { error: 'Space connection not found.' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const AGENT_REFUSED = { error: 'An agent cannot manage space connections.' };
-const REMOTE_REFUSED = { error: 'Manage space connections from this machine.' };
+/**
+ * The session gate's 401. A caller at another name is another device, which
+ * needs a person session even with the this-computer password off (ADR
+ * 261015-125850 rule 3); the signed-in owner there is answered in the login-on
+ * suite.
+ */
+const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const OWNER_CHANGED = {
   error: 'The local owner changed. Reload to see spaces for the current account.',
   code: 'COMMUNITY_OWNER_CHANGED',
@@ -273,7 +279,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     });
   });
 
-  it('refuses a caller that is not this install’s owner, at this machine', async () => {
+  it('refuses a caller that is not this install’s owner, at this machine, and asks another device to sign in', async () => {
     await check(server, {
       path: '/api/community-connections',
       headers: AGENT,
@@ -287,7 +293,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: '/api/community-connections',
       headers: { host: PROXIED_HOST },
-      expect: { status: 403, body: REMOTE_REFUSED },
+      expect: { status: 401, schema: GATE_REFUSED },
     });
     await check(server, {
       path: '/api/community-connections',
@@ -747,7 +753,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: `${base}/rooms`,
       headers: { host: PROXIED_HOST },
-      expect: { status: 403, body: REMOTE_REFUSED },
+      expect: { status: 401, schema: GATE_REFUSED },
     });
     await check(server, {
       path: `${base}/rooms`,
@@ -889,7 +895,7 @@ describe('contract: the space routes with login on', () => {
   };
 
   beforeAll(async () => {
-    server = await bootComposedServer();
+    server = await bootComposedServer({ DORKOS_TRUSTED_HOSTS: PROXIED_HOST });
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
     await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
@@ -966,6 +972,21 @@ describe('contract: the space routes with login on', () => {
       path: '/api/community-connections',
       headers: { ...cookie, ...AGENT },
       expect: { status: 403, body: AGENT_REFUSED },
+    });
+  });
+
+  it('answers the owner’s cookie at another name as that person', async () => {
+    // The "from this machine" refusal is for a caller nobody signed in; a
+    // signed-in owner on another device is a person, and is answered.
+    await check(server, {
+      path: '/api/community-connections',
+      headers: { ...cookie, host: PROXIED_HOST },
+      expect: { status: 200, headers: JSON_TYPE, body: EMPTY_LIST },
+    });
+    await check(server, {
+      path: '/api/communities/remote_x/rooms',
+      headers: { ...cookie, host: PROXIED_HOST },
+      expect: { status: 404, body: NO_CONNECTION },
     });
   });
 });

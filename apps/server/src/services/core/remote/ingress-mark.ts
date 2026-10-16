@@ -7,7 +7,7 @@
  * listener. The first two forward from an ngrok agent on loopback, so the
  * socket alone would make a phone on either look like a person at this
  * machine. Each listener marks every request it admits, and the request
- * classifier (`lib/request-classifier.ts`) and `isLocalCaller` read the mark,
+ * classifier (`lib/request-classifier.ts`) and `isAtThisComputer` (`services/core/auth/gate-policy.ts`) read the mark,
  * so a marked request is never taken for this computer whatever its `Host` says.
  *
  * `relay` is reserved for the session relay (B2, DOR-2946), which marks what

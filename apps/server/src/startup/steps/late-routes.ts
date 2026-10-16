@@ -20,6 +20,7 @@ import { resolveCaller } from '../../routes/room-caller.js';
 import { logConfigWrite } from '../../services/core/operator/config-write.js';
 import { env } from '../../env.js';
 import { checkA2aExposure } from '../../services/core/auth/exposure-guard.js';
+import { hasAnyUser } from '../../services/core/auth/index.js';
 import { logger } from '../../lib/logger.js';
 import { startMarketplace } from '../marketplace.js';
 import { TerminalManager } from '../../services/terminal/index.js';
@@ -239,20 +240,19 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
       ? env.DORKOS_A2A_ENABLED
       : (configManager.get('a2a')?.enabled ?? false);
   if (a2aEnabled && refs.relayCore && refs.meshCore) {
-    // The A2A surface is guarded by decideMcpAuth for the 'a2a' surface. In
-    // login-off mode the per-instance local token gates JSON-RPC execution, but
+    // The A2A surface is guarded by decideMcpAuth for the 'a2a' surface. For a
+    // person at this computer the per-instance local token gates JSON-RPC execution, but
     // that token is a loopback-trust mechanism (a 0600 file only a local operator
     // can read) — it does not make the surface safe on a non-loopback bind. So the
     // exposure guard still keys off a network-reachable credential (an env key,
-    // the legacy compat key, or login) to decide whether A2A may mount off loopback.
+    // the legacy compat key, or an owner account, whose key every other device
+    // must present) to decide whether A2A may mount off loopback.
     //
     // This answers "may A2A face the network?" and nothing else. It is NOT what
     // Agent Cards advertise: execution is gated in every posture, so cards state
     // the bearer requirement unconditionally (DOR-1824, agent-card-generator.ts).
     const authConfigured =
-      !!env.MCP_API_KEY?.trim() ||
-      !!configManager.get('mcp')?.apiKey ||
-      configManager.get('auth')?.enabled === true;
+      !!env.MCP_API_KEY?.trim() || !!configManager.get('mcp')?.apiKey || hasAnyUser();
 
     // Exposure guard: refuse to mount the external A2A surface (JSON-RPC plus
     // the agent-card discovery endpoints) on a non-loopback host when nothing

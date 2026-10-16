@@ -19,6 +19,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 // instance; the real end-to-end path is covered in mcp-auth.integration.test.ts.
 vi.mock('../../services/core/auth/index.js', () => ({
   verifyRequestAuth: vi.fn(),
+  hasAnyUser: vi.fn(() => false),
 }));
 
 // The per-instance local token (DOR-278). Mocked to a known value/path so the
@@ -28,7 +29,9 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
   getMcpLocalTokenPath: vi.fn(),
 }));
 
+import type { IncomingMessage } from 'node:http';
 import { honoMcpAuth, type McpAuthEnv, type McpAuthSurface } from '../mcp-auth.js';
+import { markIngress, type IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
@@ -43,11 +46,41 @@ const LOCAL_TOKEN = `dork_mcp_local_${'a'.repeat(64)}`;
 /** The resolved token file path the 401 body must name (never the value). */
 const TOKEN_PATH = '/tmp/dork/mcp-local-token';
 
+/**
+ * Where a request came from (ADR 261015-125850 rule 1): the TCP peer, the
+ * headers the classifier reads, and the listener that admitted it. The
+ * default is a person at this computer.
+ */
+interface Origin {
+  peerAddress: string;
+  headers: Record<string, string>;
+  ingress?: IngressKind;
+}
+
+/** A browser or client on this computer: loopback peer, loopback Host. */
+const THIS_COMPUTER: Origin = { peerAddress: '127.0.0.1', headers: { host: 'localhost:4242' } };
+/** A phone on the same Wi-Fi, through the Wi-Fi listener. */
+const WIFI: Origin = {
+  peerAddress: '192.168.1.31',
+  headers: { host: '192.168.1.20:4243' },
+  ingress: 'wifi',
+};
+/** The own tunnel: a loopback socket, but marked by its listener. */
+const OWN_TUNNEL: Origin = { ...THIS_COMPUTER, ingress: 'own-tunnel' };
+/** A proxy on this host that adds a forwarding header. */
+const FORWARDED: Origin = {
+  peerAddress: '127.0.0.1',
+  headers: { host: 'localhost:4242', 'x-forwarded-for': '203.0.113.9' },
+};
+/** The session relay. */
+const RELAYED: Origin = { ...THIS_COMPUTER, ingress: 'relay' };
+
 /** The request facts a case sends through the credential check. */
 interface Request {
   headers: Record<string, string>;
   body?: unknown;
   method: string;
+  from?: Origin;
 }
 
 /** What the check decided, as a case reads it. */
@@ -85,11 +118,14 @@ function authFor(surface: McpAuthSurface) {
       next();
       return c.body(null, 204);
     });
-    const answer = await app.request(
-      '/',
-      { method: req.method, headers: req.headers },
-      { incoming: { headers: req.headers } }
-    );
+    const from = req.from ?? THIS_COMPUTER;
+    const headers = { ...from.headers, ...req.headers };
+    const incoming = {
+      headers,
+      socket: { remoteAddress: from.peerAddress },
+    } as unknown as IncomingMessage;
+    if (from.ingress) markIngress(incoming, from.ingress);
+    const answer = await app.request('/', { method: req.method, headers }, { incoming });
     if (answer.status !== 204) {
       res.statusCode = answer.status;
       res.body = await answer.json();
@@ -101,12 +137,13 @@ const mcpAuth = authFor('mcp');
 const a2aAuth = authFor('a2a');
 
 function createMockReq(
-  opts: { authHeader?: string; body?: unknown; method?: string } = {}
+  opts: { authHeader?: string; body?: unknown; method?: string; from?: Origin } = {}
 ): Request {
   return {
     headers: opts.authHeader ? { authorization: opts.authHeader } : {},
     body: opts.body,
     method: opts.method ?? 'POST',
+    from: opts.from,
   };
 }
 
@@ -652,6 +689,103 @@ describe('honoMcpAuth — surface "a2a", login off', () => {
   });
 });
 
+/**
+ * Login is no longer one switch (ADR 261015-125850 rules 1 to 3): with "Ask for
+ * a password on this computer too" off, only a person at this computer gets
+ * the local token and the tokenless paths. Every other device needs a key.
+ */
+describe('honoMcpAuth — another device needs a key even with the password off', () => {
+  const OTHER_DEVICES: Array<[string, Origin]> = [
+    ['a phone on the Wi-Fi', WIFI],
+    ['the own tunnel', OWN_TUNNEL],
+    ['a same-host proxy that forwards', FORWARDED],
+  ];
+
+  it.each(OTHER_DEVICES)('401s tokenless discovery from %s', async (_name, from) => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(createMockReq({ body: rpc('tools/list'), from }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+  });
+
+  it.each(OTHER_DEVICES)('does not accept the local token from %s', async (_name, from) => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+        body: rpc('tools/call', 'create_extension'),
+        from,
+      }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+  });
+
+  it.each(OTHER_DEVICES)('401s a tokenless a2a card GET from %s', async (_name, from) => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await a2aAuth(createMockReq({ method: 'GET', from }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('accepts a per-user key from another device', async () => {
+    mockConfig({ authEnabled: false });
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        authHeader: 'Bearer user-key',
+        body: rpc('tools/call', 'create_extension'),
+        from: WIFI,
+      }),
+      res,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(res.locals.user).toEqual({ userId: 'owner-1', credential: 'api-key' });
+  });
+
+  it('names the personal key, not the local token file, in the 401 to another device', async () => {
+    mockConfig({ authEnabled: false });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({ body: rpc('tools/call', 'create_extension'), from: WIFI }),
+      res,
+      next
+    );
+    const message = (res.body as { error: { message: string } }).error.message;
+    expect(message).not.toContain(TOKEN_PATH);
+    expect(message).toContain('personal API key');
+  });
+
+  it('refuses a relayed caller before any credential, even the env key', async () => {
+    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+    mockConfig({ authEnabled: false });
+    vi.mocked(verifyRequestAuth).mockClear();
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({ authHeader: 'Bearer env-key', body: rpc('tools/list'), from: RELAYED }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(verifyRequestAuth).not.toHaveBeenCalled();
+  });
+});
+
 describe('honoMcpAuth — login ON (both surfaces)', () => {
   beforeEach(() => {
     // Login on: the local token is inactive (not resolved), so no path either.
@@ -770,10 +904,12 @@ describe('honoMcpAuth — the Hono adapter', () => {
       seen = { user: c.get('user'), mcpLocalToken: c.get('mcpLocalToken') };
       return c.json({ ok: true });
     });
+    const headers: Record<string, string> = { host: 'localhost:4242' };
+    if (authorization) headers.authorization = authorization;
     const res = await app.request(
       '/mcp',
-      { method: 'POST', headers: authorization ? { authorization } : {} },
-      { incoming: { headers: authorization ? { authorization } : {} } }
+      { method: 'POST', headers },
+      { incoming: { headers, socket: { remoteAddress: '127.0.0.1' } } }
     );
     return { status: res.status, json: await res.json(), seen };
   }

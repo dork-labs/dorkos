@@ -79,7 +79,7 @@ const NEEDS_LOCAL_TOKEN = z
 const NEEDS_CREDENTIAL = rpcError(
   -32001,
   'Unauthorized. Provide a valid credential as "Authorization: Bearer <token>". ' +
-    'When login is on, use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
+    'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
 );
 const AUTH_REQUIRED = { error: 'Unauthorized', code: 'AUTH_REQUIRED' };
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
@@ -404,7 +404,12 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     expect: { status: 500, body: NOT_ALLOWED_BY_CORS('null') },
   },
   {
-    name: 'POST /mcp refuses a page rebound onto this port: the origin is its own host’s',
+    // A rebound page names a host that is not this computer, so it is another
+    // device, which the session gate asks for a person session even with login
+    // off (ADR 261015-125850 rule 3). The local token is not one. The `/mcp`
+    // origin check behind the gate is pinned with a real key in the login-on
+    // suite below.
+    name: 'POST /mcp refuses a page rebound onto this port at the session gate, local token or not',
     method: 'POST',
     path: '/mcp',
     headers: {
@@ -414,9 +419,9 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     },
     body: rpc('ping'),
     expect: {
-      status: 403,
-      headers: { ...JSON_TYPE, ...NOSNIFF, ...NOT_COUNTED },
-      body: rpcError(-32002, 'Origin http://evil.example:4242 not allowed'),
+      status: 401,
+      headers: { ...JSON_TYPE, ...NOT_COUNTED },
+      body: AUTH_REQUIRED,
     },
   },
 ];
@@ -436,7 +441,7 @@ describe('contract: the /mcp endpoint, login off', () => {
     await check(server, testCase, token);
   });
 
-  it('answers 503 while switched off, after the origin check and before the credential check', async () => {
+  it('answers 503 while switched off, before the credential check, and a rebound page is refused at the gate first', async () => {
     await setup(server, 'PATCH', '/api/config', { mcp: { enabled: false } });
     try {
       for (const headers of [MCP_CLIENT, WITH_TOKEN]) {
@@ -464,10 +469,8 @@ describe('contract: the /mcp endpoint, login off', () => {
           path: '/mcp',
           headers: { host: 'evil.example:4242', origin: 'http://evil.example:4242' },
           body: rpc('ping'),
-          expect: {
-            status: 403,
-            body: rpcError(-32002, 'Origin http://evil.example:4242 not allowed'),
-          },
+          // Another device: the session gate answers before the switch.
+          expect: { status: 401, body: AUTH_REQUIRED },
         },
         token
       );

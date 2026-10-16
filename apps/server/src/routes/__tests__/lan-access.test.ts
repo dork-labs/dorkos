@@ -28,6 +28,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createLanAccessStatus } from '@dorkos/test-utils';
 import type { LanAccessStatus } from '@dorkos/shared/types';
 import { configManager } from '../../services/core/config-manager.js';
+import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   createLanAccessRoutes,
@@ -119,12 +120,26 @@ describe('POST /api/lan-access { enabled: true }', () => {
   });
 
   it('lets the signed-in owner turn it on from another device, as the tunnel does', async () => {
+    vi.mocked(decideSessionGate).mockResolvedValueOnce({
+      allowed: true,
+      user: { userId: 'owner', credential: 'cookie' },
+    });
     const res = await request(app())
       .post('/api/lan-access')
       .set('Host', 'box.ngrok.app')
       .send({ enabled: true });
     expect(res.status).toBe(200);
     expect(current.writeSetting).toHaveBeenCalledWith(true);
+  });
+
+  it('refuses another device with no browser session, even with "Require login" off', async () => {
+    const res = await request(app())
+      .post('/api/lan-access')
+      .set('Host', 'box.ngrok.app')
+      .send({ enabled: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('operator_cookie_required');
+    expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
   it('refuses a body that is not a yes or a no', async () => {

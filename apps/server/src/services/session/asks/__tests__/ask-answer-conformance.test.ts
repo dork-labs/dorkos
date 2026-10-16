@@ -117,12 +117,23 @@ const CALLERS: ProbeCaller[] = [
   },
 ];
 
-/** The request's facts, carrying only what either seam reads off them. */
-function factsFor(caller: ProbeCaller): Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> {
+/**
+ * The request's facts, carrying what either seam reads off them. Every caller
+ * is at this computer; the posture each seam reads is injected per caller, so
+ * where the request came from never decides the comparison.
+ */
+function factsFor(
+  caller: ProbeCaller
+): Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity' | 'peerAddress' | 'ingress'> {
   return {
-    headers: caller.agentPresented ? { [AGENT_IDENTITY_HEADER]: 'tok_probe' } : {},
+    headers: {
+      host: 'localhost:4242',
+      ...(caller.agentPresented ? { [AGENT_IDENTITY_HEADER]: 'tok_probe' } : {}),
+    },
     user: caller.user,
     agentIdentity: undefined,
+    peerAddress: '127.0.0.1',
+    ingress: 'direct',
   };
 }
 

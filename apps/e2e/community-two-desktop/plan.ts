@@ -1,7 +1,7 @@
 /**
  * Which journey steps a run takes, and why a remote run leaves some out.
  *
- * The local run takes every step, 1 to 29 with 15b. A remote run (a community
+ * The local run takes every step, 1 to 29 with 15b, 20b and 23b. A remote run (a community
  * the live gate made and is holding, see `config.ts`) takes only the steps
  * that make sense on one real community whose owner and member already exist,
  * and lists every other step in its receipt as `skipped: remote-mode` with the
@@ -33,9 +33,11 @@ export const ALL_STEPS = [
   '18',
   '19',
   '20',
+  '20b',
   '21',
   '22',
   '23',
+  '23b',
   '24',
   '25',
   '26',
@@ -64,8 +66,10 @@ export const REMOTE_RUN_STEPS: readonly StepId[] = [
   '18',
   '19',
   '20',
+  '20b',
   '22',
   '23',
+  '23b',
   '25',
 ];
 

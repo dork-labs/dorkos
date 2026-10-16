@@ -35,7 +35,7 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { getRoomService } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
-import { isLocalCaller, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionNotFoundError,
@@ -68,6 +68,7 @@ import {
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { officialOnlyOrigin, spaceReachable } from '../middleware/spaces-enabled.js';
 import { addAnswerInRoutes } from './community-answer-in.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /**
  * Resolve the only local human allowed to use a stored community connection.
@@ -84,7 +85,7 @@ export function resolveCommunityOwner(c: Context<ApiEnv>): string | Response {
       cookieRefusal.status as ContentfulStatusCode
     );
   }
-  if (!facts.user && !isLocalCaller(facts)) {
+  if (!facts.user && !isAtThisComputer(facts)) {
     return c.json({ error: 'Manage space connections from this machine.' }, 403);
   }
   let caller;

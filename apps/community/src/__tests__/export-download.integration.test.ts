@@ -1,7 +1,10 @@
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eraseMembership } from '../erasure/erasure.js';
-import { ARCHIVE_RECHECK_BYTES, DOWNLOAD_RECHECK_BYTES } from '../routes/community/exports.js';
+import {
+  ARCHIVE_RECHECK_BYTES,
+  DOWNLOAD_RECHECK_BYTES,
+} from '../routes/community/downloads/export-download.js';
 import {
   exportCommunity,
   exportMember,

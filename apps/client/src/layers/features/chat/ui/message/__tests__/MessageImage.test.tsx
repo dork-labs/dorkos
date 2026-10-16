@@ -50,9 +50,11 @@ describe('MessageImage', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
-  it('links to the raw bytes for a full-size view', () => {
+  it('opens the full-size view in the lightbox, not a new tab', () => {
     render(<MessageImage part={PART} />);
 
-    expect(screen.getByRole('link')).toHaveAttribute('href', PART.url);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    const trigger = screen.getByRole('img').closest('button');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
   });
 });

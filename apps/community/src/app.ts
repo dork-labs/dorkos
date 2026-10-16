@@ -16,6 +16,7 @@ import { bootstrapGrant, transaction } from './data.js';
 import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { securityHeaders } from './headers/security-headers.js';
+import { registerUserContentRoutes } from './user-content/routes.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/community/channels.js';
 import { registerEntryRoutes } from './routes/community/entries.js';
@@ -159,7 +160,8 @@ export function createCommunityApp({
     beforeSessionInsert: hooks?.beforeSessionInsert,
   });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
-  app.get('/health', (c) => c.json({ status: 'ok' }));
+  // Before every other route: the user-content address answers only its signed links (DOR-2957).
+  registerUserContentRoutes(app, { pool, config, blobStore, now: hooks?.now });
   const { limitAttempts } = createAttemptLimiter();
   // Password guesses keep their own map, keyed by account: a flood of made-up callers on the
   // shared one above evicts its oldest keys, and must never evict a spent guess budget.
@@ -190,8 +192,7 @@ export function createCommunityApp({
     if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) return next();
     await withRequestStart(pool, next);
   };
-  app.use('/api/v1/*', recordStart);
-  app.use('/api/auth/*', recordStart);
+  for (const path of ['/api/v1/*', '/api/auth/*']) app.use(path, recordStart);
   // Using a mailed link spends from a per-caller budget: tokens are 256-bit, so this caps load,
   // not guessing.
   const limitEmailLinkUse = (c: Context) =>
@@ -549,7 +550,7 @@ export function createCommunityApp({
   });
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerRedactionRoutes(communityApi, { pool, auth, config });
-  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
+  registerExportRoutes(communityApi, { pool, auth, config, blobStore, confirmPassword });
   registerAdministrationRoutes(communityApi, {
     pool,
     auth,

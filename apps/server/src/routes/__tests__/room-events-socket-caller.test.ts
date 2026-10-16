@@ -24,6 +24,7 @@
  *   problem described as a missing room.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { IncomingMessage } from 'node:http';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -93,11 +94,17 @@ describe('the room stream upgrade', () => {
    * token becomes an identity and an unverifiable one becomes nothing at all —
    * so a test that filled `locals` itself would decide the very fact under test.
    *
-   * @param headers - The upgrade request's headers.
+   * @param headers - The upgrade request's headers, from this computer.
    * @param path - The path to route, defaulting to this test's room.
    */
   async function authorize(headers: Record<string, string>, path = `/api/rooms/${roomId}/events`) {
-    const gate = await authorizeStreamUpgrade(headers);
+    // From this computer: a loopback peer asking for a loopback host, which
+    // the gate admits with nothing while it asks for no password.
+    const upgrade = {
+      headers: { host: 'localhost:4242', ...headers },
+      socket: { remoteAddress: '127.0.0.1' },
+    } as unknown as IncomingMessage;
+    const gate = await authorizeStreamUpgrade(upgrade);
     if (!gate.ok) throw new Error(`the credential gate refused: ${gate.status}`);
     return roomEventsRoute.authorize({
       url: new URL(`http://localhost${path}`),

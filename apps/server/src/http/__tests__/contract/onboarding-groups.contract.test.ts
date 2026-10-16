@@ -48,6 +48,12 @@ const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const NOT_HERE = { error: 'Setup is only available on this computer.' };
+/**
+ * The session gate's 401. Another device needs a person session even with the
+ * this-computer password off (ADR 261015-125850 rule 3); the route's own
+ * answers to a signed-in caller at another name are in the login-on suite.
+ */
+const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
 const CHOOSE = { error: 'Choose how your agents run.' };
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
@@ -105,20 +111,20 @@ contractSuite(
   [
     // The bars, before anything is read or written.
     {
-      name: 'POST /api/onboarding/first-run refuses a caller at another name',
+      name: 'POST /api/onboarding/first-run asks a caller at another name to sign in, with login off',
       method: 'POST',
       path: '/api/onboarding/first-run',
       headers: { host: REMOTE_HOST },
       body: { path: 'none' },
-      expect: { status: 403, headers: JSON_TYPE, body: NOT_HERE },
+      expect: { status: 401, headers: JSON_TYPE, schema: GATE_REFUSED },
     },
     {
-      name: 'POST /api/onboarding/first-run refuses a caller at another name before its body',
+      name: 'POST /api/onboarding/first-run asks a caller at another name to sign in before its body',
       method: 'POST',
       path: '/api/onboarding/first-run',
       headers: { host: REMOTE_HOST, ...AGENT },
       body: { path: 'nowhere' },
-      expect: { status: 403, body: NOT_HERE },
+      expect: { status: 401, schema: GATE_REFUSED },
     },
     {
       name: 'POST /api/onboarding/first-run refuses a foreign host',
@@ -362,11 +368,11 @@ contractSuite(
       expect: { status: 200, headers: JSON_TYPE, schema: WELCOME },
     },
     {
-      name: 'POST /api/onboarding/welcome answers again from a caller at another name',
+      name: 'POST /api/onboarding/welcome asks a caller at another name to sign in, with login off',
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: { host: REMOTE_HOST },
-      expect: { status: 200, schema: WELCOME },
+      expect: { status: 401, schema: GATE_REFUSED },
     },
     {
       name: 'POST /api/onboarding/welcome ignores a body',
@@ -527,6 +533,12 @@ describe('contract: first-run setup with login on', () => {
       headers: { ...cookie, host: REMOTE_HOST, origin: `http://${REMOTE_HOST}` },
       body: { path: 'none' },
       expect: { status: 403, body: NOT_HERE },
+    });
+    await check(server, {
+      method: 'POST',
+      path: '/api/onboarding/welcome',
+      headers: { ...cookie, host: REMOTE_HOST, origin: `http://${REMOTE_HOST}` },
+      expect: { status: 200, schema: WELCOME },
     });
   });
 

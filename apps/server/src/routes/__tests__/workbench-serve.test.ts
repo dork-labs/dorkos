@@ -18,6 +18,12 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+// The real gate, wrapped so one test can stand in a signed-in session: a
+// request through the tunnel is another device and must sign in.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
+  return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
+});
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
@@ -33,6 +39,7 @@ import {
   workbenchTokenSigner,
 } from '../../services/workbench-serve/index.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
+import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 
 let root: string;
 let outside: string;
@@ -452,6 +459,10 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
 
   it('says previews are unavailable through a tunnel instead of naming an unreachable port', async () => {
     tunnelManager.status.url = 'https://demo.ngrok.app';
+    vi.mocked(decideSessionGate).mockResolvedValueOnce({
+      allowed: true,
+      user: { userId: 'owner', credential: 'cookie' },
+    });
 
     const res = await request(testServer)
       .post('/api/workbench/sign')

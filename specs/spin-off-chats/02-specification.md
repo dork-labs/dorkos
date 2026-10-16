@@ -13,7 +13,7 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 ### `chat_send({ to, message, summary?, delivery?, replyTo? })`
 
 - `to` is a chat id or an agent id.
-  - A **chat id** posts into that chat. It must be a chat this server has bound, and not a room's conversation, a bridged Telegram/Slack chat or a scheduled run (`CHAT_SENDABLE_ORIGINS`; `null` origins refused, same rule as `ctx.agent.send`).
+  - A **chat id** posts into that chat. It must be a chat this server has bound, and not a room's conversation, a bridged Telegram/Slack chat or a scheduled run (`CHAT_SENDABLE_ORIGINS`; `null` origins refused, same rule as `ctx.agent.send`). One exception: an answer to a message a scheduled run or a heartbeat beat sent (`CHAT_UNATTENDED_ORIGINS`) goes to the asking agent's DM chat with the one answering, threaded to the question, and the receipt's `note` says so. That DM chat is what `to=<agent id>` reaches anyway, so nothing new becomes reachable.
   - An **agent id** posts into the sender agent's own DM chat with that agent (`chat_agent_dms`, keyed by sender agent and receiver agent), opening one in the receiver's home on the first message.
   - Sending to your own chat is refused (`SELF`).
 - `message`: markdown, 1 to 20,000 characters.

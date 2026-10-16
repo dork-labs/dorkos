@@ -5,11 +5,8 @@
  *
  * ## Sending
  *
- * 1. **Where it goes.** `to` is tried as a Mesh agent id first: the message
- *    goes to the DM chat the sending agent keeps with that agent
- *    (`chat_agent_dms`), opened in the receiving agent's home on the first
- *    message. Otherwise `to` is a chat id, which must be one this server bound
- *    and one a chat may write into ({@link CHAT_SENDABLE_ORIGINS}).
+ * 1. **Where it goes.** An agent's DM chat or a chat id, resolved by
+ *    `chat-target.ts`, which also says which chats a chat may write into.
  * 2. **Who sent it.** The calling chat and its agent, read off the verified
  *    turn, never the input. A `chat_messages` row is written BEFORE the
  *    dispatch, with the fence nonce and the sender's level, so the turn it
@@ -78,27 +75,11 @@ import { chatClientId, isChatClientId } from './chat-client-id.js';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+import { ChatMessageError } from './chat-message-error.js';
+import { assertChatSendable, resolveChatTarget, sameChat, type ChatTarget } from './chat-target.js';
 
-/**
- * The launch origins of chats another chat may write into or stop: a person's
- * own chat, one an agent or an extension started, one a chat message opened,
- * and a carry-over or resume of one.
- *
- * Deny by default, as `ctx.agent.send` is. Left out on purpose: a room's
- * conversation (agents speak in rooms with `post_to_room`), a chat bridged
- * from Telegram or Slack (its replies go to people off this machine), a relay
- * DM, a connector event's chat, a schedule's run, and the test harness. `null`
- * is not in it: a chat bound before the column existed could be any of those.
- */
-export const CHAT_SENDABLE_ORIGINS: ReadonlySet<string> = new Set([
-  'interactive',
-  'agent-launch',
-  'chat-message',
-  'extension-start',
-  'extension-message',
-  'account-handoff',
-  'account-resume',
-]);
+export { ChatMessageError } from './chat-message-error.js';
+export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
 
 /** Agent messages enqueued this close to the waiting one they follow are batched into it. */
 export const CHAT_BATCH_WINDOW_MS = 2 * 60_000;
@@ -148,30 +129,6 @@ export interface ChatSendReceipt {
   note?: string;
 }
 
-/** A refusal `chat_send`, `chat_read` or `chat_stop` answers with. */
-export class ChatMessageError extends Error {
-  /**
-   * Build a refusal.
-   *
-   * @param code - A stable code.
-   * @param message - A plain sentence for the calling agent.
-   */
-  constructor(
-    readonly code:
-      | 'NO_CHAT'
-      | 'SELF'
-      | 'NOT_FOUND'
-      | 'NOT_ALLOWED'
-      | 'NOT_READABLE'
-      | 'INVALID_INPUT'
-      | 'UNAVAILABLE',
-    message: string
-  ) {
-    super(message);
-    this.name = 'ChatMessageError';
-  }
-}
-
 /** What the chat-message service needs. Everything after `meshCore` has a production default in boot. */
 export interface ChatMessageServiceDeps {
   /** The store. */
@@ -216,16 +173,6 @@ export interface ChatMessageServiceDeps {
 interface AgentFacts {
   agentId: string | null;
   agentName: string;
-}
-
-/** Where a send is going, once resolved. */
-interface Target {
-  /** The chat, or null when an agent's DM chat is not open yet. */
-  sessionId: string | null;
-  /** Set when the target is an agent. */
-  agent?: { id: string; path: string };
-  /** The id a new DM chat is opened under, minted before the send. */
-  newSessionId?: string;
 }
 
 /** The chat-message service. See the module documentation. */
@@ -298,10 +245,11 @@ export class ChatMessageService {
     delivery: ChatDelivery,
     kind: Extract<ChatMessageKind, 'message' | 'report'>
   ): Promise<ChatSendReceipt> {
-    const target = await this.resolveTarget(caller, input.to);
+    const target = await resolveChatTarget(this.deps, caller, input.to, input.replyTo);
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
-    const replyToId = this.replyTarget(caller, target.sessionId, input.replyTo);
+    const replyToId =
+      target.redirectedReplyTo ?? this.replyTarget(caller, target.sessionId, input.replyTo);
     const messageId = crypto.randomUUID();
     const rendered = renderChatMessage(
       {
@@ -357,6 +305,15 @@ export class ChatMessageService {
     if (replyToId) this.markReplied(replyToId);
     this.deps.emitActivity(caller.sessionId);
     this.deps.emitActivity(receipt.chatId);
+    if (target.redirectedReplyTo) {
+      const asker = this.deps.store.get(target.redirectedReplyTo)?.fromAgentName ?? 'that agent';
+      return {
+        ...receipt,
+        note:
+          `That chat was a scheduled run, so your answer went to ${asker}'s direct chat ` +
+          'with you, where it will see it.',
+      };
+    }
     return receipt;
   }
 
@@ -364,7 +321,7 @@ export class ChatMessageService {
   private async deliver(
     caller: ChatCaller,
     row: ChatMessageRow,
-    target: Target,
+    target: ChatTarget,
     content: string,
     delivery: ChatDelivery
   ): Promise<ChatSendReceipt> {
@@ -546,57 +503,6 @@ export class ChatMessageService {
     if (row) this.deps.emitActivity(row.fromSessionId);
   }
 
-  /** Where a send is going, or the refusal that says why it cannot go. */
-  private async resolveTarget(caller: ChatCaller, to: string): Promise<Target> {
-    const mesh = this.deps.meshCore();
-    const agentPath = mesh?.get(to) ? mesh.getProjectPath(to) : undefined;
-    if (agentPath) {
-      const agent = { id: to, path: agentPath };
-      const kept = this.deps.store.dmChat(caller.agentPath, to);
-      if (kept && kept !== caller.sessionId) {
-        const facts = await this.deps.describeSession(kept);
-        if (facts.bound && facts.agentPath === agentPath && !facts.roomBound) {
-          return { sessionId: kept, agent };
-        }
-      }
-      return { sessionId: null, agent };
-    }
-    if (to === caller.sessionId || (await this.sameChat(to, caller.sessionId))) {
-      throw new ChatMessageError(
-        'SELF',
-        'That is your own chat. Send to another chat or agent, or just keep working.'
-      );
-    }
-    await this.assertSendable(to, mesh !== undefined);
-    return { sessionId: to };
-  }
-
-  /** Refuse a chat id this chat may not write into or stop. */
-  private async assertSendable(sessionId: string, meshUp: boolean): Promise<SessionFacts> {
-    const facts = await this.deps.describeSession(sessionId);
-    if (!facts.bound) {
-      if (!meshUp) {
-        throw new ChatMessageError(
-          'UNAVAILABLE',
-          'Agents aren’t loaded yet. Try again in a moment.'
-        );
-      }
-      throw new ChatMessageError('NOT_FOUND', 'There is no agent or chat with that id here.');
-    }
-    if (
-      facts.roomBound ||
-      facts.launchOrigin === null ||
-      !CHAT_SENDABLE_ORIGINS.has(facts.launchOrigin)
-    ) {
-      throw new ChatMessageError(
-        'NOT_ALLOWED',
-        'That chat belongs to a room, a Telegram or Slack chat, or a scheduled run. Post in the ' +
-          'room with post_to_room instead, or pick another chat.'
-      );
-    }
-    return facts;
-  }
-
   /**
    * Whether a chat can be sent chat messages at all: one bound here that is
    * not a room's, a bridged chat, or a scheduled run. A spin-off of a chat
@@ -606,20 +512,11 @@ export class ChatMessageService {
    */
   async canReceive(sessionId: string): Promise<boolean> {
     try {
-      await this.assertSendable(sessionId, true);
+      await assertChatSendable(this.deps, sessionId, true);
       return true;
     } catch {
       return false;
     }
-  }
-
-  /** Whether two ids name the same chat (a request id and its canonical one). */
-  private async sameChat(a: string, b: string): Promise<boolean> {
-    const [ca, cb] = await Promise.all([
-      this.deps.canonicalId(a).catch(() => a),
-      this.deps.canonicalId(b).catch(() => b),
-    ]);
-    return ca === cb;
   }
 
   /** The lock key for sends that may open an agent's DM chat, or null for a chat id. */
@@ -739,10 +636,13 @@ export class ChatMessageService {
     caller: ChatCaller,
     input: { chat: string; reason?: string }
   ): Promise<{ stopped: boolean; chatId: string; droppedMessages: number; note: string }> {
-    if (input.chat === caller.sessionId || (await this.sameChat(input.chat, caller.sessionId))) {
+    if (
+      input.chat === caller.sessionId ||
+      (await sameChat(this.deps, input.chat, caller.sessionId))
+    ) {
       throw new ChatMessageError('SELF', 'That is your own chat. End your turn instead.');
     }
-    await this.assertSendable(input.chat, this.deps.meshCore() !== undefined);
+    await assertChatSendable(this.deps, input.chat, this.deps.meshCore() !== undefined);
     const reason = input.reason?.trim() ? input.reason.trim().slice(0, CHAT_STOP_REASON_MAX) : null;
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);

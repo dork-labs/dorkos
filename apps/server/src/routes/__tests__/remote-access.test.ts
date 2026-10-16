@@ -63,6 +63,13 @@ function deps() {
 
 let current: ReturnType<typeof deps>;
 
+/**
+ * A person signed in from another device. Other devices always prove a person
+ * session at the gate (ADR 261015-125850 rule 3), so a remote case carries one
+ * to reach the route's own "only on this computer" bar.
+ */
+const SIGNED_IN: RequestUser = { userId: 'u1', credential: 'cookie' };
+
 /** The routes alone, with the identity `sessionGate` would have resolved. */
 function app(options: { user?: RequestUser; managed?: boolean } = {}) {
   return target.mount(
@@ -138,15 +145,27 @@ describe.each([
     expect(effect()).toHaveBeenCalled();
   });
 
-  it('refuses a caller on another device', async () => {
-    const res = await request(app()).post(path).set('Host', 'box.ngrok.app').send(body);
+  it('refuses a person signed in on another device', async () => {
+    const res = await request(app({ user: SIGNED_IN }))
+      .post(path)
+      .set('Host', 'box.ngrok.app')
+      .send(body);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
     expect(effect()).not.toHaveBeenCalled();
   });
 
+  it('asks another device with no browser session for one, with the this-computer password off', async () => {
+    // The cookie bar decides "login on" per request now: another device is
+    // always asked, whatever "Ask for a password on this computer too" says.
+    const res = await request(app()).post(path).set('Host', 'box.ngrok.app').send(body);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('operator_cookie_required');
+    expect(effect()).not.toHaveBeenCalled();
+  });
+
   it('refuses a request that arrived over managed access, whatever its Host says', async () => {
-    const res = await request(app({ managed: true }))
+    const res = await request(app({ managed: true, user: SIGNED_IN }))
       .post(path)
       .send(body);
     expect(res.status).toBe(403);
@@ -237,14 +256,19 @@ describe('POST /api/remote-access/withdraw, a person at this computer', () => {
     expect(current.coordinator.withdraw).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses an agent, another device and a request over managed access', async () => {
+  it('refuses an agent, another device (signed in or not) and a request over managed access', async () => {
     const agent = await request(app()).post(path).set('x-dorkos-agent', 'agent-token');
     expect(agent.status).toBe(403);
     expect(agent.body.code).toBe('operator_only_config');
-    const remote = await request(app()).post(path).set('Host', 'box.ngrok.app');
+    const remote = await request(app({ user: SIGNED_IN }))
+      .post(path)
+      .set('Host', 'box.ngrok.app');
     expect(remote.status).toBe(403);
     expect(remote.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
-    const managed = await request(app({ managed: true })).post(path);
+    const unsigned = await request(app()).post(path).set('Host', 'box.ngrok.app');
+    expect(unsigned.status).toBe(403);
+    expect(unsigned.body.code).toBe('operator_cookie_required');
+    const managed = await request(app({ managed: true, user: SIGNED_IN })).post(path);
     expect(managed.status).toBe(403);
     expect(managed.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
     expect(current.coordinator.withdraw).not.toHaveBeenCalled();

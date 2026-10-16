@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import type { ImagePart } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
+import { ImageLightboxTrigger } from '@/layers/shared/ui';
 
 /**
  * A picture the agent produced, rendered where it happened in the transcript.
@@ -10,8 +11,8 @@ import { cn } from '@/layers/shared/lib';
  * is for opening files a session TOUCHED — you go there to inspect something.
  * A generated image is part of what the agent said, so it belongs in reading
  * order beside the sentence that introduced it, the same way a tool card does.
- * The canvas remains the right home for a full-size view later; sending the
- * picture there instead would have made "look at what I made" a navigation.
+ * Clicking it opens the full-size view in the message's lightbox, over the
+ * transcript, so looking closer is never a navigation either.
  *
  * The bytes are fetched by the browser from `part.url` and cached there. This
  * component never holds them, which is the same rule the part, the event and
@@ -41,14 +42,9 @@ export function MessageImage({ part }: { part: ImagePart }) {
 
   return (
     <figure className="my-3" data-testid="message-image">
-      <a
-        href={part.url}
-        target="_blank"
-        rel="noreferrer"
-        // Opening the raw bytes in a tab is the full-size view. Safe because the
-        // route serves only raster images with `nosniff` and refuses SVG
-        // outright, so a top-level navigation to one cannot execute anything.
-        className="focus-visible:ring-ring block rounded-md focus-visible:ring-2 focus-visible:outline-none"
+      <ImageLightboxTrigger
+        image={{ src: part.url, alt: part.alt ?? 'Image produced by the agent' }}
+        className="block"
       >
         <img
           src={part.url}
@@ -58,7 +54,7 @@ export function MessageImage({ part }: { part: ImagePart }) {
           onError={() => setFailed(true)}
           className="border-border/60 bg-muted/20 max-h-[32rem] max-w-full rounded-md border object-contain"
         />
-      </a>
+      </ImageLightboxTrigger>
     </figure>
   );
 }

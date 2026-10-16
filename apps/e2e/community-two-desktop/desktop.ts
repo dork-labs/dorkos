@@ -96,8 +96,9 @@ export const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g
  *
  * A first launch skips first-run setup and settles the one-time prompts the
  * way a returning person would have, so a modal cannot hide the page from
- * assistive technology mid-journey. A relaunch does neither: whatever the app
- * shows after a restart is what the person would see.
+ * assistive technology mid-journey. It also turns on the spaces experiment.
+ * A relaunch does neither: whatever the app shows after a restart is what the
+ * person would see.
  *
  * @param context - The executable and where homes and evidence live.
  * @param name - The person's short name; also the home folder's name.
@@ -193,6 +194,9 @@ export async function launchDesktop(
         profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
         telemetry: { userHasDecided: true },
         ui: { trustNoticeSeenAt: now },
+        // Spaces ship behind one experiment switch, off by default (DOR-2740),
+        // and this whole journey is about spaces. It is saved, so a relaunch keeps it.
+        spaces: { enabled: true },
       })
     );
     await page.reload();

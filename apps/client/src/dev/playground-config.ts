@@ -30,6 +30,7 @@ import {
   FORMS_SECTIONS,
   COMPONENTS_SECTIONS,
   CONVERSATION_SECTIONS,
+  IMAGE_LIGHTBOX_SECTIONS,
   ENTRY_ACTIONS_SECTIONS,
   FEATURE_AGENT_SECTIONS,
   FEATURE_SURFACE_SECTIONS,
@@ -209,7 +210,11 @@ export const PAGE_CONFIGS: PageConfig[] = [
     // Owned sections first, then the one this page renders but Home, Inbox &
     // Approvals owns — see CONVERSATION_CROSS_LISTED for why cross-listing
     // works this way.
-    sections: [...CONVERSATION_SECTIONS, ...crossListed(CONVERSATION_CROSS_LISTED)],
+    sections: [
+      ...CONVERSATION_SECTIONS,
+      ...IMAGE_LIGHTBOX_SECTIONS,
+      ...crossListed(CONVERSATION_CROSS_LISTED),
+    ],
     path: 'conversation',
   },
   {

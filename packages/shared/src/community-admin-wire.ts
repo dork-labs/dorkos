@@ -1,5 +1,6 @@
 /** Strict wire schemas for standalone Community administration. */
 import { z } from 'zod';
+import { CommunityAdminAccountIdSchema } from './community-admin-accounts.js';
 
 const id = z.uuid();
 const timestamp = z.iso.datetime();
@@ -352,6 +353,16 @@ export {
   CommunityAdminHostApiKeySecretResponseSchema,
 } from './community-admin-host-keys.js';
 
+export {
+  HOST_ACCOUNT_SPACES_MAX,
+  CommunityAdminAccountIdSchema,
+  CommunityAdminAccountLookupRequestSchema,
+  CommunityAdminAccountLookupResponseSchema,
+  CommunityAdminAccountSpaceSchema,
+  CommunityAdminAccountSpacesRequestSchema,
+  CommunityAdminAccountSpacesResponseSchema,
+} from './community-admin-accounts.js';
+
 /** Most erasure journal lines one read returns, and how many when `limit` is left out. */
 export const COMMUNITY_ERASURE_JOURNAL_PAGE_MAX = 1_000;
 const COMMUNITY_ERASURE_JOURNAL_PAGE_DEFAULT = 500;
@@ -489,27 +500,6 @@ export const CommunityAdminOwnerReplacementClaimTokenSchema = z.strictObject({
   replacementId: id,
   claimToken: z.string().min(1),
   claimUrl: z.url(),
-});
-
-/**
- * A host account's id, as Better Auth stores it. Opaque: never an email or a sign-in identity.
- */
-export const CommunityAdminAccountIdSchema = z
-  .string()
-  .regex(/^[A-Za-z0-9_-]{1,128}$/, 'An account id is 1 to 128 letters, digits, `_` or `-`.');
-
-/**
- * Find the host account that signs in through this host's single sign-on with one identity. The
- * issuer must be the one this host is configured with; only an exact match answers, so the
- * lookup cannot list or guess other accounts.
- */
-export const CommunityAdminAccountLookupRequestSchema = z.strictObject({
-  issuer: z.string().min(1).max(2048),
-  subject: z.string().min(1).max(255),
-});
-/** The account that signs in with the identity asked about. A miss is `404 NOT_FOUND`. */
-export const CommunityAdminAccountLookupResponseSchema = z.strictObject({
-  accountId: CommunityAdminAccountIdSchema,
 });
 
 /** Why a host closed someone's account. Recorded on the closure; never shown to members. */

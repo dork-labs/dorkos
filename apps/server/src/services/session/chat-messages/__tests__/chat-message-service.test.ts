@@ -680,6 +680,102 @@ describe('send — replies', () => {
   });
 });
 
+describe('send — answering a scheduled run or a beat', () => {
+  /** A question Bo's unattended chat asked Ana's chat. */
+  function askedBy(chatId: string, id: string, fromAgentPath = '/agents/bo') {
+    store.insert({
+      id,
+      toSessionId: ANA.sessionId,
+      fromSessionId: chatId,
+      fromAgentPath,
+      fromAgentId: 'agent-bo',
+      fromAgentName: 'Bo',
+      fromChatTitle: 'Heartbeat',
+      kind: 'message',
+      text: 'question',
+      summary: null,
+      nonce: id.padEnd(8, '0').slice(0, 8),
+      delivery: 'queue',
+      status: 'delivered',
+      queueMessageId: null,
+      ceilingJson: '"runtime-default"',
+      replyToId: null,
+    });
+  }
+
+  it.each(['heartbeat', 'schedule'])(
+    'sends the answer to a %s chat into the asking agent’s DM chat',
+    async (origin) => {
+      chat('beat-b', { launchOrigin: origin });
+      chat('dm-bo', { launchOrigin: 'chat-message', agentPath: '/agents/bo' });
+      store.keepDmChat(ANA.agentPath, 'agent-bo', 'dm-bo');
+      askedBy('beat-b', 'aaaa1111');
+
+      const receipt = await service.send(ANA, {
+        to: 'beat-b',
+        message: 'answer',
+        replyTo: 'aaaa1111',
+      });
+
+      expect(receipt.chatId).toBe('dm-bo');
+      expect(receipt.note).toMatch(/Bo's direct chat with you/);
+      expect(dispatched[0]!.sessionId).toBe('dm-bo');
+      expect(sentByAna()[0]!.replyToId).toBe('aaaa1111');
+      expect(store.get('aaaa1111')!.status).toBe('replied');
+    }
+  );
+
+  it('finds the question without a replyTo, and opens the DM chat when none is kept', async () => {
+    chat('beat-b', { launchOrigin: 'heartbeat' });
+    askedBy('beat-b', 'aaaa1111');
+    dispatchImpl = async (opts) => {
+      chat('opened-dm', {
+        agentPath: opts.request.agentPath ?? null,
+        launchOrigin: 'chat-message',
+      });
+      return { ...(await defaultDispatch(opts)), canonicalId: 'opened-dm' } as never;
+    };
+
+    const receipt = await service.send(ANA, { to: 'beat-b', message: 'answer' });
+
+    expect(receipt.chatId).toBe('opened-dm');
+    expect(dispatched[0]!.request.agentPath).toBe('/agents/bo');
+    expect(store.dmChat(ANA.agentPath, 'agent-bo')).toBe('opened-dm');
+    expect(store.get('aaaa1111')!.status).toBe('replied');
+  });
+
+  it('still refuses a message to a beat that answers nothing it asked', async () => {
+    chat('beat-b', { launchOrigin: 'heartbeat' });
+    expect((await refusal(service.send(ANA, { to: 'beat-b', message: 'hi' }))).code).toBe(
+      'NOT_ALLOWED'
+    );
+    expect(dispatched).toEqual([]);
+  });
+
+  it('refuses a replyTo the beat did not send, and never redirects a room chat', async () => {
+    chat('beat-b', { launchOrigin: 'heartbeat' });
+    chat('room-b', { launchOrigin: 'room', roomBound: true });
+    askedBy('room-b', 'rrrr1111');
+    askedBy('chat-other', 'oooo1111');
+
+    expect(
+      (await refusal(service.send(ANA, { to: 'beat-b', message: 'a', replyTo: 'oooo1111' }))).code
+    ).toBe('NOT_ALLOWED');
+    expect(
+      (await refusal(service.send(ANA, { to: 'room-b', message: 'a', replyTo: 'rrrr1111' }))).code
+    ).toBe('NOT_ALLOWED');
+    expect(dispatched).toEqual([]);
+  });
+
+  it('refuses when the asking agent no longer lives where it asked from', async () => {
+    chat('beat-b', { launchOrigin: 'heartbeat' });
+    askedBy('beat-b', 'aaaa1111', '/agents/moved');
+    expect(
+      (await refusal(service.send(ANA, { to: 'beat-b', message: 'a', replyTo: 'aaaa1111' }))).code
+    ).toBe('NOT_ALLOWED');
+  });
+});
+
 describe('the lifecycle of a sent message', () => {
   async function queuedPair(): Promise<{ queueId: string; ids: string[] }> {
     chat('chat-b');

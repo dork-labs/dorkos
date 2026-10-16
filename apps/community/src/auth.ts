@@ -18,6 +18,7 @@ import { withRequestStart, writtenBeforeClearing } from './sign-in/request-start
 import { communityEmailLinks } from './email-links/plugin.js';
 import { queueEmailConfirmation } from './email-links/requests.js';
 import { isBanned } from './moderation/bans.js';
+import { withoutProviderTokens } from './sign-in/no-provider-tokens.js';
 import {
   OPEN_ADMISSION_COOKIE,
   openAdmissionAvailable,
@@ -359,7 +360,8 @@ export function createCommunityAuth(
               canSendNotice,
               now,
             });
-            return { data: account };
+            // The space keeps who you are, never a provider's tokens (DOR-2957).
+            return { data: withoutProviderTokens(account) };
           },
           /**
            * A request that checked the account before a clean-out (`clearAccountAccess`)
@@ -387,15 +389,18 @@ export function createCommunityAuth(
           },
         },
         update: {
+          // A sign-in that refreshes a provider link writes no tokens either (DOR-2957).
+          before: async (account) => ({ data: withoutProviderTokens(account) }),
           /**
            * The same rule for an update. Better Auth's `update.before` sees only the changed
            * fields, not whose row it is, so the check runs here, after the commit. Better Auth's
            * own password change and reset are off, and a mailed reset or confirmation writes the
            * password row in this server's own transaction, never through Better Auth, so updates
-           * here only refresh a provider link's tokens: a stale one adds no way in; the sign-in it
-           * belongs to is refused, and its session too (`session.create.after`). A stale update
-           * to a password row would be one a clean-out did not write, so that row is deleted: the
-           * account then has no password, which fails closed.
+           * here only touch a provider link (with its tokens cleared): a stale one adds no way
+           * in; the sign-in it belongs to is refused, and its session too
+           * (`session.create.after`). A stale update to a password row would be one a clean-out
+           * did not write, so that row is deleted: the account then has no password, which fails
+           * closed.
            */
           after: async (account) => {
             if (!account || !(await writtenBeforeClearing(pool, account.userId, { lock: true })))

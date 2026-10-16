@@ -115,6 +115,26 @@ async function providersOf(email: string) {
   return rows.map((row) => row.providerId);
 }
 
+/** The provider tokens stored on an account's single sign-on link (DOR-2957: none, ever). */
+async function providerTokensOf(email: string) {
+  const { rows } = await pool.query(
+    `SELECT a."accessToken",a."refreshToken",a."idToken",
+            a."accessTokenExpiresAt",a."refreshTokenExpiresAt"
+     FROM account a JOIN "user" u ON u.id=a."userId"
+     WHERE u.email=$1 AND a."providerId"='oidc'`,
+    [email]
+  );
+  return rows;
+}
+
+const NO_TOKENS = {
+  accessToken: null,
+  refreshToken: null,
+  idToken: null,
+  accessTokenExpiresAt: null,
+  refreshTokenExpiresAt: null,
+};
+
 beforeAll(async () => {
   issuer = await startFakeIssuer();
   await admin.query(`CREATE DATABASE ${dbName}`);
@@ -229,6 +249,8 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     const signedIn = await oidcSignIn(await invitation());
     expect(signedIn.location.pathname).toBe('/signed-in');
     expect(await providersOf('invited@example.com')).toEqual(['oidc']);
+    // The new link keeps who signed in, never the issuer's tokens (DOR-2957).
+    expect(await providerTokensOf('invited@example.com')).toEqual([NO_TOKENS]);
     expect((await call('/api/v1/invites/bind', 'POST', {}, signedIn.cookie)).status).toBe(200);
     const redeemed = await call('/api/v1/invites/redeem', 'POST', {}, signedIn.cookie);
     expect(redeemed.status).toBe(200);
@@ -307,6 +329,23 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     } finally {
       issuer.down = false;
     }
+  });
+
+  it('keeps no provider token on the account at a later sign-in either (DOR-2957)', async () => {
+    // Purpose: fails if the space stores the issuer's access, refresh or ID token, which could
+    // act in the person's account outside the space (room-only power for a space sign-in).
+    expect(await providerTokensOf('invited@example.com')).toEqual([NO_TOKENS]);
+    issuer.identity = {
+      sub: 'invited',
+      email: 'invited@example.com',
+      email_verified: true,
+      name: 'Invited',
+    };
+    const issued = issuer.requests.length;
+    expect((await oidcSignIn()).location.pathname).toBe('/signed-in');
+    // The issuer did issue tokens this time too; the space kept none of them.
+    expect(issuer.requests.length).toBeGreaterThan(issued);
+    expect(await providerTokensOf('invited@example.com')).toEqual([NO_TOKENS]);
   });
 
   it('keeps a signed-in person from adding a password to a session older than five minutes', async () => {
