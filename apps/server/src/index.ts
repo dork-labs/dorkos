@@ -68,6 +68,7 @@ import { mountLateRoutes } from './startup/steps/late-routes.js';
 import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
 import { createServerRefs, type ServerRefs } from './startup/server-refs.js';
+import { currentServerRole } from './lib/server-role.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
 //
@@ -266,6 +267,7 @@ async function start() {
     host,
     exposureAllowed: canExpose(),
     allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+    hub: currentServerRole() === 'hub',
   });
   if (!bindCheck.allowed) {
     logger.error(`[Auth] ${bindCheck.reason}`);

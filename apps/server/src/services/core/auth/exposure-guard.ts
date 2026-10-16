@@ -102,6 +102,12 @@ export interface BindCheckInput {
    * the network boundary.
    */
   allowInsecureBind: boolean;
+  /**
+   * Whether this server is a hub. A hub binds beyond loopback before it has an
+   * owner: its login is always on and only provisioning can make an account,
+   * so nobody can reach it unsigned-in, owner or not.
+   */
+  hub?: boolean;
 }
 
 /** Result of {@link checkBindAllowed}. */
@@ -153,6 +159,7 @@ function insecureBindWarning(host: string): string {
 export function checkBindAllowed(input: BindCheckInput): BindCheckResult {
   if (isLoopbackHost(input.host)) return { allowed: true };
   if (input.exposureAllowed) return { allowed: true };
+  if (input.hub === true) return { allowed: true };
   if (input.allowInsecureBind) return { allowed: true, warning: insecureBindWarning(input.host) };
   return { allowed: false, reason: bindRefusalMessage(input.host) };
 }

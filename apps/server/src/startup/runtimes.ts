@@ -37,6 +37,7 @@ import {
   LocalSessionAttachmentStore,
   setSessionAttachmentStore,
 } from '../services/session/attachments/index.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 /** What registering the runtimes needs from the startup that came before it. */
 export interface RuntimeStartupDeps {
@@ -70,6 +71,15 @@ export interface RegisteredRuntimes {
  * @returns See {@link RegisteredRuntimes}.
  */
 export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<RegisteredRuntimes> {
+  // A hub runs no agents (ADR 261015-042933): its agents work on agent
+  // computers it asks Cloud to start. It registers nothing, so nothing on it
+  // can start a turn, and a route that needs a runtime refuses as it does for
+  // any runtime that is not registered. It still talks to DorkOS Cloud.
+  if (currentServerRole() === 'hub') {
+    initCloudLinkManager();
+    logger.info('[DorkOS] Hub mode: no agent runtimes on this server');
+    return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay: null };
+  }
   const { db, dorkHome } = deps;
   let claudeRuntime: ClaudeCodeRuntime | null = null;
   let doeRuntime: DoeRuntime | null = null;

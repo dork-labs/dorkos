@@ -263,6 +263,15 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
               role: currentServerRole(),
             });
             if (!registrationAllowed(mode, caller)) {
+              // A hub's owner comes from DorkOS Cloud, never from a sign-up
+              // form, and a pooled hub has no owner yet, so "an owner already
+              // exists" would be untrue there.
+              if (mode === 'provisioned') {
+                throw new APIError('FORBIDDEN', {
+                  code: REGISTRATION_PROVISIONED,
+                  message: 'Accounts here come from DorkOS. Sign in with your DorkOS account.',
+                });
+              }
               throw new APIError('FORBIDDEN', {
                 code: 'REGISTRATION_CLOSED',
                 message:
@@ -469,6 +478,12 @@ export {
   type RequestUser,
   type VerifyRequestAuthOptions,
 } from './session-gate.js';
+
+/**
+ * The refusal code for a sign-up on a hub (DOR-2934). Distinct from
+ * `REGISTRATION_CLOSED`, which the client reads as "an owner already exists".
+ */
+export const REGISTRATION_PROVISIONED = 'REGISTRATION_PROVISIONED';
 
 // The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
 // startup seed on a clean seam right after `initAuth`.

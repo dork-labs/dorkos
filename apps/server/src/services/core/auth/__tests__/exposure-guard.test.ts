@@ -109,6 +109,18 @@ describe('exposure-guard', () => {
       ).toEqual({ allowed: true });
     });
 
+    it('lets a hub bind beyond loopback before it has an owner, with no warning', () => {
+      // A hub's login is always on and only provisioning makes an account, so
+      // no owner yet does not mean open.
+      const result = checkBindAllowed({
+        host: '0.0.0.0',
+        exposureAllowed: false,
+        allowInsecureBind: false,
+        hub: true,
+      });
+      expect(result).toEqual({ allowed: true });
+    });
+
     it('refuses a non-loopback host with an actionable reason when the guard fails', () => {
       const result = checkBindAllowed({
         host: '0.0.0.0',

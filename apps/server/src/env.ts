@@ -241,6 +241,12 @@ export const serverEnvSchema = z.object({
   //   - the `/api` host guard (middleware/host-guard.ts)
   //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
+  // What this server is (ADR 261015-042933, DOR-2934): `computer` (the default,
+  // a person's own DorkOS) or `hub` (a person's own DorkOS in the cloud). Read
+  // by `lib/server-role.ts` and nowhere else. A hub runs no agents, keeps login
+  // on, takes its owner from provisioning, and refuses
+  // DORKOS_ALLOW_INSECURE_BIND (below the schema).
+  DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -422,7 +428,20 @@ export const serverEnvSchema = z.object({
   NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 
-const result = serverEnvSchema.safeParse(process.env);
+const result = serverEnvSchema
+  .superRefine((parsed, ctx) => {
+    // A hub keeps login on and owns no network boundary of its own to vouch
+    // for, so the escape hatch that switches the locality checks off has no
+    // meaning there. Refuse to boot rather than quietly ignore it.
+    if (parsed.DORKOS_SERVER_ROLE === 'hub' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DORKOS_ALLOW_INSECURE_BIND'],
+        message: 'must not be set when DORKOS_SERVER_ROLE is hub',
+      });
+    }
+  })
+  .safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
