@@ -50,6 +50,8 @@ import { adaptLanCookies } from '../services/core/lan-access/lan-cookies.js';
 import { markIngress, type IngressKind } from '../services/core/remote/ingress-mark.js';
 import { isLoopbackPeer } from '../lib/trusted-origins.js';
 import { admitHubRequest, trackHubConnection } from '../services/core/hub/hub-serving.js';
+import { adaptHubCookies } from '../services/core/hub/hub-cookies.js';
+import { AUTH_COOKIES_SECURE } from '../services/core/auth/cookie-security.js';
 
 /**
  * The origin a request the adapter cannot read is given, so it has a URL at
@@ -95,6 +97,7 @@ export function frontDoorListener(app: Hono<ApiEnv>): RequestListener {
       return;
     }
     trackHubConnection(incoming.socket);
+    adaptHubCookies(incoming, outgoing, AUTH_COOKIES_SECURE);
     adaptLanCookies(incoming, outgoing);
     return raw.run([incoming, outgoing], () => viaHono(incoming, outgoing));
   };
@@ -183,6 +186,7 @@ export function createFrontDoorServer(
   // cookie names the auth stack set (see `adaptLanCookies`).
   server.prependListener('upgrade', (req: IncomingMessage) => {
     mark(req);
+    adaptHubCookies(req, undefined, AUTH_COOKIES_SECURE);
     adaptLanCookies(req);
   });
   return server;
