@@ -67,7 +67,7 @@ server and window.
 | 17-18  | The switcher works by keyboard (⌘⇧K, arrows, Enter, Escape) and at phone width                                                                   |
 | 19     | Neither app looks up a Community room in its local rooms                                                                                         |
 | 20     | Each person picks an agent from their own app only. The Community allows one agent per member, and B's second agent is refused                   |
-| 20b    | B's app shows A's agent as "Available" in the channel's member list, within 30 seconds of A adding it                                            |
+| 20b    | B's app shows A's agent as "Available" in the channel's member list, within a minute of A adding it                                              |
 | 21     | A private channel shows up only for its member. B can't read it and can't add an agent to it                                                     |
 | 22     | A mentions B's agent. B's app answers with the scripted test reply, and both people see it                                                       |
 | 23     | B's app quits and relaunches mid-journey. The connection, switcher order, saved spot and agent all survive, and B reopens where they were        |
@@ -87,10 +87,15 @@ channel's member list from the space, and the step checks three things:
 - B's agent's last report time does not move for a full report interval
   (about two minutes), long enough that a running app would have reported
 - A's agent, still running, is reported again in that same window
-- once B's app is back, B's agent is reported again and reads as available
+- once B's app is back, B's agent is reported again
 
 That adds up to about two and a half minutes while B's app is closed. The
 receipt records when the space would show B's agent as offline.
+
+Steps 20b and 23b need a space and an app that both have agent availability
+(DOR-2877 and DOR-2878). Both are product contracts (see below): against a
+space from before availability they are recorded as product bugs, and the run
+goes on to the steps after them.
 
 Some checks are product contracts, where a failure is the product's fault
 rather than the script's. When one fails, the run still finishes every step,

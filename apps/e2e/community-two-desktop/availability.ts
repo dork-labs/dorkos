@@ -25,11 +25,23 @@ import { json, type Desktop } from './desktop.js';
 /**
  * How long the closed app's agent must stay unreported, from its last recorded
  * report: the longest wait between two reports (the space's interval plus the
- * reporter's 10% spread), plus room for the request itself. A running app is
- * always recorded again inside it, since the space skips a write only for a
- * report under half an interval after the last.
+ * reporter's 10% spread), plus room for the request and a little clock drift
+ * between the space and this machine. A steadily running app is recorded again
+ * inside it, since the space skips a write only for a report under half an
+ * interval after the last.
  */
 export const SILENT_FOR_MS = (COMMUNITY_AGENT_AVAILABILITY_REPORT_SECONDS * 1.1 + 18) * 1000;
+
+/**
+ * Whether a later read of an agent's last report time shows a newer report.
+ * A missing row or time never counts as one.
+ *
+ * @param after - The later read.
+ * @param before - The earlier read.
+ */
+export function reportedAfter(after: string | null | undefined, before: string): boolean {
+  return Boolean(after) && Date.parse(after!) > Date.parse(before);
+}
 
 /**
  * One agent's row in a channel's member list, read through a person's app,
@@ -54,8 +66,9 @@ export async function agentRow(
 
 /**
  * Wait until a person's app reads an agent as available, and return its row.
- * The first report goes out 2-10 s after an app starts reporting, so 30 s is
- * plenty for an agent enrolled moments before.
+ * The owning app starts reporting for a newly enrolled agent on its next
+ * 30-second check of its enrollments, and sends the first report 2-10 s after
+ * that, so 60 s covers an agent enrolled moments before.
  *
  * @param viewer - The app whose person reads the list.
  * @param ref - That app's connection to the space.
@@ -72,7 +85,7 @@ export async function waitUntilAvailable(
   let row: RemoteCommunityMember | undefined;
   await expect
     .poll(async () => (row = await agentRow(viewer, ref, roomId, memberId))?.availability, {
-      timeout: 30_000,
+      timeout: 60_000,
       message:
         'the agent reads as available (no availability at all means the space lacks the agentAvailability feature)',
     })
@@ -129,7 +142,7 @@ export async function watchWhileClosed(
     .poll(
       async () => {
         controlAfter = await lastSeen(agents.control);
-        return Date.now() >= quietUntil && controlAfter !== controlBefore;
+        return Date.now() >= quietUntil && reportedAfter(controlAfter, controlBefore);
       },
       { timeout: SILENT_FOR_MS + 60_000, intervals: [5_000] }
     )
