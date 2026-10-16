@@ -244,7 +244,7 @@ function McpAuthRow({
     return (
       <SettingRow
         label="Authentication"
-        description="Couldn’t make a token for other apps. Restart DorkOS or turn on login."
+        description="Couldn’t make a token for other apps. Use a personal API key instead."
       >
         <Badge variant="outline" tone="warning">
           No key yet
@@ -357,6 +357,9 @@ function LocalTokenAuthRow({
       </p>
       <p className="text-muted-foreground text-xs">
         It guards tools that change things. Read-only checks work without it.
+      </p>
+      <p className="text-muted-foreground text-xs">
+        Only apps on this computer can use it. Other devices need a personal API key.
       </p>
       {revealedToken ? (
         <div className="flex items-center gap-1.5">

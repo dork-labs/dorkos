@@ -8,7 +8,7 @@ import path from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
+import { createDb, runMigrations, user, apikey, session, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
 import {
   createAuth,
@@ -16,6 +16,7 @@ import {
   readOwnerEmail,
   toNodeHandler,
   isBetterAuthBaseUrlAdvisory,
+  SESSION_LIFETIME_SECONDS,
 } from '../index.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
@@ -143,6 +144,25 @@ describe('Better Auth — local identity core (integration)', () => {
     const cookies = res.headers['set-cookie'] as unknown as string[] | undefined;
     expect(cookies).toBeDefined();
     expect(cookies?.join(';')).toMatch(/session_token/);
+  });
+
+  it('makes a sign-in last 30 days (DOR-2968)', async () => {
+    const before = Date.now();
+    await request(fixtureServer)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+
+    const newest = db
+      .select()
+      .from(session)
+      .all()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+    const lifetimeMs = newest.expiresAt.getTime() - before;
+    const thirtyDaysMs = SESSION_LIFETIME_SECONDS * 1000;
+    expect(SESSION_LIFETIME_SECONDS).toBe(30 * 24 * 60 * 60);
+    expect(lifetimeMs).toBeGreaterThan(thirtyDaysMs - 60_000);
+    expect(lifetimeMs).toBeLessThanOrEqual(thirtyDaysMs + 60_000);
   });
 
   it('round-trips the session cookie via get-session', async () => {

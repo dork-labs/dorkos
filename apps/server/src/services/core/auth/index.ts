@@ -192,9 +192,14 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       },
     },
     session: {
+      // A sign-in lasts 30 days and each day of use pushes that back, so a
+      // device used weekly never signs out (DOR-2968). Set here rather than
+      // left to the library default, which is 7 days.
+      expiresIn: SESSION_LIFETIME_SECONDS,
+      updateAge: SESSION_REFRESH_SECONDS,
       // Signed short-TTL session snapshot in a cookie so hot paths (SSE
       // reconnect, high-frequency polling) avoid a DB read per request.
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
+      cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
     //
@@ -304,6 +309,19 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     hooks: { after: authAuditAfterHook },
   };
 }
+
+/** How long a person session lasts without use: 30 days, rolling (DOR-2968). */
+export const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+
+/** How often use extends a session: at most once a day. */
+export const SESSION_REFRESH_SECONDS = 24 * 60 * 60;
+
+/**
+ * How long a signed session snapshot in the cookie is trusted without a
+ * database read: 5 minutes. A revoked session can keep answering reads for at
+ * most this long, which `dorkos auth reset-password` says plainly.
+ */
+export const SESSION_COOKIE_CACHE_SECONDS = 5 * 60;
 
 let activeAuth: Auth | undefined;
 let activeDb: Db | undefined;

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 import { createOwnerAuth } from '../auth-instance.js';
 import {
   runAuthEnable,
@@ -250,6 +250,66 @@ describe('auth-commands', () => {
       await expect(
         signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } })
       ).rejects.toBeDefined();
+    });
+
+    it('ends every sign-in made before the reset, and says what it cannot cut', async () => {
+      const store = createFileConfigStore(tmpDir);
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: store,
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      const signInApi = auth as unknown as {
+        api: {
+          signInEmail(input: { body: { email: string; password: string } }): Promise<unknown>;
+        };
+      };
+      // Two devices signed in with the old password.
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      await signInApi.api.signInEmail({ body: { email: OWNER_EMAIL, password: OWNER_PASSWORD } });
+      expect(db.select().from(session).all().length).toBeGreaterThanOrEqual(2);
+
+      const { io, logs } = captureIo();
+      const code = await runAuthResetPassword({
+        options: { password: NEW_PASSWORD },
+        auth,
+        db,
+        prompt: throwingPrompt,
+        io,
+      });
+
+      expect(code).toBe(0);
+      expect(db.select().from(session).all()).toEqual([]);
+      const output = logs.join('\n');
+      expect(output).toMatch(/Signed out everywhere/);
+      expect(output).toMatch(/up to 5 minutes/);
+      expect(output).toMatch(/API keys keep working/);
+      expect(output).toMatch(/shell history/);
+    });
+
+    it('asks for the password without the shell-history note when --password is left off', async () => {
+      const store = createFileConfigStore(tmpDir);
+      await runAuthEnable({
+        options: { email: OWNER_EMAIL, password: OWNER_PASSWORD },
+        auth,
+        db,
+        configStore: store,
+        prompt: throwingPrompt,
+        io: captureIo().io,
+      });
+      const { io, logs } = captureIo();
+      const code = await runAuthResetPassword({
+        options: {},
+        auth,
+        db,
+        prompt: { email: throwingPrompt.email, password: async () => NEW_PASSWORD },
+        io,
+      });
+      expect(code).toBe(0);
+      expect(logs.join('\n')).not.toMatch(/shell history/);
     });
 
     it('rejects a password shorter than the minimum length', async () => {
