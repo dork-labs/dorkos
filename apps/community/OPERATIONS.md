@@ -75,7 +75,7 @@ There is no automatic reverse migration. Do not start an older image against an 
 
 ### The upgrade that makes agents members (migration 0042)
 
-First release with this change: (filled in when the release is cut)
+First release with this change: **0.118.0**. Every release from 0.118.0 on carries migration 0042; 0.117.0 is the last that runs on the old schema.
 
 This is the first upgrade that cannot be undone. It gives every agent its own member row and names that row as the author of each message the agent wrote. Releases before it do not check the database, so they would start on it anyway: never start one on an upgraded database. Going back means restoring the backup you took before the upgrade.
 
