@@ -134,9 +134,10 @@ export function bindRefusalMessage(host: string): string {
 /** Warning logged when a non-loopback bind is permitted only by the escape hatch. */
 function insecureBindWarning(host: string): string {
   return (
-    `Binding to non-loopback host "${host}" without a login because ` +
-    `DORKOS_ALLOW_INSECURE_BIND=true. DorkOS is reachable from the network with ` +
-    `no credentials — ensure the surrounding environment restricts access.`
+    `⚠️ Binding to non-loopback host "${host}" with no owner account because ` +
+    `DORKOS_ALLOW_INSECURE_BIND=true. Until an owner account exists, anyone who ` +
+    `reaches this port gets full control. Create the owner now. A coming release ` +
+    `will ask for a one-time setup code printed here instead.`
   );
 }
 

@@ -41,6 +41,16 @@ interface OwnerSetupScreenProps {
   onCancel?: () => void;
 }
 
+/**
+ * The refusals that mean "this sign-up came from another device and needs the
+ * setup code this computer printed" (DOR-2968). Any of them shows the field.
+ */
+const SETUP_CODE_CODES = new Set([
+  'SETUP_CODE_REQUIRED',
+  'SETUP_CODE_INVALID',
+  'SETUP_CODE_TOO_MANY_ATTEMPTS',
+]);
+
 /** Whether a sign-up error code means an owner account already exists. */
 function isOwnerExists(code: string | undefined): boolean {
   return code !== undefined && OWNER_EXISTS_CODES.has(code);
@@ -62,11 +72,16 @@ export function OwnerSetupScreen({
   const emailId = useId();
   const passwordId = useId();
   const confirmId = useId();
+  const setupCodeId = useId();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const { run, isPending, error } = useSignUp();
+  // Shown once the server asks for it, and kept after: a wrong code should
+  // leave the field there to fix, not take it away.
+  const [needsSetupCode, setNeedsSetupCode] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -85,7 +100,8 @@ export function OwnerSetupScreen({
     // Better Auth requires a name but accepts an empty one. Left empty so the
     // app asks what to call the owner; the email used to go here and then
     // showed up as their name everywhere (DOR-2964).
-    const result = await run(email, password, '');
+    const result = await run(email, password, '', needsSetupCode ? setupCode : undefined);
+    if (!result.ok && SETUP_CODE_CODES.has(result.error.code ?? '')) setNeedsSetupCode(true);
     if (result.ok) {
       await onCreated();
       return;
@@ -156,6 +172,23 @@ export function OwnerSetupScreen({
             required
           />
         </div>
+
+        {needsSetupCode && (
+          <div className="space-y-1.5">
+            <Label htmlFor={setupCodeId}>Setup code</Label>
+            <Input
+              id={setupCodeId}
+              autoComplete="one-time-code"
+              placeholder="XXXXX-XXXXX"
+              value={setupCode}
+              onChange={(e) => setSetupCode(e.target.value)}
+              required
+            />
+            <p className="text-muted-foreground text-xs">
+              Printed where DorkOS runs, and saved in its data folder.
+            </p>
+          </div>
+        )}
 
         {errorCopy && (
           <div role="alert" className="space-y-1">

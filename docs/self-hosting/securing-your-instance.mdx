@@ -45,6 +45,15 @@ Turning **Ask for a password on this computer too** back off doesn't delete the 
 </Step>
 </Steps>
 
+### Creating the owner from another device
+
+If you create the owner account from a phone or another computer, DorkOS asks for a **setup code**. The computer DorkOS runs on saves it in a `setup-code` file in the DorkOS data folder, and prints it in its terminal when you started DorkOS from one. Type it into the setup form.
+
+- A code works once and lasts an hour. Ask again for a new one.
+- After too many wrong codes, new tries wait ten minutes. Creating the owner on the computer itself always works.
+- Creating the owner on the computer itself never needs a code.
+- A Docker container with no owner yet doesn't ask, for one more release. It logs a warning instead.
+
 ## Exposing DorkOS beyond localhost
 
 Want to reach DorkOS from your phone or another computer? Create the owner account first. Every other device signs in as it, whatever this computer asks, whether you get there through a tunnel or by binding to another network interface (any address other than your own machine, like your Wi-Fi IP).
