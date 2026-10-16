@@ -25,6 +25,7 @@ import { honoRequestFacts } from './request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
+import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -43,12 +44,21 @@ export interface BetterAuthOptions {
  */
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
-  app.all('/api/auth/*', (c) =>
-    // The sign-up hook asks where this request came from (registration-policy.ts).
-    withRegistrationCaller(classifyRequest(honoRequestFacts(c), currentServerRole()), () =>
-      options.auth.handler(requestForBetterAuth(c))
-    )
-  );
+  app.all('/api/auth/*', (c) => {
+    const facts = honoRequestFacts(c);
+    const setupCode = facts.headers[SETUP_CODE_HEADER];
+    // The sign-up hook asks where this request came from (registration-policy.ts)
+    // and, from another device, which setup code it carried (setup-code.ts).
+    return withRegistrationCaller(classifyRequest(facts, currentServerRole()), () =>
+      withSetupCodeAttempt(
+        {
+          code: typeof setupCode === 'string' ? setupCode : undefined,
+          address: facts.peerAddress,
+        },
+        () => options.auth.handler(requestForBetterAuth(c))
+      )
+    );
+  });
 }
 
 /**
