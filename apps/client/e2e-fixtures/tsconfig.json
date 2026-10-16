@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["./blintz-heading-entry.tsx", "../src/vite-env.d.ts"]
+}
