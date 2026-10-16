@@ -53,6 +53,8 @@ import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireConnectorEventsAndApprovalsResult } from './connector-events-approvals.js';
 import type { WireConnectorServicesResult } from './connector-services.js';
 import type { ServerRefs } from '../server-refs.js';
+import { currentServerRole } from '../../lib/server-role.js';
+import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
 
 /** What {@link startAfterListen} reads from the startup steps before it. */
 export interface StartAfterListenInput {
@@ -103,6 +105,11 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     PORT,
     docDeliveryRunner,
   } = built;
+
+  // A hub reads who it belongs to and refuses everybody until it serves them
+  // (DOR-2934). The server is listening, so Cloud's health check answers
+  // while the first read is in flight.
+  if (currentServerRole() === 'hub') startHubAssignmentSync(dorkHome);
   /** The canvas sweep, listing the default folder only when a session is marked gone. */
   const sweepCanvases = (): Promise<number> =>
     sweepOrphanedCanvases(peekCanvasService(), async () => {
