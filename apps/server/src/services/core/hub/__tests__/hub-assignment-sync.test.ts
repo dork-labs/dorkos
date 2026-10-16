@@ -22,6 +22,7 @@ const { withRegistrationCaller } = await import('../../auth/registration-policy.
 const sync = await import('../hub-assignment-sync.js');
 const serving = await import('../hub-serving.js');
 const runner = await import('../hub-assignment-runner.js');
+const signingKey = await import('../hub-signing-key.js');
 
 const ASSIGNED: HubAssignment = {
   state: 'assigned',
@@ -52,6 +53,7 @@ describe('a hub taking its assignment', () => {
   beforeEach(() => {
     role.value = 'hub';
     serving.resetHubServingStateForTests();
+    signingKey.resetHubSigningKeyForTests();
     db = createDb(path.join(tmpDir, `auth-${Math.random().toString(36).slice(2)}.db`));
     runMigrations(db);
     dorkHome = fs.mkdtempSync(path.join(tmpDir, 'home-'));
@@ -74,6 +76,20 @@ describe('a hub taking its assignment', () => {
     expect(db.select().from(user).all()).toHaveLength(0);
     expect(serving.hubServingState().state).not.toBe('serving');
     expect(runner.nextHubBeatMs({ kind: 'pooled', pollAfterSeconds: 7 })).toBe(7_000);
+  });
+
+  it('reports the public half of its signing key when it confirms, the same key each time', async () => {
+    const sent: (string | undefined)[] = [];
+    initAuth(db, tmpDir);
+    const d = runner.liveHubDeps(dorkHome, {
+      readAssignment: () => read(),
+      confirm: async (id, signingPublicKey) => void sent.push(signingPublicKey),
+    });
+    await sync.syncHubAssignment(d);
+    read = async () => ({ ...ASSIGNED, assignmentId: 'asg_2' });
+    await sync.syncHubAssignment(d);
+    expect(sent[0]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(sent[1]).toBe(sent[0]);
   });
 
   it('pins the owner, makes the owner account, confirms, then serves', async () => {

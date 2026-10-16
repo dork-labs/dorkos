@@ -79,7 +79,9 @@ const cloudServer = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
     req.on('end', () => {
-      cloud.confirmed = JSON.parse(body || '{}').assignmentId ?? null;
+      const parsed = JSON.parse(body || '{}');
+      cloud.confirmed = parsed.assignmentId ?? null;
+      cloud.signingPublicKey = parsed.signingPublicKey ?? null;
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ confirmedAt: new Date().toISOString() }));
     });
@@ -274,6 +276,11 @@ async function main() {
       ).status !== 503,
     10_000
   );
+  check(
+    'it reports the public half of its own signing key',
+    /^[A-Za-z0-9_-]{43}$/.test(cloud.signingPublicKey ?? ''),
+    String(cloud.signingPublicKey)
+  );
   check('it serves once confirmed', serving);
 
   // 4. The front door.
@@ -314,6 +321,7 @@ async function main() {
   check('its logs were read', readLogs(join(out.dorkHome, 'logs')).length > 0, out.dorkHome);
   check('the proof secret is never logged', !logged.includes(PROOF.secret));
   check('the instance key is never logged', !logged.includes(KEY));
+  check('the private signing key is never logged', !logged.includes('PRIVATE KEY'));
 
   done = true;
   const rss = procStatus(child.pid, 'VmRSS');

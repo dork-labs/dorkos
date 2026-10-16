@@ -34,6 +34,7 @@ import {
   HubAssignmentConfirmResponseSchema,
   HubAssignmentSchema,
   V1_ROUTES,
+  type HubAssignmentConfirmRequest,
 } from '@dork-labs/cloud-api';
 
 import { CloudApiProblemError } from '@dork-labs/cloud-api/client';
@@ -68,8 +69,16 @@ export interface HubAssignmentSyncDeps {
    * treated as the contract says rather than as a failed request.
    */
   readAssignment: () => Promise<unknown>;
-  /** Confirm the assignment the hub now serves with. */
-  confirm: (assignmentId: string) => Promise<void>;
+  /**
+   * Confirm the assignment the hub now serves with, and report the public
+   * half of the hub's signing key.
+   */
+  confirm: (assignmentId: string, signingPublicKey: string) => Promise<void>;
+  /**
+   * The public half of the hub's signing key, making the pair the first time
+   * (`hub-signing-key.ts`).
+   */
+  signingPublicKey: () => string;
   /** Whether the owner account exists yet. */
   ownerExists: () => boolean;
   /** Create the owner account. Runs only while none exists. */
@@ -231,7 +240,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   // The front door may switch to the new proof and address the moment Cloud
   // records the confirmation, before its answer arrives here.
   offerHubAssignment(assignment);
-  await deps.confirm(assignment.assignmentId);
+  await deps.confirm(assignment.assignmentId, deps.signingPublicKey());
   setHubServingState({ state: 'serving', assignment });
   return { kind: 'serving', assignmentId: assignment.assignmentId };
 }
@@ -253,10 +262,11 @@ export function cloudHubCalls(
 ): Pick<HubAssignmentSyncDeps, 'readAssignment' | 'confirm'> {
   return {
     readAssignment: async () => (client ? client.get(V1_ROUTES.hubAssignment, z.unknown()) : null),
-    confirm: async (assignmentId) => {
+    confirm: async (assignmentId, signingPublicKey) => {
       if (!client) throw new Error('This hub holds no DorkOS Cloud credential.');
+      const body: HubAssignmentConfirmRequest = { assignmentId, signingPublicKey };
       await client.post(V1_ROUTES.hubAssignmentConfirm, HubAssignmentConfirmResponseSchema, {
-        body: { assignmentId },
+        body,
       });
     },
   };

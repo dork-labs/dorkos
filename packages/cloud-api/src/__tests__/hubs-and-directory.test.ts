@@ -110,8 +110,38 @@ describe('hub assignment', () => {
     expect(marked).toEqual(['HubAssignmentSchema[1].frontDoorProof.secret']);
   });
 
-  it('confirms by naming the assignment, never by echoing a key', () => {
-    expect(Object.keys(HubAssignmentConfirmRequestSchema.shape)).toEqual(['assignmentId']);
+  it('confirms by naming the assignment and the hub`s own public key, never by echoing a secret', () => {
+    expect(Object.keys(HubAssignmentConfirmRequestSchema.shape)).toEqual([
+      'assignmentId',
+      'signingPublicKey',
+    ]);
+  });
+
+  it('takes only a raw 32-byte Ed25519 public key, and confirms without one', () => {
+    const key = 'A'.repeat(42) + 'Q';
+    expect(
+      HubAssignmentConfirmRequestSchema.parse({ assignmentId: 'asg_1', signingPublicKey: key })
+    ).toEqual({
+      assignmentId: 'asg_1',
+      signingPublicKey: key,
+    });
+    expect(HubAssignmentConfirmRequestSchema.safeParse({ assignmentId: 'asg_1' }).success).toBe(
+      true
+    );
+    for (const bad of [
+      'A'.repeat(42),
+      'A'.repeat(44),
+      `${'A'.repeat(42)}=`,
+      `${'A'.repeat(42)}+`,
+    ]) {
+      expect(
+        HubAssignmentConfirmRequestSchema.safeParse({
+          assignmentId: 'asg_1',
+          signingPublicKey: bad,
+        }).success,
+        bad
+      ).toBe(false);
+    }
   });
 
   it('carries no auth secret: the hub makes its own', () => {
