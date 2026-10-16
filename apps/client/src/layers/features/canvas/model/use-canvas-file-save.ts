@@ -1,3 +1,6 @@
+import type { FileSaveDiscovery } from '@dorkos/shared/file-save/recovery';
+import type { FileSaveRecoveryActions, RecoveryCall } from './file-save/recovery-ui-types';
+import { createFileSaveRecoveryActions } from './file-save/recovery-actions';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
 import type { WriteFileResult } from '@dorkos/shared/transport';
@@ -27,6 +30,8 @@ interface UseCanvasFileSaveArgs {
   documentId?: string;
   /** Captured when this operator session edit begins; absent keeps plain file saves. */
   documentSaveBinding?: FileSaveBinding;
+  /** Existing genuine channel observation; no second replay owner. */
+  documentRecoveryBinding?: FileSaveBinding;
   /** File path backing the canvas, or undefined for generated (read-only) content. */
   sourcePath: string | undefined;
   /** Session working directory the path is resolved within and confined to. */
@@ -55,9 +60,10 @@ export function useCanvasFileSave({
   loadedContent,
   documentId,
   documentSaveBinding,
+  documentRecoveryBinding,
 }: UseCanvasFileSaveArgs) {
   const transport = useTransport();
-  const birth = documentSaveBinding?.incarnation;
+  const birth = documentSaveBinding?.incarnation ?? documentRecoveryBinding?.incarnation;
   const birthKey = birth
     ? JSON.stringify([
         birth.documentId,
@@ -79,6 +85,10 @@ export function useCanvasFileSave({
     baseHash: string | null;
     baseContent: string;
     active: boolean;
+    recoveryBinding?: FileSaveBinding;
+    recoveryGate: 'unsupported' | 'pending' | 'observed_clear' | 'blocked' | 'unavailable';
+    discovery?: Promise<RecoveryCall<FileSaveDiscovery>>;
+    recoveryBusy?: boolean;
     finalToken?: { content: string; id: symbol };
   } | null>(null);
   // Keep one dispatch tail across owners: a new incarnation cannot race a
@@ -95,14 +105,18 @@ export function useCanvasFileSave({
         baseHash: null,
         baseContent: loadedContent,
         active: true,
+        recoveryBinding: documentRecoveryBinding,
+        recoveryGate:
+          documentRecoveryBinding && transport.originalFileSaveRecovery ? 'pending' : 'unsupported',
       };
     } else {
       ownerRef.current.active = true;
+      ownerRef.current.recoveryBinding = documentRecoveryBinding;
     }
     return () => {
       if (ownerRef.current?.identity === owner) ownerRef.current.active = false;
     };
-  }, [owner, loadedContent]);
+  }, [owner, loadedContent, documentRecoveryBinding, transport]);
   const [state, setState] = useState<{
     owner: typeof owner;
     status: CanvasSaveStatus;
@@ -140,6 +154,38 @@ export function useCanvasFileSave({
     },
     [owner, currentOwner]
   );
+
+  const recoveryWritable = useCallback(
+    () =>
+      ownerRef.current?.recoveryGate === 'unsupported' ||
+      ownerRef.current?.recoveryGate === 'observed_clear',
+    []
+  );
+  const recoveryActions = useMemo<FileSaveRecoveryActions>(() => {
+    // Construct the private factory only when an effect or event invokes an action.
+    const deferredActions = () =>
+      createFileSaveRecoveryActions({
+        owner,
+        getOwner: () => ownerRef.current,
+        readTail: () => inFlightRef.current,
+        writeTail: (tail) => {
+          inFlightRef.current = tail;
+        },
+        transport,
+        cwd,
+        sourcePath,
+        documentId,
+        pending: () => receiptLane.current.pending,
+      });
+    return {
+      identity: owner,
+      supported: !!transport.originalFileSaveRecovery,
+      current: () => deferredActions().current(),
+      discover: (fresh) => deferredActions().discover(fresh),
+      recover: (eventId) => deferredActions().recover(eventId),
+      inspectCurrent: () => deferredActions().inspectCurrent(),
+    };
+  }, [owner, transport, cwd, sourcePath, documentId]);
 
   const canSave = Boolean(sourcePath && cwd);
 
@@ -225,6 +271,10 @@ export function useCanvasFileSave({
             setStatus('uncertain');
             return { status: 'uncertain' };
           }
+          if (!recoveryWritable()) {
+            setStatus('error');
+            return { status: 'error' };
+          }
           if (ownerRef.current!.finalToken === admittedFinalToken)
             ownerRef.current!.finalToken = undefined;
           setStatus('saving');
@@ -247,7 +297,7 @@ export function useCanvasFileSave({
       inFlightRef.current = next.then(() => {});
       return next;
     },
-    [canSave, writeThrough, currentOwner, setStatus, documentSaveBinding]
+    [canSave, writeThrough, currentOwner, setStatus, documentSaveBinding, recoveryWritable]
   );
 
   /** Prepare the latest buffered draft for one explicit passive-unmount drain.
@@ -274,6 +324,11 @@ export function useCanvasFileSave({
             .then(async (): Promise<CanvasSaveOutcome> => {
               if (ownerRef.current !== record || record.active) return { status: 'idle' };
               try {
+                if (
+                  record.recoveryGate !== 'unsupported' &&
+                  record.recoveryGate !== 'observed_clear'
+                )
+                  return { status: 'error' };
                 const expected =
                   record.baseHash !== null
                     ? { expectedHash: record.baseHash }
@@ -365,6 +420,10 @@ export function useCanvasFileSave({
             setStatus('uncertain');
             return { status: 'uncertain' };
           }
+          if (!recoveryWritable()) {
+            setStatus('error');
+            return { status: 'error' };
+          }
           if (ownerRef.current!.finalToken === admittedFinalToken)
             ownerRef.current!.finalToken = undefined;
           setStatus('saving');
@@ -382,7 +441,15 @@ export function useCanvasFileSave({
       inFlightRef.current = next.then(() => {});
       return next;
     },
-    [canSave, conflict, writeThrough, currentOwner, setStatus, documentSaveBinding]
+    [
+      canSave,
+      conflict,
+      writeThrough,
+      currentOwner,
+      setStatus,
+      documentSaveBinding,
+      recoveryWritable,
+    ]
   );
 
   /**
@@ -413,6 +480,7 @@ export function useCanvasFileSave({
   }, [conflict, currentOwner, setConflict, setStatus, documentSaveBinding]);
 
   return {
+    recovery: recoveryActions,
     status,
     conflict,
     canSave,

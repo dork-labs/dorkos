@@ -1,8 +1,11 @@
+import { sameOriginalFileSaveSource } from './file-save-recovery/applied-source.js';
 /** Validated ordinary-save evidence and UUID/path fences; none of these reads grants authority. */
 import { z } from 'zod';
 import {
   and,
   asc,
+  desc,
+  sql,
   eq,
   gt,
   notInArray,
@@ -212,4 +215,46 @@ export function readDocumentFileSaveCloseBlocker(
       .get()
   );
   return raw ? validateFileSaveIntent(raw) : undefined;
+}
+
+/** Bounded current-owner/current-birth window. It does not replace the complete admission census. */
+export function readCurrentFileSaveWindow(
+  db: Db,
+  captured: import('./document-file-save-source.js').Capture,
+  canonicalPath: string
+) {
+  const b = captured.incarnation,
+    owner = captured.owner;
+  const rows = readFileSaveChecked('current-owner-window', () =>
+    db
+      .select()
+      .from(canvasDocFileSaveIntents)
+      .where(
+        and(
+          eq(canvasDocFileSaveIntents.documentId, b.documentId),
+          eq(canvasDocFileSaveIntents.canonicalPath, canonicalPath),
+          sql`json_extract(${canvasDocFileSaveIntents.owner},'$.kind')=${owner.kind}`,
+          owner.kind === 'user'
+            ? sql`json_extract(${canvasDocFileSaveIntents.owner},'$.userId')=${owner.userId}`
+            : sql`json_extract(${canvasDocFileSaveIntents.owner},'$.installationId')=${owner.installationId}`,
+          sql`json_extract(${canvasDocFileSaveIntents.incarnation},'$.generation')=${b.generation}`,
+          sql`json_extract(${canvasDocFileSaveIntents.incarnation},'$.physicalOpenedAt')=${b.physicalOpenedAt}`,
+          sql`json_extract(${canvasDocFileSaveIntents.incarnation},'$.channelCreatedAt')=${b.channelCreatedAt}`
+        )
+      )
+      .orderBy(desc(canvasDocFileSaveIntents.updatedAt), desc(canvasDocFileSaveIntents.intentId))
+      .limit(26)
+      .all()
+  );
+  const selected = rows.map(validateFileSaveIntent);
+  if (
+    selected.some(
+      (row) =>
+        JSON.stringify(row.owner) !== JSON.stringify(captured.owner) ||
+        !sameOriginalFileSaveSource(db, row.source, captured.source) ||
+        JSON.stringify(row.incarnation) !== JSON.stringify(b)
+    )
+  )
+    throw new Error('Current save window identity changed');
+  return { rows: selected.slice(0, 25), hasMore: selected.length > 25 };
 }

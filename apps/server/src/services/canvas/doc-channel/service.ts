@@ -232,6 +232,8 @@ export class DocChannelService {
     return CanvasChannelReplayResponseSchema.parse({
       ...snapshot,
       incarnation,
+      // Every retained frame belongs to this same authenticated replay transaction's birth.
+      events: snapshot.events.map((frame) => ({ ...frame, incarnation })),
       routing,
       receipts: snapshot.receipts.map((row) => ({
         receipt: { id: row.id, status: 'recorded', docSeq: row.docSeq },

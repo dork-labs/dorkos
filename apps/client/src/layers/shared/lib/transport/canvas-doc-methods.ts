@@ -1,3 +1,4 @@
+import { createFileSaveRecoveryMethods } from './file-saves/recovery-methods';
 /** Thin document event calls. Scope and caller identity are resolved by the server. */
 import type {
   PageEvent,
@@ -5,10 +6,17 @@ import type {
   CanvasChannelReplayResponse,
 } from '@dorkos/shared/canvas-channel-schemas';
 import { fetchJSON, fetchResponse } from './http-client';
+import type { Transport } from '@dorkos/shared/transport';
 /** Bind document event methods to an API URL. */
-export function createCanvasDocMethods(baseUrl: string) {
+export function createCanvasDocMethods(baseUrl: string): Pick<
+  Transport,
+  'ingestCanvasEvent' | 'getCanvasChannel' | 'getCanvasEventReceipt'
+> & {
+  originalFileSaveRecovery: NonNullable<Transport['originalFileSaveRecovery']>;
+} {
   const documentPath = (id: string) => `/canvas/docs/${encodeURIComponent(id)}`;
   return {
+    originalFileSaveRecovery: createFileSaveRecoveryMethods(baseUrl),
     // Bound Doc operations own one deadline on this exact controller. The HTTP helper must
     // not replace its signal with a second timeout signal; replay retains the normal timeout.
     async ingestCanvasEvent(

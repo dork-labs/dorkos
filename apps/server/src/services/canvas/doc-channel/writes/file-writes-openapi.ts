@@ -1,3 +1,4 @@
+import { registerFileSaveRecoveryOpenApi } from './file-save-recovery/openapi.js';
 /** Ordinary file-save API documentation, including safe identity-change refusal. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
@@ -7,6 +8,7 @@ const RefusalSchema = z.object({ error: z.string(), code: z.string().optional() 
 
 /** Register the existing ordinary file save and its cooperative-write outcomes. */
 export function registerFileWriteOpenApi(registry: OpenAPIRegistry): void {
+  registerFileSaveRecoveryOpenApi(registry);
   registry.registerPath({
     method: 'put',
     path: '/api/files/content',

@@ -156,6 +156,7 @@ export class RightPanelPage {
    * toggle's own label and clicks only when it says the panel is closed.
    */
   async ensureTabStripOpen() {
+    await this.basePage.waitForAppReady();
     const tablist = this.header.getByRole('tablist');
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {

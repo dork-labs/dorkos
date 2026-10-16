@@ -1,6 +1,6 @@
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { openInCanvasBrowser, startDevServer } from '../../pages/canvas-dev-server';
 import { draftSessionUrl } from '../../pages/session-draft';
@@ -433,8 +433,46 @@ test.describe('A file opened before the session stream attaches @smoke', () => {
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 
     // On the SERVER, not just on screen — and still there after a reload.
-    await page.reload();
-    await rightPanel.ensureTabStripOpen();
+    // Hold the real lazy shell module after reload's load event. The fixture's
+    // existing one-second toggle lookup must not run before the app shell mounts.
+    const shellModule = '**/src/AppShell.tsx*';
+    let bootstrapHeld = false;
+    let releaseBootstrap!: () => void;
+    let bootstrapFinished!: () => void;
+    const bootstrapRelease = new Promise<void>((resolve) => (releaseBootstrap = resolve));
+    const bootstrapDone = new Promise<void>((resolve) => (bootstrapFinished = resolve));
+    const holdBootstrap = async (route: Route) => {
+      if (bootstrapHeld) return route.continue();
+      bootstrapHeld = true;
+      try {
+        await bootstrapRelease;
+        await route.continue();
+      } finally {
+        bootstrapFinished();
+      }
+    };
+    await page.route(shellModule, holdBootstrap);
+    try {
+      await page.reload();
+      await expect.poll(() => bootstrapHeld).toBe(true);
+      await expect(page.getByTestId('app-shell')).toHaveCount(0);
+      // Handle the promise immediately so the old helper's genuine rejection is
+      // reported after the gate releases, without leaking a held module request.
+      const opening = rightPanel.ensureTabStripOpen().then(
+        () => ({ error: undefined }),
+        (error: unknown) => ({ error })
+      );
+      // Deliberate network-fixture latency exceeds the unchanged one-second probe.
+      // This is the causal input, not a wider application or assertion timeout.
+      await new Promise<void>((resolve) => setTimeout(resolve, 2_000));
+      releaseBootstrap();
+      const result = await opening;
+      if (result.error !== undefined) throw result.error;
+    } finally {
+      releaseBootstrap();
+      await page.unroute(shellModule, holdBootstrap);
+      if (bootstrapHeld) await bootstrapDone;
+    }
     await rightPanel.selectView('Canvas');
     await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
   });
