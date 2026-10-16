@@ -59,7 +59,13 @@ vi.mock('../../../../middleware/agent-identity.js', () => ({
 }));
 
 import { decideSessionGate } from '../session-gate.js';
-import { gateAccessFor, isAtThisComputer, type GateAccess } from '../gate-policy.js';
+import {
+  gateAccessFor,
+  isAtThisComputer,
+  isContainerPortClass,
+  type GateAccess,
+} from '../gate-policy.js';
+import { classifyRequest } from '../../../../lib/request-classifier.js';
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { authorizeStreamUpgrade } from '../../streams/stream-upgrade-auth.js';
 import { markIngress, type IngressKind } from '../../remote/ingress-mark.js';
@@ -327,5 +333,22 @@ describe('a credential lets another device in', () => {
       user: { userId: 'owner', credential: 'cookie' },
     });
     expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({ ok: true });
+  });
+});
+
+describe('the container exception, as the sign-up hook asks it', () => {
+  beforeEach(() => {
+    posture.insecureBind = true;
+  });
+
+  it.each(CALLERS.map((caller) => [caller.name, caller]))('%s', (_label, caller) => {
+    const expected = caller.name === 'insecure bind (container)';
+    expect(isContainerPortClass(classifyRequest(caller.facts, 'computer'))).toBe(expected);
+  });
+
+  it('is never true without the container flag', () => {
+    posture.insecureBind = false;
+    const port = CALLERS.find((caller) => caller.name === 'insecure bind (container)')!;
+    expect(isContainerPortClass(classifyRequest(port.facts, 'computer'))).toBe(false);
   });
 });
