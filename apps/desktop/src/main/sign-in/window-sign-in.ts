@@ -84,6 +84,10 @@ export async function signInWindow(deps: WindowSignInDeps): Promise<WindowSignIn
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
+      // Without it, a request from the main process neither sends nor keeps
+      // the session's cookies (Electron's `net` docs), and the window would
+      // never see the one this sets.
+      credentials: 'include',
     });
     if (res.ok) return 'signed-in';
     log.warn(`[sign-in] The server refused the window's sign-in (${res.status}).`);

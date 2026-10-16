@@ -47,6 +47,7 @@ describe('the desktop window signing in by itself', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code: 'the-code' }),
+      credentials: 'include',
     });
   });
 
