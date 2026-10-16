@@ -180,7 +180,8 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * `dorkos auth enable`: create the owner account, then require login.
+ * `dorkos auth enable`: create the owner account, then turn on "Ask for a
+ * password on this computer too". Other devices always sign in as the owner.
  *
  * Registration is owner-only: if any user already exists this fails fast
  * without prompting and without writing config. On success it creates the owner
@@ -228,7 +229,7 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
   configStore.setDot('auth.enabled', true);
 
   io.log(`Owner account created for ${email}.`);
-  io.log('Login is now required for this instance.');
+  io.log('This computer now asks for a password too. Other devices always do.');
   io.log('Restart any running DorkOS server for the change to take effect.');
   return 0;
 }

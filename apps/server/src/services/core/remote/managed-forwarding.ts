@@ -234,7 +234,7 @@ export class ManagedForwarding {
     if (!(await this.owner.exposureAllowed())) {
       return managedRefusal(
         'exposure_not_allowed',
-        'Turn on login and create an owner account before opening remote access.'
+        'Create an owner account before opening remote access.'
       );
     }
     return null;

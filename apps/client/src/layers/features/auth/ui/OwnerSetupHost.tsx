@@ -7,7 +7,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/layers/shared/ui';
-import { useTransport } from '@/layers/shared/model';
 import { clearOwnerSetupRequest } from '@/layers/shared/lib';
 import { configKeys, useConfig } from '@/layers/entities/config';
 import { useOwnerSetupRequest } from '../model/use-auth-signal';
@@ -18,13 +17,13 @@ import { OwnerSignInScreen } from './OwnerSignInScreen';
  * App-shell host for the owner-setup flow raised outside `features/auth` — today
  * the tunnel exposure gate (`AUTH_REQUIRED_FOR_EXPOSURE`, task 1.3). Reads the
  * shared owner-setup request signal, walks the user through owner creation (or,
- * when an owner already exists, a sign-in as that owner), flips `auth.enabled`
- * on, then retries the original action via `request.onComplete`. Login never
- * turns on for an existing owner without a verified sign-in (DOR-2964).
+ * when an owner already exists, a sign-in as that owner), then retries the
+ * original action via `request.onComplete`. It never turns on "Ask for a
+ * password on this computer too": exposure needs only the owner, since other
+ * devices always sign in (ADR 261015-125850).
  */
 export function OwnerSetupHost() {
   const request = useOwnerSetupRequest();
-  const transport = useTransport();
   const queryClient = useQueryClient();
   const { data: config, refetch: refetchConfig } = useConfig();
   // Set when the create form discovers an owner the config read had not shown.
@@ -32,14 +31,15 @@ export function OwnerSetupHost() {
   const signInEmail = config?.auth?.ownerEmail ?? foundOwnerEmail;
 
   const enableAndComplete = useCallback(async () => {
-    // Owner now exists (or already existed): require login, then retry the action.
-    await transport.updateConfig({ auth: { enabled: true } });
+    // The owner now exists, which is all exposure needs: other devices always
+    // sign in as it. "Ask for a password on this computer too" stays as the
+    // person set it (ADR 261015-125850). Refresh, then retry the action.
     await queryClient.invalidateQueries({ queryKey: configKeys.current() });
     const onComplete = request?.onComplete;
     setFoundOwnerEmail(null);
     clearOwnerSetupRequest();
     onComplete?.();
-  }, [transport, queryClient, request]);
+  }, [queryClient, request]);
 
   const signInInstead = useCallback(
     async (knownOwnerEmail: string | null) => {
@@ -61,7 +61,7 @@ export function OwnerSetupHost() {
     <Dialog open onOpenChange={(open) => !open && cancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{signInEmail ? 'Turn on login' : 'Create an owner account'}</DialogTitle>
+          <DialogTitle>{signInEmail ? 'Sign in' : 'Create an owner account'}</DialogTitle>
           <DialogDescription>{request.message}</DialogDescription>
         </DialogHeader>
         {signInEmail ? (
