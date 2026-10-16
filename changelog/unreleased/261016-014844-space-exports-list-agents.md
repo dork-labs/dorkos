@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): exports list agents as members, in export format 3 (DOR-2876 part 3)'
+  - 'chore(community): refuse imports that pass an agent off as a person, and test imports in both formats (DOR-2876)'
 ---
 
 ### Changed

@@ -280,8 +280,9 @@ export class V2RowRules {
 
 /**
  * One (agent id, owner) pair as a number, so two collections' pairs compare as multisets by sum
- * in constant memory: a sum matches only when the pairs do, but for a deliberate SHA-256
- * collision.
+ * in constant memory. A plain sum is not collision-proof: a crafted set of pairs could add up to
+ * the same total. That is harmless here, because an agent's member row is never written from the
+ * export; the trigger builds it from the agents collection, so a disguised row changes nothing.
  */
 function agentKey(id: string, owner: string): bigint {
   return BigInt(`0x${createHash('sha256').update(`${id}:${owner}`).digest('hex')}`);

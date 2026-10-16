@@ -27,7 +27,7 @@ import {
 } from './export-test-helpers.js';
 import { readManifestVersionV0117 } from './fixtures/v0117-read-manifest-version.js';
 import { createImport, issueKey, readImport, uploadArchive } from './import-fixture.js';
-import { body, drainCleanup, post } from './member-erasure-fixture.js';
+import { body, drainCleanup, post, upload } from './member-erasure-fixture.js';
 import {
   TENANCY_PASSWORD,
   admit,
@@ -149,6 +149,36 @@ async function importArchive(archive: Buffer) {
   return { ...created, derive: (id: string) => uuidv5(created.importId, id) };
 }
 
+/** An owner no export names. */
+const OUTSIDE = '11111111-2222-4333-8444-555555555555';
+
+/**
+ * After a failed import, run the worker until its unclaimed space is torn down, then check
+ * nothing of it is left: the space, its blobs, and every row an import writes.
+ */
+async function expectNothingLeft(communityId: string): Promise<void> {
+  const limits = {
+    ...h.config.limits,
+    banEmailKey: (email: string) => banEmailKey(email, h.config.authSecret),
+  };
+  const left = async (sql: string) =>
+    (await h.pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM (${sql}) t`, [communityId]))
+      .rows[0].n;
+  for (let round = 0; round < 200; round++) {
+    if ((await left('SELECT 1 FROM communities WHERE id=$1')) === 0) break;
+    await h.pool.query(
+      'UPDATE community_imports SET next_attempt_at=now() WHERE settled_at IS NULL'
+    );
+    await drainCleanup(h);
+    await sweepImports(h.pool, h.blobStore, limits, new Date());
+  }
+  await drainCleanup(h);
+  expect(await left('SELECT 1 FROM communities WHERE id=$1')).toBe(0);
+  expect(await left('SELECT 1 FROM managed_blobs WHERE community_id=$1')).toBe(0);
+  for (const table of ['channels', 'entries', 'members', 'agents', 'attachments', 'audit_events'])
+    expect([table, await left(`SELECT 1 FROM ${table} WHERE community_id=$1`)]).toEqual([table, 0]);
+}
+
 /** Claim an imported space as a new account, so it can be exported again. */
 async function claim(communityId: string, label: string): Promise<TenancyMember> {
   const issued = await expectStatus(
@@ -268,6 +298,33 @@ beforeAll(async () => {
   ({ id: abeAgent } = await enroll(abe, 'abe'));
   personMessage = await say({ cookie: mo.cookie }, 'a person speaks');
   agentMessage = await say({ bearer: moAgentToken }, 'an agent answers');
+  // A thread, mentions of a person and of an agent, and a file, for the full round trip.
+  const handles = await h.pool.query<{ handle: string }>('SELECT handle FROM agents WHERE id=$1', [
+    moAgent,
+  ]);
+  const file = await upload(h, source.communityId, source.channelId, mo.cookie, 'notes.txt', 'n');
+  await post(
+    h,
+    source.communityId,
+    source.channelId,
+    { cookie: owner.cookie },
+    {
+      text: `thanks @${handles.rows[0].handle}, and @mo`,
+      idempotencyKey: 'reply-1',
+      parentEntryId: personMessage,
+    }
+  );
+  await post(
+    h,
+    source.communityId,
+    source.channelId,
+    { cookie: mo.cookie },
+    {
+      text: 'the notes',
+      idempotencyKey: 'file-1',
+      attachmentIds: [file],
+    }
+  );
 }, 120_000);
 
 afterAll(async () => {
@@ -375,6 +432,72 @@ describe('export format 3', { timeout: 180_000 }, () => {
     );
   });
 
+  // Purpose: format 3 out, imported, and format 3 out again: every person, agent member, agent,
+  // message author, mention, thread link and file comes back the same through the derived ids.
+  it('round-trips format 3 through an import and a re-export, threads, mentions and files too', async () => {
+    const first = await openArchive(await exportSpace(source, owner.cookie));
+    const imported = await importArchive(await exportSpace(source, owner.cookie));
+    expect((await readImport(h, imported.importId, key)).state).toBe('ready');
+    const claimant = await claim(imported.communityId, 'claimant-round');
+    const again = await openArchive(
+      await exportSpace({ base: `/api/v1/communities/${imported.communityId}` }, claimant.cookie)
+    );
+    expect(again.manifest.version).toBe(3);
+    const d = imported.derive;
+    const opt = (id: unknown) => (id ? d(id as string) : null);
+    const byId = <T extends Row>(rows: T[]) => new Map(rows.map((row) => [row.id as string, row]));
+
+    const members = byId(again.rows<Row>('members'));
+    for (const row of first.rows<Row>('members'))
+      expect(members.get(d(row.id as string)), String(row.id)).toMatchObject({
+        kind: row.kind,
+        owner_member_id: opt(row.owner_member_id),
+        display_name: row.display_name,
+        role: row.role,
+      });
+    const agents = byId(again.rows<Row>('agents'));
+    for (const row of first.rows<Row>('agents'))
+      expect(agents.get(d(row.id as string))).toMatchObject({
+        owner_member_id: d(row.owner_member_id as string),
+        display_name: row.display_name,
+        handle: row.handle,
+      });
+    const entries = byId(again.rows<Row>('entries'));
+    let mentions = 0;
+    let replies = 0;
+    for (const row of first.rows<Row>('entries')) {
+      mentions += (row.mentions as string[]).length;
+      if (row.parent_entry_id) replies++;
+      expect(entries.get(d(row.id as string)), String(row.text)).toMatchObject({
+        author_member_id: d(row.author_member_id as string),
+        author_agent_id: opt(row.author_agent_id),
+        text: row.text,
+        mentions: (row.mentions as string[]).map((id) => d(id)),
+        parent_entry_id: opt(row.parent_entry_id),
+        thread_root_entry_id: opt(row.thread_root_entry_id),
+      });
+    }
+    expect(mentions).toBeGreaterThanOrEqual(2);
+    expect(replies).toBeGreaterThanOrEqual(1);
+    const files = byId(again.rows<Row>('attachments'));
+    const firstFiles = first.rows<Row>('attachments');
+    expect(firstFiles.length).toBeGreaterThanOrEqual(1);
+    for (const row of firstFiles) {
+      const back = files.get(d(row.id as string))!;
+      expect(back).toMatchObject({
+        entryId: d(row.entryId as string),
+        uploaderMemberId: opt(row.uploaderMemberId),
+        uploaderAgentId: opt(row.uploaderAgentId),
+        name: row.name,
+        checksum: row.checksum,
+        byteSize: row.byteSize,
+      });
+      expect(again.files.get(back.archivePath as string)).toEqual(
+        first.files.get(row.archivePath as string)
+      );
+    }
+  });
+
   // Purpose: a format 2 archive, this release's and v0.117.0's (whose agent rows have no
   // availability fields), imports on this release with an agent member built for each agent and
   // each agent message naming it, and the space then exports as format 3 with every person, agent
@@ -429,8 +552,72 @@ describe('export format 3', { timeout: 180_000 }, () => {
       });
   });
 
-  // Purpose: format 3's own rules on rows: an agent member row with no agent behind it, or a
-  // message whose agent is not its member author, is refused and leaves nothing.
+  // Purpose: rows that cannot be right are refused as IMPORT_ARCHIVE_INVALID, never read as a
+  // storage failure, and the import's unclaimed space is torn down to nothing: format 3's own
+  // rules on agent member rows and authors; an agent's message passed off as a person's (both
+  // formats); and an agent owned by an agent, or by someone outside the export (both formats),
+  // which 0042's trigger refuses as a foreign-key violation.
+  it.each([
+    [
+      3,
+      "an agent's message that names only the agent's member row",
+      (name: string, lines: Row[]) =>
+        name.startsWith('entries/')
+          ? lines.map((entry) =>
+              entry.id === agentMessage ? { ...entry, author_agent_id: null } : entry
+            )
+          : lines,
+    ],
+    [
+      2,
+      "an agent's message that names the agent as a member",
+      (name: string, lines: Row[]) =>
+        name.startsWith('entries/')
+          ? lines.map((entry) =>
+              entry.id === agentMessage
+                ? { ...entry, author_member_id: moAgent, author_agent_id: null }
+                : entry
+            )
+          : lines,
+    ],
+    [
+      3,
+      'an agent owned by an agent',
+      (name: string, lines: Row[]) =>
+        name.startsWith('members/') || name.startsWith('agents/')
+          ? lines.map((row) => (row.id === abeAgent ? { ...row, owner_member_id: moAgent } : row))
+          : lines,
+    ],
+    [
+      3,
+      'an agent owned by someone outside the export',
+      (name: string, lines: Row[]) =>
+        name.startsWith('members/') || name.startsWith('agents/')
+          ? lines.map((row) => (row.id === abeAgent ? { ...row, owner_member_id: OUTSIDE } : row))
+          : lines,
+    ],
+    [
+      2,
+      'an agent owned by someone outside the export',
+      (name: string, lines: Row[]) =>
+        name.startsWith('agents/')
+          ? lines.map((row) => (row.id === abeAgent ? { ...row, owner_member_id: OUTSIDE } : row))
+          : lines,
+    ],
+  ] as const)('refuses, in format %i, %s', async (format, _, change) => {
+    const opened = await openArchive(await exportSpace(source, owner.cookie, { format }));
+    expect(opened.manifest.version).toBe(format);
+    const imported = await importArchive(rebuilt(opened, change));
+    expect(await readImport(h, imported.importId, key)).toMatchObject({
+      state: 'failed',
+      failureCode: 'IMPORT_ARCHIVE_INVALID',
+    });
+    await expectNothingLeft(imported.communityId);
+  });
+
+  // Purpose: format 3's own rules on rows: an agent member row whose owner is not its agent's, a
+  // message whose agent is not its member author, or an agent member row with a handle, is
+  // refused, and leaves nothing.
   it.each([
     [
       "an agent member row whose owner is not its agent's",
@@ -462,6 +649,7 @@ describe('export format 3', { timeout: 180_000 }, () => {
     const imported = await importArchive(rebuilt(opened, change));
     const report = await readImport(h, imported.importId, key);
     expect(report).toMatchObject({ state: 'failed', failureCode: 'IMPORT_ARCHIVE_INVALID' });
+    await expectNothingLeft(imported.communityId);
   });
 
   // Purpose: the importer v0.117.0 runs refuses a format 3 archive by name, so an older host
