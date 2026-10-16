@@ -140,11 +140,13 @@ export interface ExtensionReadableState {
   activeSessionId: string | null;
   agentId: string | null;
   /**
-   * Whether Require login is on (`auth.enabled`). When false, anyone on this
-   * computer can pass the person bar, so a setting only a person should change
-   * (an autonomy dial) should say so: "Anyone on this computer can change this.
-   * Turn on Require login so only you can." Probe with `'requireLogin' in
-   * api.getState()` to run on hosts from before it.
+   * Whether "Ask for a password on this computer too" is on (`auth.enabled`).
+   * When false, anyone on this computer can pass the person bar; another
+   * device always signs in, whatever this says. So a setting only a person
+   * should change (an autonomy dial) should say so: "Anyone on this computer
+   * can change this. Ask for a password on this computer too, so only you
+   * can." Probe with `'requireLogin' in api.getState()` to run on hosts from
+   * before it.
    */
   requireLogin: boolean;
   /** The project of `currentCwd`; null for no project or while resolving. */

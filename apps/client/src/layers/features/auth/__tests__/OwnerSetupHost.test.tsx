@@ -68,10 +68,10 @@ describe('OwnerSetupHost — exposure flow', () => {
     await user.click(screen.getByRole('button', { name: /create account & continue/i }));
 
     await waitFor(() => expect(signUpEmail).toHaveBeenCalled());
-    await waitFor(() =>
-      expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } })
-    );
     await waitFor(() => expect(onComplete).toHaveBeenCalled());
+    // Exposure needs only the owner: "Ask for a password on this computer too"
+    // stays as the person set it.
+    expect(transport.updateConfig).not.toHaveBeenCalled();
   });
 
   describe('an owner already exists (DOR-2964)', () => {
@@ -85,7 +85,7 @@ describe('OwnerSetupHost — exposure flow', () => {
       });
     }
 
-    it('asks the owner to sign in, and enables login only after it succeeds', async () => {
+    it('asks the owner to sign in, and continues only after it succeeds', async () => {
       const user = userEvent.setup();
       const signInEmail = vi.fn().mockResolvedValue({ data: null, error: null });
       const onComplete = vi.fn();
@@ -93,14 +93,13 @@ describe('OwnerSetupHost — exposure flow', () => {
 
       raise(onComplete);
 
-      const dialog = await screen.findByRole('dialog', { name: /turn on login/i });
+      const dialog = await screen.findByRole('dialog', { name: /^sign in$/i });
       expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
       await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
       await user.click(screen.getByRole('button', { name: /sign in & continue/i }));
 
-      await waitFor(() =>
-        expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } })
-      );
+      await waitFor(() => expect(onComplete).toHaveBeenCalled());
+      expect(transport.updateConfig).not.toHaveBeenCalled();
       expect(signInEmail).toHaveBeenCalledWith({
         email: 'dorian@example.com',
         password: 'sup3rsecret',
@@ -129,7 +128,7 @@ describe('OwnerSetupHost — exposure flow', () => {
       await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
       await user.click(screen.getByRole('button', { name: /create account & continue/i }));
 
-      const dialog = await screen.findByRole('dialog', { name: /turn on login/i });
+      const dialog = await screen.findByRole('dialog', { name: /^sign in$/i });
       expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
       expect(transport.updateConfig).not.toHaveBeenCalled();
       expect(onComplete).not.toHaveBeenCalled();

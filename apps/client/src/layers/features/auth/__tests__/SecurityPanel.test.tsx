@@ -86,7 +86,9 @@ describe('SecurityPanel', () => {
   it('renders no user affordances when auth is disabled', async () => {
     setup({ authEnabled: false });
     // The single entry point is present…
-    expect(await screen.findByRole('switch', { name: /require login/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+    ).toBeInTheDocument();
     // …but nothing that implies a user concept.
     expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/API keys/i)).not.toBeInTheDocument();
@@ -97,18 +99,34 @@ describe('SecurityPanel', () => {
     setup({ authEnabled: false });
 
     // The panel has drawn (its one switch is up), so the absence means something.
-    await screen.findByRole('switch', { name: /Require login/i });
+    await screen.findByRole('switch', { name: /ask for a password on this computer too/i });
     expect(screen.queryByRole('switch', { name: 'Standing permissions' })).not.toBeInTheDocument();
   });
 
-  it('shows API keys and sign-out when auth is enabled', async () => {
+  it('shows API keys when this computer asks for a password', async () => {
     setup({ authEnabled: true });
     expect(await screen.findByText('API keys')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it('shows sign-out to anyone signed in, whether or not this computer asks', async () => {
+    // Other devices always sign in, so a session exists with the switch off too.
+    setup({
+      authEnabled: false,
+      client: createFakeAuthClient({
+        getSession: vi.fn().mockResolvedValue({ data: SIGNED_IN_SESSION, error: null }),
+      }),
+    });
+    expect(await screen.findByRole('button', { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it('shows no sign-out with nobody signed in', async () => {
+    setup({ authEnabled: true });
+    await screen.findByText('API keys');
+    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
   });
 
   it('keeps API keys reachable after login is turned back off (DOR-1885)', async () => {
-    // Turning "Require login" off does not delete the keys, expire the session,
+    // Turning "Ask for a password on this computer too" off does not delete the keys, expire the session,
     // or stop the keys working — `/api/config` still reports `authSource:
     // 'user-keys'` and `/mcp` still accepts them. Hiding the section behind the
     // flag therefore left live credentials nobody could see or revoke, which is
@@ -137,13 +155,15 @@ describe('SecurityPanel', () => {
       client: createFakeAuthClient({ signUpEmail }),
     });
 
-    await user.click(await screen.findByRole('switch', { name: /require login/i }));
+    await user.click(
+      await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+    );
 
     // Owner-setup dialog appears; fill and submit.
     await user.type(screen.getByLabelText('Email'), 'owner@example.com');
     await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
     await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
-    await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+    await user.click(screen.getByRole('button', { name: /create account & ask here too/i }));
 
     await waitFor(() => {
       expect(signUpEmail).toHaveBeenCalledWith({
@@ -162,7 +182,9 @@ describe('SecurityPanel', () => {
     const user = userEvent.setup();
     setup({ authEnabled: false, ownerEmail: null });
 
-    await user.click(await screen.findByRole('switch', { name: /require login/i }));
+    await user.click(
+      await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+    );
 
     expect(screen.getByRole('dialog', { name: /create an owner account/i })).toBeInTheDocument();
     expect(screen.getByLabelText('Email')).toHaveValue('');
@@ -173,9 +195,11 @@ describe('SecurityPanel', () => {
       const user = userEvent.setup();
       setup({ authEnabled: false, ownerEmail: 'dorian@example.com' });
 
-      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.click(
+        await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+      );
 
-      const dialog = screen.getByRole('dialog', { name: /turn on login/i });
+      const dialog = screen.getByRole('dialog', { name: /ask for a password here too/i });
       expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
       expect(screen.queryByLabelText('Confirm password')).not.toBeInTheDocument();
       expect(screen.queryByRole('dialog', { name: /create an owner/i })).not.toBeInTheDocument();
@@ -190,9 +214,11 @@ describe('SecurityPanel', () => {
         client: createFakeAuthClient({ signInEmail }),
       });
 
-      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.click(
+        await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+      );
       await user.type(screen.getByLabelText('Password'), 'not-it');
-      await user.click(screen.getByRole('button', { name: /sign in & require login/i }));
+      await user.click(screen.getByRole('button', { name: /sign in & ask here too/i }));
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'Wrong password. Login is still off.'
@@ -220,16 +246,20 @@ describe('SecurityPanel', () => {
         order.push('enable');
       });
 
-      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.click(
+        await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+      );
       await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
-      await user.click(screen.getByRole('button', { name: /sign in & require login/i }));
+      await user.click(screen.getByRole('button', { name: /sign in & ask here too/i }));
 
       await waitFor(() =>
         expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } })
       );
       expect(order).toEqual(['sign-in', 'enable']);
       await waitFor(() =>
-        expect(screen.queryByRole('dialog', { name: /turn on login/i })).not.toBeInTheDocument()
+        expect(
+          screen.queryByRole('dialog', { name: /ask for a password here too/i })
+        ).not.toBeInTheDocument()
       );
     });
 
@@ -237,7 +267,9 @@ describe('SecurityPanel', () => {
       const user = userEvent.setup();
       setup({ authEnabled: false, ownerEmail: 'dorian@example.com' });
 
-      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.click(
+        await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+      );
       expect(screen.queryByText('dorkos auth reset-password')).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: /forgot it\?/i }));
 
@@ -271,15 +303,17 @@ describe('SecurityPanel', () => {
           client: createFakeAuthClient({ signUpEmail }),
         });
 
-        await user.click(await screen.findByRole('switch', { name: /require login/i }));
+        await user.click(
+          await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+        );
         vi.mocked(transport.getConfig).mockResolvedValue(configWith(false, 'dorian@example.com'));
         await user.type(screen.getByLabelText('Email'), typedEmail);
         await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
         await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
-        await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+        await user.click(screen.getByRole('button', { name: /create account & ask here too/i }));
 
         // Always the owner's address from the fresh read, never just what was typed.
-        const dialog = await screen.findByRole('dialog', { name: /turn on login/i });
+        const dialog = await screen.findByRole('dialog', { name: /ask for a password here too/i });
         expect(dialog).toHaveTextContent('Sign in as dorian@example.com');
         expect(screen.queryByText(/user already exists/i)).not.toBeInTheDocument();
         expect(transport.updateConfig).not.toHaveBeenCalled();
@@ -301,16 +335,20 @@ describe('SecurityPanel', () => {
         client: createFakeAuthClient({ signUpEmail }),
       });
 
-      await user.click(await screen.findByRole('switch', { name: /require login/i }));
+      await user.click(
+        await screen.findByRole('switch', { name: /ask for a password on this computer too/i })
+      );
       await user.type(screen.getByLabelText('Email'), 'someone-else@example.com');
       await user.type(screen.getByLabelText('Password'), 'sup3rsecret');
       await user.type(screen.getByLabelText('Confirm password'), 'sup3rsecret');
-      await user.click(screen.getByRole('button', { name: /create account & require login/i }));
+      await user.click(screen.getByRole('button', { name: /create account & ask here too/i }));
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         'This computer already has an owner.'
       );
-      expect(screen.queryByRole('dialog', { name: /turn on login/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('dialog', { name: /ask for a password here too/i })
+      ).not.toBeInTheDocument();
       expect(screen.queryByText(/registration is closed/i)).not.toBeInTheDocument();
       expect(transport.updateConfig).not.toHaveBeenCalled();
     });

@@ -90,8 +90,9 @@ export interface McpAuthRequest {
  *     (JSON-RPC execution) is 401 unless a token was presented.
  *
  * The 401 body is a JSON-RPC 2.0 error envelope (both surfaces speak JSON-RPC)
- * whose message names the token file path and the `Authorization: Bearer`
- * header, and never echoes the token value.
+ * whose message names the `Authorization: Bearer` header, and the token file
+ * path only when the local token would work for this caller. It never echoes
+ * the token value.
  *
  * @param surface - The surface the request reached.
  * @param request - Its method, headers and parsed body.
