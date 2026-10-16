@@ -7,7 +7,7 @@
  */
 
 /** Every token column Better Auth's `account` row has. */
-export const PROVIDER_TOKEN_FIELDS = [
+const PROVIDER_TOKEN_FIELDS = [
   'accessToken',
   'refreshToken',
   'idToken',

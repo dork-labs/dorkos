@@ -3,11 +3,13 @@ const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/u;
 
 /**
  * What a sign-in with a DorkOS account may ask for: who you are, and nothing that acts in your
- * account. A space signs you in to its rooms only (DOR-2957, room-only power for a space sign-in);
- * a scope that reached your DorkOS account, your computers or your agents would give the space
- * power outside them.
+ * account. A space signs you in to its rooms only (DOR-2957, room-only power for a space
+ * sign-in); a scope that reached your DorkOS account, your computers or your agents would give
+ * the space power outside them. The server knows a DorkOS account's issuer only by
+ * `COMMUNITY_OIDC_MARK=dorkos`: its address is the operator's to set and nothing public names
+ * it, so the mark is the trigger.
  */
-export const DORKOS_SIGN_IN_SCOPES: readonly string[] = ['openid', 'email', 'profile'];
+const DORKOS_SIGN_IN_SCOPES: readonly string[] = ['openid', 'email', 'profile'];
 
 /**
  * Read `COMMUNITY_OIDC_SCOPES`: space-separated scope tokens that include `openid`, at most 16,
