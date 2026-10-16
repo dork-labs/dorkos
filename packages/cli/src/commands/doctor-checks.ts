@@ -226,13 +226,13 @@ export interface AuthConfigContext {
 /** Warn when login is enabled but no signing secret exists (first sign-in would 500). */
 export function checkAuthConfig(ctx: AuthConfigContext): CheckResult {
   if (!ctx.authEnabled) {
-    return { label: 'Login is off (localhost only)', status: 'pass' };
+    return { label: 'This computer asks for no password', status: 'pass' };
   }
   if (ctx.secretFileExists || ctx.secretEnvSet) {
-    return { label: 'Login is on and has a signing secret', status: 'pass' };
+    return { label: 'This computer asks for a password and has a signing secret', status: 'pass' };
   }
   return {
-    label: 'Login is on but no signing secret was found',
+    label: 'This computer asks for a password but no signing secret was found',
     status: 'warn',
     detail: 'The first sign-in would fail without a secret to keep people signed in.',
     fix: 'Create the owner account (writes the secret):\n  dorkos auth enable',

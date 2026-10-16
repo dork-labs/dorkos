@@ -99,7 +99,7 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
     DORKOS_ALLOW_INSECURE_BIND: {
       type: 'boolean',
       description:
-        'Set to true by the image so it can bind 0.0.0.0. Turn on login before exposing the container (see Securing Your Instance).',
+        'Set to true by the image so it can bind 0.0.0.0. Create the owner account before exposing the container (see Securing Your Instance).',
       default: "'true'",
     },
     DORKOS_TRUSTED_HOSTS: {
@@ -424,7 +424,7 @@ Fetch the token from inside the container:
 docker exec dorkos cat /home/node/.dork/mcp-local-token
 ```
 
-Send it as a Bearer token (a key you attach to each request) on your calls to `/mcp`. Once you turn on login, per-user API keys replace this token. See the [MCP server guide](/docs/integrations/mcp-server) for the full setup.
+Send it as a Bearer token (a key you attach to each request) on your calls to `/mcp`. From another device, or once this computer asks for a password too, per-user API keys replace this token. See the [MCP server guide](/docs/integrations/mcp-server) for the full setup.
 
 ## Building from Source
 
