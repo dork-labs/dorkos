@@ -77,7 +77,7 @@ import {
   createClassifierContextHook,
   isClassifierContextEnabled,
 } from './classifier-context.js';
-import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
+import { buildSystemPromptAppend } from './context-builder.js';
 import { toolDocGates } from './tool-doc-gates.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import {
@@ -96,7 +96,7 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createTeammateFenceHook } from '../teammate-fence-hook.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
-import { defuseFileReferences, defuseUntrustedPrompt } from '../prompt-defuse.js';
+import { enrichContent } from '../enrich-content.js';
 
 /**
  * Whether DorkOS attaches host context to auto mode's permission classifier,
@@ -321,17 +321,9 @@ export async function resolveLaunch(args: {
     // also breaks command parsing). NO context prepend on command turns. Retained.
     enrichedContent = content.trim();
   } else {
-    // Context blocks carry other people's words (a room's recent messages,
-    // their names), and Claude Code reads an `@path` anywhere in the message, so
-    // every block is defused; nobody types into one. The message itself is
-    // defused only when somebody other than the person here wrote it (DOR-2955).
-    const contextBlocks = (messageOpts?.additionalContext ?? [])
-      .map(renderContextEntry)
-      .filter(Boolean)
-      .map(defuseFileReferences);
-    const prompt = untrustedText ? defuseUntrustedPrompt(content) : content;
-    enrichedContent =
-      contextBlocks.length > 0 ? `${contextBlocks.join('\n\n')}\n\n${prompt}` : prompt;
+    // Context blocks defused always, the words when somebody other than the
+    // person here wrote them (DOR-2955, `enrich-content.ts`).
+    enrichedContent = enrichContent(content, messageOpts?.additionalContext, untrustedText);
   }
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It

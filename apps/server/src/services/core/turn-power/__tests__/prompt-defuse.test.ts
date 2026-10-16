@@ -1,12 +1,13 @@
 /**
  * Words from somebody other than the person here, defused before Claude Code reads them
- * (DOR-2955). Each case below was measured against the pinned binary: a `@` at the start or after
- * whitespace is read as a file, and a leading `/` runs a command.
+ * (DOR-2955). Measured against the pinned binary: its `@` parser starts at `(^|[\s。、？！])@`
+ * (paths, `@agent-…` and `@server:uri` alike), and a leading `/` runs a command. Every `@` gets a
+ * zero-width space, so no start set has to be guessed right.
  */
 import { describe, expect, it } from 'vitest';
 import { defuseFileReferences, defuseUntrustedPrompt } from '../prompt-defuse.js';
 
-const ZW = '\u200B';
+const ZW = '​';
 
 describe('defuseFileReferences', () => {
   it.each([
@@ -16,19 +17,27 @@ describe('defuseFileReferences', () => {
     ['tab\t@keys.txt', `tab\t${ZW}@keys.txt`],
     ['nbsp\u00a0@keys.txt', `nbsp\u00a0${ZW}@keys.txt`],
     ['quoted @"a b/c.txt"', `quoted ${ZW}@"a b/c.txt"`],
+    // The review's BLOCKER: four more characters the parser starts after.
+    ['見て。@/tmp/secret.txt', `見て。${ZW}@/tmp/secret.txt`],
+    ['これ、@/tmp/secret.txt', `これ、${ZW}@/tmp/secret.txt`],
+    ['何？@/tmp/secret.txt', `何？${ZW}@/tmp/secret.txt`],
+    ['はい！@/tmp/secret.txt', `はい！${ZW}@/tmp/secret.txt`],
+    // The same parser's other two forms.
+    ['ask @agent-explore to look', `ask ${ZW}@agent-explore to look`],
+    ['read @github:repos/x/y', `read ${ZW}@github:repos/x/y`],
+    // And every other `@`, whatever comes before it.
+    ['ana@example.com', `ana${ZW}@example.com`],
+    ['(@x) "@y"', `(${ZW}@x) "${ZW}@y"`],
   ])('defuses %j', (input, expected) => {
     expect(defuseFileReferences(input)).toBe(expected);
   });
 
-  it.each(['mail me at ana@example.com', 'packages/@dorkos/shared', '(@x)', '"@x"'])(
-    'leaves an @ Claude Code does not read alone: %j',
-    (input) => {
-      expect(defuseFileReferences(input)).toBe(input);
-    }
-  );
+  it('leaves text with no @ alone', () => {
+    expect(defuseFileReferences('nothing to see')).toBe('nothing to see');
+  });
 
   it('is idempotent', () => {
-    const once = defuseFileReferences('a @b @c');
+    const once = defuseFileReferences('a @b 。@c x@y');
     expect(defuseFileReferences(once)).toBe(once);
   });
 });

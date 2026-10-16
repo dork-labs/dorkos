@@ -188,6 +188,19 @@ describe('the line an agent posts', () => {
     );
   });
 
+  it('defuses a title no `@` in it can be read as a file (DOR-2955)', () => {
+    const line = welcomeBackLine(
+      workFor('a', {
+        sessions: 1,
+        latestTitle: 'Look。@/etc/hosts',
+        lastActiveAt: new Date(NOW - 60 * 60_000).toISOString(),
+      }),
+      NOW
+    );
+
+    expect(line).toContain('Look。\u200B@/etc/hosts');
+  });
+
   it('says less rather than quoting nothing when a session has no title', () => {
     const line = welcomeBackLine(
       workFor('a', { sessions: 1, lastActiveAt: new Date(NOW - 60 * 60_000).toISOString() }),
