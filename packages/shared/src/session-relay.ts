@@ -52,9 +52,14 @@
  *   {@link isAgreedRelayVersion} accepts;
  * - records every relayed action in its own audit record.
  *
- * **Versions.** The computer opens with `hello` naming the protocol versions it
- * speaks and the features it has; the web side answers `welcome` with the one
- * version both speak, or `refuse` when there is none. A computer that lacks one
+ * **Versions and proof.** The computer opens with `hello` naming the protocol
+ * versions it speaks, the features it has and a fresh nonce; the web side
+ * answers `welcome` with the one version both speak and its Ed25519 signature
+ * over the whole exchange ({@link relayWelcomeTranscript}), or a signed `refuse` when there is no
+ * common version. The computer verifies the signature with the key it pinned
+ * from the hub itself at link time, so a compromised DorkOS Cloud that points
+ * the computer elsewhere cannot answer. The relay credential on the dial
+ * proves the computer to the hub; the signature proves the hub to the computer. A computer that lacks one
  * feature says so through {@link missingRelayFeature}, so the page can say
  * "this computer needs an update for X" instead of breaking.
  *
@@ -102,6 +107,13 @@ export const SESSION_RELAY_MAX_INFLIGHT_REQUESTS = 16;
 
 /** Most chats one `chats.list` answer carries. */
 export const SESSION_RELAY_MAX_CHATS = 200;
+
+/**
+ * How long a computer keeps the relay open after the web side reports no
+ * viewers. An open relay keeps a hub awake, so it closes soon after the last
+ * viewer leaves; the next `viewer_open` dials again.
+ */
+export const SESSION_RELAY_IDLE_CLOSE_MS = 3 * 60 * 1000;
 
 const VersionSchema = z.number().int().positive();
 
@@ -393,26 +405,112 @@ export const RelayErrorSchema = z.strictObject({
 export type RelayError = z.infer<typeof RelayErrorSchema>;
 
 // === Frames ===
+//
+// A connection has two phases. The HANDSHAKE is plain JSON: the computer's
+// `hello`, then the web side's `welcome` (or `refuse`). Both sides then derive
+// keys from an X25519 exchange that the hub signed with the key the computer
+// pinned, and every later frame travels SEALED: `{ type: 'sealed', seq, box }`,
+// an AEAD box over one inner frame. So an attacker who can terminate TLS at the
+// hub's address, or replay a handshake, can neither read nor inject a frame:
+// the keys exist only on the computer and the hub that holds the pinned key.
+// The sealing itself lives with the two ends (`apps/server`); this module
+// fixes the shapes and the exact bytes that are signed.
 
-/** The frame a computer opens with: what it can talk, never who it is. */
-const HelloFrameSchema = z.strictObject({
+/** Base64url of exactly `bytes` bytes, unpadded. */
+const exactBase64url = (bytes: number) =>
+  z
+    .string()
+    .length(Math.ceil((bytes * 4) / 3))
+    .regex(/^[A-Za-z0-9_-]+$/);
+
+/** An X25519 public key, raw 32 bytes. */
+export const RelayEphemeralKeySchema = exactBase64url(32);
+
+/** An Ed25519 signature, always 64 bytes. */
+export const RelaySignatureSchema = exactBase64url(64);
+
+/** A one-time value: 32 random bytes, a fresh one on every connection. */
+export const RelayNonceSchema = exactBase64url(32);
+
+/** The Ed25519 public key a computer pins from its hub, raw 32 bytes. */
+export const RelayPinnedHubKeySchema = exactBase64url(32);
+
+/**
+ * The frame a computer opens with: which computer it is, what it can talk, a
+ * fresh nonce and its half of the key exchange. The computer id is not a
+ * claim the hub trusts: the computer proves it in its first sealed frame,
+ * `finish`, signed with the key the hub pinned for that computer.
+ */
+export const RelayHelloFrameSchema = z.strictObject({
   type: z.literal('hello'),
+  /** The computer's id as its hub knows it. Proved by `finish`, never taken on trust. */
+  computerId: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[\w.:-]+$/),
   versions: RelayVersionRangeSchema,
   features: AdvertisedFeaturesSchema,
   /** The computer's DorkOS version, for "needs an update" copy. */
   appVersion: z.string().min(1).max(64),
+  nonce: RelayNonceSchema,
+  ephemeralKey: RelayEphemeralKeySchema,
 });
+
+/** See {@link RelayHelloFrameSchema}. */
+export type RelayHelloFrame = z.infer<typeof RelayHelloFrameSchema>;
+
+/**
+ * The web side's answer to `hello`. `welcome` names the agreed version and the
+ * hub's half of the key exchange, signed over {@link relayWelcomeTranscript};
+ * `refuse` names the versions the hub speaks, signed over
+ * {@link relayRefuseTranscript}. A computer verifies either with the key it
+ * pinned from the hub itself (never from DorkOS Cloud), and closes the
+ * connection on anything it cannot verify, saying nothing about an update.
+ */
+export const RelayHandshakeAnswerSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('welcome'),
+    version: VersionSchema,
+    ephemeralKey: RelayEphemeralKeySchema,
+    signature: RelaySignatureSchema,
+  }),
+  z.strictObject({
+    type: z.literal('refuse'),
+    versions: RelayVersionRangeSchema,
+    signature: RelaySignatureSchema,
+  }),
+]);
+
+/** See {@link RelayHandshakeAnswerSchema}. */
+export type RelayHandshakeAnswer = z.infer<typeof RelayHandshakeAnswerSchema>;
+
+/**
+ * Every frame after the handshake, both ways: one inner frame sealed with the
+ * sender's direction key. `seq` starts at 0 and rises by exactly 1 per frame
+ * in each direction; a receiver drops the connection on any other.
+ */
+export const RelaySealedFrameSchema = z.strictObject({
+  type: z.literal('sealed'),
+  seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  box: z
+    .string()
+    .min(1)
+    .max(SESSION_RELAY_MAX_FRAME_LENGTH)
+    .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+/** See {@link RelaySealedFrameSchema}. */
+export type RelaySealedFrame = z.infer<typeof RelaySealedFrameSchema>;
 
 /** Liveness, both ways. Resets the silence watchdog and carries nothing. */
 const HeartbeatFrameSchema = z.strictObject({ type: z.literal('heartbeat') });
 
 /**
- * Frames the web side sends: the handshake answer, requests, and closing a
- * stream the viewer no longer needs.
+ * What the web side sends inside a sealed frame: requests, closing a stream the
+ * viewer no longer needs, its viewer count and liveness.
  */
 export const RelayWebFrameSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('welcome'), version: VersionSchema }),
-  z.strictObject({ type: z.literal('refuse'), versions: RelayVersionRangeSchema }),
   /**
    * A request. Every `op` but `session.stream` is answered by exactly one
    * `result` or `error` with the same `id`; a stream is answered by its
@@ -421,10 +519,16 @@ export const RelayWebFrameSchema = z.discriminatedUnion('type', [
    */
   z.strictObject({ type: z.literal('request'), id: RequestIdSchema, request: RelayRequestSchema }),
   z.strictObject({ type: z.literal('stream.close'), streamId: StreamIdSchema }),
+  /**
+   * How many viewers have a chat of this computer open right now. At 0, and
+   * from the moment the handshake ends until the first report, the computer
+   * closes the relay after {@link SESSION_RELAY_IDLE_CLOSE_MS}.
+   */
+  z.strictObject({ type: z.literal('viewers'), count: z.number().int().min(0).max(10_000) }),
   HeartbeatFrameSchema,
 ]);
 
-/** One frame from the web side to a computer. */
+/** One inner frame from the web side to a computer. */
 export type RelayWebFrame = z.infer<typeof RelayWebFrameSchema>;
 
 /**
@@ -438,11 +542,10 @@ const RelayStreamFrameSchema = z.strictObject({
 });
 
 /**
- * Frames a computer sends: the handshake, one answer per request, stream
- * frames, and the end of a stream.
+ * What a computer sends inside a sealed frame: one answer per request, stream
+ * frames, the end of a stream, and liveness.
  */
 export const RelayComputerFrameSchema = z.discriminatedUnion('type', [
-  HelloFrameSchema,
   z.strictObject({
     type: z.literal('result'),
     id: RequestIdSchema,
@@ -468,16 +571,103 @@ export const RelayComputerFrameSchema = z.discriminatedUnion('type', [
   HeartbeatFrameSchema,
 ]);
 
-/** One frame from a computer to the web side. */
+/** One inner frame from a computer to the web side. */
 export type RelayComputerFrame = z.infer<typeof RelayComputerFrameSchema>;
+
+/**
+ * The computer's first sealed frame: its Ed25519 signature, by the long-lived
+ * key the hub pinned for this computer, over {@link relayFinishTranscript}.
+ * The hub serves nothing until it verifies, so a stolen relay credential alone
+ * cannot stand in for the computer.
+ */
+export const RelayFinishFrameSchema = z.strictObject({
+  type: z.literal('finish'),
+  signature: RelaySignatureSchema,
+});
+
+/** See {@link RelayFinishFrameSchema}. */
+export type RelayFinishFrame = z.infer<typeof RelayFinishFrameSchema>;
+
+// === Signed transcripts ===
+
+/** The label every relay transcript starts with, so a signature means nothing elsewhere. */
+export const SESSION_RELAY_TRANSCRIPT_LABEL = 'dorkos-session-relay/v1';
+
+/** What a hub signs, and a computer checks, to settle one handshake. */
+export interface RelayTranscriptInput {
+  /** The `hello` exactly as it crossed the wire, text and all. */
+  helloText: string;
+  /** The hub's origin, as the computer pinned it (`https://…`, no path). */
+  hubOrigin: string;
+}
+
+/**
+ * The exact bytes a hub signs in `welcome`: the label, the whole `hello` as
+ * sent, the hub's origin, the agreed version and the hub's ephemeral key, one
+ * per line. Binding the whole `hello` covers the computer's id, nonce, key and
+ * the versions it offered, so neither a replay, a downgrade nor a hello passed
+ * on from another computer verifies.
+ *
+ * @param input - The `hello` text and the pinned origin.
+ * @param version - The version the `welcome` names.
+ * @param hubEphemeralKey - The `welcome`'s ephemeral key.
+ */
+export function relayWelcomeTranscript(
+  input: RelayTranscriptInput,
+  version: number,
+  hubEphemeralKey: string
+): Uint8Array {
+  return transcript('welcome', input, [String(version), hubEphemeralKey]);
+}
+
+/**
+ * The exact bytes a computer signs in `finish`: the same exchange as the
+ * `welcome`, under its own line, so neither signature stands in for the other.
+ *
+ * @param input - The `hello` text and the pinned origin.
+ * @param version - The agreed version.
+ * @param hubEphemeralKey - The `welcome`'s ephemeral key.
+ */
+export function relayFinishTranscript(
+  input: RelayTranscriptInput,
+  version: number,
+  hubEphemeralKey: string
+): Uint8Array {
+  return transcript('finish', input, [String(version), hubEphemeralKey]);
+}
+
+/**
+ * The exact bytes a hub signs in `refuse`, so a computer only says "needs an
+ * update" when its own hub said so.
+ *
+ * @param input - The `hello` text and the pinned origin.
+ * @param versions - The versions the `refuse` names.
+ */
+export function relayRefuseTranscript(
+  input: RelayTranscriptInput,
+  versions: RelayVersionRange
+): Uint8Array {
+  return transcript('refuse', input, [`${versions.min}-${versions.max}`]);
+}
+
+function transcript(kind: string, input: RelayTranscriptInput, tail: string[]): Uint8Array {
+  // One field per line: an origin with a line break in it could shift every
+  // field after it, so it is refused rather than signed.
+  if (/[\r\n]/.test(input.hubOrigin)) throw new Error('A hub origin cannot contain a line break');
+  return new TextEncoder().encode(
+    [SESSION_RELAY_TRANSCRIPT_LABEL, kind, input.hubOrigin, input.helloText, ...tail].join('\n')
+  );
+}
 
 /**
  * Parse one frame, or `null` when it is too long, not JSON, or not a frame of
  * `schema`. Fails soft: a bad frame is dropped, the connection lives on.
  *
  * @param raw - The raw text frame received from the socket.
- * @param schema - {@link RelayWebFrameSchema} on a computer,
- *   {@link RelayComputerFrameSchema} on the web side.
+ * @param schema - The schema for what this side expects next: the handshake
+ *   schemas first, then {@link RelaySealedFrameSchema}, and once opened,
+ *   {@link RelayWebFrameSchema} on a computer or {@link RelayComputerFrameSchema}
+ *   on the web side.
  */
 export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z.infer<S> | null {
   if (raw.length > SESSION_RELAY_MAX_FRAME_LENGTH) return null;
@@ -498,7 +688,10 @@ export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z
  *
  * @param frame - The frame to encode.
  */
-export function encodeRelayFrame(frame: RelayWebFrame | RelayComputerFrame): string | null {
+export function encodeRelayFrame(
+  frame:
+    RelayWebFrame | RelayComputerFrame | RelayHelloFrame | RelayHandshakeAnswer | RelaySealedFrame
+): string | null {
   let text: string;
   try {
     text = JSON.stringify(frame);
