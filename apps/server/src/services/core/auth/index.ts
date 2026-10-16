@@ -63,6 +63,8 @@ import {
 } from './registration-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
+import { refuseWithoutSetupCode } from './setup-code-gate.js';
+import { discardSetupCode } from './setup-code.js';
 
 /**
  * The parts of the auth options that shape the instance's TYPE: the plugins
@@ -272,9 +274,12 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
                   'Registration is closed. An owner account already exists for this DorkOS instance.',
               });
             }
+            if (mode === 'setup-code') refuseWithoutSetupCode(caller);
             return { data: { ...userData, role: 'owner' } };
           },
           after: async (created) => {
+            // However the owner was made, an unused setup code is now moot.
+            discardSetupCode();
             // The account in the audit log, linked to the install id the log
             // named its owner by until now (spec `audit-trail` §3.2).
             recordAccountCreated(created);

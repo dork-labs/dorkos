@@ -166,12 +166,16 @@ describe('SecurityPanel', () => {
     await user.click(screen.getByRole('button', { name: /create account & ask here too/i }));
 
     await waitFor(() => {
-      expect(signUpEmail).toHaveBeenCalledWith({
-        email: 'owner@example.com',
-        password: 'sup3rsecret',
-        // Never the email: an empty name lets the app ask what to call them (DOR-2964).
-        name: '',
-      });
+      expect(signUpEmail).toHaveBeenCalledWith(
+        {
+          email: 'owner@example.com',
+          password: 'sup3rsecret',
+          // Never the email: an empty name lets the app ask what to call them (DOR-2964).
+          name: '',
+        },
+        // No setup code: this computer never needs one.
+        undefined
+      );
     });
     await waitFor(() => {
       expect(transport.updateConfig).toHaveBeenCalledWith({ auth: { enabled: true } });
