@@ -1,6 +1,6 @@
 /**
  * The session relay protocol: how a person's own DorkOS on the web reaches the
- * chats on one of their computers (ADR 261015-042933 rule 4, spec
+ * chats on one of their computers (ADR 261015-042933 rules 4 and 5, spec
  * `everything-is-a-space` step B1).
  *
  * The computer dials out. It opens ONE WebSocket to the address and key it
@@ -10,31 +10,53 @@
  * computer only ever reaches what it pinned. The relay credential travels on
  * the dial itself, never in a frame, so no frame can claim to be anyone.
  *
- * **Chats only, and nothing else.** The protocol carries exactly five things:
- * listing an agent's chats, the durable session stream (snapshot, resume from a
- * cursor, live `seq`), sending a message, answering what a chat is waiting on,
- * and interrupt. Terminal, files, settings, connections and previews are never
- * relayed; they open as a page move to the computer's own remote address,
- * behind its own login. That limit is enforced by the shapes, not by a promise:
+ * **Chats only, and nothing else.** The protocol carries listing an agent's
+ * chats, the durable session stream (snapshot, resume from a cursor, live
+ * `seq`), sending a message, approvals, question answers and interrupt.
+ * Terminal, files, settings, connections and previews are never relayed; they
+ * open as a page move to the computer's own remote address, behind its own
+ * login. The shapes enforce what they can:
  *
  * - every object is strict, so a field this module does not name (`cwd`,
  *   `agentPath`, `runtime`, `account`, `permissionMode`, `seedContext`,
  *   `alwaysAllow`) is a refused frame rather than a silently ignored one;
- * - sessions are named by id only, and the id is a UUID, so a request can never
- *   carry a path into a URL the computer builds;
- * - an approval can approve once or deny. "Always allow" changes the
- *   computer's rules, which is full control, so it has no field here.
+ * - every id is a narrow pattern (a lowercase UUID, a ULID, a frame id), so no
+ *   request can carry a path segment or a query string into a URL the computer
+ *   builds from it;
+ * - an approval approves once or denies, and only with a passkey proof bound
+ *   to that exact decision (spec step B4). "Always allow" changes the
+ *   computer's rules, which is full control, so it has no field here. MCP
+ *   elicitations are not relayed: their URL mode is a sign-in, which is a
+ *   connection.
  *
- * Who the caller is belongs to the computer, not to the protocol. The computer
- * treats everything arriving over this connection as a relayed caller, its own
- * kind in the session gate, never "at this computer" and never a person.
+ * **What the computer must still do (step B2).** Who the caller is belongs to
+ * the computer, not to the protocol. The computer:
+ *
+ * - treats everything arriving over this connection as a relayed caller, its
+ *   own kind in the session gate, never "at this computer" and never a person;
+ * - serves only person-facing chats of registered agents, in `chats.list` and
+ *   in every request naming a session (never a room turn, a task run or a
+ *   heartbeat), whatever UUID a request names;
+ * - marks a turn a relayed message started as relayed, so a tool call that
+ *   needs a person waits for a signed approval instead of being allowed by
+ *   the computer's own trust level;
+ * - verifies every approval proof itself (its own challenge, unexpired, used
+ *   once, signed by the passkey it pinned) and refuses an approval without one;
+ * - takes a relayed question answer as having no more power than a relayed
+ *   message: it is words for the agent, not a person's decision;
+ * - decides what to allow from its own level and rules, never from the
+ *   features it advertised or anything the web side says about the viewer;
+ * - enforces {@link SESSION_RELAY_MAX_OPEN_STREAMS} and
+ *   {@link SESSION_RELAY_MAX_INFLIGHT_REQUESTS}, takes one `hello` per
+ *   connection, and ignores every request before a `welcome` that
+ *   {@link isAgreedRelayVersion} accepts;
+ * - records every relayed action in its own audit record.
  *
  * **Versions.** The computer opens with `hello` naming the protocol versions it
  * speaks and the features it has; the web side answers `welcome` with the one
- * version both speak, or `refuse` when there is none. A computer that is too
- * old or too new for one feature says so through {@link missingRelayFeature},
- * so the page can say "this computer needs an update for X" instead of
- * breaking.
+ * version both speak, or `refuse` when there is none. A computer that lacks one
+ * feature says so through {@link missingRelayFeature}, so the page can say
+ * "this computer needs an update for X" instead of breaking.
  *
  * Frame encoding mirrors `stream-socket.ts`: one JSON object per WebSocket text
  * frame, parsed fail-soft, so a bad frame is a dropped frame and never a torn
@@ -53,14 +75,20 @@ import {
 // === Versions and limits ===
 
 /**
- * The protocol versions this build speaks, oldest first. A peer and this build
- * agree on the highest version both speak ({@link negotiateRelayVersion}).
- * Raise `max` for an additive change and `min` only when an old peer can no
- * longer be served at all.
+ * The protocol versions this build speaks, oldest first. Two peers agree on
+ * the highest version both speak ({@link negotiateRelayVersion}), so a hostile
+ * peer can only ever force the lowest one this build accepts. Raise `max` for
+ * an additive change, and raise `min` the moment an old version is unsafe, not
+ * only when it can no longer be served.
  */
 export const SESSION_RELAY_VERSIONS = { min: 1, max: 1 } as const;
 
-/** Longest frame, in UTF-16 code units, either side accepts. Larger is dropped. */
+/**
+ * Longest frame either side accepts, in UTF-16 code units (up to about three
+ * times as many bytes on the wire). Larger is dropped. A socket's own byte
+ * limit must sit above that, or an oversized frame closes the connection
+ * instead of being dropped.
+ */
 export const SESSION_RELAY_MAX_FRAME_LENGTH = 1_048_576;
 
 /** Longest message a relayed sender may post, in characters. */
@@ -68,6 +96,9 @@ export const SESSION_RELAY_MAX_MESSAGE_LENGTH = 200_000;
 
 /** Most streams one connection may hold open at once; the next is refused. */
 export const SESSION_RELAY_MAX_OPEN_STREAMS = 32;
+
+/** Most requests one connection may have unanswered at once; the next is refused. */
+export const SESSION_RELAY_MAX_INFLIGHT_REQUESTS = 16;
 
 /** Most chats one `chats.list` answer carries. */
 export const SESSION_RELAY_MAX_CHATS = 200;
@@ -96,7 +127,6 @@ export const SESSION_RELAY_FEATURES = [
   'session.interrupt',
   'interaction.approval',
   'interaction.question',
-  'interaction.elicitation',
 ] as const;
 
 /** One feature id. See {@link SESSION_RELAY_FEATURES}. */
@@ -110,30 +140,52 @@ const AdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
 
 // === Ids ===
 
-/** Correlates one request with its one result. Chosen by the web side. */
-const RequestIdSchema = z.string().min(1).max(64);
-
-/** Names one open stream on the connection. Chosen by the web side. */
-const StreamIdSchema = z.string().min(1).max(64);
-
-/**
- * A chat on the computer. Always a UUID (as `SessionSchema.id` is), so it can
- * never smuggle a path segment into a URL the computer builds from it.
- */
-const SessionIdSchema = z.string().uuid();
-
-/** A registered agent on the computer, by its Mesh id. Never a directory. */
-const AgentIdSchema = z
+/** Correlates one request with its one answer. Chosen by the web side. */
+const RequestIdSchema = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[0-9A-Za-z_-]+$/);
+  .regex(/^[\w.:-]+$/);
+
+/** Names one open stream on the connection. Chosen by the web side. */
+const StreamIdSchema = RequestIdSchema;
+
+/**
+ * A chat on the computer: a lowercase UUID (as `SessionSchema.id` is minted),
+ * so it can never smuggle a path segment into a URL, and two spellings of one
+ * id cannot pass two different checks.
+ */
+const SessionIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+/** A registered agent on the computer, by its Mesh id (a ULID). Never a directory. */
+const AgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+
+/** A tool call a chat is waiting on, as its runtime named it. */
+const ToolCallIdSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[\w.:-]+$/);
 
 /**
  * A durable stream's resume cursor: the whole `id` of the last frame the viewer
- * saw, echoed back opaque (see `stream-socket.ts`), never a bare `seq`.
+ * saw (`<sessionId>-<epoch>-<generation>-<seq>`, see `stream-socket.ts`),
+ * never a bare `seq`, and never anything that could extend a query string.
  */
-const ResumeCursorSchema = z.string().min(1).max(256);
+const ResumeCursorSchema = z
+  .string()
+  .max(256)
+  .regex(/^[0-9a-f-]+-\d+-g\d+-\d+$/);
+
+/** Base64url text, as WebAuthn encodes binary fields. */
+const base64url = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .regex(/^[A-Za-z0-9_-]+$/);
 
 // === Requests (web side to computer) ===
 
@@ -160,7 +212,7 @@ const SessionSendRequestSchema = z.strictObject({
   op: z.literal('session.send'),
   sessionId: SessionIdSchema,
   content: z.string().min(1).max(SESSION_RELAY_MAX_MESSAGE_LENGTH),
-  clientMessageId: z.string().min(1).max(128).optional(),
+  clientMessageId: RequestIdSchema.optional(),
   disposition: MessageDispositionSchema.optional(),
   newChat: z.strictObject({ agentId: AgentIdSchema }).optional(),
 });
@@ -171,27 +223,56 @@ const SessionInterruptRequestSchema = z.strictObject({
   sessionId: SessionIdSchema,
 });
 
+/** The decision an approval challenge is bound to. */
+const ApprovalDecisionSchema = z.enum(['approve', 'deny']);
+
 /**
- * Answer what a chat is waiting on. An approval is approved once or denied;
- * there is deliberately no "always allow" (see the module comment).
+ * Ask the computer for a one-time challenge to sign before answering an
+ * approval. The computer binds it to this session, tool call and decision, a
+ * hash of the exact tool input it holds, and a value of its own (spec B4).
+ */
+const InteractionChallengeRequestSchema = z.strictObject({
+  op: z.literal('interaction.challenge'),
+  sessionId: SessionIdSchema,
+  toolCallId: ToolCallIdSchema,
+  decision: ApprovalDecisionSchema,
+});
+
+/** A WebAuthn assertion over a challenge the computer issued, base64url fields. */
+export const RelayApprovalProofSchema = z.strictObject({
+  /** The `challengeId` the computer answered `interaction.challenge` with. */
+  challengeId: RequestIdSchema,
+  credentialId: base64url(1_400),
+  clientDataJSON: base64url(4_096),
+  authenticatorData: base64url(1_024),
+  signature: base64url(512),
+  userHandle: base64url(128).optional(),
+});
+
+/** See {@link RelayApprovalProofSchema}. */
+export type RelayApprovalProof = z.infer<typeof RelayApprovalProofSchema>;
+
+/**
+ * Answer what a chat is waiting on. An approval needs a proof; there is
+ * deliberately no "always allow" (see the module comment). A question answer
+ * is words for the agent and needs none.
  */
 const InteractionAnswerSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('approve'), toolCallId: z.string().min(1).max(256) }),
+  z.strictObject({
+    kind: z.literal('approve'),
+    toolCallId: ToolCallIdSchema,
+    proof: RelayApprovalProofSchema,
+  }),
   z.strictObject({
     kind: z.literal('deny'),
-    toolCallId: z.string().min(1).max(256),
+    toolCallId: ToolCallIdSchema,
     reason: z.string().max(DENY_REASON_MAX_LENGTH).optional(),
+    proof: RelayApprovalProofSchema,
   }),
   z.strictObject({
     kind: z.literal('answer'),
-    toolCallId: z.string().min(1).max(256),
-    answers: z.record(z.string().max(16), z.string().max(10_000)),
-  }),
-  z.strictObject({
-    kind: z.literal('elicitation'),
-    interactionId: z.string().min(1).max(256),
-    action: z.enum(['accept', 'decline', 'cancel']),
-    content: z.record(z.string().max(256), z.unknown()).optional(),
+    toolCallId: ToolCallIdSchema,
+    answers: z.record(z.string().regex(/^\d{1,3}$/), z.string().max(10_000)),
   }),
 ]);
 
@@ -210,6 +291,7 @@ export const RelayRequestSchema = z.discriminatedUnion('op', [
   SessionStreamRequestSchema,
   SessionSendRequestSchema,
   SessionInterruptRequestSchema,
+  InteractionChallengeRequestSchema,
   InteractionRespondRequestSchema,
 ]);
 
@@ -232,7 +314,7 @@ export const RelayChatSummarySchema = z.strictObject({
 /** See {@link RelayChatSummarySchema}. */
 export type RelayChatSummary = z.infer<typeof RelayChatSummarySchema>;
 
-/** The answer body for each request `op` that answers with a body. */
+/** The answer body for each request `op` that answers with one `result`. */
 export const RelayResultBodySchemas = {
   'chats.list': z.strictObject({
     chats: z.array(RelayChatSummarySchema).max(SESSION_RELAY_MAX_CHATS),
@@ -242,11 +324,39 @@ export const RelayResultBodySchemas = {
     receipt: InterruptReceiptSchema,
     cancelledQueued: z.array(QueuedMessageSchema),
   }),
+  'interaction.challenge': z.strictObject({
+    challengeId: RequestIdSchema,
+    /** The bytes to sign, base64url. Opaque to the web side. */
+    challenge: base64url(256),
+    /** When the computer stops accepting a proof over it. */
+    expiresAt: z.string().datetime(),
+  }),
   'interaction.respond': z.strictObject({ ok: z.boolean() }),
 } as const;
 
-/** The `op`s whose answer is one `result` frame (a stream answers with frames). */
+/** The `op`s answered by one `result` (a stream answers with frames instead). */
 export type RelayResultOp = keyof typeof RelayResultBodySchemas;
+
+/** The parsed `result` body for `op`. */
+export type RelayResultBody<Op extends RelayResultOp> = z.infer<
+  (typeof RelayResultBodySchemas)[Op]
+>;
+
+/**
+ * Check a `result` body against the `op` the web side asked for, or `null`
+ * when it does not match. The web side tracks which `op` each request id was,
+ * and reads every body through this, never as `unknown`.
+ *
+ * @param op - The `op` of the request the result answers.
+ * @param body - The `body` of the `result` frame.
+ */
+export function parseRelayResult<Op extends RelayResultOp>(
+  op: Op,
+  body: unknown
+): RelayResultBody<Op> | null {
+  const result = RelayResultBodySchemas[op].safeParse(body);
+  return result.success ? (result.data as RelayResultBody<Op>) : null;
+}
 
 /**
  * Why a request was refused. A string rather than an enum, so a newer peer's
@@ -258,12 +368,12 @@ export const SESSION_RELAY_ERROR_CODES = [
   'needs_update',
   /** The frame did not parse as a request this version knows. */
   'invalid',
-  /** No such chat or agent on the computer. */
+  /** No such chat or agent on the computer, or not one the relay serves. */
   'not_found',
-  /** The computer's own rules refused it (level, login, a local gate). */
+  /** The computer's own rules refused it (level, login, a missing proof). */
   'refused',
-  /** Too many open streams on this connection. */
-  'too_many_streams',
+  /** Too many open streams or unanswered requests on this connection. */
+  'rate_limited',
   /** Something failed on the computer. */
   'internal',
 ] as const;
@@ -284,7 +394,7 @@ export type RelayError = z.infer<typeof RelayErrorSchema>;
 
 // === Frames ===
 
-/** The frame a computer opens with: who it can talk to, never who it is. */
+/** The frame a computer opens with: what it can talk, never who it is. */
 const HelloFrameSchema = z.strictObject({
   type: z.literal('hello'),
   versions: RelayVersionRangeSchema,
@@ -382,14 +492,19 @@ export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z
 }
 
 /**
- * Serialize one frame for the wire, or `null` when it would exceed
- * {@link SESSION_RELAY_MAX_FRAME_LENGTH} (the peer would drop it unread, so the
- * sender answers with an error instead).
+ * Serialize one frame for the wire, or `null` when it cannot be (too long for
+ * the peer to read, or not serializable at all, such as nested past the
+ * engine's stack). The sender answers with an error instead.
  *
  * @param frame - The frame to encode.
  */
 export function encodeRelayFrame(frame: RelayWebFrame | RelayComputerFrame): string | null {
-  const text = JSON.stringify(frame);
+  let text: string;
+  try {
+    text = JSON.stringify(frame);
+  } catch {
+    return null;
+  }
   return text.length > SESSION_RELAY_MAX_FRAME_LENGTH ? null : text;
 }
 
@@ -421,29 +536,39 @@ export function negotiateRelayVersion(
 }
 
 /**
- * The feature a request needs. Interaction answers split by kind, so a computer
- * that can take approvals but not elicitation answers is refused only for the
- * one it lacks.
+ * Whether a `welcome` names a version this build speaks. A computer closes the
+ * connection on any other, before it serves a single request.
+ *
+ * @param self - The versions this build speaks.
+ * @param version - The version the `welcome` named.
+ */
+export function isAgreedRelayVersion(self: RelayVersionRange, version: number): boolean {
+  return Number.isInteger(version) && version >= self.min && version <= self.max;
+}
+
+/**
+ * The feature a request needs.
  *
  * @param request - The request about to be sent.
  */
 export function relayFeatureFor(request: RelayRequest): SessionRelayFeature {
-  if (request.op !== 'interaction.respond') return request.op;
-  switch (request.answer.kind) {
-    case 'approve':
-    case 'deny':
+  switch (request.op) {
+    case 'interaction.challenge':
       return 'interaction.approval';
-    case 'answer':
-      return 'interaction.question';
-    case 'elicitation':
-      return 'interaction.elicitation';
+    case 'interaction.respond':
+      return request.answer.kind === 'answer' ? 'interaction.question' : 'interaction.approval';
+    default:
+      return request.op;
   }
 }
 
 /**
- * The feature a computer lacks for `request`, or `null` when it has it. The
- * web side checks before sending and shows "this computer needs an update for"
- * the feature; the computer refuses the same request with `needs_update`.
+ * The feature a computer lacks for `request`, or `null` when it has it.
+ *
+ * A hint for the page, which shows "this computer needs an update for" the
+ * feature rather than sending a request that would fail. It is never a
+ * permission: the computer decides what to allow from its own rules, whatever
+ * it advertised.
  *
  * @param advertised - The features the computer sent in `hello`.
  * @param request - The request about to be sent.

@@ -9,6 +9,8 @@ import {
   SESSION_RELAY_VERSIONS,
   decodeRelayFrame,
   encodeRelayFrame,
+  isAgreedRelayVersion,
+  parseRelayResult,
   missingRelayFeature,
   negotiateRelayVersion,
   relayFeatureFor,
@@ -18,27 +20,40 @@ import {
 const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
 
+const PROOF = {
+  challengeId: 'c1',
+  credentialId: 'AQID',
+  clientDataJSON: 'eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0',
+  authenticatorData: 'SZYN5YgO',
+  signature: 'MEUCIQ',
+};
+
 /** One valid request of every kind, so a sweep cannot skip one. */
 const EVERY_REQUEST: RelayRequest[] = [
   { op: 'chats.list', agentId: AGENT },
-  { op: 'session.stream', streamId: 's1', sessionId: SESSION, resume: 'abc-1-g1-42' },
+  {
+    op: 'session.stream',
+    streamId: 's1',
+    sessionId: SESSION,
+    resume: `${SESSION}-1792160651863-g1-42`,
+  },
   { op: 'session.send', sessionId: SESSION, content: 'hi' },
   { op: 'session.interrupt', sessionId: SESSION },
-  { op: 'interaction.respond', sessionId: SESSION, answer: { kind: 'approve', toolCallId: 't1' } },
+  { op: 'interaction.challenge', sessionId: SESSION, toolCallId: 'toolu_01', decision: 'approve' },
   {
     op: 'interaction.respond',
     sessionId: SESSION,
-    answer: { kind: 'deny', toolCallId: 't1', reason: 'not that file' },
+    answer: { kind: 'approve', toolCallId: 'toolu_01', proof: PROOF },
   },
   {
     op: 'interaction.respond',
     sessionId: SESSION,
-    answer: { kind: 'answer', toolCallId: 't1', answers: { '0': 'Yes' } },
+    answer: { kind: 'deny', toolCallId: 'toolu_01', reason: 'not that file', proof: PROOF },
   },
   {
     op: 'interaction.respond',
     sessionId: SESSION,
-    answer: { kind: 'elicitation', interactionId: 'e1', action: 'decline' },
+    answer: { kind: 'answer', toolCallId: 'toolu_01', answers: { '0': 'Yes' } },
   },
 ];
 
@@ -73,12 +88,42 @@ describe('relay requests carry chats and nothing else', () => {
   });
 
   it('has no way to say "always allow"', () => {
-    const answer = { kind: 'approve', toolCallId: 't1', alwaysAllow: true };
+    const answer = { kind: 'approve', toolCallId: 'toolu_01', proof: PROOF, alwaysAllow: true };
     const request = { op: 'interaction.respond', sessionId: SESSION, answer };
     expect(RelayRequestSchema.safeParse(request).success).toBe(false);
   });
 
-  it.each(['../../etc/passwd', 'abc', `${SESSION}/messages`, ''])(
+  it.each(['approve', 'deny'])('refuses to %s without a passkey proof', (kind) => {
+    const answer = { kind, toolCallId: 'toolu_01' };
+    const request = { op: 'interaction.respond', sessionId: SESSION, answer };
+    expect(RelayRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it('does not relay MCP elicitations, whose URL mode is a sign-in', () => {
+    const answer = { kind: 'elicitation', interactionId: 'e1', action: 'accept' };
+    const request = { op: 'interaction.respond', sessionId: SESSION, answer };
+    expect(RelayRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it.each(['x&cwd=/Users/me/other', '1?a=b', 'x#y', 'x/y', 'x%26cwd', `${SESSION}-1-42`])(
+    'refuses a resume cursor that is not a frame id: %j',
+    (resume) => {
+      const request = { op: 'session.stream', streamId: 's1', sessionId: SESSION, resume };
+      expect(RelayRequestSchema.safeParse(request).success).toBe(false);
+    }
+  );
+
+  it.each(['../x', 'a\u0000b', 'a/b', 'a b'])('refuses a tool call id like %j', (toolCallId) => {
+    const request = {
+      op: 'interaction.challenge',
+      sessionId: SESSION,
+      toolCallId,
+      decision: 'approve',
+    };
+    expect(RelayRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it.each(['../../etc/passwd', 'abc', `${SESSION}/messages`, '', SESSION.toUpperCase()])(
     'refuses a session id that is not a UUID: %j',
     (sessionId) => {
       expect(RelayRequestSchema.safeParse({ op: 'session.interrupt', sessionId }).success).toBe(
@@ -88,7 +133,7 @@ describe('relay requests carry chats and nothing else', () => {
   );
 
   it('refuses an agent id that could be a path', () => {
-    for (const agentId of ['../agents/x', '/Users/x', 'a b']) {
+    for (const agentId of ['../agents/x', '/Users/x', 'a b', '-rf', AGENT.toLowerCase()]) {
       expect(RelayRequestSchema.safeParse({ op: 'chats.list', agentId }).success, agentId).toBe(
         false
       );
@@ -166,7 +211,7 @@ describe('frames', () => {
       {
         type: 'stream.frame',
         streamId: 's1',
-        frame: { event: 'text_delta', data: {}, id: 'x-1-g1-1' },
+        frame: { event: 'text_delta', data: {}, id: `${SESSION}-1-g1-1` },
       },
       { type: 'stream.end', streamId: 's1' },
       { type: 'stream.end', streamId: 's1', error },
@@ -207,6 +252,12 @@ describe('frames', () => {
     const body = { blob: 'x'.repeat(SESSION_RELAY_MAX_FRAME_LENGTH) };
     expect(encodeRelayFrame({ type: 'result', id: 'r1', ok: true, body })).toBeNull();
   });
+
+  it('answers null instead of throwing for a body nested past the stack', () => {
+    let body: unknown = 'leaf';
+    for (let i = 0; i < 200_000; i++) body = [body];
+    expect(encodeRelayFrame({ type: 'result', id: 'r1', ok: true, body })).toBeNull();
+  });
 });
 
 describe('result bodies', () => {
@@ -230,7 +281,28 @@ describe('result bodies', () => {
   });
 });
 
+describe('reading a result for the op that was asked', () => {
+  it('accepts the body its op defines', () => {
+    expect(parseRelayResult('session.send', { sessionId: SESSION })).toEqual({
+      sessionId: SESSION,
+    });
+  });
+
+  it('refuses a body meant for another op', () => {
+    expect(parseRelayResult('chats.list', { sessionId: SESSION })).toBeNull();
+    expect(parseRelayResult('interaction.respond', { chats: [] })).toBeNull();
+  });
+});
+
 describe('version handshake', () => {
+  it('accepts a welcome only for a version this build speaks', () => {
+    expect(isAgreedRelayVersion({ min: 1, max: 2 }, 2)).toBe(true);
+    expect(isAgreedRelayVersion({ min: 1, max: 2 }, 3)).toBe(false);
+    expect(isAgreedRelayVersion({ min: 2, max: 3 }, 1)).toBe(false);
+    expect(isAgreedRelayVersion({ min: 1, max: 2 }, Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(isAgreedRelayVersion({ min: 1, max: 2 }, 1.5)).toBe(false);
+  });
+
   it('agrees on the highest version both speak', () => {
     expect(negotiateRelayVersion({ min: 1, max: 3 }, { min: 2, max: 5 })).toEqual({
       ok: true,
@@ -271,10 +343,10 @@ describe('needs an update for one feature', () => {
 
   it('names the one feature a computer lacks and passes the ones it has', () => {
     const advertised = ['session.stream', 'session.send', 'interaction.approval'];
-    const elicitation = EVERY_REQUEST.find(
-      (r) => r.op === 'interaction.respond' && r.answer.kind === 'elicitation'
+    const question = EVERY_REQUEST.find(
+      (r) => r.op === 'interaction.respond' && r.answer.kind === 'answer'
     )!;
-    expect(missingRelayFeature(advertised, elicitation)).toBe('interaction.elicitation');
+    expect(missingRelayFeature(advertised, question)).toBe('interaction.question');
     const approve = EVERY_REQUEST.find(
       (r) => r.op === 'interaction.respond' && r.answer.kind === 'approve'
     )!;
