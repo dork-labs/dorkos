@@ -131,7 +131,6 @@
     "packages/evals/src/suite/rooms-judgment.ts": 561,
     "packages/evals/src/suite/rooms-recall.ts": 520,
     "packages/evals/src/suite/rooms.ts": 506,
-    "packages/extension-api/src/tool-check.ts": 508,
     "packages/harness/src/apply/apply.ts": 510,
     "packages/harness/src/plan/installed-projector.ts": 512,
     "packages/marketplace/src/package-validator.ts": 707,
