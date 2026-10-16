@@ -373,6 +373,10 @@
       "types": "./src/stream-socket.ts",
       "default": "./dist/stream-socket.js"
     },
+    "./session-relay": {
+      "types": "./src/session-relay.ts",
+      "default": "./dist/session-relay.js"
+    },
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"
