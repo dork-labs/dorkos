@@ -17,6 +17,10 @@ const router = new Hono<ApiEnv>();
 router.get('/', async (c) => {
   const query = readQuery(c);
   const sessionId = typeof query.sessionId === 'string' ? query.sessionId : undefined;
+  // A server with no runtime registered (a hub) has no subagents to offer.
+  if (!sessionId && !runtimeRegistry.has(runtimeRegistry.getDefaultType())) {
+    return c.json({ subagents: [] });
+  }
   const runtime = sessionId
     ? await runtimeRegistry.resolveForSession(sessionId)
     : // cold discovery: no session context (onboarding, first-run)

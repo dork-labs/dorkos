@@ -70,6 +70,7 @@ import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
+import { currentServerRole } from './server-role.js';
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -256,6 +257,10 @@ export function requireOperatorCookieUnderLogin(
 export function isLocalCaller(
   request: Pick<RequestFacts, 'peerAddress' | 'headers' | 'ingress'>
 ): boolean {
+  // A hub is a person's DorkOS in the cloud: nobody sits at it, and a request
+  // from its own loopback is a proxy or a process beside it, never the owner
+  // at this machine (DOR-2934, every request is remote there).
+  if (currentServerRole() === 'hub') return false;
   // Managed remote access arrives from the ngrok agent on loopback, so the
   // socket half would pass; the ingress marks it so nothing it carries is ever
   // taken for a person at this machine, whatever its `Host` says. The other

@@ -144,6 +144,13 @@ describe('Commands Routes', () => {
   });
 
   describe('GET /api/commands', () => {
+    it('answers no commands when no runtime is registered (a hub), never a 500', async () => {
+      vi.mocked(runtimeRegistry.has).mockReturnValueOnce(false);
+      const res = await request(testServer).get('/api/commands');
+      expect(res.status).toBe(200);
+      expect(res.body.commands).toEqual([]);
+    });
+
     it('returns cached commands', async () => {
       const registry = {
         commands: [

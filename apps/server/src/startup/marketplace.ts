@@ -78,6 +78,7 @@ import { ApprovalService } from '../services/core/approvals/index.js';
 import { type CapabilityRegistry } from '../services/core/capabilities/index.js';
 import { eventFanOut } from '../services/core/event-fan-out.js';
 import { operatorAudience } from '../services/notifications/notification-entitlement.js';
+import { currentServerRole } from '../lib/server-role.js';
 
 /** What starting the marketplace needs from the startup that came before it. */
 export interface MarketplaceStartupDeps {
@@ -524,6 +525,11 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');
+  } else if (currentServerRole() === 'hub') {
+    // A hub starts no chat app connections, so the adapter manager this needs
+    // is never built. Whether a hub installs packages is the agent computers'
+    // question (DOR-2939), not this server's.
+    logger.info('[Marketplace] Hub mode: package installs are not served from this server');
   } else {
     logger.warn(
       '[Marketplace] Routes skipped — requires extensionManager and adapterManager (relay must be enabled and extensions must have initialized successfully)'

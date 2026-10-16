@@ -20,7 +20,10 @@ import { honoListener, listeningServer } from '@dorkos/test-utils/listening-serv
 // Mutable stand-in so the container flag can be moved one test at a time — the
 // reader consults it per request, which is the behaviour under test. Same shape
 // `middleware/__tests__/host-guard.test.ts` uses for the same variable.
-const mockEnv = vi.hoisted(() => ({ DORKOS_ALLOW_INSECURE_BIND: false }));
+const mockEnv = vi.hoisted(() => ({
+  DORKOS_ALLOW_INSECURE_BIND: false,
+  DORKOS_SERVER_ROLE: 'computer' as 'computer' | 'hub',
+}));
 vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 const { isLocalCaller } = await import('../caller-authority.js');
@@ -55,6 +58,7 @@ const server = listeningServer(honoListener(honoApp));
 
 beforeEach(() => {
   mockEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+  mockEnv.DORKOS_SERVER_ROLE = 'computer';
   currentPeer = '127.0.0.1';
   viaIngress = null;
 });
@@ -67,6 +71,13 @@ describe('isLocalCaller', () => {
     expect(res.status).toBe(200);
     return res.body.local as boolean;
   }
+
+  it('never admits anyone on a hub, where nobody sits at the machine', async () => {
+    mockEnv.DORKOS_SERVER_ROLE = 'hub';
+    expect(await probe('localhost:4242')).toBe(false);
+    expect(await probe('127.0.0.1:4242')).toBe(false);
+    expect(await probe('[::1]:4242', '::1')).toBe(false);
+  });
 
   it('admits a loopback peer asking for a loopback host', async () => {
     expect(await probe('localhost:4242')).toBe(true);
