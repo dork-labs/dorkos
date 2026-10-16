@@ -23,6 +23,7 @@ import 'streamdown/styles.css';
 import { cn } from '@/layers/shared/lib/utils';
 import { MarkdownErrorBoundary } from './markdown-error-boundary';
 import { MarkdownLink } from './markdown-link';
+import { MarkdownImage } from './image-lightbox/markdown-image';
 
 export interface MarkdownContentProps {
   /** Markdown string to render. */
@@ -118,7 +119,7 @@ export function MarkdownContent({
           instead of throwing to the route boundary. Reset on content change. */}
       <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>
         <Streamdown
-          components={{ ...components, a: MarkdownLink }}
+          components={{ img: MarkdownImage, ...components, a: MarkdownLink }}
           allowedTags={allowedTags}
           literalTagContent={literalTagContent}
           plugins={plugins}

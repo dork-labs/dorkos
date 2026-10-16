@@ -3,6 +3,7 @@ import { File as FileIcon, FileCode, FileImage, FileSpreadsheet, FileText } from
 
 import type { ParsedFile } from '../../lib/parse-file-prefix';
 import { useAppStore } from '@/layers/shared/model';
+import { ImageLightboxTrigger } from '@/layers/shared/ui';
 
 /** Map file extensions to lucide icon components. */
 function getFileIcon(filename: string) {
@@ -62,14 +63,17 @@ export function FileAttachmentList({ files }: FileAttachmentListProps) {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.15 }}
             >
-              <a href={imgSrc} target="_blank" rel="noopener noreferrer">
+              <ImageLightboxTrigger
+                image={{ src: imgSrc, alt: file.displayName, downloadName: file.displayName }}
+                className="block rounded-lg"
+              >
                 <img
                   src={imgSrc}
                   alt={file.displayName}
                   loading="lazy"
-                  className="border-border/50 max-h-[120px] max-w-[200px] cursor-pointer rounded-lg border object-contain transition-[filter] duration-150 hover:brightness-95"
+                  className="border-border/50 max-h-[120px] max-w-[200px] rounded-lg border object-contain"
                 />
-              </a>
+              </ImageLightboxTrigger>
             </motion.div>
           );
         }

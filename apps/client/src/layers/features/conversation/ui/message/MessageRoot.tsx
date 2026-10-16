@@ -23,6 +23,7 @@ import { Slot } from 'radix-ui';
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import type { LongPressState } from '@/layers/shared/model';
+import { ImageLightboxGroup } from '@/layers/shared/ui';
 import {
   EntryActionMenu,
   type EntryAction,
@@ -139,7 +140,12 @@ export function MessageRoot({
           })}
       {...rest}
     >
-      <MessageStylesProvider value={styles}>{children}</MessageStylesProvider>
+      <MessageStylesProvider value={styles}>
+        {/* One gallery per message: every picture in it (attachments, Markdown
+            images, a widget's image) opens the same lightbox, with next and
+            previous between them in reading order. */}
+        <ImageLightboxGroup>{children}</ImageLightboxGroup>
+      </MessageStylesProvider>
     </Comp>
   );
 

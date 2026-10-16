@@ -1,7 +1,8 @@
 import { PlaygroundPageLayout } from '../../PlaygroundPageLayout';
-import { CONVERSATION_SECTIONS } from '../../playground-registry';
+import { CONVERSATION_SECTIONS, IMAGE_LIGHTBOX_SECTIONS } from '../../playground-registry';
 import { SurfacesShowcase } from '../../showcases/SurfacesShowcases';
 import { MessageShowcases } from '../../showcases/MessageShowcases';
+import { ImageLightboxShowcases } from '../../showcases/ImageLightboxShowcases';
 import { ChatMessagingShowcases } from '../../showcases/ChatMessagingShowcases';
 import { TimelineShowcase } from '../../showcases/TimelineShowcases';
 import { ToolShowcases } from '../../showcases/ToolShowcases';
@@ -36,10 +37,11 @@ export function ConversationPage() {
     <PlaygroundPageLayout
       title="Conversation"
       description="The Conversation compound every messaging surface composes — session, room and DM."
-      sections={CONVERSATION_SECTIONS}
+      sections={[...CONVERSATION_SECTIONS, ...IMAGE_LIGHTBOX_SECTIONS]}
     >
       <SurfacesShowcase />
       <MessageShowcases />
+      <ImageLightboxShowcases />
       <ChatMessagingShowcases />
       <TimelineShowcase />
       <ToolShowcases />

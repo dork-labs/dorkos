@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { motion } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react';
-import { MarkdownContent, Progress, Separator } from '@/layers/shared/ui';
+import { ImageLightboxTrigger, MarkdownContent, Progress, Separator } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { toneBadgeClass } from '../../lib/widget-tone';
 import {
@@ -194,16 +194,21 @@ export function ProgressNode({ node }: { node: NodeOf<'progress'> }) {
   );
 }
 
-/** `image` node — a bounded image with optional caption (https/data sources only). */
+/**
+ * `image` node — a bounded image with optional caption (https/data sources
+ * only), opening the message's lightbox on click.
+ */
 export function ImageNode({ node }: { node: NodeOf<'image'> }) {
   return (
     <figure className="flex flex-col gap-1">
-      <img
-        src={node.src}
-        alt={node.alt}
-        className="max-h-80 w-full rounded-md border object-contain"
-        loading="lazy"
-      />
+      <ImageLightboxTrigger image={{ src: node.src, alt: node.alt }} className="block w-full">
+        <img
+          src={node.src}
+          alt={node.alt}
+          className="max-h-80 w-full rounded-md border object-contain"
+          loading="lazy"
+        />
+      </ImageLightboxTrigger>
       {node.caption && (
         <figcaption className="text-muted-foreground text-xs">{node.caption}</figcaption>
       )}
