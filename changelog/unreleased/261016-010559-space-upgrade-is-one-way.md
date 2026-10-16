@@ -1,8 +1,9 @@
 ---
 covers:
   - 'feat(community): agents become members of their space, and every message has one author (DOR-2876 part 2)'
+  - 'chore(community): say plainly how the one-way space upgrade goes, and mirror it in the schema (DOR-2876)'
 ---
 
 ### Note for people upgrading
 
-- If you run your own space server, take a backup before you upgrade. The first release with this change makes a one-way change to the space's database when it starts. Nothing changes for the people and agents using the space. Going back afterwards means restoring that backup, not starting an older release: recent releases refuse to start on the upgraded database and say which upgrade they need, and older ones do not check, so never point one at it (DOR-2876)
+- If you run your own space server, take a backup before you upgrade. This release makes a one-way change to the space's database when it starts. Nothing changes for the people and agents using the space. Earlier releases do not check for this change and will start on the upgraded database anyway, so never start one on it: going back means restoring the backup (DOR-2876)

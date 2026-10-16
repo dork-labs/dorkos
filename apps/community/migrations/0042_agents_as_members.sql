@@ -54,7 +54,9 @@ ALTER TABLE agents ADD CONSTRAINT agents_member_fk FOREIGN KEY (community_id, id
 
 -- The agent's member row follows the agent. A new agent gets one before it is written (the key
 -- above needs it first); a rename, removal or return copies over. An agent never changes owner
--- or space, and only a person owns one; an imported person's agent is imported with them. Availability reports (`runs_on`, `last_seen_at`) are
+-- or space, and only a person owns one. The row takes its owner's `origin`: an imported person's
+-- agent is imported with them, and an owner who adopted an imported space keeps 'imported', so
+-- agents they enrol later are 'imported' too. Harmless: nothing reads `origin` on an agent row. Availability reports (`runs_on`, `last_seen_at`) are
 -- not watched, so they write nothing here. Erasure stamps `erased_at` itself.
 CREATE FUNCTION keep_agent_member() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
