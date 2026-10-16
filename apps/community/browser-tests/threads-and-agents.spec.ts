@@ -182,7 +182,8 @@ test('thread roots show their reply counts live, and agent messages say they are
     );
     const ids = rows[0];
 
-    // An agent's message, written the way the server stores one: authored by the agent.
+    // An agent's message, written the way the server stores one: its author is the agent's own
+    // member row (the trigger on agents wrote it), and author_agent_id keeps older apps rendering it.
     const agent = await pool.query<{ id: string }>(
       `INSERT INTO agents(community_id,owner_member_id,display_name,handle)
        VALUES($1,$2,'Scout','scout') RETURNING id`,
@@ -198,9 +199,9 @@ test('thread roots show their reply counts live, and agent messages say they are
     );
     await pool.query(
       `WITH next AS (UPDATE channels SET last_seq=last_seq+1 WHERE id=$2 RETURNING last_seq)
-       INSERT INTO entries(community_id,channel_id,seq,author_agent_id,author_display_name,text,
-         idempotency_key,payload_hash)
-       SELECT $1,$2,next.last_seq,$3,'Scout','Build finished, all green.','seed-agent',md5('a')
+       INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_agent_id,
+         author_display_name,text,idempotency_key,payload_hash)
+       SELECT $1,$2,next.last_seq,$3,$3,'Scout','Build finished, all green.','seed-agent',md5('a')
          FROM next`,
       [ids.community_id, ids.channel_id, agent.rows[0].id]
     );
