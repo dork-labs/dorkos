@@ -36,10 +36,12 @@ const clear = (): FileSaveDiscovery => ({
 });
 function deferred<T>() {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((r, j) => {
     resolve = r;
+    reject = j;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 beforeEach(() => {
   currentTransport = transport;
@@ -350,4 +352,58 @@ it('idle current-file inspection invalidates its exact old observed cache and a 
   expect(result.current.recovery.editBlocked).toBe(false);
   expect(transport.writeFile).not.toHaveBeenCalled();
   expect(port.recover).not.toHaveBeenCalled();
+});
+
+/** A new verified observation arrives while the old observation's discovery is still pending. */
+async function pendingObservationHandoff(oldReply: 'clear' | 'reject') {
+  let oldCurrent = true;
+  let observed = { incarnation: birth, current: () => oldCurrent };
+  const first = deferred<FileSaveDiscovery>();
+  const second = deferred<FileSaveDiscovery>();
+  port.discover.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  const { result, rerender } = renderHook(() => {
+    const save = useCanvasFileSave({ ...args, documentRecoveryBinding: observed });
+    const recovery = useFileSaveRecovery(save.recovery, 'ready', observed);
+    return { save, recovery };
+  });
+  await waitFor(() => expect(port.discover).toHaveBeenCalledTimes(1));
+  const owner = result.current.save.recovery.identity;
+  const oldRequest = result.current.save.recovery.discover();
+  oldCurrent = false;
+  observed = { incarnation: { ...birth }, current: () => true };
+  rerender();
+  // The replacement effect has subscribed BEFORE the old request settles.
+  const replacementRequest = result.current.save.recovery.discover();
+  expect(result.current.save.recovery.identity).toBe(owner);
+  expect(result.current.recovery.editBlocked).toBe(true);
+  // Preserve the original dispatch tail: no replacement HTTP runs ahead of the old one.
+  expect(port.discover).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    if (oldReply === 'clear') first.resolve(clear());
+    else first.reject(new Error('old observation reply failed'));
+    expect(await oldRequest).toEqual({ status: 'idle' });
+  });
+  await waitFor(() => expect(port.discover).toHaveBeenCalledTimes(2));
+  expect(result.current.recovery.editBlocked).toBe(true);
+  // Old idle-cache eviction must not evict the replacement's still-pending request.
+  expect(result.current.save.recovery.discover()).toBe(replacementRequest);
+  const fresh = oldReply === 'clear' ? { ...clear(), admission: 'blocked' as const } : clear();
+  await act(async () => {
+    second.resolve(fresh);
+    expect(await replacementRequest).toEqual({ status: 'observed', value: fresh });
+  });
+  await waitFor(() => expect(result.current.recovery.discovery).toEqual(fresh));
+  expect(result.current.recovery.editBlocked).toBe(oldReply === 'clear');
+  expect(result.current.recovery.busy).toBe(false);
+  expect(result.current.save.getConfirmedBase()).toEqual({ hash: null, content: 'base' });
+  expect(transport.writeFile).not.toHaveBeenCalled();
+  expect(transport.readFileContent).not.toHaveBeenCalled();
+  expect(port.recover).not.toHaveBeenCalled();
+  expect(port.discover).toHaveBeenCalledTimes(2);
+}
+it('new observation before old clear settlement needs its own discovery', async () => {
+  await pendingObservationHandoff('clear');
+});
+it('new observation before old rejection is not poisoned by the old reply', async () => {
+  await pendingObservationHandoff('reject');
 });
