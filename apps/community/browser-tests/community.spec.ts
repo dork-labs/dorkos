@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -38,6 +38,7 @@ const admin = new Pool({ connectionString: adminUrl });
 let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
+let fileOrigin: string;
 let blobDir: string;
 let exportWorker: ReturnType<typeof setInterval> | undefined;
 async function freePort() {
@@ -62,8 +63,12 @@ test.beforeAll(async () => {
     COMMUNITY_INVITE_SECRET: 'b'.repeat(32),
     COMMUNITY_BOOTSTRAP_SECRET: 'c'.repeat(32),
     COMMUNITY_PUBLIC_URL: baseUrl,
+    // Files download from another address, as on DorkOS Cloud (DOR-2957): `localhost` is another
+    // origin than `127.0.0.1` to the browser, and the same server answers both.
+    COMMUNITY_USER_CONTENT_URL: `http://localhost:${port}`,
     COMMUNITY_STORAGE_PATH: blobDir,
   });
+  fileOrigin = `http://localhost:${port}`;
   const blobStore = createBlobStore(config);
   const app = createCommunityApp({ config, pool, blobStore });
   // Exports are built in the background, as main.ts runs them.
@@ -89,7 +94,8 @@ test.beforeAll(async () => {
     '/c/:communityId/settings/:section',
   ])
     app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
-  server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
+  // Every loopback address: the page's and the user-content one, whichever `localhost` resolves to.
+  server = serve({ fetch: app.fetch, port });
   await new Promise<void>((resolve) => server.once('listening', resolve));
 });
 test.afterAll(async () => {
@@ -336,6 +342,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const settingsExport = ownerPage.waitForEvent('download');
     await settingsDownload.click();
     expect((await settingsExport).suggestedFilename()).toBe('community-export.zip');
+    expect((await settingsExport).url().startsWith(`${fileOrigin}/u/`)).toBe(true);
     // An erasure deletes ready exports; the panel checks before downloading and says why.
     await pool.query(
       "DELETE FROM export_archives WHERE scope='owner' AND state='ready' AND community_id IN (SELECT community_id FROM members)"
@@ -434,6 +441,9 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const downloaded = ownerPage.waitForEvent('download');
     await file.click();
     expect((await downloaded).suggestedFilename()).toBe('notes.txt');
+    // It came from the user-content address, never the space's own (DOR-2957).
+    expect((await downloaded).url().startsWith(`${fileOrigin}/u/`)).toBe(true);
+    expect(await readFile((await (await downloaded).path())!, 'utf8')).toBe('Community notes');
     const attachmentId = await ownerPage.evaluate(async () => {
       const channel = (await (await fetch('/api/v1/channels')).json()).channels.find(
         (item: { name: string }) => item.name === 'general'
@@ -491,7 +501,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('button', { name: 'Create invite' })).toBeVisible();
     expect(
       await observerPage.evaluate(
-        async (id) => (await fetch(`/api/v1/attachments/${id}`)).status,
+        async (id) => (await fetch(`/api/v1/attachments/${id}/link`, { method: 'POST' })).status,
         attachmentId
       )
     ).toBe(403);
@@ -503,7 +513,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByRole('button', { name: 'Remove admin from Niko' })).toBeVisible();
     expect(
       await observerPage.evaluate(
-        async (id) => (await fetch(`/api/v1/attachments/${id}`)).status,
+        async (id) => (await fetch(`/api/v1/attachments/${id}/link`, { method: 'POST' })).status,
         attachmentId
       )
     ).toBe(403);
@@ -519,7 +529,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect
       .poll(async () =>
         observerPage.evaluate(
-          async (id) => (await fetch(`/api/v1/attachments/${id}`)).status,
+          async (id) => (await fetch(`/api/v1/attachments/${id}/link`, { method: 'POST' })).status,
           attachmentId
         )
       )
@@ -746,6 +756,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     const exportDownload = memberPage.waitForEvent('download');
     await personalDownload.click();
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');
+    expect((await exportDownload).url().startsWith(`${fileOrigin}/u/`)).toBe(true);
     await memberPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
     await memberPage.getByLabel('Confirm password').fill('password1234');
     memberPage.once('dialog', (dialog) => void dialog.accept());

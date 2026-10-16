@@ -124,8 +124,8 @@ async function databaseAnswers(hub: LiveHub, databaseUrl: string): Promise<boole
 }
 
 /**
- * Register `/health/ready`, `/metrics` and the decision models' comparison
- * (`decisions/comparison.ts`). `/health` stays a pure liveness probe elsewhere.
+ * Register `/health` (a pure liveness probe that reads nothing), `/health/ready`, `/metrics` and
+ * the decision models' comparison (`decisions/comparison.ts`).
  *
  * Readiness needs a database round trip and, once the server pinned it at boot, a listening
  * live-notice connection. Metrics need host authority with `communities:read`: they name
@@ -140,6 +140,7 @@ export function registerMonitoringRoutes(
     databaseUrl,
   }: { pool: Pool; hub: LiveHub; authority: HostAuthority; databaseUrl: string }
 ): void {
+  app.get('/health', (c) => c.json({ status: 'ok' }));
   app.get('/health/ready', async (c) => {
     const database = (await databaseAnswers(hub, databaseUrl)) ? 'ok' : 'unavailable';
     const listener = hub.listenerState;

@@ -11,6 +11,7 @@ import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js'
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 import { minimumAgeSetting } from './sign-up/minimum-age.js';
 import { allowedCountriesSetting, countryHeaderSetting } from './sign-up/allowed-countries.js';
+import { parseOrigin, parseUserContentUrl } from './user-content/origin.js';
 
 export type { CommunityMailConfig } from './mail/config.js';
 
@@ -197,6 +198,7 @@ const schema = z.object({
   ),
   COMMUNITY_BOOTSTRAP_SECRET: z.string().min(32),
   COMMUNITY_PUBLIC_URL: z.url(),
+  COMMUNITY_USER_CONTENT_URL: z.url().optional(),
   COMMUNITY_STORAGE_DRIVER: z.enum(['filesystem', 's3']).default('filesystem'),
   COMMUNITY_STORAGE_PATH: z.string().min(1).optional(),
   COMMUNITY_S3_BUCKET: z.string().min(3).max(63).optional(),
@@ -411,24 +413,7 @@ export function parseConfig(env: Record<string, unknown>) {
       );
     }
   }
-  const publicUrl = new URL(value.COMMUNITY_PUBLIC_URL);
-  if (
-    publicUrl.protocol !== 'https:' &&
-    !(publicUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(publicUrl.hostname))
-  ) {
-    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS, or HTTP on localhost');
-  }
-  if (
-    publicUrl.username ||
-    publicUrl.password ||
-    publicUrl.pathname !== '/' ||
-    publicUrl.search ||
-    publicUrl.hash
-  ) {
-    throw new Error(
-      'COMMUNITY_PUBLIC_URL must be a bare origin without credentials, path, query or fragment'
-    );
-  }
+  const publicUrl = parseOrigin('COMMUNITY_PUBLIC_URL', value.COMMUNITY_PUBLIC_URL);
   if (value.COMMUNITY_ERASURE_JOURNAL && !isAbsolute(value.COMMUNITY_ERASURE_JOURNAL)) {
     throw new Error('COMMUNITY_ERASURE_JOURNAL must be an absolute path');
   }
@@ -558,6 +543,7 @@ export function parseConfig(env: Record<string, unknown>) {
     invitePreviousSecret: value.COMMUNITY_INVITE_PREVIOUS_SECRET,
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
+    userContentUrl: parseUserContentUrl(value.COMMUNITY_USER_CONTENT_URL, publicUrl),
     storage,
     /** Where takedowns copy removed content, outside the API; null when the host set none. */
     evidence,
