@@ -2,12 +2,12 @@
  * The lightbox, driven the way a reader drives it: click a thumbnail, step
  * through the gallery, save a picture, close it, and land back where they were.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { getPrefersReducedMotion } from '@/test-setup';
 import { ImageLightboxGroup, ImageLightboxTrigger, MarkdownImage } from '../index';
-import { lightboxDownloadName } from '../lightbox-image';
+import { lightboxDownloadName, pictureFileName } from '../lightbox-image';
 
 // The REAL motion library: the viewer awaits its animations, which the shared
 // stand-in does not return. `skipAnimations` makes each one finish at once.
@@ -50,6 +50,9 @@ function shown(): HTMLImageElement {
   return within(screen.getByRole('dialog')).getByRole('img') as HTMLImageElement;
 }
 
+/** Let any animation and the state it ends in finish. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
 async function openAt(name: string) {
   fireEvent.click(thumbnail(name));
   return screen.findByRole('dialog');
@@ -80,10 +83,14 @@ describe('ImageLightbox', () => {
     render(<Gallery />);
     const dialog = await openAt('First picture');
 
-    fireEvent.click(shown());
+    // The zoom surface turns pointer events off on the picture, so "on the
+    // picture" is decided by where the click is, not what it landed on.
+    shown().getBoundingClientRect = () =>
+      ({ left: 100, top: 100, right: 300, bottom: 200, width: 200, height: 100 }) as DOMRect;
+    fireEvent.click(dialog, { clientX: 150, clientY: 150 });
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    fireEvent.click(dialog);
+    fireEvent.click(dialog, { clientX: 20, clientY: 400 });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
@@ -101,7 +108,9 @@ describe('ImageLightbox', () => {
     const dialog = await openAt('First picture');
 
     fireEvent.keyDown(dialog, { key: 'ArrowLeft' });
-    await waitFor(() => expect(shown()).toHaveAttribute('src', '/pictures/one.png'));
+    await settle();
+    expect(shown()).toHaveAttribute('src', '/pictures/one.png');
+    expect(screen.getByText('1 of 3')).toBeInTheDocument();
 
     fireEvent.keyDown(dialog, { key: 'ArrowRight' });
     await waitFor(() => expect(shown()).toHaveAttribute('src', '/pictures/two.png'));
@@ -110,7 +119,32 @@ describe('ImageLightbox', () => {
     expect(screen.getByText('3 of 3')).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'ArrowRight' });
-    await waitFor(() => expect(shown()).toHaveAttribute('src', '/pictures/three.png'));
+    await settle();
+    expect(shown()).toHaveAttribute('src', '/pictures/three.png');
+  });
+
+  it('closes after the slide when Escape lands mid-step', async () => {
+    render(<Gallery />);
+    const dialog = await openAt('First picture');
+
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(thumbnail('Second picture')).toHaveFocus();
+  });
+
+  it('opens again after closing, at the picture clicked', async () => {
+    render(<Gallery />);
+    await openAt('First picture');
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await openAt('Third picture');
+
+    expect(shown()).toHaveAttribute('src', '/pictures/three.png');
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'ArrowLeft' });
+    await waitFor(() => expect(shown()).toHaveAttribute('src', '/pictures/two.png'));
   });
 
   it('steps with the side buttons, offering only the directions that exist', async () => {
@@ -209,6 +243,10 @@ describe('ImageLightbox — download', () => {
     vi.unstubAllGlobals();
   });
 
+  afterAll(() => {
+    click.mockRestore();
+  });
+
   it('saves the picture under its own name, from memory', async () => {
     vi.stubGlobal(
       'fetch',
@@ -273,7 +311,28 @@ describe('lightboxDownloadName', () => {
   });
 });
 
+describe('pictureFileName', () => {
+  it('takes the extension from the bytes, whatever the uploader named it', () => {
+    expect(pictureFileName('invoice.html', 'image/png')).toBe('invoice.png');
+  });
+
+  it('keeps a picture extension when the type is unknown, and replaces any other', () => {
+    expect(pictureFileName('chart.jpeg')).toBe('chart.jpeg');
+    expect(pictureFileName('invoice.html')).toBe('invoice.png');
+    expect(pictureFileName('image')).toBe('image.png');
+  });
+});
+
 describe('MarkdownImage', () => {
+  it('says a picture is not available rather than offering a broken one', () => {
+    render(<MarkdownImage src="https://example.com/gone.png" alt="A chart" />);
+
+    fireEvent.error(screen.getByRole('img', { name: 'A chart' }));
+
+    expect(screen.getByText('A chart, not available')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('opens the lightbox from a Markdown picture', () => {
     render(<MarkdownImage src="https://example.com/a.png" alt="A chart" />);
 

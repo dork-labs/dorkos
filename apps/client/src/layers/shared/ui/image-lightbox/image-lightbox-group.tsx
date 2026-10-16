@@ -112,9 +112,19 @@ export function ImageLightboxGroup({ children }: ImageLightboxGroupProps) {
     []
   );
 
+  // By the id it had at the click, or, when that thumbnail has since been
+  // drawn again (a streaming message re-renders its Markdown), by its picture.
   const getTrigger = useCallback(
-    (index: number) => entries.current.get(viewer.ids[index] ?? '')?.ref.current ?? null,
-    [viewer.ids]
+    (index: number) => {
+      const byId = entries.current.get(viewer.ids[index] ?? '')?.ref.current;
+      if (byId?.isConnected) return byId;
+      const src = viewer.images[index]?.src;
+      for (const entry of entries.current.values()) {
+        if (entry.image.src === src && entry.ref.current?.isConnected) return entry.ref.current;
+      }
+      return null;
+    },
+    [viewer.ids, viewer.images]
   );
 
   return (

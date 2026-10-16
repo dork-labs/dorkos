@@ -23,7 +23,7 @@ import 'streamdown/styles.css';
 import { cn } from '@/layers/shared/lib/utils';
 import { MarkdownErrorBoundary } from './markdown-error-boundary';
 import { MarkdownLink } from './markdown-link';
-import { MarkdownImage } from './image-lightbox/markdown-image';
+import { MarkdownImage } from './image-lightbox';
 
 export interface MarkdownContentProps {
   /** Markdown string to render. */

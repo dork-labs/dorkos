@@ -66,7 +66,15 @@ const STEP_PX = 72;
 /** Stops one event from reaching the React tree around the viewer. */
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
-/** Every bubbling event a message row (or the list around it) listens for. */
+/**
+ * The bubbling events a message row (or the list around it) acts on: its
+ * right-click menu, its long press, its keyboard navigation.
+ *
+ * React's `stopPropagation` stops the browser's event too, so this list is kept
+ * to what a row needs and no more. Mouse events are left out because the zoom
+ * surface pans from `window`-level mouse listeners; focus events are left out
+ * because Radix's focus trap listens for them on `document`.
+ */
 const STOP_AT_VIEWER = {
   onClick: stop,
   onDoubleClick: stop,
@@ -77,15 +85,14 @@ const STOP_AT_VIEWER = {
   onPointerMove: stop,
   onPointerUp: stop,
   onPointerCancel: stop,
-  onMouseDown: stop,
-  onMouseUp: stop,
   onTouchStart: stop,
   onTouchMove: stop,
   onTouchEnd: stop,
   onWheel: stop,
-  onFocus: stop,
-  onBlur: stop,
 };
+
+/** What the viewer is in the middle of; gestures and keys wait while it moves. */
+type Phase = 'idle' | 'stepping' | 'closing';
 
 /** Whether each picture has loaded, failed, or neither yet. */
 type LoadState = 'loading' | 'loaded' | 'error';
@@ -110,7 +117,10 @@ export function ImageLightbox({
   const chrome = useTransform(backdrop, [0.55, 1], [0, 1]);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const busy = useRef(false);
+  const phase = useRef<Phase>('idle');
+  // Escape pressed while a picture slides in is honoured once it lands.
+  const closeAfterStep = useRef(false);
+  const closeRef = useRef<() => Promise<void>>(async () => {});
   const stepDirection = useRef<1 | -1 | null>(null);
   // Which picture is zoomed in, if any. Keyed by picture, so stepping to the
   // next one (a fresh zoom surface, at 1x) is never mistaken for zoomed.
@@ -126,7 +136,8 @@ export function ImageLightbox({
   // reader sees is already the picture sitting over its thumbnail.
   useLayoutEffect(() => {
     if (!open) return;
-    busy.current = false;
+    phase.current = 'idle';
+    closeAfterStep.current = false;
     stepDirection.current = null;
     x.set(0);
     y.set(0);
@@ -166,7 +177,11 @@ export function ImageLightbox({
     x.set(reduceMotion ? 0 : direction * STEP_PX);
     void animate(x, 0, SETTLE);
     void animate(opacity, 1, FADE).then(() => {
-      busy.current = false;
+      phase.current = 'idle';
+      if (closeAfterStep.current) {
+        closeAfterStep.current = false;
+        void closeRef.current();
+      }
     });
   }, [index, opacity, reduceMotion, x, y, scale]);
 
@@ -179,8 +194,12 @@ export function ImageLightbox({
   }, [open, images, index]);
 
   const close = useCallback(async () => {
-    if (busy.current) return;
-    busy.current = true;
+    if (phase.current === 'closing') return;
+    if (phase.current === 'stepping') {
+      closeAfterStep.current = true;
+      return;
+    }
+    phase.current = 'closing';
     setZoomedSrc(null);
     const thumb = getTrigger?.(index)?.querySelector('img');
     const stage = stageRef.current?.getBoundingClientRect();
@@ -205,12 +224,15 @@ export function ImageLightbox({
     }
     onOpenChange?.(false);
   }, [backdrop, getTrigger, index, onOpenChange, opacity, reduceMotion, scale, x, y, zoomed]);
+  useLayoutEffect(() => {
+    closeRef.current = close;
+  }, [close]);
 
   const step = useCallback(
     async (direction: 1 | -1) => {
       const next = index + direction;
-      if (busy.current || next < 0 || next >= count) return;
-      busy.current = true;
+      if (phase.current !== 'idle' || next < 0 || next >= count) return;
+      phase.current = 'stepping';
       await Promise.all([
         reduceMotion ? null : animate(x, -direction * STEP_PX + x.get() * 0.5, FADE),
         animate(opacity, 0, { duration: 0.1 }),
@@ -226,7 +248,7 @@ export function ImageLightbox({
     y,
     scale,
     backdrop,
-    canGesture: () => !busy.current && !zoomed,
+    canGesture: () => phase.current === 'idle' && !zoomed,
     canStep: (direction) => index + direction >= 0 && index + direction < count,
     onDismiss: () => void close(),
     onStep: (direction) => void step(direction),
@@ -266,6 +288,10 @@ export function ImageLightbox({
               event.preventDefault();
               (event.currentTarget as HTMLElement | null)?.focus();
             }}
+            // Focus pulled away by the page (a composer that focuses itself, a
+            // window switch) is not the reader closing the picture; the focus
+            // trap brings it back instead.
+            onFocusOutside={(event) => event.preventDefault()}
             onCloseAutoFocus={(event) => {
               const trigger = getTrigger?.(index);
               if (!trigger) return;
@@ -278,9 +304,19 @@ export function ImageLightbox({
             }}
             onClick={(event) => {
               // Anywhere that is not the picture or a button is "outside it".
+              // Measured, not read off the target: the zoom surface turns
+              // pointer events off on the picture, so a click on it lands on
+              // the surface behind it.
               const target = event.target as HTMLElement;
-              if (gestures.endedDrag() || target.closest('img, button')) return;
-              void close();
+              if (gestures.endedDrag() || target.closest('button')) return;
+              const picture = stageRef.current?.querySelector('img')?.getBoundingClientRect();
+              const onPicture =
+                picture !== undefined &&
+                event.clientX >= picture.left &&
+                event.clientX <= picture.right &&
+                event.clientY >= picture.top &&
+                event.clientY <= picture.bottom;
+              if (!onPicture) void close();
             }}
             {...gestures.handlers}
             className="fixed inset-0 z-50 flex touch-none flex-col outline-none select-none"

@@ -18,14 +18,38 @@ export interface LightboxImage {
   downloadName?: string;
 }
 
-/** File extensions a `data:` image is saved with, by its declared type. */
-const DATA_EXTENSIONS: Record<string, string> = {
+/** The extension a picture is saved with, by its type. */
+const IMAGE_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
   'image/webp': 'webp',
   'image/avif': 'avif',
+  'image/svg+xml': 'svg',
 };
+
+/** Extensions a saved file may keep: the ones every OS opens as a picture. */
+const SAFE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'svg']);
+
+/**
+ * A file name that cannot save as anything but a picture.
+ *
+ * The name usually comes from whoever uploaded the file, and the bytes can be a
+ * valid image and a valid web page at once. Saved as `invoice.html`, such a file
+ * opens in a browser and runs. So the extension comes from the bytes' type when
+ * that is known, and is otherwise kept only when it already names a picture.
+ *
+ * @param name - The name the host or the address suggested.
+ * @param type - The fetched bytes' type, when they were fetched.
+ */
+export function pictureFileName(name: string, type?: string): string {
+  const match = /^(.*)\.([a-z0-9]{1,5})$/i.exec(name);
+  const stem = (match ? match[1] : name) || 'image';
+  const declared = match?.[2]?.toLowerCase();
+  const fromType = type ? IMAGE_EXTENSIONS[type.split(';')[0]!.trim()] : undefined;
+  const extension = fromType ?? (declared && SAFE_EXTENSIONS.has(declared) ? declared : 'png');
+  return `${stem}.${extension}`;
+}
 
 /**
  * The name a picture is saved under when its host gave none.
@@ -41,7 +65,7 @@ export function lightboxDownloadName(image: LightboxImage): string {
   if (image.downloadName) return image.downloadName;
   if (image.src.startsWith('data:')) {
     const type = /^data:([^;,]+)/.exec(image.src)?.[1] ?? '';
-    return `image.${DATA_EXTENSIONS[type] ?? 'png'}`;
+    return `image.${IMAGE_EXTENSIONS[type] ?? 'png'}`;
   }
   try {
     const segment = new URL(image.src, 'http://local').pathname.split('/').pop() ?? '';
@@ -85,12 +109,13 @@ export async function downloadLightboxImage(image: LightboxImage): Promise<void>
   try {
     const response = await fetch(image.src);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const url = URL.createObjectURL(await response.blob());
-    clickLink(url, name, false);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    clickLink(url, pictureFileName(name, blob.type), false);
     // The browser reads the URL when the click lands, not synchronously in
     // every engine, so it is revoked a beat later rather than at once.
     setTimeout(() => URL.revokeObjectURL(url), 1_000);
   } catch {
-    clickLink(image.src, name, true);
+    clickLink(image.src, pictureFileName(name), true);
   }
 }

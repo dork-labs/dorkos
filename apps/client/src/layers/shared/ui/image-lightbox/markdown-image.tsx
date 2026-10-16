@@ -18,14 +18,26 @@ export type MarkdownImageProps = ComponentProps<'img'> & { node?: unknown };
  * the author meant for the link. The thumbnail cannot know its parent when it
  * renders, so it looks once it is on the page, before the browser paints, and
  * draws a plain `<img>` there instead.
+ *
+ * A picture that will not load says so in a quiet line, the way Streamdown's own
+ * image did, rather than a broken-image glyph you could still click to open.
  */
 export function MarkdownImage({ node: _node, className, src, alt, ...rest }: MarkdownImageProps) {
   const probe = useRef<HTMLImageElement>(null);
   const [inLink, setInLink] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useLayoutEffect(() => {
     if (probe.current?.parentElement?.closest('a')) setInLink(true);
   }, []);
+
+  if (failed) {
+    return (
+      <span className="text-muted-foreground bg-muted/40 inline-block rounded-md px-2 py-1 text-xs">
+        {alt ? `${alt}, not available` : 'Image not available'}
+      </span>
+    );
+  }
 
   const img = (
     <img
@@ -35,6 +47,7 @@ export function MarkdownImage({ node: _node, className, src, alt, ...rest }: Mar
       loading="lazy"
       decoding="async"
       {...rest}
+      onError={() => setFailed(true)}
       className={cn('max-h-[32rem] max-w-full rounded-md', className)}
     />
   );
