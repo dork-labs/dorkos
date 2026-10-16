@@ -6,6 +6,10 @@
     <title>DorkOS Space</title>
     <!-- No page sends where it came from: a link's token must never leave in a Referer. -->
     <meta name="referrer" content="no-referrer" />
+    <!-- Takes a link's secret out of the address bar before anything loads. The page policy allows
+         exactly this script by its hash (src/headers/link-secret-script.ts holds the same text). -->
+    <!-- prettier-ignore -->
+    <script>(function(){var h=location.hash;if(h.length<2)return;Object.defineProperty(window,'__dorkosLinkFragment',{value:h.slice(1),configurable:true});history.replaceState(null,'',location.pathname+location.search)})()</script>
   </head>
   <body>
     <div id="root"></div>

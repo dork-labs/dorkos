@@ -13,6 +13,7 @@ import { clearLine, confirmBannerHidden } from '../links.js';
 import { ResetPassword } from '../ResetPassword.js';
 import { LinkWithPassword } from '../../sign-up/LinkWithPassword.js';
 import { captureLinkSecret } from '../../page-start/read-link-secret.js';
+import { LINK_SECRET_SCRIPT } from '../../../headers/link-secret-script.js';
 
 const TOKEN = 'T'.repeat(43);
 const PEEK = 'POST /api/v1/email-links/peek';
@@ -371,12 +372,13 @@ describe('the page bootstrap', () => {
     // Purpose: fails if a mailed link's token stays in the address bar or history, where it
     // could reach a log, a screenshot or a referrer.
     expect(html).toContain('<meta name="referrer" content="no-referrer" />');
-    // The page's content security policy refuses inline script, so the page must carry none.
-    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/u);
     for (const page of ['/reset-password', '/email-sign-in', '/confirm-email']) {
       window.history.replaceState(null, '', `${page}#${TOKEN}`);
-      captureLinkSecret();
+      // The page's inline script runs first, while the page parses: the address is clean
+      // before the bundle has loaded at all.
+      new Function(LINK_SECRET_SCRIPT)();
       expect(window.location.hash).toBe('');
+      captureLinkSecret();
       expect(window.location.pathname).toBe(page);
       expect(window.__readDorkosEmailLinkFragment?.()).toBe(TOKEN);
       window.__clearDorkosEmailLinkFragment?.();

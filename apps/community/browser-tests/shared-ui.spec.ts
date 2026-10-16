@@ -1,9 +1,10 @@
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { type Page, type Route } from '@playwright/test';
-import { securityHeaders } from '../src/headers/security-headers.js';
+import { securityHeaders, servePage } from '../src/headers/security-headers.js';
 import { test, expect } from './csp.js';
 
 // Exercise the real built admission page with requests controlled at the browser boundary.
@@ -14,8 +15,8 @@ test.beforeAll(async () => {
   const root = fileURLToPath(new URL('../dist/', import.meta.url));
   // The page's real security headers, as the space server sends them (DOR-2957).
   const app = new Hono().use('*', securityHeaders());
-  app.use('*', serveStatic({ root }));
-  app.get('*', serveStatic({ root, path: 'index.html' }));
+  app.use('/assets/*', serveStatic({ root }));
+  app.get('*', servePage(join(root, 'index.html')));
   await new Promise<void>((resolve) => {
     server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' }, (address) => {
       baseURL = `http://127.0.0.1:${address.port}`;

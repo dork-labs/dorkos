@@ -43,8 +43,21 @@ async function watch(context: BrowserContext): Promise<void> {
   context.on('console', (message) => {
     const text = message.text();
     if (text.startsWith(REPORT_PREFIX) || /Content Security Policy/u.test(text))
-      violations.push(`${message.page()?.url() ?? 'a page'}: ${text}`);
+      violations.push(withoutFragments(`${message.page()?.url() ?? 'a page'}: ${text}`));
   });
+}
+
+/** A report line with every `#…` cut from its addresses: a link's fragment can be its secret. */
+function withoutFragments(line: string): string {
+  return line.replaceAll(/#[^\s)'":]*/gu, '#…');
+}
+
+/**
+ * Take the refusals seen so far in this test, so a test that provokes one on purpose can check
+ * it. Whatever is left when the test ends fails it.
+ */
+export function takeViolations(): string[] {
+  return violations.splice(0);
 }
 
 /** Make every context this browser opens a watched one. */

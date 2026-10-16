@@ -1,8 +1,9 @@
 /**
- * Read a secret from the link fragment into page memory only, then erase it from the address bar
- * and the current history entry. `main.tsx` imports this module first, so it runs before any
- * other module of the page does. It used to be an inline script in `index.html`; the page's
- * content security policy allows no inline script (DOR-2957), so it lives in the bundle instead.
+ * Turn a link's fragment into the secret its page reads, in page memory only. The fragment never
+ * reaches this module through the address bar: the page's one inline script
+ * (`src/headers/link-secret-script.ts`) took it out while the page was still parsing, before the
+ * bundle loaded, and left it in `window.__dorkosLinkFragment` for this module to read once.
+ * `main.tsx` imports this module first, so it runs before any other module of the page does.
  *
  * The secret never reaches this server: it travels after `#`, and the page sends no referrer.
  */
@@ -26,20 +27,19 @@ const READERS = {
  * page may carry an invitation as `invite=` or `token=`.
  */
 export function captureLinkSecret(): void {
+  const raw = takeCapturedFragment();
   const path = window.location.pathname;
   const claimPage = path === '/claim';
   const replacementPage = path === '/keep-ownership' || path === '/owner-replacement';
   const emailLinkPage =
     path === '/reset-password' || path === '/email-sign-in' || path === '/confirm-email';
   const barePage = replacementPage || emailLinkPage;
-  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const fragment = new URLSearchParams(raw);
   let secret: string | null = barePage
-    ? window.location.hash.slice(1) || null
+    ? raw || null
     : claimPage
       ? fragment.get('claim')
       : (fragment.get('invite') ?? fragment.get('token'));
-  if ((claimPage || barePage) && window.location.hash)
-    window.history.replaceState(null, '', path + window.location.search);
   if (!secret) return;
   const [read, clear] = emailLinkPage
     ? READERS.emailLink
@@ -63,9 +63,18 @@ export function captureLinkSecret(): void {
     },
   });
   if (claimPage || barePage) return;
+  // An invitation opens its space's join page.
   const tenant = window.location.pathname.match(/^\/c\/[^/]+/u)?.[0];
   const cleanPath = tenant ? `${tenant}/join` : window.location.pathname;
   window.history.replaceState(null, '', cleanPath + window.location.search);
+}
+
+/** Read, once, the fragment the page's inline script took out of the address bar. */
+function takeCapturedFragment(): string {
+  const target = window as unknown as Record<string, unknown>;
+  const raw = target.__dorkosLinkFragment;
+  delete target.__dorkosLinkFragment;
+  return typeof raw === 'string' ? raw : '';
 }
 
 captureLinkSecret();

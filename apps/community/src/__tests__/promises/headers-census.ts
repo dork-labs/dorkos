@@ -5,8 +5,14 @@
  * each answer under the security header group its headers match exactly.
  *
  * The database is never reached: a route that needs it answers a refusal or `503`, which must
- * carry the same headers as its answer would. A successful file, export or icon download is a
- * database case, pinned by its own integration test against the same groups.
+ * carry the same headers as its answer would. A successful file, export, icon download or live
+ * stream is a database case, pinned over real HTTP by its own integration test against the same
+ * groups.
+ *
+ * The census reads each answer in process (`app.request`), not off the wire. The two can
+ * disagree: a header a Node server adds or drops, or a stream whose headers change once its
+ * body starts. Every such difference makes a route's headers match no group, or the wrong one,
+ * and so fails here loudly; a census that read less than the wire would pass quietly instead.
  */
 import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';

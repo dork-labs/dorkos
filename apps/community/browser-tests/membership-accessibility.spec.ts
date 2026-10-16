@@ -10,6 +10,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { servePage } from '../src/headers/security-headers.js';
 import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults, Result } from 'axe-core';
 import { serve } from '@hono/node-server';
@@ -287,10 +288,7 @@ test.beforeAll(async () => {
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   for (const path of ['/', '/host', '/claim', '/c/:communityId', '/c/:communityId/*'])
-    app.get(
-      path,
-      serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-    );
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
 

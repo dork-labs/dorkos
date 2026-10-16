@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { servePage } from '../src/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -72,10 +73,7 @@ test.beforeAll(async () => {
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   for (const path of ['/', '/c/:communityId'])
-    app.get(
-      path,
-      serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-    );
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   // The server records, in arrival order, every request start and every event
   // stream end, so the order is what the host observed rather than what the page
   // intended.

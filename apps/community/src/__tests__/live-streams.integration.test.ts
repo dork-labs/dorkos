@@ -18,6 +18,7 @@ import { clearAccountAccess } from '../sign-in/account-access.js';
 import { eraseMembership } from '../erasure/erasure.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { transaction } from '../data.js';
+import { headerGroupOf } from './promises/headers-census.js';
 import {
   TENANCY_PASSWORD,
   admit,
@@ -147,6 +148,10 @@ async function open(
   });
   if (response.status !== 200)
     throw new Error(`stream refused: ${response.status} ${await response.text()}`);
+  // Every open stream carries the locked security headers over the wire (DOR-2957): the
+  // headers census only sees streams refused, since it has no database to open one.
+  expect(response.headers.get('content-type')).toMatch(/^text\/event-stream\b/u);
+  expect(headerGroupOf(response)).toBe('locked');
   const reader = response.body!.getReader();
   let buffer = '';
   const next = async (timeoutMs = PROMPT_MS): Promise<StreamEvent> => {

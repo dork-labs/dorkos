@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { type Browser, type Page } from '@playwright/test';
+import { servePage } from '../src/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -67,10 +68,7 @@ async function start(links: Record<string, string>) {
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   for (const path of ['/', '/c/:communityId', '/c/:communityId/*'])
-    app.get(
-      path,
-      serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
-    );
+    app.get(path, servePage(fileURLToPath(new URL('../dist/index.html', import.meta.url))));
   const server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   servers.push(server);

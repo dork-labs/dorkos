@@ -6,7 +6,7 @@
       "referrer-policy": "no-referrer",
       "x-frame-options": "DENY",
       "cross-origin-resource-policy": "same-origin",
-      "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; script-src 'self' 'sha256-YM2TeDkH/bJSTKLU/hQs6u9DbLafFjAkoLBrld04qB4='; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'",
       "cross-origin-opener-policy": "same-origin"
     },
     "locked": {
