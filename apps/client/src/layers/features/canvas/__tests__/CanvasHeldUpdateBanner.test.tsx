@@ -33,6 +33,14 @@ vi.mock('../ui/BlintzCanvas', () => ({
 // only has to say the document is file-backed, which is what offers the pencil.
 vi.mock('../model/use-canvas-file-save', () => ({
   useCanvasFileSave: () => ({
+    recovery: {
+      identity: {},
+      supported: false,
+      current: () => false,
+      discover: async () => ({ status: 'idle' }),
+      recover: async () => ({ status: 'idle' }),
+      inspectCurrent: async () => ({ status: 'idle' }),
+    },
     status: 'idle',
     conflict: null,
     canSave: true,

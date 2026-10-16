@@ -1,3 +1,4 @@
+import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.js';
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
  * community connections, remote communities, commitments, heartbeats, the first
@@ -23,6 +24,7 @@ import type { ConnectorHoldTransport } from './transport-connector-holds.js';
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
   extends
+    FileSaveRecoveryTransport,
     RoomTransport,
     CommunityConnectionTransport,
     RemoteCommunityTransport,

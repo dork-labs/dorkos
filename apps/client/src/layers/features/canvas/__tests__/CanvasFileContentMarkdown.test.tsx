@@ -48,6 +48,14 @@ vi.mock('@/layers/shared/model', () => {
 // deterministic and off the real transport. `save` records what the autosave
 // debounce flushes.
 const mockFileSave = {
+  recovery: {
+    identity: {},
+    supported: false,
+    current: () => false,
+    discover: async () => ({ status: 'idle' }),
+    recover: async () => ({ status: 'idle' }),
+    inspectCurrent: async () => ({ status: 'idle' }),
+  },
   status: 'idle' as 'idle' | 'saving' | 'saved' | 'error' | 'conflict',
   conflict: null as { currentHash: string; currentContent: string } | null,
   canSave: true,

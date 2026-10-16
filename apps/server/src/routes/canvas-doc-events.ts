@@ -1,3 +1,5 @@
+import { createFileSaveRecoveryRoutes } from './file-saves/recovery.js';
+import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 /** Private document event endpoints, behind the app's host, origin and session gates. */
 import type { ServerResponse } from 'node:http';
 import bodyParser from 'body-parser';
@@ -52,6 +54,7 @@ function refusalClass(status: number): DocChannelRejectionClass {
 
 /** The composition root resolves authenticated callers; page envelopes carry no authority. */
 export interface DocChannelHttp {
+  fileWrites?: InstallationFileWrites;
   service: DocChannelService;
   metrics?: DocChannelMetrics;
   actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
@@ -215,6 +218,10 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
   // Claim every path under `/api/canvas/docs`, served or not, so a request to
   // one no route serves still gets this group's body limit before its `/api`
   // 404, as it always had.
+  router.route(
+    '/',
+    createFileSaveRecoveryRoutes(() => source()?.fileWrites)
+  );
   router.all('*', (c) => c.notFound());
   return router;
 }
