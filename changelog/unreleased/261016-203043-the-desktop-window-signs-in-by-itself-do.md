@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat: the desktop window signs in by itself (DOR-2966)'
+  - "fix(desktop): the window's sign-in request keeps its cookie (DOR-2966)"
 ---
 
 ### Changed
