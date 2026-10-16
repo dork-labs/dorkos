@@ -261,6 +261,7 @@
     "POST /api/v1/host/accounts/:accountId/closure",
     "POST /api/v1/host/accounts/:accountId/closure/cancel",
     "POST /api/v1/host/accounts/lookup",
+    "POST /api/v1/host/accounts/spaces",
     "POST /api/v1/host/api-keys",
     "POST /api/v1/host/api-keys/:id/revoke",
     "POST /api/v1/host/api-keys/:id/rotate",

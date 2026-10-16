@@ -270,6 +270,7 @@
     "POST /api/v1/host/accounts/:accountId/closure": "locked",
     "POST /api/v1/host/accounts/:accountId/closure/cancel": "locked",
     "POST /api/v1/host/accounts/lookup": "locked",
+    "POST /api/v1/host/accounts/spaces": "locked",
     "POST /api/v1/host/api-keys": "locked",
     "POST /api/v1/host/api-keys/:id/revoke": "locked",
     "POST /api/v1/host/api-keys/:id/rotate": "locked",
