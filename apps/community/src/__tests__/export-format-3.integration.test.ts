@@ -371,8 +371,9 @@ describe('export format 3', { timeout: 180_000 }, () => {
   });
 
   // Purpose: a person's own export lists them and their agents as members, as it holds their
-  // agents and their agents' messages, and as erasing them erases those agents too. Nobody
-  // else's agent is in it.
+  // agents and their agents' messages, and as erasing them erases those agents too. It holds
+  // every message they and their agents wrote, with their files, and nobody else's agent or
+  // message.
   it("lists a person's own agents as their members in a personal export", async () => {
     const archive = await openArchive(await exportSpace(source, mo.cookie, { scope: 'personal' }));
     expect(archive.manifest.scope).toBe('personal');
@@ -389,6 +390,22 @@ describe('export format 3', { timeout: 180_000 }, () => {
     );
     expect(archive.rows<{ id: string }>('agents').map((row) => row.id)).toEqual([moAgent]);
     expect(archive.rows<{ id: string }>('members').map((row) => row.id)).not.toContain(abeAgent);
+    // Their own messages and their agent's are all there, with their files; nobody else's.
+    const entries = archive.rows<{ id: string; text: string; author_member_id: string }>('entries');
+    expect(entries.map((row) => row.id)).toEqual(
+      expect.arrayContaining([personMessage, agentMessage])
+    );
+    expect(entries.map((row) => row.text)).toContain('the notes');
+    expect(entries.every((row) => [mo.memberId, moAgent].includes(row.author_member_id))).toBe(
+      true
+    );
+    expect(archive.manifest.counts.entries).toBe(entries.length);
+    const files = archive.rows<{ name: string; archivePath: string; entryId: string }>(
+      'attachments'
+    );
+    expect(files.map((file) => file.name)).toEqual(['notes.txt']);
+    expect(archive.files.get(files[0].archivePath)?.toString()).toBe('n');
+    expect(entries.map((row) => row.id)).toContain(files[0].entryId);
   });
 
   // Purpose: a format 3 export imports on this release with the same people, agent members (built

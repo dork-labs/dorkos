@@ -460,7 +460,8 @@ describe('backout', () => {
     );
     expect(await purgeVersionTwoExports(h.pool)).toBeGreaterThanOrEqual(2);
     expect(
-      (await h.pool.query('SELECT id FROM export_archives WHERE format_version=2')).rowCount
+      // Every export a job wrote, format 2 or 3, is gone.
+      (await h.pool.query('SELECT id FROM export_archives WHERE format_version>=2')).rowCount
     ).toBe(0);
     expect(
       (await h.pool.query('SELECT 1 FROM export_archives WHERE id=$1', [legacy.rows[0].id]))
