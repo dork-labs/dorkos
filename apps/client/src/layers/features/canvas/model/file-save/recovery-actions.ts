@@ -1,4 +1,4 @@
-/** Fixed proof-only endpoint orchestration; shares the owning hook's one dispatch tail. */
+/** Proof orchestration preserves the effect tail without retaining obsolete file reads. */
 import {
   FileSaveDiscoverySchema,
   FileSaveRecoverResultSchema,
@@ -65,16 +65,18 @@ export function createFileSaveRecoveryActions<Owner extends object>({
   };
   const enqueue = <T>(
     call: () => Promise<T>,
-    expectedObservation?: FileSaveBinding
+    expectedObservation?: FileSaveBinding,
+    readOnlyInspection = false
   ): Promise<RecoveryCall<T>> => {
     if (!port || !current()) return Promise.resolve({ status: 'idle' });
     const record = getOwner()!;
+    const work = {};
     const requestCurrent = () =>
       getOwner() === record &&
       current() &&
-      (!expectedObservation || record.recoveryBinding === expectedObservation);
-    const work = {},
-      priorDiscovery = record.discovery;
+      (!expectedObservation || record.recoveryBinding === expectedObservation) &&
+      (!readOnlyInspection || record.recoveryWork === work);
+    const priorDiscovery = record.discovery;
     let observed = false;
     record.recoveryWork = work;
     record.recoveryGate = 'pending';
@@ -86,6 +88,7 @@ export function createFileSaveRecoveryActions<Owner extends object>({
           if (!requestCurrent()) return { status: 'idle' };
           const value = await call();
           if (!requestCurrent()) return { status: 'idle' };
+          if (readOnlyInspection) record.recoveryGate = 'observed_clear';
           observed = true;
           return { status: 'observed', value };
         } catch {
@@ -102,7 +105,9 @@ export function createFileSaveRecoveryActions<Owner extends object>({
           }
         }
       });
-    writeTail(next.then(() => {}));
+    // A read must await earlier effects, but cannot hold the effect lane across
+    // a suspended presenter or replacement observation. It never writes or adopts bytes.
+    if (!readOnlyInspection) writeTail(next.then(() => {}));
     return next;
   };
   const discover = (fresh = false): Promise<RecoveryCall<FileSaveDiscovery>> => {
@@ -164,18 +169,21 @@ export function createFileSaveRecoveryActions<Owner extends object>({
       const record = getOwner();
       if (!record || !current() || pending() || !recoveryWritable())
         return Promise.resolve({ status: 'local_uncertain' });
-      return enqueue(async () => {
-        const value = await transport.readFileContent(cwd!, sourcePath!);
-        if (
-          !value ||
-          typeof value.content !== 'string' ||
-          typeof value.hash !== 'string' ||
-          !/^[a-f0-9]{64}$/u.test(value.hash)
-        )
-          throw new Error('Current file evidence missing');
-        if (getOwner() === record && current()) record.recoveryGate = 'observed_clear';
-        return { content: value.content, hash: value.hash };
-      });
+      return enqueue(
+        async () => {
+          const value = await transport.readFileContent(cwd!, sourcePath!);
+          if (
+            !value ||
+            typeof value.content !== 'string' ||
+            typeof value.hash !== 'string' ||
+            !/^[a-f0-9]{64}$/u.test(value.hash)
+          )
+            throw new Error('Current file evidence missing');
+          return { content: value.content, hash: value.hash };
+        },
+        record.recoveryBinding,
+        true
+      );
     },
   };
 }

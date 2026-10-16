@@ -874,6 +874,50 @@ describe('RuntimeRegistry', () => {
         ).toBe('bypassPermissions');
       });
 
+      it("seeds the operator's stop on a chat another chat's message opens", async () => {
+        // A chat `chat_send` opens used to start with no mode, which runs as the
+        // runtime's Default. Every message turn is also held to its sender's
+        // level, so the stricter of the two was always Default: two Full
+        // autonomy agents talking held each other to asking. The row now starts
+        // at the operator's stop, and the sender's ceiling still bounds it.
+        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
+
+        await registry.persistSessionRuntime('dm-opened-by-message', 'claude-code', {
+          kind: 'chat-message',
+        });
+
+        expect(
+          db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, 'dm-opened-by-message'))
+            .get()?.permissionMode
+        ).toBe('bypassPermissions');
+      });
+
+      it("never seeds a message's chat over a mode a person already chose", async () => {
+        db.insert(sessionMetadata)
+          .values({
+            sessionId: 'dm-person-set',
+            permissionMode: 'default',
+            createdAt: new Date().toISOString(),
+          })
+          .run();
+
+        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
+        await registry.persistSessionRuntime('dm-person-set', 'claude-code', {
+          kind: 'chat-message',
+        });
+
+        expect(
+          db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, 'dm-person-set'))
+            .get()?.permissionMode
+        ).toBe('default');
+      });
+
       it('never lets that seed overwrite a mode already on the row', async () => {
         // "Applies to new conversations, running ones keep their settings." A row
         // that already names a mode was written by somebody's choice, and a

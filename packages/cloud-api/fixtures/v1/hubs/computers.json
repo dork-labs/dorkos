@@ -1,0 +1,32 @@
+{
+  "items": [
+    {
+      "id": "cmp_0001",
+      "instanceId": "inst_0101",
+      "displayName": "Cloud computer",
+      "state": "running",
+      "stopReason": null,
+      "createdAt": "2026-11-03T09:05:00Z",
+      "stateChangedAt": "2026-11-03T09:06:00Z"
+    },
+    {
+      "id": "cmp_0002",
+      "instanceId": null,
+      "displayName": "Second cloud computer",
+      "state": "stopped",
+      "stopReason": "out_of_credits",
+      "createdAt": "2026-11-04T10:00:00Z",
+      "stateChangedAt": "2026-11-05T10:00:00Z"
+    },
+    {
+      "id": "cmp_0003",
+      "instanceId": "inst_0103",
+      "displayName": "Third cloud computer",
+      "state": "stopped",
+      "stopReason": "suspended",
+      "reasonText": "This computer was switched off. Contact support to turn it back on.",
+      "createdAt": "2026-11-04T10:00:00Z",
+      "stateChangedAt": "2026-11-06T10:00:00Z"
+    }
+  ]
+}

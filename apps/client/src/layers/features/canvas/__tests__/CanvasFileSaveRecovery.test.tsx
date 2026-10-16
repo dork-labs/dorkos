@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { Suspense } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
@@ -502,4 +503,62 @@ it('a hidden old read stays held while reopened hash-changing Load settles disco
     content: 'newer draft and selection',
   });
   expect(port.recover).not.toHaveBeenCalled();
+});
+
+it('a Suspense-hidden retained presenter rediscovers before its old current-file read is released', async () => {
+  const oldRead = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
+  const replacement = deferred<void>();
+  let hidden = false;
+  function Presenter() {
+    if (hidden) throw replacement.promise;
+    return (
+      <CanvasFileContent documentId="doc-1" content={{ type: 'file', sourcePath: 'notes.txt' }} />
+    );
+  }
+  query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = () => (
+    <QueryClientProvider client={query}>
+      <Suspense fallback={<p>Opening another view</p>}>
+        <Presenter />
+      </Suspense>
+    </QueryClientProvider>
+  );
+  const rendered = render(tree());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  const editorButton = screen.getByRole('button', { name: 'Edit file' });
+  const discoveries = port.discover.mock.calls.length;
+  vi.mocked(transport.readFileContent).mockReturnValueOnce(oldRead.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(2));
+  hidden = true;
+  rendered.rerender(tree());
+  await screen.findByText('Opening another view');
+  expect(screen.queryByRole('region', { name: 'Previous file saves' })).toBeNull();
+  try {
+    hidden = false;
+    await act(async () => {
+      replacement.resolve();
+      rendered.rerender(tree());
+    });
+    // React hid this editor without destroying its hook refs; reveal requalifies the real channel.
+    expect(screen.getByRole('button', { name: 'Edit file' })).toBe(editorButton);
+    await waitFor(() => expect(port.discover.mock.calls.length).toBeGreaterThan(discoveries));
+    await waitFor(() => expect(editorButton).toBeEnabled());
+    expect(transport.writeFile).not.toHaveBeenCalled();
+    expect(port.recover).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => {
+      oldRead.resolve({
+        content: 'obsolete retained read',
+        hash: 'c'.repeat(64),
+        encoding: 'utf-8',
+      });
+      await oldRead.promise;
+    });
+  }
+  await waitFor(() => expect(editorButton).toBeEnabled());
+  expect(query.getQueryData(['canvas-file', '/work', 'notes.txt'])).toMatchObject({
+    content: 'base',
+    hash: 'a'.repeat(64),
+  });
 });

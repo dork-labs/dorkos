@@ -137,10 +137,14 @@ export type TurnOrigin =
   /**
    * Another chat sent this one a message (`chat_send`, a spin-off's report,
    * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
-   * Like `agent-launch`, nobody chose a trust stop for it and nobody is
-   * watching: the row seeds no operator stop. Its turn is held to the sending
-   * chat's level by a ceiling the dispatcher reads at launch, so a message
-   * never carries more power than the chat that sent it.
+   * A chat it OPENS is born at the operator's configured stop, the same as a
+   * room turn by a local author, and every turn a message starts is held to
+   * the sending chat's level by a ceiling the dispatcher reads at launch. So a
+   * message runs at the stricter of the two, and never carries more power than
+   * the chat that sent it. Seeding nothing here used to mean the runtime's
+   * Default, which made that stricter of the two always Default: two Full
+   * autonomy agents talking held each other to asking, and every reply after
+   * the first kept it that way.
    */
   | { readonly kind: 'chat-message' }
   /**
@@ -260,6 +264,14 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // changed the settings of keeps what they chose.
     case 'heartbeat':
       return 'configured-stop-on-insert';
+    // A chat another chat's message opens (spec `spin-off-chats`). The
+    // dispatcher holds every message-started turn to its sender's level, so
+    // the operator's stop here is a ceiling's partner, never a grant on its
+    // own: the turn runs at the stricter of the two. On insert only, so an
+    // existing chat a person set keeps what they chose. A person who later
+    // types into it gets the same stop a chat of their own starts at.
+    case 'chat-message':
+      return 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule
@@ -287,10 +299,6 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // with nothing seeded, like a connector event's.
     //
     // The harness is not a surface anybody ships to.
-    // Another chat's message is the sending chat's work, held to its level by
-    // the launch ceiling; the operator's stop is a promise to a person, and the
-    // sender is not that person.
-    case 'chat-message':
     case 'extension-message':
     case 'schedule':
     case 'relay-binding':

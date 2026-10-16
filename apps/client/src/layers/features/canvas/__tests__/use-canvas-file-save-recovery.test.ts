@@ -407,3 +407,82 @@ it('new observation before old clear settlement needs its own discovery', async 
 it('new observation before old rejection is not poisoned by the old reply', async () => {
   await pendingObservationHandoff('reject');
 });
+
+it('a replacement read observation can stay blocked after an obsolete held inspection settles', async () => {
+  let oldCurrent = true;
+  let observation = { incarnation: birth, current: () => oldCurrent };
+  const held = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
+  vi.mocked(transport.readFileContent).mockReturnValue(held.promise);
+  const { result, rerender } = renderHook(() => {
+    const save = useCanvasFileSave({ ...args, documentRecoveryBinding: observation });
+    const recovery = useFileSaveRecovery(save.recovery, 'ready', observation);
+    return { save, recovery };
+  });
+  await waitFor(() => expect(result.current.recovery.editBlocked).toBe(false));
+  const identity = result.current.save.recovery.identity;
+  let inspection!: ReturnType<typeof result.current.recovery.inspectCurrent>;
+  act(() => {
+    inspection = result.current.recovery.inspectCurrent();
+  });
+  await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(1));
+  oldCurrent = false;
+  observation = { incarnation: { ...birth }, current: () => true };
+  port.discover.mockResolvedValue({ ...clear(), admission: 'blocked' });
+  rerender();
+  try {
+    await waitFor(() => expect(port.discover).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.recovery.discovery?.admission).toBe('blocked'));
+    expect(result.current.save.recovery.identity).toBe(identity);
+  } finally {
+    await act(async () => {
+      held.resolve({ content: 'stale bytes', hash: 'c'.repeat(64), encoding: 'utf-8' });
+      expect(await inspection).toEqual({ status: 'idle' });
+    });
+  }
+  expect(result.current.recovery.discovery?.admission).toBe('blocked');
+  expect(result.current.recovery.editBlocked).toBe(true);
+  expect(result.current.recovery.phase).toBe('ready');
+  expect(result.current.save.getConfirmedBase()).toEqual({ content: 'base', hash: null });
+  expect(transport.writeFile).not.toHaveBeenCalled();
+  expect(port.recover).not.toHaveBeenCalled();
+});
+
+it('read-only inspection still waits for the already dispatched conditional write', async () => {
+  const wire = deferred<WriteFileResult>();
+  vi.mocked(transport.writeFile).mockReturnValue(wire.promise);
+  vi.mocked(transport.readFileContent).mockResolvedValue({
+    content: 'first',
+    hash: 'b'.repeat(64),
+    encoding: 'utf-8',
+  });
+  const { result } = renderHook(() =>
+    useCanvasFileSave({ ...args, documentSaveBinding: undefined })
+  );
+  await act(async () => {
+    await result.current.recovery.discover();
+  });
+  let saving!: ReturnType<typeof result.current.save>;
+  act(() => {
+    saving = result.current.save('first');
+  });
+  await waitFor(() => expect(transport.writeFile).toHaveBeenCalledTimes(1));
+  let inspecting!: ReturnType<typeof result.current.recovery.inspectCurrent>;
+  act(() => {
+    inspecting = result.current.recovery.inspectCurrent();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(transport.readFileContent).not.toHaveBeenCalled();
+  await act(async () => {
+    wire.resolve({ ok: true, hash: 'b'.repeat(64), effect: 'changed' });
+    await saving;
+    expect(await inspecting).toEqual({
+      status: 'observed',
+      value: { content: 'first', hash: 'b'.repeat(64) },
+    });
+  });
+  expect(transport.readFileContent).toHaveBeenCalledExactlyOnceWith('/work', 'notes.txt');
+  expect(transport.writeFile).toHaveBeenCalledTimes(1);
+  expect(result.current.getConfirmedBase()).toEqual({ content: 'first', hash: 'b'.repeat(64) });
+});

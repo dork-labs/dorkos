@@ -53,6 +53,8 @@ describe('conformance fixtures', () => {
       'billing',
       'communities',
       'connections',
+      'directory',
+      'hubs',
       'inference',
       'instances',
       'problem',

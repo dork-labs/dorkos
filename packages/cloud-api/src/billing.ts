@@ -121,6 +121,21 @@ export const EntitlementLimitsSchema = z
     communities: EntitlementCommunityLimitsSchema.optional().describe(
       'The limits on hosted communities. Absent means the service did not say.'
     ),
+    fullControl: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the account may open a linked computer`s full control (terminal, files, settings) from the web. Absent reads as no.'
+      ),
+    cloudComputers: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .optional()
+      .describe(
+        'How many cloud agent computers the account may have. Null means no fixed count; absent means the service did not say.'
+      ),
   })
   .describe(
     'The measurable limits of the caller`s entitlement. Interface behaviour is driven by these values, never by the plan identifier.'
