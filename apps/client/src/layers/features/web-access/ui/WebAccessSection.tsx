@@ -24,6 +24,8 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useWebAccess, type WebAccess } from '../model/use-web-access';
+import { useSeenDevices } from '../model/use-remote-presence';
+import { SeenDevices } from './SeenDevices';
 
 /** The host a hub origin names, for showing it. */
 function hostOf(origin: string | null): string {
@@ -289,6 +291,7 @@ function LinkedControls({ access, status }: { access: WebAccess; status: Session
 export function WebAccessSection({ className }: { className?: string }) {
   const access = useWebAccess();
   const status = access.status;
+  const devices = useSeenDevices(status?.linked === true);
   if (!access.available || !status) return null;
 
   return (
@@ -303,7 +306,10 @@ export function WebAccessSection({ className }: { className?: string }) {
         <p className="text-muted-foreground text-xs">Change this on the computer DorkOS runs on.</p>
       )}
       {status.linked ? (
-        <LinkedControls access={access} status={status} />
+        <>
+          <LinkedControls access={access} status={status} />
+          <SeenDevices devices={devices} />
+        </>
       ) : (
         <LinkForm access={access} status={status} />
       )}

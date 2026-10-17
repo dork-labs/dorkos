@@ -21,6 +21,13 @@
  * permission mode) is a 400, never something forwarded. Approvals are not
  * offered: a computer refuses them until they can carry a passkey proof.
  *
+ * **Which browser asked.** Each relayed request names the owner's browser
+ * (`device`): an id from a cookie of its own, set here the first time the
+ * browser comes without one, and a label read from its `User-Agent`
+ * (`services/core/hub-relay/browser-device.ts`). Never the sign-in token.
+ * The computer remembers it and tells its owner about a new one; a request
+ * from a browser without the cookie yet names none.
+ *
  * A linked computer that is not connected right now is woken
  * (`computer-waker.ts`) and answered with 503 and `Retry-After`. What the
  * computer refuses is answered with its own status and sentence, except a
@@ -37,6 +44,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   RelayRequestSchema,
   missingRelayFeature,
+  type RelayDevice,
   type RelayError,
   type RelayRequest,
 } from '@dorkos/shared/session-relay';
@@ -49,10 +57,14 @@ import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { currentAuditActor } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
+import { AUTH_COOKIES_SECURE } from '../services/core/auth/cookie-security.js';
 import {
+  browserDevice,
+  browserDeviceSetCookie,
   computerConnection,
   hubComputerWaker,
   hubViewers,
+  mintBrowserDeviceId,
   readLinkedComputers,
   type HubComputerConnection,
   type RelayCallRequest,
@@ -82,6 +94,8 @@ export interface HubComputerRoutesDeps {
   wake: (computerId: string) => void;
   /** Counts open chat streams per computer. */
   viewers: { open: (computerId: string) => () => void };
+  /** Whether cookies are `Secure`, which names the browser's device cookie; `false` when absent. */
+  secureCookies?: boolean;
 }
 
 const liveDeps: HubComputerRoutesDeps = {
@@ -92,6 +106,7 @@ const liveDeps: HubComputerRoutesDeps = {
     hubComputerWaker.wake(computerId);
   },
   viewers: hubViewers,
+  secureCookies: AUTH_COOKIES_SECURE,
 };
 
 /** How long a page should wait before asking again while a computer wakes. */
@@ -201,8 +216,24 @@ export function createHubComputerRoutes(
         403
       );
     }
+    // A browser without its device cookie gets one with this answer. The
+    // stream route writes its own head, so it is handed the same value.
+    if (!deviceOf(c)) {
+      const cookie = browserDeviceSetCookie(mintBrowserDeviceId(), deps.secureCookies === true);
+      c.header('Set-Cookie', cookie, { append: true });
+      mintedCookies.set(c.env.incoming, cookie);
+    }
     await next();
   });
+
+  /** The device cookie minted for a request, by its Node request, for the stream's own head. */
+  const mintedCookies = new WeakMap<object, string>();
+
+  /** The browser that asked, from its device cookie, or `undefined` before it has one. */
+  function deviceOf(c: Context<ApiEnv>): RelayDevice | undefined {
+    const headers = { cookie: c.req.header('cookie'), userAgent: c.req.header('user-agent') };
+    return browserDevice(headers, deps.secureCookies === true) ?? undefined;
+  }
 
   /** The computer's live connection, or the answer to give instead. */
   function reach(c: Context<ApiEnv>, computerId: string): RelayedComputer | Response {
@@ -246,7 +277,7 @@ export function createHubComputerRoutes(
     if (computer instanceof Response) return computer;
     const refused = unsupported(c, computer, request);
     if (refused) return refused;
-    const result = await computer.request(request);
+    const result = await computer.request(request, deviceOf(c));
     if (audit) {
       const outcome: AuditOutcome = result.ok
         ? 'ok'
@@ -308,6 +339,8 @@ export function createHubComputerRoutes(
       sessionId: request.sessionId,
       resume: request.resume,
       openViewer: () => deps.viewers.open(computerId),
+      device: deviceOf(c),
+      setCookie: mintedCookies.get(c.env.incoming),
     });
   });
 

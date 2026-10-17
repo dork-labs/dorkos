@@ -9,8 +9,10 @@
 import type {
   HubComputerList,
   HubLinkCode,
+  SessionRelayDeviceList,
   SessionRelayLevel,
   SessionRelayLinkBody,
+  SessionRelayPresence,
   SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import { fetchJSON, fetchNoContent } from './http-client';
@@ -61,6 +63,15 @@ export function createHubMethods(baseUrl: string) {
     },
     unlinkSessionRelay(): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/link', { method: 'DELETE' });
+    },
+    getSessionRelayPresence(): Promise<SessionRelayPresence> {
+      return fetchJSON(baseUrl, '/session-relay/presence');
+    },
+    endSessionRelayPresence(): Promise<SessionRelayPresence> {
+      return fetchJSON(baseUrl, '/session-relay/presence/end', { method: 'POST' });
+    },
+    listSessionRelayDevices(): Promise<SessionRelayDeviceList> {
+      return fetchJSON(baseUrl, '/session-relay/devices');
     },
   };
 }

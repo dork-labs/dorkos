@@ -5,6 +5,13 @@
  *
  * - `GET /status`: where the link stands, for anyone the session gate let in.
  *   Never the relay secret.
+ * - `GET /presence` and `GET /devices`: whether someone is using this
+ *   computer from the web now, and the browsers seen here, for anyone the
+ *   session gate let in but an agent, as the live event goes to the owner's
+ *   windows only. Labels and times only, never what was said.
+ * - `POST /presence/end`: end use from the web now. Behind the same bar as
+ *   the writes below; it closes the relay and pauses the link, as Pause does,
+ *   so it needs no password: it only narrows access.
  * - `POST /link`, `PATCH /level`, `POST /pause`, `POST /resume` and
  *   `DELETE /link`: behind {@link requirePersonAtThisComputer}, the owner at
  *   this computer using the app, so nothing reached from the web (the relay
@@ -39,13 +46,16 @@ import {
   SessionRelayLevelBodySchema,
   SessionRelayLinkBodySchema,
   SessionRelayResumeBodySchema,
+  type SessionRelayDevice,
   type SessionRelayLinkRefusal,
+  type SessionRelayPresence,
   type SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody } from '../lib/route-utils.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
@@ -57,7 +67,9 @@ import {
 import {
   closeSessionRelay,
   sessionRelayConnected,
+  sessionRelayDevices,
   sessionRelayEnabled,
+  sessionRelayPresence,
 } from '../services/core/session-relay/index.js';
 import {
   clearRelayPin,
@@ -99,6 +111,10 @@ export interface SessionRelayRouteDeps {
   suggestedName: () => string;
   /** Check the install owner's password. */
   checkPassword: (password: string | undefined) => Promise<OwnerPasswordCheck>;
+  /** Whether someone is using this computer from the web now. */
+  presence: () => SessionRelayPresence;
+  /** Every browser seen here, most recent first. */
+  devices: () => SessionRelayDevice[];
 }
 
 const liveDeps: SessionRelayRouteDeps = {
@@ -113,6 +129,8 @@ const liveDeps: SessionRelayRouteDeps = {
   link: (input) => linkToHub(input),
   suggestedName: defaultComputerName,
   checkPassword: (password) => checkOwnerPassword(password),
+  presence: () => sessionRelayPresence().snapshot(),
+  devices: () => sessionRelayDevices().list(),
 };
 
 /** Code for every refusal of the password step-up. */
@@ -314,6 +332,31 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     );
     return c.json(status());
   }
+
+  /** The browsers using this computer are the owner's to see, never an agent's. */
+  function refuseAgent(c: Context<ApiEnv>): Response | undefined {
+    if (!presentsAgentIdentity(honoRequestFacts(c))) return undefined;
+    return c.json(errorBody('Only you can see this.', 'FORBIDDEN'), 403);
+  }
+
+  router.get('/presence', (c) => refuseAgent(c) ?? c.json(deps.presence()));
+
+  router.get('/devices', (c) => refuseAgent(c) ?? c.json({ devices: deps.devices() }));
+
+  // End use from the web now: pause the link and close the relay, as Pause
+  // does. The live connection ending is what tells the open windows.
+  router.post('/presence/end', async (c) => {
+    const refusal = refusePerson(c);
+    if (refusal) return refusal;
+    const pin = await withRelayPinLock(async () => {
+      const next = await deps.updatePin({ paused: true });
+      if (next) deps.closeRelay();
+      return next;
+    });
+    if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+    audit('presence.end', 'modify', 'Ended use from the web and paused chat from the web', 'ok');
+    return c.json(deps.presence());
+  });
 
   router.post('/pause', (c) => setPaused(c, true));
   router.post('/resume', (c) => setPaused(c, false));
