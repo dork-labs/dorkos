@@ -68,10 +68,9 @@ export type CloudLinkIdentity =
       instanceId: string | null;
       accountKey: string | null;
       /**
-       * The issuer of this computer's DorkOS account, or `null` while it is
-       * not known. No Cloud contract tells a computer its account's issuer yet
-       * (the hub learns its own from its assignment), so the live value is
-       * `null` until one does; see {@link accountMatches}.
+       * The issuer of this computer's DorkOS account (`GET /v1/session`'s
+       * `account.issuer`), or `null` when the service does not name one; see
+       * {@link accountMatches}.
        */
       issuer: string | null;
     };
@@ -101,8 +100,8 @@ async function liveCloudIdentity(): Promise<CloudLinkIdentity> {
   const context = captureCloudV1Context();
   if (context === null) return { linked: false };
   try {
-    // No contract carries the account's issuer to a computer yet.
-    return { linked: true, ...(await resolveCloudIdentity(context)), issuer: null };
+    const { instanceId, accountKey, issuer } = await resolveCloudIdentity(context);
+    return { linked: true, instanceId, accountKey, issuer: issuer ?? null };
   } catch {
     return { linked: true, instanceId: null, accountKey: null, issuer: null };
   }
@@ -218,10 +217,10 @@ const bareIssuer = (issuer: string): string => issuer.replace(/\/+$/u, '');
 /**
  * Whether a hub's answer names this computer's own DorkOS account as its
  * owner: the same account id, and an issuer. The issuer must equal this
- * computer's when it knows its own; while no contract tells it (`issuer:
- * null`), the hub must still name one, since an account id means nothing
- * without the issuer it belongs to. A safeguard against the wrong hub, not
- * proof of ownership.
+ * computer's when the service names one (`GET /v1/session`); when it does
+ * not (`issuer: null`), the hub must still name one, since an account id means
+ * nothing without the issuer it belongs to. A safeguard against the wrong
+ * hub, not proof of ownership.
  */
 export function accountMatches(
   identity: Extract<CloudLinkIdentity, { linked: true }>,

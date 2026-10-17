@@ -194,6 +194,11 @@ export interface CloudIdentity {
    * organization's — or `null` when the service names neither.
    */
   accountKey: string | null;
+  /**
+   * The issuer whose sign-ins carry the account's id as their subject, when
+   * the service names one. Absent otherwise.
+   */
+  issuer?: string;
 }
 
 /**
@@ -210,9 +215,11 @@ export async function resolveCloudIdentity(context: CloudV1Context): Promise<Clo
   }
   const id = session.instanceId;
   const key = session.account?.id ?? session.orgId ?? null;
+  const issuer = session.account?.issuer;
   return {
     instanceId: id && id.trim() !== '' ? id : null,
     accountKey: key && key.trim() !== '' ? key : null,
+    ...(issuer ? { issuer } : {}),
   };
 }
 
