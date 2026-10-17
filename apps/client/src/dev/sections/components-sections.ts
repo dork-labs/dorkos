@@ -51,13 +51,6 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['label', 'tag', 'chip', 'status', 'pill'],
   },
   {
-    id: 'hoverbordergradient',
-    title: 'HoverBorderGradient',
-    page: 'components',
-    category: 'Buttons',
-    keywords: ['gradient', 'animated', 'border', 'hover', 'aceternity'],
-  },
-  {
     id: 'kbd',
     title: 'Kbd',
     page: 'components',

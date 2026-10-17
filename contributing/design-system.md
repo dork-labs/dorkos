@@ -88,7 +88,6 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 **Where brand orange appears:**
 
 - Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
-- `HoverBorderGradient` — the onboarding CTA, the first branded moment users see
 - `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
 - Sidebar active tab indicator — subtle brand presence in navigation
 - Assistant message links and inline code — via `--ring`
