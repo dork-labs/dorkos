@@ -52,6 +52,9 @@ describe('managed OAuth policy envelope', () => {
     { is_connection_revoke_supported: 'true' },
     { unknown_policy: true },
     { shared_credentials: { token: 'PRIVATE_SENTINEL' } },
+    { shared_connection_fields: { api_key: 'PRIVATE_SENTINEL' } },
+    { shared_connection_fields: null },
+    { shared_connection_fields: [] },
     { proxy_config: { proxy_url: 'https://evil.test' } },
     { tool_access_config: { tools_available_for_execution: ['WRITE'] } },
     { restrict_to_following_tools: ['WRITE'] },
@@ -221,5 +224,76 @@ describe('custom account-field policy envelope', () => {
     expect(
       matchesComposioAutomaticAuthenticationPolicy(config, toolkit, blueprint('API_KEY'))
     ).toBe(false);
+  });
+});
+
+// The exact envelope Composio returned on 2026-10-17 when the hosted service
+// read back the Vercel and Cloudflare API-key configs it had just created
+// (only the ids, names and timestamps are synthetic). The new top-level
+// `shared_connection_fields: {}` made every config read look unknown, so each
+// sign-in start was refused before it reached the browser.
+describe('config read with shared connection fields', () => {
+  const read = (slug: string, sharedConnectionFields: unknown = {}) => ({
+    auth_scheme: 'API_KEY',
+    created_at: '2026-10-17T22:23:39.197Z',
+    created_by: '00000000-0000-0000-0000-000000000000',
+    credentials: { scopes: [], user_scopes: [] },
+    expected_input_fields: [
+      {
+        description: 'Your API key',
+        displayName: 'API Key',
+        is_available_as_shared_credentials: false,
+        is_secret: true,
+        legacy_template_name: 'api_key',
+        name: 'generic_api_key',
+        required: true,
+        type: 'string',
+        user_visible: true,
+      },
+    ],
+    id: 'ac_synthetic',
+    is_composio_managed: false,
+    is_enabled_for_tool_router: false,
+    last_updated_at: '2026-10-17T22:23:39.197Z',
+    name: `dorkos-default-v1-${slug}-synthetic`,
+    no_of_connections: 0,
+    restrict_to_following_tools: [],
+    shared_connection_fields: sharedConnectionFields,
+    shared_credentials: {},
+    status: 'ENABLED',
+    tool_access_config: {
+      tools_for_connected_account_creation: [],
+      tools_available_for_execution: [],
+    },
+    toolkit: { slug },
+    type: 'custom',
+    uuid: '00000000-0000-0000-0000-000000000000',
+  });
+
+  it.each(['vercel', 'cloudflare'])('accepts the empty %s config read', (slug) => {
+    expect(projectComposioAuthenticationConfigPolicy(read(slug))).toEqual({
+      type: 'custom',
+      scopes: [],
+      userScopes: [],
+      credentialsEmpty: true,
+      routerEnabled: false,
+    });
+  });
+
+  it('accepts the same key on a managed OAuth config read', () => {
+    expect(
+      projectComposioAuthenticationConfigPolicy({ ...canonical(), shared_connection_fields: {} })
+    ).toBeDefined();
+  });
+
+  it.each([
+    { api_key: 'PRIVATE_SENTINEL' },
+    { subdomain: 'acme' },
+    { api_key: '' },
+    null,
+    [],
+    'PRIVATE_SENTINEL',
+  ])('refuses shared connection fields %j', (fields) => {
+    expect(projectComposioAuthenticationConfigPolicy(read('vercel', fields))).toBeUndefined();
   });
 });
