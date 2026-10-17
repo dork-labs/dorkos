@@ -71,11 +71,16 @@ function call(route: string, init: { method?: string; cookie?: string; body?: un
   );
 }
 
+/** The cookies a browser keeps from a response: the last one set under each name wins. */
 function cookiesOf(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
+  const kept = new Map<string, string>();
+  for (const value of response.headers.getSetCookie()) {
+    const pair = value.split(';')[0]!;
+    const name = pair.slice(0, pair.indexOf('='));
+    if (pair.endsWith('=')) kept.delete(name);
+    else kept.set(name, pair);
+  }
+  return [...kept.values()].join('; ');
 }
 
 /** Drive a whole sign-in as a browser would; returns the callback's answer. */
@@ -145,6 +150,8 @@ describe('continue with DorkOS on a hub', () => {
     expect(set.some((c) => c.startsWith(`${PUBLIC_COMPUTER_MARKER}=;`))).toBe(true);
     const who = await auth.api.getSession({ headers: new Headers({ cookie }) });
     expect(who?.user.email).toBe('owner@hub-1.example.invalid');
+    // What the app is told, from the cookie cache it reads first, says so too.
+    expect((who?.session as { publicComputer?: boolean }).publicComputer).toBe(true);
     const row = db
       .select()
       .from(session)

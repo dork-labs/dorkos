@@ -29,6 +29,7 @@ function wrapperFor(publicComputer: boolean, signOut: ReturnType<typeof vi.fn>) 
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   reload.mockReset();
   vi.stubGlobal('location', { ...window.location, reload });
@@ -59,6 +60,34 @@ describe('signing out a public computer left idle', () => {
     window.dispatchEvent(new Event('keydown'));
     await act(async () => vi.advanceTimersByTimeAsync(PUBLIC_COMPUTER_IDLE_MS - 1_000));
     expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('keeps a session in use in another tab', async () => {
+    const signOut = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+    renderHook(() => usePublicComputerIdleSignOut(), { wrapper: wrapperFor(true, signOut) });
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    await act(async () => vi.advanceTimersByTimeAsync(PUBLIC_COMPUTER_IDLE_MS - 1_000));
+    // Another tab records that someone is using it.
+    window.localStorage.setItem('dorkos.publicComputer.lastActivity', String(Date.now()));
+    await act(async () => vi.advanceTimersByTimeAsync(PUBLIC_COMPUTER_IDLE_MS - 1_000));
+    expect(signOut).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('tries again, without reloading, when the sign-out fails', async () => {
+    const signOut = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'offline', status: 0 } })
+      .mockResolvedValue({ data: { success: true }, error: null });
+    renderHook(() => usePublicComputerIdleSignOut(), { wrapper: wrapperFor(true, signOut) });
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    await act(async () => vi.advanceTimersByTimeAsync(PUBLIC_COMPUTER_IDLE_MS + 1_000));
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(61_000));
+    expect(signOut).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalled();
   });
 
   it('never signs out an ordinary session', async () => {

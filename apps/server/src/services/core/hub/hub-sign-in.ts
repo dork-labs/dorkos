@@ -362,7 +362,11 @@ export function hubSignInPlugin(
             });
             await setSessionCookie(
               ctx,
-              { session: { ...created.session, expiresAt }, user: created.user },
+              // The cached copy the app reads first must say so too.
+              {
+                session: { ...created.session, expiresAt, publicComputer: true },
+                user: created.user,
+              },
               true
             );
             ctx.setCookie(PUBLIC_COMPUTER_MARKER, '', {

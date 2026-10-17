@@ -249,10 +249,27 @@ export const PUBLIC_COMPUTER_IDLE_MS = 30 * 60 * 1000;
 /** What counts as someone using the page. */
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
 
+/** Where every tab records when someone last used one of them. */
+const LAST_ACTIVITY_KEY = 'dorkos.publicComputer.lastActivity';
+
+/** How often a tab writes that it is in use, at most. */
+const ACTIVITY_WRITE_MS = 5_000;
+
+/** How long to wait before trying a sign-out that failed again. */
+const SIGN_OUT_RETRY_MS = 60_000;
+
+/** When someone last used any tab on this DorkOS, or `fallback` when unknown. */
+function lastActivity(fallback: number): number {
+  const stored = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY));
+  return Number.isFinite(stored) && stored > 0 ? Math.max(stored, fallback) : fallback;
+}
+
 /**
  * Sign a public-computer session out after {@link PUBLIC_COMPUTER_IDLE_MS}
- * with nobody using the page, then reload to the sign-in screen. Does nothing
- * for any other session. Mounted once, by the {@link AuthGuard}.
+ * with nobody using it, in any tab, then reload to the sign-in screen. Every
+ * tab records use in one shared place, so a tab nobody looks at never signs
+ * out the one in use. Does nothing for any other session. Mounted once, by the
+ * {@link AuthGuard}.
  */
 export function usePublicComputerIdleSignOut(): void {
   const { data } = useAuthSession();
@@ -262,18 +279,34 @@ export function usePublicComputerIdleSignOut(): void {
   useEffect(() => {
     if (!publicComputer) return;
     let timer: ReturnType<typeof setTimeout>;
-    const signOut = () => {
-      void client.signOut().finally(() => window.location.reload());
+    let seen = Date.now();
+    let written = 0;
+    const record = () => {
+      seen = Date.now();
+      if (seen - written < ACTIVITY_WRITE_MS) return;
+      written = seen;
+      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(seen));
     };
-    const restart = () => {
-      clearTimeout(timer);
-      timer = setTimeout(signOut, PUBLIC_COMPUTER_IDLE_MS);
+    const check = () => {
+      const idleFor = Date.now() - lastActivity(seen);
+      if (idleFor < PUBLIC_COMPUTER_IDLE_MS) {
+        timer = setTimeout(check, PUBLIC_COMPUTER_IDLE_MS - idleFor);
+        return;
+      }
+      void client.signOut().then(
+        ({ error }) => {
+          if (error) timer = setTimeout(check, SIGN_OUT_RETRY_MS);
+          else window.location.reload();
+        },
+        () => (timer = setTimeout(check, SIGN_OUT_RETRY_MS))
+      );
     };
-    restart();
-    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, restart, { passive: true });
+    record();
+    timer = setTimeout(check, PUBLIC_COMPUTER_IDLE_MS);
+    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, record, { passive: true });
     return () => {
       clearTimeout(timer);
-      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, restart);
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, record);
     };
   }, [publicComputer, client]);
 }
