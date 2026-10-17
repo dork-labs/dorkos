@@ -208,9 +208,46 @@ function titleFor(name, raw) {
   return name.replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
+// What the jump list and auto-advance need: every screen's title, whether a
+// Send went out from it, and whether it has a thumbnail.
+function screenIndex(screens, events) {
+  const sent = new Set(events.filter((e) => e.type === 'send').map((e) => e.screen));
+  return screens.map((s) => ({
+    name: s.name,
+    title: titleFor(s.name, read(path.join(CONTENT_DIR, s.file))),
+    sent: sent.has(s.name),
+    shot: fs.existsSync(path.join(SHOTS_DIR, s.name + '.light.png')),
+  }));
+}
+
+// A screen's saved picks (the last `select` event) and what was last sent from
+// it, so navigating away and back restores the page as the person left it.
+function savedFor(name, events) {
+  let choices = null;
+  let sent = null;
+  let sentAt = null;
+  let sentLabels = null;
+  let sentMessage = null;
+  for (const e of events) {
+    if (e.screen !== name) continue;
+    if (e.type === 'select' && Array.isArray(e.choices)) choices = e.choices;
+    if (e.type === 'send') {
+      const sel = Array.isArray(e.selection) ? e.selection : [];
+      sent = sel.map((x) => x.choice);
+      sentLabels = sel.map((x) => x.label || x.choice);
+      sentAt = e.timestamp || null;
+      sentMessage = e.message || null;
+    }
+  }
+  return { choices, sent, sentAt, sentLabels, sentMessage };
+}
+
 function boot(screen, screens, raw) {
   const index = screen ? screens.findIndex((s) => s.name === screen.name) : -1;
+  const events = readEvents();
   return {
+    screens: screenIndex(screens, events),
+    saved: screen ? savedFor(screen.name, events) : savedFor(null, []),
     v: VERSION,
     session: SESSION_ID,
     screen: screen ? screen.name : null,
@@ -619,7 +656,7 @@ function readBody(req, cb) {
 function handleRequest(req, res) {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
-  const tail = p.replace(/^.*\/(vc\/[^/]+|files\/[^/]+)$/, '$1');
+  const tail = p.replace(/^.*\/(vc\/shot\/[^/]+|vc\/[^/]+|files\/[^/]+)$/, '$1');
   // Polls and health checks are not activity: an open tab shouldn't keep the server up forever.
   const passive = tail === 'vc/state' || tail === 'vc/health';
   if (!passive) touchActivity();
@@ -642,6 +679,12 @@ function handleRequest(req, res) {
   if (req.method === 'GET' && tail === 'vc/state') return send(res, 200, statePayload());
   if (req.method === 'GET' && tail === 'vc/pins')
     return send(res, 200, pinsFor(url.searchParams.get('screen')));
+  if (req.method === 'GET' && tail.startsWith('vc/shot/')) {
+    const f = path.join(SHOTS_DIR, path.basename(decodeURIComponent(tail.slice(8))));
+    if (!f.endsWith('.png') || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+    return fs.createReadStream(f).pipe(res);
+  }
   if (req.method === 'GET' && tail === 'vc/app.css') {
     if (!fs.existsSync(APP_CSS_FILE))
       return send(res, 404, 'app.css is not built yet: run scripts/vc build', 'text/plain');

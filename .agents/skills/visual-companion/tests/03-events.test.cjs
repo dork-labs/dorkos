@@ -53,10 +53,16 @@ test('a click on a choice is recorded with its screen; vc events reads only what
   await page.locator('[data-choice="a"]').focus();
   await page.keyboard.press(' ');
   await waitFor(() => events(dir).filter((e) => e.type === 'click').length === 2);
-  const first = vc(dir, ['events'], { raw: true }).stdout.trim().split('\n');
-  assert.equal(first.length, 2);
+  // Each pick also saves the screen's selection (a `select` event).
+  const clicksIn = (out) =>
+    out
+      .trim()
+      .split('\n')
+      .filter((l) => JSON.parse(l).type === 'click').length;
+  await waitFor(() => events(dir).filter((e) => e.type === 'select').length === 2);
+  assert.equal(clicksIn(vc(dir, ['events'], { raw: true }).stdout), 2);
   assert.equal(vc(dir, ['events'], { raw: true }).stdout.trim(), '', 'cursor advanced');
-  assert.equal(vc(dir, ['events', '--all'], { raw: true }).stdout.trim().split('\n').length, 2);
+  assert.equal(clicksIn(vc(dir, ['events', '--all'], { raw: true }).stdout), 2);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -180,7 +186,7 @@ test('on a vc-wake screen, Send wakes the chat that ran vc show, once, with sele
     50,
     'send bar shows B'
   );
-  assert.equal((await page.locator('.vc-send-btn').textContent()).trim(), 'Send to Tester');
+  assert.equal((await page.locator('.vc-send-btn').textContent()).trim(), 'Send to @Tester');
   assert.equal(await page.locator('[data-choice="b"]').getAttribute('aria-label'), 'B · Busy');
   await page.waitForTimeout(1200);
   assert.equal(stub.calls.length, 0, 'clicks alone never wake the agent');
