@@ -30,6 +30,9 @@ export { MODELS_KEY } from './models-query-key';
 export {
   getAuthRequired,
   setAuthRequired,
+  getSignInWith,
+  setSignInWith,
+  type SignInWith,
   subscribeAuthRequired,
   getOwnerSetupRequest,
   requestOwnerSetup,

@@ -11,6 +11,7 @@ import type { AuthClient } from '../model/auth-client';
 /** Build a fake {@link AuthClient}; override any leaf method per test. */
 export function createFakeAuthClient(overrides?: {
   signInEmail?: AuthClient['signIn']['email'];
+  signInSocial?: AuthClient['signIn']['social'];
   signUpEmail?: AuthClient['signUp']['email'];
   getSession?: AuthClient['getSession'];
   apiKeyCreate?: AuthClient['apiKey']['create'];
@@ -21,6 +22,12 @@ export function createFakeAuthClient(overrides?: {
   return {
     signIn: {
       email: overrides?.signInEmail ?? vi.fn().mockResolvedValue({ data: null, error: null }),
+      social:
+        overrides?.signInSocial ??
+        vi.fn().mockResolvedValue({
+          data: { url: 'https://id.example/authorize', redirect: true },
+          error: null,
+        }),
     },
     signUp: {
       email:

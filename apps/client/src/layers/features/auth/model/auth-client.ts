@@ -79,6 +79,15 @@ export interface ApiKeyList {
 /** The auth client surface consumed by this slice's hooks. Mirrors `better-auth/client`. */
 export interface AuthClient {
   signIn: {
+    /**
+     * Start a sign-in with another account (on a person's own DorkOS in the
+     * cloud, their DorkOS account): answers where to send the browser.
+     */
+    social(input: {
+      provider: string;
+      callbackURL: string;
+      errorCallbackURL: string;
+    }): Promise<AuthResult<{ url: string; redirect: boolean }>>;
     email(input: {
       email: string;
       password: string;
@@ -159,6 +168,7 @@ export function createAuthRestClient(baseUrl: string): AuthClient {
   return {
     signIn: {
       email: (input) => request('POST', '/sign-in/email', input),
+      social: (input) => request('POST', '/sign-in/social', input),
     },
     signUp: {
       email: (input, options) =>

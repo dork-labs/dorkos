@@ -27,6 +27,29 @@ type Listener = () => void;
 let authRequired = false;
 const authRequiredListeners = new Set<Listener>();
 
+/**
+ * How the server said to sign in: this DorkOS's own form, or a DorkOS account
+ * (`signInWith: 'dorkos'` on the `401`, a person's own DorkOS in the cloud).
+ */
+export type SignInWith = 'password' | 'dorkos';
+
+let signInWith: SignInWith = 'password';
+
+/** How the server last said to sign in. */
+export function getSignInWith(): SignInWith {
+  return signInWith;
+}
+
+/**
+ * Record how the server said to sign in. Set before {@link setAuthRequired},
+ * whose listeners read it.
+ *
+ * @param value - What the `401` named.
+ */
+export function setSignInWith(value: SignInWith): void {
+  signInWith = value;
+}
+
 /** Whether a gated request has reported that login is required. */
 export function getAuthRequired(): boolean {
   return authRequired;

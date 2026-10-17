@@ -38,6 +38,7 @@ import { getAuth } from './index.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -235,11 +236,22 @@ export async function verifyRequestAuth(
 /** The body of the session gate's `401`. */
 export const AUTH_REQUIRED_BODY = { error: 'Unauthorized', code: 'AUTH_REQUIRED' } as const;
 
+/**
+ * The session gate's `401`, saying how to sign in: on a hub, with a DorkOS
+ * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords.
+ * Elsewhere the app's own sign-in form.
+ */
+export function authRequiredBody(): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' } {
+  return currentServerRole() === 'hub'
+    ? { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' }
+    : AUTH_REQUIRED_BODY;
+}
+
 /** What the session gate decided about one request. */
 export type SessionGateDecision =
   /** Let it through. `user` is set when the gate proved who is calling. */
   | { allowed: true; user?: RequestUser }
-  /** Answer `401` with {@link AUTH_REQUIRED_BODY}. */
+  /** Answer `401` with {@link authRequiredBody}. */
   | { allowed: false };
 
 /**

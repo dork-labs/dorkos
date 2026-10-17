@@ -47,7 +47,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import type { AuditActorContext } from '../services/audit/audit-context.js';
 import { runWithAuditActor } from '../services/audit/audit-context.js';
-import { decideSessionGate, AUTH_REQUIRED_BODY } from '../services/core/auth/session-gate.js';
+import { decideSessionGate, authRequiredBody } from '../services/core/auth/session-gate.js';
 import { noteGateAdmitted } from '../services/core/remote/ingress-mark.js';
 import { resolveAgentIdentityFromHeaders } from '../middleware/agent-identity.js';
 import { auditActorForRequest } from '../middleware/audit-actor.js';
@@ -191,7 +191,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     noteForeignOrigin(facts, requestClass);
     const access = decideGateAccess(requestClass, readGatePosture());
     const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
-    if (!decision.allowed) return c.json(AUTH_REQUIRED_BODY, 401);
+    if (!decision.allowed) return c.json(authRequiredBody(), 401);
     if (decision.user) c.set('user', decision.user);
     noteGateAdmitted(c.env.incoming, c.env.outgoing);
     await next();

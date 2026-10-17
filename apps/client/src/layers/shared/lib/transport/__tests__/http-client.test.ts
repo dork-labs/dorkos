@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
 import { createProfileMethods } from '../profile-methods';
-import { getAuthRequired, setAuthRequired } from '../../auth-signal';
+import { getAuthRequired, getSignInWith, setAuthRequired, setSignInWith } from '../../auth-signal';
 import {
   confirmCommunityAuthority,
   getCommunityAuthority,
@@ -104,6 +104,20 @@ describe('fetchJSON', () => {
     expect(getAuthRequired()).toBe(false);
     await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
     expect(getAuthRequired()).toBe(true);
+  });
+
+  it('remembers how the 401 says to sign in: a DorkOS account, else the form', async () => {
+    const answer = (body: object) =>
+      vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 401 }));
+    answer({ error: 'Unauthorized', code: 'AUTH_REQUIRED', signInWith: 'dorkos' });
+    await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
+    expect(getSignInWith()).toBe('dorkos');
+    answer({ error: 'Unauthorized', code: 'AUTH_REQUIRED', signInWith: 'something-else' });
+    await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
+    expect(getSignInWith()).toBe('password');
+    setSignInWith('password');
   });
 
   it('does not flip the auth-required signal on other 401s', async () => {

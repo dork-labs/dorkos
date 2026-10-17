@@ -33,10 +33,12 @@ export {
   useAuthSession,
   useCurrentUser,
   useSignIn,
+  useContinueWithDorkOS,
+  DORKOS_SIGN_IN_FAILED,
   useSignUp,
   useSignOut,
   authSessionKey,
   type AuthActionResult,
 } from './model/use-auth-session';
 export { useApiKeys, useCreateApiKey, useRevokeApiKey, apiKeysKey } from './model/use-api-keys';
-export { useAuthRequired, useOwnerSetupRequest } from './model/use-auth-signal';
+export { useAuthRequired, useOwnerSetupRequest, useSignInWith } from './model/use-auth-signal';
