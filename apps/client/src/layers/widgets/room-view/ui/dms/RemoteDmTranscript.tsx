@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import type { RemoteCommunityDm } from '@dorkos/shared/community-dm-views';
 import { useRemoteCommunityAgentDmEntries } from '@/layers/entities/community';
 import { Button } from '@/layers/shared/ui';
@@ -36,6 +37,14 @@ export function RemoteDmTranscript({
   access: string;
 }) {
   const entries = useRemoteCommunityAgentDmEntries(dm.community, dm.roomId, localAgentId, access);
+  const scroller = useRef<HTMLElement>(null);
+  const atBottom = useRef(true);
+  const newest = entries.data?.entries.at(-1)?.id;
+  // Open on the newest message, and follow new ones while the reader is at the bottom.
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    if (box && atBottom.current) box.scrollTop = box.scrollHeight;
+  }, [newest]);
   const target: ConversationTarget = {
     kind: 'room',
     id: JSON.stringify([dm.community, dm.roomId, 'read-only']),
@@ -48,7 +57,7 @@ export function RemoteDmTranscript({
   return (
     <Conversation.Root surface="room" capabilities={READ_ONLY} target={target}>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="border-b px-4 py-2 text-sm" aria-label="About this direct message">
+        <section className="border-b px-4 py-2 text-sm" aria-label="About this direct message">
           <p>
             <span className="font-medium">{`${dm.member.displayName} with ${dm.agent.displayName}`}</span>
             <span className="text-muted-foreground"> · Read-only</span>
@@ -56,8 +65,16 @@ export function RemoteDmTranscript({
           <p className="text-muted-foreground text-xs">
             {`Only ${dm.member.displayName} and ${dm.agent.displayName} can post here.`}
           </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto py-2" aria-label="Messages">
+        </section>
+        <section
+          ref={scroller}
+          onScroll={(event) => {
+            const box = event.currentTarget;
+            atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+          }}
+          className="min-h-0 flex-1 overflow-auto py-2"
+          aria-label="Messages"
+        >
           {entries.isError && (
             <p role="alert" className="px-4 text-sm">
               Couldn’t load this direct message.{' '}
@@ -72,7 +89,7 @@ export function RemoteDmTranscript({
           {entries.data?.entries.map((entry) => (
             <RemoteCommunityMessage key={entry.id} entry={entry} />
           ))}
-        </div>
+        </section>
       </div>
     </Conversation.Root>
   );

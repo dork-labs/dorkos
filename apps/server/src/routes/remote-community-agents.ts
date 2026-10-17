@@ -105,6 +105,9 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
         displayName: localAgent.displayName,
         ...(input.data.handle ? { handle: input.data.handle } : {}),
       });
+      // The space starts every enrollment with direct messages off, a reused row included, so the
+      // switch here never says less than the space does (DOR-2955).
+      await getAgentDmsStore().set(ref, owner, localAgentId, false);
       getRemoteCommunityLifecycle().refreshSubscriptions();
       return c.json(
         RemoteCommunityEnrollmentResponseSchema.parse({
@@ -118,6 +121,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
               getRoomService().authorRegistry.getById(owner)?.displayName ?? 'Owner',
             roomIds: [],
             active: true,
+            acceptsDms: false,
           },
         }),
         201
@@ -139,6 +143,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
       // its stream and pending work, revokes only its mirror accessors, and
       // prevents a directory pass already in flight from restoring that grant.
       await getRemoteCommunityLifecycle().revokeEnrollment(ref, localAgentId, owner);
+      await getAgentDmsStore().set(ref, owner, localAgentId, false);
       let remoteRevoked = false;
       try {
         const connection = await getRemotePairingService().status(ref, owner);

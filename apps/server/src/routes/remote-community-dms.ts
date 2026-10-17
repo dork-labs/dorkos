@@ -6,8 +6,9 @@
  * - `POST /:ref/dms {agentMemberId}`: the person starts one with an agent, or finds it.
  * - `PUT /:ref/agents/:localAgentId/dms {accepts}`: the owner turns one of their agents' direct
  *   messages on or off.
- * - `GET /:ref/dms/:roomId/entries?agent=`: the owner reads one of their agents' direct messages,
- *   with that agent's credential; the space decides whether the agent is in it.
+ * - `GET /:ref/dms/:roomId/entries?agent=&after=`: the owner reads one of their agents' direct
+ *   messages, with that agent's credential: the newest page, or what came after `after`. Only a
+ *   room that is one of that agent's direct messages is read.
  *
  * Reading and posting in the person's own direct message use the ordinary room routes, since its
  * id is a channel id. Every call goes through the owner's verified connection, and no credential
@@ -27,8 +28,14 @@ import {
 } from '@dorkos/shared/community-dm-views';
 import { RemoteCommunityHistoryResponseSchema } from '@dorkos/shared/community-views';
 import type { CommunityWireDirectMessage } from '@dorkos/shared/community-wire';
-import type { CommunityRef } from '@dorkos/shared/community-adapter';
+import {
+  CommunityCursorSchema,
+  type CommunityCursor,
+  type CommunityEntry,
+  type CommunityRef,
+} from '@dorkos/shared/community-adapter';
 import type { ApiEnv } from '../http/api-chain.js';
+import { logger } from '../lib/logger.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import {
@@ -66,6 +73,41 @@ function project(
   };
 }
 
+/** The most entries the owner's read-only copy holds, the history page's own limit. */
+const TAIL = 100;
+/** How many pages a first read follows to reach the newest; the poll catches up past it. */
+const MAX_PAGES = 200;
+
+type DmAdapter = ReturnType<typeof getRemoteCommunityAdapter>;
+
+/**
+ * The newest entries of a direct message, read as its agent: from `after` when given, else
+ * following the space's oldest-first pages to the end. Returns at most {@link TAIL}, oldest first,
+ * and the cursor to continue from when the read stopped before the end.
+ */
+async function readTail(
+  adapter: DmAdapter,
+  roomId: string,
+  actingMemberId: string,
+  after: CommunityCursor | undefined
+): Promise<{ entries: CommunityEntry[]; nextCursor: CommunityCursor | null }> {
+  let cursor = after;
+  let tail: CommunityEntry[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const read = await adapter.listEntriesWithThreadRoot(roomId, {
+      limit: TAIL,
+      actingMemberId,
+      ...(cursor ? { cursor } : {}),
+    });
+    tail = [...tail, ...read.entries].slice(-TAIL);
+    if (!read.nextCursor) return { entries: tail, nextCursor: null };
+    cursor = read.nextCursor;
+    // A poll asks only for what is new: one page, and the cursor for the rest.
+    if (after) return { entries: tail, nextCursor: cursor };
+  }
+  return { entries: tail, nextCursor: cursor ?? null };
+}
+
 /** A space's refusal to reach an agent that takes no direct messages, said plainly. */
 function notTakingDms(c: Context, error: unknown): Response | null {
   if (!(error instanceof PinnedHttpError) || error.remoteCode !== AGENT_NOT_TAKING_DMS) return null;
@@ -96,12 +138,24 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
       const own = (await adapter.listDirectMessages()).map((dm) => project(ref, dm, null));
       const seen = new Set(own.map((dm) => dm.roomId));
       const agents: RemoteCommunityDm[] = [];
+      let incomplete = false;
       for (const enrollment of getRemoteCommunityEnrollmentStore().activeForOwner(ref, owner)) {
         // Someone else's direct message with this install's agent: read through the agent, and
-        // never the owner's own, which is already listed above with its composer.
-        for (const dm of await adapter.listDirectMessages({
-          actingMemberId: enrollment.remoteMemberId,
-        })) {
+        // never the owner's own, which is already listed above with its composer. One agent
+        // whose read fails is left out, and the rest are still listed.
+        let theirs: CommunityWireDirectMessage[];
+        try {
+          theirs = await adapter.listDirectMessages({ actingMemberId: enrollment.remoteMemberId });
+        } catch (error) {
+          incomplete = true;
+          logger.warn("[remote-community-dms] couldn't list an agent's direct messages", {
+            communityRef: ref,
+            localAgentId: enrollment.localAgentId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+        for (const dm of theirs) {
           if (seen.has(dm.id)) continue;
           seen.add(dm.id);
           agents.push(project(ref, dm, { localAgentId: enrollment.localAgentId }));
@@ -112,6 +166,7 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
           community: ref,
           available,
           dms: [...own, ...agents],
+          ...(incomplete ? { incomplete } : {}),
         })
       );
     } catch (error) {
@@ -176,13 +231,18 @@ export function registerRemoteCommunityDmRoutes(router: Hono<ApiEnv>): void {
       .activeForOwner(ref, owner)
       .find((item) => item.localAgentId === query.agent);
     if (!enrollment) return c.json({ error: 'Agent not found in this space.' }, 404);
+    const after = query.after ? CommunityCursorSchema.safeParse(query.after) : undefined;
+    if (after && !after.success) return c.json({ error: 'Use a valid cursor.' }, 400);
     try {
       await verifiedConnection(ref, owner, 'read');
-      // Read as the agent: the space answers only for a direct message the agent is in.
-      const page = await getRemoteCommunityAdapter(ref, owner).listEntriesWithThreadRoot(roomId, {
-        limit: 100,
+      const adapter = getRemoteCommunityAdapter(ref, owner);
+      // Only one of this agent's direct messages: never a channel the agent happens to be in.
+      const theirs = await adapter.listDirectMessages({
         actingMemberId: enrollment.remoteMemberId,
       });
+      if (!theirs.some((dm) => dm.id === roomId))
+        return c.json({ error: 'Direct message not found.' }, 404);
+      const page = await readTail(adapter, roomId, enrollment.remoteMemberId, after?.data);
       const entries = page.entries.map((entry) => remoteEntry(entry, owner));
       return c.json(
         RemoteCommunityHistoryResponseSchema.parse({

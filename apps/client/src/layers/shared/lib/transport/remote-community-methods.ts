@@ -285,12 +285,12 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
         throw new Error('The space returned a different agent.');
       return result;
     },
-    async listRemoteCommunityAgentDmEntries(ref, roomId, localAgentId) {
+    async listRemoteCommunityAgentDmEntries(ref, roomId, localAgentId, after) {
       return qualified(
         RemoteCommunityHistoryResponseSchema.parse(
           await fetchJSON(
             baseUrl,
-            `${communityPath(ref)}/dms/${encodeURIComponent(roomId)}/entries${buildQueryString({ agent: localAgentId })}`
+            `${communityPath(ref)}/dms/${encodeURIComponent(roomId)}/entries${buildQueryString({ agent: localAgentId, after })}`
           )
         ),
         ref,

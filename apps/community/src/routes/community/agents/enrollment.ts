@@ -137,7 +137,7 @@ export function registerAgentRoutes(
       if (reusable) await adoptAgent(client, reusable, member.grant_id, member.community_id);
       const agent = reusable
         ? await client.query<AgentRow>(
-            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$3,runs_on=NULL,last_seen_at=NULL WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
+            'UPDATE agents SET active=true,accepts_dms=false,revoked_at=NULL,display_name=$3,runs_on=NULL,last_seen_at=NULL WHERE id=$1 AND community_id=$2 RETURNING id,display_name,handle,owner_member_id,active',
             [reusable.id, member.community_id, body.displayName]
           )
         : await (async () => {
@@ -398,7 +398,7 @@ export function registerAgentRoutes(
       if (owner && owner.rows[0].role !== 'member')
         throw new ApiError(403, 'FORBIDDEN', 'You cannot remove this agent.');
       await client.query(
-        'UPDATE agents SET active=false,revoked_at=now() WHERE id=$1 AND community_id=$2',
+        'UPDATE agents SET active=false,accepts_dms=false,revoked_at=now() WHERE id=$1 AND community_id=$2',
         [id, actor.community_id]
       );
       await client.query(

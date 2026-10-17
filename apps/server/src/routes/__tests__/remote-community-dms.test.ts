@@ -20,10 +20,14 @@ const fixture = vi.hoisted(() => {
     listDirectMessages: vi.fn(async (_context?: { actingMemberId: string }) => [] as unknown[]),
     startDirectMessage: vi.fn(),
     setAgentDirectMessages: vi.fn(async (_id: string, accepts: boolean) => accepts),
-    listEntriesWithThreadRoot: vi.fn(async () => ({ entries: [], nextCursor: null })),
+    listEntriesWithThreadRoot: vi.fn(
+      async (_roomId: string, _opts?: { cursor?: string; limit?: number }) =>
+        ({ entries: [], nextCursor: null }) as { entries: unknown[]; nextCursor: string | null }
+    ),
   };
   const enrollments = [
     { localAgentId: 'local-ana', remoteMemberId: 'remote-ana', ownerAuthorId: 'owner-a' },
+    { localAgentId: 'local-cy', remoteMemberId: 'remote-cy', ownerAuthorId: 'owner-a' },
   ];
   const dmsStore = { set: vi.fn(async () => undefined), get: vi.fn(async () => []) };
   return { ref, full, adapter, enrollments, dmsStore };
@@ -66,11 +70,31 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 import { createRemoteCommunitiesRoutes } from '../remote-communities.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { PinnedHttpError } from '../../services/communities/remote/pinned-origin.js';
+import { entry as projectEntry } from '../../services/communities/remote/adapter/remote-community-projection.js';
 
 const server = listeningServer(
   honoGroupListener({ path: '/api/communities', routes: createRemoteCommunitiesRoutes() })
 );
 const base = `/api/communities/${fixture.ref}`;
+
+/** One message in the space, as the adapter projects it. */
+function spaceEntry(seq: number) {
+  return projectEntry(fixture.ref, {
+    id: `e-${seq}`,
+    channelId: 'dm-bo-ana',
+    seq,
+    authorMemberId: 'human-b',
+    authorDisplayName: 'Bo',
+    authorKind: 'human',
+    text: `message ${seq}`,
+    mentions: [],
+    parentEntryId: null,
+    threadRootEntryId: null,
+    cursor: `c-${seq}`,
+    createdAt: '2026-10-16T00:00:00.000Z',
+    attachments: [],
+  });
+}
 
 function wireDm(id: string, member: string, agent = 'remote-ana'): CommunityWireDirectMessage {
   return {
@@ -160,14 +184,66 @@ describe('direct messages in a space, through this computer', () => {
     expect(stranger.status).toBe(404);
   });
 
+  it('lists the rest when one agent’s direct messages can’t be read, and says so', async () => {
+    fixture.adapter.listDirectMessages.mockImplementation(async (context) => {
+      if (context?.actingMemberId === 'remote-cy') throw new Error('agent token refused');
+      return context ? [wireDm('dm-bo-ana', 'human-b')] : [];
+    });
+    const response = await request(server).get(`${base}/dms`);
+    expect(response.status).toBe(200);
+    expect(response.body.incomplete).toBe(true);
+    expect(response.body.dms.map((dm: { roomId: string }) => dm.roomId)).toEqual(['dm-bo-ana']);
+  });
+
   it('reads one of the owner’s agents’ direct messages through that agent', async () => {
+    fixture.adapter.listDirectMessages.mockResolvedValue([wireDm('dm-bo-ana', 'human-b')]);
     const response = await request(server).get(`${base}/dms/dm-bo-ana/entries?agent=local-ana`);
     expect(response.status).toBe(200);
     expect(fixture.adapter.listEntriesWithThreadRoot).toHaveBeenCalledWith('dm-bo-ana', {
       limit: 100,
       actingMemberId: 'remote-ana',
     });
-    const other = await request(server).get(`${base}/dms/dm-bo-ana/entries?agent=local-cy`);
+    const other = await request(server).get(`${base}/dms/dm-bo-ana/entries?agent=local-nobody`);
     expect(other.status).toBe(404);
+  });
+
+  it('reads only a room that is one of that agent’s direct messages', async () => {
+    fixture.adapter.listDirectMessages.mockResolvedValue([wireDm('dm-bo-ana', 'human-b')]);
+    const channel = await request(server).get(`${base}/dms/general/entries?agent=local-ana`);
+    expect(channel.status).toBe(404);
+    expect(fixture.adapter.listEntriesWithThreadRoot).not.toHaveBeenCalled();
+  });
+
+  it('opens on the newest page of a long one, and a poll asks only for what came after', async () => {
+    fixture.adapter.listDirectMessages.mockResolvedValue([wireDm('dm-bo-ana', 'human-b')]);
+    // 250 entries in the space's oldest-first pages of 100.
+    const all = Array.from({ length: 250 }, (_, i) => spaceEntry(i + 1));
+    fixture.adapter.listEntriesWithThreadRoot.mockImplementation(
+      async (_room: string, opts?: { cursor?: string }) => {
+        const from = opts?.cursor ? Number(String(opts.cursor).slice('c-'.length)) : 0;
+        const entries = all.slice(from, from + 100);
+        return {
+          entries,
+          nextCursor: from + 100 < all.length ? `c-${from + 100}` : null,
+        } as never;
+      }
+    );
+    const opened = await request(server).get(`${base}/dms/dm-bo-ana/entries?agent=local-ana`);
+    expect(opened.status).toBe(200);
+    expect(opened.body.entries).toHaveLength(100);
+    expect(opened.body.entries[0].text).toBe('message 151');
+    expect(opened.body.entries.at(-1).text).toBe('message 250');
+
+    const polled = await request(server).get(
+      `${base}/dms/dm-bo-ana/entries?agent=local-ana&after=c-240`
+    );
+    expect(polled.body.entries.map((e: { text: string }) => e.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `message ${241 + i}`)
+    );
+    expect(fixture.adapter.listEntriesWithThreadRoot).toHaveBeenLastCalledWith('dm-bo-ana', {
+      limit: 100,
+      actingMemberId: 'remote-ana',
+      cursor: 'c-240',
+    });
   });
 });

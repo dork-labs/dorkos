@@ -46,6 +46,8 @@ export const RemoteCommunityDmsResponseSchema = z.strictObject({
   /** The space says it holds direct messages (`features.agentDms`). False hides every control. */
   available: z.boolean(),
   dms: z.array(RemoteCommunityDmSchema),
+  /** True when one of the owner's agents' direct messages couldn't be read; the rest are listed. */
+  incomplete: z.literal(true).optional(),
 });
 /** This install's direct messages in one space. */
 export type RemoteCommunityDmsResponse = z.infer<typeof RemoteCommunityDmsResponseSchema>;
@@ -78,10 +80,14 @@ export interface RemoteCommunityDmTransport {
     localAgentId: string,
     accepts: boolean
   ): Promise<{ localAgentId: string; acceptsDms: boolean }>;
-  /** The owner reads a direct message with their agent, through that agent. */
+  /**
+   * The owner reads a direct message with their agent, through that agent: the newest page, or
+   * only what came after `after` (an entry's cursor).
+   */
   listRemoteCommunityAgentDmEntries(
     ref: string,
     roomId: string,
-    localAgentId: string
+    localAgentId: string,
+    after?: string
   ): Promise<RemoteCommunityHistoryResponse>;
 }

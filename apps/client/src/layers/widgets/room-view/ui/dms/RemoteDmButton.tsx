@@ -49,9 +49,13 @@ export function RemoteDmButton({
     }
   }
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex flex-wrap items-center justify-end gap-x-2">
       {notice && (
-        <span role="status" className="text-muted-foreground text-xs">
+        // Its own line on a narrow screen, beside the button on a wide one.
+        <span
+          role="status"
+          className="text-muted-foreground order-last w-full text-right text-xs sm:order-none sm:w-auto"
+        >
           {notice}
         </span>
       )}

@@ -126,9 +126,9 @@ function CommunityDms({ connection }: { connection: CommunityConnectionDescripto
   const access = communityAccessState(connection.access);
   const dms = useRemoteCommunityDms(connection.ref, access.capabilities.read, access.fingerprint);
   const search = useSafeSearch() as { community?: string; id?: string };
-  if (!dms.data?.available || dms.data.dms.length === 0) return null;
+  if (!dms.data?.available || (dms.data.dms.length === 0 && !dms.data.incomplete)) return null;
   return (
-    <div className="mt-2" aria-label="Direct messages">
+    <section className="mt-2" aria-label="Direct messages">
       <h4 className="text-muted-foreground px-2 text-xs font-medium">Direct messages</h4>
       {dms.data.dms.map((dm) => (
         <Link
@@ -154,6 +154,11 @@ function CommunityDms({ connection }: { connection: CommunityConnectionDescripto
           )}
         </Link>
       ))}
-    </div>
+      {dms.data.incomplete && (
+        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
+          Some direct messages couldn’t load.
+        </p>
+      )}
+    </section>
   );
 }

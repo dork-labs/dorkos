@@ -34,6 +34,10 @@ vi.mock('../ui/RemoteCommunitySurface', () => ({
     return <p>Remote channel</p>;
   },
 }));
+// Whether the address names a direct message is `remote-dms.test.tsx`'s; here it is a channel.
+vi.mock('../ui/dms/RemoteDmRoom', () => ({
+  RemoteDmRoom: ({ children }: { children: () => React.ReactNode }) => children(),
+}));
 vi.mock('../ui/RoomSurface', () => ({
   RoomSurface: (props: unknown) => {
     local(props);
@@ -66,8 +70,6 @@ vi.mock('@/layers/entities/community', () => ({
   // (spec `official-community-space` D5; `use-space-visible.test.tsx` covers that rule).
   useSpaceVisible: () => ({ visible: spaces.enabled, isLoading: spaces.isLoading }),
   OfficialSpaceUnreachableNotice: () => null,
-  communityAccessState: () => ({ capabilities: { read: true }, fingerprint: 'fp' }),
-  useRemoteCommunityDm: () => ({ dm: undefined, pending: false }),
 }));
 afterEach(() => {
   cleanup();

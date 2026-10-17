@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityDm } from '@dorkos/shared/community-dm-views';
+import type { RemoteCommunityHistoryResponse } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
 import {
   communityKeys,
@@ -11,6 +12,8 @@ import {
 const DMS_REFRESH_MS = 30_000;
 /** How often the owner's read-only copy of a direct message with their agent is read again. */
 const AGENT_DM_REFRESH_MS = 10_000;
+/** The most messages the owner's read-only copy keeps in memory, newest kept. */
+const AGENT_DM_KEEP = 500;
 
 /**
  * Whether a space holds direct messages with agents, and the ones this install can open: its
@@ -37,7 +40,8 @@ export function useRemoteCommunityDms(ref: string, enabled = true, accessFingerp
 
 /**
  * The owner's read-only copy of someone's direct message with one of their agents, read through
- * that agent (DOR-2955). It has no live stream of its own, so it is read again on an interval.
+ * that agent (DOR-2955). It opens on the newest messages, and with no live stream of its own it
+ * is read again on an interval, asking only for what came after the last message it holds.
  *
  * @param ref - The space's connection ref.
  * @param roomId - The direct message's channel id.
@@ -51,15 +55,32 @@ export function useRemoteCommunityAgentDmEntries(
   accessFingerprint = 'legacy'
 ) {
   const transport = useTransport();
+  const queries = useQueryClient();
   const authority = useCommunityContentAuthority(true, accessFingerprint, ref);
+  const queryKey = authority
+    ? communityKeys.agentDmEntries(authority, ref, roomId, localAgentId)
+    : [...communityKeys.all, 'owner', 'unresolved', ref, 'room', roomId, 'as-agent'];
   return useQuery({
-    queryKey: authority
-      ? communityKeys.agentDmEntries(authority, ref, roomId, localAgentId)
-      : [...communityKeys.all, 'owner', 'unresolved', ref, 'room', roomId, 'as-agent'],
+    queryKey,
     queryFn: () =>
-      withinCommunityContentAuthority(authority!, () =>
-        transport.listRemoteCommunityAgentDmEntries(ref, roomId, localAgentId)
-      ),
+      withinCommunityContentAuthority(authority!, async () => {
+        const held = queries.getQueryData<RemoteCommunityHistoryResponse>(queryKey);
+        const last = held?.entries.at(-1);
+        const page = await transport.listRemoteCommunityAgentDmEntries(
+          ref,
+          roomId,
+          localAgentId,
+          last?.cursor
+        );
+        if (!held || !last) return page;
+        const known = new Set(held.entries.map((entry) => entry.id));
+        const entries = [...held.entries, ...page.entries.filter((entry) => !known.has(entry.id))];
+        return {
+          ...page,
+          entries: entries.slice(-AGENT_DM_KEEP),
+          lastRemoteSeq: entries.at(-1)?.remoteSeq ?? held.lastRemoteSeq,
+        };
+      }),
     enabled: authority !== null,
     refetchInterval: AGENT_DM_REFRESH_MS,
   });
@@ -78,8 +99,9 @@ export function remoteDmTitle(dm: RemoteCommunityDm): string {
 }
 
 /**
- * The direct message a space room id names, if it names one. `pending` while the list is still
- * on its way, so a caller can wait rather than open a direct message as an ordinary channel.
+ * The direct message a space room id names, if it names one, and whether the list that says so
+ * has arrived. A caller that must never open a direct message as an ordinary channel waits on
+ * `loading` and stops on `error`.
  *
  * @param ref - The space's connection ref.
  * @param roomId - The room id the address names.
@@ -91,10 +113,16 @@ export function useRemoteCommunityDm(
   roomId: string,
   enabled = true,
   accessFingerprint = 'legacy'
-): { dm: RemoteCommunityDm | undefined; pending: boolean } {
+): {
+  dm: RemoteCommunityDm | undefined;
+  status: 'loading' | 'error' | 'ready';
+  retry: () => void;
+} {
   const dms = useRemoteCommunityDms(ref, enabled, accessFingerprint);
   return {
     dm: dms.data?.dms.find((item) => item.roomId === roomId),
-    pending: enabled && dms.isPending && dms.fetchStatus === 'fetching',
+    // Pending until the list lands, including while the owner's authority is still resolving.
+    status: dms.data ? 'ready' : dms.isError ? 'error' : 'loading',
+    retry: () => void dms.refetch(),
   };
 }

@@ -104,8 +104,44 @@ function transportFor(available: boolean, dms: RemoteCommunityDm[] = []) {
   return transport;
 }
 
+let lastQueries: QueryClient | undefined;
+
+/** One message in a direct message, as the local server sends it. */
+function message(seq: number, text = `message ${seq}`) {
+  return {
+    community: ref,
+    roomId: 'dm-1',
+    id: `e${seq}`,
+    authorId: 'remote-ada',
+    authorKind: 'human',
+    authorDisplayName: 'Ada',
+    text,
+    mentions: [],
+    parentEntryId: null,
+    threadRootEntryId: null,
+    depth: 0,
+    remoteSeq: seq,
+    attachments: [],
+    cursor: `c${seq}`,
+    createdAt: '2026-10-16T10:00:00Z',
+  } as never;
+}
+
+function page(from: number, to: number) {
+  const entries = Array.from({ length: to - from + 1 }, (_, i) => message(from + i));
+  return {
+    community: ref,
+    roomId: 'dm-1',
+    entries,
+    nextCursor: null,
+    lastRemoteSeq: to,
+    stale: false,
+  };
+}
+
 function wrap(transport: ReturnType<typeof transportFor>, children: ReactNode) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastQueries = queries;
   return render(
     <QueryClientProvider client={queries}>
       <TransportProvider transport={transport}>
@@ -134,6 +170,44 @@ function roster(transport: ReturnType<typeof transportFor>, canEnroll = false) {
 }
 
 describe('Message on an agent’s row', () => {
+  it('is not offered on the person’s own agents', async () => {
+    const transport = transportFor(true);
+    wrap(
+      transport,
+      <RemoteCommunityRoster
+        roster={{
+          community: ref,
+          roomId: 'general',
+          members: [
+            agent,
+            {
+              ...agent,
+              memberId: 'remote-mine',
+              displayName: 'Mine',
+              handle: 'mine',
+              ownerMemberId: 'remote-ada',
+            },
+          ],
+          stale: false,
+        }}
+        failed={false}
+        canMention
+        onMention={() => undefined}
+        community={ref}
+        roomId="general"
+        online
+        canEnroll={false}
+        agentsKey="k"
+        accessFingerprint="f"
+      />
+    );
+    expect(await screen.findByRole('button', { name: 'Message Scout' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Message Mine' })).not.toBeInTheDocument()
+    );
+    expect(screen.getByText('Mention @mine')).toBeInTheDocument();
+  });
+
   it('is there only where the space holds direct messages', async () => {
     roster(transportFor(false));
     await screen.findByText('Mention @scout');
@@ -204,6 +278,58 @@ describe('the owner’s switch', () => {
 });
 
 describe('a direct message', () => {
+  it('opens nothing until the space says whether the room is one', async () => {
+    const transport = transportFor(true, [dm()]);
+    vi.mocked(transport.listRemoteCommunityDms).mockReturnValue(new Promise(() => undefined));
+    wrap(
+      transport,
+      <RemoteDmRoom community={ref} roomId="dm-1">
+        {() => <p>the room</p>}
+      </RemoteDmRoom>
+    );
+    // Long enough for the connection list and the owner's authority to land.
+    await waitFor(() => expect(transport.listRemoteCommunityDms).toHaveBeenCalled());
+    expect(screen.queryByText('the room')).not.toBeInTheDocument();
+  });
+
+  it('says so, and opens no room, when the list can’t be read', async () => {
+    const transport = transportFor(true, [dm()]);
+    vi.mocked(transport.listRemoteCommunityDms).mockRejectedValue(new Error('down'));
+    wrap(
+      transport,
+      <RemoteDmRoom community={ref} roomId="dm-1">
+        {() => <p>the room</p>}
+      </RemoteDmRoom>
+    );
+    expect(
+      await screen.findByText(/Couldn’t load this space’s direct messages\./)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('the room')).not.toBeInTheDocument();
+  });
+
+  it('reads only what came after the newest message it holds, and keeps both', async () => {
+    const transport = transportFor(true, [dm({ readOnly: true, localAgentId: 'local-scout' })]);
+    vi.mocked(transport.listRemoteCommunityAgentDmEntries)
+      .mockResolvedValueOnce(page(151, 250) as never)
+      .mockResolvedValueOnce(page(251, 253) as never);
+    wrap(
+      transport,
+      <RemoteDmRoom community={ref} roomId="dm-1">
+        {() => <p>the room</p>}
+      </RemoteDmRoom>
+    );
+    expect(await screen.findByText('message 250')).toBeInTheDocument();
+    await lastQueries!.refetchQueries();
+    expect(await screen.findByText('message 253')).toBeInTheDocument();
+    expect(screen.getByText('message 151')).toBeInTheDocument();
+    expect(transport.listRemoteCommunityAgentDmEntries).toHaveBeenLastCalledWith(
+      ref,
+      'dm-1',
+      'local-scout',
+      'c250'
+    );
+  });
+
   it('says whose agent it is and that its owner can read it, above the room', async () => {
     const transport = transportFor(true, [dm()]);
     vi.mocked(transport.listRemoteCommunityMembers).mockResolvedValue({
@@ -299,7 +425,8 @@ describe('a direct message', () => {
     expect(transport.listRemoteCommunityAgentDmEntries).toHaveBeenCalledWith(
       ref,
       'dm-1',
-      'local-scout'
+      'local-scout',
+      undefined
     );
   });
 });

@@ -50,7 +50,7 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/community')>()),
   useCommunityConnections: () => ({ data: [{ ref: 'acme', label: 'Acme' }] }),
   useRemoteCommunityRoom: () => ({ data: { title: 'design-review' } }),
-  useRemoteCommunityDm: () => ({ dm: undefined, pending: false }),
+  useRemoteCommunityDm: () => ({ dm: undefined, status: 'ready', retry: () => undefined }),
   // Whether the space may show: the experiment alone here, since no official space is named.
   useSpaceVisible: () => ({ visible: route.spaces, isLoading: false }),
 }));
