@@ -49,8 +49,8 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-/** Send one chat message; resolves with how its turn settled. */
-function send(content: string): Promise<'ok' | 'failed'> {
+/** Send one chat message; resolves with how its turn settled, as the caller is told. */
+function send(content: string): Promise<[outcome: 'ok' | 'failed', refusal?: string]> {
   return new Promise((resolve, reject) => {
     const mesh = { listWithPaths: () => [{ id: 'agent-juno', name: 'juno', projectPath: home }] };
     dispatchSessionMessage({
@@ -60,7 +60,7 @@ function send(content: string): Promise<'ok' | 'failed'> {
       clientId: 'chat:sender',
       meshCore: mesh as never,
       roomSessionPlace: undefined,
-      onSettled: resolve,
+      onSettled: (outcome, refusal) => resolve([outcome, refusal]),
     }).catch(reject);
   });
 }
@@ -78,7 +78,8 @@ describe('a turn the runtime refused before the agent saw it', () => {
       },
     ]);
 
-    expect(await send('hello')).toBe('failed');
+    // The caller hears why too: that is how a heartbeat records it as refused.
+    expect(await send('hello')).toEqual(['failed', 'warm-ceiling']);
     expect(settled).toEqual([
       expect.objectContaining({ outcome: 'failed', reason: 'warm-ceiling' }),
     ]);
@@ -93,7 +94,7 @@ describe('a turn the runtime refused before the agent saw it', () => {
       },
     ]);
 
-    expect(await send('hello')).toBe('ok');
+    expect(await send('hello')).toEqual(['ok', undefined]);
     expect(settled[0]).not.toHaveProperty('reason');
   });
 });
