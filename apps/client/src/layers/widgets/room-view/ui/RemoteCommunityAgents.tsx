@@ -33,6 +33,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/layers/shared/ui';
+import { RemoteCommunityTeammates } from './teammates/RemoteCommunityTeammates';
 
 /** Local manifest-backed enrollment controls; remote identities never become local runtime authority. */
 export function RemoteCommunityAgents({
@@ -162,6 +163,7 @@ export function RemoteCommunityAgents({
           {error}
         </p>
       )}
+      {canEnroll && <RemoteCommunityTeammates community={community} online={online} />}
     </section>
   );
 }

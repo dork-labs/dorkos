@@ -249,6 +249,10 @@
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
     },
+    "./community-teammates": {
+      "types": "./src/community-teammates.ts",
+      "default": "./dist/community-teammates.js"
+    },
     "./community-release-manifest": {
       "types": "./src/community-release-manifest.ts",
       "default": "./dist/community-release-manifest.js"

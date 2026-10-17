@@ -510,6 +510,24 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return mirror?.state === 'revoked' && mirror.ownerAuthorId === ownerAuthorId;
   }
 
+  /**
+   * The connection a local room mirrors, or `null` for a room that mirrors none: what a teammate
+   * turn in it counts against (DOR-2956).
+   */
+  connectionOf(roomId: string): { communityRef: CommunityRef; ownerAuthorId: string } | null {
+    const mirror = this.db
+      .select({
+        communityRef: communityRoomMirrors.communityRef,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+      })
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return mirror
+      ? { communityRef: mirror.communityRef as CommunityRef, ownerAuthorId: mirror.ownerAuthorId }
+      : null;
+  }
+
   /** Whether a mirror is actively authorized for fresh inbound work. */
   isActivelyAuthorized(roomId: string, ownerAuthorId: string): boolean {
     const mirror = this.db

@@ -27,10 +27,11 @@ import {
   type SilenceWatch,
 } from './availability.js';
 import { directMessageStep } from './steps-dms.js';
+import { teammateLimitStep } from './steps-teammate-limit.js';
 import { PRIVATE_CHANNEL, type Entry, type Room, type World } from './world.js';
 
 /**
- * Steps 20-23b (22b in `steps-dms.ts`): each member enrolls their own local agent under the
+ * Steps 20-23b (22b in `steps-dms.ts`, 22c in `steps-teammate-limit.ts`): each member enrolls their own local agent under the
  * Community's agent limit and the other member's app shows it as available,
  * a private channel admits only its members and their agents, a mention is
  * answered by the scripted test runtime (no model, no spend), and a packaged
@@ -397,6 +398,8 @@ export async function agentSteps(w: World): Promise<void> {
 
   if (runs('22b')) await directMessageStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
   else skip('22b');
+  if (runs('22c')) await teammateLimitStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
+  else skip('22c');
 
   // What A's app saw while B's app was closed, or why it could not watch; step 23b judges it.
   let closedWatch: SilenceWatch | Error | undefined;

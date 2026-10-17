@@ -102,6 +102,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'extension.decision': MessageCircleQuestion,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
+  'community.teammate-limit': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
   // An agent's high-risk action in a connected app, waiting or done.
   'connector.destructive_pending': Hourglass,
@@ -322,9 +323,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // those agents are.
     return { ...appRoutes.team(), search: {} };
   }
-  if (kind === 'community.owner-replacement') {
+  if (kind === 'community.owner-replacement' || kind === 'community.teammate-limit') {
     // The subject is the owner's connection ref: the community's own page, where the banner
-    // says what is happening and opens the community to keep ownership.
+    // says what is happening and opens the community to keep ownership, and where the
+    // agents panel sets teammates' monthly limit (DOR-2956).
     return { ...appRoutes.channels(), search: { community: subject.id } };
   }
   if (kind === 'connector.destructive_pending' || kind === 'connector.destructive_executed') {

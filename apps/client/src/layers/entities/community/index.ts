@@ -85,6 +85,10 @@ export {
   remoteDmTitle,
 } from './model/use-remote-community-dms';
 export {
+  useCommunityTeammates,
+  useUpdateCommunityTeammates,
+} from './model/use-community-teammates';
+export {
   useRemoteCommunityStream,
   applyRemoteCommunityRevisions,
   mergeRemoteCommunityEntries,
