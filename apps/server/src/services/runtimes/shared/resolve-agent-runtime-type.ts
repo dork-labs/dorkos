@@ -48,18 +48,34 @@ import { runtimeRegistry } from '../../core/runtime-registry.js';
 export async function resolveAgentRuntimeType(agentPath: string): Promise<string> {
   const placed = runtimeRegistry.computerRuntimeForAgentPath(agentPath);
   if (placed) return placed;
+  let declared: string | undefined;
   try {
-    const manifest = await readManifest(agentPath);
-    if (manifest?.runtime) {
-      if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
+    declared = (await readManifest(agentPath))?.runtime;
+    if (declared && !runtimeRegistry.has(declared)) {
       logger.warn(
-        `[runtimes] '${agentPath}' runs on '${manifest.runtime}', which this server did not ` +
+        `[runtimes] '${agentPath}' runs on '${declared}', which this server did not ` +
           `start; its turns will be answered by '${runtimeRegistry.getDefaultType()}' instead.`
       );
     }
   } catch {
     // No manifest, or an unreadable one. The default is the right answer.
   }
+  return agentRuntimeTypeFrom(agentPath, declared);
+}
+
+/**
+ * The same ladder as {@link resolveAgentRuntimeType}, answered from a manifest the caller already
+ * holds (Mesh's cached copy) rather than read from disk, for a caller that cannot wait: the space
+ * stream bridge deciding, as a post arrives, whether an agent may take a teammate's turn
+ * (DOR-2955). Silent: the warning is the disk read's to give.
+ *
+ * @param agentPath - The agent's project directory.
+ * @param declared - The runtime its manifest names, if any.
+ */
+export function agentRuntimeTypeFrom(agentPath: string, declared: string | undefined): string {
+  const placed = runtimeRegistry.computerRuntimeForAgentPath(agentPath);
+  if (placed) return placed;
+  if (declared && runtimeRegistry.has(declared)) return declared;
   return runtimeRegistry.getDefaultType();
 }
 

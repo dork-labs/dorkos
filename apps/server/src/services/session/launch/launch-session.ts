@@ -543,15 +543,17 @@ async function launchSessionMessage(
     cwd: effectiveCwd,
     ...(forAgent !== undefined ? { forAgent } : {}),
   });
+  // A person typing, here or from the web through the session relay.
+  const personTyped = origin.kind === 'interactive' || origin.kind === 'session-relay';
   if (paused) {
     agentPause()?.recordHeld(paused, {
-      via: origin.kind === 'interactive' ? 'message' : 'turn',
+      via: personTyped ? 'message' : 'turn',
       sessionId,
     });
     return { refused: 'AGENT_PAUSED', message: `${paused.name} is paused.`, agentId: paused.id };
   }
 
-  if (origin.kind === 'interactive') await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
+  if (personTyped) await validateBoundaryOrDorkHome(effectiveCwd ?? DEFAULT_CWD);
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
   // `persistSessionRuntime` binds a session that has none — including one whose

@@ -64,6 +64,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // An agent's beat found work and starts a turn in its beat chat (spec
   // `heartbeats` §7.2).
   'services/heartbeats/beat-launch.ts': ['heartbeat'],
+  // The owner sent a message from their own DorkOS on the web, through the
+  // session relay this computer dialed out to.
+  'services/core/session-relay/relay-request-server.ts': ['session-relay'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'startup/steps/capabilities.ts': ['test-harness'],
 };

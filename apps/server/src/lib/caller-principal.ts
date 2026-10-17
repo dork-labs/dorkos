@@ -39,7 +39,16 @@ export type CallerPrincipal =
       readonly kind: 'bridged';
       readonly platform: string;
       readonly platformUserId: string;
-    };
+    }
+  /**
+   * The session relay: the owner's own DorkOS on the web, reaching this
+   * computer's chats over the connection this computer dialed out to its
+   * pinned hub (`services/core/session-relay/`). Never a person and never "at
+   * this computer": whatever it may do is decided per request by the relay's
+   * own request server, never by a policy that trusts a person here. Never
+   * arrives over HTTP.
+   */
+  | { readonly kind: 'relayed' };
 
 /**
  * Read the principal off a request's facts.
@@ -53,6 +62,8 @@ export type CallerPrincipal =
  * There is no `bridged` branch: nothing on a chat platform speaks HTTP to this
  * server. That member is constructed by the relay path (spec `ask-entitlement`
  * §5) and belongs to the union so that one function answers for both worlds.
+ * No `relayed` branch either, for the same reason: only the session relay's
+ * request server constructs one.
  *
  * @param caller - The request's facts (`http/request-facts.ts`): the raw
  *   headers and what the session gate and the agent-identity step resolved. A

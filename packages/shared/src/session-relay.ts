@@ -37,9 +37,10 @@
  * - serves only person-facing chats of registered agents, in `chats.list` and
  *   in every request naming a session (never a room turn, a task run or a
  *   heartbeat), whatever UUID a request names;
- * - marks a turn a relayed message started as relayed, so a tool call that
- *   needs a person waits for a signed approval instead of being allowed by
- *   the computer's own trust level;
+ * - runs a turn a relayed message started at the chat's own trust level, as a
+ *   message typed at this computer runs (ADR rule 5 names the limit: a
+ *   compromised Cloud could send a harmful message), and never answers an
+ *   approval over the relay without the signed proof (B4);
  * - verifies every approval proof itself (its own challenge, unexpired, used
  *   once, signed by the passkey it pinned) and refuses an approval without one;
  * - takes a relayed question answer as having no more power than a relayed

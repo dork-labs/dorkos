@@ -60,6 +60,7 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
 import { credentialGated } from '../../services/core/auth/gate-policy.js';
+import { wireSessionRelay } from '../../services/core/session-relay/index.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -326,6 +327,16 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
+  });
+
+  // The session relay answers the owner's own DorkOS on the web with the same
+  // origin lookups and room port the session routes use, so a room turn, a
+  // task run or a beat reads the same there as here (spec
+  // `everything-is-a-space` B2). Read per request, never copied.
+  wireSessionRelay({
+    meshCore: () => refs.meshCore,
+    origins,
+    roomSessionPlace: () => refs.roomSessionPlacePort,
   });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).

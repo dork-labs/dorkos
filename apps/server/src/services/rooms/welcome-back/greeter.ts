@@ -66,6 +66,7 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { MENTION_PATTERN } from '../mentions.js';
+import { defuseFileReferences } from '../../core/turn-power/prompt-defuse.js';
 
 /** The `welcomeBack` block of user config, as this module reads it. */
 export type WelcomeBackSettings = UserConfig['welcomeBack'];
@@ -214,7 +215,9 @@ function quoteTitle(title: string): string {
   // Capped by `TITLE_LIMIT` below rather than by the identity default, so the
   // sanitizer is asked only for safety and this file keeps its own length rule.
   const safe = sanitizeIdentity(title, Number.MAX_SAFE_INTEGER) ?? '';
-  const flat = safe.replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim();
+  // Defused last (DOR-2955): a session title can be anybody's words, and this
+  // line can reach a turn's prompt, where Claude Code would read an `@path`.
+  const flat = defuseFileReferences(safe.replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim());
   return flat.length <= TITLE_LIMIT ? flat : `${flat.slice(0, TITLE_LIMIT).trimEnd()}…`;
 }
 

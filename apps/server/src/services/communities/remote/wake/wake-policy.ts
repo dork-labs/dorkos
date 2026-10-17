@@ -32,6 +32,16 @@ export interface RemoteWakeGate {
    */
   wakes(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
   /**
+   * Whether `authorMemberId` is this owner's own account in the space, so their post keeps the
+   * owner's power rather than a teammate's (DOR-2955). Absent answers no: every post is a
+   * teammate's.
+   *
+   * @param communityRef - The local connection ref.
+   * @param ownerAuthorId - The local owner the connection belongs to.
+   * @param authorMemberId - The message author's member id in the space.
+   */
+  isOwnerPost?(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean;
+  /**
    * Whether every person's post in this channel wakes this owner's agents there, mention or not
    * (spec `official-community-space` D11). Absent answers no, everywhere.
    *
@@ -42,7 +52,8 @@ export interface RemoteWakeGate {
   answersIn?(communityRef: CommunityRef, ownerAuthorId: string, channelName: string): boolean;
   /**
    * Spend one wake of the answer-in budget for this author in this channel, or refuse once the
-   * author's or the channel's share is spent. Absent refuses every one.
+   * author's or the channel's share is spent. Since DOR-2955 it is also the ONE budget every
+   * teammate wake pays from, mention or not. Absent, the bridge holds teammates to its own.
    *
    * @param communityRef - The local connection ref.
    * @param ownerAuthorId - The local owner the connection belongs to.
@@ -220,7 +231,13 @@ export class RemoteWakePolicy implements RemoteWakeGate {
     const entry = this.entries?.get(key(communityRef, ownerAuthorId));
     if (!entry) return false;
     if ((entry.chosen ?? this.defaultFor(entry)) === 'members') return true;
-    return entry.ownerMemberId !== null && entry.ownerMemberId === authorMemberId;
+    return this.isOwnerPost(communityRef, ownerAuthorId, authorMemberId);
+  }
+
+  /** @inheritdoc */
+  isOwnerPost(communityRef: CommunityRef, ownerAuthorId: string, authorMemberId: string): boolean {
+    const ownerMemberId = this.entries?.get(key(communityRef, ownerAuthorId))?.ownerMemberId;
+    return typeof ownerMemberId === 'string' && ownerMemberId === authorMemberId;
   }
 }
 

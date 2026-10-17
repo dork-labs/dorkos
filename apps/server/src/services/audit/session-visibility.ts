@@ -63,6 +63,7 @@ export interface SessionVisibilityDeps {
  */
 const KNOWN_KINDS: Record<TurnOrigin['kind'], true> = {
   interactive: true,
+  'session-relay': true,
   room: true,
   schedule: true,
   heartbeat: true,

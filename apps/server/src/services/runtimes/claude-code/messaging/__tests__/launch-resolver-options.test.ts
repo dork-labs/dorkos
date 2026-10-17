@@ -14,6 +14,12 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
+import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
+import { resolveLaunch } from '../launch-resolver.js';
+import {
+  captureLaunchFingerprint,
+  compareLaunchFingerprints,
+} from '../../sessions/launch-fingerprint.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -126,6 +132,168 @@ describe('the launch options every Claude Code turn is given', () => {
     const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
     expect(unmatched).toHaveLength(1);
     expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
+  });
+
+  it('registers the teammate fence on every tool, read from the session as each call is made', async () => {
+    // DOR-2955. A fence that is never registered fails nothing anywhere: a
+    // teammate's turn would simply reach every room the agent is in again.
+    const session = makeSession();
+    const options = await captureSdkOptions(undefined, session);
+    const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(unmatched).toHaveLength(1);
+    const hook = unmatched[0]!.hooks[0]!;
+    const call = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'mcp__dorkos__read_room_history',
+      tool_input: { roomId: 'room-of-the-owner' },
+      tool_use_id: 'tool-1',
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(call, 'tool-1', signal)).toEqual({});
+    session.teammateFence = { roomId: 'room-answered' };
+    expect(await hook(call, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
+  it('shows a teammate’s turn no notes, says what it may do, and never shares its process with the owner’s', async () => {
+    // DOR-2955. The notes are left out of the prompt, which the digest does not
+    // see, so the teammate block must be IN the digest: without it a warm
+    // process launched with the owner's notes would serve the teammate's turn.
+    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => ({
+      text:
+        options?.memory === false
+          ? '<env>mock</env>'
+          : '<env>mock</env>\n\n<agent_memory>x</agent_memory>',
+      stable: '<env>mock</env>',
+    }));
+    const session = makeSession();
+    const resolve = (messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session,
+        opts: makeOpts(),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const append = (launch: Awaited<ReturnType<typeof resolve>>) =>
+      (launch.sdkOptions.systemPrompt as { append: string }).append;
+    const pin = (launch: Awaited<ReturnType<typeof resolve>>) =>
+      captureLaunchFingerprint(launch.launch);
+
+    const owner = await resolve();
+    const teammate = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+    const ownerAgain = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' },
+    });
+
+    expect(append(teammate)).not.toContain('<agent_memory>');
+    expect(append(teammate)).not.toContain('<relay_connections>');
+    expect(append(teammate)).toContain('<teammate_turn>');
+    expect(append(ownerAgain)).toContain('<agent_memory>');
+    expect(append(ownerAgain)).not.toContain('<teammate_turn>');
+    expect(compareLaunchFingerprints(pin(owner), pin(teammate)).action).toBe('relaunch');
+    expect(compareLaunchFingerprints(pin(teammate), pin(ownerAgain)).action).toBe('relaunch');
+    // And an ordinary turn after an ordinary turn relaunches for none of this.
+    expect(compareLaunchFingerprints(pin(owner), pin(ownerAgain)).action).not.toBe('relaunch');
+    // Back to the file's own stub, which `clearAllMocks` would not restore.
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>mock</env>',
+      stable: '<env>mock</env>',
+    });
+  });
+
+  // DOR-2955, review B1/B2: Claude Code reads `@path` and runs a leading `/name`
+  // before any tool gate sees them. Measured on the pinned binary; these pin the
+  // launcher half.
+  describe('words somebody other than the person here wrote', () => {
+    const ZW = '\u200B';
+    const resolveWith = (content: string, messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content,
+        session: makeSession(),
+        opts: makeOpts({ getKnownCommands: async () => ['/leak', '/compact'] }),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const stranger: MessageOpts = {
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', untrustedText: true },
+    };
+
+    it('never run as a command, and never read as a file', async () => {
+      const slash = await resolveWith('/leak', stranger);
+      expect(slash.enrichedContent).toBe(`${ZW}/leak`);
+      const at = await resolveWith('see @/etc/hosts', stranger);
+      expect(at.enrichedContent).toBe(`see ${ZW}@/etc/hosts`);
+    });
+
+    it('is the same for a teammate’s turn', async () => {
+      const launched = await resolveWith('/compact', {
+        roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+      });
+      expect(launched.enrichedContent).toBe(`${ZW}/compact`);
+    });
+
+    it('leaves the person here exactly as today: commands run bare, files are read', async () => {
+      expect((await resolveWith('/leak')).enrichedContent).toBe('/leak');
+      expect((await resolveWith('  /leak  ')).enrichedContent).toBe('/leak');
+      expect((await resolveWith('see @notes.md')).enrichedContent).toBe('see @notes.md');
+    });
+
+    it('defuses every context block, whoever wrote the message', async () => {
+      vi.mocked(renderContextEntry).mockReturnValueOnce(
+        '<room_context>bo: @/etc/hosts</room_context>'
+      );
+      const launched = await resolveWith('see @notes.md', {
+        additionalContext: [{ kind: 'room_context' } as never],
+      });
+      expect(launched.enrichedContent).toBe(
+        `<room_context>bo: ${ZW}@/etc/hosts</room_context>\n\nsee @notes.md`
+      );
+    });
+  });
+
+  it('launches a teammate’s turn with no setting layers and no auto-memory, in its own process', async () => {
+    // DOR-2955, review B3: every setting layer adds the owner's CLAUDE.md files, and
+    // Claude Code adds its own auto-memory for the folder whatever the layers say.
+    const session = makeSession();
+    const resolve = (messageOpts?: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session,
+        opts: makeOpts(),
+        ...(messageOpts ? { messageOpts } : {}),
+        effectiveCwd: '/mock/project',
+      });
+    const owner = await resolve();
+    const teammate = await resolve({
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+
+    expect(teammate.sdkOptions.settingSources).toEqual([]);
+    expect(teammate.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    expect(owner.sdkOptions.settingSources).toEqual(['local', 'project', 'user']);
+    expect(owner.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    // What bounds the turn is an option of the launch, never a setting layer.
+    expect(teammate.sdkOptions.hooks?.PreToolUse?.length).toBeGreaterThan(0);
+    expect(teammate.sdkOptions.canUseTool).toBeTypeOf('function');
+    const moved = compareLaunchFingerprints(
+      captureLaunchFingerprint(owner.launch),
+      captureLaunchFingerprint(teammate.launch)
+    );
+    expect(moved.action).toBe('relaunch');
+    if (moved.action === 'relaunch') {
+      expect(moved.changed).toEqual(expect.arrayContaining(['settingSources', 'env']));
+    }
   });
 
   it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {

@@ -151,6 +151,14 @@ export interface RoomTurnRequest {
    */
   permissionCeiling?: TurnPermissionCeiling;
   /**
+   * Set when a message this turn answers is a TEAMMATE's: a space member who is
+   * not this install's owner (DOR-2955, `limits/space-teammates.ts`). The runner
+   * then sends the turn with nobody to ask, fences its DorkOS tools to this room,
+   * and refuses it on a runtime that cannot hold it to both
+   * (`limits/teammate-turn.ts`). The read-only half rides `permissionCeiling`.
+   */
+  teammate?: true;
+  /**
    * The words the turn is triggered with — what reaches the model as the visible
    * user message, byte for byte.
    *

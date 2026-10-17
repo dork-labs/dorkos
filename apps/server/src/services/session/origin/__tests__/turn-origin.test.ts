@@ -37,6 +37,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A person is holding the stream open, so a stop they set is one they can
   // answer — including on a row their own pre-launch settings change created.
   [{ kind: 'interactive' }, 'configured-stop'],
+  // The owner on the web, with the chat's stream open through the session
+  // relay: the chat runs at its own level, the same as at this computer.
+  [{ kind: 'session-relay' }, 'configured-stop'],
   // Nobody is watching a room turn, which is the reason it follows the
   // operator's level rather than the reason it may not (DOR-1917). On a NEW
   // row only: an existing one is a conversation somebody already configured,

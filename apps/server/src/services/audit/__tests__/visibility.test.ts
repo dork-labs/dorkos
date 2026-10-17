@@ -80,6 +80,7 @@ describe('sessionVisibilityForOrigin', () => {
   it('maps each origin as the spec table says', () => {
     const table: Record<TurnOrigin['kind'], 'space' | 'participants'> = {
       interactive: 'participants',
+      'session-relay': 'participants',
       'relay-binding': 'participants',
       room: 'space',
       schedule: 'space',

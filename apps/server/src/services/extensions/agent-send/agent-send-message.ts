@@ -38,6 +38,7 @@ export const AGENT_SEND_KEY_MAX = 200;
  */
 export const MESSAGEABLE_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
+  'session-relay',
   'agent-launch',
   'chat-message',
   'extension-start',

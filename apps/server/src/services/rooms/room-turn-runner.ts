@@ -35,7 +35,7 @@
  * @module server/services/rooms/room-turn-runner
  */
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
-import { outsiderInViewOf } from './limits/turn-ceiling.js';
+import { refuseTeammateTurnOn, roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -464,6 +464,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         throw new RoomTurnRuntimeGoneError(runtimeType, boundSessionId);
       }
       const runtime = runtimeRegistry.get(runtimeType);
+      // A teammate's turn runs only where it can be held to every bound (DOR-2955).
+      refuseTeammateTurnOn(request, runtimeType);
       // **The desk guard** (spec `agent-home-desk` §3.4, invariant I3, DOR-2356).
       // A room turn stands in its agent's home and nowhere else — never a room's
       // folder, never another agent's home or a copy of it. Asked before anything
@@ -925,7 +927,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           aheadOfMain: request.roomContext.files?.ahead ?? null,
           // A stranger's line it is shown but does not answer bounds no power,
           // and still marks what the turn saves or passes on (§4.7).
-          ...outsiderInViewOf(request.roomContext),
+          // And whether a teammate started it, which fences its DorkOS tools
+          // to this room (DOR-2955).
+          ...roomTurnMarksOf(request),
         },
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
@@ -946,9 +950,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // And the bound on THIS turn, from who wrote the message: applied by the
         // runtime on top of whatever the conversation is set to, and never
         // stored (spec `trusted-by-default-flip` §4).
-        ...(request.permissionCeiling !== undefined
-          ? { permissionCeiling: request.permissionCeiling }
-          : {}),
+        // A teammate's turn also has nobody to ask (DOR-2955).
+        ...turnBoundsOf(request),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a

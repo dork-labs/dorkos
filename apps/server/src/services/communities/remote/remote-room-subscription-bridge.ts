@@ -9,12 +9,15 @@ import {
   type CommunityEntry,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
-import { logger } from '../../../lib/logger.js';
+import { logRefusal } from '../../observability/refusals.js';
 import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
+import { vouchOwnerSpaceEntry } from '../../rooms/limits/space-teammates.js';
+import { TeammateWakes, type TeammateRuntimeCheck } from './wake/teammate-wakes.js';
+import { SpaceDispatchAddressing } from './wake/dispatch-addressing.js';
 import type { RemoteWakeGate } from './wake/wake-policy.js';
 import { RECONNECT_FRESH_MS } from './subscription/reconnect-timing.js';
 
@@ -87,6 +90,8 @@ export interface CommunityOutboxInFlightAborter {
 export class RemoteRoomSubscriptionBridge {
   private readonly dispatchesSinceBoot = new Map<string, number>();
   private wakeGate: RemoteWakeGate | undefined;
+  private readonly teammates: TeammateWakes;
+  private readonly addressing: SpaceDispatchAddressing;
 
   constructor(
     private readonly mirrors: RemoteMirrorStore,
@@ -105,7 +110,15 @@ export class RemoteRoomSubscriptionBridge {
      * Read per message, so turning spaces back on resumes without a restart.
      */
     private readonly dispatchEnabled: (communityRef: CommunityRef) => boolean = () => true
-  ) {}
+  ) {
+    this.teammates = new TeammateWakes(now);
+    this.addressing = new SpaceDispatchAddressing(
+      mirrors,
+      enrollments,
+      resolveLocalAgentAuthor,
+      this.teammates
+    );
+  }
 
   /**
    * Hold every space message to the owner's "who may wake my agents" setting (spec
@@ -116,6 +129,16 @@ export class RemoteRoomSubscriptionBridge {
    */
   useWakeGate(gate: RemoteWakeGate): void {
     this.wakeGate = gate;
+  }
+
+  /**
+   * Say which enrolled agents run where a teammate's turn can be held to its limits (DOR-2955).
+   * Until this is called no agent can, so every teammate's post stays history.
+   *
+   * @param check - Answers for one enrolled agent by its local manifest id.
+   */
+  useTeammateRuntimes(check: TeammateRuntimeCheck): void {
+    this.teammates.useRuntimeCheck(check);
   }
 
   /**
@@ -203,6 +226,13 @@ export class RemoteRoomSubscriptionBridge {
       return;
     }
     if (event.author.kind !== 'human') return;
+    // A teammate is anyone in the space but this install's owner (DOR-2955). Only the owner's own
+    // posts are vouched for; the rooms dispatcher holds every other space post to the teammate
+    // rules, so a post this misses fails closed. No gate, no owner.
+    const owner =
+      this.wakeGate?.isOwnerPost?.(room.communityRef, room.ownerAuthorId, event.author.memberId) ===
+      true;
+    if (owner) vouchOwnerSpaceEntry(saved.id);
     // Before the claim, so a message the owner's setting holds back is never recorded as
     // dispatched and stays ordinary history (spec `official-community-space` D9). A channel the
     // owner answers in (D11) is the one exception, and it pays for each wake from its budget.
@@ -224,14 +254,14 @@ export class RemoteRoomSubscriptionBridge {
     // Unclaimed on purpose: only a fresh live frame dispatches, so a message
     // that arrived while spaces were off never starts a turn later either.
     if (!this.dispatchEnabled(room.communityRef)) return;
-    let dispatchEntry = this.dispatchEntry(target.id, room, saved);
+    let dispatchEntry = this.addressing.dispatchEntry(target.id, room, saved, owner);
     // Past here without a mention the setting allows only in an answer-in channel: every other
     // connection keeps the mention rule exactly as it was. A message removed before it was cached
     // is stored as it stands now, with nothing to answer.
     const answerIn = !wakes || !dispatchEntry.mentions.length;
     if (answerIn) {
       if (!answering || !saved.body.text.trim()) return;
-      dispatchEntry = this.answerInEntry(target.id, room, dispatchEntry);
+      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry, owner);
       if (!dispatchEntry.mentions.length) return;
     }
     if (
@@ -247,22 +277,35 @@ export class RemoteRoomSubscriptionBridge {
     // Paid for only once the claim is won, so a post that reaches this bridge twice (one stream
     // per enrolled agent, or a frame repeated after a reconnect) is charged once. A post past the
     // budget stays claimed: it is handled, with no turn, and never starts one later.
-    if (
-      answerIn &&
-      this.wakeGate?.takeAnswerInWake?.(
-        room.communityRef,
-        room.ownerAuthorId,
-        room.title,
-        event.author.memberId
-      ) !== true
-    ) {
-      // Ids only, never a name or a body: what an operator watching a flood needs.
-      logger.info('[RemoteRoomSubscriptionBridge] answer-in budget spent; post kept as history', {
-        communityRef: room.communityRef,
-        remoteRoomId: room.remoteRoomId,
-        entryId: event.entry.id,
-      });
-      return;
+    //
+    // ONE budget per person and per channel (DOR-2955): a teammate's every wake pays from it,
+    // whether their post named the agent or landed in a channel the owner answers in, and so does
+    // the owner's own answer-in post, as before. Two budgets would give each person twice the
+    // wakes. It is the space's answer-in budget; a gate without one falls back to this bridge's,
+    // which holds the same numbers.
+    if (!owner || answerIn) {
+      const paid = this.wakeGate?.takeAnswerInWake
+        ? this.wakeGate.takeAnswerInWake(
+            room.communityRef,
+            room.ownerAuthorId,
+            room.title,
+            event.author.memberId
+          )
+        : this.teammates.take(
+            `${room.communityRef}\0${room.ownerAuthorId}`,
+            room.remoteRoomId,
+            event.author.memberId
+          );
+      if (!paid) {
+        // Ids only, never a name or a body: what an operator watching a flood needs.
+        logRefusal('[RemoteRoomSubscriptionBridge] wake budget spent; post kept as history', {
+          reason: 'space_wake_budget',
+          visibility: 'silent',
+          entryId: saved.id,
+          detail: { communityRef: room.communityRef, teammate: !owner },
+        });
+        return;
+      }
     }
     this.service.dispatchImportedRemoteEntry(target.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
@@ -576,49 +619,5 @@ export class RemoteRoomSubscriptionBridge {
         kind: event.author.kind,
       },
     };
-  }
-
-  /**
-   * Address an answer-in post to every agent this owner enrolled that can read the room, on the
-   * short-lived dispatch view only: the stored entry keeps the mentions its author wrote. The
-   * turn it starts is the same one a mention from this author would start, external and held to
-   * the stranger ceiling.
-   */
-  private answerInEntry(
-    localRoomId: string,
-    room: MirrorRoomInput,
-    entry: ReturnType<RemoteMirrorStore['importEntries']>[number]
-  ) {
-    const enrolled = this.enrollments
-      .activeLocalAgentIds(room.communityRef, room.ownerAuthorId)
-      .flatMap((localAgentId) => {
-        const authorId = this.resolveLocalAgentAuthor(localAgentId);
-        return authorId && this.mirrors.canRead(localRoomId, authorId) === true ? [authorId] : [];
-      });
-    return { ...entry, mentions: [...new Set([...entry.mentions, ...enrolled])] };
-  }
-
-  /** Translate remote mention identities only on the short-lived local dispatch view. */
-  private dispatchEntry(
-    localRoomId: string,
-    room: MirrorRoomInput,
-    saved: ReturnType<RemoteMirrorStore['importEntries']>[number]
-  ) {
-    // The mentions the entry was stored with, not the frame's: a message removed before it was
-    // cached is stored as it stands now, and a removed message mentions nobody.
-    const mentions = saved.mentions.flatMap((remoteMemberId) => {
-      const enrollment = this.enrollments.findLocalAgent(
-        room.communityRef,
-        remoteMemberId,
-        room.ownerAuthorId
-      );
-      if (!enrollment) return [];
-      const authorId = this.resolveLocalAgentAuthor(enrollment.localAgentId);
-      // Membership is refreshed from the enrolled agent's own remote
-      // directory. Keep the persisted per-room grant as the final fence so a
-      // late event cannot dispatch an agent removed during reconciliation.
-      return authorId && this.mirrors.canRead(localRoomId, authorId) === true ? [authorId] : [];
-    });
-    return { ...saved, mentions };
   }
 }

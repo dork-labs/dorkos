@@ -37,6 +37,10 @@ export type NotificationEntitlement = 'manage' | 'see' | 'none';
  * They are entitled to the ONE Ask that was addressed to them (which
  * `askEntitlement` decides, unchanged), never to the operator's whole inbox.
  *
+ * A `relayed` caller — the session relay — gets `none` too. The relay carries
+ * chats and nothing else (`@dorkos/shared/session-relay`), and the inbox is not
+ * a chat.
+ *
  * @param principal - Who is calling, as `readCallerPrincipal` resolved them.
  */
 export function notificationEntitlement(principal: CallerPrincipal): NotificationEntitlement {
@@ -48,6 +52,7 @@ export function notificationEntitlement(principal: CallerPrincipal): Notificatio
     case 'program':
       return 'see';
     case 'bridged':
+    case 'relayed':
       return 'none';
   }
 }

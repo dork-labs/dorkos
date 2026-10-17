@@ -19,7 +19,7 @@ import type { ChatMessageStore } from './chat-message-store.js';
 
 /**
  * The launch origins of chats another chat may write into or stop: a person's
- * own chat, one an agent or an extension started, one a chat message opened,
+ * own chat (started here or from the web), one an agent or an extension started, one a chat message opened,
  * and a carry-over or resume of one.
  *
  * Deny by default, as `ctx.agent.send` is. Left out on purpose: a room's
@@ -31,6 +31,7 @@ import type { ChatMessageStore } from './chat-message-store.js';
  */
 export const CHAT_SENDABLE_ORIGINS: ReadonlySet<string> = new Set([
   'interactive',
+  'session-relay',
   'agent-launch',
   'chat-message',
   'extension-start',

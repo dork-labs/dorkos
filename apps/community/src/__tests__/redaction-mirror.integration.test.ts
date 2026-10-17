@@ -160,6 +160,10 @@ async function install(s: Scene, origin = h.baseUrl): Promise<Install> {
     enrollments,
     (localAgentId) => (localAgentId === 'local-ana' ? ana.id : null)
   );
+  // P, who mentions Ana below, is a member of the space and not Ana's owner: a teammate
+  // (DOR-2955). Ana runs where a teammate's turn can be held to its limits, as the installation
+  // says of every agent it runs on Claude Code.
+  bridge.useTeammateRuntimes(() => true);
   const room: MirrorRoomInput = {
     communityRef: ref,
     remoteRoomId: s.channelId,
