@@ -80,11 +80,17 @@ function fileStem(fileName: string): string {
   return fileName.slice(0, fileName.length - DOC_EXTENSION.length);
 }
 
-/** A frontmatter value without the quotes YAML allows around it. */
-function unquote(value: string): string {
+/**
+ * A one-line frontmatter value: without the quotes YAML allows around it, or
+ * without a trailing ` # comment` when unquoted. A block scalar (`|`, `>`)
+ * starts on the next lines, which this does not read, so it gives `''`.
+ */
+function frontmatterValue(value: string): string {
   const trimmed = value.trim();
   const quoted = /^(["'])(.*)\1$/.exec(trimmed);
-  return (quoted ? quoted[2]! : trimmed).trim();
+  if (quoted) return quoted[2]!.trim();
+  if (/^[|>][+-]?\d*$/.test(trimmed)) return '';
+  return trimmed.replace(/\s+#.*$/, '').trim();
 }
 
 /**
@@ -103,7 +109,7 @@ export function docTitleFromHead(head: string, fileName: string): string {
       if (text === '---' || text === '...') break;
       const title = /^title:(.*)$/.exec(text);
       if (title) {
-        const value = unquote(title[1]!);
+        const value = frontmatterValue(title[1]!);
         if (value !== '') return value;
       }
     }

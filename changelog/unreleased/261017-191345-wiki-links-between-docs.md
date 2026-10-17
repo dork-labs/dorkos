@@ -2,6 +2,7 @@
 covers:
   - 'feat(shared): one set of wiki-link rules for the docs in a space (DOR-2982)'
   - 'feat(server): list the docs in a space for wiki links, behind the Docs experiment (DOR-2982)'
+  - 'feat(server): read a doc title the way one-line YAML frontmatter writes it (DOR-2982)'
   - 'feat(client): wiki links and the [[ menu in canvas docs, behind the Docs experiment (DOR-2982)'
 ---
 

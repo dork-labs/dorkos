@@ -51,6 +51,8 @@ describe('docTitleFromHead', () => {
       'Launch plan'
     );
     expect(docTitleFromHead("---\nowner: me\ntitle: 'Q3'\n---\n", 'a.md')).toBe('Q3');
+    expect(docTitleFromHead('---\ntitle: Roadmap # draft\n---\n', 'a.md')).toBe('Roadmap');
+    expect(docTitleFromHead('---\ntitle: >\n  Folded\n---\n# Heading\n', 'a.md')).toBe('Heading');
   });
 
   it('falls back to the first # heading, skipping code blocks and deeper headings', () => {
