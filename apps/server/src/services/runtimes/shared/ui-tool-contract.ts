@@ -124,7 +124,7 @@ const DOC_EMBEDS_SENTENCE =
   'A line that is only ::name{…} is an embed, so write \\::name to mean the text. ' +
   `While Docs is on, ::chart{kind="bar" data='[{"label":"Mon","value":4}]'} draws a chart, and ` +
   `${DOC_EMBED_NAMES.filter((name) => name !== 'chart').join(', ')} take their dorkos-ui fields ` +
-  'the same way, arrays and objects as one-line JSON.';
+  'the same way: an array or object field is one single-quoted, one-line JSON attribute, every other field plain text. stat also takes delta="+8%" direction="up".';
 
 /**
  * The hand-written half of the canvas catalog: one sentence per content type.
