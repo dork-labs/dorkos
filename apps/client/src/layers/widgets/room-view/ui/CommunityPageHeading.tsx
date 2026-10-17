@@ -1,6 +1,8 @@
 import {
   communityAccessState,
+  remoteDmTitle,
   useCommunityConnections,
+  useRemoteCommunityDm,
   useRemoteCommunityRoom,
 } from '@/layers/entities/community';
 import { PageHeading } from '@/layers/shared/ui';
@@ -34,8 +36,14 @@ export function CommunityPageHeading({ community, roomId }: CommunityPageHeading
     Boolean(roomId) && access.capabilities.read,
     access.fingerprint
   );
+  const { dm } = useRemoteCommunityDm(
+    community,
+    roomId ?? '',
+    Boolean(roomId) && access.capabilities.read,
+    access.fingerprint
+  );
   const label = connection?.label ?? 'Space';
-  const title = roomId ? room.data?.title : undefined;
+  const title = roomId ? (dm ? remoteDmTitle(dm) : room.data?.title) : undefined;
   // Still on its way: a half-name read aloud is the half a person remembers.
   const pending =
     (connection === undefined && connections.fetchStatus === 'fetching') ||

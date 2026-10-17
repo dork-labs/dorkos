@@ -11,7 +11,8 @@ export function RemoteCommunityMessage({
   onReport,
 }: {
   entry: RemoteCommunityEntry;
-  onThread: (rootId: string) => void;
+  /** Absent where threads can't be opened, as in an owner's read-only copy of a direct message. */
+  onThread?: (rootId: string) => void;
   /** Offered only on someone else's message, where reporting it means something. */
   onReport?: () => void;
 }) {
@@ -80,13 +81,15 @@ export function RemoteCommunityMessage({
               {error}
             </p>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onThread(entry.threadRootEntryId ?? entry.id)}
-          >
-            {entry.depth === 0 ? 'Reply in thread' : 'Open thread'}
-          </Button>
+          {onThread && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onThread(entry.threadRootEntryId ?? entry.id)}
+            >
+              {entry.depth === 0 ? 'Reply in thread' : 'Open thread'}
+            </Button>
+          )}
           {onReport && (
             <Button variant="ghost" size="sm" onClick={onReport}>
               Report

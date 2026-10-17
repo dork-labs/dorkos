@@ -13,8 +13,8 @@ import type { JourneyContext } from './world.js';
  * data and local server. A owns the "Desktop Proof" Community and invites B.
  * A also owns a second, separate "Isolation Proof" Community that B never
  * joins. Steps 1-19 (with 15b) are the original journey; steps 20-29 (with
- * 20b and 23b) add the agent, availability, restart, lifecycle and invitation
- * proofs.
+ * 20b, 22b and 23b) add the agent, availability, direct message, restart,
+ * lifecycle and invitation proofs.
  *
  * In remote mode the same stages run against one community the live gate is
  * holding, and each stage records the steps it leaves out (see `plan.ts`).

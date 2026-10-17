@@ -63,7 +63,7 @@ export async function remove(
     [target.id, target.community_id]
   );
   await client.query(
-    'UPDATE agents SET active=false,revoked_at=now() WHERE owner_member_id=$1 AND community_id=$2 AND active',
+    'UPDATE agents SET active=false,accepts_dms=false,revoked_at=now() WHERE owner_member_id=$1 AND community_id=$2 AND active',
     [target.id, target.community_id]
   );
   await client.query(
@@ -131,7 +131,7 @@ export async function clearFormerMembership(
     [memberId, communityId]
   );
   await client.query(
-    'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE owner_member_id=$1 AND community_id=$2',
+    'UPDATE agents SET active=false,accepts_dms=false,revoked_at=COALESCE(revoked_at,now()) WHERE owner_member_id=$1 AND community_id=$2',
     [memberId, communityId]
   );
   await client.query(

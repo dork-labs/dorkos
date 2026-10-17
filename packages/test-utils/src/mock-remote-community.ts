@@ -54,5 +54,17 @@ export function remoteCommunityTransportMocks(): RemoteCommunityTransport {
       .fn()
       .mockImplementation(async (_community: string, displayName: string) => displayName.trim()),
     reportRemoteCommunityEntry: vi.fn().mockResolvedValue(undefined),
+    // Direct messages (DOR-2955): a space that holds none, unless a test says otherwise.
+    listRemoteCommunityDms: vi
+      .fn()
+      .mockImplementation(async (community: string) => ({ community, available: false, dms: [] })),
+    startRemoteCommunityDm: vi.fn(),
+    setRemoteCommunityAgentDms: vi
+      .fn()
+      .mockImplementation(async (_community: string, localAgentId: string, accepts: boolean) => ({
+        localAgentId,
+        acceptsDms: accepts,
+      })),
+    listRemoteCommunityAgentDmEntries: vi.fn(),
   };
 }

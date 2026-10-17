@@ -1021,6 +1021,59 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     runtime.stop();
   });
 
+  it('keeps an agent’s direct message and wakes it on every post there, mention or not (DOR-2955)', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const ana = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: ana.id,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(mirrors, harness.service, enrollments, (id) =>
+      id === ana.id ? id : null
+    );
+    bridge.useTeammateRuntimes(() => true);
+    const dm: CommunityRoom = { ...testRoom(), kind: 'dm', title: 'Direct message with Bo' };
+    const adapter: RemoteRoomSubscriptionAdapter = {
+      listRooms: async () => [],
+      listDirectMessageRooms: async (context) =>
+        context.actingMemberId === 'remote-ana' ? [dm] : [],
+      subscribeNativeRoom(): AsyncIterable<RemoteNativeRoomEvent> {
+        return (async function* () {
+          yield snapshot(dm, [entry(1, [])], 1);
+          yield { type: 'replay_complete' as const, capturedSeq: 1 };
+          yield { type: 'entry' as const, entry: entry(2, []) };
+        })();
+      },
+    };
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
+      adapters: () => adapter,
+      resolveLocalAgentAuthor: (id) => (id === ana.id ? id : null),
+      isRoomJoined: () => true,
+      toLiveEntry: (value) => live(value, Number(value.id.slice('entry-'.length))),
+      retryMs: 1,
+    });
+
+    runtime.start();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.dispatchesSinceBoot === 1,
+      'the direct message wakes its agent without a mention'
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0]?.authorId).toBe(ana.id);
+    expect(harness.runner.turns[0]?.teammate).toBe(true);
+    runtime.stop();
+  });
+
   it('revokes a persisted mirror and aborts its agent stream when the fresh agent directory removes the room', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),

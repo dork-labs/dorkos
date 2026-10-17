@@ -255,6 +255,10 @@ export class RemoteRoomSubscriptionBridge {
     // that arrived while spaces were off never starts a turn later either.
     if (!this.dispatchEnabled(room.communityRef)) return;
     let dispatchEntry = this.addressing.dispatchEntry(target.id, room, saved, owner);
+    // A direct message (DOR-2955) needs no mention: every person's post in it is to its agent,
+    // through the same gate, budget and teammate rules as a mention.
+    if (room.kind === 'dm')
+      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry, owner);
     // Past here without a mention the setting allows only in an answer-in channel: every other
     // connection keeps the mention rule exactly as it was. A message removed before it was cached
     // is stored as it stands now, with nothing to answer.
