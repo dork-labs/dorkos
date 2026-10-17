@@ -25,6 +25,7 @@ import {
 } from './v2-archive.js';
 import { maxLineBytes, V2RowRules, V2Tally, type V2Row } from './v2-rows.js';
 import { STEPS, weight, type RestoreScope } from './v2-writers.js';
+import { directMessagesResolve } from './v2-direct-messages.js';
 
 /** The most rows one restore batch inserts, counting a message's mentions. */
 export const RESTORE_BATCH_ROWS = 1_000;
@@ -354,12 +355,14 @@ export async function restoreV2(
       [communityId, ownerId]
     );
     invalid(!owner.rowCount);
+    // A direct message names a person and an agent this restore wrote (DOR-2955).
+    await directMessagesResolve(client, communityId);
     // An owner export that gave its owner no channel membership still leaves them in every
-    // channel, as version 1 does.
+    // channel, as version 1 does; in a direct message only when it is the owner's own.
     await client.query(
       `INSERT INTO channel_members(community_id,channel_id,member_id)
        SELECT $1,c.id,$2 FROM channels c
-       WHERE c.community_id=$1 AND NOT EXISTS(
+       WHERE c.community_id=$1 AND (c.kind='channel' OR c.dm_member_id=$2) AND NOT EXISTS(
          SELECT 1 FROM channel_members cm WHERE cm.community_id=$1 AND cm.member_id=$2)`,
       [communityId, ownerId]
     );

@@ -28,6 +28,7 @@ import {
 import { channelRoster } from '../../content/roster.js';
 import { ApiError, json, readJson } from '../../http.js';
 import { notifyLive } from '../../live/notices.js';
+import { refuseDirectMessage, registerDirectMessageRoutes } from './agents/direct-messages.js';
 
 interface ChannelRow {
   id: string;
@@ -77,11 +78,13 @@ async function channelProjection(pool: Pool, id: string, member: Member | Princi
   return project(row);
 }
 
-/** Register channel discovery, membership and moderator routes. */
+/** Register channel discovery, membership and moderator routes, and direct messages'. */
 export function registerChannelRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
+  // Direct messages are channels of their own kind (DOR-2955); their routes sit with these.
+  registerDirectMessageRoutes(app, { pool, auth });
   app.get('/channels', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
     const agent = member.kind === 'agent';
@@ -93,7 +96,8 @@ export function registerChannelRoutes(
        FROM channels c
        LEFT JOIN ${agent ? 'agent_channel_members' : 'channel_members'} cm ON cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$1
        LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$1
-       WHERE c.community_id=$2 AND ${agent ? 'cm.agent_id IS NOT NULL' : "(c.visibility='public' OR cm.member_id IS NOT NULL)"}
+       WHERE c.community_id=$2 AND c.kind='channel'
+         AND ${agent ? 'cm.agent_id IS NOT NULL' : "(c.visibility='public' OR cm.member_id IS NOT NULL)"}
        ORDER BY c.created_at,c.id`,
       [member.id, member.community_id]
     );
@@ -159,6 +163,7 @@ export function registerChannelRoutes(
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       await requireLiveRole(client, member, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       refusePrivateAutoJoin(channel.visibility, body.autoJoin);
       await client.query(
         `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
@@ -194,6 +199,7 @@ export function registerChannelRoutes(
       throw new ApiError(403, 'FORBIDDEN', 'Agents cannot join channels themselves.');
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
+      refuseDirectMessage(channel);
       await lockPrincipalAuthority(client, member, 'post');
       await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
@@ -215,6 +221,7 @@ export function registerChannelRoutes(
       throw new ApiError(403, 'FORBIDDEN', 'Agents cannot leave channels themselves.');
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
+      refuseDirectMessage(channel);
       await lockPrincipalAuthority(client, member, 'post');
       await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
       await client.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
@@ -264,6 +271,7 @@ export function registerChannelRoutes(
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
       await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       const target = await client.query(
         "SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
@@ -285,6 +293,7 @@ export function registerChannelRoutes(
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
       const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
+      refuseDirectMessage(channel);
       const target = await client.query<{ role: Member['role'] }>(
         "SELECT role FROM members WHERE id=$1 AND community_id=$2 AND kind='person' AND active FOR SHARE",
         [c.req.param('memberId'), actor.community_id]

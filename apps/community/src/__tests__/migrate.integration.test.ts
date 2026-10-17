@@ -1872,8 +1872,14 @@ it('adds agent availability without touching rows, and the release before still 
 
     await migrate(url.toString());
 
-    // Existing rows: as they were, plus two NULL columns, which read as unknown.
-    expect(await snapshot(existing)).toEqual({ ...before, runs_on: null, last_seen_at: null });
+    // Existing rows: as they were, plus two NULL columns, which read as unknown, and the later
+    // direct-message switch (0046), off.
+    expect(await snapshot(existing)).toEqual({
+      ...before,
+      runs_on: null,
+      last_seen_at: null,
+      accepts_dms: false,
+    });
     const columns = await db.query(
       `SELECT column_name,is_nullable,column_default FROM information_schema.columns
        WHERE table_name='agents' AND column_name IN ('runs_on','last_seen_at') ORDER BY column_name`
@@ -2175,7 +2181,7 @@ it('starts across an unknown additive migration and refuses a raised compatibili
     const newest = Math.max(...COMMUNITY_MIGRATIONS.map(([version]) => version));
     expect(
       (await db.query('SELECT min_migration FROM community_compatibility_floor')).rows
-    ).toEqual([{ min_migration: 42 }]);
+    ).toEqual([{ min_migration: 46 }]);
     // A newer release added a migration that only adds: this release still starts.
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [newest + 1]);
     await migrate(url.toString());

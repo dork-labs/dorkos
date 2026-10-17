@@ -79,7 +79,7 @@ function specs(scope: ExportJobScope, format: ExportFormat): CollectionSpec[] {
       key: 'channels',
       prefix: 'channels',
       select: `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,c.auto_join,
-          c.slow_mode_seconds
+          c.slow_mode_seconds,c.kind,c.dm_member_id,c.dm_agent_id
         FROM channels c WHERE c.community_id=$1 ${owner ? '' : 'AND c.id=ANY($3::uuid[])'}`,
       keys: [uuidKey('c.id', 'id')],
       line: (row) =>
@@ -92,6 +92,10 @@ function specs(scope: ExportJobScope, format: ExportFormat): CollectionSpec[] {
           created_at: iso(row.created_at),
           auto_join: row.auto_join,
           slow_mode_seconds: row.slow_mode_seconds,
+          // Only on a direct message (DOR-2955), so every channel's line reads as it always did.
+          ...(row.kind === 'dm'
+            ? { kind: 'dm', dm_member_id: row.dm_member_id, dm_agent_id: row.dm_agent_id }
+            : {}),
         }),
     },
     {

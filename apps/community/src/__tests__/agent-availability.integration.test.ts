@@ -414,7 +414,9 @@ describe('what an installed app reads', () => {
     // Purpose: fails if the capability flag goes, so an app would never start reporting.
     for (const path of ['/api/v1/features', `${tenant()}/features`]) {
       const response = await expectStatus(await h.call(path), 200, path);
-      expect(await response.json()).toEqual({ features: { agentAvailability: true } });
+      expect(await response.json()).toEqual({
+        features: { agentAvailability: true, agentDms: true },
+      });
     }
   });
 });

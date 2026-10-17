@@ -8,7 +8,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import { requireConnectionGrant } from '../../../data.js';
 import { json, readJson } from '../../../http.js';
-import { grantScope } from './enrollment.js';
+import { grantScope } from './agent-scope.js';
 
 /**
  * How old an agent's recorded report must be before a new one is written: half the report

@@ -163,6 +163,10 @@ export class V2RowRules {
       case 'channels': {
         const channel = importedChannel(value as V2Row['channels']);
         this.notFuture(channel.created_at);
+        // A direct message is private and never joined on arrival (0046, DOR-2955).
+        invalid(
+          channel.kind === 'dm' && (channel.visibility !== 'private' || channel.auto_join === true)
+        );
         readable(CommunityWireChannelSchema, {
           id: channel.id,
           name: channel.name,

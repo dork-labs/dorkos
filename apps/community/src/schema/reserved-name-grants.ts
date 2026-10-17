@@ -1,6 +1,7 @@
 import { check, foreignKey, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { communityShortNames, time } from '../schema.js';
+import { time } from '../schema.js';
+import { communityShortNames } from './short-names.js';
 
 // Reserved short names a host operator gave to a space (0038), beside `../schema.ts`.
 

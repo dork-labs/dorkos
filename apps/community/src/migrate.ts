@@ -49,6 +49,7 @@ export const COMMUNITY_MIGRATIONS = [
   [43, '0043_export_format_3.sql'],
   [44, '0044_accounts_read_scope.sql'],
   [45, '0045_no_provider_tokens.sql'],
+  [46, '0046_agent_dms.sql'],
 ] as const;
 
 /**

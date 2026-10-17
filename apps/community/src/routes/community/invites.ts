@@ -38,6 +38,7 @@ import { joinAutoJoinChannels, lockAutoJoinChannels } from '../../admission/auto
 import { resolveCommunityContext } from '../../tenant-context.js';
 import { notifyLive } from '../../live/notices.js';
 import { assertAdmissionOpen, invalidInvitation, invitationRefusal } from './admission-refusals.js';
+import { refuseDirectMessage } from './agents/direct-messages.js';
 
 interface InviteRow {
   id: string;
@@ -158,7 +159,8 @@ export function registerInviteRoutes(
     const actor = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireInviteCreateRequestSchema);
     const result = await transaction(pool, async (client) => {
-      if (body.channelId) await lockChannel(client, body.channelId, actor);
+      // A direct message takes no invitation: it holds its person and its agent (DOR-2955).
+      if (body.channelId) refuseDirectMessage(await lockChannel(client, body.channelId, actor));
       await requireLiveRole(client, actor, ['owner', 'admin']);
       await assertAdmissionOpen(client, actor.community_id, true);
       const id = randomUUID();

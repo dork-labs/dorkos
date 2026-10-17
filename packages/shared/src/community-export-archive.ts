@@ -28,17 +28,32 @@ const nullableId = id.nullable();
  * One `channels/NNNNNN.ndjson` line of an export archive (version 2). `auto_join` is absent from
  * archives written before channels could have it, and reads as `false`.
  */
-export const CommunityExportChannelRowSchema = z.strictObject({
-  id,
-  name: z.string().min(1),
-  description: z.string().nullable(),
-  visibility: z.enum(['public', 'private']),
-  archived: z.boolean(),
-  created_at: timestamp,
-  auto_join: z.boolean().optional(),
-  /** Absent from archives written before slow mode existed; reads as 0 (off). */
-  slow_mode_seconds: z.int().min(0).max(21_600).optional(),
-});
+export const CommunityExportChannelRowSchema = z
+  .strictObject({
+    id,
+    name: z.string().min(1),
+    description: z.string().nullable(),
+    visibility: z.enum(['public', 'private']),
+    archived: z.boolean(),
+    created_at: timestamp,
+    auto_join: z.boolean().optional(),
+    /** Absent from archives written before slow mode existed; reads as 0 (off). */
+    slow_mode_seconds: z.int().min(0).max(21_600).optional(),
+    /**
+     * `dm` for a direct message with an agent, with its person and its agent's member id (0046,
+     * DOR-2955). All three are absent for an ordinary channel, and from every older archive.
+     */
+    kind: z.enum(['channel', 'dm']).optional(),
+    dm_member_id: id.optional(),
+    dm_agent_id: id.optional(),
+  })
+  .refine(
+    (row) =>
+      row.kind === 'dm'
+        ? row.dm_member_id !== undefined && row.dm_agent_id !== undefined
+        : row.dm_member_id === undefined && row.dm_agent_id === undefined,
+    { message: 'A direct message names its person and its agent; a channel names neither.' }
+  );
 /**
  * One `members/NNNNNN.ndjson` line. `email` is present for owner exports (null for an erased
  * member) and, in a personal export, only on the requester's own row.

@@ -1192,6 +1192,12 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       route: 'DELETE /channels/:id/agents/:agentId',
       call: (x) => ({ path: `/channels/${ownChannel}/agents/${x.agent}`, body: {} }),
     },
+    // Direct messages (DOR-2955): another space's agent can be neither messaged nor switched.
+    { route: 'POST /dms', call: (x) => ({ path: '/dms', body: { agentId: x.agent } }) },
+    {
+      route: 'PUT /agents/:id/dms',
+      call: (x) => ({ path: `/agents/${x.agent}/dms`, body: { accepts: true } }),
+    },
   ];
   // Routes that take no object id at all: they act only on the caller, the
   // community named in the URL, or an object they create. There is nothing
@@ -1241,6 +1247,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /reserved-names': 'reads the URL community only',
     'PUT /reserved-names': 'edits the URL community only',
     'GET /channels/auto-join': 'lists the URL community',
+    'GET /dms': "lists the caller's own direct messages",
     'GET /open-admission': 'reads the URL community only',
     'POST /open-admission/preflight': 'the URL community only; references nothing',
     'POST /open-admission/join': 'admits the caller to the URL community only; no body',
