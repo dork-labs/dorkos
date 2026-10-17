@@ -88,9 +88,27 @@ const deps = {
   viewers: { open: vi.fn(() => release) },
 } satisfies HubComputerRoutesDeps;
 
+/** The owner's link routes, faked: only the stored names matter here. */
+const links = {
+  servingOrigin: () => 'https://me.dorkos.app',
+  mint: vi.fn(),
+  forget: vi.fn(),
+  record: (computerId: string) =>
+    computerId === COMPUTER
+      ? {
+          v: 1 as const,
+          computerId,
+          secretHash: 'h'.repeat(43),
+          computerKey: 'k'.repeat(43),
+          computerName: 'Studio Mac',
+          linkedAt: '2026-10-16T12:00:00.000Z',
+        }
+      : null,
+};
+
 const server = listeningServer(
   honoGroupListener(
-    { path: '/api/hub/computers', routes: createHubComputerRoutes(deps) },
+    { path: '/api/hub/computers', routes: createHubComputerRoutes(deps, links) },
     {
       before: async (c, next) => {
         if (caller.credential)
@@ -213,8 +231,20 @@ describe('GET /api/hub/computers', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       computers: [
-        { computerId: COMPUTER, connected: true, features: [...SESSION_RELAY_FEATURES] },
-        { computerId: 'computer-2', connected: false, features: [] },
+        {
+          computerId: COMPUTER,
+          computerName: 'Studio Mac',
+          linkedAt: '2026-10-16T12:00:00.000Z',
+          connected: true,
+          features: [...SESSION_RELAY_FEATURES],
+        },
+        {
+          computerId: 'computer-2',
+          computerName: null,
+          linkedAt: null,
+          connected: false,
+          features: [],
+        },
       ],
     });
   });

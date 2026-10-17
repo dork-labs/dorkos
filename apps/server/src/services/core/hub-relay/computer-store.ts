@@ -56,6 +56,11 @@ export const LinkedComputerSchema = z.strictObject({
   secretHash: Base64url32Schema,
   /** The computer's Ed25519 public key, raw 32 bytes base64url (`pinnableKey`). */
   computerKey: RelayPinnedHubKeySchema,
+  /**
+   * The name the computer linked with, as its owner sees it. Optional, so a
+   * record written before names were kept still reads.
+   */
+  computerName: z.string().min(1).max(64).optional(),
   /** When it was linked (ISO 8601). */
   linkedAt: z.string().datetime(),
 });
@@ -66,7 +71,10 @@ export type LinkedComputer = z.infer<typeof LinkedComputerSchema>;
 const FileSchema = z.array(LinkedComputerSchema).max(HUB_RELAY_MAX_COMPUTERS);
 
 /** What the linking flow hands {@link linkComputer}. */
-export type LinkComputerInput = Pick<LinkedComputer, 'computerId' | 'secretHash' | 'computerKey'>;
+export type LinkComputerInput = Pick<
+  LinkedComputer,
+  'computerId' | 'secretHash' | 'computerKey' | 'computerName'
+>;
 
 function filePath(dorkHome: string): string {
   return path.join(dorkHome, FOLDER, FILE);
@@ -163,11 +171,25 @@ async function writeList(
 }
 
 /**
+ * Thrown when a link names a computer id already linked under another key.
+ * Nothing is written and no connection is closed: a fresh link code is not
+ * enough to take over a computer the hub already serves.
+ */
+export class LinkedComputerKeyMismatchError extends Error {
+  constructor() {
+    super('That computer id is already linked under another key');
+    this.name = 'LinkedComputerKeyMismatchError';
+  }
+}
+
+/**
  * Store a computer's record, or replace the record of one already linked under
- * the same id. Mints nothing: the caller (step B3) made the secret and hands
- * over only its hash. Refuses a 33rd computer, and a secret hash another
- * computer has. Closes no connection: B3 calls `linkComputer` from this
- * folder's `index.ts`, which does.
+ * the same id and the same key (a relink, which rotates its secret). Mints
+ * nothing: the caller (step B3) made the secret and hands over only its hash.
+ * Refuses a 33rd computer, a secret hash another computer has, and an id
+ * already linked under another key ({@link LinkedComputerKeyMismatchError}).
+ * Closes no connection: B3 calls `linkComputer` from this folder's
+ * `index.ts`, which does.
  *
  * @param input - The computer's id, secret hash and public key.
  * @param dorkHome - The data folder; defaults to the live one.
@@ -184,6 +206,10 @@ export async function storeLinkedComputer(
   });
   return withFileLock(filePath(dorkHome), async (write) => {
     const all = readLinkedComputers(dorkHome);
+    const existing = all.find((c) => c.computerId === record.computerId);
+    if (existing && existing.computerKey !== record.computerKey) {
+      throw new LinkedComputerKeyMismatchError();
+    }
     const others = all.filter((c) => c.computerId !== record.computerId);
     if (others.some((c) => c.secretHash === record.secretHash)) {
       throw new Error('That relay secret already belongs to another computer');

@@ -3,6 +3,7 @@ import { CloudPlanPanel, creditsRuntimesOnOffer } from '@/layers/features/cloud-
 import { useCloudCredits } from '@/layers/shared/model';
 import { useSpacesEnabled } from '@/layers/entities/config';
 import { OfficialSpaceOfferCard } from '@/layers/entities/community';
+import { LinkedComputersSection } from '@/layers/features/linked-computers';
 
 /**
  * Settings › DorkOS account — the hosted account's one home in the app
@@ -21,13 +22,19 @@ import { OfficialSpaceOfferCard } from '@/layers/entities/community';
  * Once linked, it offers the DorkOS community once (spec
  * `official-community-space` D5): the card draws nothing without an official
  * space, after joining, or after Not now.
+ *
+ * On a hub it also lists the owner's linked computers, above everything else;
+ * anywhere else that section draws nothing.
  */
 export function DorkosAccountTab() {
   return (
-    <CloudLinkPanel signedOut={<SignedOutPage />}>
-      <OfficialSpaceOfferCard />
-      <CloudPlanPanel />
-    </CloudLinkPanel>
+    <div className="space-y-4">
+      <LinkedComputersSection />
+      <CloudLinkPanel signedOut={<SignedOutPage />}>
+        <OfficialSpaceOfferCard />
+        <CloudPlanPanel />
+      </CloudLinkPanel>
+    </div>
   );
 }
 

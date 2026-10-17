@@ -27002,7 +27002,7 @@
           "Hub"
         ],
         "summary": "List linked computers",
-        "description": "On a hub: each computer it serves, whether it is connected now, and the relay features it advertised. Elsewhere this path is not found.",
+        "description": "On a hub: each computer it serves, the name it linked with, whether it is connected now, and the relay features it advertised. Elsewhere this path is not found.",
         "responses": {
           "200": {
             "description": "The linked computers",
@@ -27019,6 +27019,18 @@
                           "computerId": {
                             "type": "string"
                           },
+                          "computerName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "linkedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "connected": {
                             "type": "boolean"
                           },
@@ -27031,6 +27043,8 @@
                         },
                         "required": [
                           "computerId",
+                          "computerName",
+                          "linkedAt",
                           "connected",
                           "features"
                         ]
@@ -28304,6 +28318,470 @@
                       "type": "string"
                     },
                     "feature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/hub/computers/link-code": {
+      "post": {
+        "tags": [
+          "Hub"
+        ],
+        "summary": "Make a code to link a computer",
+        "description": "On a hub, for its owner's own browser sign-in: a one-time code, good for ten minutes, with the hub's host folded in (`<code>@<host>`). The owner pastes it into DorkOS on the computer to link. At most three are outstanding; another drops the oldest.",
+        "responses": {
+          "200": {
+            "description": "The code, and when it stops working",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linkCode": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linkCode",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a hub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The hub is not serving yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/hub/computers/{computerId}": {
+      "delete": {
+        "tags": [
+          "Hub"
+        ],
+        "summary": "Unlink a computer",
+        "description": "On a hub, for its owner's own browser sign-in: forgets the computer, so its relay secret stops working, and ends anything it has open on the hub now.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "computerId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unlinked"
+          },
+          "403": {
+            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a hub, or no such linked computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/hub/link": {
+      "post": {
+        "tags": [
+          "Hub"
+        ],
+        "summary": "Link a computer with a code",
+        "description": "Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the credential. The request is signed with the computer's own key; the answer carries the hub's key and is signed with it. A wrong, expired or used code and a bad signature get the same 401.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "v": {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "computerId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[\\w.:-]+$"
+                  },
+                  "computerKey": {
+                    "type": "string",
+                    "minLength": 43,
+                    "maxLength": 43,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "secretHash": {
+                    "type": "string",
+                    "minLength": 43,
+                    "maxLength": 43,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "computerName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "minLength": 86,
+                    "maxLength": 86,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  }
+                },
+                "required": [
+                  "v",
+                  "code",
+                  "computerId",
+                  "computerKey",
+                  "secretHash",
+                  "computerName",
+                  "signature"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "type": "number",
+                      "enum": [
+                        1
+                      ]
+                    },
+                    "hubKey": {
+                      "type": "string",
+                      "minLength": 43,
+                      "maxLength": 43,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "ownerAccountId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    },
+                    "issuer": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    },
+                    "signature": {
+                      "type": "string",
+                      "minLength": 86,
+                      "maxLength": 86,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    }
+                  },
+                  "required": [
+                    "v",
+                    "hubKey",
+                    "signature"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a link request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The code or the signature did not check out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A browser sent it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a hub",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That computer id is already linked under another key, or the hub cannot link another",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is over 4 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong codes lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The hub is not serving, or has no signing key yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
                       "type": "string"
                     }
                   },

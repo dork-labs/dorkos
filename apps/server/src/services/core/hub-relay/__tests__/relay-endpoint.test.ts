@@ -33,7 +33,7 @@ const serving = await import('../../hub/hub-serving.js');
 const { pinnableKey } = await import('../../session-relay/channel.js');
 const { RelayDialer } = await import('../../session-relay/relay-dialer.js');
 const { relaySecretHash } = await import('../computer-store.js');
-const { linkComputer } = await import('../index.js');
+const { LinkedComputerKeyMismatchError, linkComputer } = await import('../index.js');
 const { hubRelayComputerRoute, setHubRelaySigner } = await import('../relay-endpoint.js');
 const { computerConnection } = await import('../hub-relay-registry.js');
 type Deps = import('../relay-endpoint.js').HubRelayEndpointDeps;
@@ -216,7 +216,7 @@ describe('a computer dialing its hub for real', () => {
       },
     });
     dialers.push(dialer);
-    return { dialer, hubKey };
+    return { dialer, hubKey, computerKey };
   }
 
   it('connects, proves both ends and answers a request through the hub', async () => {
@@ -233,19 +233,36 @@ describe('a computer dialing its hub for real', () => {
     expect(result).toEqual({ ok: true, body: { chats: [] } });
   });
 
-  it('closes a computer’s connection when it is linked again with a new key', async () => {
+  it('closes a computer’s connection when it relinks under its key with a new secret', async () => {
     const hubKey = generateKeyPairSync('ed25519').privateKey;
     setHubRelaySigner((data) => sign(null, data, hubKey));
-    const { dialer } = await computer(hubKey);
+    const { dialer, computerKey } = await computer(hubKey);
     dialer.onViewerOpen('2099-01-01T00:00:00.000Z');
     await vi.waitFor(() => expect(computerConnection('computer-1')).not.toBeNull());
     await linkComputer({
       computerId: 'computer-1',
       secretHash: relaySecretHash(randomBytes(32).toString('base64url')),
-      computerKey: pinnableKey(generateKeyPairSync('ed25519').privateKey),
+      computerKey: pinnableKey(computerKey),
     });
     expect(computerConnection('computer-1')).toBeNull();
     await vi.waitFor(() => expect(dialer.connected).toBe(false));
+  });
+
+  it('refuses another key under a linked id and keeps the live connection', async () => {
+    const hubKey = generateKeyPairSync('ed25519').privateKey;
+    setHubRelaySigner((data) => sign(null, data, hubKey));
+    const { dialer } = await computer(hubKey);
+    dialer.onViewerOpen('2099-01-01T00:00:00.000Z');
+    await vi.waitFor(() => expect(computerConnection('computer-1')).not.toBeNull());
+    await expect(
+      linkComputer({
+        computerId: 'computer-1',
+        secretHash: relaySecretHash(randomBytes(32).toString('base64url')),
+        computerKey: pinnableKey(generateKeyPairSync('ed25519').privateKey),
+      })
+    ).rejects.toBeInstanceOf(LinkedComputerKeyMismatchError);
+    expect(computerConnection('computer-1')).not.toBeNull();
+    expect(dialer.connected).toBe(true);
   });
 
   it('refuses every dial while the hub has no signing key', async () => {

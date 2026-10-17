@@ -22,6 +22,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 import { logger } from '../../../../lib/logger.js';
 import {
   HUB_RELAY_MAX_COMPUTERS,
+  LinkedComputerKeyMismatchError,
   findComputerBySecret,
   readLinkedComputers,
   relaySecretHash,
@@ -94,15 +95,16 @@ describe('the linked computer store', () => {
     expect(timingSafeEqual).toHaveBeenCalledTimes(3);
   });
 
-  it('replaces a computer linked again under its id, and forgets one unlinked', async () => {
+  it('replaces a computer linked again under its id and key, and forgets one unlinked', async () => {
     const old = secret();
     const fresh = secret();
+    const computerKey = key();
     await linkComputer(
-      { computerId: 'computer-1', secretHash: relaySecretHash(old), computerKey: key() },
+      { computerId: 'computer-1', secretHash: relaySecretHash(old), computerKey },
       home
     );
     await linkComputer(
-      { computerId: 'computer-1', secretHash: relaySecretHash(fresh), computerKey: key() },
+      { computerId: 'computer-1', secretHash: relaySecretHash(fresh), computerKey },
       home
     );
     expect(readLinkedComputers(home)).toHaveLength(1);
@@ -112,6 +114,21 @@ describe('the linked computer store', () => {
     expect(await unlinkComputer('computer-1', home)).toBe(true);
     expect(await unlinkComputer('computer-1', home)).toBe(false);
     expect(findComputerBySecret(fresh, home)).toBeNull();
+  });
+
+  it('refuses a linked id under another key, and keeps the record it has', async () => {
+    const kept = secret();
+    await linkComputer(
+      { computerId: 'computer-1', secretHash: relaySecretHash(kept), computerKey: key() },
+      home
+    );
+    await expect(
+      linkComputer(
+        { computerId: 'computer-1', secretHash: relaySecretHash(secret()), computerKey: key() },
+        home
+      )
+    ).rejects.toBeInstanceOf(LinkedComputerKeyMismatchError);
+    expect(findComputerBySecret(kept, home)?.computerId).toBe('computer-1');
   });
 
   it('refuses a secret another computer has, and one computer past the cap', async () => {

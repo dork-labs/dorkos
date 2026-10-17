@@ -55,7 +55,7 @@ import type { WireConnectorServicesResult } from './connector-services.js';
 import type { ServerRefs } from '../server-refs.js';
 import { currentServerRole } from '../../lib/server-role.js';
 import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
-import { signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
+import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
 import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
 import { hubRelayWake } from '../../services/core/hub/hub-relay-wake.js';
 
@@ -115,8 +115,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   if (currentServerRole() === 'hub') {
     startHubAssignmentSync(dorkHome);
     // The relay signs each computer's handshake with the hub's own key, which
-    // signs relay transcripts only and only while the hub serves.
-    setHubRelaySigner(signWithHubKey);
+    // signs relay transcripts only and only while the hub serves. Linking a
+    // computer also hands it the key's public half, to pin.
+    setHubRelaySigner(signWithHubKey, hubSigningPublicKey);
     // A chat opened on a computer that is not connected asks Cloud to wake
     // it; a hub with no Cloud key wakes nobody.
     setHubRelayWaker(hubRelayWake());

@@ -3,8 +3,8 @@
  *
  * `/api/hub/computers` is the hub owner's alone: through the real `/api` chain
  * and session gate on a hub, a caller with no sign-in is refused before any
- * route runs, for reads, the stream and writes alike, and nothing reaches a
- * computer.
+ * route runs, for reads, the stream, writes and the link routes alike, and
+ * nothing reaches a computer.
  */
 import { describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
@@ -55,6 +55,8 @@ describe('the hub gate on /api/hub/computers', () => {
     ['post', `${BASE}/sessions/${SESSION}/messages`],
     ['post', `${BASE}/sessions/${SESSION}/interrupt`],
     ['post', `${BASE}/sessions/${SESSION}/answers`],
+    ['post', '/api/hub/computers/link-code'],
+    ['delete', BASE],
   ] as const)('refuses %s %s without a sign-in', async (method, path) => {
     const res = await request(server)[method](path).set('Host', 'localhost:4242');
     expect(res.status).toBe(401);

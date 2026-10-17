@@ -377,6 +377,14 @@
       "types": "./src/session-relay.ts",
       "default": "./dist/session-relay.js"
     },
+    "./session-relay-link": {
+      "types": "./src/session-relay-link.ts",
+      "default": "./dist/session-relay-link.js"
+    },
+    "./transport-hub": {
+      "types": "./src/transport-hub.ts",
+      "default": "./dist/transport-hub.js"
+    },
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"
