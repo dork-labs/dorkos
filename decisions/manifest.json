@@ -7712,6 +7712,16 @@
       "extractedFrom": null,
       "specSlug": "agent-memory",
       "amends": ["0273"]
+    },
+    {
+      "id": "261017-211859",
+      "slug": "a-conversation-is-the-shared-log-a-session-is-private",
+      "title": "A conversation is the shared log; a session is one agent's private context seated behind it",
+      "status": "proposed",
+      "created": "2026-10-17",
+      "extractedFrom": null,
+      "specSlug": "conversation-model",
+      "amends": ["261006-235240", "261009-171114"]
     }
   ]
 }

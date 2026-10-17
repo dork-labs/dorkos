@@ -3737,6 +3737,13 @@
       "created": "2026-10-10",
       "status": "specified",
       "linearIssue": "DOR-2783"
+    },
+    {
+      "id": "261017-211900",
+      "slug": "conversation-model",
+      "title": "One conversation model: the log is shared, the session is private",
+      "created": "2026-10-17",
+      "status": "draft"
     }
   ]
 }
