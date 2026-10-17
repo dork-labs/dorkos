@@ -24,9 +24,10 @@ const BASE = '/documents/comments';
 /**
  * Create the doc comment methods bound to a base URL.
  *
- * Every write carries this window's `X-Client-Id`: with login off it is how
- * the server tells the app from a program on this machine, and only the app's
- * comments count as the owner's request (`routes/doc-comment-caller.ts`).
+ * Every write carries this window's `X-Client-Id`, a marker the server asks
+ * for before it reads a comment as the owner's request with login off. It is
+ * not a credential (any program can send one); the protection is login
+ * (`routes/doc-comment-caller.ts`).
  *
  * @param baseUrl - Server base URL (already includes `/api`).
  * @param getClientId - This window's client id.

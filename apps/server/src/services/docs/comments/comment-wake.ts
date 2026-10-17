@@ -14,7 +14,8 @@
  *    counted. Then the rooms' hourly turn budget (`RoomTurnBudget`) is charged,
  *    under a window of the doc's own that counts in the install-wide total
  *    (`rooms.maxAutomaticTurnsTotalPerHour`), so doc comments can never spend
- *    more automatic turns than rooms could. There is no path from a comment to
+ *    more automatic turns than rooms could. A wake whose send is refused or
+ *    fails hands its turn back. There is no path from a comment to
  *    an agent's turn that these do not see.
  * 2. **Where it lands.** The chat DorkOS keeps with that agent for doc
  *    comments (`doc_comment_agent_chats`), opened in the agent's home on the
@@ -127,7 +128,7 @@ export interface CommentWakeDeps {
   /** The limits, read per call. */
   limits: () => CommentWakeLimits;
   /** The rooms' hourly turn budget, or null before rooms are wired (it then refuses). */
-  budget: () => Pick<RoomTurnBudget, 'tryReserve'> | null;
+  budget: () => Pick<RoomTurnBudget, 'tryReserve' | 'release'> | null;
   /** The level a chat's latest turn ran at, or undefined when not known. */
   turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
   /** Mesh, when running. */
@@ -220,7 +221,9 @@ export class CommentWaker {
       depth = decision.depth;
     }
     const budget = this.deps.budget();
-    if (!budget || !budget.tryReserve(`doc:${request.docKey}`).allowed) return refuse('budget');
+    const window = `doc:${request.docKey}`;
+    const charge = budget?.tryReserve(window);
+    if (!budget || !charge?.allowed) return refuse('budget');
     const wakeId = ulid();
     this.deps.store.recordWake({
       id: wakeId,
@@ -237,6 +240,8 @@ export class CommentWaker {
     const unsent = (reason: 'unavailable', err?: unknown): WakeOutcome => {
       this.pending.delete(messageId);
       this.deps.store.forgetWake(wakeId);
+      // No turn ran, so the hour gets its unit back.
+      if (charge.at !== undefined) budget.release(window, charge.at);
       if (err !== undefined) {
         logger.warn('[doc-comments] could not wake a mentioned agent', {
           agentId: target.agentId,

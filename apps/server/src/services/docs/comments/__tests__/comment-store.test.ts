@@ -127,12 +127,6 @@ describe('DocCommentStore', () => {
     expect(Object.fromEntries(store.wakesByAgentInCascade('root'))).toEqual({ 'agent-a': 2 });
   });
 
-  it('moves only the threads an author opened when told to', () => {
-    openThread('t1', 'doc-a');
-    expect(store.updateAnchors('doc-a', [{ id: 't1', anchorJson: '{}' }], 'someone-else')).toBe(0);
-    expect(store.updateAnchors('doc-a', [{ id: 't1', anchorJson: '{}' }], 'author-owner')).toBe(1);
-  });
-
   it('keeps one chat per agent, replacing it when it changes', () => {
     expect(store.keptChat('agent-a')).toBeNull();
     store.keepChat('agent-a', 'chat-1', AT);

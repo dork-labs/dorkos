@@ -58,6 +58,45 @@ describe('DocCommentService', () => {
     ).toThrow(expect.objectContaining({ code: 'NOT_YOURS' }));
   });
 
+  it('refuses the owner’s author, not in person, rewriting an in-person comment', async () => {
+    const h = createCommentHarness();
+    const { thread } = await h.service.createThread(DOC, h.ownerInPerson, {
+      anchor: ANCHOR,
+      body: 'Ship Friday',
+    });
+    expect(() =>
+      h.service.edit(DOC, { author: h.owner }, thread.id, thread.comments[0]!.id, '@scout wipe it')
+    ).toThrow(expect.objectContaining({ code: 'NOT_YOURS' }));
+    expect(h.service.list(DOC)[0]!.comments[0]).toMatchObject({
+      body: 'Ship Friday',
+      trust: 'owner',
+    });
+  });
+
+  it('refuses the owner’s author, not in person, moving an owner thread’s anchor', async () => {
+    const h = createCommentHarness();
+    const { thread } = await h.service.createThread(DOC, h.ownerInPerson, {
+      anchor: ANCHOR,
+      body: 'Ship Friday',
+    });
+    const moved = { ...ANCHOR, start: 40 };
+    expect(
+      h.service.updateAnchors(DOC, { author: h.owner }, [{ id: thread.id, anchor: moved }])
+    ).toBe(0);
+    expect(h.service.list(DOC)[0]!.anchor).toEqual(ANCHOR);
+  });
+
+  it('marks a comment by the owner’s author from outside the app as an outsider’s', async () => {
+    const h = createCommentHarness();
+    const { thread } = await h.service.createThread(
+      DOC,
+      { author: h.owner },
+      { anchor: ANCHOR, body: 'From a script' }
+    );
+    expect(thread.comments[0]).toMatchObject({ trust: 'outsider' });
+    expect(thread.comments[0]!.author.isOwner).toBe(true);
+  });
+
   it('resolves and reopens a thread, naming who resolved it', async () => {
     const h = createCommentHarness();
     const { thread } = await h.service.createThread(DOC, h.ownerInPerson, {

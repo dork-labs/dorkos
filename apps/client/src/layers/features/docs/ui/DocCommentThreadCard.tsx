@@ -65,6 +65,11 @@ function CommentRow({
           <span className="text-foreground truncate font-medium">
             {comment.author.isOwner ? 'You' : comment.author.displayName}
           </span>
+          {/* Your account, but not from the app: a script or an agent holding
+              your key. Agents read it as an outsider's words, and so should you. */}
+          {comment.author.isOwner && comment.trust !== 'owner' && (
+            <span className="text-status-warning-fg shrink-0">· not from the app</span>
+          )}
           <time className="text-muted-foreground shrink-0" dateTime={comment.createdAt}>
             {formatRelativeTime(comment.createdAt)}
           </time>

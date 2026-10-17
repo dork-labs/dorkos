@@ -26,6 +26,16 @@ function budgetOf(perRoom: number, windowMs = 60_000, global = 100_000) {
 }
 
 describe('RoomTurnBudget', () => {
+  it('takes back a charged turn that never ran, in memory and on disk', () => {
+    const { budget, db, restart } = budgetOf(1);
+    const charge = budget.tryReserve('doc:k');
+    expect(budget.tryReserve('doc:k').allowed).toBe(false);
+    budget.release('doc:k', charge.at!);
+    expect(db.select().from(roomTurnSpend).all()).toHaveLength(0);
+    expect(restart().tryReserve('doc:k').allowed).toBe(true);
+    expect(budget.tryReserve('doc:k').allowed).toBe(true);
+  });
+
   it('allows up to the cap and refuses past it', () => {
     const { budget } = budgetOf(3);
     expect([1, 2, 3].map(() => budget.tryReserve('room-1').allowed)).toEqual([true, true, true]);
@@ -386,6 +396,10 @@ describe('RoomTurnBudget — per-room caps and the unlimited state (DOR-1429)', 
 
   it('marks a charged reservation as counted, so the notice re-arm can tell', () => {
     const budget = perRoomBudget({ 'room-1': 2 }, 10);
-    expect(budget.tryReserve('room-1')).toEqual({ allowed: true, counted: true });
+    expect(budget.tryReserve('room-1')).toEqual({
+      allowed: true,
+      counted: true,
+      at: expect.any(Number),
+    });
   });
 });

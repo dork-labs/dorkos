@@ -185,14 +185,17 @@ export class DocCommentService {
 
   /**
    * Change your own comment. Its mentions stay what they were when it was
-   * written, so an edit never wakes anybody.
+   * written, so an edit never wakes anybody, and so does its trust: a comment
+   * written as the owner's request can be changed only by the owner in the
+   * app, so its words stay the owner's.
    *
    * @param doc - The doc.
    * @param writer - Who is editing.
    * @param threadId - The thread.
    * @param commentId - The comment.
    * @param body - Its new words.
-   * @throws DocCommentError `NOT_FOUND`, or `NOT_YOURS` for somebody else's comment.
+   * @throws DocCommentError `NOT_FOUND`, or `NOT_YOURS` for somebody else's
+   *   comment, or for the owner's in-person comment edited from outside the app.
    */
   edit(
     doc: DocLocation,
@@ -207,6 +210,11 @@ export class DocCommentService {
     if (comment.authorId !== writer.author.id) {
       throw new DocCommentError('NOT_YOURS', 'Only the person who wrote a comment can change it.');
     }
+    // The owner's request stays the owner's: only the owner in the app may
+    // rewrite it, never a program holding the owner's identity.
+    if (comment.trust === 'owner' && writer.inPerson !== true) {
+      throw new DocCommentError('NOT_YOURS', 'Change this comment in the DorkOS app.');
+    }
     this.deps.store.editComment(comment, body, this.stamp());
     return this.view(doc, this.requireThread(doc, threadId));
   }
@@ -215,7 +223,7 @@ export class DocCommentService {
    * Save the anchors the editor moved. Ids that are not this doc's threads
    * are skipped, and so are threads the caller may not move: a person in the
    * app moves any thread (their editor reports them), anybody else only the
-   * threads it opened.
+   * threads it opened, and never one the owner opened in person.
    *
    * @param doc - The doc.
    * @param writer - Who is saving them.
@@ -227,10 +235,28 @@ export class DocCommentService {
     writer: CommentWriter,
     updates: ReadonlyArray<{ id: string; anchor: DocCommentAnchor }>
   ): number {
+    const movable = writer.inPerson === true ? null : this.movableBy(doc, writer.author.id);
     return this.deps.store.updateAnchors(
       doc.key,
-      updates.map(({ id, anchor }) => ({ id, anchorJson: JSON.stringify(anchor) })),
-      writer.inPerson === true ? undefined : writer.author.id
+      updates
+        .filter(({ id }) => movable === null || movable.has(id))
+        .map(({ id, anchor }) => ({ id, anchorJson: JSON.stringify(anchor) }))
+    );
+  }
+
+  /**
+   * The threads on a doc a caller that is not a person in the app may move:
+   * the ones it opened, and never one opened as the owner's own request.
+   */
+  private movableBy(doc: DocLocation, authorId: string): Set<string> {
+    return new Set(
+      this.deps.store
+        .listThreads(doc.key)
+        .filter(
+          ({ thread, comments }) =>
+            thread.createdByAuthorId === authorId && comments[0]?.trust !== 'owner'
+        )
+        .map(({ thread }) => thread.id)
     );
   }
 
@@ -443,6 +469,7 @@ function toThread(
       author: author(comment.authorId),
       body: comment.body,
       mentions: parseMentions(comment.mentionsJson),
+      trust: comment.trust,
       createdAt: comment.createdAt,
       editedAt: comment.editedAt,
     })),

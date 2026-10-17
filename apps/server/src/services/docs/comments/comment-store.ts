@@ -209,13 +209,11 @@ export class DocCommentStore {
    *
    * @param docKey - The doc.
    * @param updates - Each thread and its new anchor (JSON).
-   * @param openedBy - When set, only threads this author opened move.
    * @returns How many threads took a new anchor.
    */
   updateAnchors(
     docKey: string,
-    updates: ReadonlyArray<{ id: string; anchorJson: string }>,
-    openedBy?: string
+    updates: ReadonlyArray<{ id: string; anchorJson: string }>
   ): number {
     if (updates.length === 0) return 0;
     return this.db.transaction((tx) => {
@@ -224,13 +222,7 @@ export class DocCommentStore {
         const result = tx
           .update(docCommentThreads)
           .set({ anchorJson })
-          .where(
-            and(
-              eq(docCommentThreads.id, id),
-              eq(docCommentThreads.docKey, docKey),
-              ...(openedBy !== undefined ? [eq(docCommentThreads.createdByAuthorId, openedBy)] : [])
-            )
-          )
+          .where(and(eq(docCommentThreads.id, id), eq(docCommentThreads.docKey, docKey)))
           .run();
         updated += result.changes;
       }

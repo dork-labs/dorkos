@@ -8,6 +8,7 @@
  * @module services/docs/comments/comment-agent-view
  */
 import fs from 'node:fs/promises';
+import type { DocComment } from '@dorkos/shared/doc-comments';
 import { anchorForRange, placeThreads } from './anchor-model.js';
 import { DocCommentError } from './comment-errors.js';
 import type { CommentWriteResult, CommentWriter, DocCommentService } from './comment-service.js';
@@ -37,7 +38,14 @@ export interface AgentThreadView {
    */
   span: { start: number; end: number; markdown: string } | null;
   /** Its comments, oldest first. */
-  comments: Array<{ id: string; author: string; authorKind: string; body: string; at: string }>;
+  comments: Array<{
+    id: string;
+    author: string;
+    /** `owner` (the owner in person, in the app), `agent`, or `outsider`. */
+    authorKind: DocComment['trust'];
+    body: string;
+    at: string;
+  }>;
 }
 
 /** The doc's markdown, or a plain refusal when the file cannot be read. */
@@ -84,7 +92,9 @@ export async function listThreadsForAgent(
       comments: thread.comments.map((comment) => ({
         id: comment.id,
         author: comment.author.displayName,
-        authorKind: comment.author.isOwner ? 'owner' : comment.author.kind,
+        // How much the words counted for when written, never who the author row
+        // is: the owner's own account writing from outside the app is an outsider.
+        authorKind: comment.trust,
         body: comment.body,
         at: comment.createdAt,
       })),

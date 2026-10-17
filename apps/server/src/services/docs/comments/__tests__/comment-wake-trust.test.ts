@@ -303,6 +303,16 @@ describe('doc comment wakes', () => {
     expect(result.unreached).toEqual([
       expect.objectContaining({ name: 'scout', reason: 'unavailable' }),
     ]);
+    // No turn ran, so the hour's unit and the chain's wake are both handed back.
+    expect(h.released).toEqual([`doc:${DOC.key}`]);
+    expect(h.store.wakesByAgentInCascade(result.thread.comments[0]!.cascadeRoot).size).toBe(0);
+  });
+
+  it('hands the turn back when the send throws', async () => {
+    const h = createCommentHarness();
+    h.dispatch.mockRejectedValueOnce(new Error('boom'));
+    await h.service.createThread(DOC, h.ownerInPerson, { anchor: ANCHOR, body: '@scout hi' });
+    expect(h.released).toEqual([`doc:${DOC.key}`]);
   });
 });
 

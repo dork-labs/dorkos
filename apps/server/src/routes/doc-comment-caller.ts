@@ -10,14 +10,17 @@
  * owner's author, and with login on so does one holding the owner's API key.
  *
  * - **Login on:** {@link clearsTheAgentBar}, which requires a browser session
- *   (never an API key) and no agent identity or approval token.
- * - **Login off:** there is no credential for anyone, so the strongest signals
- *   there are are both required: {@link requirePersonAtThisComputer} (at this
- *   computer, no agent identity, no approval token, no `Authorization` bearer)
- *   and {@link isPersonAtTheApp} (the app's own `X-Client-Id`). The residual is
- *   DOR-505's: a program on this machine that sends neither an agent header nor
- *   a bearer, and copies a client id, reads as the app. Turning on login closes
- *   it.
+ *   (never an API key) and no agent identity or approval token. This is the
+ *   protection.
+ * - **Login off:** there is no credential for anyone, so the bar is
+ *   {@link requirePersonAtThisComputer}: at this computer, no agent identity,
+ *   no approval token and no `Authorization` bearer. That is the DOR-505 gap,
+ *   stated plainly: a program on this machine that sends none of those reads
+ *   as the person, and only turning on login closes it. {@link isPersonAtTheApp}
+ *   is also asked, but its `X-Client-Id` is a marker, not a credential: any
+ *   non-empty string passes. It keeps an honest script (one that never
+ *   pretends to be a window of the app) from reading as the owner; it stops
+ *   nobody who means to.
  *
  * Anything that clears neither is written as itself, and an owner author that
  * is not in person is an outsider: its words are fenced and its wakes held to

@@ -66,13 +66,19 @@ const SCOUT = {
   isOwner: false,
 };
 
-function comment(id: string, body: string, author = OWNER): DocComment {
+function comment(
+  id: string,
+  body: string,
+  author = OWNER,
+  trust: DocComment['trust'] = 'owner'
+): DocComment {
   return {
     id,
     threadId: 't1',
     author,
     body,
     mentions: [],
+    trust,
     createdAt: new Date().toISOString(),
     editedAt: null,
   };
@@ -167,6 +173,19 @@ describe('DocCommentsSurface', () => {
     );
     act(() => blintz.options?.onOrphanedChange?.(['t2']));
     expect(await screen.findByText('The words this was on were removed.')).toBeInTheDocument();
+  });
+
+  it('marks a comment from your account but not from the app', async () => {
+    mount([
+      thread('t1', {
+        comments: [
+          comment('c1', 'From the app'),
+          comment('c2', 'From a script', OWNER, 'outsider'),
+        ],
+      }),
+    ]);
+    await screen.findByText('From a script');
+    expect(screen.getAllByText('· not from the app')).toHaveLength(1);
   });
 
   it('keeps resolved threads behind a switch', async () => {

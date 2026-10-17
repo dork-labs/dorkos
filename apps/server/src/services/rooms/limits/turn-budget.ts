@@ -84,7 +84,7 @@
  *
  * @module server/services/rooms/limits/turn-budget
  */
-import { roomTurnSpend, and, gt, lte, type Db } from '@dorkos/db';
+import { roomTurnSpend, and, eq, gt, lte, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 
 /** One hour, the window both config fields are denominated in. */
@@ -127,6 +127,11 @@ export interface BudgetDecision {
    * exhaustion is news" is only true of a window that exists.
    */
   counted: boolean;
+  /**
+   * When this turn was charged, epoch ms, set only when `counted`. What
+   * {@link RoomTurnBudget.release} takes to hand the unit back.
+   */
+  at?: number;
 }
 
 /**
@@ -243,7 +248,40 @@ export class RoomTurnBudget {
     this.globalRuns.push(at);
     this.store(roomId, room);
     this.record(roomId, at, floor);
-    return { allowed: true, counted: true };
+    return { allowed: true, counted: true, at };
+  }
+
+  /**
+   * Hand back one charged turn that never ran: its send was refused or failed
+   * before any turn started (a doc comment's wake, DOR-2983). Removes exactly
+   * the unit {@link RoomTurnBudget.tryReserve} charged, from both windows and
+   * from the durable record; a unit that has already left the window is a
+   * no-op.
+   *
+   * @param roomId - The window it was charged to.
+   * @param at - The `at` the reservation answered with.
+   */
+  release(roomId: string, at: number): void {
+    const drop = (window: number[]) => {
+      const index = window.lastIndexOf(at);
+      if (index !== -1) window.splice(index, 1);
+    };
+    drop(this.globalRuns);
+    const room = this.perRoom.get(roomId);
+    if (room) drop(room);
+    try {
+      const row = this.db
+        .select({ id: roomTurnSpend.id })
+        .from(roomTurnSpend)
+        .where(and(eq(roomTurnSpend.roomId, roomId), eq(roomTurnSpend.at, at)))
+        .get();
+      if (row) this.db.delete(roomTurnSpend).where(eq(roomTurnSpend.id, row.id)).run();
+    } catch (err) {
+      logger.warn('[rooms] could not hand back a turn the budget had charged', {
+        roomId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

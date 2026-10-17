@@ -117,8 +117,14 @@ describe('/api/documents/comments', () => {
       .expect(200)
       .expect((res) => expect(res.body.thread.comments[1].body).toBe('And then what?'));
 
+    // A program on this computer, not the app, cannot move the owner's thread.
     await request(app())
       .put('/api/documents/comments/anchors')
+      .send({ ...doc, updates: [{ id: threadId, anchor: { ...ANCHOR, start: 1 } }] })
+      .expect(200, { updated: 0 });
+    await request(app())
+      .put('/api/documents/comments/anchors')
+      .set('X-Client-Id', 'tab-1')
       .send({ ...doc, updates: [{ id: threadId, anchor: { ...ANCHOR, start: 1 } }] })
       .expect(200, { updated: 1 });
 

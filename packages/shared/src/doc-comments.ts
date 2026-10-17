@@ -87,6 +87,13 @@ export const DocCommentSchema = z.object({
   body: z.string(),
   /** Author ids its `@handles` reached, resolved once when it was written. */
   mentions: z.array(z.string()),
+  /**
+   * How much its words counted for when it was written: `owner` only for the
+   * owner in person (in the app), `agent` for one of this computer's agents,
+   * `outsider` for anybody else, the owner's own account included when the
+   * request did not come from the app.
+   */
+  trust: z.enum(['owner', 'agent', 'outsider']),
   /** When it was written (ISO 8601). */
   createdAt: z.string(),
   /** When its author last changed it, or `null` when never. */

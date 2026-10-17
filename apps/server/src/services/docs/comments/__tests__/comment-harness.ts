@@ -113,13 +113,18 @@ export function createCommentHarness(
   let lifecycle: ((event: DispatchLifecycleEvent) => void) | undefined;
   // The rooms' hourly budget, as the waker sees it: what was charged, and to which window.
   const reserved: string[] = [];
+  const released: string[] = [];
   let turnsLeft = opts.turnsLeft ?? Number.POSITIVE_INFINITY;
   const budget = {
     tryReserve: (key: string) => {
       if (turnsLeft <= 0) return { allowed: false, scope: 'global' as const, counted: false };
       turnsLeft -= 1;
       reserved.push(key);
-      return { allowed: true, counted: true };
+      return { allowed: true, counted: true, at: reserved.length };
+    },
+    release: (key: string) => {
+      turnsLeft += 1;
+      released.push(key);
     },
   };
   const waker = new CommentWaker({
@@ -169,6 +174,7 @@ export function createCommentHarness(
     owner,
     ownerInPerson,
     reserved,
+    released,
     agentAuthor,
     startTurn,
   };
