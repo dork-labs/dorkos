@@ -1,5 +1,7 @@
 ---
 covers:
+  - 'feat(config): add the docs.enabled experiment leaf, off by default (DOR-2993)'
+  - 'feat(server): add the docs service domain with one way to name a doc and its space'
   - 'feat(client): upgrade to blintz 0.8.0 and draw mermaid diagrams in canvas docs'
   - 'fix(docs): key a doc by the file it resolves to, and keep Docs off /api/docs'
 ---
