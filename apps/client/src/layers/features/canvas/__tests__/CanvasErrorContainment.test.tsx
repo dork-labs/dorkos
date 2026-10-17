@@ -12,6 +12,8 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 // the fallback. This stands in for any viewer that throws — a stale lazy chunk,
 // a WebGL failure, a bad file.
 const jsonControl = { throws: true };
+// The route controls read their own server state and have their own suite.
+vi.mock('../ui/doc-routes/CanvasDocRoutes', () => ({ CanvasDocRoutes: () => null }));
 vi.mock('../ui/CanvasJsonContent', () => ({
   CanvasJsonContent: () => {
     if (jsonControl.throws) throw new Error('json viewer boom');

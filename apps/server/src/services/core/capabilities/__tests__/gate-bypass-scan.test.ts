@@ -448,6 +448,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/approvals.ts':
         'the cockpit route a person answers on — runs the agent bar, the requester bar, and under login the cookie bar, so an API key cannot answer for a person (DOR-474)',
+      'services/canvas/doc-channel/route-controls/controls.ts':
+        "a person allowing a document route from the canvas header (DOR-2665): reached only through routes/canvas-doc-route-controls.ts, which runs the same agent, requester and cookie bars first; it grants only the ticket it raised a moment before for the operator's own reviewed binding, and only when that ticket's inputHash equals the hash the person reviewed",
     },
   },
   {
@@ -455,6 +457,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'approvals.deny(',
     allowed: {
       'routes/approvals.ts': 'the same route, guarded the same way — see the grant entry above',
+      'services/canvas/doc-channel/route-controls/controls.ts':
+        'the same person-only path as its grant entry above: it denies only the ticket it raised itself, when the binding changed before it could be allowed, so that ticket never sits waiting',
     },
   },
   {

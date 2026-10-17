@@ -3,7 +3,8 @@
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
- * succeeds, and sign-in landing pages, where no landing is held. Heartbeats
+ * succeeds, sign-in landing pages, where no landing is held, and a canvas
+ * document's route controls, where no document declares a route. Heartbeats
  * and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -26,7 +27,11 @@ type SliceMethods =
   | 'resumeAgent'
   | 'cancelHeldConnectorAction'
   | 'getSignInLanding'
-  | 'retrySignIn';
+  | 'retrySignIn'
+  | 'getCanvasDocRoutes'
+  | 'reviewCanvasDocRoute'
+  | 'approveCanvasDocRoute'
+  | 'revokeCanvasDocRoute';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -57,5 +62,12 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
     getSignInLanding: vi.fn().mockRejectedValue(new Error('No such sign-in')),
     retrySignIn: vi.fn().mockResolvedValue({ kind: 'connected' }),
+    // No document declares a route, so the header draws no route control.
+    getCanvasDocRoutes: vi
+      .fn()
+      .mockImplementation(async (documentId: string) => ({ documentId, routes: [] })),
+    reviewCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
+    approveCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
+    revokeCanvasDocRoute: vi.fn().mockRejectedValue(new Error('No such route')),
   };
 }

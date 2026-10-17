@@ -19,6 +19,7 @@ import { CanvasRenderer } from './CanvasRenderer';
 import { CanvasHeldUpdateBanner } from './CanvasHeldUpdateBanner';
 import { CanvasSplash } from './CanvasSplash';
 import { RoomCanvasBody } from './room/RoomCanvasBody';
+import { CanvasDocRoutes } from './doc-routes/CanvasDocRoutes';
 
 /**
  * Shared body for one of the two document views — rendered in the right panel's
@@ -61,6 +62,8 @@ function CanvasBody({ view }: { view: CanvasView }) {
           onClose={close}
         />
       )}
+      {/* The open document's event routes; draws nothing when it declares none. */}
+      {active && <CanvasDocRoutes key={active.id} documentId={active.id} />}
       {/* Above the scroll container, so the choice stays put while the document
           scrolls under it — and outside the tabpanel, because it is about the
           document rather than part of it. */}

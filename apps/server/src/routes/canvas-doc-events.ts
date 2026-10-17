@@ -1,4 +1,6 @@
 import { createFileSaveRecoveryRoutes } from './file-saves/recovery.js';
+import { createCanvasDocRouteControlRoutes } from './canvas-doc-route-controls.js';
+import type { DocRouteControls } from '../services/canvas/doc-channel/route-controls/controls.js';
 import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 /** Private document event endpoints, behind the app's host, origin and session gates. */
 import type { ServerResponse } from 'node:http';
@@ -57,6 +59,8 @@ export interface DocChannelHttp {
   fileWrites?: InstallationFileWrites;
   service: DocChannelService;
   metrics?: DocChannelMetrics;
+  /** A person's route controls (`routes/canvas-doc-route-controls.ts`). */
+  routeControls?: DocRouteControls;
   actor(caller: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>): DocChannelActor;
 }
 
@@ -222,6 +226,7 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
     '/',
     createFileSaveRecoveryRoutes(() => source()?.fileWrites)
   );
+  router.route('/', createCanvasDocRouteControlRoutes(source));
   router.all('*', (c) => c.notFound());
   return router;
 }
