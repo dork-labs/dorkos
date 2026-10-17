@@ -17,12 +17,16 @@ vi.mock('@/layers/shared/model', () => {
   return { useAppStore, useTransport: () => ({ mediaUrl }) };
 });
 
+const hub = { value: false };
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+
 import { CanvasImageContent } from '../ui/CanvasImageContent';
 import { CanvasPdfContent } from '../ui/CanvasPdfContent';
 import { CanvasAudioContent } from '../ui/CanvasAudioContent';
 import { CanvasVideoContent } from '../ui/CanvasVideoContent';
 
 beforeEach(() => {
+  hub.value = false;
   mockState.selectedCwd = '/work';
   mediaUrl.mockClear();
 });
@@ -124,6 +128,22 @@ describe('CanvasPdfContent', () => {
       'data',
       '/api/files/raw?cwd=/work&path=docs/spec.pdf'
     );
+  });
+
+  it('offers a download for its own PDF on a hub, which sends it only as one', () => {
+    hub.value = true;
+    render(<CanvasPdfContent content={{ type: 'pdf', src: 'docs/spec.pdf', title: 'Spec' }} />);
+    expect(document.querySelector('object')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download Spec' })).toHaveAttribute(
+      'href',
+      '/api/files/raw?cwd=/work&path=docs/spec.pdf'
+    );
+  });
+
+  it('still shows a PDF from elsewhere on a hub', () => {
+    hub.value = true;
+    render(<CanvasPdfContent content={{ type: 'pdf', src: 'https://x/doc.pdf' }} />);
+    expect(document.querySelector('object')).toHaveAttribute('data', 'https://x/doc.pdf');
   });
 
   it('rejects a non-pdf data URI', () => {

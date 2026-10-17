@@ -217,6 +217,11 @@ router.post('/probe', async (c) => {
   if (!parsed.success) {
     return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
   }
+  // A hub's own ports are not the person's, so it does not say. The browser
+  // then asks for a preview anyway, which a hub answers as a tunnel would.
+  if (currentServerRole() === 'hub') {
+    return c.json({ error: 'No dev servers are looked for here.', code: 'NOT_ON_HUB' }, 409);
+  }
   const listening = await probeLoopbackPort(parsed.data.port);
   return c.json({ listening });
 });

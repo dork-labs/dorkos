@@ -33,6 +33,7 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
+import { currentServerRole } from '../../lib/server-role.js';
 import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
@@ -480,7 +481,10 @@ export class ExtensionServerLifecycle {
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
-        bridgeExpressRouter(router),
+        // An Express router writes straight to the socket, past the reply
+        // rules that keep a reply from running as a page (`reply-headers.ts`),
+        // so a hub mounts none (DOR-2937). Fetch handlers still answer there.
+        currentServerRole() === 'hub' ? hubRefusesRouter(id, router) : bridgeExpressRouter(router),
         this.proxyFor(id, record),
         fetch && createFetchHandler(record.manifest.name, fetch)
       );
@@ -988,4 +992,12 @@ function sealAgentTools(
     );
   }
   return agentTools;
+}
+
+/** On a hub, mount no Express router, and say so when there was one to mount. */
+function hubRefusesRouter(id: string, router: Router): null {
+  if (router.stack.length > 0) {
+    logger.warn(`[Extensions] ${id}: Express routes are off on a hub; use a fetch handler`);
+  }
+  return null;
 }

@@ -32,6 +32,12 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
     }),
   };
 });
+// `send` refuses any path with a dot segment, so the real `.dork/.temp/uploads`
+// folder answers every GET with a 404; a plain folder lets the headers show.
+const uploadsDir = vi.hoisted(() => ({ value: '' }));
+vi.mock('../../services/core/upload-handler.js', () => ({
+  uploadHandler: { getUploadDir: () => uploadsDir.value },
+}));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
@@ -46,11 +52,14 @@ import { initBoundary } from '../../lib/boundary.js';
 import { workbenchTokenSigner } from '../../services/workbench-serve/index.js';
 import workbenchRoutes from '../workbench-serve.js';
 import { createFileRoutes } from '../files.js';
+import uploadRoutes from '../uploads.js';
+import { servesInlineHere } from '../../lib/file-route-guards.js';
 
 const server = listeningServer(
   honoGroupListener([
     { path: '/api/workbench', routes: workbenchRoutes },
     { path: '/api/files', routes: createFileRoutes() },
+    { path: '/api/uploads', routes: uploadRoutes },
   ])
 );
 
@@ -64,6 +73,15 @@ beforeAll(async () => {
   await fs.writeFile(path.join(root, 'drawing.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   await fs.writeFile(path.join(root, 'report.pdf'), '%PDF-1.7');
   await fs.writeFile(path.join(root, 'model.glb'), 'glb');
+  const uploads = path.join(root, 'uploads');
+  uploadsDir.value = uploads;
+  await fs.mkdir(uploads, { recursive: true });
+  await fs.writeFile(path.join(uploads, 'notes.html'), '<script>alert(1)</script>');
+  await fs.writeFile(
+    path.join(uploads, 'drawing.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg"/>'
+  );
+  await fs.writeFile(path.join(uploads, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   await initBoundary(root);
 });
 
@@ -95,6 +113,12 @@ describe('previews on a hub', () => {
       .send({ kind: 'proxy', port: 5173 });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ url: null, unavailable: 'tunnel' });
+  });
+
+  it('does not say which of its own ports are in use', async () => {
+    const res = await request(server).post('/api/workbench/probe').send({ port: 5173 });
+    expect(res.status).toBe(409);
+    expect(res.body.listening).toBeUndefined();
   });
 
   it('refuses a serve token, even a good one', async () => {
@@ -135,5 +159,54 @@ describe('files on a hub', () => {
     for (const file of ['drawing.svg', 'report.pdf', 'model.glb']) {
       expect((await raw(file)).headers['content-disposition']).toBe('inline');
     }
+  });
+});
+
+const upload = (file: string) =>
+  request(server).get(`/api/uploads/${file}?cwd=${encodeURIComponent(root)}`);
+
+describe('uploads on a hub', () => {
+  it.each(['notes.html', 'drawing.svg'])('sends %s as opaque bytes to download', async (file) => {
+    const res = await upload(file);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/octet-stream');
+    expect(res.headers['content-disposition']).toBe('attachment');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toContain('sandbox');
+  });
+
+  it('shows a picture in the page', async () => {
+    const res = await upload('photo.png');
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['content-disposition']).toBeUndefined();
+  });
+
+  it('answers a missing upload as JSON, not as a download', async () => {
+    const res = await upload('missing.html');
+    expect(res.status).toBe(404);
+    expect(res.headers['content-type']).toContain('application/json');
+  });
+
+  it('serves an upload as its type on a person’s own computer', async () => {
+    role.value = 'computer';
+    const res = await upload('notes.html');
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.headers['content-disposition']).toBeUndefined();
+  });
+});
+
+describe('which files show in the page', () => {
+  it('on a hub: pictures, sound and video only', () => {
+    expect(servesInlineHere('image/png')).toBe(true);
+    expect(servesInlineHere('audio/mpeg')).toBe(true);
+    expect(servesInlineHere('video/mp4')).toBe(true);
+    for (const type of ['image/svg+xml', 'application/pdf', 'model/gltf-binary', 'text/html']) {
+      expect(servesInlineHere(type)).toBe(false);
+    }
+  });
+
+  it('on a person’s own computer: every type', () => {
+    role.value = 'computer';
+    expect(servesInlineHere('application/pdf')).toBe(true);
   });
 });

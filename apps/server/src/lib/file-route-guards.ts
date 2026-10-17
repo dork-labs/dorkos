@@ -14,6 +14,22 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { validateBoundary, BoundaryError } from './boundary.js';
+import { currentServerRole } from './server-role.js';
+
+/**
+ * Whether a file of this type is shown in the page rather than downloaded.
+ * Everywhere but a hub, every type is. On a hub (DOR-2937) only pictures,
+ * sound and video are, since a browser never runs those as a page; anything
+ * else (an SVG, a PDF, a 3D model, an upload of any other kind) downloads, so
+ * no file can open as a page at the hub's own address.
+ *
+ * @param contentType - The type the file is served as.
+ */
+export function servesInlineHere(contentType: string): boolean {
+  if (currentServerRole() !== 'hub') return true;
+  if (contentType === 'image/svg+xml') return false;
+  return /^(image|audio|video)\//.test(contentType);
+}
 
 /**
  * File extensions the raw media routes will stream, mapped to their content
