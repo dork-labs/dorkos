@@ -384,7 +384,7 @@ export function CreateTaskDialog({
             <DialogFooter>
               <button
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
               >
                 Cancel
               </button>
