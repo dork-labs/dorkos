@@ -241,7 +241,7 @@ describe('useDocWikiLinks', () => {
   it('says so when a link names no doc, and opens nothing', async () => {
     const { result } = await ready();
     result.current!.onOpen!(link('  Someday  '), { exists: false });
-    expect(toastInfo).toHaveBeenCalledWith('No doc called “Someday” here yet.');
+    expect(toastInfo).toHaveBeenCalledWith('No doc called “Someday” yet.');
     result.current!.onOpen!(link('', 'Goals'), undefined);
     expect(toastInfo).toHaveBeenCalledWith('Links within this doc don’t open.');
     expect(executeUiCommand).not.toHaveBeenCalled();

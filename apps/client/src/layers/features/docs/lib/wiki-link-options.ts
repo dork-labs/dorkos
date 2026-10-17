@@ -81,7 +81,7 @@ export function createWikiLinkOptions(input: WikiLinkOptionsInput): WikiLinkOpti
       refuse(SELF_LINK_TITLE);
       return;
     }
-    const missing = `No doc called “${target}” here yet.`;
+    const missing = `No doc called “${target}” yet.`;
     const doc = index.resolve(target, docPath);
     if (doc) {
       open(doc.path);

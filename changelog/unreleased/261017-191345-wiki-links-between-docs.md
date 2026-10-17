@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(docs): links take the app's link ink, and the Docs row says what Docs is"
   - 'feat(shared): one set of wiki-link rules for the docs in a space (DOR-2982)'
   - 'feat(server): list the docs in a space for wiki links, behind the Docs experiment (DOR-2982)'
   - 'feat(server): read a doc title the way one-line YAML frontmatter writes it (DOR-2982)'
