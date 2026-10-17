@@ -655,6 +655,16 @@ describe('runtime connect endpoints', () => {
       });
     });
 
+    it('finishes when the OpenRouter page is the Referer, as a real redirect sends it', async () => {
+      vi.mocked(handleOpenRouterCallback).mockResolvedValue({ status: 'connected' });
+      const res = await request(server)
+        .get('/api/runtimes/opencode/openrouter/oauth/callback')
+        .query({ state: 'abc', code: 'auth_code' })
+        .set('Referer', 'https://openrouter.ai/');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('Connected');
+    });
+
     it('renders an error page when the callback failed', async () => {
       vi.mocked(handleOpenRouterCallback).mockResolvedValue({
         status: 'error',

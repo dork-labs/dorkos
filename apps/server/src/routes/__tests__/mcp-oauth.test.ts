@@ -113,6 +113,58 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
     expect(res.text).toContain('nope');
   });
 
+  it('finishes when the provider page is the Referer, as a real redirect sends it', async () => {
+    // The provider's page redirects the browser here, so the request carries
+    // its page as Referer. That alone must not read as another device: the
+    // gate once answered 401 and the sign-in never finished.
+    const spy = vi.fn();
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
+    const res = await request(server)
+      .get('/api/agents/mcp-oauth/callback?state=s1&code=c1')
+      .set('Referer', 'https://mcp.artblocks.io/')
+      .set('Sec-Fetch-Mode', 'navigate')
+      .set('Sec-Fetch-Dest', 'document');
+
+    expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalledWith({ state: 's1', code: 'c1', error: undefined });
+  });
+
+  it('still fails an unknown state when the provider page is the Referer', async () => {
+    const server = fixtureTarget.mount(
+      appWith(stubOAuth({ connected: false, error: 'This sign-in expired.' }))
+    );
+    const res = await request(server)
+      .get('/api/agents/mcp-oauth/callback?state=unknown&code=c1')
+      .set('Referer', 'https://mcp.artblocks.io/');
+
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('This sign-in expired.');
+  });
+
+  it('keeps a cross-site write to the callback path gated', async () => {
+    const spy = vi.fn();
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
+    const res = await request(server)
+      .post('/api/agents/mcp-oauth/callback?state=s1&code=c1')
+      .set('Referer', 'https://evil.example.com/');
+
+    // Only a GET is judged without its Referer; a write is still another device.
+    expect(res.status).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a foreign Referer behind a proxy forwarding header', async () => {
+    const spy = vi.fn();
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
+    const res = await request(server)
+      .get('/api/agents/mcp-oauth/callback?state=s1&code=c1')
+      .set('Referer', 'https://mcp.artblocks.io/')
+      .set('X-Forwarded-For', '203.0.113.9');
+
+    expect(res.status).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('refuses a non-loopback caller with 403 and never runs the exchange', async () => {
     const spy = vi.fn();
     const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));

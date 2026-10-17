@@ -65,6 +65,7 @@ import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
 import { classifyRequest, noteForeignOrigin } from '../lib/request-classifier.js';
 import { decideGateAccess, readGatePosture } from '../services/core/auth/gate-policy.js';
+import { gateFactsFor } from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { parseRequestBody, underMount, type BodyRule } from './request-body.js';
@@ -186,7 +187,8 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     await next();
   });
   app.use(async (c, next) => {
-    const facts = honoRequestFacts(c);
+    // An OAuth callback is judged without the provider page it came from.
+    const facts = gateFactsFor(c.req.method, c.req.path, honoRequestFacts(c));
     const requestClass = classifyRequest(facts, currentServerRole());
     noteForeignOrigin(facts, requestClass);
     const access = decideGateAccess(requestClass, readGatePosture());

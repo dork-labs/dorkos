@@ -18,6 +18,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { withoutReferringPage } from '../services/core/auth/oauth-callback-arrival.js';
 
 /** HTTP status for a completed callback vs. any failure (used for the rendered page). */
 const OK = 200;
@@ -112,7 +113,8 @@ export function createMcpOAuthRoutes(oauth: AgentMcpOAuthService): Hono<ApiEnv> 
   const router = new Hono<ApiEnv>();
 
   router.get('/callback', async (c) => {
-    if (!isAtThisComputer(honoRequestFacts(c))) {
+    // The provider's page is the Referer here; judge where the request came from.
+    if (!isAtThisComputer(withoutReferringPage(honoRequestFacts(c)))) {
       return c.body('Not available.', 403, HTML);
     }
     // A repeated key is an array, and reads as absent, as it did on Express.
