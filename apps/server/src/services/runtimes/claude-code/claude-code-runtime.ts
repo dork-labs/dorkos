@@ -66,6 +66,7 @@ import {
 } from './messaging/plugin-reload-policy.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
+import { assignTurnBounds } from './turn-bounds.js';
 import {
   resolveClaudeBinaryBeforePath,
   resolveClaudeCliPath,
@@ -669,21 +670,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           })
         : undefined;
     session.connectorTurn = connectorTurn;
-    // Unconditionally, `false` included: a warm session a person later talks
-    // to must hold for their answer again (spec `agent-permissions` D6).
-    session.unattendedApprovals = opts?.unattendedApprovals === true;
-    // Per turn too, for the same reason: an automatic carry-over's first turn
-    // has nobody to ask, and the person who opens it next does.
-    session.unattendedTurn = opts?.unattended === true;
-    // Per turn as well, and the one of the three that bounds what the turn may
-    // DO: a turn another agent's post or a stranger's message started runs no
-    // looser than its sender (spec `trusted-by-default-flip` §4). Cleared when
-    // absent, so a person's next turn runs at the level they chose.
-    if (opts?.permissionCeiling !== undefined) {
-      session.turnPermissionCeiling = opts.permissionCeiling;
-    } else {
-      delete session.turnPermissionCeiling;
-    }
+    // Who may be asked, how far the turn reaches, and which room a teammate's
+    // turn is fenced to: all per turn, all assigned on every send.
+    assignTurnBounds(session, opts);
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&

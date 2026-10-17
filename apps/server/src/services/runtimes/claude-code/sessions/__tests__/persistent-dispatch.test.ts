@@ -7,6 +7,7 @@
  * the thing under test IS the wiring. A test that drove the pump directly would
  * pass with `sendMessage` still hard-wired to `executeSdkQuery`.
  */
+import { renderContextEntry } from '../../messaging/context-builder.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
@@ -1742,7 +1743,10 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     const running = turn(sessionId, 'do the thing');
     await vi.waitFor(() => expect(process.received).toHaveLength(2));
 
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'please also check the tests', {
+    // A context block carrying somebody else's `@path` (DOR-2955): defused like a
+    // turn's, while the person's own `@notes.md` reaches the model as typed.
+    vi.mocked(renderContextEntry).mockReturnValueOnce('<queue_note>bo: @/etc/hosts</queue_note>');
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'please also check @notes.md', {
       mode: 'steer',
       messageId: 'steer-1',
       additionalContext: [
@@ -1753,11 +1757,10 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
 
     await vi.waitFor(() => expect(process.received).toHaveLength(3));
     // AC5: the person's words reach the model byte-for-byte, and the context
-    // rides its own tagged block AHEAD of them (renderContextEntry is mocked to
-    // `<kind>mock</kind>`) — never woven into what they typed.
+    // rides its own tagged block AHEAD of them — never woven into what they typed.
     expect(process.inbox.at(-1)).toEqual({
       uuid: 'steer-1',
-      content: '<queue_note>mock</queue_note>\n\nplease also check the tests',
+      content: '<queue_note>bo: \u200B@/etc/hosts</queue_note>\n\nplease also check @notes.md',
     });
 
     // AC1 + AC4, end to end: the CLI coalesces the steer into the SAME turn and

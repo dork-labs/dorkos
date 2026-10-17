@@ -1076,6 +1076,22 @@ export interface MessageOpts extends SessionSettings {
      * on says so (spec `trusted-by-default-flip` §4.7).
      */
     outsiderInView?: true;
+    /**
+     * True when a space member who is not this install's owner started the
+     * turn: a teammate (DOR-2955). A runtime that honours it lets the turn's
+     * DorkOS tools reach only {@link roomId}, and refuses the rest; the same
+     * turn is also sent `unattended` and a read-only `permissionCeiling`.
+     * Assigned with the rest of this marker, on every send.
+     */
+    teammate?: true;
+    /**
+     * True when a message this turn answers was written by anyone but a person
+     * on this machine: a stranger in a bridged chat, a space member, another
+     * agent (DOR-2955). The words then reach the model as words only: a
+     * runtime that honours it never runs them as a command and never expands a
+     * file reference in them.
+     */
+    untrustedText?: true;
   };
   /**
    * The home of the agent this turn is dispatched AS, when a server path names

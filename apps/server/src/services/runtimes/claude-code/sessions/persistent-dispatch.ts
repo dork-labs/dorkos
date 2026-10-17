@@ -151,7 +151,7 @@ import type {
   RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
-import { renderContextEntry } from '../messaging/context-builder.js';
+import { enrichContent } from '../enrich-content.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
@@ -1674,9 +1674,9 @@ export class PersistentDispatch {
  * @param additionalContext - The neutral context bag, or undefined
  */
 function enrichDeliveredContent(content: string, additionalContext?: AdditionalContext): string {
-  const contextBlocks = (additionalContext ?? []).map(renderContextEntry).filter(Boolean);
-  if (contextBlocks.length === 0) return content;
-  return `${contextBlocks.join('\n\n')}\n\n${content}`;
+  // Context defused as a turn's is; the words as written, since this path does
+  // not know who wrote them and a person's steer must keep its `@` (DOR-2955).
+  return enrichContent(content, additionalContext, false);
 }
 
 /**

@@ -7,8 +7,10 @@
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
+import { isTeammateEntry } from './space-teammates.js';
 
 /**
  * Whether the author of a triggering entry is somebody OUTSIDE this machine.
@@ -38,7 +40,10 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * `RoomTurnRequest` takes (spec `trusted-by-default-flip` §4).
  *
  * A stranger's message, or one whose author cannot be resolved, is held to the
- * receiving runtime's default. Another agent's post is held to the level its
+ * receiving runtime's default. A teammate's (a space member who is not the
+ * owner, DOR-2955) is held to that AND to read access: both bounds hold at once,
+ * so the turn still counts as a stranger's everywhere `'runtime-default'` is
+ * read for that. Another agent's post is held to the level its
  * turn ran at when it wrote the post; when that was not kept (a restart, a post
  * with no session), to the runtime's default, because the alternative is to
  * hand out the receiving conversation's level on the strength of a missing
@@ -46,11 +51,16 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function ceilingForEntry(
   authors: AuthorRegistry,
-  entry: Pick<RoomEntry, 'id' | 'authorId'>
+  entry: Pick<RoomEntry, 'id' | 'authorId'>,
+  inSpaceRoom = false
 ): { permissionCeiling?: TurnPermissionCeiling } {
+  if (isTeammateEntry(authors, entry, inSpaceRoom)) {
+    return { permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] };
+  }
   if (isEntryAuthorExternal(authors, entry.authorId)) {
     return { permissionCeiling: 'runtime-default' };
   }
@@ -66,14 +76,17 @@ export function ceilingForEntry(
  *
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  */
 export function ceilingForEntries(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[]
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  inSpaceRoom = false
 ): { permissionCeiling?: TurnPermissionCeiling } {
-  const bounds = entries.flatMap((entry) => {
-    const one = ceilingForEntry(authors, entry).permissionCeiling;
-    return one === undefined ? [] : [one as TurnPermissionBound];
+  const bounds = entries.flatMap((entry): TurnPermissionBound[] => {
+    const one = ceilingForEntry(authors, entry, inSpaceRoom).permissionCeiling;
+    if (one === undefined) return [];
+    return Array.isArray(one) ? [...one] : [one as TurnPermissionBound];
   });
   if (bounds.length === 0) return {};
   return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
