@@ -35,7 +35,7 @@ export function SidebarSearchPill() {
       data-testid="sidebar-search-pill"
       onClick={() => setGlobalPaletteOpen(true)}
       className={cn(
-        'bg-sidebar-accent/40 text-sidebar-foreground/60 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] outline-hidden transition-colors duration-150 focus-visible:ring-2',
+        'bg-sidebar-accent/40 text-sidebar-foreground/60 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-control flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 outline-hidden transition-colors duration-150 focus-visible:ring-2',
         // 33px measured at 390×844, under the 40px bar (P4 AC-4).
         isMobile && TOUCH_TARGET_MIN_H
       )}

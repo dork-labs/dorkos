@@ -90,6 +90,11 @@
   --text-2xs: calc(0.6875rem * var(--_st) * var(--user-font-scale, 1));
   --text-2xs--line-height: 1rem;
   --text-xs: calc(0.75rem * var(--_st) * var(--user-font-scale, 1));
+  /* 13px, the label size of control surfaces (sidebar rows, menus). No
+     --line-height on purpose: it keeps the line height its surroundings give it,
+     exactly as the literal `text-[13px]` it replaced did, and that inherited
+     ratio grows with the font size. Merged as a size by `cn` (`shared/lib/utils`). */
+  --text-control: calc(0.8125rem * var(--_st) * var(--user-font-scale, 1));
   --text-sm: calc(0.875rem * var(--_st) * var(--user-font-scale, 1));
   --text-base: calc(1rem * var(--_st) * var(--user-font-scale, 1));
   --text-lg: calc(1.125rem * var(--_st) * var(--user-font-scale, 1));
@@ -125,6 +130,7 @@
   --color-ring: hsl(var(--ring));
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-text: hsl(var(--brand-text));
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -241,6 +247,7 @@
   --radius: 0.5rem;
   --brand: var(--dui-brand);
   --brand-foreground: var(--dui-brand-foreground);
+  --brand-text: var(--dui-brand-text);
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
@@ -512,6 +519,7 @@
   --ring: var(--dui-ring);
   --brand: var(--dui-brand);
   --brand-foreground: var(--dui-brand-foreground);
+  --brand-text: var(--dui-brand-text);
 
   --status-success: 152 69% 55%;
   --status-success-bg: 152 69% 12%;
@@ -1887,12 +1895,12 @@ body {
 
 .msg-prose a,
 .msg-prose [data-streamdown='link'] {
-  color: hsl(var(--ring));
+  color: hsl(var(--brand-text));
   text-decoration: underline;
 }
 
 .msg-prose code {
-  color: hsl(var(--ring));
+  color: hsl(var(--brand-text));
 }
 
 .msg-prose ul {

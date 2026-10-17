@@ -15,17 +15,20 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { cn } from '@/layers/shared/lib/utils';
 
 /**
- * The drawer row's label size, in literal pixels on purpose.
+ * The drawer row's label size, outside the `text-*` tokens on purpose.
  *
  * 17px is Apple's HIG body size, and this markup renders only below 768px —
  * exactly where the app's `--_st` type scale is already multiplying every
  * `text-*` token by 1.25. Spelling it as a token would scale it a second time
- * and land at 21px, which is not what a native sheet row looks like.
+ * and land at 21px, which is not what a native sheet row looks like. It still
+ * follows the person's own font size (`--user-font-scale`), which a bare
+ * `text-[17px]` ignored.
  */
-const MOBILE_ROW_LABEL = 'text-[17px] leading-snug';
+const MOBILE_ROW_LABEL = 'text-[calc(1.0625rem*var(--user-font-scale,1))] leading-snug';
 
-/** The drawer row's description size — HIG footnote, literal for the same reason as {@link MOBILE_ROW_LABEL}. */
-const MOBILE_ROW_DESCRIPTION = 'text-muted-foreground text-[13px] leading-snug';
+/** The drawer row's description size — HIG footnote (13px), sized the same way as {@link MOBILE_ROW_LABEL}. */
+const MOBILE_ROW_DESCRIPTION =
+  'text-muted-foreground text-[calc(0.8125rem*var(--user-font-scale,1))] leading-snug';
 
 const ResponsiveDropdownMenuContext = React.createContext<{
   isDesktop: boolean;

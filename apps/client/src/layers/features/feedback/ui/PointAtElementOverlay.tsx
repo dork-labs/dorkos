@@ -321,7 +321,7 @@ export function PointAtElementOverlay({ phase, onSelect, onCancel }: PointAtElem
               }}
             />
             <div
-              className="bg-primary text-primary-foreground pointer-events-none absolute max-w-[60vw] truncate rounded-sm px-1.5 py-0.5 font-mono text-[11px] leading-tight"
+              className="bg-primary text-primary-foreground text-2xs pointer-events-none absolute max-w-[60vw] truncate rounded-sm px-1.5 py-0.5 font-mono leading-tight"
               style={{
                 left: Math.max(4, aiming.box.left),
                 top: labelBelow ? aiming.box.top + aiming.box.height + 4 : aiming.box.top - 22,

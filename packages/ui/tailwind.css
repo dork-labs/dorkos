@@ -40,5 +40,6 @@
   --color-dui-ring: hsl(var(--dui-ring));
   --color-dui-brand: hsl(var(--dui-brand));
   --color-dui-brand-foreground: hsl(var(--dui-brand-foreground));
+  --color-dui-brand-text: hsl(var(--dui-brand-text));
   --color-dui-success: hsl(var(--dui-success));
 }

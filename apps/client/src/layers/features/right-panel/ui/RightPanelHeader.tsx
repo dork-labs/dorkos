@@ -353,7 +353,7 @@ function TabStrip({
                                 <IdentityAvatar
                                   key={watcher.id}
                                   size="xs"
-                                  className="ring-background size-3.5 text-[8px] ring-1"
+                                  className="ring-background text-3xs size-3.5 ring-1"
                                   kind={watcher.kind}
                                   color={watcher.color ?? hashToHslColor(watcher.id)}
                                   emoji={watcher.emoji}

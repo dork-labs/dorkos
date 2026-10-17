@@ -40,7 +40,7 @@ export const agentIdentityVariants = tv({
         // panel writes its name at 13px. One point of difference on one row type
         // is not a distinction anybody reads — it is just a list that looks
         // slightly wrong (`specs/sidebar-simplification` D1).
-        name: 'text-[13px] font-medium',
+        name: 'text-control font-medium',
         detail: 'text-3xs',
       },
       sm: {

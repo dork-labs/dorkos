@@ -213,7 +213,7 @@ export function EntryReactionPicker({
           className={cn(
             'leading-none',
             capsule
-              ? 'text-[0.8125rem]'
+              ? 'text-control'
               : // The ghost + ends the pill row and measures 45×24 on a phone,
                 // which clears WCAG 2.5.8 on its own. It carries no invisible
                 // reach for the reason `EntryReactionRow` measures out: down

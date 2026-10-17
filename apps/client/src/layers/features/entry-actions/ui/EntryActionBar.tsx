@@ -184,7 +184,7 @@ export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarPro
                   onClick={() => reactions!.onToggle(button.emoji)}
                   onKeyDown={onKeyDown}
                   className={cn(
-                    'text-[0.8125rem] leading-none',
+                    'text-control leading-none',
                     button.mine && 'bg-brand/15 text-foreground'
                   )}
                 >

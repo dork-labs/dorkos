@@ -117,7 +117,7 @@ describe('IdentityHoverCard', () => {
     await user.hover(screen.getByRole('button', { name: 'Ana' }));
 
     const viewProfile = await screen.findByRole('button', { name: 'View profile' });
-    expect(viewProfile.className).toContain('text-brand');
+    expect(viewProfile.className).toContain('text-brand-text');
   });
 
   it('turns "View profile" into a real control once a destination is supplied', async () => {

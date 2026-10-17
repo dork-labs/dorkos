@@ -28,7 +28,7 @@ export function UnreadDivider() {
       className="flex items-center gap-2 py-2"
     >
       <span aria-hidden="true" className="bg-brand/60 h-px flex-1" />
-      <span className="text-brand text-2xs font-medium tracking-wide">{UNREAD_LABEL}</span>
+      <span className="text-brand-text text-2xs font-medium tracking-wide">{UNREAD_LABEL}</span>
     </div>
   );
 }

@@ -22,6 +22,8 @@
   --dui-ring: 24 90% 44%;
   --dui-brand: 24 90% 44%;
   --dui-brand-foreground: 0 0% 100%;
+  /* Orange for small text: the brand fill reads 3.7:1 as text; this clears 4.5:1. */
+  --dui-brand-text: 24 90% 29%;
   --dui-success: 152 69% 24%;
   --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
@@ -61,6 +63,7 @@
     --dui-ring: 24 88% 55%;
     --dui-brand: 24 88% 55%;
     --dui-brand-foreground: 0 0% 100%;
+    --dui-brand-text: 24 88% 60%;
     --dui-success: 152 69% 55%;
   }
 }
@@ -87,5 +90,6 @@
   --dui-ring: 24 88% 55%;
   --dui-brand: 24 88% 55%;
   --dui-brand-foreground: 0 0% 100%;
+  --dui-brand-text: 24 88% 60%;
   --dui-success: 152 69% 55%;
 }

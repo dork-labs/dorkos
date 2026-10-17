@@ -89,7 +89,7 @@ export function RoomLoudnessLine({
     >
       <LoudnessMeter level={loudness.level} size="room" />
       <div className="min-w-0 flex-1">
-        <p className={cn('text-sm', preview !== null && 'text-brand')}>
+        <p className={cn('text-sm', preview !== null && 'text-brand-text')}>
           {preview !== null && <span className="sr-only">If you make that change: </span>}
           {loudness.sentence}
         </p>

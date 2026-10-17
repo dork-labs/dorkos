@@ -52,6 +52,7 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 | `text-foreground`        | `0 0% 9%`    | Body text                                                                        |
 | `text-muted-foreground`  | `0 0% 32%`   | Labels, metadata                                                                 |
 | `text-status-warning-fg` | `38 92% 28%` | Warning text: 4.68:1 or better on the page, cards, the sidebar and its zone tint |
+| `text-brand-text`        | `24 90% 29%` | Orange text: 4.66:1 or better, its own `bg-brand/15` badge tint included         |
 | `border-border`          | `0 0% 83%`   | Card borders, inputs                                                             |
 
 ### Dark Mode
@@ -65,6 +66,7 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 | `text-foreground`        | `0 0% 87%`   | Body text                                            |
 | `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata                                     |
 | `text-status-warning-fg` | `38 92% 50%` | Warning text                                         |
+| `text-brand-text`        | `24 88% 60%` | Orange text                                          |
 | `border-border`          | `0 0% 25%`   | Card borders, inputs                                 |
 
 ### Elevation in dark mode: height is light
@@ -90,7 +92,7 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 - Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
 - `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
 - Sidebar active tab indicator — subtle brand presence in navigation
-- Assistant message links and inline code — via `--ring`
+- Assistant message links and inline code — via `--brand-text`
 
 **Where gray stays:**
 
@@ -98,6 +100,8 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
 - All structural surfaces — backgrounds, cards, borders, muted
+
+**Orange text is `text-brand-text`.** The brand fill reads only 3.7:1 as text on the light page; `--brand-text` clears 4.5:1 on every ground it sits on (`__tests__/brand-text-contrast.test.ts`). Plain `brand` stays for fills, rings, icons and large type.
 
 **Usage rule:** Orange means interaction or action. If you're adding it to a static, structural element — stop. The brand lives in moments of engagement, not in decoration. Like a single red chair in a white room.
 
@@ -122,12 +126,17 @@ Users can override font family via Settings → Appearance. The app store (`setF
 
 Base values at desktop (no mobile scaling applied). Actual rendered sizes multiply by `--_st` on mobile (default 1.25x). Users can apply a further `--user-font-scale` via Settings → Appearance.
 
-| Token       | Base size | Usage                                     |
-| ----------- | --------- | ----------------------------------------- |
-| `text-xs`   | 12px      | Timestamps, tool status                   |
-| `text-sm`   | 14px      | Message body text, code, metadata, labels |
-| `text-base` | 16px      | (unused in chat UI)                       |
-| `text-lg`   | 18px      | In-message headings (h3+)                 |
+| Token          | Base size | Usage                                       |
+| -------------- | --------- | ------------------------------------------- |
+| `text-3xs`     | 10px      | Count badges, avatar initials               |
+| `text-2xs`     | 11px      | Section labels, secondary metadata          |
+| `text-xs`      | 12px      | Timestamps, tool status                     |
+| `text-control` | 13px      | Control-surface labels: sidebar rows, menus |
+| `text-sm`      | 14px      | Message body text, code, metadata, labels   |
+| `text-base`    | 16px      | (unused in chat UI)                         |
+| `text-lg`      | 18px      | In-message headings (h3+)                   |
+
+Literal sizes (`text-[13px]`) ignore the user's font size; use tokens. `text-control` sets no line height, so it keeps the one its surroundings give it.
 
 ### Weights
 
@@ -152,7 +161,7 @@ The scale below is a **content**-surface scale. Control surfaces — sidebars, t
 |             | Content surface                                    | Control surface                                    |
 | ----------- | -------------------------------------------------- | -------------------------------------------------- |
 | Examples    | Message area, settings panels, cards, empty states | Sidebar, status strip, command palette, table rows |
-| Body text   | `text-sm` / `text-base`                            | 13px label, `text-2xs` (11px) metadata             |
+| Body text   | `text-sm` / `text-base`                            | `text-control` (13px) label, `text-2xs` metadata   |
 | Row height  | —                                                  | 28–32px (`h-7` / `h-8`)                            |
 | Inset       | 16px and up (`p-4`, `p-6`)                         | **16px total**, panel edge to first glyph          |
 | Panel width | —                                                  | 240–280px (the DorkOS sidebar is 272px)            |
@@ -1113,8 +1122,7 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 #### Mobile Sizing (Apple HIG)
 
 - `min-h-[44px]` touch targets
-- `text-[17px]` labels (iOS body)
-- `text-[13px]` descriptions (iOS footnote)
+- 17px labels (iOS body) and 13px descriptions (iOS footnote), scaled by `--user-font-scale` only: a `text-*` token would add the phone's 1.25x a second time
 - Right-aligned `Check` icon for selected item
 - `border-b border-border` separators between items
 
