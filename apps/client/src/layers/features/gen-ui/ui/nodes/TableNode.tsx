@@ -50,7 +50,9 @@ export function TableNode({ node }: { node: TableNodeData }) {
                   key={col.key}
                   className={cn('tabular-nums', col.align && ALIGN_CLASS[col.align])}
                 >
-                  {renderCell(row[col.key] ?? null)}
+                  {/* Own keys only: a column keyed `constructor` must read an
+                      empty cell, not Object.prototype's function. */}
+                  {renderCell(Object.hasOwn(row, col.key) ? (row[col.key] ?? null) : null)}
                 </TableCell>
               ))}
             </MotionTableRow>
