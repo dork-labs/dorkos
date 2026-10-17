@@ -10,6 +10,8 @@ export { WidgetFence } from './ui/WidgetFence';
 export { LiveSessionWidget, type LiveSessionWidgetProps } from './ui/LiveSessionWidget';
 export { WidgetErrorCard } from './ui/WidgetErrorCard';
 export { WidgetSkeleton } from './ui/WidgetSkeleton';
+export { WidgetNodeView } from './ui/WidgetNodeView';
+export { WidgetStillProvider } from './lib/widget-motion';
 export { UiActionChip } from './ui/UiActionChip';
 export { parseWidget, validateWidgetDocument, type ParseWidgetResult } from './model/parse-widget';
 export { parseUiActionMessage, type ParsedUiAction } from './lib/ui-action-parse';

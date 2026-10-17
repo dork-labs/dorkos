@@ -33,8 +33,25 @@ const readFileContent = vi.fn();
 
 const DOC_ID = 'doc-md';
 
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
+// The Docs feature, off unless a test turns it on. When on, it hands the real
+// editor one stand-in embed, so a test can see the registry arrive end to end.
+const docs = vi.hoisted(() => ({ on: false }));
+vi.mock('@/layers/features/docs', () => {
+  const embeds = {
+    note: {
+      component: ({ attributes }: { attributes: Record<string, string> }) => (
+        <p data-testid="note-embed">{attributes.text}</p>
+      ),
+    },
+  };
+  return {
+    // Wiki links are tested in features/docs; here they stay off.
+    useDocWikiLinks: () => undefined,
+    useDocEmbeds: () => (docs.on ? embeds : undefined),
+    SaveAsWebPageButton: ({ sourcePath }: { sourcePath: string }) =>
+      docs.on ? <button type="button" aria-label={`Save ${sourcePath} as web page`} /> : null,
+  };
+});
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -92,6 +109,7 @@ function editableSurface(): HTMLElement | null {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  docs.on = false;
   mockState.openDocuments = [{ id: 'doc-md', editing: false }];
   mockState.selectedCwd = '/work';
   mockFileSave.status = 'idle';
@@ -134,5 +152,31 @@ describe('CanvasFileContent markdown branch (real Blintz)', () => {
     // is intentionally avoided: jsdom lacks the coordinate APIs (elementFromPoint /
     // posAtCoords) ProseMirror calls, so a real keystroke floods uncaught async
     // errors. This test's job is to prove the reactive `editable` flip end to end.
+  });
+
+  it('draws embeds through the real editor and offers Save as web page only with Docs on', async () => {
+    readFileContent.mockResolvedValue({
+      content: '# Notes\n\n::note{text="Drawn by the host"}\n',
+      hash: 'h1',
+      encoding: 'utf-8',
+    });
+    renderMarkdownFile();
+    await waitFor(() => expect(editableSurface()).not.toBeNull(), { timeout: 4000 });
+    // Off: Blintz still reads the directive (its grammar is always on) but has
+    // no component for it, so it keeps its own placeholder; no save action.
+    expect(screen.queryByTestId('note-embed')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-embed-name="note"]')).toHaveAttribute(
+      'data-embed-state',
+      'unknown'
+    );
+    expect(screen.queryByRole('button', { name: /as web page/ })).not.toBeInTheDocument();
+    cleanup();
+
+    docs.on = true;
+    renderMarkdownFile();
+    expect(await screen.findByTestId('note-embed', {}, { timeout: 4000 })).toHaveTextContent(
+      'Drawn by the host'
+    );
+    expect(screen.getByRole('button', { name: 'Save notes.md as web page' })).toBeInTheDocument();
   });
 });

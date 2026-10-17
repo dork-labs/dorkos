@@ -119,3 +119,25 @@ tags:
 
 Metadata remains separate from the text you came to read.
 `;
+
+/** Every Docs embed, written the way agents write them, plus an invalid and an unknown one. */
+export const MARKDOWN_EMBEDS_SAMPLE = `## Launch week
+
+::stat[Up from last week]{label="Signups" value="1,204" delta="+18%" direction="up"}
+
+::chart{kind="bar" data='[{"label":"Mon","value":4},{"label":"Tue","value":7},{"label":"Wed","value":5}]'}
+
+::progress{value="60" label="Launch checklist"}
+
+::timeline{items='[{"time":"Mon","title":"Draft","status":"done"},{"time":"Wed","title":"Review","status":"active"},{"time":"Fri","title":"Ship","status":"upcoming"}]'}
+
+::table{columns='[{"key":"task","label":"Task"},{"key":"owner","label":"Owner"}]' rows='[{"task":"Write the brief","owner":"Ada"},{"task":"Review","owner":"Sam"}]'}
+
+::list{items='[{"title":"Write the brief","subtitle":"Due Monday"},{"title":"Review","meta":"2h"}]'}
+
+::badge{text="On track" tone="success"}
+
+::chart{kind="bar"}
+
+::note{text="No component for this one"}
+`;

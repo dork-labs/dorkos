@@ -12,8 +12,9 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 // the fallback. This stands in for any viewer that throws — a stale lazy chunk,
 // a WebGL failure, a bad file.
 const jsonControl = { throws: true };
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
+// Docs is off, its default: reading the experiment needs a server config
+// these tests don't serve (see ./docs-off).
+vi.mock('@/layers/features/docs', () => import('./docs-off'));
 vi.mock('../ui/CanvasJsonContent', () => ({
   CanvasJsonContent: () => {
     if (jsonControl.throws) throw new Error('json viewer boom');

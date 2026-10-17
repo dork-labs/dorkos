@@ -31,8 +31,9 @@ const readFileContent = vi.fn(async () => ({
 }));
 const writeFile = vi.fn();
 const transport = { readFileContent, writeFile };
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
+// Docs is off, its default: reading the experiment needs a server config
+// these tests don't serve (see ./docs-off).
+vi.mock('@/layers/features/docs', () => import('./docs-off'));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (select: (value: typeof state) => unknown) => select(state);
   useAppStore.getState = () => state;

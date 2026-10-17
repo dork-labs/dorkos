@@ -3,7 +3,7 @@ import { Check, Pencil } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import { useDocWikiLinks } from '@/layers/features/docs';
+import { SaveAsWebPageButton, useDocEmbeds, useDocWikiLinks } from '@/layers/features/docs';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
 
 // Lazy: the Blintz chunk (Milkdown + ProseMirror + CodeMirror + KaTeX) loads
@@ -69,6 +69,7 @@ export function CanvasMarkdownContent({
     (s) => s.openDocuments.find((d) => d.id === documentId)?.editing ?? false
   );
   const cwd = useAppStore((s) => s.selectedCwd);
+  const embeds = useDocEmbeds();
 
   // Edit mode is the AND of this editor's own state and the store's flag for
   // this document, derived rather than mirrored. The store's flag can be cleared
@@ -231,6 +232,12 @@ export function CanvasMarkdownContent({
             {statusLabel}
           </span>
         )}
+        {fileBacked && content.sourcePath && (
+          <SaveAsWebPageButton
+            markdown={editing ? draft : content.content}
+            sourcePath={content.sourcePath}
+          />
+        )}
         {fileBacked && (
           <Button
             type="button"
@@ -276,6 +283,7 @@ export function CanvasMarkdownContent({
             editable={editing}
             onChange={editing ? handleChange : undefined}
             wikiLinks={wikiLinks}
+            embeds={embeds}
           />
         </Suspense>
       </div>

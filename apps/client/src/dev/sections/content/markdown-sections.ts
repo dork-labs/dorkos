@@ -44,4 +44,11 @@ export const MARKDOWN_SECTIONS: PlaygroundSection[] = [
     category: 'Canvas',
     keywords: ['blintz', 'placeholder', 'empty'],
   },
+  {
+    id: 'markdown-embeds',
+    title: 'Markdown embeds',
+    page: 'markdown',
+    category: 'Canvas',
+    keywords: ['blintz', 'docs', 'embed', 'directive', 'chart', 'widget', 'gen-ui'],
+  },
 ];

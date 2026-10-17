@@ -21,6 +21,7 @@ import { Check, Pencil } from 'lucide-react';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { Button } from '@/layers/shared/ui';
+import { useDocEmbeds } from '@/layers/features/docs';
 import { useRoomCanvasEditLock } from '../../model/use-room-canvas';
 
 const BlintzCanvas = lazy(() =>
@@ -62,6 +63,7 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
   // Read out of a file: shown, never edited here — the file's own tree is what
   // a save would have to reach, and this is not the editor that can.
   const editable = content.sourcePath === undefined;
+  const embeds = useDocEmbeds();
 
   useRoomCanvasEditLock(roomId, editing ? document.id : null);
 
@@ -131,6 +133,7 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
             value={draft ?? content.content}
             editable={editing}
             onChange={setDraft}
+            embeds={embeds}
           />
         </Suspense>
       </div>

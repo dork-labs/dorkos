@@ -141,6 +141,15 @@ describe('BlintzCanvas public source callbacks', () => {
     expect(onTaskToggleRequest).not.toHaveBeenCalled();
   });
 
+  it('forwards the embed registry by identity, and none when the caller passes none', () => {
+    const embeds = { note: { component: () => null } };
+    const { unmount } = render(<BlintzCanvas value="::note" editable={false} embeds={embeds} />);
+    expect(editorControl.props?.embeds).toBe(embeds);
+    unmount();
+    render(<BlintzCanvas value="::note" editable={false} />);
+    expect(editorControl.props?.embeds).toBeUndefined();
+  });
+
   it('keeps legacy callers callback-free', () => {
     render(<BlintzCanvas value="# raw" editable={false} />);
     expect(editorControl.props?.sourceRevision).toBeUndefined();

@@ -9,7 +9,7 @@
  *
  * @module features/gen-ui/lib/widget-motion
  */
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { animate, useReducedMotion } from 'motion/react';
 import type { Transition, Variants } from 'motion/react';
 
@@ -37,13 +37,27 @@ export const widgetStaggerContainer: Variants = {
   visible: { transition: { staggerChildren: WIDGET_STAGGER_STEP } },
 };
 
+const WidgetStillContext = createContext(false);
+
+/**
+ * Renders the widgets under it still: final states, no entrance or count-up.
+ *
+ * For surfaces where a widget is part of a document rather than a reply that
+ * just arrived (a doc embed, a page rendered to HTML on the server). Motion
+ * there replays every time the document re-renders, and a server render would
+ * freeze the first frame (a count-up at 0) into the page.
+ */
+export const WidgetStillProvider = WidgetStillContext.Provider;
+
 /**
  * Whether widget motion should play. Thin wrapper over motion's
- * `useReducedMotion` so every node has one testable switch — `false` means
- * "render final states instantly".
+ * `useReducedMotion`, and off under {@link WidgetStillProvider}, so every node
+ * has one testable switch — `false` means "render final states instantly".
  */
 export function useWidgetMotion(): boolean {
-  return !useReducedMotion();
+  const still = useContext(WidgetStillContext);
+  const reduced = useReducedMotion();
+  return !still && !reduced;
 }
 
 /**

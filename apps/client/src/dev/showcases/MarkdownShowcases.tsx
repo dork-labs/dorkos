@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { CanvasMarkdownContent } from '@/layers/features/canvas/ui/CanvasMarkdownContent';
+import { DOC_EMBEDS } from '@/layers/features/docs/ui/doc-embed-registry';
 import { Button } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -8,6 +9,7 @@ import {
   MARKDOWN_IMAGE_SAMPLE,
   MARKDOWN_NARROW_SAMPLE,
   MARKDOWN_FRONTMATTER_SAMPLE,
+  MARKDOWN_EMBEDS_SAMPLE,
 } from '../mock-samples/markdown';
 
 // Match production: the heavy editor and its CSS arrive only when needed.
@@ -45,6 +47,25 @@ function EditableDocument() {
           {value}
         </pre>
       </details>
+    </>
+  );
+}
+
+/** The Docs embed catalog in the editor, as a doc shows it with Docs switched on. */
+function EmbedsDocument() {
+  const [value, setValue] = useState(MARKDOWN_EMBEDS_SAMPLE);
+  const [editable, setEditable] = useState(false);
+  return (
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setEditable((current) => !current)}>
+          {editable ? 'Read document' : 'Edit document'}
+        </Button>
+        <span className="text-muted-foreground text-xs">Type / in edit mode to insert one.</span>
+      </div>
+      <div data-testid="markdown-embeds-surface" className="bg-background min-w-0 rounded-lg">
+        <BlintzCanvas value={value} editable={editable} onChange={setValue} embeds={DOC_EMBEDS} />
+      </div>
     </>
   );
 }
@@ -107,6 +128,14 @@ export function MarkdownShowcases() {
       >
         <ShowcaseDemo>
           <BlintzCanvas value={MARKDOWN_FRONTMATTER_SAMPLE} editable={false} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+      <PlaygroundSection
+        title="Markdown embeds"
+        description="Charts, stats and tables drawn inside a doc, with Docs switched on."
+      >
+        <ShowcaseDemo>
+          <EmbedsDocument />
         </ShowcaseDemo>
       </PlaygroundSection>
       <PlaygroundSection

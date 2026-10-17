@@ -5,7 +5,7 @@ import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types'
 import { sameCanvasDocIncarnation } from '@dorkos/shared/canvas-doc-frame-wire';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-import { useDocWikiLinks } from '@/layers/features/docs';
+import { SaveAsWebPageButton, useDocEmbeds, useDocWikiLinks } from '@/layers/features/docs';
 import { useCanvasFileSave } from '../../model/use-canvas-file-save';
 import { useCanvasDocumentClosePreparation } from '../../model/file-save/use-document-close';
 import type { FileSaveBinding } from '../../model/file-save/receipt-operation';
@@ -78,6 +78,7 @@ export function FileEditor({
 }: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
+  const embeds = useDocEmbeds();
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState(loaded);
@@ -349,6 +350,7 @@ export function FileEditor({
             <RotateCw className="size-4" />
           </Button>
         )}
+        {markdown && <SaveAsWebPageButton markdown={value} sourcePath={content.sourcePath} />}
         {editable && (
           <Button
             type="button"
@@ -413,6 +415,7 @@ export function FileEditor({
                 editable={isEditing}
                 onChange={isEditing ? handleChange : undefined}
                 wikiLinks={wikiLinks}
+                embeds={embeds}
               />
             </div>
           ) : (
