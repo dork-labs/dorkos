@@ -61,6 +61,14 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./sign-in-landing": {
+      "types": "./src/sign-in-landing.ts",
+      "default": "./dist/sign-in-landing.js"
+    },
+    "./transport-sign-in-landing": {
+      "types": "./src/transport-sign-in-landing.ts",
+      "default": "./dist/transport-sign-in-landing.js"
+    },
     "./transport-onboarding": {
       "types": "./src/transport-onboarding.ts",
       "default": "./dist/transport-onboarding.js"

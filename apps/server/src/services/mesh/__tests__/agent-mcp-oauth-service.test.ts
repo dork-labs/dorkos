@@ -200,7 +200,7 @@ describe('AgentMcpOAuthService — full sign-in flow', () => {
 
     // 2. The browser (auto-approved) redirects to the loopback callback with code+state.
     const cb = await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
-    expect(cb).toEqual({ connected: true, serverName: SERVER });
+    expect(cb).toMatchObject({ connected: true, serverName: SERVER });
     expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
 
     // 3. The access token is now readable SYNCHRONOUSLY (the injection read path).
@@ -705,9 +705,9 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     held.resolve();
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
-    expect(firstResult).toEqual({ connected: true, serverName: SERVER });
+    expect(firstResult).toMatchObject({ connected: true, serverName: SERVER });
     // Moving the inner re-check back outside the `exclusive` block reddens this.
-    expect(secondResult).toEqual({ connected: true, serverName: SERVER });
+    expect(secondResult).toMatchObject({ connected: true, serverName: SERVER });
     // What the operator actually sees: the poll must not say the sign-in failed
     // while its token is live and injecting.
     expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
@@ -727,7 +727,7 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     });
     const started = await oauth.startSignin(REFRESH_TARGET);
     pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
-    expect(await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })).toEqual({
+    expect(await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })).toMatchObject({
       connected: true,
       serverName: SERVER,
     });
@@ -741,7 +741,7 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     // Without the already-connected early return, the one-shot PKCE verifier is
     // gone, the exchange throws, and `markFailed` overwrites `connected` — so a
     // successful sign-in reported itself as failed while the token still worked.
-    expect(replay).toEqual({ connected: true, serverName: SERVER });
+    expect(replay).toMatchObject({ connected: true, serverName: SERVER });
     expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
   });

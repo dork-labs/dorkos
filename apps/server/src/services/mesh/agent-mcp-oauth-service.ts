@@ -31,13 +31,18 @@ import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import type { Logger } from '@dorkos/shared/logger';
 import type { McpClientOrigin } from '@dorkos/shared/mesh-schemas';
 import type { McpClientCredentials } from '@dorkos/shared/transport';
+import type { SignInFailureReason } from '@dorkos/shared/sign-in-landing';
 
 import {
   McpAccessTokenCache,
   type McpAccessTokenCacheDeps,
   type McpCacheRefreshVerdict,
 } from './agent-mcp-access-token-cache.js';
-import { McpOAuthFlowStore, type McpSigninStatus } from './agent-mcp-oauth-flow-store.js';
+import {
+  McpOAuthFlowStore,
+  type McpSigninStatus,
+  type StartedFlow,
+} from './agent-mcp-oauth-flow-store.js';
 import {
   McpOAuthClientProvider,
   newSigninProgress,
@@ -76,6 +81,20 @@ export type FetchFn = typeof fetch;
  * expects a token. The same shape a probe is asked about, named for this side.
  */
 export type McpOAuthTarget = McpProbeTarget;
+
+/** What a callback came to, for its landing page (`routes/mcp-oauth.ts`). */
+export interface McpCallbackResult {
+  /** Whether a token landed. */
+  connected: boolean;
+  /** The failure, in words, for the poll and the log. */
+  error?: string;
+  /** Why it failed, as a code the landing page words for itself. */
+  reason?: SignInFailureReason;
+  /** The server signed into, when the flow was still known. */
+  serverName?: string;
+  /** The flow the callback finished, when it was still known. */
+  flow?: StartedFlow;
+}
 
 /**
  * The probe port and its result, re-exported so boot and the sign-in tests reach
@@ -448,7 +467,9 @@ export class AgentMcpOAuthService {
    *
    * The server's name comes back with the result so the landing page can say
    * WHICH server the operator just signed in to (DOR-1003) — it is known here and
-   * nowhere else, since the browser only ever carried the opaque `state`.
+   * nowhere else, since the browser only ever carried the opaque `state`. The
+   * whole flow comes back too, so the landing page can go back to the
+   * conversation that asked and Try again can start the very same sign-in.
    *
    * @param args - The `state`, `code`, and optional `error` from the callback query.
    */
@@ -456,18 +477,32 @@ export class AgentMcpOAuthService {
     state?: string;
     code?: string;
     error?: string;
-  }): Promise<{ connected: boolean; error?: string; serverName?: string }> {
+  }): Promise<McpCallbackResult> {
     const { state, code, error } = args;
-    if (!state) return { connected: false, error: 'Missing sign-in state. Please start again.' };
+    if (!state) {
+      return {
+        connected: false,
+        error: 'Missing sign-in state. Please start again.',
+        reason: 'expired',
+      };
+    }
     const target = this.flows.target(state);
-    if (!target)
-      return { connected: false, error: 'This sign-in link expired. Please start again.' };
+    if (!target) {
+      return {
+        connected: false,
+        error: 'This sign-in link expired. Please start again.',
+        reason: 'expired',
+      };
+    }
     const serverName = target.serverName;
-    if (this.flows.status(state).status === 'connected') return { connected: true, serverName };
+    const flow = target;
+    if (this.flows.status(state).status === 'connected') {
+      return { connected: true, serverName, flow };
+    }
     if (error || !code) {
       const message = 'Sign-in was cancelled.';
       this.flows.markFailed(state, message);
-      return { connected: false, error: message, serverName };
+      return { connected: false, error: message, reason: 'cancelled', serverName, flow };
     }
 
     return this.refresher.exclusive(targetKey(target), async () => {
@@ -477,7 +512,9 @@ export class AgentMcpOAuthService {
       // milliseconds is exactly how this happens. The second would then run the
       // exchange against a spent one-shot verifier, throw, and `markFailed` over
       // a flow that is already connected (DOR-986).
-      if (this.flows.status(state).status === 'connected') return { connected: true, serverName };
+      if (this.flows.status(state).status === 'connected') {
+        return { connected: true, serverName, flow };
+      }
       try {
         const provider = this.providerFor(target, state);
         await auth(provider, {
@@ -490,11 +527,11 @@ export class AgentMcpOAuthService {
         if (!(await this.primeFromStore(target))) {
           const message = 'The server did not complete the sign-in. Please try again.';
           this.flows.markFailed(state, message);
-          return { connected: false, error: message, serverName };
+          return { connected: false, error: message, reason: 'failed', serverName, flow };
         }
         this.flows.markConnected(state);
         await this.announceConnected(state, target);
-        return { connected: true, serverName };
+        return { connected: true, serverName, flow };
       } catch (err) {
         // Keep the raw detail in the server log; hand the browser + poll a generic
         // message (the callback lands in the operator's own loopback browser, but
@@ -504,7 +541,7 @@ export class AgentMcpOAuthService {
         );
         const message = 'Sign-in failed. Please try again.';
         this.flows.markFailed(state, message);
-        return { connected: false, error: message, serverName };
+        return { connected: false, error: message, reason: 'failed', serverName, flow };
       }
     });
   }

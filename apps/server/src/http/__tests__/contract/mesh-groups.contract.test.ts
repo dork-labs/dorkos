@@ -479,18 +479,46 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 200, schema: AgentPauseListSchema },
   },
   {
-    name: 'GET /api/agents/mcp-oauth/callback answers a sign-in it never started with a failure page',
+    name: 'GET /api/agents/mcp-oauth/callback sends a sign-in it never started to the landing page',
     path: '/api/agents/mcp-oauth/callback?state=nobody&code=nothing',
     expect: {
-      status: 400,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
-      schema: z.string().startsWith('<!doctype html>').includes('Sign-in failed'),
+      status: 303,
+      headers: {
+        location: /\/signed-in\?landing=[A-Za-z0-9_-]+$/,
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      },
     },
   },
   {
     name: 'GET /api/agents/mcp-oauth/callback/ answers with a trailing slash',
     path: '/api/agents/mcp-oauth/callback/',
-    expect: { status: 400, headers: { 'content-type': 'text/html; charset=utf-8' } },
+    expect: { status: 303, headers: { location: /\/signed-in\?landing=/ } },
+  },
+  // the sign-in landing page's record and Try again (`routes/sign-in-landings.ts`)
+  {
+    name: 'GET /api/sign-in-landings/:id answers a record it never wrote with 404',
+    path: '/api/sign-in-landings/nobody',
+    expect: {
+      status: 404,
+      body: { error: 'This sign-in page expired.', code: 'SIGNIN_LANDING_GONE' },
+    },
+  },
+  {
+    name: 'POST /api/sign-in-landings/:id/retry answers a record it never wrote with 404',
+    method: 'POST',
+    path: '/api/sign-in-landings/nobody/retry',
+    body: {},
+    expect: {
+      status: 404,
+      body: { error: 'This sign-in page expired.', code: 'SIGNIN_LANDING_GONE' },
+    },
+  },
+  {
+    name: 'GET /api/sign-in-landings/:id refuses a foreign Host',
+    path: '/api/sign-in-landings/nobody',
+    headers: { host: 'evil.example.com' },
+    expect: { status: 403 },
   },
   {
     name: 'POST /api/agents/mcp-oauth/callback is the /api 404',
