@@ -24,10 +24,15 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import {
+  MARKDOWN_WORKER_BANNER,
+  MARKDOWN_WORKER_FILE,
+  MARKDOWN_WORKER_SOURCE,
+} from '../../apps/server/src/services/docs/collab/worker-build.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const ENTRY = 'apps/server/src/services/docs/collab/markdown-worker.ts';
-const OUTFILE = 'server/docs-markdown-worker.mjs';
+const ENTRY = MARKDOWN_WORKER_SOURCE;
+const OUTFILE = `server/${MARKDOWN_WORKER_FILE}`;
 const SMOKE = 'scripts/smoke-docs-markdown-worker.mjs';
 
 /** Read a repo file. */
@@ -41,7 +46,7 @@ function read(relative: string): string {
  * @param source - A build script.
  */
 function workerBuildCall(source: string): string | null {
-  const at = source.indexOf(ENTRY);
+  const at = source.indexOf('MARKDOWN_WORKER_SOURCE)');
   if (at === -1) return null;
   const start = source.lastIndexOf('await build(', at);
   const end = source.indexOf('});', at);
@@ -72,8 +77,9 @@ describe('docs markdown worker build entry', () => {
         Math.max(0, source.indexOf(call!) - 400),
         source.indexOf(call!) + call!.length + 600
       );
-      expect(region).toContain(OUTFILE);
+      expect(region).toMatch(/'server', MARKDOWN_WORKER_FILE\)/);
       expect(region).toContain(SMOKE);
+      expect(call).toContain('banner: { js: MARKDOWN_WORKER_BANNER }');
       expect(call).toMatch(/format:\s*'esm'/);
       expect(call).toMatch(/bundle:\s*true/);
       expect(call).toMatch(/platform:\s*'node'/);
@@ -85,11 +91,25 @@ describe('docs markdown worker build entry', () => {
     expect(read('apps/desktop/scripts/build-server.ts')).toMatch(/await buildSideBundles\(/);
   });
 
-  // Purpose: the name the builds emit is the name the server looks for.
-  it('matches the name the server resolves', () => {
-    const source = read('apps/server/src/services/docs/collab/worker-entry.ts');
-    const match = source.match(/export const MARKDOWN_WORKER_FILE = '([^']+)'/);
-    expect(match?.[1]).toBe(path.basename(OUTFILE));
+  // Purpose: every build reads the name, entry and banner from one module,
+  // and that name is the one the server looks for.
+  it('builds from the one shared description of the worker', () => {
+    const shared = read('apps/server/src/services/docs/collab/worker-build.ts');
+    expect(shared.match(/export const MARKDOWN_WORKER_FILE = '([^']+)'/)?.[1]).toBe(
+      path.basename(OUTFILE)
+    );
+    expect(shared).toContain(`'${ENTRY}'`);
+    for (const script of [
+      'packages/cli/scripts/build.ts',
+      'apps/desktop/scripts/build-side-bundles.ts',
+    ]) {
+      const source = read(script);
+      expect(source).toContain('MARKDOWN_WORKER_BANNER');
+      expect(source).toContain('MARKDOWN_WORKER_FILE');
+    }
+    expect(read('apps/server/src/services/docs/collab/worker-entry.ts')).toContain(
+      './worker-build.js'
+    );
   });
 
   // Purpose: the desktop app ships the worker as a real file.
@@ -106,7 +126,7 @@ describe('docs markdown worker build entry', () => {
       'esbuild'
     );
     const { build } = (await import(pathToFileURL(esbuildPath).href)) as EsbuildApi;
-    const outfile = path.join(scratch, 'docs-markdown-worker.mjs');
+    const outfile = path.join(scratch, MARKDOWN_WORKER_FILE);
     const result = await build({
       absWorkingDir: ROOT,
       entryPoints: [path.join(ROOT, ENTRY)],
@@ -115,9 +135,7 @@ describe('docs markdown worker build entry', () => {
       target: 'node22.22',
       format: 'esm',
       outfile,
-      banner: {
-        js: "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);",
-      },
+      banner: { js: MARKDOWN_WORKER_BANNER },
       metafile: true,
       logLevel: 'silent',
     });

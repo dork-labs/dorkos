@@ -26,6 +26,11 @@ import { execFileSync } from 'child_process';
 import { build, type Message, type Plugin } from 'esbuild';
 import { rmSync } from 'fs';
 import path from 'path';
+import {
+  MARKDOWN_WORKER_BANNER,
+  MARKDOWN_WORKER_FILE,
+  MARKDOWN_WORKER_SOURCE,
+} from '../../server/src/services/docs/collab/worker-build';
 
 /** What the side bundles need from the build that calls them. */
 export interface SideBundleBuild {
@@ -75,17 +80,15 @@ export async function buildSideBundles(options: SideBundleBuild): Promise<void> 
     execFileSync(process.execPath, ['--check', childOutfile], { stdio: 'inherit' });
   });
 
-  const workerOutfile = path.join(out, 'server/docs-markdown-worker.mjs');
+  const workerOutfile = path.join(out, 'server', MARKDOWN_WORKER_FILE);
   const workerResult = await build({
-    entryPoints: [path.join(root, 'apps/server/src/services/docs/collab/markdown-worker.ts')],
+    entryPoints: [path.join(root, MARKDOWN_WORKER_SOURCE)],
     bundle: true,
     platform: 'node',
     target: 'node22.22',
     format: 'esm',
     outfile: workerOutfile,
-    banner: {
-      js: "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);",
-    },
+    banner: { js: MARKDOWN_WORKER_BANNER },
     plugins: [plugin],
   });
   await gated(out, async () => {

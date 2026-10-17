@@ -37,13 +37,13 @@ export interface ResolvedDoc {
   /** Its stable key (`docKey`). */
   key: string;
   /** Where its saved versions live. */
-  scope: { docKey: string };
+  scope: { docKey: string; file: string };
 }
 
 /** Why a doc could not be reached, with the status a route answers. */
 export class DocRefusal extends Error {
   /** The HTTP status. */
-  readonly status: 400 | 403 | 404 | 413 | 415;
+  readonly status: 400 | 403 | 404 | 413 | 415 | 429 | 503;
   /** A machine-readable code. */
   readonly code: string;
 
@@ -95,5 +95,5 @@ export async function resolveDoc(ref: DocRef): Promise<ResolvedDoc> {
     throw new DocRefusal(413, 'TOO_LARGE', 'This doc is too large to edit live.');
   }
   const key = await docKey(space, relPath);
-  return { space, path: relPath, file, key, scope: { docKey: key } };
+  return { space, path: relPath, file, key, scope: { docKey: key, file } };
 }

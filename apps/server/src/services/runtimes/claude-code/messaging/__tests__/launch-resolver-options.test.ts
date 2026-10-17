@@ -256,6 +256,36 @@ describe('the launch options every Claude Code turn is given', () => {
     });
   });
 
+  it('hands the tool server the same grants the CLI got, and none on a teammate’s turn (DOR-2984)', async () => {
+    // Red when: the doc tools stop seeing the turn's grants, so a read-only
+    // grant could be written through doc_write while Edit and Write refuse it.
+    const launches: Array<{ directoryGrants?: unknown }> = [];
+    const grants = [{ path: '/elsewhere/team-plans', access: 'read' as const }];
+    const resolve = (messageOpts: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session: makeSession(),
+        opts: makeOpts({
+          mcpServerFactory: (_session, _id, launch) => {
+            launches.push(launch ?? {});
+            return {};
+          },
+        }),
+        messageOpts,
+        effectiveCwd: '/mock/project',
+      });
+
+    await resolve({ additionalDirectories: grants });
+    await resolve({
+      additionalDirectories: grants,
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+
+    expect(launches[0]?.directoryGrants).toEqual(grants);
+    expect(launches[1]?.directoryGrants).toEqual([]);
+  });
+
   // DOR-2955, review B1/B2: Claude Code reads `@path` and runs a leading `/name`
   // before any tool gate sees them. Measured on the pinned binary; these pin the
   // launcher half.

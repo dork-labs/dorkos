@@ -8,15 +8,25 @@
  * plain file write. Either way the doc's previous bytes are kept, so a person
  * can restore them. Refused while the `docs.enabled` experiment is off.
  *
+ * **The same reach as the agent's own file tools, never more.** A doc must be
+ * inside the session's folder or one of the turn's folder grants; `doc_write`
+ * is refused inside a read-only grant, exactly as `Edit` and `Write` are
+ * (`messaging/directory-grants.ts`). A doc anywhere else is refused outright,
+ * where a file tool would at least have asked.
+ *
  * @module services/runtimes/claude-code/mcp-tools/doc-tools
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import {
   DocBaseError,
   DocChangedError,
+  DocNotReadError,
   DocRefusal,
   docsEnabled,
   getDocCollab,
@@ -31,14 +41,46 @@ export interface DocToolSession {
   sessionKey?: string;
   /** The calling agent's name, as people editing the doc see it. */
   agentName?: () => Promise<string | undefined>;
+  /** The turn's folder grants beyond `cwd`; absent means none. */
+  grants?: readonly DirectoryGrant[];
 }
+
+/** What this session may do to a file: as its own `Edit` and `Write` may. */
+type DocAccess = 'write' | 'read' | 'none';
+
+/**
+ * This session's reach over `file` (canonical): its own folder and write
+ * grants may be written, read grants only read, anything else neither.
+ */
+async function accessTo(file: string, session: DocToolSession): Promise<DocAccess> {
+  const inside = (root: string) => file === root || file.startsWith(root + path.sep);
+  const cwd = session.cwd ? await fs.realpath(session.cwd).catch(() => null) : null;
+  if (cwd && inside(cwd)) return 'write';
+  let access: DocAccess = 'none';
+  for (const grant of session.grants ?? []) {
+    if (!inside(grant.path)) continue;
+    if (grant.access === 'write') return 'write';
+    access = 'read';
+  }
+  return access;
+}
+
+const OUTSIDE =
+  'This doc is outside your folder and the folders you were given. Ask for access first.';
+const READ_ONLY = 'You can read this folder but not change it, so this doc can’t be written.';
 
 const OFF = 'Docs are turned off on this computer, so the doc tools are unavailable.';
 
 /** The refusal an agent reads for each way a doc call can fail, or `null` for a bug. */
 function refusalOf(err: unknown): string | null {
   if (err instanceof DocRefusal) return err.message;
-  if (err instanceof DocChangedError || err instanceof DocBaseError) return err.message;
+  if (
+    err instanceof DocChangedError ||
+    err instanceof DocBaseError ||
+    err instanceof DocNotReadError
+  ) {
+    return err.message;
+  }
   if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'This doc doesn’t exist.';
   return null;
 }
@@ -64,12 +106,16 @@ async function withDoc(
   session: DocToolSession,
   deps: McpToolDeps,
   args: { path: string; cwd?: string },
+  needs: 'read' | 'write',
   run: (doc: { cwd: string; path: string }, caller: DocAgentCaller) => Promise<object>
 ) {
   const service = getDocCollab();
   if (!docsEnabled() || !service) return jsonContent({ error: OFF }, true);
   try {
     const doc = { cwd: args.cwd ?? session.cwd ?? deps.defaultCwd, path: args.path };
+    const access = await accessTo((await service.resolve(doc)).file, session);
+    if (access === 'none') return jsonContent({ error: OUTSIDE }, true);
+    if (needs === 'write' && access === 'read') return jsonContent({ error: READ_ONLY }, true);
     return jsonContent(await run(doc, await callerOf(session)));
   } catch (err) {
     const refusal = refusalOf(err);
@@ -87,7 +133,7 @@ async function withDoc(
  */
 export function createDocReadHandler(deps: McpToolDeps, session: () => DocToolSession) {
   return (args: { path: string; cwd?: string }) =>
-    withDoc(session(), deps, args, async (doc, caller) => {
+    withDoc(session(), deps, args, 'read', async (doc, caller) => {
       const { markdown, live } = await getDocCollab()!.read(doc, caller);
       return { path: args.path, live, markdown };
     });
@@ -101,7 +147,7 @@ export function createDocReadHandler(deps: McpToolDeps, session: () => DocToolSe
  */
 export function createDocWriteHandler(deps: McpToolDeps, session: () => DocToolSession) {
   return (args: { path: string; markdown: string; cwd?: string }) =>
-    withDoc(session(), deps, args, async (doc, caller) => {
+    withDoc(session(), deps, args, 'write', async (doc, caller) => {
       const { live, changed } = await getDocCollab()!.write(doc, args.markdown, caller);
       return { path: args.path, live, changed };
     });
@@ -135,8 +181,9 @@ export function getDocTools(deps: McpToolDeps, session: () => DocToolSession) {
     tool(
       'doc_write',
       'Replace a markdown doc’s content without overwriting what people are typing in it. ' +
-        'Your change is merged with their edits since you last read the doc; with nobody editing, ' +
-        'the file is written. The previous version is kept, so a person can restore it. Use ' +
+        'Read the doc first: your change is merged with their edits since that read. With ' +
+        'nobody editing, the file is written. The previous version is kept, so a person can ' +
+        'restore it. Use ' +
         'this rather than your file tools for any doc a person may have open. A line that is ' +
         'exactly a directive (`::note`) is an embed; to mean the text itself, write `\\::note`.',
       {

@@ -12,6 +12,8 @@
 import path from 'node:path';
 import { DocCollabService } from './doc-collab-service.js';
 import { DocVersionStore } from './doc-versions.js';
+import { DocStateStore } from './doc-states.js';
+import { logger } from '../../../lib/logger.js';
 import type { DocFileWriter } from './live-doc.js';
 import { MarkdownWorkerClient } from './markdown-worker-client.js';
 import { resolveMarkdownWorkerEntry } from './worker-entry.js';
@@ -20,6 +22,7 @@ export {
   DocCollabService,
   DocBaseError,
   DocChangedError,
+  DocNotReadError,
   type DocAgentCaller,
   type DocJoinHandle,
 } from './doc-collab-service.js';
@@ -50,7 +53,10 @@ export function initDocCollab(wiring: DocCollabWiring): DocCollabService {
     }),
     writer: wiring.writer,
     versions: new DocVersionStore(path.join(wiring.dorkHome, 'docs', 'versions')),
+    states: new DocStateStore(path.join(wiring.dorkHome, 'docs', 'live')),
   });
+  // Saved states and versions of docs whose files have been gone a while.
+  void service.sweep().catch((err) => logger.warn('[docs] doc sweep failed', { err }));
   return service;
 }
 

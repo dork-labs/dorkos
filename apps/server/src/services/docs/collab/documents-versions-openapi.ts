@@ -11,6 +11,8 @@ import { z } from 'zod';
 import {
   DocRefSchema,
   DocVersionListSchema,
+  DocVersionSchema,
+  KeepDocDraftRequestSchema,
   RestoreDocVersionRequestSchema,
   RestoreDocVersionResponseSchema,
 } from '@dorkos/shared/doc-collab';
@@ -50,11 +52,30 @@ export function registerDocumentVersionsOpenApi(registry: OpenAPIRegistry): void
   });
   registry.registerPath({
     method: 'post',
+    path: '/api/documents/versions',
+    tags: TAGS,
+    summary: 'Keep unsaved edits as a version',
+    description:
+      'Keep text an editor could not save (its live copy was replaced while it was offline) ' +
+      'as a version of the doc, so a person can put it back.',
+    request: {
+      body: { content: { 'application/json': { schema: KeepDocDraftRequestSchema } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.literal(true), version: DocVersionSchema.nullable() }),
+        'Kept, or already the newest version'
+      ),
+      ...REFUSALS,
+    },
+  });
+  registry.registerPath({
+    method: 'post',
     path: '/api/documents/versions/restore',
     tags: TAGS,
     summary: 'Restore a saved version',
     description:
-      'Make the doc exactly that version. What it said before is kept as a version too, so ' +
+      'Replace the doc with that version. What it said before is kept as a version first, so ' +
       'a restore can be undone. While the doc is open, its editors see the restore live.',
     request: {
       body: { content: { 'application/json': { schema: RestoreDocVersionRequestSchema } } },

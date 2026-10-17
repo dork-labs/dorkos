@@ -4,33 +4,41 @@
  * The server holds the doc's `Y.Doc` from the first editor's arrival until a
  * short while after the last one leaves. Editors sync with it directly
  * (`doc-sync.ts`); everything that turns markdown into Yjs or back goes to the
- * markdown worker. The file on disk follows the doc through debounced flushes
- * written by the installation's one canonical file writer, so a flush never
+ * markdown worker. The file on disk follows the doc through debounced saves
+ * written by the installation's one canonical file writer, so a save never
  * races another DorkOS write to the same file.
  *
- * **The file base.** `#fileBase` is the doc state the file on disk reflects:
- * the state it was loaded from, or the state the last flush wrote. A change
- * to the file DorkOS did not make (an agent's own Write tool, say) is merged
- * with that state as its base, so only what the writer changed lands, and
- * whatever the people editing typed since stays. An agent that never read the
- * doc through DorkOS is treated the same way: its markdown is an edit of the
- * file as it is on disk.
+ * **Nothing an editor typed is dropped.** A save counts only once the file
+ * has it: a save that fails (the worker timed out, the disk refused) leaves
+ * the doc unsaved and is tried again with backoff, and closing the doc keeps
+ * trying for a bounded while, then keeps the text as a version. Each save also
+ * records the doc's Yjs state (`doc-states.ts`), so a doc reopened later, or
+ * after the server stopped, is the same copy and an editor that reconnects
+ * merges instead of starting over. An editor holding a different copy is told
+ * which copy this is and closed before it can send anything.
  *
- * File work (flushes, merges, restores) runs one at a time per doc. Editors'
+ * **The file base.** `#fileBase` is the doc state the file on disk reflects:
+ * the state it was loaded from, or the state the last save wrote. A change to
+ * the file DorkOS did not make (an agent's own Write tool, say) is merged with
+ * that state as its base, so only what the writer changed lands, and whatever
+ * the people editing typed since stays.
+ *
+ * File work (saves, merges, restores) runs one at a time per doc. Editors'
  * typing never waits for it.
  *
  * @module services/docs/collab/live-doc
  */
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import chokidar, { type FSWatcher } from 'chokidar';
 import * as Y from 'yjs';
 import type { DocCollabNote, DocWriter } from '@dorkos/shared/doc-collab';
 import { sha256 } from '../../../lib/file-route-guards.js';
 import { logger } from '../../../lib/logger.js';
-import { DocSyncHub, type DocPeer } from './doc-sync.js';
-import type { MarkdownWorkerClient } from './markdown-worker-client.js';
+import { watchDocFile, type DocFileWatch } from './doc-file-watch.js';
+import { DocSyncHub, noteFrame, type DocPeer } from './doc-sync.js';
+import type { DocStateStore } from './doc-states.js';
 import type { DocVersionStore } from './doc-versions.js';
+import type { MarkdownWorkerClient } from './markdown-worker-client.js';
 import type { ResolvedDoc } from './resolve-doc.js';
 
 /** The installation's file writer, as a live doc uses it (`InstallationFileWrites`). */
@@ -52,13 +60,27 @@ export interface LiveDocDeps {
   worker: MarkdownWorkerClient;
   writer: DocFileWriter;
   versions: DocVersionStore;
+  states: DocStateStore;
   /** How long typing may pause before the file is written. */
   flushDelayMs: number;
   /** The longest a change waits for the file while typing never pauses. */
   flushMaxWaitMs: number;
+  /** First delay before a failed save is tried again; it doubles to 30 s. */
+  retryBaseMs: number;
   /** Whether to watch the file for changes DorkOS did not make. */
   watch: boolean;
+  /** The most editors one doc takes at once. */
+  maxEditors: number;
 }
+
+/** How an editor's arrival went. */
+export type LiveDocJoin = 'joined' | 'stale' | 'full' | 'closing';
+
+/** The longest wait between attempts to save a doc that keeps failing. */
+const MAX_RETRY_MS = 30_000;
+
+/** How many times closing a doc tries to save it before keeping its text as a version. */
+const CLOSE_SAVE_ATTEMPTS = 5;
 
 /** The transaction origin of the doc's first load: not an edit. */
 const LOAD = Symbol('doc-load');
@@ -86,46 +108,74 @@ export interface LiveDocWriteResult {
 
 /** One open doc; see the module doc. */
 export class LiveDoc {
-  /** Which copy of the doc this is; a fresh load is a new generation. */
-  readonly generation = randomUUID();
+  /** Which copy of the doc this is. Kept across reopens while the file is unchanged. */
+  readonly generation: string;
   readonly ref: ResolvedDoc;
   readonly #deps: LiveDocDeps;
   readonly #doc = new Y.Doc();
   readonly #hub: DocSyncHub;
   #fileBase: FileBase;
-  /** The doc holds edits the file does not have yet. */
-  #dirty = false;
+  /** Counts every change the file does not have yet; equal to `#savedRevision` when saved. */
+  #revision = 0;
+  #savedRevision = 0;
   #flushTimer: ReturnType<typeof setTimeout> | null = null;
-  #firstUnflushedAt: number | null = null;
+  #firstUnsavedAt: number | null = null;
+  #retryMs: number | null = null;
   #ops: Promise<unknown> = Promise.resolve();
-  #watcher: FSWatcher | null = null;
-  #closed = false;
+  #watch: DocFileWatch | null = null;
+  /** The file was moved or deleted: nothing is saved until it is back. */
+  #gone = false;
+  #closing: Promise<void> | null = null;
+  /** State saves, one after another, so the newest always lands last. */
+  #persisting: Promise<void> = Promise.resolve();
 
-  private constructor(ref: ResolvedDoc, deps: LiveDocDeps, base: FileBase) {
+  private constructor(ref: ResolvedDoc, deps: LiveDocDeps, base: FileBase, generation: string) {
     this.ref = ref;
     this.#deps = deps;
     this.#fileBase = base;
+    this.generation = generation;
     Y.applyUpdate(this.#doc, base.state, LOAD);
     this.#hub = new DocSyncHub(this.#doc);
     this.#doc.on('update', (_update: Uint8Array, origin: unknown) => {
       if (origin === LOAD) return;
       // A change on disk is already in the file; everything else is not.
       if ((origin as WriteOrigin | undefined)?.writer?.kind === 'disk') return;
-      this.#markDirty();
+      this.#changed();
     });
   }
 
   /**
-   * Load a doc from its file and start serving it.
+   * Load a doc and start serving it: the saved state of this copy when the
+   * file is unchanged since it was saved, otherwise a fresh copy of the file.
    *
    * @param ref - Which doc.
-   * @param deps - The worker, the writer and the version store.
+   * @param deps - The worker, the writer and the stores.
    */
   static async open(ref: ResolvedDoc, deps: LiveDocDeps): Promise<LiveDoc> {
     const content = await fs.readFile(ref.file, 'utf8');
-    const state = await deps.worker.seed(content);
-    const doc = new LiveDoc(ref, deps, { state, hash: sha256(content), content });
-    if (deps.watch) doc.#watch();
+    const hash = sha256(content);
+    const saved = await deps.states.load(ref.key, hash);
+    let doc: LiveDoc | null = null;
+    if (saved) {
+      try {
+        doc = new LiveDoc(ref, deps, { state: saved.state, hash, content }, saved.generation);
+      } catch (err) {
+        logger.warn('[docs] a saved doc state could not be read; loading the file', { err });
+      }
+    }
+    if (!doc) {
+      const state = await deps.worker.seed(content);
+      doc = new LiveDoc(ref, deps, { state, hash, content }, randomUUID());
+      doc.#persist(state, hash);
+    }
+    if (deps.watch) {
+      const opened = doc;
+      opened.#watch = watchDocFile(ref.file, () => opened.#onFileEvent());
+      await opened.#watch.ready;
+      // Anything that happened to the file between the read above and the
+      // watcher's first report is caught here instead.
+      opened.#onFileEvent();
+    }
     return doc;
   }
 
@@ -145,12 +195,25 @@ export class LiveDoc {
   }
 
   /**
-   * Add an editor.
+   * Add an editor that holds `generation` (absent: an editor with nothing yet).
+   * An editor holding another copy is told which copy this is and closed,
+   * before anything it holds can reach this doc.
    *
    * @param peer - Its connection.
+   * @param generation - The copy it holds.
    */
-  join(peer: DocPeer): void {
-    this.#hub.join(peer, { type: 'hello', generation: this.generation });
+  join(peer: DocPeer, generation?: string): LiveDocJoin {
+    const hello: DocCollabNote = { type: 'hello', generation: this.generation };
+    if (this.#closing) return 'closing';
+    if (generation !== undefined && generation !== this.generation) {
+      peer.send(noteFrame(hello));
+      peer.close();
+      return 'stale';
+    }
+    if (this.#hub.size >= this.#deps.maxEditors) return 'full';
+    this.#hub.join(peer, hello);
+    if (this.#gone) peer.send(noteFrame({ type: 'gone' }));
+    return 'joined';
   }
 
   /**
@@ -188,7 +251,8 @@ export class LiveDoc {
   }
 
   /**
-   * Merge a writer's markdown into the doc, keeping the doc as it was first.
+   * Merge a writer's markdown into the doc, keeping the doc's bytes as a
+   * version first.
    *
    * @param markdown - What the writer wants the doc to say.
    * @param writer - Who is writing.
@@ -200,23 +264,52 @@ export class LiveDoc {
     return this.#serial(() => this.#merge(markdown, writer, base));
   }
 
-  /** Write any edits the file does not have yet. */
-  flush(): Promise<void> {
+  /** Write any edits the file does not have yet. Resolves whether the file has them. */
+  flush(): Promise<boolean> {
     return this.#serial(() => this.#flushNow());
   }
 
-  /** Write what is left, stop watching, and close every editor's connection. */
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#clearFlushTimer();
-    await this.flush().catch((err) => {
-      logger.warn('[docs] could not write a doc before closing it', { err });
-    });
-    this.#closed = true;
-    await this.#watcher?.close();
-    this.#watcher = null;
+  /**
+   * Close every editor's connection, write what is left (trying a few times),
+   * stop watching, and drop the doc. Text that still could not be written is
+   * kept as a version, never dropped.
+   */
+  close(): Promise<void> {
+    this.#closing ??= this.#close();
+    return this.#closing;
+  }
+
+  async #close(): Promise<void> {
+    // No more frames: whatever is in the doc now is what gets written.
     this.#hub.close();
+    this.#clearFlushTimer();
+    await this.#watch?.close().catch(() => undefined);
+    this.#watch = null;
+    await this.#serial(async () => {
+      for (let attempt = 0; attempt < CLOSE_SAVE_ATTEMPTS && this.#unsaved; attempt++) {
+        if (this.#gone || (await this.#flushNow())) continue;
+        await sleep(Math.min(MAX_RETRY_MS, this.#deps.retryBaseMs * 2 ** attempt));
+      }
+      if (this.#unsaved) {
+        const text = await this.#deps.worker
+          .serialize(Y.encodeStateAsUpdate(this.#doc))
+          .catch(() => null);
+        if (text !== null) {
+          await this.#deps.versions.keep(this.ref.scope, text, { kind: 'person' }, 'unsaved-edits');
+        }
+        logger.warn('[docs] closed a doc whose last edits could not be written to its file', {
+          key: this.ref.key,
+          keptAsVersion: text !== null,
+        });
+      }
+    }).catch((err) => logger.warn('[docs] could not write a doc before closing it', { err }));
+    this.#clearFlushTimer();
+    await this.#persisting;
     this.#doc.destroy();
+  }
+
+  get #unsaved(): boolean {
+    return this.#revision !== this.#savedRevision;
   }
 
   async #merge(
@@ -224,13 +317,16 @@ export class LiveDoc {
     writer: DocWriter,
     base?: Uint8Array
   ): Promise<LiveDocWriteResult> {
+    // Write the editors' pending edits first, so the version kept below is the
+    // file's own bytes whenever the file has everything the doc has.
+    await this.#flushNow();
     const before = Y.encodeStateAsUpdate(this.#doc);
     const previous = await this.#deps.worker.serialize(before);
     const merged = await this.#deps.worker.merge(before, markdown, base);
     if (merged.markdown === previous) return { base: merged.base, changed: false };
-    const kept = await this.#deps.versions.keep(this.ref.scope, previous, writer);
-    const origin: WriteOrigin = { kind: 'write', writer };
-    Y.applyUpdate(this.#doc, merged.update, origin);
+    const bytes = this.#unsaved || this.#gone ? previous : this.#fileBase.content;
+    const kept = await this.#deps.versions.keep(this.ref.scope, bytes, writer);
+    Y.applyUpdate(this.#doc, merged.update, { kind: 'write', writer } satisfies WriteOrigin);
     this.notify({ type: 'changed', changedBy: writer });
     if (kept) this.notify({ type: 'versions' });
     return { base: merged.base, changed: true };
@@ -252,69 +348,96 @@ export class LiveDoc {
     // change, and none of the edits only the editors have.
     const reflected = Y.mergeUpdates([fileBase.state, merged.update]);
     this.#fileBase = { state: reflected, hash, content };
-    if (merged.markdown === previous) return;
-    const writer: DocWriter = { kind: 'disk' };
-    const kept = await this.#deps.versions.keep(this.ref.scope, previous, writer);
-    Y.applyUpdate(this.#doc, merged.update, { kind: 'write', writer } satisfies WriteOrigin);
+    if (merged.markdown !== previous) {
+      const writer: DocWriter = { kind: 'disk' };
+      const bytes = this.#unsaved ? previous : fileBase.content;
+      const kept = await this.#deps.versions.keep(this.ref.scope, bytes, writer);
+      Y.applyUpdate(this.#doc, merged.update, { kind: 'write', writer } satisfies WriteOrigin);
+      this.notify({ type: 'changed', changedBy: writer });
+      if (kept) this.notify({ type: 'versions' });
+    }
     // Only when the editors had unsaved edits does the merged doc differ from
-    // the file; otherwise the file keeps the writer's exact bytes.
-    if (merged.markdown !== (await this.#deps.worker.serialize(reflected))) this.#markDirty();
-    this.notify({ type: 'changed', changedBy: writer });
-    if (kept) this.notify({ type: 'versions' });
+    // the file; otherwise the file keeps the writer's exact bytes, and this
+    // copy is what it holds.
+    if (this.#unsaved) this.#schedule(this.#deps.flushDelayMs);
+    else this.#persist(Y.encodeStateAsUpdate(this.#doc), hash);
   }
 
-  async #flushNow(): Promise<void> {
+  /** One save attempt. Resolves whether the file now has every edit it was asked to save. */
+  async #flushNow(): Promise<boolean> {
     this.#clearFlushTimer();
-    if (!this.#dirty) return;
-    this.#dirty = false;
-    this.#firstUnflushedAt = null;
+    if (!this.#unsaved) return true;
+    if (this.#gone) return false;
+    const revision = this.#revision;
     const state = Y.encodeStateAsUpdate(this.#doc);
-    const markdown = await this.#deps.worker.serialize(state);
-    const hash = sha256(markdown);
-    if (hash === this.#fileBase.hash) {
-      this.#fileBase = { state, hash, content: markdown };
-      return;
-    }
-    let result: Awaited<ReturnType<DocFileWriter['save']>>;
+    let markdown: string;
+    let result: Awaited<ReturnType<DocFileWriter['save']>> | null = null;
     try {
-      result = await this.#deps.writer.save({
-        cwd: this.ref.space.root,
-        path: this.ref.path,
-        content: markdown,
-        expectedHash: this.#fileBase.hash,
-      });
+      markdown = await this.#deps.worker.serialize(state);
+      const hash = sha256(markdown);
+      if (hash !== this.#fileBase.hash) {
+        result = await this.#deps.writer.save({
+          cwd: this.ref.space.root,
+          path: this.ref.path,
+          content: markdown,
+          expectedHash: this.#fileBase.hash,
+        });
+      }
     } catch (err) {
-      // The file is gone or unwritable for now; keep the edits and try again later.
-      this.#markDirty();
-      logger.warn('[docs] could not write an open doc to its file', {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        await this.#markGone();
+        return false;
+      }
+      logger.warn('[docs] could not write an open doc to its file; trying again', {
         err,
         key: this.ref.key,
       });
-      return;
+      this.#retryLater();
+      return false;
     }
-    if (result.status === 200) {
-      this.#fileBase = { state, hash, content: markdown };
-      return;
+    if (result?.status === 409) {
+      // Somebody changed the file since this doc last read it: take their
+      // change in first, then save the result.
+      await this.#mergeDisk(result.body.currentContent);
+      this.#schedule(0);
+      return false;
     }
-    // Somebody changed the file since this doc last read it: take their
-    // change in first, then write the result.
-    this.#markDirty();
-    await this.#mergeDisk(result.body.currentContent);
+    const hash = sha256(markdown);
+    this.#fileBase = { state, hash, content: markdown };
+    this.#savedRevision = revision;
+    this.#retryMs = null;
+    this.#firstUnsavedAt = null;
+    this.#persist(state, hash);
+    // Edits that arrived while this save ran get a save of their own.
+    if (this.#unsaved) this.#schedule(this.#deps.flushDelayMs);
+    return !this.#unsaved;
   }
 
-  #markDirty(): void {
-    if (this.#closed) return;
-    this.#dirty = true;
-    this.#firstUnflushedAt ??= Date.now();
-    this.#clearFlushTimer();
-    const waited = Date.now() - this.#firstUnflushedAt;
-    const delay = Math.max(
-      0,
-      Math.min(this.#deps.flushDelayMs, this.#deps.flushMaxWaitMs - waited)
+  #changed(): void {
+    this.#revision += 1;
+    this.#firstUnsavedAt ??= Date.now();
+    if (this.#retryMs !== null) return; // a retry is already on its way
+    const waited = Date.now() - this.#firstUnsavedAt;
+    this.#schedule(
+      Math.max(0, Math.min(this.#deps.flushDelayMs, this.#deps.flushMaxWaitMs - waited))
     );
+  }
+
+  #retryLater(): void {
+    this.#retryMs = Math.min(
+      MAX_RETRY_MS,
+      this.#retryMs === null ? this.#deps.retryBaseMs : this.#retryMs * 2
+    );
+    this.#schedule(this.#retryMs);
+  }
+
+  #schedule(delay: number): void {
+    // While closing, the close loop does the saving; no timer may outlive it.
+    if (this.#closing || this.#gone) return;
+    this.#clearFlushTimer();
     this.#flushTimer = setTimeout(() => {
       this.#flushTimer = null;
-      void this.flush().catch((err) => logger.warn('[docs] doc flush failed', { err }));
+      void this.flush().catch((err) => logger.warn('[docs] doc save failed', { err }));
     }, delay);
   }
 
@@ -323,21 +446,47 @@ export class LiveDoc {
     this.#flushTimer = null;
   }
 
-  #watch(): void {
-    const watcher = chokidar.watch(this.ref.file, {
-      ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
-    });
-    const check = () => {
-      void this.#serial(async () => {
-        if (this.#closed) return;
-        const content = await fs.readFile(this.ref.file, 'utf8').catch(() => null);
-        if (content !== null) await this.#mergeDisk(content);
-      }).catch((err) => logger.warn('[docs] could not merge a change on disk', { err }));
-    };
-    watcher.on('change', check);
-    watcher.on('add', check);
-    this.#watcher = watcher;
+  /** Record this copy's state for the file at `hash`. A failure costs only the reconnect merge. */
+  #persist(state: Uint8Array, hash: string): void {
+    this.#persisting = this.#persisting.then(() =>
+      this.#deps.states
+        .save(this.ref.key, this.ref.file, { generation: this.generation, hash, state })
+        .catch((err) => logger.warn('[docs] could not save a doc state', { err }))
+    );
+  }
+
+  /** The file changed, appeared or went: read it and act on what it says now. */
+  #onFileEvent(): void {
+    void this.#serial(async () => {
+      if (this.#closing) return;
+      const content = await fs.readFile(this.ref.file, 'utf8').catch(() => null);
+      if (content === null) {
+        // Replacements are atomic renames, so a file that cannot be read is gone.
+        await this.#markGone();
+        return;
+      }
+      if (this.#gone) {
+        this.#gone = false;
+        this.notify({ type: 'changed', changedBy: { kind: 'disk' } });
+      }
+      await this.#mergeDisk(content);
+      if (this.#unsaved) this.#schedule(0);
+    }).catch((err) => logger.warn('[docs] could not merge a change on disk', { err }));
+  }
+
+  /** The file was moved or deleted: say so, keep the text, and stop saving until it is back. */
+  async #markGone(): Promise<void> {
+    if (this.#gone) return;
+    this.#gone = true;
+    this.#clearFlushTimer();
+    const text = await this.#deps.worker
+      .serialize(Y.encodeStateAsUpdate(this.#doc))
+      .catch(() => null);
+    const kept =
+      text !== null &&
+      (await this.#deps.versions.keep(this.ref.scope, text, { kind: 'disk' }).catch(() => null));
+    this.notify({ type: 'gone' });
+    if (kept) this.notify({ type: 'versions' });
   }
 
   #serial<T>(work: () => Promise<T>): Promise<T> {
@@ -345,4 +494,8 @@ export class LiveDoc {
     this.#ops = next;
     return next;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

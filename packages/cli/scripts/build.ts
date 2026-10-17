@@ -4,6 +4,11 @@ import { createHash } from 'node:crypto';
 import { builtinModules } from 'node:module';
 import { buildNativeObserver } from '../../browser/scripts/build-native-observer.ts';
 import { importBrowserNativeArtifact } from './browser-native-artifact.ts';
+import {
+  MARKDOWN_WORKER_BANNER,
+  MARKDOWN_WORKER_FILE,
+  MARKDOWN_WORKER_SOURCE,
+} from '../../../apps/server/src/services/docs/collab/worker-build.ts';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
@@ -488,17 +493,15 @@ async function buildCLI() {
   // (MARKDOWN_WORKER_FILE). The smoke run proves the emitted file loads Blintz
   // in Node and round-trips a doc. Name and entry are pinned by
   // scripts/__tests__/docs-markdown-worker-build-entry.test.ts.
-  const markdownWorkerOutfile = path.join(OUT, 'server/docs-markdown-worker.mjs');
+  const markdownWorkerOutfile = path.join(OUT, 'server', MARKDOWN_WORKER_FILE);
   const markdownWorkerBundle = await build({
-    entryPoints: [path.join(ROOT, 'apps/server/src/services/docs/collab/markdown-worker.ts')],
+    entryPoints: [path.join(ROOT, MARKDOWN_WORKER_SOURCE)],
     bundle: true,
     platform: 'node',
     target: 'node22.22',
     format: 'esm',
     outfile: markdownWorkerOutfile,
-    banner: {
-      js: "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);",
-    },
+    banner: { js: MARKDOWN_WORKER_BANNER },
     plugins: [dorkosSourcePlugin()],
   });
   await assertNoUnexpectedWarnings('markdown worker', markdownWorkerBundle.warnings);

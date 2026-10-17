@@ -10,10 +10,14 @@
  * browser cannot read the status of a failed handshake, and the editor falls
  * back to saving the file on a 404.
  *
+ * An editor that already holds a copy of the doc names it with
+ * `?generation=`; if the server holds a different copy now, the editor is
+ * told which and closed before it can send anything (`LiveDoc.join`).
+ *
  * @module routes/documents-live-socket
  */
 import { WebSocketServer, type WebSocket } from 'ws';
-import { DocRefSchema } from '@dorkos/shared/doc-collab';
+import { DOC_COLLAB_GENERATION_PARAM, DocRefSchema } from '@dorkos/shared/doc-collab';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import {
   DocRefusal,
@@ -91,6 +95,10 @@ function serve(ws: WebSocket, join: (peer: DocPeer) => Promise<DocJoinHandle>): 
       for (const frame of early.splice(0)) handle.receive(frame);
     },
     (err: unknown) => {
+      if (err instanceof DocRefusal) {
+        ws.close(STREAM_CLOSE_CODE_BASE + err.status, err.message);
+        return;
+      }
       logger.warn('[docs] could not open a doc for live editing', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -122,9 +130,14 @@ export const liveDocRoute: UpgradeRoute = {
       path: url.searchParams.get('path'),
     });
     if (!parsed.success) return refuse(400, 'Name a doc with cwd and path');
+    const generation = url.searchParams.get(DOC_COLLAB_GENERATION_PARAM) || undefined;
     try {
       const doc = await service.resolve(parsed.data);
-      return { ok: true, open: (ws) => serve(ws, (peer) => service.join(doc, peer)) };
+      return {
+        ok: true,
+        open: (ws) =>
+          serve(ws, (peer) => service.join(doc, peer, generation ? { generation } : {})),
+      };
     } catch (err) {
       if (err instanceof DocRefusal) return refuse(err.status, err.message);
       throw err;

@@ -107,3 +107,29 @@ describe('MarkdownWorkerClient', () => {
     expect(await client.serialize(await client.seed('Back.\n'))).toContain('Back.');
   });
 });
+
+describe('MarkdownWorkerClient queue', () => {
+  it('fails only the request a hung worker was running; the ones waiting run on a fresh worker', async () => {
+    const dir = scratch();
+    const hang = path.join(dir, 'hang.mjs');
+    writeFileSync(
+      hang,
+      "import { parentPort } from 'node:worker_threads'; parentPort.on('message', () => {});\n"
+    );
+    const real = await resolveMarkdownWorkerEntry(scratch());
+    let entry = hang;
+    const client = new MarkdownWorkerClient({
+      resolveEntry: async () => entry,
+      requestTimeoutMs: 300,
+    });
+    clients.push(client);
+
+    const first = client.seed('First.\n');
+    const second = client.seed('Second.\n');
+    // The second request waits behind the first: switching the entry now
+    // means the fresh worker after the timeout is the real one.
+    entry = real;
+    await expect(first).rejects.toMatchObject({ code: 'FAILED' });
+    expect(await client.serialize(await second)).toContain('Second.');
+  });
+});

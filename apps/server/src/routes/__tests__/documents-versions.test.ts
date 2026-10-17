@@ -96,6 +96,23 @@ describe('/api/documents/versions', () => {
     expect(after.body.versions[0].changedBy).toEqual({ kind: 'person' });
   });
 
+  it('keeps unsaved edits as a version that can be put back', async () => {
+    const rel = space.write('draft.md', 'On disk.\n');
+    const kept = await request(app())
+      .post('/api/documents/versions')
+      .send({ cwd: space.space, path: rel, markdown: 'Typed offline.\n' });
+    expect(kept.status).toBe(200);
+    expect(kept.body.version).toMatchObject({
+      reason: 'unsaved-edits',
+      changedBy: { kind: 'person' },
+    });
+
+    await request(app())
+      .post('/api/documents/versions/restore')
+      .send({ cwd: space.space, path: rel, versionId: kept.body.version.id });
+    expect(readFileSync(path.join(space.space, rel), 'utf8')).toBe('Typed offline.\n');
+  });
+
   it('refuses what the files routes refuse', async () => {
     space.write('notes.txt', 'x\n');
     const notMarkdown = await request(app())

@@ -10,7 +10,11 @@
  * @module services/runtimes/claude-code/messaging/message-sender-shared
  */
 import type { McpServerConfig, McpServerStatus } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentRegistryPort, McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import type {
+  DirectoryGrant,
+  AgentRegistryPort,
+  McpAppServerConnection,
+} from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
@@ -97,6 +101,13 @@ export interface McpServerLaunch {
    * per call to resolve who is calling.
    */
   connectorTools?: boolean;
+  /**
+   * This launch's folder grants, as `applyDirectoryGrants` handed them to the
+   * CLI, so the in-session doc tools refuse exactly what `Edit` and `Write`
+   * would (DOR-2984). Grants are part of the launch fingerprint, so a change
+   * relaunches the process and rebuilds the tool server with the new set.
+   */
+  directoryGrants?: readonly DirectoryGrant[];
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */

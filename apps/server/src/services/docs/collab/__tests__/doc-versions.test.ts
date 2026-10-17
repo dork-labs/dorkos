@@ -50,3 +50,32 @@ describe('DocVersionStore', () => {
     expect(await store.list({ docKey: 'b'.repeat(32) })).toEqual([]);
   });
 });
+
+describe('DocVersionStore bounds', () => {
+  it('holds every doc together to a byte cap, oldest first', async () => {
+    const store = new DocVersionStore(root, 10, 12);
+    const a = { docKey: 'a'.repeat(32) };
+    const b = { docKey: 'b'.repeat(32) };
+    await store.keep(a, 'aaaa1\n', AGENT);
+    await store.keep(b, 'bbbb1\n', AGENT);
+    await store.keep(a, 'aaaa2\n', AGENT);
+    const total = [...(await store.list(a)), ...(await store.list(b))];
+    expect(total.reduce((sum, v) => sum + v.bytes, 0)).toBeLessThanOrEqual(12);
+    expect(await store.list(b)).toHaveLength(1);
+  });
+
+  it('sweeps the versions of a doc whose file is gone and that nobody touched for a while', async () => {
+    const store = new DocVersionStore(root);
+    const file = path.join(root, 'gone.md');
+    await store.keep({ docKey: 'c'.repeat(32), file }, 'old\n', AGENT);
+    expect(await store.sweep(60_000)).toBe(0);
+    expect(await store.sweep(-1)).toBe(1);
+    expect(await store.list({ docKey: 'c'.repeat(32) })).toEqual([]);
+  });
+
+  it('marks unsaved edits as such', async () => {
+    const store = new DocVersionStore(root);
+    const kept = await store.keep(scope, 'draft\n', { kind: 'person' }, 'unsaved-edits');
+    expect(kept?.reason).toBe('unsaved-edits');
+  });
+});

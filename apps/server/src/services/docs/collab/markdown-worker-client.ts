@@ -4,9 +4,12 @@
  * Every markdown ↔ Yjs conversion goes through here, so none of it runs on the
  * event loop. One worker serves every doc (Blintz builds one model per worker
  * and reuses it); it starts on the first request, stops after a quiet spell so
- * an idle server holds no parser, and starts again when needed. A worker that
- * crashes or hangs fails only the requests it held: the next request gets a
- * fresh one.
+ * an idle server holds no parser, and starts again when needed.
+ *
+ * Requests run one at a time, in order, and a request's time limit starts when
+ * it reaches the worker, not while it waits behind others. A worker that
+ * crashes or hangs fails only the request it was running; the ones still
+ * waiting go to a fresh worker, so one doc's bad request never fails another's.
  *
  * @module services/docs/collab/markdown-worker-client
  */
@@ -57,10 +60,11 @@ type RequestBody = MarkdownWorkerRequest extends infer R
     : never
   : never;
 
-interface Pending {
+interface Queued {
+  id: number;
+  request: MarkdownWorkerRequest;
   resolve: (result: MarkdownWorkerResult) => void;
   reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
 }
 
 /** Talks to the markdown worker; see the module doc. */
@@ -68,7 +72,8 @@ export class MarkdownWorkerClient {
   readonly #options: Required<MarkdownWorkerClientOptions>;
   #worker: Promise<Worker> | null = null;
   #nextId = 1;
-  readonly #pending = new Map<number, Pending>();
+  readonly #queue: Queued[] = [];
+  #running: (Queued & { timer: ReturnType<typeof setTimeout>; worker: Worker }) | null = null;
   #idleTimer: ReturnType<typeof setTimeout> | null = null;
   #closed = false;
 
@@ -112,97 +117,134 @@ export class MarkdownWorkerClient {
     return this.#request({ op: 'merge', state, markdown, ...(base ? { base } : {}) });
   }
 
-  /** Stop the worker and refuse further requests. */
+  /** Stop the worker and refuse every request, running or waiting. */
   async close(): Promise<void> {
     this.#closed = true;
-    await this.#stopWorker(new MarkdownWorkerError('FAILED', 'The markdown worker stopped.'));
-  }
-
-  async #request<Op extends MarkdownWorkerOp>(
-    body: Extract<RequestBody, { op: Op }>
-  ): Promise<ResultOf<Op>> {
-    if (this.#closed) throw new MarkdownWorkerError('FAILED', 'The markdown worker stopped.');
     this.#clearIdle();
-    const worker = await this.#ensureWorker();
-    const id = this.#nextId++;
-    const result = await new Promise<MarkdownWorkerResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        // A request that hangs takes its worker with it; the next one starts fresh.
-        void this.#stopWorker(
-          new MarkdownWorkerError('FAILED', 'The markdown worker took too long.')
-        );
-      }, this.#options.requestTimeoutMs);
-      this.#pending.set(id, { resolve, reject, timer });
-      worker.postMessage({ ...body, id } as MarkdownWorkerRequest);
-    });
-    return result as ResultOf<Op>;
-  }
-
-  #ensureWorker(): Promise<Worker> {
-    this.#worker ??= this.#options.resolveEntry().then((entry) => {
-      const worker = new Worker(entry);
-      // Never what keeps a process alive: a CLI or test that is done must exit.
-      worker.unref();
-      worker.on('message', (response: MarkdownWorkerResponse) => this.#settle(response));
-      worker.on('error', (error) =>
-        this.#failWorker(worker, new MarkdownWorkerError('FAILED', error.message))
-      );
-      worker.on('exit', () =>
-        this.#failWorker(worker, new MarkdownWorkerError('FAILED', 'The markdown worker exited.'))
-      );
-      return worker;
-    });
-    // A worker file that cannot be found fails this request, not the next one.
-    this.#worker.catch(() => {
-      this.#worker = null;
-    });
-    return this.#worker;
-  }
-
-  #settle(response: MarkdownWorkerResponse): void {
-    const pending = this.#pending.get(response.id);
-    if (!pending) return;
-    this.#pending.delete(response.id);
-    clearTimeout(pending.timer);
-    if (response.ok) {
-      const { id: _id, ok: _ok, ...result } = response;
-      pending.resolve(result as MarkdownWorkerResult);
-    } else {
-      pending.reject(new MarkdownWorkerError(response.code, response.message));
-    }
-    if (this.#pending.size === 0) this.#armIdle();
-  }
-
-  /** Fail what `worker` held, once, and forget it if it is still the current one. */
-  #failWorker(worker: Worker, error: Error): void {
-    void this.#worker?.then((current) => {
-      if (current !== worker) return;
-      this.#worker = null;
-      this.#rejectAll(error);
-    });
-  }
-
-  async #stopWorker(error: Error): Promise<void> {
-    this.#clearIdle();
-    const current = this.#worker;
+    const stopped = new MarkdownWorkerError('FAILED', 'The markdown worker stopped.');
+    for (const queued of this.#queue.splice(0)) queued.reject(stopped);
+    this.#failRunning(stopped);
+    const worker = await this.#worker?.catch(() => null);
     this.#worker = null;
-    this.#rejectAll(error);
-    const worker = await current?.catch(() => null);
     await worker?.terminate();
   }
 
-  #rejectAll(error: Error): void {
-    for (const [id, pending] of this.#pending) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-      this.#pending.delete(id);
+  #request<Op extends MarkdownWorkerOp>(
+    body: Extract<RequestBody, { op: Op }>
+  ): Promise<ResultOf<Op>> {
+    if (this.#closed) {
+      return Promise.reject(new MarkdownWorkerError('FAILED', 'The markdown worker stopped.'));
     }
+    this.#clearIdle();
+    const id = this.#nextId++;
+    return new Promise<MarkdownWorkerResult>((resolve, reject) => {
+      this.#queue.push({ id, request: { ...body, id } as MarkdownWorkerRequest, resolve, reject });
+      void this.#pump();
+    }) as Promise<ResultOf<Op>>;
+  }
+
+  /** Send the next waiting request, when nothing is running. */
+  async #pump(): Promise<void> {
+    if (this.#running || this.#closed) return;
+    const next = this.#queue[0];
+    if (!next) {
+      this.#armIdle();
+      return;
+    }
+    let worker: Worker;
+    try {
+      worker = await this.#ensureWorker();
+    } catch (error) {
+      // No worker file: nothing can run, so every waiting request fails.
+      const failure = new MarkdownWorkerError(
+        'FAILED',
+        error instanceof Error ? error.message : String(error)
+      );
+      for (const queued of this.#queue.splice(0)) queued.reject(failure);
+      return;
+    }
+    if (this.#running || this.#closed || this.#queue[0] !== next) return;
+    this.#queue.shift();
+    const timer = setTimeout(() => {
+      // A request that hangs takes its worker with it; the rest start fresh.
+      this.#replaceWorker(
+        worker,
+        new MarkdownWorkerError('FAILED', 'The markdown worker took too long.')
+      );
+    }, this.#options.requestTimeoutMs);
+    this.#running = { ...next, timer, worker };
+    worker.postMessage(next.request);
+  }
+
+  #ensureWorker(): Promise<Worker> {
+    if (!this.#worker) {
+      const starting = this.#options.resolveEntry().then((entry) => {
+        const worker = new Worker(entry);
+        // Never what keeps a process alive: a CLI or test that is done must exit.
+        worker.unref();
+        worker.on('message', (response: MarkdownWorkerResponse) => this.#settle(worker, response));
+        worker.on('error', (error) =>
+          this.#replaceWorker(worker, new MarkdownWorkerError('FAILED', error.message))
+        );
+        worker.on('exit', () =>
+          this.#replaceWorker(
+            worker,
+            new MarkdownWorkerError('FAILED', 'The markdown worker exited.')
+          )
+        );
+        return worker;
+      });
+      this.#worker = starting;
+      // A worker file that cannot be found is retried on the next request.
+      starting.catch(() => {
+        if (this.#worker === starting) this.#worker = null;
+      });
+    }
+    return this.#worker;
+  }
+
+  #settle(worker: Worker, response: MarkdownWorkerResponse): void {
+    const running = this.#running;
+    if (!running || running.worker !== worker || running.id !== response.id) return;
+    clearTimeout(running.timer);
+    this.#running = null;
+    if (response.ok) {
+      const { id: _id, ok: _ok, ...result } = response;
+      running.resolve(result as MarkdownWorkerResult);
+    } else {
+      running.reject(new MarkdownWorkerError(response.code, response.message));
+    }
+    void this.#pump();
+  }
+
+  /** `worker` failed: fail what it was running, drop it, and carry on with a fresh one. */
+  #replaceWorker(worker: Worker, error: Error): void {
+    if (this.#running?.worker === worker) this.#failRunning(error);
+    void this.#worker?.then((current) => {
+      if (current !== worker) return;
+      this.#worker = null;
+      void worker.terminate();
+      void this.#pump();
+    });
+  }
+
+  #failRunning(error: Error): void {
+    const running = this.#running;
+    if (!running) return;
+    clearTimeout(running.timer);
+    this.#running = null;
+    running.reject(error);
   }
 
   #armIdle(): void {
     this.#clearIdle();
+    if (this.#closed || !this.#worker) return;
     this.#idleTimer = setTimeout(() => {
-      void this.#stopWorker(new MarkdownWorkerError('FAILED', 'The markdown worker stopped.'));
+      this.#idleTimer = null;
+      if (this.#running || this.#queue.length > 0) return;
+      const current = this.#worker;
+      this.#worker = null;
+      void current?.then((worker) => worker.terminate()).catch(() => undefined);
     }, this.#options.idleMs);
     this.#idleTimer.unref?.();
   }

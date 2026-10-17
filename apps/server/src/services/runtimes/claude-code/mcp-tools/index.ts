@@ -7,6 +7,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { requiresDocPrincipal } from './doc-principal-policy.js';
 import type { McpToolDeps, McpToolSession } from './types.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import {
   DORKOS_MCP_SERVER_NAME,
   toolExposure,
@@ -155,6 +156,8 @@ export interface HandRegisteredInSessionOptions {
   identity?: HomeResolution;
   /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
   resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
+  /** The launch's folder grants, which the doc tools hold to (DOR-2984). */
+  directoryGrants?: readonly DirectoryGrant[];
   /**
    * The in-session hold seam (DOR-1930).
    *
@@ -283,6 +286,7 @@ export function handRegisteredInSessionToolSet(
     // Live docs (DOR-2984): bases are this session's own, read at call time.
     ...getDocTools(deps, () => ({
       cwd: session?.cwd,
+      grants: options.directoryGrants ?? [],
       sessionKey: session?.sdkSessionId || sessionId,
       agentName: async () => (await resolveContext?.())?.identity?.displayName,
     })),
@@ -381,6 +385,8 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  * @param connectorTools - Whether to list the five connector tools, decided by
  *   the launch from session-long facts (DOR-2685). Defaults to whether the
  *   session holds a turn's connector context, for callers that are not a launch.
+ * @param directoryGrants - The launch's folder grants, so the doc tools refuse
+ *   what `Edit` and `Write` would (DOR-2984). None by default.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
@@ -391,7 +397,8 @@ export function createDorkOsToolServer(
   registry?: CapabilityRegistry,
   hiddenToolNames: ReadonlySet<string> = new Set(),
   launchIdentity?: HomeResolution,
-  connectorTools: boolean = session?.connectorTurn !== undefined
+  connectorTools: boolean = session?.connectorTurn !== undefined,
+  directoryGrants: readonly DirectoryGrant[] = []
 ) {
   const identity = launchIdentity ?? resolveAgentHome(session?.cwd);
   // Operator + marketplace + self-description tools, all generated from the
@@ -459,6 +466,7 @@ export function createDorkOsToolServer(
     ...(sessionId ? { sessionId } : {}),
     identity,
     resolveContext,
+    directoryGrants,
     // The same seam the registry tools get. Both halves of the tool surface can
     // wait for one person's decision — before this, `mesh_unregister` and
     // `tasks_delete` were the only gated tools that ended the turn and left the

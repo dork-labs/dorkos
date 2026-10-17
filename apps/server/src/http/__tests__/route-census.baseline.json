@@ -414,6 +414,7 @@
     "POST /api/discovery/scan",
     "POST /api/documents/comments/threads",
     "POST /api/documents/comments/threads/:threadId/replies",
+    "POST /api/documents/versions",
     "POST /api/documents/versions/restore",
     "POST /api/errors",
     "POST /api/extension-decisions/:id/action",

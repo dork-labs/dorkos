@@ -20,6 +20,7 @@ import { initBoundary } from '../../../../lib/boundary.js';
 import { InstallationFileWrites } from '../../../canvas/doc-channel/writes/installation-file-writes.js';
 import { DocCollabService, type DocCollabServiceDeps } from '../doc-collab-service.js';
 import { DocVersionStore } from '../doc-versions.js';
+import { DocStateStore } from '../doc-states.js';
 import type { DocPeer } from '../doc-sync.js';
 import {
   handleMarkdownRequest,
@@ -66,29 +67,57 @@ export async function makeSpace(): Promise<TestSpace> {
 const workerHome = realpathSync(mkdtempSync(path.join(tmpdir(), 'doc-collab-worker-')));
 afterAll(() => rmSync(workerHome, { recursive: true, force: true }));
 
-/** A worker client over the real, bundled worker. */
-export function makeWorker(): MarkdownWorkerClient {
-  return new MarkdownWorkerClient({ resolveEntry: () => resolveMarkdownWorkerEntry(workerHome) });
+/** The real, bundled worker file, built once per test file. */
+export function workerEntry(): Promise<string> {
+  return resolveMarkdownWorkerEntry(workerHome);
 }
 
-/** A service over the real worker, writer and version store. */
+/** A worker client over the real, bundled worker. */
+export function makeWorker(): MarkdownWorkerClient {
+  return new MarkdownWorkerClient({ resolveEntry: workerEntry });
+}
+
+/** A service over the real worker, writer, version store and saved-state store. */
 export function makeService(
   space: TestSpace,
   overrides: Partial<DocCollabServiceDeps> = {}
-): { service: DocCollabService; writer: InstallationFileWrites; versions: DocVersionStore } {
+): {
+  service: DocCollabService;
+  writer: InstallationFileWrites;
+  versions: DocVersionStore;
+  states: DocStateStore;
+} {
   const writer = new InstallationFileWrites();
   const versions = new DocVersionStore(path.join(space.dorkHome, 'docs', 'versions'));
+  const states = new DocStateStore(path.join(space.dorkHome, 'docs', 'live'));
   const service = new DocCollabService({
     worker: makeWorker(),
     writer,
     versions,
+    states,
     lingerMs: 0,
     flushDelayMs: 20,
     flushMaxWaitMs: 100,
+    retryBaseMs: 20,
     watch: false,
     ...overrides,
   });
-  return { service, writer, versions };
+  return { service, writer, versions, states };
+}
+
+/** What a bare `LiveDoc` is built with, for tests below the service. */
+export function liveDocDeps(space: TestSpace) {
+  return {
+    worker: makeWorker(),
+    writer: new InstallationFileWrites(),
+    versions: new DocVersionStore(path.join(space.dorkHome, 'docs', 'versions')),
+    states: new DocStateStore(path.join(space.dorkHome, 'docs', 'live')),
+    flushDelayMs: 20,
+    flushMaxWaitMs: 100,
+    retryBaseMs: 20,
+    watch: false,
+    maxEditors: 32,
+  };
 }
 
 let model: Promise<MarkdownModel> | null = null;
@@ -99,23 +128,49 @@ function editorModel(): Promise<MarkdownModel> {
   return model;
 }
 
-/** An editor joined to a live doc, syncing the way a browser does. */
+/** How {@link TestEditor.join} joins. */
+export interface TestEditorJoin {
+  /** Rejoin with this copy of the doc (a reconnect), instead of a fresh one. */
+  ydoc?: Y.Doc;
+  /** The generation that copy came from. */
+  generation?: string | null;
+}
+
+/**
+ * An editor joined to a live doc, syncing the way a browser does: nothing
+ * goes to the server until its `hello` confirms the copy this editor holds.
+ */
 export class TestEditor {
-  readonly doc = new Y.Doc();
+  readonly doc: Y.Doc;
   readonly notes: DocCollabNote[] = [];
+  /** The generation of the copy this editor holds, once a hello confirmed it. */
+  generation: string | null;
+  /** The server named a different copy: this editor must start over. */
+  stale = false;
+  closed = false;
+  #ready = false;
   #handle: { receive: (frame: Uint8Array) => void; leave: () => void } | null = null;
   /** Replies to frames the server sent from inside `join`, before the handle existed. */
   readonly #early: Uint8Array[] = [];
-  closed = false;
+
+  private constructor(options: TestEditorJoin) {
+    this.doc = options.ydoc ?? new Y.Doc();
+    this.generation = options.generation ?? null;
+  }
 
   /**
    * Join `doc` on `service` and wait for the first sync.
    *
    * @param service - The live-doc service.
    * @param doc - Which doc.
+   * @param options - A copy to rejoin with, for a reconnect.
    */
-  static async join(service: DocCollabService, doc: ResolvedDoc): Promise<TestEditor> {
-    const editor = new TestEditor();
+  static async join(
+    service: DocCollabService,
+    doc: ResolvedDoc,
+    options: TestEditorJoin = {}
+  ): Promise<TestEditor> {
+    const editor = new TestEditor(options);
     const peer: DocPeer = {
       send: (frame) => editor.#receive(frame),
       close: () => {
@@ -123,21 +178,29 @@ export class TestEditor {
       },
     };
     editor.doc.on('update', (update: Uint8Array, origin: unknown) => {
-      if (origin === 'server' || editor.closed) return;
+      if (origin === 'server' || editor.closed || !editor.#ready) return;
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
       syncProtocol.writeUpdate(encoder, update);
       editor.#send(encoding.toUint8Array(encoder));
     });
-    const handle = await service.join(doc, peer);
+    const handle = await service.join(doc, peer, {
+      ...(editor.generation ? { generation: editor.generation } : {}),
+    });
     editor.#handle = handle;
     for (const frame of editor.#early.splice(0)) handle.receive(frame);
-    // Ask for what the server has (sync step 1), as a browser does on open.
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
-    syncProtocol.writeSyncStep1(encoder, editor.doc);
-    handle.receive(encoding.toUint8Array(encoder));
     return editor;
+  }
+
+  /**
+   * Join again with this editor's own copy, as a browser does after a drop.
+   *
+   * @param service - The live-doc service (maybe a fresh one, after a restart).
+   * @param doc - Which doc.
+   */
+  reconnect(service: DocCollabService, doc: ResolvedDoc): Promise<TestEditor> {
+    this.leave();
+    return TestEditor.join(service, doc, { ydoc: this.doc, generation: this.generation });
   }
 
   /** Type: change the editor's doc to say `markdown`, as a person's keystrokes would. */
@@ -163,6 +226,11 @@ export class TestEditor {
     return result.markdown;
   }
 
+  /** Send any frame, as a misbehaving client might. */
+  sendRaw(frame: Uint8Array): void {
+    this.#send(frame);
+  }
+
   /** Leave the doc. */
   leave(): void {
     this.closed = true;
@@ -170,11 +238,25 @@ export class TestEditor {
   }
 
   #receive(frame: Uint8Array): void {
+    if (this.closed) return;
     const decoder = decoding.createDecoder(frame);
     const type = decoding.readVarUint(decoder);
     if (type === DOC_COLLAB_MESSAGE.note) {
-      this.notes.push(DocCollabNoteSchema.parse(JSON.parse(decoding.readVarString(decoder))));
-    } else if (type === DOC_COLLAB_MESSAGE.sync) {
+      const note = DocCollabNoteSchema.parse(JSON.parse(decoding.readVarString(decoder)));
+      this.notes.push(note);
+      if (note.type !== 'hello') return;
+      if (this.generation && this.generation !== note.generation) {
+        this.stale = true;
+        return;
+      }
+      this.generation = note.generation;
+      this.#ready = true;
+      // Ask for what the server has (sync step 1), as a browser does once confirmed.
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
+      syncProtocol.writeSyncStep1(encoder, this.doc);
+      this.#send(encoding.toUint8Array(encoder));
+    } else if (type === DOC_COLLAB_MESSAGE.sync && this.#ready) {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
       syncProtocol.readSyncMessage(decoder, encoder, this.doc, 'server');
@@ -183,6 +265,7 @@ export class TestEditor {
   }
 
   #send(frame: Uint8Array): void {
+    if (this.closed) return;
     if (this.#handle) this.#handle.receive(frame);
     else this.#early.push(frame);
   }

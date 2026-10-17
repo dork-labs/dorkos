@@ -276,7 +276,9 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
           // Whether the connector tools are listed, from facts that hold for
           // the whole session, so a staged warm-up and the turn after it list
           // the same tools (DOR-2685).
-          launch?.connectorTools
+          launch?.connectorTools,
+          // The launch's folder grants, which the doc tools hold to (DOR-2984).
+          launch?.directoryGrants
         ),
       })
     );

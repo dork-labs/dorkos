@@ -440,19 +440,22 @@ export const MCP_TOOL_TIERS = {
   },
 
   // ── Docs (DOR-2984) ─────────────────────────────────────────────────────
-  // No area: these reach the same files an agent's own Read and Write tools
-  // already reach, inside the same folder boundary. The write is the safer of
-  // the two paths: it merges with people's typing and keeps a version.
+  // No area: both reach only what an agent's own Read and Write tools reach
+  // without asking — its folder and its folder grants — and doc_write is
+  // refused inside a read-only grant, as Write is (`doc-tools.ts`). The write
+  // is the safer path of the two: it merges with people's typing and keeps a
+  // version.
   doc_read: {
     tier: 'observe',
     area: null,
-    areaNote: 'reads a file the agent can already read with its own tools',
+    areaNote: 'reads only inside the agent’s folder and the folders it was granted',
     title: 'Read a doc',
   },
   doc_write: {
     tier: 'act',
     area: null,
-    areaNote: 'writes a file the agent can already write, merged and with the old version kept',
+    areaNote:
+      'writes only where the agent’s Write tool may: its folder and write grants, never a read grant',
     title: 'Change a doc',
   },
 

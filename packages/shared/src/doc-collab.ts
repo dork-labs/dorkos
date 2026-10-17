@@ -54,13 +54,26 @@ export const DocWriterSchema = z.object({
 /** Who changed a doc. */
 export type DocWriter = z.infer<typeof DocWriterSchema>;
 
-/** One saved version: the doc as it was just before somebody changed it. */
+/**
+ * Why a version was kept: `before-change` is the doc just before somebody
+ * other than its editors changed it (`changedBy`); `unsaved-edits` is text an
+ * editor typed that could not reach the file or the live doc, kept so it can
+ * be put back.
+ */
+export const DocVersionReasonSchema = z.enum(['before-change', 'unsaved-edits']);
+
+/** Why a version was kept. */
+export type DocVersionReason = z.infer<typeof DocVersionReasonSchema>;
+
+/** One saved version of a doc. */
 export const DocVersionSchema = z.object({
   /** Sortable, unique within the doc. */
   id: z.string(),
   /** When it was saved. ISO 8601. */
   savedAt: z.string(),
-  /** Whose change came right after this version. */
+  /** Why it was kept. */
+  reason: DocVersionReasonSchema.default('before-change'),
+  /** Whose change came right after this version (for `unsaved-edits`, who typed it). */
   changedBy: DocWriterSchema,
   /** Its size, in bytes. */
   bytes: z.number().int().nonnegative(),
@@ -76,6 +89,15 @@ export const DocVersionListSchema = z.object({
 
 /** A doc's saved versions, newest first. */
 export type DocVersionList = z.infer<typeof DocVersionListSchema>;
+
+/** Keep text an editor could not save as a version of the doc, so it can be put back. */
+export const KeepDocDraftRequestSchema = DocRefSchema.extend({
+  /** The text, as markdown. */
+  markdown: z.string().max(5 * 1024 * 1024),
+});
+
+/** Keep text an editor could not save as a version. */
+export type KeepDocDraftRequest = z.infer<typeof KeepDocDraftRequestSchema>;
 
 /** Put a saved version back. */
 export const RestoreDocVersionRequestSchema = DocRefSchema.extend({
@@ -116,7 +138,27 @@ export const DocCollabNoteSchema = z.discriminatedUnion('type', [
     /** The doc's saved versions changed. */
     type: z.literal('versions'),
   }),
+  z.object({
+    /**
+     * The doc's file was moved or deleted. Its text is kept as a version; the
+     * doc stops saving until the file is back.
+     */
+    type: z.literal('gone'),
+  }),
+  z.object({
+    /**
+     * Proof of life, every few seconds, so an editor notices a connection
+     * that died without closing and reconnects.
+     */
+    type: z.literal('heartbeat'),
+  }),
 ]);
+
+/** How often the server sends a heartbeat note to each editor. */
+export const DOC_COLLAB_HEARTBEAT_MS = 15_000;
+
+/** The socket query parameter an editor names the copy of the doc it holds with. */
+export const DOC_COLLAB_GENERATION_PARAM = 'generation';
 
 /** A note the server sends on the doc socket. */
 export type DocCollabNote = z.infer<typeof DocCollabNoteSchema>;

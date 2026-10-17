@@ -10,6 +10,12 @@
  * transaction origin of everything it sends, which is how its own updates are
  * not echoed back to it.
  *
+ * Only editors that hold this copy of the doc are let in (`LiveDoc.join`
+ * checks the generation they name). An update that still cannot be placed in
+ * this copy (it builds on items the doc never had) closes the editor that sent
+ * it, and the unplaceable part is dropped, so it cannot sit in the doc and
+ * make every later merge fail.
+ *
  * @module services/docs/collab/doc-sync
  */
 import * as Y from 'yjs';
@@ -22,7 +28,11 @@ import {
   encodeAwarenessUpdate,
   removeAwarenessStates,
 } from 'y-protocols/awareness';
-import { DOC_COLLAB_MESSAGE, type DocCollabNote } from '@dorkos/shared/doc-collab';
+import {
+  DOC_COLLAB_HEARTBEAT_MS,
+  DOC_COLLAB_MESSAGE,
+  type DocCollabNote,
+} from '@dorkos/shared/doc-collab';
 import { logger } from '../../../lib/logger.js';
 
 /** One editor's connection, as the protocol needs it. */
@@ -53,6 +63,7 @@ export class DocSyncHub {
     change: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown
   ) => void;
+  readonly #heartbeat: ReturnType<typeof setInterval>;
 
   /**
    * Start serving `doc` to whoever joins.
@@ -87,6 +98,11 @@ export class DocSyncHub {
     };
     doc.on('update', this.#onUpdate);
     this.awareness.on('update', this.#onAwareness);
+    this.#heartbeat = setInterval(
+      () => this.broadcast({ type: 'heartbeat' }),
+      DOC_COLLAB_HEARTBEAT_MS
+    );
+    this.#heartbeat.unref?.();
   }
 
   /** How many editors are here. */
@@ -132,6 +148,12 @@ export class DocSyncHub {
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
         syncProtocol.readSyncMessage(decoder, encoder, this.#doc, peer);
+        if (this.#dropUnplaceable()) {
+          logger.warn('[docs] closed an editor whose update this doc cannot place');
+          this.leave(peer);
+          peer.close();
+          return;
+        }
         // Only a step 1 needs an answer (the step 2 it asked for).
         if (encoding.length(encoder) > 1) peer.send(encoding.toUint8Array(encoder));
       } else if (type === DOC_COLLAB_MESSAGE.awareness) {
@@ -144,6 +166,22 @@ export class DocSyncHub {
       this.leave(peer);
       peer.close();
     }
+  }
+
+  /**
+   * Drop what an update left waiting for items this doc does not have. Yjs
+   * keeps such structs (and deletes) aside until their dependencies arrive;
+   * from an editor of another copy they never will, and while they wait every
+   * base check and every state vector the doc hands out is wrong.
+   *
+   * @returns Whether anything was dropped.
+   */
+  #dropUnplaceable(): boolean {
+    const store = this.#doc.store;
+    if (store.pendingStructs === null && store.pendingDs === null) return false;
+    store.pendingStructs = null;
+    store.pendingDs = null;
+    return true;
   }
 
   /**
@@ -170,6 +208,7 @@ export class DocSyncHub {
 
   /** Close every connection and stop listening to the doc. */
   close(): void {
+    clearInterval(this.#heartbeat);
     this.#doc.off('update', this.#onUpdate);
     this.awareness.off('update', this.#onAwareness);
     for (const peer of [...this.#peers.keys()]) {

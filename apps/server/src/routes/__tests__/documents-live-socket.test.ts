@@ -74,14 +74,28 @@ afterEach(async () => {
 });
 
 /** An editor over a real socket. */
-async function connect(rel: string) {
-  const query = new URLSearchParams({ cwd: space.space, path: rel });
+async function connect(rel: string, generation?: string) {
+  const query = new URLSearchParams({
+    cwd: space.space,
+    path: rel,
+    ...(generation ? { generation } : {}),
+  });
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/documents/live?${query}`);
   const doc = new Y.Doc();
   const closed = new Promise<number>((resolve) => ws.on('close', (code) => resolve(code)));
+  const hellos: string[] = [];
   ws.on('message', (data) => {
     const decoder = decoding.createDecoder(new Uint8Array(data as Buffer));
-    if (decoding.readVarUint(decoder) !== DOC_COLLAB_MESSAGE.sync) return;
+    const type = decoding.readVarUint(decoder);
+    if (type === DOC_COLLAB_MESSAGE.note) {
+      const note = JSON.parse(decoding.readVarString(decoder)) as {
+        type: string;
+        generation?: string;
+      };
+      if (note.type === 'hello' && note.generation) hellos.push(note.generation);
+      return;
+    }
+    if (type !== DOC_COLLAB_MESSAGE.sync) return;
     const encoder = encoding.createEncoder();
     encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
     syncProtocol.readSyncMessage(decoder, encoder, doc, 'server');
@@ -118,7 +132,7 @@ async function connect(rel: string) {
     });
     if (result.op === 'merge') Y.applyUpdate(doc, result.update, 'local');
   };
-  return { ws, closed, markdown, type };
+  return { ws, closed, markdown, type, hellos, doc };
 }
 
 describe('the live doc socket', () => {
@@ -152,6 +166,18 @@ describe('the live doc socket', () => {
     arrange();
     const editor = await connect(rel);
     expect(await editor.closed).toBe(4000 + status);
+  });
+
+  it('tells an editor holding another copy which copy this is, and closes it untouched', async () => {
+    const rel = space.write('copy.md', '# Real\n');
+    const first = await connect(rel);
+    await expect.poll(first.markdown, { timeout: 5000 }).toContain('# Real');
+
+    const old = await connect(rel, 'an-older-copy');
+    await old.closed;
+    expect(old.hellos).toEqual([first.hellos[0]]);
+    expect(old.doc.getXmlFragment('prosemirror').length).toBe(0);
+    first.ws.close();
   });
 
   it('refuses a cwd outside the boundary', async () => {

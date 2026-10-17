@@ -770,6 +770,8 @@ export async function resolveLaunch(args: {
     sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId, {
       hiddenToolNames: toolVisibility.hiddenToolNames,
       identity: toolIdentity,
+      // The same grants the CLI got above, so the doc tools refuse what Edit would.
+      directoryGrants: (teammate ? undefined : messageOpts?.additionalDirectories) ?? [],
       ...(opts.connectorTools !== undefined ? { connectorTools: opts.connectorTools } : {}),
     });
   }

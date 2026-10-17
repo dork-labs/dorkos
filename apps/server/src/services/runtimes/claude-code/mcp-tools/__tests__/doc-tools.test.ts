@@ -40,7 +40,11 @@ afterEach(async () => {
   space.cleanup();
 });
 
-const session = () => ({ sessionKey: 'session-1', agentName: async () => 'Ada' });
+const session = () => ({
+  cwd: space.space,
+  sessionKey: 'session-1',
+  agentName: async () => 'Ada',
+});
 
 function parse(result: { content: { text: string }[]; isError?: boolean }) {
   return { ...JSON.parse(result.content[0]!.text), isError: result.isError === true };
@@ -102,6 +106,70 @@ describe('doc tools', () => {
     );
     expect(stale).toMatchObject({ isError: true, error: expect.stringContaining('Read it again') });
     expect(readFileSync(path.join(space.space, rel), 'utf8')).toBe('v3 by someone else\n');
+  });
+
+  it('reach only the agent’s folder and its grants, and never write a read-only grant', async () => {
+    space.write('agent/own.md', 'Mine.\n');
+    space.write('team-read/plan.md', 'Read only.\n');
+    space.write('team-write/plan.md', 'Writable.\n');
+    space.write('elsewhere/plan.md', 'Not granted.\n');
+    const granted = () => ({
+      cwd: path.join(space.space, 'agent'),
+      sessionKey: 'granted',
+      grants: [
+        { path: path.join(space.space, 'team-read'), access: 'read' as const },
+        { path: path.join(space.space, 'team-write'), access: 'write' as const },
+      ],
+    });
+    const read = createDocReadHandler(deps, granted);
+    const write = createDocWriteHandler(deps, granted);
+
+    expect(parse(await write({ path: 'own.md', markdown: 'Mine, edited.\n' })).isError).toBe(false);
+    expect(
+      parse(await read({ path: 'plan.md', cwd: path.join(space.space, 'team-read') })).isError
+    ).toBe(false);
+    const refused = parse(
+      await write({ path: 'plan.md', cwd: path.join(space.space, 'team-read'), markdown: 'No.\n' })
+    );
+    expect(refused).toMatchObject({
+      isError: true,
+      error: expect.stringContaining('can’t be written'),
+    });
+    expect(readFileSync(path.join(space.space, 'team-read/plan.md'), 'utf8')).toBe('Read only.\n');
+    expect(
+      parse(
+        await write({
+          path: 'plan.md',
+          cwd: path.join(space.space, 'team-write'),
+          markdown: 'Writable, edited.\n',
+        })
+      ).isError
+    ).toBe(false);
+    const outside = parse(
+      await read({ path: 'plan.md', cwd: path.join(space.space, 'elsewhere') })
+    );
+    expect(outside).toMatchObject({
+      isError: true,
+      error: expect.stringContaining('outside your folder'),
+    });
+  });
+
+  it('refuse a write to an open doc the agent never read', async () => {
+    const rel = space.write('unread.md', 'Hello.\n');
+    await TestEditor.join(
+      getDocCollab()!,
+      await getDocCollab()!.resolve({ cwd: space.space, path: rel })
+    );
+    const result = parse(
+      await createDocWriteHandler(deps, () => ({ cwd: space.space, sessionKey: 'fresh' }))({
+        path: rel,
+        markdown: 'Overwritten.\n',
+      })
+    );
+    expect(result).toMatchObject({
+      isError: true,
+      error: expect.stringContaining('doc_read first'),
+    });
   });
 
   it('say so for a doc outside the folder boundary', async () => {

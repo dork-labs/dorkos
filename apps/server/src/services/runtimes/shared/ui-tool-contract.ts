@@ -171,7 +171,7 @@ const CANVAS_CONTENT_CATALOG: Record<UiCanvasContent['type'], CanvasContentEntry
     shape:
       '{ type: "file", sourcePath: string, language?: string, readOnly?: boolean, title?: string }',
     sentence:
-      'A file from the working directory, loaded by DorkOS rather than pasted into the command. Markdown opens in the rich editor, everything else in the code editor. Reaching for this by hand is rarely needed — open_file picks the right viewer for you.',
+      'A file from the working directory, loaded by DorkOS rather than pasted into the command. Markdown opens in the rich editor, everything else in the code editor. Reaching for this by hand is rarely needed — open_file picks the right viewer for you. To change a markdown file a person may have open, use the doc tools if you have them, not your file tools: they merge with what the person is typing.',
   },
   model3d: {
     shape: '{ type: "model3d", src: "<https url | data: URI | local file path>", title?: string }',

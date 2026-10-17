@@ -7,9 +7,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DocBaseError, DocChangedError, type DocCollabService } from '../doc-collab-service.js';
+import { DocChangedError, DocNotReadError, type DocCollabService } from '../doc-collab-service.js';
+import { LiveDoc } from '../live-doc.js';
 import type { DocVersionStore } from '../doc-versions.js';
-import { makeService, makeSpace, TestEditor, type TestSpace } from './collab-harness.js';
+import {
+  liveDocDeps,
+  makeService,
+  makeSpace,
+  TestEditor,
+  type TestSpace,
+} from './collab-harness.js';
 
 const AGENT = { kind: 'agent' as const, name: 'Ada' };
 
@@ -60,14 +67,30 @@ describe('an open doc', () => {
     expect(person.notes).toContainEqual({ type: 'changed', changedBy: AGENT });
   });
 
-  it('merges an agent that never read through DorkOS as an edit of the file on disk', async () => {
+  it('refuses a write from an agent that never read the open doc, and changes nothing', async () => {
     const rel = space.write('notes.md', 'One.\n\nTwo.\n');
     const doc = await service.resolve(ref(rel));
     const person = await TestEditor.join(service, doc);
     await person.type('One.\n\nTwo.\n\nPerson’s three.\n');
 
-    await service.write(ref(rel), 'One, by the agent.\n\nTwo.\n', { writer: AGENT });
+    await expect(
+      service.write(ref(rel), 'One, by the agent.\n\nTwo.\n', { writer: AGENT })
+    ).rejects.toBeInstanceOf(DocNotReadError);
 
+    const shown = await person.markdown();
+    expect(shown).not.toContain('One, by the agent.');
+    expect(shown).toContain('Person’s three.');
+  });
+
+  it('merges an agent that read the file before anybody opened it', async () => {
+    const rel = space.write('early.md', 'One.\n\nTwo.\n');
+    await service.read(ref(rel), { writer: AGENT, sessionKey: 'early' });
+    const person = await TestEditor.join(service, await service.resolve(ref(rel)));
+    await person.type('One.\n\nTwo.\n\nPerson’s three.\n');
+    await service.write(ref(rel), 'One, by the agent.\n\nTwo.\n', {
+      writer: AGENT,
+      sessionKey: 'early',
+    });
     const shown = await person.markdown();
     expect(shown).toContain('One, by the agent.');
     expect(shown).toContain('Person’s three.');
@@ -84,16 +107,21 @@ describe('an open doc', () => {
   it('refuses a base read from another doc', async () => {
     const a = space.write('a.md', 'Doc A.\n');
     const b = space.write('b.md', 'Doc B.\n');
-    const docA = await service.resolve(ref(a));
-    const docB = await service.resolve(ref(b));
-    await TestEditor.join(service, docA);
-    const person = await TestEditor.join(service, docB);
-    const readOfA = await service.readWithBase(docA);
-
-    await expect(
-      service.writeWithBase(docB, 'Doc B, clobbered.\n', AGENT, readOfA!.base)
-    ).rejects.toBeInstanceOf(DocBaseError);
-    expect(await person.markdown()).toContain('Doc B.');
+    const deps = liveDocDeps(space);
+    const docA = await LiveDoc.open(await service.resolve(ref(a)), deps);
+    const docB = await LiveDoc.open(await service.resolve(ref(b)), deps);
+    try {
+      const readOfA = await docA.read();
+      const failure = await docB
+        .write('Doc B, clobbered.\n', AGENT, readOfA.base)
+        .catch((err: unknown) => err);
+      expect(failure).toMatchObject({ code: 'BASE_MISMATCH' });
+      expect((await docB.read()).markdown).toContain('Doc B.');
+    } finally {
+      await docA.close();
+      await docB.close();
+      await deps.worker.close();
+    }
   });
 
   it('merges a change made on disk, keeping the person’s typing', async () => {
@@ -171,7 +199,11 @@ describe('restoring a previous version', () => {
     const rel = space.write('live-restore.md', 'Original.\n');
     const doc = await service.resolve(ref(rel));
     const person = await TestEditor.join(service, doc);
-    await service.write(ref(rel), 'Agent rewrote everything.\n', { writer: AGENT });
+    await service.read(ref(rel), { writer: AGENT, sessionKey: 's1' });
+    await service.write(ref(rel), 'Agent rewrote everything.\n', {
+      writer: AGENT,
+      sessionKey: 's1',
+    });
     expect(await person.markdown()).toContain('Agent rewrote everything.');
     const [before] = await versions.list(doc.scope);
 

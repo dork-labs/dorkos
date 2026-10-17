@@ -24,16 +24,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unpackedPath } from '../../extensions/isolation/child-entry.js';
+import { MARKDOWN_WORKER_BANNER, MARKDOWN_WORKER_FILE } from './worker-build.js';
 
-/** The file name the production builds emit beside the server bundle. */
-export const MARKDOWN_WORKER_FILE = 'docs-markdown-worker.mjs';
-
-/**
- * The banner every ESM bundle of this worker carries: a few of Blintz's
- * dependencies are CommonJS and call `require`, which an ES module lacks.
- */
-export const MARKDOWN_WORKER_BANNER =
-  "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);";
+export { MARKDOWN_WORKER_FILE } from './worker-build.js';
 
 /** One development bundle per data directory, per server process. */
 const devBuilds = new Map<string, Promise<string>>();
@@ -61,11 +54,18 @@ async function bundleForDev(source: string, dorkHome: string): Promise<string> {
   const hash = createHash('sha256').update(output.contents).digest('hex').slice(0, 16);
   const dir = path.join(dorkHome, 'cache', 'docs');
   await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `markdown-worker-${hash}.mjs`);
+  const name = `markdown-worker-${hash}.mjs`;
+  const file = path.join(dir, name);
   if (!existsSync(file)) {
     const temp = `${file}.${process.pid}.tmp`;
     await fs.writeFile(temp, output.contents);
     await fs.rename(temp, file);
+  }
+  // Bundles of earlier edits are never run again.
+  for (const old of await fs.readdir(dir).catch(() => [] as string[])) {
+    if (/^markdown-worker-[0-9a-f]{16}\.mjs$/.test(old) && old !== name) {
+      await fs.rm(path.join(dir, old), { force: true }).catch(() => undefined);
+    }
   }
   return file;
 }
