@@ -22,6 +22,7 @@ import {
 } from '../lib/file-route-guards.js';
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
+import { currentServerRole } from '../lib/server-role.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
@@ -32,6 +33,19 @@ import {
   saveOriginalDocumentFile,
 } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 import { CanonicalFileIdentityChangedError } from '../services/canvas/doc-channel/writes/canonical-writer.js';
+
+/**
+ * Whether a file of this type is shown in the page rather than downloaded.
+ * Everywhere but a hub, every type is. On a hub (DOR-2937) only pictures,
+ * sound and video are, since a browser never runs those as a page; a PDF, an
+ * SVG or a 3D model downloads instead, so no file can open as a page at the
+ * hub's own address.
+ */
+function inlineHere(contentType: string): boolean {
+  if (currentServerRole() !== 'hub') return true;
+  if (contentType === 'image/svg+xml') return false;
+  return /^(image|audio|video)\//.test(contentType);
+}
 
 /** Build confined file routes using the owning installation writer. */
 export function createFileRoutes(writes = new InstallationFileWrites()): Hono<ApiEnv> {
@@ -117,7 +131,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     const headers: Record<string, string> = {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
-      'Content-Disposition': 'inline',
+      'Content-Disposition': inlineHere(contentType) ? 'inline' : 'attachment',
       'Cache-Control': 'private, max-age=0, must-revalidate',
       // Advertise Range support so browsers know they can seek audio/video.
       'Accept-Ranges': 'bytes',
