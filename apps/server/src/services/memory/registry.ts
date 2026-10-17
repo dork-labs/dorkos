@@ -83,6 +83,10 @@ import {
   MemoryCapExceededError,
   MemoryIOError,
   MemoryMatchError,
+  MemoryNoteError,
+  MemoryNoteListQuerySchema,
+  MemoryNoteListSchema,
+  MemoryNoteNameSchema,
   MemoryNoteShapeError,
   MemoryQuerySchema,
   MemorySelectorSchema,
@@ -91,6 +95,8 @@ import {
   MemoryWriteOpSchema,
   type AgentMemoryRef,
   type MemoryHits,
+  type MemoryNoteList,
+  type MemoryNoteListQuery,
   type MemoryProvider,
   type MemoryProviderInfo,
   type MemoryProviderStatus,
@@ -117,7 +123,7 @@ export type MemoryProviderFactory = () => MemoryProvider;
  */
 export const MEMORY_PROVIDER_UNAVAILABLE_INFO: MemoryProviderInfo = {
   id: 'unavailable',
-  capabilities: { search: false, consolidate: false },
+  capabilities: { search: false, consolidate: false, notes: false },
 };
 
 /** Every registered backend, by the id `memory.provider` names. */
@@ -228,6 +234,7 @@ const REFUSAL_NAMES: ReadonlySet<string> = new Set([
   'MemoryMatchError',
   'MemoryCapExceededError',
   'MemoryNoteShapeError',
+  'MemoryNoteError',
   'MemoryIOError',
   'MemoryPathError',
 ]);
@@ -252,6 +259,7 @@ function isContractRefusal(err: unknown): boolean {
     err instanceof MemoryMatchError ||
     err instanceof MemoryCapExceededError ||
     err instanceof MemoryNoteShapeError ||
+    err instanceof MemoryNoteError ||
     err instanceof MemoryIOError ||
     err instanceof MemoryPathError
   ) {
@@ -571,6 +579,35 @@ const facade: MemoryProvider = {
     const parsed = AgentMemoryRefSchema.safeParse(ref);
     if (!parsed.success) return Promise.reject(parsed.error);
     return dispatch((provider) => provider.consolidate(parsed.data), rethrow);
+  },
+
+  listNotes(ref: AgentMemoryRef, query: MemoryNoteListQuery): Promise<MemoryNoteList> {
+    const parsed = AgentMemoryRefSchema.safeParse(ref);
+    if (!parsed.success) return Promise.reject(parsed.error);
+    const parsedQuery = MemoryNoteListQuerySchema.safeParse(query);
+    if (!parsedQuery.success) return Promise.reject(parsedQuery.error);
+    // A refusal (notes off) rejects, so a caller can say "this backend keeps no
+    // notes" rather than "you have none"; a backend that cannot answer at all
+    // is an `'error'` list, which a caller renders as silence.
+    return dispatch(
+      (provider) => provider.listNotes(parsed.data, parsedQuery.data),
+      (err) =>
+        MemoryNoteListSchema.parse({
+          status: 'error',
+          notes: [],
+          total: 0,
+          recentlyMigrated: 0,
+          error: errorSnapshot(err).error,
+        })
+    );
+  },
+
+  readNote(ref: AgentMemoryRef, name: string): Promise<MemorySnapshot> {
+    const parsed = AgentMemoryRefSchema.safeParse(ref);
+    if (!parsed.success) return Promise.resolve(errorSnapshot(parsed.error));
+    const parsedName = MemoryNoteNameSchema.safeParse(name);
+    if (!parsedName.success) return Promise.resolve(errorSnapshot(parsedName.error));
+    return dispatchRead((provider) => provider.readNote(parsed.data, parsedName.data));
   },
 };
 

@@ -6,7 +6,9 @@
  */
 import path from 'node:path';
 
-import { MEMORY_DIR_NAME, MEMORY_FILE_NAME } from './constants.js';
+import { MemoryNoteNameSchema } from '@dorkos/shared/memory-provider';
+
+import { MEMORY_DIR_NAME, MEMORY_FILE_NAME, MEMORY_NOTES_DIR_NAME } from './constants.js';
 
 /**
  * Refusal to resolve a memory file for a path that could reach outside the
@@ -37,10 +39,11 @@ export class MemoryPathError extends Error {
  * Resolve the one file that holds this agent's memory:
  * `<agentPath>/.dork/MEMORY.md`.
  *
- * **This is the only place a memory path is ever constructed**, and there is no
- * parameter for a file name, a sub-directory or an alternative location — the
- * tool the model calls has no path argument at all, so the sole way a write
- * could escape is a poisoned `agentPath`. Two checks close that:
+ * **This module is the only place a memory path is ever constructed**, and
+ * there is no parameter for a free file name, a sub-directory or an alternative
+ * location — the tool the model calls has no path argument at all (a note's
+ * NAME is whitelisted in {@link resolveNoteFile}), so the sole way a write could
+ * escape is a poisoned `agentPath`. Two checks close that:
  *
  * 1. The path must be **absolute**. A relative path would resolve against
  *    whatever `process.cwd()` happened to be — in a server that changes
@@ -65,6 +68,63 @@ export class MemoryPathError extends Error {
  *   a `..` segment.
  */
 export function resolveMemoryFile(agentPath: string): string {
+  const jail = resolveJail(agentPath);
+  const file = path.join(jail, MEMORY_FILE_NAME);
+
+  // Post-condition, not decoration: every caller of this function treats the
+  // result as jailed, so the claim is asserted where it is made. It fires only
+  // if the constants above ever gain a separator or a traversal.
+  if (!file.startsWith(jail + path.sep)) {
+    throw new MemoryPathError(agentPath, 'the resolved memory file would sit outside it');
+  }
+
+  return file;
+}
+
+/**
+ * Resolve the folder that holds this agent's notes files:
+ * `<agentPath>/.dork/memory/`.
+ *
+ * @param agentPath - The agent's own directory, absolute.
+ * @throws {MemoryPathError} On the same paths {@link resolveMemoryFile} refuses.
+ */
+export function resolveNotesDir(agentPath: string): string {
+  return path.join(resolveJail(agentPath), MEMORY_NOTES_DIR_NAME);
+}
+
+/**
+ * Resolve one notes file: `<agentPath>/.dork/memory/<name>.md`.
+ *
+ * The name is checked against {@link MemoryNoteNameSchema} HERE, not only at
+ * the tool, because this is the jail: whatever reaches it — a tool call, the
+ * migration, a future surface — gets the same whitelist, and a name with a
+ * separator, a dot or a traversal never becomes a path.
+ *
+ * @param agentPath - The agent's own directory, absolute.
+ * @param name - The note's name, without `.md`.
+ * @throws {MemoryPathError} When the agent path is refused or the name is not
+ *   a valid note name.
+ */
+export function resolveNoteFile(agentPath: string, name: string): string {
+  if (!MemoryNoteNameSchema.safeParse(name).success) {
+    throw new MemoryPathError(agentPath, `'${name}' is not a valid note name`);
+  }
+  const dir = resolveNotesDir(agentPath);
+  const file = path.join(dir, `${name}.md`);
+  if (!file.startsWith(dir + path.sep)) {
+    throw new MemoryPathError(agentPath, 'the resolved note file would sit outside it');
+  }
+  return file;
+}
+
+/**
+ * The checks every memory path starts from, returning `<agentPath>/.dork`.
+ *
+ * @param agentPath - The agent's own directory, absolute.
+ * @throws {MemoryPathError} When the path is not absolute, is empty, or contains
+ *   a `..` segment.
+ */
+function resolveJail(agentPath: string): string {
   if (agentPath.trim() === '') {
     throw new MemoryPathError(agentPath, 'it must not be empty');
   }
@@ -83,15 +143,5 @@ export function resolveMemoryFile(agentPath: string): string {
     throw new MemoryPathError(agentPath, "it must not contain a '..' segment");
   }
 
-  const jail = path.join(path.resolve(agentPath), MEMORY_DIR_NAME);
-  const file = path.join(jail, MEMORY_FILE_NAME);
-
-  // Post-condition, not decoration: every caller of this function treats the
-  // result as jailed, so the claim is asserted where it is made. It fires only
-  // if the constants above ever gain a separator or a traversal.
-  if (!file.startsWith(jail + path.sep)) {
-    throw new MemoryPathError(agentPath, 'the resolved memory file would sit outside it');
-  }
-
-  return file;
+  return path.join(path.resolve(agentPath), MEMORY_DIR_NAME);
 }

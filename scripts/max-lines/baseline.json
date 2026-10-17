@@ -92,7 +92,7 @@
     "apps/server/src/services/rooms/room-turn-runner.ts": 536,
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1074,
     "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts": 513,
-    "apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts": 549,
+    "apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts": 542,
     "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 767,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 743,
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 551,

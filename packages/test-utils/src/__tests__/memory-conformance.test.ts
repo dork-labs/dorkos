@@ -62,6 +62,15 @@ memoryConformance(() => new FakeMemoryProvider({ search: false, consolidate: fal
   makeUnreadableMemory: () => makeUnreadableMemory({ search: false, consolidate: false }),
 });
 
+// Notes off, so every note call's typed refusal is asserted against a second
+// implementation, not only the on branch the builtin engine takes.
+memoryConformance(() => new FakeMemoryProvider({ notes: false }), {
+  name: 'FakeMemoryProvider (no notes) — conformance',
+  capChars: FAKE_MEMORY_CAP_CHARS,
+  makeRef,
+  makeUnreadableMemory: () => makeUnreadableMemory({ notes: false }),
+});
+
 // A tighter cap, so the cap assertion is not silently pinned to one number, and
 // no unreadable hook at all — the declined case must show up as a named skip.
 memoryConformance(() => new FakeMemoryProvider({ capChars: 120 }), {

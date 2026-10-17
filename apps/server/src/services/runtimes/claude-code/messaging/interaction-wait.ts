@@ -217,6 +217,29 @@ export interface InteractiveSession {
 }
 
 /**
+ * What each kind of unanswerable ask is called in its own record. Constant
+ * strings, for the reason `NO_APPROVAL_SURFACE_DENIAL` gives (`sessions/tool-result-outcome.ts`).
+ */
+export const NOBODY_TO_ASK_REASON = {
+  approval: 'nobody was available to approve this tool',
+  question: 'nobody was available to answer this question',
+  elicitation: 'nobody was available to answer this request',
+} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
+
+/**
+ * How each kind of refused ask is named on the wire.
+ *
+ * `approval` becomes `tool` because that is what it is to the person reading
+ * the run: the agent reached for a tool and was not allowed to use it. The
+ * internal word describes the PROMPT; the wire word describes what was lost.
+ */
+export const ASK_KIND_ON_THE_WIRE = {
+  approval: 'tool',
+  question: 'question',
+  elicitation: 'elicitation',
+} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
+
+/**
  * Whether an ask raised now has nobody to answer it: the session is
  * unattended, or the turn running in it is.
  *

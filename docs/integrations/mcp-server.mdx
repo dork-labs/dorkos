@@ -111,7 +111,7 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 69 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent heartbeats, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 70 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent heartbeats, agent permissions, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                              |
 | ------------------- | ----- | ------------------------------------------------------------------------------------- |
@@ -124,7 +124,7 @@ Connecting gives a client DorkOS's full external tool surface: 69 tools in total
 | Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`   |
 | Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`               |
 | Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`       |
-| Memory              | 1     | `memory_write`                                                                        |
+| Memory              | 2     | `memory_write`, `memory_read`                                                         |
 | Commitments         | 3     | `commitment_add`, `commitment_update`, `commitments_list`                             |
 | Heartbeats          | 1     | `heartbeat_status`                                                                    |
 | Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                      |
@@ -132,7 +132,7 @@ Connecting gives a client DorkOS's full external tool surface: 69 tools in total
 | Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                   |
 | Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link` |
 
-The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 32 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 33 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
 Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 

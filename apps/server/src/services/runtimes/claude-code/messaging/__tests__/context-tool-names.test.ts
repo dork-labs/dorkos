@@ -509,7 +509,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // deferred and unprefixed.
     // 131 -> 135 for the four scoped local-browser tools (DOR-2929).
     // Their qualified surface is explicit page use, so all four stay deferred.
-    expect(advertised.size).toBe(135);
+    // 135 -> 136 for `memory_read` (ADR 261017-153539): `<session_model>` and
+    // the memory block name it as a searchable ending, and it is always loaded.
+    expect(advertised.size).toBe(136);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
