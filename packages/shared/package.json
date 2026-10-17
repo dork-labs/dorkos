@@ -409,6 +409,10 @@
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
     },
+    "./doc-embeds": {
+      "types": "./src/doc-embeds.ts",
+      "default": "./dist/doc-embeds.js"
+    },
     "./viewer-registry": {
       "types": "./src/viewer-registry.ts",
       "default": "./dist/viewer-registry.js"
