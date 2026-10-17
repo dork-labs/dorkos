@@ -49,18 +49,18 @@ function formatIssue(issue: DocEmbedIssue): string {
 }
 
 /**
- * The inline "can't show this" state: for an embed whose attributes do not
- * decode, or, with no `issues`, for a name nothing is registered under.
+ * The author's "can't show this" state for an embed whose attributes do not
+ * decode, with what is wrong.
  *
  * @param name - The directive name as written.
- * @param issues - What is wrong; omit for a name with no component.
+ * @param issues - What is wrong.
  */
 export function DocEmbedProblem({
   name,
   issues,
 }: {
   name: string;
-  issues?: readonly DocEmbedIssue[];
+  issues: readonly DocEmbedIssue[];
 }) {
   const title = isDocEmbedName(name) ? DOC_EMBED_CATALOG[name].title.toLowerCase() : name;
   return (
@@ -69,18 +69,25 @@ export function DocEmbedProblem({
       className="text-muted-foreground my-2 rounded-md border border-dashed p-3 text-xs"
       data-doc-embed-problem={name}
     >
-      <p className="text-foreground font-medium">
-        {issues ? `Can’t show this ${title}` : `No embed called “${name}”`}
-      </p>
-      {issues ? (
-        <ul className="mt-1 list-disc pl-4">
-          {issues.map((issue, index) => (
-            <li key={index}>{formatIssue(issue)}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-1">It stays in the doc as written.</p>
-      )}
+      <p className="text-foreground font-medium">{`Can’t show this ${title}`}</p>
+      <ul className="mt-1 list-disc pl-4">
+        {issues.map((issue, index) => (
+          <li key={index}>{formatIssue(issue)}</li>
+        ))}
+      </ul>
     </div>
+  );
+}
+
+/**
+ * What a reader of a saved or published doc sees where an embed could not be
+ * drawn. Quiet and neutral on purpose: the reader can do nothing about the
+ * doc's source, so the author's diagnostics stay in the editor.
+ */
+export function DocEmbedUnavailable() {
+  return (
+    <p role="note" className="text-muted-foreground my-2 text-xs italic" data-doc-embed-unavailable>
+      This part of the doc can’t be shown here.
+    </p>
   );
 }

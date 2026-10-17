@@ -14,6 +14,15 @@
  * their markup (inline SVG, styles) is the app's own output from validated
  * props, which a generic sanitizer would strip.
  *
+ * The output is for readers, so an embed that cannot be drawn (an unknown
+ * name, attributes that do not validate, a component that throws) becomes one
+ * quiet note. The author's diagnostics stay in the editor.
+ *
+ * Math (`$…$`, `$$…$$` and ` ```latex ` blocks, the forms the editor draws) is
+ * rendered by KaTeX as MathML, which every current browser draws without a
+ * stylesheet or fonts. Mermaid diagrams stay code blocks: mermaid lays a
+ * diagram out by measuring text in a live DOM, which a string render has not got.
+ *
  * @module features/docs/lib/render-doc-html
  */
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -24,19 +33,20 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype, { type Options as RemarkRehypeOptions } from 'remark-rehype';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
 import { toHtml } from 'hast-util-to-html';
+import remarkMath from 'remark-math';
+import katex from 'katex';
 import { visit, SKIP } from 'unist-util-visit';
 import type { Root as MdastRoot, Parent as MdastParent, RootContent } from 'mdast';
 import type { Root as HastRoot, Element as HastElement } from 'hast';
-import type { EmbedAttributes, EmbedIssue, EmbedRegistry } from 'blintz';
+import type { EmbedAttributes, EmbedRegistry } from 'blintz';
 import {
   remarkBlockDirectives,
   remarkWikiLinks,
   validateEmbedAttributes,
   type WikiLinkNode,
 } from 'blintz/markdown';
-import type { DocEmbedIssue } from '@dorkos/shared/doc-embeds';
 import { DOC_EMBEDS } from '../ui/doc-embed-registry';
-import { DocEmbedProblem } from '../ui/DocEmbed';
+import { DocEmbedUnavailable } from '../ui/DocEmbed';
 
 /** Options for {@link renderDocToHtml}. */
 export interface RenderDocOptions {
@@ -57,6 +67,14 @@ interface DirectiveNode extends MdastParent {
  * name in the tree is one this module put there.
  */
 const SLOT_TAG = 'dorkos-doc-embed-slot';
+
+/** A placeholder for the rendered HTML at `slot`, spliced in after sanitizing. */
+function slotNode(slot: number): RootContent {
+  return {
+    type: 'docEmbedSlot',
+    data: { hName: SLOT_TAG, hProperties: { dataSlot: String(slot) } },
+  } as unknown as RootContent;
+}
 
 /** GitHub's sanitize schema, plus the slot element and its index. */
 const SANITIZE_SCHEMA: SanitizeSchema = {
@@ -104,21 +122,13 @@ function isLabel(node: RootContent | undefined): boolean {
   );
 }
 
-/** Blintz's issue paths allow symbols and `{ key }` segments; ours are plain. */
-function plainIssues(issues: readonly EmbedIssue[]): DocEmbedIssue[] {
-  return issues.map((issue) => ({
-    message: issue.message,
-    path: issue.path?.map((part) => {
-      const key = typeof part === 'object' ? part.key : part;
-      return typeof key === 'number' ? key : String(key);
-    }),
-  }));
-}
+/** The reader's note for an embed that cannot be drawn. */
+const UNAVAILABLE = renderToStaticMarkup(<DocEmbedUnavailable />);
 
 /**
- * Draw one embed the way the editor's embed view does: unknown name → the
- * placeholder, invalid → the issues, valid → the registered component. A
- * component that throws becomes the "can't show this" state, never a failed render.
+ * Draw one embed after the same check the editor's embed view makes. Anything
+ * the editor would show a notice for (an unknown name, invalid attributes, a
+ * component that throws) becomes the reader's quiet note, never a failed render.
  */
 async function renderEmbed(
   registry: EmbedRegistry,
@@ -129,20 +139,66 @@ async function renderEmbed(
   const definition = Object.prototype.hasOwnProperty.call(registry, name)
     ? registry[name]
     : undefined;
-  if (!definition) return renderToStaticMarkup(<DocEmbedProblem name={name} />);
+  if (!definition) return UNAVAILABLE;
   const { issues } = await validateEmbedAttributes(definition.validate, attributes);
-  if (issues?.length) {
-    return renderToStaticMarkup(<DocEmbedProblem name={name} issues={plainIssues(issues)} />);
-  }
+  if (issues?.length) return UNAVAILABLE;
   const Embed = definition.component;
   try {
     return renderToStaticMarkup(
       <Embed name={name} attributes={attributes} label={label} editable={false} />
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return renderToStaticMarkup(<DocEmbedProblem name={name} issues={[{ message }]} />);
+  } catch {
+    return UNAVAILABLE;
   }
+}
+
+/** The math nodes `remark-math` reads, and the code blocks the editor draws as math. */
+function mathOf(node: { type: string; value?: unknown; lang?: unknown }): {
+  tex: string;
+  display: boolean;
+} | null {
+  if (typeof node.value !== 'string') return null;
+  if (node.type === 'inlineMath') return { tex: node.value, display: false };
+  if (node.type === 'math') return { tex: node.value, display: true };
+  if (
+    node.type === 'code' &&
+    typeof node.lang === 'string' &&
+    node.lang.toLowerCase() === 'latex'
+  ) {
+    return { tex: node.value, display: true };
+  }
+  return null;
+}
+
+/**
+ * Replace every math node with a slot holding KaTeX's MathML. KaTeX escapes
+ * what it is given and, untrusted by default, renders no links or raw HTML; a
+ * formula it cannot read comes back as its source, marked as an error.
+ *
+ * @param slots - Rendered HTML so far; math is appended after the embeds.
+ */
+function renderMath(tree: MdastRoot, slots: string[]): void {
+  visit(tree, (node, index, parent) => {
+    const math = mathOf(node as { type: string });
+    if (!math || !parent || index === undefined) return;
+    slots.push(
+      katex.renderToString(math.tex, {
+        displayMode: math.display,
+        output: 'mathml',
+        throwOnError: false,
+      })
+    );
+    const slot = slotNode(slots.length - 1);
+    // A display formula is a block of its own; inline math stays in its line.
+    parent.children.splice(
+      index,
+      1,
+      math.display && parent.type === 'root'
+        ? ({ type: 'paragraph', children: [slot] } as RootContent)
+        : slot
+    );
+    return SKIP;
+  });
 }
 
 /**
@@ -187,9 +243,7 @@ async function renderDirectives(tree: MdastRoot, registry: EmbedRegistry): Promi
   // Back to front, so earlier indexes in a shared parent stay valid.
   for (let slot = found.length - 1; slot >= 0; slot--) {
     const { node, index, parent } = found[slot]!;
-    const replacement: unknown[] = [
-      { type: 'docEmbedSlot', data: { hName: SLOT_TAG, hProperties: { dataSlot: String(slot) } } },
-    ];
+    const replacement: unknown[] = [slotNode(slot)];
     if (node.type === 'containerDirective') {
       const content = (node.children as RootContent[]).filter(
         (child, i) => i > 0 || !isLabel(child)
@@ -232,6 +286,7 @@ export async function renderDocToHtml(
     .use(remarkParse)
     .use(remarkFrontmatter)
     .use(remarkGfm)
+    .use(remarkMath)
     // Blintz's grammar before anything that handles paragraphs (its contract).
     .use(remarkBlockDirectives)
     .use(remarkWikiLinks)
@@ -240,6 +295,7 @@ export async function renderDocToHtml(
 
   const mdast = processor.parse(markdown);
   const rendered = await renderDirectives(mdast, options.embeds ?? DOC_EMBEDS);
+  renderMath(mdast, rendered);
   const hast = (await processor.run(mdast)) as HastRoot;
   spliceEmbeds(hast, rendered);
   return toHtml(hast, { allowDangerousHtml: true });
