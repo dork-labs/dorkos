@@ -72,7 +72,7 @@ function host(transportOwner: object) {
     transportOwner,
     publisherEpoch: 1,
   })!;
-  return { controller, observation };
+  return { controller, observation, iframe };
 }
 it('refuses structural owner tokens and consumes captured retirement tickets only once', async () => {
   expect(() => readOwnedFrameFacade({})).toThrow();
@@ -128,4 +128,92 @@ it('drains independent OLD resources after an undefined throw without touching a
   expect(() => resources.drainRetirement(ticket)).not.toThrow();
   expect(cleanup).toHaveBeenCalledTimes(1);
   expect(sibling).toHaveBeenCalledTimes(1);
+});
+
+it('retains only its actual completed frame as passive custody and refuses it after disposal', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  expect(facade.retainsLoadedFrame(f.controller, f.observation)).toBe(false);
+  const prepared = facade.prepareFrameLoad(f.controller, f.observation)!;
+  const loaded = prepared.completeLoad()!;
+  expect(loaded.loaded).toBe(true);
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(true);
+  expect(facade.retainsLoadedFrame(new FrameLifetimeController(), loaded)).toBe(false);
+  h.owner.dispose();
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(false);
+  expect(facade.attachFrame(f.controller, loaded)).toBeNull();
+});
+it('cannot borrow another current owner or transport to retain an old completed frame', async () => {
+  const old = await owned(),
+    f = host(old.transport),
+    oldFacade = old.view.frameAdmission!;
+  const loaded = oldFacade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const replacement = await owned();
+  expect(replacement.view.frameAdmission!.retainsLoadedFrame(f.controller, loaded)).toBe(false);
+  const other = host(replacement.transport);
+  expect(oldFacade.retainsLoadedFrame(other.controller, loaded)).toBe(false);
+  expect(oldFacade.retainsLoadedFrame(f.controller, { ...loaded })).toBe(false);
+});
+
+it('passive loaded custody never requalifies an unavailable original or issues a frame lease', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const recovery = h.owner.beginRun();
+  recovery.failed();
+  expect(h.view.binding!.current('read')).toBe(false);
+  const transition = vi.fn(),
+    stop = f.controller.subscribe(transition);
+  transition.mockClear();
+  try {
+    expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(true);
+    expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(true);
+    expect(facade.attachFrame(f.controller, loaded)).toBeNull();
+    expect(transition).not.toHaveBeenCalled();
+    expect(h.view.binding!.current('read')).toBe(false);
+  } finally {
+    stop();
+  }
+});
+it('a new host observation on the same physical window retires passive custody of the old load', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const next = f.controller.observeHostContext({
+    frame: f.iframe.contentWindow,
+    documentId: 'doc',
+    resolvedSource: '/replacement',
+    logicalUrl: '/replacement',
+    reloadKey: 'two',
+    sessionId: 'session',
+    eligibility: 'served-document',
+    exactOrigin: 'null',
+    transportOwner: h.transport,
+    publisherEpoch: 1,
+  });
+  expect(next).not.toBeNull();
+  expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(false);
+  expect(facade.attachFrame(f.controller, loaded)).toBeNull();
+});
+it('passive custody cannot revive the original frame lease after explicit Doc retirement', async () => {
+  const h = await owned(),
+    f = host(h.transport),
+    facade = h.view.frameAdmission!;
+  const loaded = facade.prepareFrameLoad(f.controller, f.observation)!.completeLoad()!;
+  const bound = facade.attachFrame(f.controller, loaded)!;
+  expect(bound.current()).toBe(true);
+  f.controller.retireDoc(bound.binding);
+  const transition = vi.fn(),
+    stop = f.controller.subscribe(transition);
+  transition.mockClear();
+  try {
+    expect(facade.retainsLoadedFrame(f.controller, loaded)).toBe(true);
+    expect(bound.current()).toBe(false);
+    expect(transition).not.toHaveBeenCalled();
+  } finally {
+    stop();
+  }
 });

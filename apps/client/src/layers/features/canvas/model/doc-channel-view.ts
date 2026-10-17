@@ -19,6 +19,8 @@ export interface NativeFrameAdmission {
     controller: FrameLifetimeController,
     observation: FrameObservation
   ): { completeLoad(): FrameObservation | null } | null;
+  /** Passive custody of an already completed load; never action admission. */
+  retainsLoadedFrame(controller: FrameLifetimeController, observation: FrameObservation): boolean;
   attachFrame(
     controller: FrameLifetimeController,
     observation: FrameObservation

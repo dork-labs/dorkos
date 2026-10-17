@@ -1369,3 +1369,75 @@ it('guards deferred old-controller projection after a real Transport replacement
     fresh.dispose();
   }
 });
+
+it('exposes actual initial replay disposition and inert snapshot without manufacturing readiness', async () => {
+  const transport = createMockTransport(),
+    page = deferred<CanvasChannelReplayResponse>();
+  vi.mocked(transport.getCanvasChannel).mockReturnValue(page.promise);
+  const hook = renderHook(() => useDocChannel('doc-1'), { wrapper: wrapper(transport) });
+  expect(hook.result.current.replayObserved).toBe(false);
+  expect(hook.result.current.snapshot).toBeUndefined();
+  await act(async () => page.resolve(replay()));
+  await waitFor(() => expect(hook.result.current.replayObserved).toBe(true));
+  expect(hook.result.current.snapshot?.incarnation).toEqual(birth);
+  expect(hook.result.current.fileSaveObservation).toBe('ready');
+  hook.unmount();
+});
+it('does not borrow the previous document snapshot or replay disposition while replacement replay is held', async () => {
+  const transport = createMockTransport(),
+    second = deferred<CanvasChannelReplayResponse>();
+  vi.mocked(transport.getCanvasChannel)
+    .mockResolvedValueOnce(replay())
+    .mockReturnValue(second.promise);
+  const hook = renderHook(({ documentId }) => useDocChannel(documentId), {
+    initialProps: { documentId: 'doc-1' },
+    wrapper: wrapper(transport),
+  });
+  await waitFor(() => expect(hook.result.current.fileSaveObservation).toBe('ready'));
+  hook.rerender({ documentId: 'doc-2' });
+  expect(hook.result.current.replayObserved).toBe(false);
+  expect(hook.result.current.snapshot).toBeUndefined();
+  expect(hook.result.current.fileSaveObservation).toBe('pending');
+  await act(async () => second.resolve(replay({ incarnation: { ...birth, documentId: 'doc-2' } })));
+  await waitFor(() => expect(hook.result.current.replayObserved).toBe(true));
+  expect(hook.result.current.snapshot?.incarnation?.documentId).toBe('doc-2');
+  hook.unmount();
+});
+
+it('a late initial reply from a replaced Transport cannot publish its snapshot or replay disposition', async () => {
+  const old = createMockTransport(),
+    fresh = createMockTransport();
+  const oldPage = deferred<CanvasChannelReplayResponse>(),
+    freshPage = deferred<CanvasChannelReplayResponse>();
+  vi.mocked(old.getCanvasChannel).mockReturnValue(oldPage.promise);
+  vi.mocked(fresh.getCanvasChannel).mockReturnValue(freshPage.promise);
+  let selected = old;
+  const hook = renderHook(() => useDocChannel('doc-1'), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <TransportProvider transport={selected}>{children}</TransportProvider>
+    ),
+  });
+  selected = fresh;
+  hook.rerender();
+  expect(hook.result.current.replayObserved).toBe(false);
+  expect(hook.result.current.snapshot).toBeUndefined();
+  await act(async () => oldPage.resolve(replay({ state: { source: 'old' } })));
+  expect(hook.result.current.replayObserved).toBe(false);
+  expect(hook.result.current.snapshot).toBeUndefined();
+  expect(hook.result.current.channel.enabled).toBe(false);
+  await act(async () => freshPage.resolve(replay({ state: { source: 'fresh' } })));
+  await waitFor(() => expect(hook.result.current.replayObserved).toBe(true));
+  expect(hook.result.current.snapshot?.state).toEqual({ source: 'fresh' });
+  hook.unmount();
+});
+it('a failed replay disposition is observable without a snapshot or action authority', async () => {
+  const transport = createMockTransport();
+  vi.mocked(transport.getCanvasChannel).mockRejectedValue(new Error('HTTP unavailable'));
+  const hook = renderHook(() => useDocChannel('doc-1'), { wrapper: wrapper(transport) });
+  await waitFor(() => expect(hook.result.current.replayObserved).toBe(true));
+  expect(hook.result.current.snapshot).toBeUndefined();
+  expect(hook.result.current.channel.enabled).toBe(false);
+  expect(hook.result.current.fileSaveObservation).toBe('unavailable');
+  expect(hook.result.current.fileSaveBinding).toBeUndefined();
+  hook.unmount();
+});

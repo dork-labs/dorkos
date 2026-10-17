@@ -17,6 +17,7 @@ import type { DocChannelBinding } from './doc-channel-view';
 import {
   requireOwnedCustody,
   readOwnedTransport,
+  readOwnedFacts,
   captureOwnedSubject,
   readOwnedSubject,
   ownedSubjectCurrent,
@@ -84,6 +85,25 @@ function buildFacade(custodyKey: object, frames: DocChannelFrameResources) {
           return true;
         },
       });
+    },
+    // A quarantined record cannot issue actions. This predicate retains only passive
+    // custody of the exact completed load; attachFrame still requires fresh qualification.
+    retainsLoadedFrame: (controller: FrameLifetimeController, observation: FrameObservation) => {
+      if (!(controller instanceof FrameLifetimeController) || !observation.loaded) return false;
+      const previous = loadedBirths.get(observation);
+      const record = captureOwnedSubject(custodyKey);
+      const subject = record && readOwnedSubject(custodyKey, record);
+      return (
+        !!previous &&
+        !!record &&
+        !!subject &&
+        readOwnedFacts(custodyKey).live &&
+        previous.record === record &&
+        sameCanvasDocIncarnation(previous.birth, subject.birth) &&
+        readOwnedTransport(custodyKey) === transportOwner &&
+        observation.transportOwner === transportOwner &&
+        controller.getCurrent() === observation
+      );
     },
     subscribeInvalidation: (callback: () => void) => frames.subscribe(callback),
     attachFrame: (

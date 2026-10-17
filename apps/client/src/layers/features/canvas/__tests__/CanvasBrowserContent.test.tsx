@@ -5,6 +5,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WORKBENCH_SANDBOX_EXTERNAL, WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
+// This existing suite isolates URL/history/presentation and deliberately supplies a
+// fresh, URL-only transport per render. Keep that meaningful fixture unchanged.
+// The real Doc owner/physical capture integration is covered in the separate
+// CanvasBrowserContentFrame whole file; this inert adapter grants no Doc port.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: ({ resolvedSource }: { resolvedSource: string | null }) => ({
+    physicalMountKey: 'url-presentation-fixture',
+    navigationSource: resolvedSource,
+    noteFrameMounted: () => {},
+    noteFrameLoaded: () => true,
+    noteFrameRetired: () => {},
+  }),
+}));
 
 /** Mirror of the store's BrowserHistoryState (the real type comes from the mocked module). */
 interface BrowserHistoryEntry {

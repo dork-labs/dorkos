@@ -1,3 +1,4 @@
+import { registerDocFrameSdkBrowserTests } from './doc-frame-sdk-browser';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
@@ -476,3 +477,6 @@ test.describe('Browser — an agent uses the page @smoke', () => {
       .toBe(true);
   });
 });
+
+// Same maintained credential-free project/file admission; no parallel server or authority path.
+registerDocFrameSdkBrowserTests();

@@ -18,7 +18,7 @@
     "apps/client/src/dev/showcases/SidebarModelShowcases.tsx": 547,
     "apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx": 517,
     "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts": 719,
-    "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts": 976,
+    "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts": 974,
     "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 709,
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
     "apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx": 585,

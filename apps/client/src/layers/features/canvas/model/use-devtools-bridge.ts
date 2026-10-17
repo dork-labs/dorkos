@@ -10,6 +10,7 @@ import { useSessionId } from '@/layers/entities/session';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { loadRasterizerSource } from '../lib/load-rasterizer';
+import { classifyDevtoolsFrameChange, type DevtoolsFrameContext } from './devtools-frame-boundary';
 import { drawFrames, encodeGif, halveFrames, type RecordingFrame } from '../lib/encode-recording';
 
 /** Immutable host facts belonging to one observed frame lifetime. */
@@ -49,6 +50,8 @@ interface RecordingJob {
 }
 /** Host-resolved eligibility is distinct from the frame's reported origin. */
 export interface UseDevtoolsBridgeParams {
+  /** Retire the sibling Doc port before observable physical frame teardown. */
+  onFrameRetire?: (frame: Window) => void;
   iframeRef: RefObject<HTMLIFrameElement | null>;
   documentId: string;
   logicalUrl: string;
@@ -109,16 +112,7 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
     documentId: string;
     logicalUrl: string;
   } | null>(null);
-  const observedContext = useRef<{
-    frame: Window | null | undefined;
-    sessionId: typeof sessionId;
-    documentId: string;
-    logicalUrl: string;
-    source: typeof params.resolvedSource;
-    eligibility: typeof params.bridgeEligibility;
-    origin: typeof params.previewOrigin;
-    reload: number;
-  } | null>(null);
+  const observedContext = useRef<DevtoolsFrameContext | null>(null);
   // A page report may retire a lifetime, but only browser/host facts may replace it.
   const awaitingFrameLoad = useRef(false);
   const lastBatchAt = useRef(-Infinity);
@@ -197,7 +191,7 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
       )
       .catch(() => {});
   }
-  function retire(): void {
+  function retire(preserveDocLoad = false): void {
     const old = life.current;
     if (old) old.retired = true;
     life.current = null;
@@ -239,6 +233,17 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
     resourceRaf.current = null;
     resourceCount.current = 0;
     setResourceErrorCount(0);
+    // Cleanup owns only the old lifetime; notify last so a nested new load survives.
+    const completed = loadedFrame.current;
+    if (
+      old &&
+      !preserveDocLoad &&
+      completed?.frame === old.frame &&
+      completed.source === old.source &&
+      completed.documentId === old.documentId &&
+      completed.logicalUrl === old.logicalUrl
+    )
+      currentParams.current.onFrameRetire?.(old.frame);
   }
   function initialize({
     loadActivation,
@@ -292,22 +297,17 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
       reload: params.reloadNonce,
     };
     const previous = observedContext.current;
-    const changed =
-      !previous ||
-      Object.keys(next).some(
-        (key) => next[key as keyof typeof next] !== previous[key as keyof typeof next]
-      );
+    const { changed, pageChanged, sessionOnlyChanged } = classifyDevtoolsFrameChange(
+      previous,
+      next
+    );
     if (changed) {
-      const pageChanged =
-        !previous ||
-        previous.frame !== next.frame ||
-        previous.documentId !== next.documentId ||
-        previous.logicalUrl !== next.logicalUrl ||
-        previous.source !== next.source ||
-        previous.reload !== next.reload;
       observedContext.current = next;
       awaitingFrameLoad.current = false;
-      retire();
+      // A conversation attribution change retires DevTools requests, not the
+      // sibling Doc protocol's captured physical load. Origin/eligibility and
+      // every real page boundary still retire that original Doc lifetime.
+      retire(sessionOnlyChanged);
       initialize({ reset: pageChanged });
     }
   });
@@ -325,11 +325,14 @@ export function useDevtoolsBridge(params: UseDevtoolsBridgeParams): DevtoolsBrid
         logicalUrl: p.logicalUrl,
       };
     awaitingFrameLoad.current = false;
-    retire();
+    retire(true);
     initialize({ loadActivation: activation, reset: true });
   }, []);
   const notePersonNavigated = useCallback(() => {
     const current = life.current;
+    const frame = current?.frame ?? currentParams.current.iframeRef.current?.contentWindow;
+    if (frame) currentParams.current.onFrameRetire?.(frame);
+    if (life.current !== current) return;
     // Address submission can precede signed-source resolution. Keep the person's
     // intent, but publish no claim until an eligible frame lifetime exists.
     personActivationPending.current = true;

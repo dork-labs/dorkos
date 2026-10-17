@@ -1356,3 +1356,168 @@ it('refuses a response at the exact pending deadline and permits a later ordinar
   capture('later');
   expect(captureCalls()).toHaveLength(1);
 });
+
+describe('sibling document frame retirement notification', () => {
+  it('does not retire the captured document load for genuine onLoad activation or session attribution alone', () => {
+    const retired = vi.fn(),
+      hook = mount({ onFrameRetire: retired });
+    retired.mockClear();
+    act(() => hook.result.current.noteFrameLoaded());
+    expect(retired).not.toHaveBeenCalled();
+    searchSession = 'session-2';
+    hook.rerender({ onFrameRetire: retired });
+    expect(retired).not.toHaveBeenCalled();
+    hook.unmount();
+    expect(retired).toHaveBeenCalledTimes(1);
+  });
+  it('notifies on an actual physical source transition and explicit person navigation', () => {
+    const retired = vi.fn(),
+      hook = mount({ onFrameRetire: retired });
+    retired.mockClear();
+    act(() => hook.result.current.notePersonNavigated());
+    expect(retired).toHaveBeenCalledTimes(1);
+    hook.rerender({ onFrameRetire: retired, resolvedSource: '/signed/other' });
+    expect(retired).toHaveBeenCalledTimes(2);
+    hook.unmount();
+  });
+  it('does not drain the nested new load when retirement notification reenters load activation', async () => {
+    const retired = vi.fn(),
+      hook = mount({ onFrameRetire: retired });
+    const old = generation();
+    request('old-nested');
+    await settle();
+    retired.mockImplementationOnce(() => hook.result.current.noteFrameLoaded());
+    act(() => hook.result.current.notePersonNavigated());
+    expect(retired).toHaveBeenCalledTimes(1);
+    ready();
+    expect(generation()).not.toBe(old);
+    capture('old-nested', {}, old);
+    expect(captureCalls()).toHaveLength(0);
+    request('fresh-nested');
+    await settle();
+    capture('fresh-nested');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][1].screenshot?.requestId).toBe('fresh-nested');
+    hook.unmount();
+  });
+});
+
+describe('retirement notification preserves original DevTools guards', () => {
+  it('drops a late old screenshot delivered reentrantly by retirement and admits a fresh request normally', async () => {
+    let oldGeneration = '';
+    const retired = vi.fn(() => capture('old', {}, oldGeneration));
+    const hook = mount({ onFrameRetire: retired });
+    oldGeneration = generation();
+    request('old');
+    await settle();
+    hook.rerender({ onFrameRetire: retired, resolvedSource: '/signed/new-page' });
+    expect(retired).toHaveBeenCalledTimes(1);
+    expect(captureCalls()).toHaveLength(0);
+    act(() => hook.result.current.noteFrameLoaded());
+    ready();
+    request('fresh');
+    await settle();
+    capture('fresh');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][1].screenshot?.requestId).toBe('fresh');
+    hook.unmount();
+  });
+  it('cleans old requests and stream listeners even when the private retirement notification throws', async () => {
+    const failure = new Error('retirement observer failed');
+    const retired = vi.fn(() => {
+      throw failure;
+    });
+    const hook = mount({ onFrameRetire: retired });
+    request('held');
+    await settle();
+    const oldGeneration = generation();
+    let rejected = false;
+    try {
+      hook.unmount();
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).toBe(true);
+    expect(retired.mock.results[0]).toEqual({ type: 'throw', value: failure });
+    expect(retired).toHaveBeenCalledTimes(1);
+    capture('held', {}, oldGeneration);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(captureCalls()).toHaveLength(0);
+    expect(sessionEventListeners.size).toBe(0);
+  });
+  it('a notification or person-navigation callback cannot opt an external frame into the bridge', () => {
+    const retired = vi.fn();
+    const hook = mount(
+      {
+        onFrameRetire: retired,
+        bridgeEligibility: null,
+        resolvedSource: 'https://external.example',
+      },
+      false
+    );
+    act(() => hook.result.current.notePersonNavigated());
+    expect(retired).toHaveBeenCalledTimes(1);
+    raw({ __dorkosDevtools: 'ready', bridgeGeneration: 'unissued', pageInstanceId: 'page' });
+    raw({
+      __dorkosDevtools: 'capture-result',
+      bridgeGeneration: 'unissued',
+      requestId: 'unissued',
+      dataUrl: PNG,
+    });
+    expect(iframe.contentWindow!.postMessage).not.toHaveBeenCalled();
+    expect(relayedBatches()).toHaveLength(0);
+    expect(loadRasterizerSource).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+});
+
+it('an origin transition still rejects the old origin after sibling retirement notification', async () => {
+  const origin = 'http://preview.local:4444',
+    nextOrigin = 'http://preview.local:4445';
+  const retired = vi.fn();
+  const hook = mount({
+    onFrameRetire: retired,
+    bridgeEligibility: 'preview-listener',
+    previewOrigin: origin,
+  });
+  retired.mockClear();
+  hook.rerender({
+    onFrameRetire: retired,
+    bridgeEligibility: 'preview-listener',
+    previewOrigin: nextOrigin,
+  });
+  expect(retired).toHaveBeenCalledTimes(1);
+  act(() => hook.result.current.noteFrameLoaded());
+  ready(nextOrigin);
+  request('fresh-origin');
+  await settle();
+  const data = {
+    __dorkosDevtools: 'capture-result',
+    requestId: 'fresh-origin',
+    dataUrl: PNG,
+    bridgeGeneration: generation(),
+  };
+  raw(data, iframe.contentWindow, origin);
+  expect(captureCalls()).toHaveLength(0);
+  raw(data, foreignFrame.contentWindow, nextOrigin);
+  expect(captureCalls()).toHaveLength(0);
+  raw(data, iframe.contentWindow, nextOrigin);
+  expect(captureCalls()).toHaveLength(1);
+  hook.unmount();
+});
+
+it('initial provisional DevTools contexts do not notify retirement of an unobserved Doc load', () => {
+  const onFrameRetire = vi.fn();
+  const ref = { current: iframe } as RefObject<HTMLIFrameElement | null>;
+  const host = renderHook(
+    (p) => useDevtoolsBridge({ ...defaults, iframeRef: ref, onFrameRetire, ...p }),
+    { initialProps: { logicalUrl: 'first.html' } }
+  );
+  expect(onFrameRetire).not.toHaveBeenCalled();
+  host.rerender({ logicalUrl: 'second.html' });
+  expect(onFrameRetire).not.toHaveBeenCalled();
+  act(() => host.result.current.noteFrameLoaded());
+  host.rerender({ logicalUrl: 'third.html' });
+  expect(onFrameRetire).toHaveBeenCalledTimes(1);
+  expect(onFrameRetire.mock.calls[0][0] === iframe.contentWindow).toBe(true);
+});
