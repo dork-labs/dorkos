@@ -29,6 +29,7 @@ export function createMockDocCollabTransport(): DocCollabTransport {
       };
     }),
     listDocVersions: vi.fn().mockResolvedValue({ versions: [] }),
+    keepDocDraft: vi.fn().mockResolvedValue({ ok: true, version: null }),
     restoreDocVersion: vi.fn().mockResolvedValue({ ok: true, live: false }),
   };
 }

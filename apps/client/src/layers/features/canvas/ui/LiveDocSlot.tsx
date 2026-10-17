@@ -25,8 +25,8 @@ export interface LiveDocSlotProps {
   loaded: string;
   /** Today's editor, unchanged: shown while Docs are off, and whenever live editing is not. */
   children: ReactNode;
-  /** Reload the file after a restore while the doc was not live. */
-  onRestored?: () => void;
+  /** Reload the file: it changed outside today's editor (a restore, a saved draft). */
+  onFileChanged?: () => void;
 }
 
 /**
@@ -41,7 +41,7 @@ export function LiveDocSlot({
   editable,
   loaded,
   children,
-  onRestored,
+  onFileChanged,
 }: LiveDocSlotProps) {
   const liveDocs = useLiveDocsOn();
   if (!liveDocs || !cwd || !sourcePath || !editable || !LIVE_MARKDOWN.test(sourcePath)) {
@@ -53,11 +53,17 @@ export function LiveDocSlot({
       <LiveDocEditor
         doc={{ cwd, path: sourcePath }}
         fallback={children}
-        onRestored={onRestored}
-        renderEditor={({ plugins, key }) => (
+        onFileChanged={onFileChanged}
+        renderEditor={({ plugins, key, editable: editing, onChange }) => (
           <div className="px-2 pb-6">
             <Suspense fallback={loading}>
-              <BlintzCanvas key={key} value={loaded} editable plugins={plugins} />
+              <BlintzCanvas
+                key={key}
+                value={loaded}
+                editable={editing}
+                onChange={onChange}
+                plugins={plugins}
+              />
             </Suspense>
           </div>
         )}

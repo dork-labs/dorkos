@@ -33,8 +33,14 @@ export interface LiveDoc {
   status: LiveDocStatus;
   /** Changes when the editor must remount on a fresh copy of the doc. */
   epoch: number;
-  /** Edits made while offline that a fresh copy could not take. */
-  offlineEditsLost: boolean;
+  /** Whether the current copy has the server's doc, so the editor may mount on it. */
+  synced: boolean;
+  /** Whether it was ever live: a later `unavailable` means live editing stopped. */
+  everLive: boolean;
+  /** How many times a fresh copy replaced one that held edits of its own. */
+  lostEdits: number;
+  /** The file was moved or deleted while open. */
+  gone: boolean;
   /** The plugins that make the editor live, or `null` before there is a provider. */
   plugins: BlintzPlugin[] | null;
   /** The other people with this doc open. */
@@ -43,7 +49,13 @@ export interface LiveDoc {
   recentChange: DocWriter | null;
 }
 
-const CONNECTING: DocCollabSnapshot = { status: 'connecting', epoch: 0, offlineEditsLost: false };
+const CONNECTING: DocCollabSnapshot = {
+  status: 'connecting',
+  epoch: 0,
+  synced: false,
+  everLive: false,
+  lostEdits: 0,
+};
 const NO_PROVIDER = () => () => undefined;
 
 /** The names of everyone in `provider`'s presence but this editor. */
@@ -108,15 +120,22 @@ export function useLiveDoc(doc: DocRef | null, user: LiveDocUser): LiveDoc {
   }, [provider, awareness]);
 
   const [recentChange, setRecentChange] = useState<DocWriter | null>(null);
+  const [gone, setGone] = useState(false);
   useEffect(() => {
     if (!provider || !cwd || !path) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const stop = provider.onNote((note) => {
+      if (note.type === 'gone') {
+        setGone(true);
+        return;
+      }
       if (note.type === 'versions') {
         void queryClient.invalidateQueries({ queryKey: docVersionsKey({ cwd, path }) });
         return;
       }
       if (note.type !== 'changed') return;
+      // A change on disk after a delete means the file is back.
+      setGone(false);
       setRecentChange(note.changedBy);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => setRecentChange(null), CHANGE_SHOWN_MS);
@@ -144,7 +163,10 @@ export function useLiveDoc(doc: DocRef | null, user: LiveDocUser): LiveDoc {
   return {
     status: snapshot.status,
     epoch: snapshot.epoch,
-    offlineEditsLost: snapshot.offlineEditsLost,
+    synced: snapshot.synced,
+    everLive: snapshot.everLive,
+    lostEdits: snapshot.lostEdits,
+    gone,
     plugins,
     others,
     recentChange,

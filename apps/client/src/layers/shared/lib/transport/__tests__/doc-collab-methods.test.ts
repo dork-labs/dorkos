@@ -60,6 +60,7 @@ describe('createDocCollabMethods().connectDocCollab', () => {
     expect(url.pathname).toBe('/api/documents/live');
     expect(url.searchParams.get('cwd')).toBe(doc.cwd);
     expect(url.searchParams.get('path')).toBe(doc.path);
+    expect(url.searchParams.has('generation')).toBe(false);
     expect(socket.binaryType).toBe('arraybuffer');
 
     connection.send(new Uint8Array([1]));
@@ -70,6 +71,12 @@ describe('createDocCollabMethods().connectDocCollab', () => {
     expect(socket.sent).toEqual([new Uint8Array([2, 3])]);
     socket.receive(new Uint8Array([4]));
     expect(handlers.onMessage).toHaveBeenCalledWith(new Uint8Array([4]));
+  });
+
+  it('names the copy it holds when reconnecting', () => {
+    const handlers = { onOpen: vi.fn(), onMessage: vi.fn(), onClose: vi.fn() };
+    createDocCollabMethods('/api').connectDocCollab(doc, handlers, { generation: 'gen-7' });
+    expect(new URL(FakeSocket.last!.url).searchParams.get('generation')).toBe('gen-7');
   });
 
   it('reports a refusal as its status, and a drop with none, once', () => {
@@ -104,6 +111,20 @@ describe('createDocCollabMethods() versions', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body))).toEqual({
       ...doc,
       versionId: 'v1',
+    });
+  });
+
+  it('keeps unsaved edits as a version', async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      Response.json({ ok: true, version: null })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await createDocCollabMethods('/api').keepDocDraft(doc, 'Typed.');
+    expect(String(fetchMock.mock.calls[0]![0])).toBe('/api/documents/versions');
+    expect(fetchMock.mock.calls[0]![1]?.method).toBe('POST');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toEqual({
+      ...doc,
+      markdown: 'Typed.',
     });
   });
 });

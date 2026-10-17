@@ -69,12 +69,12 @@ describe('DocCollabProvider', () => {
 
     await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
     expect(server.text()).toContain('Offline words.');
-    expect(provider.getSnapshot().offlineEditsLost).toBe(false);
+    expect(provider.getSnapshot().lostEdits).toBe(0);
   });
 
-  it('starts over on a fresh copy of the doc instead of merging the old one into it', async () => {
+  it('reconnects naming its copy, and starts over on a fresh copy without merging the old one in', async () => {
     const server = new FakeDocServer('Old copy.');
-    const { provider } = connect(server);
+    const { provider, transport } = connect(server);
     await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
     const first = provider.ydoc;
 
@@ -83,13 +83,67 @@ describe('DocCollabProvider', () => {
     server.reload('Fresh copy.');
     await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
 
+    // It named the copy it held, was told about the fresh one, and came back on it.
+    expect(transport.connectDocCollab.mock.calls[1]?.[2]).toEqual({ generation: 'gen-1' });
+    expect(transport.connectDocCollab.mock.calls.at(-1)?.[2]).toEqual({
+      generation: server.generation,
+    });
     expect(provider.getSnapshot().epoch).toBe(1);
     expect(provider.ydoc).not.toBe(first);
     expect(textOf(provider.ydoc)).toContain('Fresh copy.');
-    // Nothing from the old copy reached the new one.
     expect(server.text()).not.toContain('Old copy.');
     expect(server.text()).not.toContain('Typed while away.');
-    expect(provider.getSnapshot().offlineEditsLost).toBe(true);
+    // The words typed away are not dropped silently: the editor is told to keep them.
+    expect(provider.getSnapshot().lostEdits).toBe(1);
+  });
+
+  it('is not synced on a fresh copy until the server has sent it', async () => {
+    const server = new FakeDocServer('Body.');
+    const { provider } = connect(server);
+    expect(provider.getSnapshot().synced).toBe(false);
+    await vi.waitFor(() => expect(provider.getSnapshot().synced).toBe(true));
+  });
+
+  it('notices a connection that went silent and reconnects', async () => {
+    const server = new FakeDocServer('x');
+    const transport = server.transport();
+    const provider = new DocCollabProvider({
+      transport,
+      doc,
+      // Slow enough that the line is back before the retry: a retry into a
+      // still-dead line would wait out the connect timeout instead.
+      baseDelayMs: 300,
+      maxDelayMs: 300,
+      silenceTimeoutMs: 60,
+    });
+    providers.push(provider);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    server.muted = true;
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('reconnecting'));
+    server.muted = false;
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    expect(transport.connectDocCollab.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('sends nothing until the server’s hello confirms the copy it holds', async () => {
+    const server = new FakeDocServer('x');
+    const sent: Uint8Array[] = [];
+    const real = server.transport();
+    const transport = {
+      connectDocCollab: vi.fn((ref, handlers, options) => {
+        const connection = real.connectDocCollab(ref, handlers, options);
+        return {
+          ...connection,
+          send: (frame: Uint8Array) => (sent.push(frame), connection.send(frame)),
+        };
+      }),
+    };
+    const provider = new DocCollabProvider({ transport, doc });
+    providers.push(provider);
+    typeInto(provider.ydoc, 'Before the hello. ');
+    expect(sent).toEqual([]);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    expect(server.text()).toContain('Before the hello.');
   });
 
   it('passes the server’s notes on', async () => {

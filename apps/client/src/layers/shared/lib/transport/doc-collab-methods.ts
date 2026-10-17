@@ -6,17 +6,29 @@
  *
  * @module shared/lib/transport/doc-collab-methods
  */
-import type { DocRef, DocVersionList, RestoreDocVersionResponse } from '@dorkos/shared/doc-collab';
-import type { DocCollabConnection, DocCollabHandlers } from '@dorkos/shared/transport-doc-collab';
+import {
+  DOC_COLLAB_GENERATION_PARAM,
+  type DocRef,
+  type DocVersion,
+  type DocVersionList,
+  type RestoreDocVersionResponse,
+} from '@dorkos/shared/doc-collab';
+import type {
+  DocCollabConnectOptions,
+  DocCollabConnection,
+  DocCollabHandlers,
+} from '@dorkos/shared/transport-doc-collab';
 import { statusFromCloseCode } from '@dorkos/shared/stream-socket';
 import { buildQueryString, fetchJSON } from './http-client';
 
 /** The socket URL for a doc, from a base URL that may be relative (`/api`). */
-function socketUrl(baseUrl: string, doc: DocRef): string {
-  const url = new URL(
-    `${baseUrl}/documents/live${buildQueryString({ cwd: doc.cwd, path: doc.path })}`,
-    window.location.href
-  );
+function socketUrl(baseUrl: string, doc: DocRef, generation?: string): string {
+  const query = buildQueryString({
+    cwd: doc.cwd,
+    path: doc.path,
+    [DOC_COLLAB_GENERATION_PARAM]: generation,
+  });
+  const url = new URL(`${baseUrl}/documents/live${query}`, window.location.href);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
@@ -24,8 +36,12 @@ function socketUrl(baseUrl: string, doc: DocRef): string {
 /** Create the live doc methods bound to a base URL. */
 export function createDocCollabMethods(baseUrl: string) {
   return {
-    connectDocCollab(doc: DocRef, handlers: DocCollabHandlers): DocCollabConnection {
-      const ws = new WebSocket(socketUrl(baseUrl, doc));
+    connectDocCollab(
+      doc: DocRef,
+      handlers: DocCollabHandlers,
+      options: DocCollabConnectOptions = {}
+    ): DocCollabConnection {
+      const ws = new WebSocket(socketUrl(baseUrl, doc, options.generation));
       ws.binaryType = 'arraybuffer';
       let closed = false;
       const close = (status?: number) => {
@@ -57,6 +73,13 @@ export function createDocCollabMethods(baseUrl: string) {
         baseUrl,
         `/documents/versions${buildQueryString({ cwd: doc.cwd, path: doc.path })}`
       );
+    },
+
+    keepDocDraft(doc: DocRef, markdown: string): Promise<{ ok: true; version: DocVersion | null }> {
+      return fetchJSON(baseUrl, '/documents/versions', {
+        method: 'POST',
+        body: JSON.stringify({ ...doc, markdown }),
+      });
     },
 
     restoreDocVersion(doc: DocRef, versionId: string): Promise<RestoreDocVersionResponse> {

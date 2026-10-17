@@ -25,6 +25,8 @@ export class FakeDocServer {
   readonly peers = new Set<Peer>();
   /** When set, the next connection is refused with this status. */
   refuseWith: number | null = null;
+  /** While true, nothing reaches editors and nothing closes: a half-open socket. */
+  muted = false;
 
   constructor(text = '') {
     if (text) this.doc.getXmlFragment('prosemirror').insert(0, [new Y.XmlText(text)]);
@@ -83,30 +85,44 @@ export class FakeDocServer {
     connectDocCollab: ReturnType<typeof vi.fn>;
   } {
     return {
-      connectDocCollab: vi.fn((_doc, handlers: DocCollabHandlers) => {
-        const peer: Peer = { handlers, open: false };
-        const refused = this.refuseWith;
-        this.refuseWith = null;
-        queueMicrotask(() => {
-          if (refused !== null) {
-            handlers.onClose({ status: refused });
-            return;
-          }
-          this.peers.add(peer);
-          peer.open = true;
-          handlers.onOpen();
-          this.#hello(peer);
-        });
-        return {
-          send: (frame: Uint8Array) => {
-            if (peer.open && this.peers.has(peer)) this.#receive(peer, frame);
-          },
-          close: () => {
-            if (!this.peers.delete(peer)) return;
-            handlers.onClose({});
-          },
-        };
-      }),
+      connectDocCollab: vi.fn(
+        (_doc, handlers: DocCollabHandlers, options: { generation?: string } = {}) => {
+          const peer: Peer = { handlers, open: false };
+          const refused = this.refuseWith;
+          this.refuseWith = null;
+          queueMicrotask(() => {
+            if (refused !== null) {
+              handlers.onClose({ status: refused });
+              return;
+            }
+            handlers.onOpen();
+            if (options.generation !== undefined && options.generation !== this.generation) {
+              // As the real server does: name this copy, then close, syncing nothing.
+              const hello = encoding.createEncoder();
+              encoding.writeVarUint(hello, DOC_COLLAB_MESSAGE.note);
+              encoding.writeVarString(
+                hello,
+                JSON.stringify({ type: 'hello', generation: this.generation })
+              );
+              handlers.onMessage(encoding.toUint8Array(hello));
+              handlers.onClose({});
+              return;
+            }
+            this.peers.add(peer);
+            peer.open = true;
+            this.#hello(peer);
+          });
+          return {
+            send: (frame: Uint8Array) => {
+              if (peer.open && this.peers.has(peer) && !this.muted) this.#receive(peer, frame);
+            },
+            close: () => {
+              if (!this.peers.delete(peer)) return;
+              handlers.onClose({});
+            },
+          };
+        }
+      ),
     };
   }
 
@@ -142,6 +158,7 @@ export class FakeDocServer {
   }
 
   #broadcast(frame: Uint8Array, except?: Peer): void {
+    if (this.muted) return;
     for (const peer of this.peers) if (peer !== except) peer.handlers.onMessage(frame);
   }
 }

@@ -17,17 +17,45 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { DocCollabProvider } from '@/layers/features/docs';
+import * as Y from 'yjs';
 import { FakeDocServer } from '@/layers/features/docs/__tests__/fake-doc-server';
 
+/** Type into the live copy, as the bound editor would. */
+function typeLive(text: string): void {
+  const plugin = editorChange.plugins[0] as { fragment: Y.XmlFragment };
+  plugin.fragment.insert(0, [new Y.XmlText(text)]);
+}
+
+/** Reconnects back off for a second; give them room. */
+const RECONNECT = { timeout: 5_000 };
+
 // The canvas editor, as a stub that shows what it was handed.
+const editorChange = vi.hoisted(() => ({
+  current: null as ((markdown: string) => void) | null,
+  plugins: [] as unknown[],
+}));
+// The real plugin needs a real editor; this one hands the test the shared
+// fragment, so it can type into the live copy as the editor would.
+vi.mock('blintz/collab', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('blintz/collab')>()),
+  collaboration: (options: { fragment: unknown }) => ({ fragment: options.fragment }),
+}));
 vi.mock('../ui/BlintzCanvas', () => ({
-  BlintzCanvas: (props: { plugins?: unknown[]; editable: boolean }) => (
-    <div
-      data-testid="live-editor"
-      data-plugins={props.plugins?.length ?? 0}
-      data-editable={String(props.editable)}
-    />
-  ),
+  BlintzCanvas: (props: {
+    plugins?: unknown[];
+    editable: boolean;
+    onChange?: (markdown: string) => void;
+  }) => {
+    editorChange.current = props.onChange ?? null;
+    editorChange.plugins = props.plugins ?? [];
+    return (
+      <div
+        data-testid="live-editor"
+        data-plugins={props.plugins?.length ?? 0}
+        data-editable={String(props.editable)}
+      />
+    );
+  },
 }));
 
 import { LiveDocsContext } from '../model/live-docs-context';
@@ -47,7 +75,7 @@ const VERSION = {
 
 function renderSlot(
   transport: Transport,
-  { on, onRestored }: { on: boolean; onRestored?: () => void }
+  { on, onFileChanged }: { on: boolean; onFileChanged?: () => void }
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrap = (node: ReactNode) => (
@@ -64,7 +92,7 @@ function renderSlot(
         sourcePath="plan.md"
         editable
         loaded="# Plan"
-        onRestored={onRestored}
+        onFileChanged={onFileChanged}
       >
         <div data-testid="file-editor">today’s editor</div>
       </LiveDocSlot>
@@ -103,7 +131,10 @@ describe('LiveDocSlot', () => {
 
     const editor = await screen.findByTestId('live-editor', {}, LAZY);
     expect(editor).toHaveAttribute('data-plugins', '1');
-    expect(editor).toHaveAttribute('data-editable', 'true');
+    // Read-only until the pencil, like every canvas doc; still live either way.
+    expect(editor).toHaveAttribute('data-editable', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
+    expect(screen.getByTestId('live-editor')).toHaveAttribute('data-editable', 'true');
     expect(screen.queryByTestId('file-editor')).not.toBeInTheDocument();
 
     // Sam opens the same doc from another window.
@@ -125,27 +156,103 @@ describe('LiveDocSlot', () => {
     expect(await screen.findByTestId('file-editor', {}, LAZY)).toBeInTheDocument();
     expect(transport.connectDocCollab).toHaveBeenCalledWith(
       { cwd: '/work', path: 'plan.md' },
-      expect.any(Object)
+      expect.any(Object),
+      {}
     );
   });
 
-  it('offers Restore previous version once a version exists, and reloads the file after', async () => {
-    const onRestored = vi.fn();
+  it('lists the doc’s versions to pick from, and reloads the file after a restore', async () => {
+    const onFileChanged = vi.fn();
+    const OLDER = {
+      ...VERSION,
+      id: '01JZZZZZZZZZZZZZZZZZZZZZZY',
+      changedBy: { kind: 'disk' as const },
+    };
     const transport = createMockTransport({
-      listDocVersions: vi.fn().mockResolvedValue({ versions: [VERSION] }),
+      listDocVersions: vi.fn().mockResolvedValue({ versions: [VERSION, OLDER] }),
       restoreDocVersion: vi.fn().mockResolvedValue({ ok: true, live: false }),
     });
-    renderSlot(transport, { on: true, onRestored });
+    renderSlot(transport, { on: true, onFileChanged });
 
-    const restore = await screen.findByRole('button', { name: /restore previous version/i }, LAZY);
-    expect(restore).toHaveAttribute('title', expect.stringContaining('Ada’s change'));
-    fireEvent.click(restore);
+    const menu = await screen.findByRole('button', { name: /versions/i }, LAZY);
+    fireEvent.pointerDown(menu, { button: 0, pointerType: 'mouse' });
+    expect(await screen.findByText('Before Ada’s change')).toBeInTheDocument();
+    expect(screen.getByText(/Restoring replaces the doc/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Before a change on disk'));
     await waitFor(() =>
       expect(transport.restoreDocVersion).toHaveBeenCalledWith(
         { cwd: '/work', path: 'plan.md' },
-        VERSION.id
+        OLDER.id
       )
     );
-    await waitFor(() => expect(onRestored).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onFileChanged).toHaveBeenCalledOnce());
+  });
+
+  it('shows no editor until the doc has arrived', async () => {
+    const transport = createMockTransport({
+      // A socket that opens and never sends anything.
+      connectDocCollab: vi.fn(() => ({ send: vi.fn(), close: vi.fn() })),
+    });
+    renderSlot(transport, { on: true });
+    expect(await screen.findByText('Loading editor…', {}, LAZY)).toBeInTheDocument();
+    expect(screen.queryByTestId('live-editor')).not.toBeInTheDocument();
+  });
+
+  it('offers the last edits back when live editing stops after the person typed', async () => {
+    const server = new FakeDocServer('# Plan');
+    const onFileChanged = vi.fn();
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+      readFileContent: vi
+        .fn()
+        .mockResolvedValue({ content: '# Plan', hash: 'h1', encoding: 'utf-8' }),
+      writeFile: vi.fn().mockResolvedValue({ ok: true, hash: 'h2', effect: 'changed' }),
+    });
+    renderSlot(transport, { on: true, onFileChanged });
+    await screen.findByTestId('live-editor', {}, LAZY);
+    editorChange.current?.('# Plan\n\nTyped before it stopped.');
+
+    // Docs turned off: the server refuses the reconnect.
+    server.refuseWith = 404;
+    server.dropAll();
+    expect(
+      await screen.findByText(/before your last edits reached the file/, {}, RECONNECT)
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('file-editor')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save them' }));
+    await waitFor(() =>
+      expect(transport.writeFile).toHaveBeenCalledWith(
+        '/work',
+        'plan.md',
+        '# Plan\n\nTyped before it stopped.',
+        { expectedHash: 'h1' }
+      )
+    );
+    await waitFor(() => expect(onFileChanged).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps edits as a version when a fresh copy of the doc replaces this one', async () => {
+    const server = new FakeDocServer('# Old');
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+    });
+    renderSlot(transport, { on: true });
+    await screen.findByTestId('live-editor', {}, LAZY);
+    typeLive('Typed on the old copy.');
+    editorChange.current?.('# Old\n\nTyped on the old copy.');
+    server.dropAll();
+    server.reload('# Fresh');
+
+    await waitFor(
+      () =>
+        expect(transport.keepDocDraft).toHaveBeenCalledWith(
+          { cwd: '/work', path: 'plan.md' },
+          '# Old\n\nTyped on the old copy.'
+        ),
+      RECONNECT
+    );
+    expect(await screen.findByText(/kept as a version/, {}, RECONNECT)).toBeInTheDocument();
+    // Nothing from the old copy reached the fresh one.
+    expect(server.text()).not.toContain('Typed on the old copy.');
   });
 });

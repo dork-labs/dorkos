@@ -14,5 +14,5 @@ export { useDocWikiLinks, type UseDocWikiLinksInput } from './model/use-doc-wiki
 export { useDocEmbeds } from './model/use-doc-embeds';
 export { SaveAsWebPageButton, type SaveAsWebPageButtonProps } from './ui/SaveAsWebPageButton';
 export { DocCommentsFrame, type DocCommentsFrameProps } from './ui/DocCommentsFrame';
-export { LiveDocEditor, type LiveDocEditorProps } from './ui/LiveDocEditor';
+export { LiveDocEditor, type LiveDocEditorProps, type LiveEditorBinding } from './ui/LiveDocEditor';
 export { DocCollabProvider } from './model/doc-collab-provider';

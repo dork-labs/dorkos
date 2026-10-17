@@ -94,16 +94,20 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   // outside cannot leave the key stuck on a hash no editor is showing.
   const mountHash = (editing ? editSession?.pinnedHash : null) ?? data.hash;
 
-  const Editor = sessionId && !roomId ? SessionFileEditor : FileEditor;
+  // A session canvas saves through the Doc Channel (DOR-2665), which records
+  // each save as a document event; live editing would bypass it, so those
+  // files keep today's editor until the two are joined.
+  const docChannelSaves = Boolean(sessionId && !roomId);
+  const Editor = docChannelSaves ? SessionFileEditor : FileEditor;
   return (
     // While the Docs experiment is on, a markdown file is edited live instead
     // (DOR-2984); this editor stays the fallback.
     <LiveDocSlot
       cwd={cwd}
       sourcePath={content.sourcePath}
-      editable={content.readOnly !== true}
+      editable={content.readOnly !== true && !docChannelSaves}
       loaded={data.content}
-      onRestored={() =>
+      onFileChanged={() =>
         void queryClient.invalidateQueries({
           queryKey: fileContentQueryKey(cwd, content.sourcePath),
         })

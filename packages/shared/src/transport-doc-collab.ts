@@ -8,7 +8,12 @@
  *
  * @module shared/transport-doc-collab
  */
-import type { DocRef, DocVersionList, RestoreDocVersionResponse } from './doc-collab.js';
+import type {
+  DocRef,
+  DocVersion,
+  DocVersionList,
+  RestoreDocVersionResponse,
+} from './doc-collab.js';
 
 /** Why a doc socket closed. */
 export interface DocCollabClosed {
@@ -38,10 +43,25 @@ export interface DocCollabConnection {
   close: () => void;
 }
 
+/** How a doc socket is opened. */
+export interface DocCollabConnectOptions {
+  /**
+   * The copy of the doc this editor already holds (the generation its last
+   * `hello` named). The server refuses to sync a different copy into its own.
+   */
+  generation?: string;
+}
+
 /** Join a doc's live editing, and restore its saved versions. */
 export interface DocCollabTransport {
   /** Open a socket to a doc's live editing. */
-  connectDocCollab(doc: DocRef, handlers: DocCollabHandlers): DocCollabConnection;
+  connectDocCollab(
+    doc: DocRef,
+    handlers: DocCollabHandlers,
+    options?: DocCollabConnectOptions
+  ): DocCollabConnection;
+  /** Keep text an editor could not save as a version of the doc. */
+  keepDocDraft(doc: DocRef, markdown: string): Promise<{ ok: true; version: DocVersion | null }>;
   /** A doc's saved versions, newest first. */
   listDocVersions(doc: DocRef): Promise<DocVersionList>;
   /** Put a saved version back, as a write everyone editing it sees. */
