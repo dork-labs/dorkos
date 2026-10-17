@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   DOC_EMBED_CATALOG,
+  DOC_EMBED_MAX_CHART_HEIGHT,
+  DOC_EMBED_MAX_ITEMS,
   DOC_EMBED_NAMES,
   decodeDocEmbed,
   isDocEmbedName,
@@ -39,6 +41,39 @@ describe('DOC_EMBED_CATALOG', () => {
     for (const type of ['button', 'form', 'input', 'select', 'board', 'reveal', 'checklist']) {
       expect(isDocEmbedName(type)).toBe(false);
     }
+  });
+});
+
+/**
+ * A widget node written the way agents are taught: every array or object field
+ * as one JSON attribute, every other field as its text.
+ */
+function asTaught(node: Record<string, unknown>): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'type') continue;
+    attributes[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  }
+  return attributes;
+}
+
+describe('the rule agents are taught', () => {
+  const nodes: Record<string, unknown>[] = [
+    ...DOC_EMBED_NAMES.map((name) => decoded(name, { ...DOC_EMBED_CATALOG[name].example })),
+    {
+      type: 'stat',
+      label: 'Temp',
+      value: '64°F',
+      delta: { value: '+2°', direction: 'up' },
+      trend: [1, 2],
+    },
+    { type: 'chart', kind: 'area', data: [{ label: 'a', value: 1 }], height: 120 },
+    { type: 'rating', value: 3, count: 7, label: 'Reviews' },
+    { type: 'badge', text: 'Late', tone: 'error' },
+  ];
+
+  it.each(nodes)('$type: the taught encoding decodes to the same node', (node) => {
+    expect(decoded(node.type as string, asTaught(node))).toEqual(node);
   });
 });
 
@@ -82,6 +117,31 @@ describe('decodeDocEmbed codecs', () => {
     ]);
   });
 
+  it('takes delta as the JSON object a fence carries, as the guidance says', () => {
+    expect(
+      decoded('stat', {
+        label: 'Revenue',
+        value: '$12k',
+        delta: '{"value":"+8%","direction":"up"}',
+      })
+    ).toMatchObject({ delta: { value: '+8%', direction: 'up' } });
+    // Its issues keep the path inside the object.
+    expect(
+      issuesOf('stat', { label: 'x', value: '1', delta: '{"value":"1","direction":"sideways"}' })[0]
+        ?.path
+    ).toEqual(['delta', 'direction']);
+  });
+
+  it('refuses a direction given twice, in the delta object and beside it', () => {
+    const [issue] = issuesOf('stat', {
+      label: 'x',
+      value: '1',
+      delta: '{"value":"1","direction":"up"}',
+      direction: 'down',
+    });
+    expect(issue?.path).toEqual(['direction']);
+  });
+
   it('parses one JSON attribute into structured data', () => {
     const node = decoded('chart', { kind: 'line', data: '[{"label":"Q1","value":"3"}]' });
     expect(node).toEqual({ type: 'chart', kind: 'line', data: [{ label: 'Q1', value: 3 }] });
@@ -114,6 +174,37 @@ describe('decodeDocEmbed validation', () => {
       { title: 'Open', actions: [{ kind: 'url', href: 'https://example.com' }] },
     ]);
     expect(issuesOf('list', { items })[0]?.path).toEqual(['items', 0, 'actions']);
+  });
+
+  it.each([
+    ['chart', 'data', { kind: 'bar' }, (i: number) => ({ label: String(i), value: i })],
+    ['table', 'rows', { columns: '[]' }, (i: number) => ({ a: i })],
+    ['table', 'columns', { rows: '[]' }, (i: number) => ({ key: String(i), label: String(i) })],
+    ['list', 'items', {}, (i: number) => ({ title: String(i) })],
+    ['timeline', 'items', {}, (i: number) => ({ title: String(i) })],
+  ] as const)('caps %s %s at the item limit', (name, key, rest, item) => {
+    const list = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => item(i)));
+    expect(decodeDocEmbed(name, { ...rest, [key]: list(DOC_EMBED_MAX_ITEMS) }).ok).toBe(true);
+    const [issue] = issuesOf(name, { ...rest, [key]: list(DOC_EMBED_MAX_ITEMS + 1) });
+    expect(issue).toEqual({
+      path: [key],
+      message: expect.stringContaining(`up to ${DOC_EMBED_MAX_ITEMS}`),
+    });
+  });
+
+  it('caps a chart’s height', () => {
+    const data = '[{"label":"a","value":1}]';
+    const height = String(DOC_EMBED_MAX_CHART_HEIGHT);
+    expect(decodeDocEmbed('chart', { kind: 'bar', data, height }).ok).toBe(true);
+    const [issue] = issuesOf('chart', { kind: 'bar', data, height: '100000' });
+    expect(issue?.path).toEqual(['height']);
+  });
+
+  it('parses a directive once, however often it is asked about', () => {
+    const attributes = { kind: 'bar', data: '[{"label":"a","value":1}]' };
+    const first = decodeDocEmbed('chart', attributes);
+    expect(decodeDocEmbed('chart', { ...attributes })).toBe(first);
+    expect(decodeDocEmbed('chart', { ...attributes, height: '90' })).not.toBe(first);
   });
 
   it('refuses names outside the catalog, prototype keys included', () => {

@@ -122,6 +122,13 @@ describe('the markdown entry teaches Docs embeds (DOR-2981)', () => {
     );
   });
 
+  it('says exactly how fields are written, stat’s delta included', () => {
+    expect(CONTROL_UI_DESCRIPTION).toContain(
+      'an array or object field is one single-quoted, one-line JSON attribute, every other field plain text'
+    );
+    expect(CONTROL_UI_DESCRIPTION).toContain('stat also takes delta="+8%" direction="up"');
+  });
+
   it('names every embed in the catalog', () => {
     expect(named(CONTROL_UI_DESCRIPTION, DOC_EMBED_NAMES)).toEqual([...DOC_EMBED_NAMES]);
   });
