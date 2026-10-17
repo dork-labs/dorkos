@@ -103,8 +103,17 @@ export function hubDiscoveryProblem(issuer: string, document: unknown): string |
   const configured = new URL(issuer);
   const loopback = (host: string) => host === 'localhost' || host === '127.0.0.1';
   const localIssuer = configured.protocol === 'http:' && loopback(configured.hostname);
-  for (const key of ['authorization_endpoint', 'token_endpoint', 'jwks_uri']) {
+  for (const key of [
+    'authorization_endpoint',
+    'token_endpoint',
+    'jwks_uri',
+    'userinfo_endpoint',
+    'end_session_endpoint',
+  ]) {
     const value = doc[key];
+    if (value === undefined && (key === 'userinfo_endpoint' || key === 'end_session_endpoint')) {
+      continue;
+    }
     if (typeof value !== 'string') return `has no ${key}`;
     let url: URL;
     try {
@@ -168,8 +177,14 @@ function usesHubSignIn(ctx: { path?: string; params?: unknown; body?: unknown })
   const params = ctx.params as { id?: string } | undefined;
   if (ctx.path === `/callback/${HUB_SIGN_IN_PROVIDER_ID}`) return true;
   if (ctx.path === '/callback/:id' && params?.id === HUB_SIGN_IN_PROVIDER_ID) return true;
-  const body = ctx.body as { provider?: string } | undefined;
-  return ctx.path === '/sign-in/social' && body?.provider === HUB_SIGN_IN_PROVIDER_ID;
+  const body = ctx.body as { provider?: string; providerId?: string } | undefined;
+  const named = body?.provider ?? body?.providerId;
+  return (
+    named === HUB_SIGN_IN_PROVIDER_ID &&
+    ['/sign-in/social', '/link-social', '/get-access-token', '/refresh-token'].includes(
+      ctx.path ?? ''
+    )
+  );
 }
 
 /**
@@ -186,6 +201,7 @@ export function hubSignInPlugin(
   const readClient = options.readClient ?? currentHubSignInClient;
   let context: AuthContext | null = null;
   let resolved: { key: string; provider: Provider; client: HubSignInClient } | null = null;
+  let pending: { key: string; work: Promise<void> } | null = null;
   let failed: { key: string; at: number } | null = null;
 
   const discover = async (client: HubSignInClient): Promise<Provider> => {
@@ -199,8 +215,11 @@ export function hubSignInPlugin(
     const problem = hubDiscoveryProblem(client.issuer, document);
     if (problem) throw new Error(`the discovery document ${problem}`);
     const checked = document as Record<string, string | undefined>;
-    // The endpoints people and codes go to are the ones checked above, passed
-    // explicitly, so Better Auth's own second read cannot swap them.
+    // The endpoints people, codes and tokens go to are the ones checked above,
+    // passed explicitly. Better Auth reads the document once more itself, for
+    // the issuer and the keys ID tokens are checked against; that read is held
+    // to the same issuer below, and to a deadline. An issuer that answers it
+    // with different keys could sign tokens anyway: it is the issuer.
     const inner = genericOAuth({
       config: [
         {
@@ -211,6 +230,8 @@ export function hubSignInPlugin(
           tokenUrl: checked.token_endpoint,
           userInfoUrl: checked.userinfo_endpoint,
           clientId: client.clientId,
+          // Signing out of this hub never signs the owner out of DorkOS.
+          disableProviderLogout: true,
           redirectURI: client.redirectUri,
           scopes: HUB_SIGN_IN_SCOPES,
           pkce: true,
@@ -219,7 +240,12 @@ export function hubSignInPlugin(
       ],
     });
     if (!inner.init) throw new Error('Better Auth genericOAuth has no setup step');
-    const setup = await Promise.resolve(inner.init(context));
+    const setup = await Promise.race([
+      Promise.resolve(inner.init(context)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('discovery timed out')), DISCOVERY_TIMEOUT_MS).unref()
+      ),
+    ]);
     const providers = (setup as { context?: { socialProviders?: Provider[] } } | undefined)?.context
       ?.socialProviders;
     const provider = providers?.find(
@@ -239,16 +265,29 @@ export function hubSignInPlugin(
     if (failed?.key === key && now() - failed.at < DISCOVERY_RETRY_MS) {
       throw new Error('discovery failed recently');
     }
-    try {
-      resolved = { key, provider: await discover(client), client };
-      failed = null;
-    } catch (err) {
-      failed = { key, at: now() };
-      logger.error('[Hub] Sign-in with DorkOS is unavailable', {
-        error: err instanceof Error ? err.message : 'unknown',
-      });
-      throw err;
+    // Sign-ins that start together share one setup.
+    if (pending?.key !== key) {
+      const work = discover(client).then(
+        (provider) => {
+          resolved = { key, provider, client };
+          failed = null;
+        },
+        (err: unknown) => {
+          failed = { key, at: now() };
+          logger.error('[Hub] Sign-in with DorkOS is unavailable', {
+            error: err instanceof Error ? err.message : 'unknown',
+          });
+          throw err;
+        }
+      );
+      pending = { key, work };
+      void work
+        .finally(() => {
+          if (pending?.work === work) pending = null;
+        })
+        .catch(() => undefined);
     }
+    await pending.work;
   };
 
   /** The identity a sign-in may use: the pinned owner, vouched for by a signed ID token. */

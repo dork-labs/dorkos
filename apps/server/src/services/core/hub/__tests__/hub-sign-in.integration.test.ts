@@ -116,6 +116,7 @@ beforeEach(() => {
   role.value = 'hub';
   issuer.identity = { sub: OWNER, email: 'owner@example.com', email_verified: true, name: 'Owner' };
   issuer.discovery = {};
+  issuer.nonceOverride = null;
   serve(RIGHT_CLIENT());
 });
 
@@ -152,6 +153,53 @@ describe('continue with DorkOS on a hub', () => {
     const { back, cookie } = await signIn();
     expect(back?.headers.get('location')).toContain('/signed-out');
     expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull();
+  });
+
+  it('turns away anyone but the pinned owner, even one linked to the owner account', async () => {
+    // Only the subject check stands between this stranger and a session.
+    const context = await auth.$context;
+    const ownerId = db.select().from(user).all()[0]!.id;
+    await context.internalAdapter.createAccount({
+      userId: ownerId,
+      providerId: 'dorkos',
+      accountId: 'acct_linked_stranger',
+    });
+    issuer.identity = {
+      sub: 'acct_linked_stranger',
+      email: 'x@example.com',
+      email_verified: true,
+      name: 'X',
+    };
+    const { back, cookie } = await signIn();
+    expect(back?.headers.get('location')).toContain('/signed-out');
+    expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull();
+  });
+
+  it('refuses an ID token whose nonce is not this sign-in`s', async () => {
+    issuer.nonceOverride = 'a-nonce-from-another-sign-in';
+    const { back, cookie } = await signIn();
+    expect(back?.headers.get('location')).toContain('/signed-out');
+    expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull();
+  });
+
+  it('never signs in from a bare ID token, even the owner`s', async () => {
+    // Set the provider up first, as a real sign-in would have.
+    await signIn();
+    const res = await call('sign-in/social', {
+      method: 'POST',
+      body: {
+        provider: 'dorkos',
+        idToken: { token: issuer.mintIdToken({ ...issuer.identity, sub: OWNER }) },
+      },
+    });
+    expect(res.status).not.toBe(200);
+    expect(res.headers.getSetCookie().some((c) => c.includes('session_token='))).toBe(false);
+  });
+
+  it('refuses an issuer that sends tokens or people anywhere but https', async () => {
+    issuer.discovery = { userinfo_endpoint: 'http://userinfo.example.invalid/userinfo' };
+    serve({ ...RIGHT_CLIENT(), clientId: 'a-third-client' });
+    expect((await signIn()).start.status).toBe(503);
   });
 
   it('is closed with no sign-in client, or one whose redirect is not this hub`s callback', async () => {

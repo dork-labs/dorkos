@@ -28,6 +28,10 @@ export interface FakePublicIssuer {
   discovery: Record<string, unknown>;
   /** Every request, as `METHOD /path`. */
   requests: string[];
+  /** Sign ID tokens with this nonce instead of the request's, as a replayed token would carry. */
+  nonceOverride: string | null;
+  /** Sign a valid ID token directly, as one stolen or replayed would be. */
+  mintIdToken(identity: FakeIdentity, nonce?: string | null): string;
   close(): Promise<void>;
 }
 
@@ -60,6 +64,8 @@ export async function startFakePublicIssuer(): Promise<FakePublicIssuer> {
     },
     discovery: {},
     requests: [],
+    nonceOverride: null,
+    mintIdToken: () => '',
     close: async () => undefined,
   };
   const idToken = (identity: FakeIdentity, nonce: string | null) => {
@@ -142,12 +148,13 @@ export async function startFakePublicIssuer(): Promise<FakePublicIssuer> {
           access_token: randomBytes(16).toString('hex'),
           token_type: 'Bearer',
           expires_in: 300,
-          id_token: idToken(grant.identity, grant.nonce),
+          id_token: idToken(grant.identity, state.nonceOverride ?? grant.nonce),
         });
       }
       return reply(404, { error: 'not_found' });
     })();
   });
+  state.mintIdToken = (identity, nonce = null) => idToken(identity, nonce);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No fake issuer port');
