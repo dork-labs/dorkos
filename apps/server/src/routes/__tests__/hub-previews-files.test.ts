@@ -32,12 +32,6 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
     }),
   };
 });
-// `send` refuses any path with a dot segment, so the real `.dork/.temp/uploads`
-// folder answers every GET with a 404; a plain folder lets the headers show.
-const uploadsDir = vi.hoisted(() => ({ value: '' }));
-vi.mock('../../services/core/upload-handler.js', () => ({
-  uploadHandler: { getUploadDir: () => uploadsDir.value },
-}));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
     status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
@@ -73,8 +67,7 @@ beforeAll(async () => {
   await fs.writeFile(path.join(root, 'drawing.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   await fs.writeFile(path.join(root, 'report.pdf'), '%PDF-1.7');
   await fs.writeFile(path.join(root, 'model.glb'), 'glb');
-  const uploads = path.join(root, 'uploads');
-  uploadsDir.value = uploads;
+  const uploads = path.join(root, '.dork', '.temp', 'uploads');
   await fs.mkdir(uploads, { recursive: true });
   await fs.writeFile(path.join(uploads, 'notes.html'), '<script>alert(1)</script>');
   await fs.writeFile(
@@ -165,7 +158,7 @@ describe('files on a hub', () => {
 const upload = (file: string) =>
   request(server).get(`/api/uploads/${file}?cwd=${encodeURIComponent(root)}`);
 
-describe('uploads on a hub', () => {
+describe('uploads', () => {
   it.each(['notes.html', 'drawing.svg'])('sends %s as opaque bytes to download', async (file) => {
     const res = await upload(file);
     expect(res.status).toBe(200);
@@ -179,6 +172,8 @@ describe('uploads on a hub', () => {
     const res = await upload('photo.png');
     expect(res.headers['content-type']).toBe('image/png');
     expect(res.headers['content-disposition']).toBeUndefined();
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
   });
 
   it('answers a missing upload as JSON, not as a download', async () => {
@@ -187,11 +182,12 @@ describe('uploads on a hub', () => {
     expect(res.headers['content-type']).toContain('application/json');
   });
 
-  it('serves an upload as its type on a person’s own computer', async () => {
+  it('downloads one that could open as a page on a person’s own computer too', async () => {
     role.value = 'computer';
     const res = await upload('notes.html');
-    expect(res.headers['content-type']).toContain('text/html');
-    expect(res.headers['content-disposition']).toBeUndefined();
+    expect(res.headers['content-type']).toBe('application/octet-stream');
+    expect(res.headers['content-disposition']).toBe('attachment');
+    expect((await upload('photo.png')).headers['content-type']).toBe('image/png');
   });
 });
 

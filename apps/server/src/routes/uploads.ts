@@ -7,8 +7,7 @@ import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { sendFileFromRoot } from '../http/send-file.js';
-import { MEDIA_CONTENT_TYPES, servesInlineHere } from '../lib/file-route-guards.js';
-import { currentServerRole } from '../lib/server-role.js';
+import { isPassiveMedia, MEDIA_CONTENT_TYPES } from '../lib/file-route-guards.js';
 import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
 
 const router = new Hono<ApiEnv>();
@@ -84,15 +83,22 @@ router.get('/:filename', async (c) => {
     const validatedCwd = await validateBoundary(cwd);
     const filename = path.basename(c.req.param('filename'));
     const type = MEDIA_CONTENT_TYPES[path.extname(filename).toLowerCase()];
-    if (currentServerRole() === 'hub' && !(type && servesInlineHere(type))) {
-      downloadOnly(c.env.outgoing);
-    }
+    // Every upload is somebody's file: never sniffed, never in a shared cache.
+    c.env.outgoing.setHeader('X-Content-Type-Options', 'nosniff');
+    c.env.outgoing.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    if (!(type && isPassiveMedia(type))) downloadOnly(c.env.outgoing);
     const sent = await sendFileFromRoot(c, uploadHandler.getUploadDir(validatedCwd), filename);
     if (sent.kind === 'sent') return sent.response;
     if (sent.kind === 'outside') return c.json({ error: 'Access denied' }, 403);
     // `send` reports not-found via err.status (404). err.code is only 'ENOENT'
     // when the parent dir exists, so check both to stay robust.
     const status = sent.error.status === 404 || sent.error.code === 'ENOENT' ? 404 : 500;
+    // Any other refusal `send` words itself (a bad name, a range past the
+    // end) is the caller's, not the server's.
+    const refused = sent.error.status;
+    if (status === 500 && refused && refused >= 400 && refused < 500) {
+      return c.json({ error: 'Not a file that can be sent' }, refused as 400);
+    }
     return c.json({ error: status === 404 ? 'File not found' : 'Internal error' }, status);
   } catch (err) {
     if (err instanceof BoundaryError) {
@@ -104,15 +110,15 @@ router.get('/:filename', async (c) => {
 });
 
 /**
- * Make an upload a download of opaque bytes that run nothing even if opened:
- * on a hub (DOR-2937), for every upload but a picture, sound or video. Set
- * before `send`, which keeps a `Content-Type` already there; an error answer's
- * own headers win. Everywhere else every upload is served as its type.
+ * Make an upload a download of opaque bytes that run nothing even if opened,
+ * for every upload but a picture, sound or video (DOR-2990): an upload is
+ * anything a person or an agent put there, and served as its type an `.html`
+ * would run as a page on the app's own address. Set before `send`, which
+ * keeps a `Content-Type` already there; an error answer's own headers win.
  */
 function downloadOnly(outgoing: ApiEnv['Bindings']['outgoing']): void {
   outgoing.setHeader('Content-Type', 'application/octet-stream');
   outgoing.setHeader('Content-Disposition', 'attachment');
-  outgoing.setHeader('X-Content-Type-Options', 'nosniff');
   outgoing.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
 }
 
