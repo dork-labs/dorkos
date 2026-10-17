@@ -88,6 +88,7 @@ import {
 } from './runtimes-http.js';
 import { createDoeSetupRoutes } from './runtimes-doe-setup.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { withoutReferringPage } from '../services/core/auth/oauth-callback-arrival.js';
 
 const SecretBodySchema = z.object({ secret: z.string().min(1) });
 const OpenRouterKeyBodySchema = z.object({ key: z.string().min(1) });
@@ -260,7 +261,8 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
    * the user to return to DorkOS. Loopback-only (the user's own browser hits it).
    */
   router.get('/opencode/openrouter/oauth/callback', async (c) => {
-    if (!isAtThisComputer(honoRequestFacts(c))) {
+    // The provider's page is the Referer here; judge where the request came from.
+    if (!isAtThisComputer(withoutReferringPage(honoRequestFacts(c)))) {
       return c.body('Not available.', 403, { 'Content-Type': HTML_TYPE });
     }
     const query = readQuery(c);
