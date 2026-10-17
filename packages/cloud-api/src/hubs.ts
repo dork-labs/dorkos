@@ -172,10 +172,25 @@ export const HubAssignmentSchema = z
 /** Who a hub belongs to, and the keys it serves with. */
 export type HubAssignment = z.infer<typeof HubAssignmentSchema>;
 
-/** `POST /v1/hubs/self/assignment/confirm` — the hub applied this assignment. */
+/**
+ * `POST /v1/hubs/self/assignment/confirm` — the hub applied this assignment.
+ *
+ * A stale `assignmentId` is `conflict`: the hub reads its assignment again. A
+ * `signingPublicKey` different from the one the service already holds for
+ * this hub is `precondition_failed`: the service keeps the key it holds,
+ * refuses the confirmation and raises an alert, and the hub stops serving for
+ * good, since it no longer holds the key its owner's Macs trust.
+ */
 export const HubAssignmentConfirmRequestSchema = z
   .object({
     assignmentId: IdSchema.describe('The assignment the hub now serves with.'),
+    signingPublicKey: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{43}$/, 'must be base64url of exactly 32 bytes, unpadded')
+      .optional()
+      .describe(
+        'The public half of the hub`s own Ed25519 signing key: base64url of the raw 32 bytes, 43 characters, no padding. The hub makes the pair before its first confirmation and never replaces it, so it sends the same key every time; a Mac pins it at pairing and checks the hub`s relay handshakes with it. Optional so an older hub still confirms.'
+      ),
   })
   .describe(
     'Tell the service the hub now serves with this assignment`s owner, address and proof. A stale id is `conflict`.'

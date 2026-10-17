@@ -34,6 +34,7 @@ import {
   HubAssignmentConfirmResponseSchema,
   HubAssignmentSchema,
   V1_ROUTES,
+  type HubAssignmentConfirmRequest,
 } from '@dork-labs/cloud-api';
 
 import { CloudApiProblemError } from '@dork-labs/cloud-api/client';
@@ -68,8 +69,16 @@ export interface HubAssignmentSyncDeps {
    * treated as the contract says rather than as a failed request.
    */
   readAssignment: () => Promise<unknown>;
-  /** Confirm the assignment the hub now serves with. */
-  confirm: (assignmentId: string) => Promise<void>;
+  /**
+   * Confirm the assignment the hub now serves with, and report the public
+   * half of the hub's signing key.
+   */
+  confirm: (assignmentId: string, signingPublicKey: string) => Promise<void>;
+  /**
+   * The public half of the hub's signing key (`hub-signing-key.ts`), making
+   * the pair only when `mayCreate`; `null` when there is none and it may not.
+   */
+  signingPublicKey: (mayCreate: boolean) => string | null;
   /** Whether the owner account exists yet. */
   ownerExists: () => boolean;
   /** Create the owner account. Runs only while none exists. */
@@ -132,6 +141,13 @@ export function writeHubOwnerPin(dorkHome: string, pin: PinnedHubOwner): void {
     fs.closeSync(fd);
   }
   fs.renameSync(partial, file);
+  // The rename itself reaches disk only once the folder's entries do.
+  const dir = fs.openSync(dorkHome, 'r');
+  try {
+    fs.fsyncSync(dir);
+  } finally {
+    fs.closeSync(dir);
+  }
 }
 
 /**
@@ -217,6 +233,24 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
     setHubServingState({ state: 'refused' });
     return { kind: 'refused' };
   }
+  // The signing key comes before the pin: a hub with an owner pinned always
+  // has the key its owner's Macs pin, and one that has lost it never makes
+  // another, which would break every Mac that pinned the first.
+  let signingPublicKey: string | null;
+  try {
+    signingPublicKey = deps.signingPublicKey(!pin);
+  } catch (err) {
+    logger.error('[Hub] This hub`s signing key cannot be read; it will not serve', {
+      error: (err as Error).message,
+    });
+    setHubServingState({ state: 'refused' });
+    return { kind: 'refused' };
+  }
+  if (!signingPublicKey) {
+    logger.error('[Hub] This hub lost the signing key its owner`s Macs pin; it will not serve');
+    setHubServingState({ state: 'refused' });
+    return { kind: 'refused' };
+  }
   if (!pin) {
     deps.writePin({
       ownerAccountId: assignment.ownerAccountId,
@@ -231,7 +265,20 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   // The front door may switch to the new proof and address the moment Cloud
   // records the confirmation, before its answer arrives here.
   offerHubAssignment(assignment);
-  await deps.confirm(assignment.assignmentId);
+  try {
+    await deps.confirm(assignment.assignmentId, signingPublicKey);
+  } catch (err) {
+    if (err instanceof CloudApiProblemError && err.problem.code === 'precondition_failed') {
+      // Cloud holds a different signing key for this hub: it is not the key
+      // its owner's Macs trust. Stop for good; asking again changes nothing.
+      logger.error(
+        '[Hub] DorkOS Cloud holds a different signing key for this hub; it will not serve'
+      );
+      setHubServingState({ state: 'refused' });
+      return { kind: 'refused' };
+    }
+    throw err;
+  }
   setHubServingState({ state: 'serving', assignment });
   return { kind: 'serving', assignmentId: assignment.assignmentId };
 }
@@ -253,10 +300,11 @@ export function cloudHubCalls(
 ): Pick<HubAssignmentSyncDeps, 'readAssignment' | 'confirm'> {
   return {
     readAssignment: async () => (client ? client.get(V1_ROUTES.hubAssignment, z.unknown()) : null),
-    confirm: async (assignmentId) => {
+    confirm: async (assignmentId, signingPublicKey) => {
       if (!client) throw new Error('This hub holds no DorkOS Cloud credential.');
+      const body: HubAssignmentConfirmRequest = { assignmentId, signingPublicKey };
       await client.post(V1_ROUTES.hubAssignmentConfirm, HubAssignmentConfirmResponseSchema, {
-        body: { assignmentId },
+        body,
       });
     },
   };

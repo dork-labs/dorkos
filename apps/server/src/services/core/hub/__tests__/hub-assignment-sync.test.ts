@@ -22,6 +22,7 @@ const { withRegistrationCaller } = await import('../../auth/registration-policy.
 const sync = await import('../hub-assignment-sync.js');
 const serving = await import('../hub-serving.js');
 const runner = await import('../hub-assignment-runner.js');
+const signingKey = await import('../hub-signing-key.js');
 
 const ASSIGNED: HubAssignment = {
   state: 'assigned',
@@ -52,6 +53,7 @@ describe('a hub taking its assignment', () => {
   beforeEach(() => {
     role.value = 'hub';
     serving.resetHubServingStateForTests();
+    signingKey.resetHubSigningKeyForTests();
     db = createDb(path.join(tmpDir, `auth-${Math.random().toString(36).slice(2)}.db`));
     runMigrations(db);
     dorkHome = fs.mkdtempSync(path.join(tmpDir, 'home-'));
@@ -74,6 +76,61 @@ describe('a hub taking its assignment', () => {
     expect(db.select().from(user).all()).toHaveLength(0);
     expect(serving.hubServingState().state).not.toBe('serving');
     expect(runner.nextHubBeatMs({ kind: 'pooled', pollAfterSeconds: 7 })).toBe(7_000);
+  });
+
+  it('reports the public half of its signing key when it confirms, the same key each time', async () => {
+    const sent: (string | undefined)[] = [];
+    initAuth(db, tmpDir);
+    const d = runner.liveHubDeps(dorkHome, {
+      readAssignment: () => read(),
+      confirm: async (id, signingPublicKey) => void sent.push(signingPublicKey),
+    });
+    await sync.syncHubAssignment(d);
+    read = async () => ({ ...ASSIGNED, assignmentId: 'asg_2' });
+    await sync.syncHubAssignment(d);
+    expect(sent[0]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(sent[1]).toBe(sent[0]);
+  });
+
+  it('refuses, rather than make a new key, when a pinned hub has lost its own', async () => {
+    const d = deps();
+    await sync.syncHubAssignment(d);
+    fs.rmSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE));
+    signingKey.resetHubSigningKeyForTests();
+    serving.resetHubServingStateForTests();
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
+    expect(fs.existsSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE))).toBe(false);
+  });
+
+  it('stops for good when Cloud holds a different signing key for it', async () => {
+    let calls = 0;
+    initAuth(db, tmpDir);
+    const d = runner.liveHubDeps(dorkHome, {
+      readAssignment: () => read(),
+      confirm: async () => {
+        calls += 1;
+        throw new CloudApiProblemError({
+          type: 'about:blank',
+          code: 'precondition_failed',
+          status: 412,
+          title: 'Different key',
+        } as never);
+      },
+    });
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
+    expect(serving.hubServingState()).toEqual({ state: 'refused' });
+    expect(calls).toBe(1);
+    // No retries: a refused hub's beat stops.
+    expect(runner.nextHubBeatMs({ kind: 'refused' })).toBeNull();
+  });
+
+  it('refuses when its signing key file cannot be read', async () => {
+    const d = deps();
+    await sync.syncHubAssignment(d);
+    fs.writeFileSync(path.join(dorkHome, signingKey.HUB_SIGNING_KEY_FILE), 'not a key');
+    signingKey.resetHubSigningKeyForTests();
+    serving.resetHubServingStateForTests();
+    expect(await sync.syncHubAssignment(d)).toEqual({ kind: 'refused' });
   });
 
   it('pins the owner, makes the owner account, confirms, then serves', async () => {
@@ -150,6 +207,9 @@ describe('a hub taking its assignment', () => {
   });
 
   it('makes the owner account on the next sync if it crashed after pinning', async () => {
+    // What a crash right after pinning leaves: the key, made first, and the pin.
+    signingKey.ensureHubSigningKey(dorkHome);
+    signingKey.resetHubSigningKeyForTests();
     sync.writeHubOwnerPin(dorkHome, {
       ownerAccountId: 'acct_1',
       issuer: 'https://accounts.example.invalid',

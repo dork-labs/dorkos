@@ -15,6 +15,7 @@ import { withRegistrationCaller } from '../auth/registration-policy.js';
 import { getAuth, hasAnyUser, type Auth } from '../auth/index.js';
 import { createCloudV1ClientFor } from '../cloud/v1-client.js';
 import { env } from '../../../env.js';
+import { ensureHubSigningKey, loadHubSigningKey } from './hub-signing-key.js';
 import {
   cloudHubCalls,
   readHubOwnerPin,
@@ -96,6 +97,7 @@ export function liveHubDeps(
       if (!auth) throw new Error('Sign-in is not ready yet.');
       await createHubOwner(auth, input);
     },
+    signingPublicKey: (mayCreate) => ensureHubSigningKey(dorkHome, mayCreate),
     readPin: () => readHubOwnerPin(dorkHome),
     writePin: (pin) => writeHubOwnerPin(dorkHome, pin),
   };
@@ -108,6 +110,13 @@ export function liveHubDeps(
  * @param deps - Replaces the live dependencies, for tests.
  */
 export function startHubAssignmentSync(dorkHome: string, deps?: HubAssignmentSyncDeps): void {
+  // A hub that restarts signs relay handshakes before its next confirmation.
+  // A key file it cannot read is caught by the first sync, which refuses.
+  try {
+    loadHubSigningKey(dorkHome);
+  } catch {
+    // Left for the sync: it reads the key again and refuses with the reason.
+  }
   const resolved = deps ?? liveHubDeps(dorkHome);
   const beat = async (): Promise<void> => {
     let outcome: HubSyncOutcome;
