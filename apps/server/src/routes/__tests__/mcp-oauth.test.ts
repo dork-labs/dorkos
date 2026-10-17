@@ -204,20 +204,24 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
       .set('Sec-Fetch-Mode', 'navigate')
       .set('Sec-Fetch-Dest', 'document');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(303);
+    expect(landingFrom(res.headers.location as string).status).toBe('connected');
     expect(spy).toHaveBeenCalledWith({ state: 's1', code: 'c1', error: undefined });
   });
 
   it('still fails an unknown state when the provider page is the Referer', async () => {
     const server = fixtureTarget.mount(
-      appWith(stubOAuth({ connected: false, error: 'This sign-in expired.' }))
+      appWith(stubOAuth({ connected: false, error: 'This sign-in expired.', reason: 'expired' }))
     );
     const res = await request(server)
       .get('/api/agents/mcp-oauth/callback?state=unknown&code=c1')
       .set('Referer', 'https://mcp.artblocks.io/');
 
-    expect(res.status).toBe(400);
-    expect(res.text).toContain('This sign-in expired.');
+    expect(res.status).toBe(303);
+    expect(landingFrom(res.headers.location as string)).toMatchObject({
+      status: 'failed',
+      reason: 'expired',
+    });
   });
 
   it('keeps a cross-site write to the callback path gated', async () => {
