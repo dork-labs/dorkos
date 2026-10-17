@@ -998,7 +998,6 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'browser.enabled',
       'computers.enabled',
       'sessionRelay.enabled',
-      'docs.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'a2a.enabled',
@@ -1180,6 +1179,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'welcomeBack.offersEnabled',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
+      // Docs: a mention in a doc comment wakes the agent it names (DOR-2983).
+      'docs.enabled',
     ],
   },
   {

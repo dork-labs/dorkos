@@ -11,6 +11,7 @@
  * @module server/services/docs/doc-space
  */
 import { createHash } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { validateBoundary } from '../../lib/boundary.js';
 
@@ -46,12 +47,19 @@ function opaqueKey(...parts: string[]): string {
  * Applies the same directory-boundary check as the files routes, so a doc API
  * can never reach a folder the files API could not.
  *
- * @param cwd - The session working directory (absolute or `~`-prefixed).
+ * @param cwd - The session working directory: absolute or `~`-prefixed, and an
+ *   existing folder.
  * @returns The space.
- * @throws BoundaryError when `cwd` is outside the directory boundary.
+ * @throws DocPathError when `cwd` is relative or not a folder; BoundaryError
+ *   when it is outside the directory boundary.
  */
 export async function resolveDocSpace(cwd: string): Promise<DocSpace> {
+  if (!path.isAbsolute(cwd) && cwd !== '~' && !cwd.startsWith('~/')) {
+    throw new DocPathError('A doc space must be an absolute folder path.');
+  }
   const root = await validateBoundary(cwd);
+  const info = await stat(root).catch(() => null);
+  if (!info?.isDirectory()) throw new DocPathError('A doc space must be an existing folder.');
   return { root, key: opaqueKey(root) };
 }
 
@@ -66,7 +74,7 @@ export async function resolveDocSpace(cwd: string): Promise<DocSpace> {
 export function normalizeDocPath(docPath: string): string {
   if (docPath.includes('\u0000')) throw new DocPathError('A doc path cannot contain a null byte.');
   const slashed = docPath.replaceAll('\\', '/');
-  if (slashed.startsWith('/') || /^[A-Za-z]:\//.test(slashed)) {
+  if (slashed.startsWith('/') || /^[A-Za-z]:/.test(slashed)) {
     throw new DocPathError('A doc path must be relative to its space.');
   }
   const normalized = path.posix.normalize(slashed);
@@ -79,15 +87,18 @@ export function normalizeDocPath(docPath: string): string {
 }
 
 /**
- * The stable server-side name of one doc: the same space and path always give
- * the same key, and the key reveals neither.
+ * The stable server-side name of one doc, taken from the file it resolves to:
+ * a case variant, a symlinked alias or another space reaching the same file
+ * all get the same key, so a comment thread or a live document never splits
+ * in two. The key reveals neither the space nor the path.
  *
- * @param space - The doc's space.
- * @param docPath - The doc's path inside it (normalized here).
+ * @param space - The space the doc was reached from.
+ * @param docPath - The doc's path inside it.
  * @returns A 32-character hex key.
+ * @throws DocPathError when the path is malformed; BoundaryError when it escapes.
  */
-export function docKey(space: DocSpace, docPath: string): string {
-  return opaqueKey(space.root, normalizeDocPath(docPath));
+export async function docKey(space: DocSpace, docPath: string): Promise<string> {
+  return opaqueKey(await resolveDocFile(space, docPath));
 }
 
 /**

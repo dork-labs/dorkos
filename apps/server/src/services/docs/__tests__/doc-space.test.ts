@@ -43,6 +43,7 @@ describe('normalizeDocPath', () => {
       '.',
       '/etc/passwd',
       'C:/x.md',
+      'C:x.md',
       '../outside/secret.md',
       'a/../../b.md',
       'a\u0000.md',
@@ -52,19 +53,47 @@ describe('normalizeDocPath', () => {
   });
 });
 
-describe('resolveDocSpace and docKey', () => {
-  it('names the same doc the same way, and different docs differently', async () => {
+describe('resolveDocSpace', () => {
+  it('names one folder one way', async () => {
     const one = await resolveDocSpace(space);
-    const two = await resolveDocSpace(`${space}/`);
-    expect(one).toEqual(two);
+    expect(await resolveDocSpace(`${space}/`)).toEqual(one);
     expect(one.root).toBe(space);
-    expect(docKey(one, 'plans/launch.md')).toBe(docKey(two, './plans/launch.md'));
-    expect(docKey(one, 'plans/launch.md')).not.toBe(docKey(one, 'plans/other.md'));
-    expect(docKey(one, 'plans/launch.md')).toMatch(/^[0-9a-f]{32}$/);
+    expect(one.key).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('refuses a space outside the directory boundary', async () => {
+  it('refuses a relative path, a file, a missing folder and a folder outside the boundary', async () => {
+    await expect(resolveDocSpace('space')).rejects.toThrow(DocPathError);
+    await expect(resolveDocSpace(path.join(space, 'plans', 'launch.md'))).rejects.toThrow(
+      DocPathError
+    );
+    await expect(resolveDocSpace(path.join(space, 'missing'))).rejects.toThrow(DocPathError);
     await expect(resolveDocSpace(outside)).rejects.toThrow(/outside directory boundary/);
+  });
+});
+
+describe('docKey', () => {
+  it('gives one file one key however it is reached', async () => {
+    symlinkSync(path.join(space, 'plans'), path.join(space, 'alias'));
+    const root = await resolveDocSpace(space);
+    const plans = await resolveDocSpace(path.join(space, 'plans'));
+    const key = await docKey(root, 'plans/launch.md');
+    expect(key).toMatch(/^[0-9a-f]{32}$/);
+    expect(await docKey(root, './plans/x/../launch.md')).toBe(key);
+    expect(await docKey(root, 'alias/launch.md')).toBe(key);
+    expect(await docKey(plans, 'launch.md')).toBe(key);
+  });
+
+  it.runIf(process.platform === 'darwin')(
+    'gives case variants one key on a case-insensitive disk',
+    async () => {
+      const root = await resolveDocSpace(space);
+      expect(await docKey(root, 'Plans/Launch.md')).toBe(await docKey(root, 'plans/launch.md'));
+    }
+  );
+
+  it('gives different files different keys', async () => {
+    const root = await resolveDocSpace(space);
+    expect(await docKey(root, 'plans/other.md')).not.toBe(await docKey(root, 'plans/launch.md'));
   });
 });
 
