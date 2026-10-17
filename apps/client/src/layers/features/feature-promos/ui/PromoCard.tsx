@@ -74,7 +74,7 @@ export function PromoCard({ promo }: PromoCardProps) {
           {/* `/90` and `/70`: the title is what the eye lands on and the line
               under it is the aside, and both clear 4.5:1 on the zone tint in
               both themes — the measurement `SidebarZone`'s heading records. */}
-          <span className="text-sidebar-foreground/90 block truncate text-[13px] font-medium">
+          <span className="text-sidebar-foreground/90 text-control block truncate font-medium">
             {promo.content.title}
           </span>
           <span className="text-2xs block truncate">{promo.content.shortDescription}</span>

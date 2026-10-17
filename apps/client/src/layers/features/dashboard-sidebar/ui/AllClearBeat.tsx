@@ -20,7 +20,7 @@ export function AllClearBeat() {
   return (
     <p
       data-slot="sidebar-all-clear"
-      className="text-sidebar-foreground/70 flex min-h-7 items-center gap-1.5 px-2 text-[13px]"
+      className="text-sidebar-foreground/70 text-control flex min-h-7 items-center gap-1.5 px-2"
     >
       <Check className="text-status-success size-3.5 shrink-0" aria-hidden />
       All clear

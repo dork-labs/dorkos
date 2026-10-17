@@ -120,7 +120,7 @@ export function InboxBellPill({
             // The corner badge, below `lg`: out of flow, so the number never
             // widens the control. Solid in the pill's own ink, so it reads as
             // the same signal at a glance.
-            'absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none',
+            'text-3xs absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 leading-none',
             tone === 'waiting'
               ? 'bg-status-warning-fg text-background'
               : 'bg-foreground text-background',

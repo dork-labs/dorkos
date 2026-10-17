@@ -69,6 +69,17 @@
  * button in the two `streaming-queue` baselines gained that one token, added
  * by hand for the same reason as above. The measured diff before the edit was
  * that one `class-added` entry per file on the Stop `button`; nothing else.
+ *
+ * ## The scan-line highlight amendment (2026-10-17)
+ *
+ * `ScanLine`'s beam ended in pure white. It now ends in `--scan-highlight`, an
+ * off-white the root sets per theme (the page background on light, the
+ * foreground on dark), so the root gained two class tokens and the beam's
+ * `style` swapped `white` for `var(--scan-highlight)`. jsdom re-serializes the
+ * agent colour as hex once the value holds a `var()`, which is the rest of that
+ * one attribute change. Same two baselines, edited by hand for the same reason
+ * as above. The measured diff before the edit was exactly those three entries
+ * per file; nothing else moved.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';

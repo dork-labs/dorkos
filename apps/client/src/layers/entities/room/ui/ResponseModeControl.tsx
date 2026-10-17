@@ -363,7 +363,7 @@ export function ResponseModeControl({
                 {checked && <span className="bg-brand size-2 rounded-full" />}
               </span>
               <span className="min-w-0">
-                <span className={cn('block text-sm font-medium', checked && 'text-brand')}>
+                <span className={cn('block text-sm font-medium', checked && 'text-brand-text')}>
                   {option.label}
                 </span>
                 {/* One line, and the sentence only — the footnote that goes
@@ -405,7 +405,7 @@ export function ResponseModeControl({
               className={cn(
                 'focus-visible:ring-ring h-9 flex-1 border-r px-1 text-xs outline-hidden transition-colors last:border-r-0 focus-visible:ring-2 focus-visible:ring-inset',
                 checked
-                  ? 'bg-brand/15 text-brand font-medium'
+                  ? 'bg-brand/15 text-brand-text font-medium'
                   : 'text-muted-foreground hover:bg-accent'
               )}
             >

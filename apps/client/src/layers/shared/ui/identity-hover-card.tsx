@@ -316,7 +316,7 @@ function IdentityHoverCard({
               triggerRef.current?.focus();
               onViewProfile();
             }}
-            className="border-border hover:bg-accent focus-visible:ring-ring text-brand mt-auto flex w-full items-center border-t px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            className="border-border hover:bg-accent focus-visible:ring-ring text-brand-text mt-auto flex w-full items-center border-t px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
           >
             View profile
           </button>

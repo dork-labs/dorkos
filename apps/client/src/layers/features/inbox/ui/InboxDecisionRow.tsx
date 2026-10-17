@@ -235,13 +235,13 @@ function InlineAnswer({
         className="min-h-14 text-xs"
       />
       {failed && (
-        <p role="alert" className="text-status-error-fg text-[11px]">
+        <p role="alert" className="text-status-error-fg text-2xs">
           Couldn’t send. Try again.
         </p>
       )}
       <div className="flex items-center justify-end gap-1.5">
         {nearLimit && (
-          <span className="text-muted-foreground mr-auto text-[11px] tabular-nums">
+          <span className="text-muted-foreground text-2xs mr-auto tabular-nums">
             {text.length}/{maxLength}
           </span>
         )}
@@ -379,7 +379,7 @@ export function InboxDecisionRow({
           <p
             className={cn(
               'text-xs break-words',
-              history ? 'text-foreground/90' : 'text-foreground text-[13px] font-semibold',
+              history ? 'text-foreground/90' : 'text-foreground text-control font-semibold',
               unread && 'text-foreground font-medium'
             )}
           >
@@ -410,13 +410,11 @@ export function InboxDecisionRow({
               {notice}
             </p>
           )}
-          {meta && <p className="text-muted-foreground mt-0.5 text-[11px]">{meta}</p>}
+          {meta && <p className="text-muted-foreground text-2xs mt-0.5">{meta}</p>}
           {details && <div className="mt-1">{details}</div>}
-          {watchLine && <p className="mt-0.5 text-[11px]">{watchLine}</p>}
+          {watchLine && <p className="text-2xs mt-0.5">{watchLine}</p>}
           {sourceLine && (
-            <p className="text-muted-foreground mt-0.5 truncate font-mono text-[11px]">
-              {sourceLine}
-            </p>
+            <p className="text-muted-foreground text-2xs mt-0.5 truncate font-mono">{sourceLine}</p>
           )}
           {actions?.kind === 'choice' && (
             <div className="mt-1.5" data-slot="inbox-decision-choices">
@@ -459,7 +457,7 @@ export function InboxDecisionRow({
                 )}
               </div>
               {actions.deadlineLine && (
-                <p className="text-muted-foreground mt-1 text-[11px]">{actions.deadlineLine}</p>
+                <p className="text-muted-foreground text-2xs mt-1">{actions.deadlineLine}</p>
               )}
               {answering === 'reply' && (
                 <InlineAnswer

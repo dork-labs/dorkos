@@ -24,7 +24,7 @@ export function ChatMessageTags({ stamp }: { stamp: Pick<ChatMessageStamp, 'kind
         <span
           key={tag}
           data-testid="chat-message-tag"
-          className="bg-muted text-muted-foreground rounded px-1.5 py-px text-[11px] leading-4 font-medium"
+          className="bg-muted text-muted-foreground text-2xs rounded px-1.5 py-px leading-4 font-medium"
         >
           {tag}
         </span>

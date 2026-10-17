@@ -52,7 +52,7 @@ import { useCurrentUser } from '@/layers/features/auth';
  * sake of a string.
  */
 export const FOOTER_LABELLED_ROW = cn(
-  'flex w-full items-center gap-2.5 rounded-md px-2.5 text-[13px]',
+  'flex w-full items-center gap-2.5 rounded-md px-2.5 text-control',
   TOUCH_TARGET_MIN_H
 );
 

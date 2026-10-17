@@ -173,7 +173,7 @@ function CanvasTabWatchers({ watchers }: { watchers: readonly CanvasDocumentAuth
             size="xs"
             // A ring in the strip's own background colour is what keeps two
             // overlapping discs readable as two faces rather than one blob.
-            className="ring-background size-3.5 text-[8px] ring-1"
+            className="ring-background text-3xs size-3.5 ring-1"
             kind={watcher.kind}
             color={watcher.color ?? hashToHslColor(watcher.id)}
             emoji={watcher.emoji}
@@ -183,7 +183,7 @@ function CanvasTabWatchers({ watchers }: { watchers: readonly CanvasDocumentAuth
           />
         ))}
         {extra > 0 && (
-          <span className="bg-muted text-muted-foreground ring-background flex size-3.5 shrink-0 items-center justify-center rounded-full text-[8px] ring-1">
+          <span className="bg-muted text-muted-foreground ring-background text-3xs flex size-3.5 shrink-0 items-center justify-center rounded-full ring-1">
             +{extra}
           </span>
         )}
@@ -285,7 +285,7 @@ export function CanvasHeader({
                 <IdentityAvatar
                   aria-hidden
                   size="xs"
-                  className="size-3.5 shrink-0 text-[8px]"
+                  className="text-3xs size-3.5 shrink-0"
                   kind={author.kind}
                   color={author.color ?? hashToHslColor(author.id)}
                   emoji={author.emoji}
