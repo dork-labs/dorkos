@@ -11,7 +11,11 @@ import {
   type SQL,
 } from '@dorkos/db';
 import { DocChannelStore } from './store.js';
-import { protectedEventSql, backfillEnvelopeAccounting } from './current/accounting.js';
+import {
+  protectedEventSql,
+  retainedRoomEventSql,
+  backfillEnvelopeAccounting,
+} from './current/accounting.js';
 import { DocIngestRefusal } from './ingest-types.js';
 
 /** Completed history caps include compact headers and receipt outcomes, not only app payloads. */
@@ -61,8 +65,10 @@ const deliveryBytes = rowBytes('d', [
   'acknowledged_by',
   'ack_evidence',
   'updated_at',
+  'delivery_kind',
+  'room_admission_id',
 ]);
-const batchBytes = rowBytes('b', [
+const originalBatchBytes = rowBytes('b', [
   'batch_id',
   'document_id',
   'scope',
@@ -83,10 +89,89 @@ const batchBytes = rowBytes('b', [
   'waiting_warning_at',
   'created_at',
   'updated_at',
+  'delivery_kind',
+  'room_admission_id',
+  'room_source_attempt',
+  'room_source_json',
+  'room_source_hash',
+]);
+// Historical pending capsules share their original batch's retention ceiling and lifecycle.
+const pendingCapsuleBytes = rowBytes('s', [
+  'document_id',
+  'batch_id',
+  'generation',
+  'source_json',
+  'source_hash',
+  'due_at',
+  'updated_at',
+]);
+const batchBytes = sql`${originalBatchBytes} + coalesce((SELECT sum(${pendingCapsuleBytes})
+  FROM canvas_doc_room_pending_sources s WHERE s.batch_id=b.batch_id),0)`;
+const roomAdmissionBytes = rowBytes('ra', [
+  'admission_id',
+  'document_id',
+  'batch_id',
+  'generation',
+  'source_attempt',
+  'room_id',
+  'entry_id',
+  'entry_seq',
+  'grant_id',
+  'grant_revision',
+  'route_id',
+  'route_hash',
+  'declaration_hash',
+  'manifest_hash',
+  'input_fingerprint',
+  'authority_digest',
+  'effective_payload_digest',
+  'source_hash',
+  'producer_evidence_json',
+  'target_agent_id',
+  'target_author_id',
+  'target_session_id',
+  'target_runtime',
+  'target_agent_path',
+  'cascade_root',
+  'root_room_id',
+  'root_entry_id',
+  'frozen_ceiling',
+  'dispatch_attempt',
+  'boot_epoch',
+  'dispatch_id',
+  'claimed_at_ms',
+  'claimed_at',
+  'spend_row_id',
+  'status',
+  'turn_id',
+  'outcome',
+  'created_at',
+  'updated_at',
+  'row_json',
+]);
+const roomInputBytes = rowBytes('ri', [
+  'admission_id',
+  'document_id',
+  'event_id',
+  'route_id',
+  'input_ordinal',
+  'doc_seq',
+  'envelope_hash',
+  'source_delivery_status',
+  'source_delivery_reason',
+]);
+const roomExhaustionBytes = rowBytes('rx', [
+  'cascade_root',
+  'root_room_id',
+  'root_entry_id',
+  'original_admission_id',
+  'frozen_ceiling',
+  'exhausted_at',
 ]);
 const historyBytes = sql`${eventBytes} + coalesce((SELECT sum(${deliveryBytes}) FROM canvas_doc_deliveries d
   WHERE d.document_id=e.document_id AND d.event_id=e.event_id),0)`;
-const completedBatchSql = sql`b.status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')`;
+const completedBatchSql = sql`b.status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+  AND NOT EXISTS (SELECT 1 FROM room_doc_admissions ra WHERE ra.document_id=b.document_id AND ra.batch_id=b.batch_id)`;
 
 /** Completed correlations still prove route starts until the strict rolling-hour boundary. */
 function recentTurnStartSql(admissionReceiptId: SQL, startedAfter: string): SQL {
@@ -115,7 +200,9 @@ export function retainDocHistory(
     // Remove expired source correlations with no retained receipt before computing usage.
     tx.delete(canvasDocBatches)
       .where(
-        sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+        sql`NOT EXISTS (SELECT 1 FROM room_doc_admissions ra WHERE ra.document_id=canvas_doc_batches.document_id
+      AND ra.batch_id=canvas_doc_batches.batch_id)
+      AND status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
       AND updated_at < ${cutoff}
       AND NOT ${recentTurnStartSql(sql`${canvasDocBatches.admissionReceiptId}`, startedAfter)}
       AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
@@ -139,7 +226,7 @@ export function retainDocHistory(
       }>(sql`
       SELECT e.document_id AS documentId,e.event_id AS eventId,e.doc_seq AS docSeq,e.received_at AS receivedAt,
         ${historyBytes} AS bytes,e.payload_pruned_at AS payloadPrunedAt
-      FROM canvas_doc_events e WHERE NOT ${protectedEventSql}
+      FROM canvas_doc_events e WHERE NOT (${protectedEventSql} OR ${retainedRoomEventSql})
       AND ${cursor ? sql`(e.received_at,e.document_id,e.doc_seq)>(${cursor.receivedAt},${cursor.documentId},${cursor.docSeq})` : sql`1`}
       ORDER BY e.received_at,e.document_id,e.doc_seq LIMIT 200`);
       if (!candidates.length) break;
@@ -209,7 +296,9 @@ export function retainDocHistory(
     // Keep source correlation for rolling started-turn limits until its one-hour window ends.
     tx.delete(canvasDocBatches)
       .where(
-        sql`status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+        sql`NOT EXISTS (SELECT 1 FROM room_doc_admissions ra WHERE ra.document_id=canvas_doc_batches.document_id
+      AND ra.batch_id=canvas_doc_batches.batch_id)
+      AND status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
         AND NOT ${recentTurnStartSql(sql`${canvasDocBatches.admissionReceiptId}`, startedAfter)}
         AND NOT EXISTS (SELECT 1 FROM canvas_doc_deliveries d WHERE
           d.document_id=canvas_doc_batches.document_id AND d.batch_id=canvas_doc_batches.batch_id)`
@@ -219,16 +308,25 @@ export function retainDocHistory(
 }
 /** Aggregate completed rows once; subsequent compaction/deletion adjusts these exact totals. */
 function historyUsage(tx: DbTransaction): { documents: Map<string, number>; installation: number } {
-  const rows = tx.all<{ documentId: string; bytes: number }>(sql`
+  const rows = tx.all<{ documentId: string | null; bytes: number }>(sql`
     SELECT e.document_id AS documentId,sum(${historyBytes}) AS bytes FROM canvas_doc_events e
-      WHERE NOT ${protectedEventSql} GROUP BY e.document_id
+      WHERE NOT ${protectedEventSql} OR ${retainedRoomEventSql} GROUP BY e.document_id
     UNION ALL
     SELECT b.document_id AS documentId,sum(${batchBytes}) AS bytes FROM canvas_doc_batches b
-      WHERE ${completedBatchSql} GROUP BY b.document_id`);
+      WHERE b.status NOT IN ('pending','waiting','accepted','dispatching','turn_started','in_doubt')
+        OR EXISTS (SELECT 1 FROM room_doc_admissions ra WHERE ra.document_id=b.document_id AND ra.batch_id=b.batch_id)
+      GROUP BY b.document_id
+    UNION ALL SELECT ra.document_id AS documentId,sum(${roomAdmissionBytes}) AS bytes
+      FROM room_doc_admissions ra GROUP BY ra.document_id
+    UNION ALL SELECT ri.document_id AS documentId,sum(${roomInputBytes}) AS bytes
+      FROM room_doc_admission_inputs ri GROUP BY ri.document_id
+    UNION ALL SELECT NULL AS documentId,coalesce(sum(${roomExhaustionBytes}),0) AS bytes
+      FROM room_doc_exhausted_lineages rx`);
   const documents = new Map<string, number>();
   let installation = 0;
   for (const row of rows) {
-    documents.set(row.documentId, (documents.get(row.documentId) ?? 0) + row.bytes);
+    if (row.documentId !== null)
+      documents.set(row.documentId, (documents.get(row.documentId) ?? 0) + row.bytes);
     installation += row.bytes;
   }
   return { documents, installation };
@@ -262,6 +360,8 @@ function advanceFloor(
   floor: number,
   receipts: boolean
 ): void {
+  // A protected older input remains replayable, but cannot hide a later missing sequence.
+  // Reset snapshots include those retained receipts separately from the contiguous event tail.
   tx.update(canvasDocChannels)
     .set(
       receipts

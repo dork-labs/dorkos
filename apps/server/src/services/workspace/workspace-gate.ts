@@ -51,7 +51,7 @@ import type {
   ConfirmationProvider,
   ConfirmationRequest,
 } from '../marketplace-mcp/confirmation-provider.js';
-import { WORKSPACE_HOOKS_ENTRY_MARKER } from '../harness/hook-consent.js';
+import { WORKSPACE_HOOKS_ENTRY_MARKER } from '../harness/workspace-hooks-entry-marker.js';
 import type { WorkspaceHookConfig } from './hooks.js';
 
 /** The hooks a workspace runs from the server, as they were shown. */

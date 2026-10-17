@@ -25,8 +25,47 @@
  *
  * @module server/services/rooms/session-bindings/room-session-ledger
  */
-import { roomSessions, roomSessionRetirements, eq, lt, type Db } from '@dorkos/db';
+import {
+  roomSessions,
+  roomSessionRetirements,
+  rooms,
+  roomMembers,
+  authors,
+  agents,
+  sessionMetadata,
+  communityRoomMirrors,
+  eq,
+  lt,
+  and,
+  isNull,
+  sql,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
+import type { GrantedDocTargetBinding } from '../service/room-service-deps.js';
 import { logger } from '../../../lib/logger.js';
+
+import type { OriginalRoomEmissionStage } from '../../canvas/doc-channel/current/current-operation-types.js';
+import type { OriginalDownstreamRoomEmitter } from '../../canvas/doc-channel/downstream/native-room-emitter.js';
+import {
+  requireOriginalRoomEmissionFrameTransaction,
+  readOriginalRoomEmissionTargetBindingRow,
+} from '../../canvas/doc-channel/operations/room-responder-operation.js';
+const originalLedgerTargetReads = new WeakMap<
+  RoomSessionLedger,
+  {
+    db: Db;
+    inside: (
+      stage: OriginalRoomEmissionStage,
+      tx: DbTransaction,
+      emitter: OriginalDownstreamRoomEmitter,
+      roomId: string,
+      agentId: string,
+      sessionId: string,
+      runtime: string
+    ) => Readonly<GrantedDocTargetBinding> | null;
+  }
+>();
 
 /** One `(room, agent) → session` binding, as the convergence paths read it. */
 export interface RoomSessionBinding {
@@ -74,6 +113,8 @@ const BINDING_COLUMNS = {
 
 /** Session-id-keyed reads and writes over `room_sessions`, plus which ids are dead. */
 export class RoomSessionLedger {
+  /** Dedicated target facts never follow replacement of the ordinary TS parameter field. */
+  readonly #fixedDocTargetDb: Db;
   /**
    * Open the ledger over one database.
    *
@@ -84,7 +125,105 @@ export class RoomSessionLedger {
   constructor(
     private readonly db: Db,
     private readonly now: () => number = () => Date.now()
-  ) {}
+  ) {
+    this.#fixedDocTargetDb = db;
+    originalLedgerTargetReads.set(this, {
+      db,
+      inside: (stage, tx, emitter, roomId, agentId, sessionId, runtime) => {
+        const rows = readOriginalRoomEmissionTargetBindingRow(
+          stage,
+          db,
+          tx,
+          emitter,
+          roomId,
+          agentId,
+          sessionId,
+          runtime
+        );
+        return rows.length === 1 ? Object.freeze({ ...rows[0] }) : null;
+      },
+    });
+  }
+
+  /** Read one approved local target binding; never creates a session, author or claim. */
+  readGrantedDocTargetBinding(
+    roomId: string,
+    approvedAgentId: string,
+    approvedCanonicalSessionId: string,
+    approvedRuntime: string
+  ): Readonly<GrantedDocTargetBinding> | null {
+    return this.#readDocTarget(
+      this.#fixedDocTargetDb,
+      roomId,
+      approvedAgentId,
+      approvedCanonicalSessionId,
+      approvedRuntime
+    );
+  }
+  #readDocTarget(
+    executor: Db | DbTransaction,
+    roomId: string,
+    approvedAgentId: string,
+    approvedCanonicalSessionId: string,
+    approvedRuntime: string
+  ): Readonly<GrantedDocTargetBinding> | null {
+    if (
+      [roomId, approvedAgentId, approvedCanonicalSessionId, approvedRuntime].some(
+        (value) => typeof value !== 'string' || !value.length || value.length > 4096
+      )
+    )
+      return null;
+    const rows = executor
+      .select({
+        roomId: rooms.id,
+        targetAuthorId: authors.id,
+        targetAgentId: agents.id,
+        targetSessionId: sessionMetadata.sessionId,
+        targetRuntime: agents.runtime,
+        targetAgentPath: agents.projectPath,
+      })
+      .from(rooms)
+      .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
+      .innerJoin(
+        authors,
+        and(
+          eq(authors.id, roomMembers.authorId),
+          eq(authors.kind, 'agent'),
+          isNull(authors.retiredAt)
+        )
+      )
+      .innerJoin(
+        agents,
+        and(eq(agents.projectPath, authors.naturalKey), eq(agents.id, authors.mintedForManifestId))
+      )
+      .innerJoin(
+        roomSessions,
+        and(eq(roomSessions.roomId, rooms.id), eq(roomSessions.authorId, authors.id))
+      )
+      .innerJoin(
+        sessionMetadata,
+        and(
+          eq(sessionMetadata.sessionId, roomSessions.sessionId),
+          eq(sessionMetadata.agentPath, agents.projectPath),
+          eq(sessionMetadata.runtime, agents.runtime)
+        )
+      )
+      .where(
+        and(
+          eq(rooms.id, roomId),
+          eq(rooms.archived, false),
+          eq(agents.id, approvedAgentId),
+          eq(agents.status, 'active'),
+          eq(agents.runtime, approvedRuntime),
+          eq(roomSessions.sessionId, approvedCanonicalSessionId),
+          sql`NOT EXISTS (SELECT 1 FROM ${communityRoomMirrors}
+          WHERE ${communityRoomMirrors.localRoomId} = ${rooms.id})`
+        )
+      )
+      .limit(2)
+      .all();
+    return rows.length === 1 ? Object.freeze(rows[0]) : null;
+  }
 
   /**
    * Every binding this install holds — the backfill sweep's input.
@@ -311,4 +450,22 @@ export class RoomSessionLedger {
     }
     return successor;
   }
+}
+
+/** Fixed frame-only query; no generic public executor or structural checker is accepted. */
+export function readOriginalLedgerTargetInsideEmission(
+  ledger: RoomSessionLedger,
+  db: Db,
+  stage: OriginalRoomEmissionStage,
+  tx: DbTransaction,
+  emitter: OriginalDownstreamRoomEmitter,
+  roomId: string,
+  agentId: string,
+  sessionId: string,
+  runtime: string
+): Readonly<GrantedDocTargetBinding> | null {
+  const own = originalLedgerTargetReads.get(ledger);
+  if (!own || own.db !== db) throw new Error('ORIGINAL_ROOM_TARGET_LEDGER_REQUIRED');
+  requireOriginalRoomEmissionFrameTransaction(stage, db, tx, emitter);
+  return own.inside(stage, tx, emitter, roomId, agentId, sessionId, runtime);
 }

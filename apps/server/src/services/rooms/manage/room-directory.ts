@@ -27,10 +27,10 @@ import { markRoomRead as markRoomNotificationsRead } from '../../notifications/n
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import { bridgeInfo, type RoomProjection } from '../service/room-projection.js';
 import type { RoomRoster } from '../room-roster.js';
-import { parseEntryBody } from '../room-rows.js';
+import { parseEntryBody } from '../data/room-rows.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';

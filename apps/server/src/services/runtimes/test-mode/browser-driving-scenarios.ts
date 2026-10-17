@@ -30,10 +30,10 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
   createRecordingHandlers,
-  devtoolsCaptureStore,
   emitToSession,
-  type DrivingAnswer,
-} from '../../session/index.js';
+} from '../../session/browser-seat/index.js';
+import { devtoolsCaptureStore } from '../../session/devtools-capture-store.js';
+import type { DrivingAnswer } from '../../session/index.js';
 import type { RawSessionEvent } from '../../session/session-state-projector.js';
 import type { ScenarioFn } from './scenario-store.js';
 

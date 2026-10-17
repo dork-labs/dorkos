@@ -1,3 +1,15 @@
+import type { RoomWorktreeRefreshTarget } from './room-worktree-refresh.js';
+import { readOriginalRoomRunnerLaunch } from '../room-turn-runner.js';
+import {
+  executeOriginalRoomWorktreeLaunch,
+  executeOriginalRoomWorktreeRetirement,
+} from './room-worktree-manager.js';
+import {
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  readInstallationRoomMutationRoots,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
 /**
  * Where a room turn stands, and which of the room's folders it may reach
  * (spec `agent-home-desk` §5.1).
@@ -65,9 +77,12 @@ import { logger } from '../../../lib/logger.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { logResolvedCwd } from '../../workspace/session-cwd-rung.js';
 import type { AuthorRegistry } from '../author-registry.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomSessionLedger } from '../session-bindings/room-session-ledger.js';
-import type { RoomWorktreeManager } from './room-worktree-manager.js';
+import {
+  executeOriginalRoomWorktreePlacement,
+  type RoomWorktreeManager,
+} from './room-worktree-manager.js';
 import { launchFiles, type RoomWorktreeRefreshDeps } from './room-worktree-refresh.js';
 
 /** Where one room turn stands, and what it may reach. */
@@ -121,12 +136,10 @@ export function roomTurnGrants(worktree: string, repo: string, cwd: string): Dir
  * Place one room turn: at home, with the room's folders granted when it has
  * files of its own.
  *
- * **Never throws, and degrades to "no files".** A room with no files is the
- * ordinary case (`NOT_A_PROJECT_ROOM`). Anything else — no git, a worktree that
- * cannot be made, a disk error — is logged and the turn runs at home with no
- * files section and no grants: an agent that cannot reach the room's files is
- * told nothing about them, which is honest, where failing the turn would cost a
- * person their answer over a folder.
+ * A room with no files is the ordinary case (`NOT_A_PROJECT_ROOM`). Authority
+ * and scope refusals propagate; they cannot turn into an at-home provider
+ * launch. The fixed Manager projects files and grants while its original
+ * placement scope remains held.
  *
  * @param worktrees - The manager, or `null`/`undefined` where none is wired.
  * @param roomId - The room being answered.
@@ -138,7 +151,8 @@ export async function resolveRoomTurnPlace(
   worktrees: RoomWorktreeManager | null | undefined,
   roomId: string,
   agentPath: string,
-  agentName: string
+  agentName: string,
+  originalPlacement?: object
 ): Promise<RoomTurnPlace> {
   // The same `[cwd] resolved` line every other turn boundary writes, so an
   // operator asking "where did that agent work" finds room turns too.
@@ -149,36 +163,13 @@ export async function resolveRoomTurnPlace(
     worktree: null,
     files: null,
   };
-  if (!worktrees) return atHome;
-  let handle: Awaited<ReturnType<RoomWorktreeManager['ensureWorktree']>>;
+  if (!worktrees || !originalPlacement) return atHome;
   try {
-    handle = await worktrees.ensureWorktree(roomId, agentPath, agentName);
+    return await executeOriginalRoomWorktreePlacement(worktrees, originalPlacement);
   } catch (err) {
     if (err instanceof RoomError && err.code === 'NOT_A_PROJECT_ROOM') return atHome;
-    logger.warn(
-      '[rooms] could not open this agent’s copy of the room’s files; answering without it',
-      {
-        roomId,
-        error: err instanceof Error ? err.message : String(err),
-      }
-    );
-    return atHome;
+    throw err;
   }
-  // A commit in the copy writes its branch's reflog here, and a sandboxed shell
-  // may not create folders beside the ones it is granted — so the server, which
-  // owns `repo/.git`, makes sure the granted folder is there first.
-  await fs
-    .mkdir(path.join(handle.repo, '.git', 'logs', 'refs', 'heads', 'room'), { recursive: true })
-    .catch(() => undefined);
-  const files = await worktrees.turnFilesContext(roomId, agentPath, agentName, handle.path);
-  return {
-    cwd: agentPath,
-    additionalDirectories: existsSync(handle.path)
-      ? roomTurnGrants(handle.path, handle.repo, agentPath)
-      : [],
-    worktree: handle.path,
-    files,
-  };
 }
 
 /**
@@ -266,37 +257,71 @@ export interface RoomTurnLaunch {
  */
 export function roomTurnLaunchStep(
   deps: RoomTurnLaunchDeps,
-  turn: { roomId: string; worktree: string; agentPath: string; files: RoomContextFiles | null }
+  turn: { roomId: string; worktree: string; agentPath: string; files: RoomContextFiles | null },
+  request?: import('../room-turn-port.js').RoomTurnRequest
 ): (sessionId: string) => Promise<RoomTurnLaunch> {
+  void turn;
   return async (sessionId) => {
-    const others = deps.boundSessionIds().filter((bound) => bound !== sessionId);
-    const idle = async (): Promise<boolean> => {
-      for (const bound of others) {
-        const running = await deps.isTurnInFlight(bound).catch(() => true);
-        if (running) return false;
-      }
-      return true;
-    };
-    const busy: RoomTurnLaunch = turn.files
-      ? { files: { ...turn.files, refresh: { kind: 'held', reason: 'busy', moved: null } } }
-      : {};
-    if (!(await idle())) {
-      logger.debug(
-        '[rooms] another session of this agent in this room is running; not touching its copy',
-        { roomId: turn.roomId }
-      );
-      return busy;
+    if (!request) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    const launch = readOriginalRoomRunnerLaunch(request);
+    if (!launch || launch.sessionId !== sessionId)
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    return executeOriginalRoomWorktreeLaunch(deps.worktrees as RoomWorktreeManager, request);
+  };
+}
+/** Finite original launch body. Only the private original Trigger capture supplies its data/reads. */
+export async function runOwnedRoomTurnLaunchStep(
+  deps: RoomTurnLaunchDeps,
+  turn: { roomId: string; worktree: string; agentPath: string; files: RoomContextFiles | null },
+  sessionId: string,
+  context: InstallationRoomMutationContext
+): Promise<RoomTurnLaunch> {
+  const others = deps.boundSessionIds().filter((bound) => bound !== sessionId);
+  const idle = async (): Promise<boolean> => {
+    for (const bound of others) {
+      const running = await deps.isTurnInFlight(bound).catch(() => true);
+      if (running) return false;
     }
-    await deps.worktrees.retireLegacyPlumbing(turn.roomId, turn.worktree, turn.agentPath);
-    const target = deps.worktrees.refreshTarget(turn.roomId, turn.worktree);
-    if (!turn.files || !target) return {};
-    const files = await launchFiles(target, turn.files, {
+    return true;
+  };
+  const busy: RoomTurnLaunch = turn.files
+    ? { files: { ...turn.files, refresh: { kind: 'held', reason: 'busy', moved: null } } }
+    : {};
+  if (!(await idle())) {
+    logger.debug(
+      '[rooms] another session of this agent in this room is running; not touching its copy',
+      { roomId: turn.roomId }
+    );
+    return busy;
+  }
+  await checkInstallationRoomMutationTarget(context, turn.worktree);
+  await executeOriginalRoomWorktreeRetirement(
+    deps.worktrees as RoomWorktreeManager,
+    turn.roomId,
+    turn.worktree,
+    turn.agentPath,
+    context
+  );
+  const roots = readInstallationRoomMutationRoots(context);
+  const target: RoomWorktreeRefreshTarget = {
+    worktree: turn.worktree,
+    repo: roots.repoPath,
+    ceiling: roots.homePath,
+    branch: `room/${path.basename(turn.worktree)}`,
+  };
+  if (!turn.files || !target) return {};
+  const files = await launchFiles(
+    target,
+    turn.files,
+    {
       stillIdle: idle,
       describeCommits: deps.describeCommits,
       forgetMoved: (absPaths) => deps.forgetBaselines([sessionId, ...others], absPaths),
-    });
-    return { files };
-  };
+    },
+    context
+  );
+  requireInstallationRoomMutationTarget(context, turn.worktree);
+  return { files };
 }
 
 /** The reads {@link roomSessionPlace} needs, injected so a test needs no server. */

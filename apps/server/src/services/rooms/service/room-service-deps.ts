@@ -22,7 +22,7 @@ import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
 import type { CanvasDocumentStore, CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import type { RoomDispatchSummary, RoomTurnRunner } from '../room-trigger.js';
@@ -121,6 +121,22 @@ export interface RoomMirrorWritePolicy {
   ): PreparedMirrorWrite | null;
 }
 
+/** Stored target facts only; original F2 grant/SDK/source authority is separate. */
+export interface GrantedDocTargetBinding {
+  readonly roomId: string;
+  readonly targetAuthorId: string;
+  readonly targetAgentId: string;
+  readonly targetSessionId: string;
+  readonly targetRuntime: string;
+  readonly targetAgentPath: string;
+}
+export type GrantedDocTargetBindingReader = (
+  roomId: string,
+  approvedAgentId: string,
+  approvedCanonicalSessionId: string,
+  approvedRuntime: string
+) => Readonly<GrantedDocTargetBinding> | null;
+
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
   store: RoomStore;
@@ -141,6 +157,8 @@ export interface RoomServiceDeps {
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */
   turns: RoomTurnRunner;
+  /** Constructor-captured passive DATA at the actual original launch boundary. */
+  observeOriginalLaunch?: (data: Readonly<{ sessionId: string; roomId: string }>) => void;
   /**
    * Where that turn runs, when the room has files of its own (spec §3.5).
    *

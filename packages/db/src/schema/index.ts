@@ -35,6 +35,7 @@ export * from './connectors/connector-usage.js';
 export * from './connectors/connector-execution-state.js';
 export * from './connectors/connector-local-state.js';
 export * from './rooms.js';
+export * from './rooms/doc-admissions.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';
 export * from './bridges.js';
@@ -45,6 +46,7 @@ export * from './projects.js';
 export * from './extensions/extension-decisions.js';
 export * from './extensions/extension-agent-sends.js';
 export * from './canvas/channel.js';
+export * from './canvas/channel-tokens.js';
 export * from './browser/registry.js';
 
 export * from './session/session-locations.js';

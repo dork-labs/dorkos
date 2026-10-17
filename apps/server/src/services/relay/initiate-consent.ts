@@ -79,7 +79,8 @@
  */
 import { isDocumentSubject, type AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { InitiateConsentGate, InitiateConsentDecision } from '@dorkos/relay';
-import { requiresInitiateConsent, isConsoleSubject, AGENT_SUBJECT_PREFIX } from '@dorkos/relay';
+import { requiresInitiateConsent, isConsoleSubject } from '@dorkos/relay/consent-scope';
+import { AGENT_SUBJECT_PREFIX } from '@dorkos/relay/subjects';
 import { parseHumanSubject } from './human-subject.js';
 import { BRIDGE_PRINCIPAL_PREFIX, parseBridgePrincipal } from './bridge-principal.js';
 

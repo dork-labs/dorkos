@@ -31,7 +31,7 @@
 import type { RoomMember } from '@dorkos/shared/room-schemas';
 import type { AuthorRecord } from '../author-registry.js';
 import type { MentionCandidate } from '../mentions.js';
-import type { RoomAgentLookup } from '../room-errors.js';
+import type { RoomAgentLookup } from '../data/room-errors.js';
 
 /**
  * Whether an agent author still speaks for the directory it names.

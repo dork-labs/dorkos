@@ -34,7 +34,13 @@ export interface DocChannelReceiptRebinder {
   /** Suspend an exact authenticated source observation only after SQLite ownership rollback. */
   onRebindFailed?(error: unknown): undefined;
   /** Revalidate and rebind one accepted receipt without changing its source authority. */
-  rebindAccepted(tx: DbTransaction, receiptId: string, fromId: string, toId: string): boolean;
+  rebindAccepted(
+    tx: DbTransaction,
+    receiptId: string,
+    fromId: string,
+    toId: string,
+    previousSourceScope?: string
+  ): boolean;
 }
 /** Lifecycle collaborators; no token authority exists until its own implementation arrives. */
 export interface DocChannelLifecycleOptions {
@@ -143,6 +149,12 @@ export class DocChannelLifecycle {
       .where(eq(canvasDocBatches.documentId, document.id))
       .all();
     for (const batch of batches) {
+      // Closing authority refuses new starts; retained native source evidence must not be rewritten.
+      if (
+        tx.get(sql`SELECT 1 FROM room_doc_admissions WHERE document_id=${document.id}
+        AND batch_id=${batch.batchId} LIMIT 1`)
+      )
+        continue;
       const receipt = this.receipt(tx, batch.admissionReceiptId);
       if (receipt && receipt.state !== 'accepted') continue;
       if (!['pending', 'waiting', 'accepted'].includes(batch.status)) continue;
@@ -266,10 +278,29 @@ export class DocChannelLifecycle {
       .from(canvasDocuments)
       .where(eq(canvasDocuments.scope, from))
       .all();
-    if (!documents.length) return 0;
+    const targetDocuments = this.db
+      .select({
+        id: canvasDocuments.id,
+        scope: canvasDocuments.scope,
+        sourceKey: canvasDocuments.sourceKey,
+      })
+      .from(canvasDocuments)
+      .innerJoin(canvasDocGrants, eq(canvasDocuments.id, canvasDocGrants.documentId))
+      .where(
+        and(
+          eq(canvasDocGrants.targetSessionId, from.slice(8)),
+          isNull(canvasDocGrants.revokedAt),
+          sql`${canvasDocuments.scope} LIKE 'session:%'`
+        )
+      )
+      .all();
+    const affected = [
+      ...new Map([...documents, ...targetDocuments].map((row) => [row.id, row])).values(),
+    ];
+    if (!affected.length) return 0;
     const now = this.now();
     this.db.transaction((tx) => {
-      for (const document of documents) {
+      for (const document of affected) {
         this.opened(tx, document);
         const prior = tx
           .select()
@@ -348,7 +379,28 @@ export class DocChannelLifecycle {
       .from(canvasDocuments)
       .where(eq(canvasDocuments.scope, from))
       .all();
+    const targetDocuments = tx
+      .select({
+        id: canvasDocuments.id,
+        scope: canvasDocuments.scope,
+        sourceKey: canvasDocuments.sourceKey,
+      })
+      .from(canvasDocuments)
+      .innerJoin(canvasDocGrants, eq(canvasDocuments.id, canvasDocGrants.documentId))
+      .where(
+        and(
+          eq(canvasDocGrants.targetSessionId, fromId),
+          isNull(canvasDocGrants.revokedAt),
+          sql`${canvasDocuments.scope} LIKE 'session:%'`
+        )
+      )
+      .all();
+    const affected = [
+      ...new Map([...documents, ...targetDocuments].map((row) => [row.id, row])).values(),
+    ];
+    const owners = new Set(documents.map((row) => row.id));
     let uncertain = false;
+    for (const document of affected) assertIdentityMoveTarget(tx, document.id, fromId, toId);
     for (const document of documents) {
       if (
         document.sourceKey !== null &&
@@ -382,6 +434,18 @@ export class DocChannelLifecycle {
         .where(eq(canvasDocChannels.documentId, document.id))
         .run();
     }
+    for (const document of affected) {
+      if (owners.has(document.id)) continue;
+      tx.update(canvasDocGrants)
+        .set({ targetSessionId: toId })
+        .where(
+          and(
+            eq(canvasDocGrants.documentId, document.id),
+            eq(canvasDocGrants.targetSessionId, fromId)
+          )
+        )
+        .run();
+    }
     const changed = tx
       .update(canvasDocuments)
       .set({ scope: to })
@@ -394,11 +458,18 @@ export class DocChannelLifecycle {
         updatedAt: now,
       })
       .where(
-        and(eq(canvasDocIdentityIntents.fromScope, from), eq(canvasDocIdentityIntents.toScope, to))
+        and(
+          eq(canvasDocIdentityIntents.fromScope, from),
+          eq(canvasDocIdentityIntents.toScope, to),
+          inArray(
+            canvasDocIdentityIntents.documentId,
+            affected.map((row) => row.id)
+          )
+        )
       )
       .run();
     // Uncommitted canonical state permits the source to revalidate real grant authority.
-    for (const document of documents) {
+    for (const document of affected) {
       const batches = tx
         .select()
         .from(canvasDocBatches)
@@ -408,16 +479,25 @@ export class DocChannelLifecycle {
         const receipt = this.receipt(tx, batch.admissionReceiptId);
         if (batch.admissionReceiptId && !receipt) throw new DocChannelIdentityBlockedError();
         if (receipt?.state === 'accepted') {
+          const movedTarget = receipt.sessionId === fromId;
+          const destination = movedTarget ? toId : receipt.sessionId;
+          if (!owners.has(document.id) && !movedTarget) continue;
           if (
-            receipt.sessionId !== fromId ||
-            !this.sameTarget(tx, receipt, toId) ||
-            !this.options.receipts?.rebindAccepted(tx, receipt.id, fromId, toId)
+            !this.sameTarget(tx, receipt, destination) ||
+            !this.options.receipts?.rebindAccepted(
+              tx,
+              receipt.id,
+              receipt.sessionId,
+              destination,
+              owners.has(document.id) ? from : undefined
+            )
           )
             throw new DocChannelIdentityBlockedError();
-          this.moveQueue(tx, receipt, fromId, toId);
+          if (movedTarget) this.moveQueue(tx, receipt, fromId, toId);
         } else if (
           receipt &&
-          ['dispatching', 'turn_started', 'outcome_unknown'].includes(receipt.state)
+          ['dispatching', 'turn_started', 'outcome_unknown'].includes(receipt.state) &&
+          (owners.has(document.id) || receipt.sessionId === fromId)
         ) {
           uncertain = true;
           tx.update(canvasDocBatches)
@@ -438,7 +518,14 @@ export class DocChannelLifecycle {
         updatedAt: now,
       })
       .where(
-        and(eq(canvasDocIdentityIntents.fromScope, from), eq(canvasDocIdentityIntents.toScope, to))
+        and(
+          eq(canvasDocIdentityIntents.fromScope, from),
+          eq(canvasDocIdentityIntents.toScope, to),
+          inArray(
+            canvasDocIdentityIntents.documentId,
+            affected.map((row) => row.id)
+          )
+        )
       )
       .run();
     return changed;

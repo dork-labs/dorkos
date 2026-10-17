@@ -159,6 +159,55 @@ function levelForTurn(
     : base;
 }
 
+/** Copy only turn-level DATA at the native stream's original construction. */
+export function captureTurnLevelOptions(opts: MessageOpts | undefined): Readonly<MessageOpts> {
+  const bound = (value: import('@dorkos/shared/agent-runtime').TurnPermissionBound) =>
+    value === 'runtime-default'
+      ? value
+      : Object.freeze({
+          asks: value.asks,
+          reach: value.reach,
+          ...(value.auto === true ? { auto: true as const } : {}),
+        });
+  const permissionMode = opts?.permissionMode;
+  const ceiling = opts?.permissionCeiling;
+  return Object.freeze({
+    ...(permissionMode !== undefined ? { permissionMode } : {}),
+    ...(ceiling !== undefined
+      ? {
+          permissionCeiling:
+            typeof ceiling === 'string'
+              ? ceiling
+              : 'asks' in ceiling
+                ? bound(ceiling)
+                : Object.freeze(ceiling.map(bound)),
+        }
+      : {}),
+  });
+}
+
+/**
+ * Record one genuine turn's permission DATA without opening another runtime stream.
+ * The registry uses this for captured original native sends; ordinary sends use
+ * the same calculation below. This records a downstream bound, never grants a turn.
+ *
+ * @param runtime - The selected original runtime whose modes describe the turn.
+ * @param stored - Its current stored session mode, or none when unavailable.
+ * @param sessionId - The original turn's session id.
+ * @param opts - The exact options forwarded to the native entry.
+ */
+export function recordRuntimeTurnLevel(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  sessionId: string,
+  opts?: MessageOpts,
+  beforeRecord?: () => void
+): void {
+  const level = levelForTurn(runtime, stored, opts);
+  beforeRecord?.();
+  remember(turnLevels, sessionId, level);
+}
+
 /**
  * Wrap a runtime so every turn sent through it records the level it runs at.
  * Applied once, at the registry's registration seam, which every turn passes
@@ -190,7 +239,7 @@ export function recordTurnLevels(
           } catch {
             stored = undefined;
           }
-          remember(turnLevels, sessionId, levelForTurn(target, stored, opts));
+          recordRuntimeTurnLevel(target, stored, sessionId, opts);
           return target.sendMessage(sessionId, content, opts);
         };
       }

@@ -1,3 +1,4 @@
+import { originalRelayReceiptNeedsNativeDispatch } from '../../canvas/doc-channel/delivery/relay-authority.js';
 /**
  * Durable acceptance and dispatch preflight for private session messages.
  *
@@ -25,7 +26,7 @@ import {
 import {
   documentTransaction,
   executeDocumentWork,
-} from '../../canvas/doc-channel/store-transaction.js';
+} from '../../canvas/doc-channel/storage/store-transaction.js';
 import { requireSynchronous, assertDispatchBinding } from './synchronous-source.js';
 import { rebindAcceptedReceipt } from './receipt-rebind.js';
 import { documentReceiptReady } from './document-receipt-guard.js';
@@ -149,7 +150,8 @@ export class PrivateSessionMessageAcceptanceService {
     tx: DbTransaction,
     receiptId: string,
     fromSessionId: string,
-    toSessionId: string
+    toSessionId: string,
+    previousSourceScope?: string
   ): boolean {
     return executeDocumentWork(tx, (scoped) =>
       rebindAcceptedReceipt(scoped, receiptId, fromSessionId, toSessionId, (receipt) =>
@@ -157,7 +159,8 @@ export class PrivateSessionMessageAcceptanceService {
           scoped,
           receipt,
           toSessionId,
-          this.now().toISOString()
+          this.now().toISOString(),
+          previousSourceScope
         )
       )
     );
@@ -228,6 +231,11 @@ export class PrivateSessionMessageAcceptanceService {
             'This private message is no longer available for dispatch.'
           );
         }
+        if (originalRelayReceiptNeedsNativeDispatch(this.db, tx, receipt.id))
+          throw new PrivateSessionMessageRefusalError(
+            'document_native_relay_owned',
+            'This document message belongs to its original native Relay dispatcher.'
+          );
         assertDispatchBinding(receipt, binding);
         if (
           prepared.sourceKind !== receipt.sourceKind ||

@@ -11,7 +11,7 @@
  *
  * @module services/runtimes/codex/transport/exec-transport
  */
-import { Codex } from '@openai/codex-sdk';
+import type { Codex } from '@openai/codex-sdk';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import { runtimeInheritedNames } from '../../shared/runtime-environment-config.js';
 import { buildCodexOptions, codexKeepAwakeConfig } from '../codex-options.js';
@@ -55,7 +55,7 @@ export class ExecCodexTransport implements CodexTransport {
       request.cwd,
       request.writableDirectories
     );
-    const client = this.clientForTurn(
+    const client = await this.clientForTurn(
       request.binary,
       request.tools.agentTokenEnv,
       request.tools.managed,
@@ -63,6 +63,7 @@ export class ExecCodexTransport implements CodexTransport {
       request.tools.connectorTools,
       request.launch.home === 'credits' ? request.launch.credits : null
     );
+    request.signal.throwIfAborted();
     const thread =
       request.boundThreadId !== undefined
         ? client.resumeThread(request.boundThreadId, threadOptions)
@@ -107,14 +108,15 @@ export class ExecCodexTransport implements CodexTransport {
    * bearers), or runs on credits. Constructing a client is cheap next to
    * spawning the model subprocess.
    */
-  private clientForTurn(
+  private async clientForTurn(
     binary: string,
     tokenEnv: Record<string, string>,
     managed: CodexManagedMcpServers,
     dorkosTools: DorkosMcpInjection | null,
     connectorTools: ConnectorRuntimeMcpInjection | null,
     credits: CreditsLaunch | null
-  ): Codex {
+  ): Promise<Codex> {
+    const { Codex } = await import('@openai/codex-sdk');
     if (credits) {
       return new Codex(
         withCodexCredits(

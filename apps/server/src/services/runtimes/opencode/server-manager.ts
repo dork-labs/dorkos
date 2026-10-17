@@ -22,7 +22,7 @@
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
+import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CreditsUnavailableError } from '../../core/cloud/credits-protocols.js';
 import { configManager } from '../../core/config-manager.js';
@@ -455,8 +455,12 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     this.running = plan;
 
     let url: string;
+    let createOpencodeClient: typeof import('@opencode-ai/sdk').createOpencodeClient;
     try {
       url = await this.waitForReady(child);
+      // Keep native manager/owner identity synchronous; load only the SDK driver
+      // at this existing async boot boundary, under original child cleanup.
+      ({ createOpencodeClient } = await import('@opencode-ai/sdk'));
       // The ready line and an immediate crash can land in the same tick; a
       // dead child must never be handed out as "ready".
       if (child.exitCode !== null || child.signalCode !== null) {

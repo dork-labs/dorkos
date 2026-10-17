@@ -282,7 +282,28 @@ function compactingTurn(options: { hold: boolean }): ScenarioFn {
  * names in its own answer which path served the turn (DOR-1326). All four
  * families are inert unless selected via `POST /api/test/scenario`.
  */
+/** Identity-only selection; only the original native runtime private lane can execute this script. */
+export const originalRoomPartialAckReplyScenario: ScenarioFn = async function* () {
+  yield refuseOriginalNativeScenario(
+    'Original Room partial reply scenario requires its native runtime lane.'
+  );
+};
+
+/** Only the constructor-owned native turn can assign the canonical ID and execute this held script. */
+export const originalNativeCanonicalRekeyScenario: ScenarioFn = async function* () {
+  yield refuseOriginalNativeScenario(
+    'Original canonical recovery requires its native runtime lane'
+  );
+};
+
+/** Refuse a selected identity marker before its generator can emit any event. */
+function refuseOriginalNativeScenario(message: string): never {
+  throw new Error(message);
+}
+
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
+  'native-canonical-rekey': originalNativeCanonicalRekeyScenario,
+  'native-room-partial-ack-reply': originalRoomPartialAckReplyScenario,
   ...DEMO_SCENARIOS,
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,

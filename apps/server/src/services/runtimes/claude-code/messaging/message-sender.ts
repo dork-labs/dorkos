@@ -1,3 +1,13 @@
+import {
+  consumeOriginalRelaySdkLaunch,
+  startOriginalRelaySdkQuery,
+  drainOriginalRelaySdkQuery,
+  type OriginalPreparedRelaySdkLaunch,
+} from './relay/relay-sdk-launch.js';
+import {
+  captureClaudeOriginalQueryCurrent,
+  requireOriginalClaudeRoomQueryStart,
+} from '../claude-code-runtime.js';
 /**
  * SDK query execution -- extracted from ClaudeCodeRuntime.sendMessage()
  * for file size management.
@@ -8,7 +18,7 @@
  *
  * @module services/runtimes/claude-code/message-sender
  */
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import {
@@ -121,7 +131,8 @@ export async function* executeSdkQuery(
   session: AgentSession,
   opts: MessageSenderOpts,
   messageOpts?: MessageOpts,
-  retryDepth = 0
+  retryDepth = 0,
+  relayLaunch?: OriginalPreparedRelaySdkLaunch
 ): AsyncGenerator<StreamEvent> {
   session.lastActivity = Date.now();
   session.turnStartedAwake = performance.now();
@@ -141,7 +152,7 @@ export async function* executeSdkQuery(
   // one directory while the process ran in another (`dispatch-boundary.ts`).
   const effectiveCwd = resolveEffectiveCwd(opts, messageOpts);
   try {
-    await validateDispatchBoundary(effectiveCwd);
+    if (!relayLaunch) await validateDispatchBoundary(effectiveCwd);
   } catch {
     logger.warn('[sendMessage] boundary violation', { session: sessionId, effectiveCwd });
     yield boundaryViolationEvent(effectiveCwd);
@@ -153,14 +164,16 @@ export async function* executeSdkQuery(
   // read as "no change" to the pump's relaunch fingerprint.
   let resolved: Awaited<ReturnType<typeof resolveLaunch>>;
   try {
-    resolved = await resolveLaunch({
-      sessionId,
-      content,
-      session,
-      opts,
-      ...(messageOpts !== undefined ? { messageOpts } : {}),
-      effectiveCwd,
-    });
+    resolved = relayLaunch
+      ? consumeOriginalRelaySdkLaunch(relayLaunch, sessionId, content, session, opts, messageOpts)
+      : await resolveLaunch({
+          sessionId,
+          content,
+          session,
+          opts,
+          ...(messageOpts !== undefined ? { messageOpts } : {}),
+          effectiveCwd,
+        });
   } catch (err) {
     // A session set to DorkOS credits with no live token is refused with its
     // own typed event, so the chat can offer Retry and the person's own
@@ -180,8 +193,17 @@ export async function* executeSdkQuery(
 
   // Hold the input stream open so the subprocess survives past the result message
   // and can answer getContextUsage() (closed below once the turn completes).
+  const requireQueryCurrent = captureClaudeOriginalQueryCurrent(session);
+  const { query } = await import('@anthropic-ai/claude-agent-sdk');
+  requireQueryCurrent?.();
   const heldPrompt = createHeldUserPrompt(enrichedContent);
-  const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
+  const queryInput = { prompt: heldPrompt.prompt, options: sdkOptions };
+  const captureRoomQuery = requireOriginalClaudeRoomQueryStart(session);
+  const relayQuery = relayLaunch
+    ? await startOriginalRelaySdkQuery(relayLaunch, session)
+    : undefined;
+  const agentQuery = relayQuery?.query ?? query(queryInput);
+  captureRoomQuery?.(agentQuery);
   session.activeQuery = agentQuery;
 
   // Ending the held prompt sends the CLI's stdin an EOF, and from that moment
@@ -197,6 +219,7 @@ export async function* executeSdkQuery(
   // overwrite the successor's own record. Weak, so nothing has to clear it.
   const endStdin = (): void => {
     heldPrompt.close();
+    relayQuery?.endStdin();
     (session.stdinEndedQueries ??= new WeakSet()).add(agentQuery);
   };
 
@@ -277,6 +300,67 @@ export async function* executeSdkQuery(
   const streamStart = Date.now();
   const toolState = createToolState();
 
+  let relayFailed = false;
+  let relayFirst: unknown;
+  // Join this scope to its captured cleanup before returning or reporting failure.
+  const drainOriginalCleanup = async () => {
+    // Always release the held input stream so the subprocess can never leak if we
+    // exit before the result message (error, interrupt, empty stream). Idempotent.
+    // Clearing the deadline here also covers the path where the race THREW —
+    // otherwise a rejected SDK promise would leave a live timer behind.
+    if (relayLaunch) {
+      // Preserve raw first cleanup failure including undefined; actual child drain is still attempted.
+      let failed = relayFailed;
+      let first = relayFirst;
+      const remember = (cause: unknown) => {
+        if (!failed) {
+          failed = true;
+          first = cause;
+        }
+      };
+      try {
+        deferredClose.release();
+      } catch (cause) {
+        remember(cause);
+      }
+      try {
+        endStdin();
+      } catch (cause) {
+        remember(cause);
+      }
+      try {
+        await drainOriginalRelaySdkQuery(relayLaunch, session);
+      } catch (cause) {
+        remember(cause);
+      }
+      if (failed) throw first;
+    } else {
+      deferredClose.release();
+      endStdin();
+    }
+    // Preserve the query reference for post-stream control methods (e.g.
+    // reloadPlugins) — but only when this frame still OWNS the active query
+    // (DOR-1088). Unconditional, this cleared whatever query happened to be
+    // active, so a frame that settled late stranded its successor: the newer
+    // turn kept streaming with `activeQuery` set to `undefined`, and every
+    // control call that reaches for it (interrupt, model change, context usage)
+    // found nothing to talk to. The recursion retry has the same shape — the
+    // inner frame installs and clears its own query, and this line then wiped
+    // the `lastQuery` the inner frame had just recorded.
+    if (session.activeQuery === agentQuery) {
+      session.lastQuery = agentQuery;
+      session.activeQuery = undefined;
+    }
+    if (session.liveHelperCount === liveHelperCount) session.liveHelperCount = undefined;
+    // Commit this turn's resume anchor for the next turn: the last main-thread
+    // assistant uuid, or undefined when the turn produced none (empty/error) so
+    // the next resume stays plain and keeps this turn's user message in context.
+    // Skipped when a recursion retry ran — that inner call set the correct value
+    // and this outer frame's local would clobber it.
+    if (!retriedViaRecursion) {
+      session.lastAssistantUuid = lastMainAssistantUuid;
+    }
+  };
   try {
     const sdkIterator = agentQuery[Symbol.asyncIterator]();
     let pendingSdkPromise: Promise<{
@@ -561,11 +645,21 @@ export async function* executeSdkQuery(
       }
     }
   } catch (err) {
+    if (relayLaunch) {
+      relayFailed = true;
+      relayFirst = err;
+      throw err;
+    } // Preserve raw first through owned drain.
     // A stale/absent `resumeSessionAt` anchor (transcript compacted or rewritten
     // out from under us) makes the CLI hard-fail. Drop the anchor and resume
     // plainly — this preserves history (unlike the resume-as-new path below) and
     // at worst re-admits a single phantom continue this one turn.
-    if (sdkOptions.resumeSessionAt && isAnchorNotFound(err) && retryDepth < MAX_RESUME_RETRIES) {
+    if (
+      !relayLaunch &&
+      sdkOptions.resumeSessionAt &&
+      isAnchorNotFound(err) &&
+      retryDepth < MAX_RESUME_RETRIES
+    ) {
       logger.warn('[sendMessage] resumeSessionAt anchor not found, retrying without anchor', {
         session: sessionId,
         retryDepth,
@@ -576,7 +670,12 @@ export async function* executeSdkQuery(
       yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);
       return;
     }
-    if (session.hasStarted && isResumeFailure(err) && retryDepth < MAX_RESUME_RETRIES) {
+    if (
+      !relayLaunch &&
+      session.hasStarted &&
+      isResumeFailure(err) &&
+      retryDepth < MAX_RESUME_RETRIES
+    ) {
       logger.warn('[sendMessage] resume failed for stale session, retrying as new', {
         session: sessionId,
         retryDepth,
@@ -626,34 +725,7 @@ export async function* executeSdkQuery(
     };
     emittedError = true;
   } finally {
-    // Always release the held input stream so the subprocess can never leak if we
-    // exit before the result message (error, interrupt, empty stream). Idempotent.
-    // Clearing the deadline here also covers the path where the race THREW —
-    // otherwise a rejected SDK promise would leave a live timer behind.
-    deferredClose.release();
-    endStdin();
-    // Preserve the query reference for post-stream control methods (e.g.
-    // reloadPlugins) — but only when this frame still OWNS the active query
-    // (DOR-1088). Unconditional, this cleared whatever query happened to be
-    // active, so a frame that settled late stranded its successor: the newer
-    // turn kept streaming with `activeQuery` set to `undefined`, and every
-    // control call that reaches for it (interrupt, model change, context usage)
-    // found nothing to talk to. The recursion retry has the same shape — the
-    // inner frame installs and clears its own query, and this line then wiped
-    // the `lastQuery` the inner frame had just recorded.
-    if (session.activeQuery === agentQuery) {
-      session.lastQuery = agentQuery;
-      session.activeQuery = undefined;
-    }
-    if (session.liveHelperCount === liveHelperCount) session.liveHelperCount = undefined;
-    // Commit this turn's resume anchor for the next turn: the last main-thread
-    // assistant uuid, or undefined when the turn produced none (empty/error) so
-    // the next resume stays plain and keeps this turn's user message in context.
-    // Skipped when a recursion retry ran — that inner call set the correct value
-    // and this outer frame's local would clobber it.
-    if (!retriedViaRecursion) {
-      session.lastAssistantUuid = lastMainAssistantUuid;
-    }
+    await drainOriginalCleanup();
   }
 
   // Detect empty streams that also never produced a done — zero content

@@ -17,7 +17,7 @@ import { nameForAgents, type AgentFacingNameDeps } from '../room-context.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import type { RoomAuthority } from '../service/room-authority.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError } from '../room-errors.js';
+import { RoomError } from '../data/room-errors.js';
 import type { RoomProjection } from '../service/room-projection.js';
 import { slugify } from '../service/room-slugs.js';
 import type { RoomStore } from '../room-store.js';

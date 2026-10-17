@@ -41,7 +41,7 @@
  *
  * @module server/services/rooms/repo/room-worktree-refresh
  */
-import { existsSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type {
   MainMoved,
@@ -50,8 +50,25 @@ import type {
   WorktreeRefreshOutcome,
 } from '@dorkos/shared/additional-context';
 import { logger } from '../../../lib/logger.js';
-import { RoomError } from '../room-errors.js';
-import { aheadBehind, assertRoomRepoConfigSafe, runGit, runGitRaw } from './room-repo-git.js';
+import { RoomError } from '../data/room-errors.js';
+import {
+  aheadBehind,
+  assertRoomRepoConfigSafe,
+  fastForwardRoomWorktree,
+  roomVerifiedTip,
+  roomSymbolicHead,
+  roomStatusRaw,
+  roomTrackedPathsRaw,
+  roomCommitCount,
+  roomChangedPathsRaw,
+  roomMergeBase,
+  roomLogRaw,
+} from './room-repo-git.js';
+import {
+  checkInstallationRoomMutationTarget,
+  requireInstallationRoomMutationTarget,
+  type InstallationRoomMutationContext,
+} from '../../canvas/doc-channel/writes/installation-room-writes.js';
 
 /** How many of `main`'s commits the heads-up lists before "and N more". */
 const MAIN_MOVED_MAX_COMMITS = 8;
@@ -124,16 +141,10 @@ function wasKilled(err: unknown): boolean {
 /**
  * Clean up after a fast-forward that failed.
  *
- * **The lock is removed only when the write was KILLED.** A git process killed
- * mid-checkout leaves the `index.lock` it held, and every later git command in
- * the copy — the agent's own included — then refuses to run. A git that merely
- * FAILED left nothing: git removes its own lock on every exit it controls. The
- * common failure is the lock itself — a person's shell, a git GUI or a leftover
- * process took it between the idle check and the write, and the merge refused
- * with "index.lock: File exists" — and that lock belongs to a process that may
- * still be running, so it is never touched. A lock that was there before the
- * write started is never touched either. The residual, stated: another process
- * taking the lock in the instant after ours was killed and before this runs.
+ * A post-kill lock is preserved. Native child completion and absence before
+ * launch do not identify the inode's owner after the wait. No existing launcher
+ * supplies an acquired lock receipt, so ordinary namespace exclusion cannot
+ * safely authorize its unlink. The warning names the retained lock for recovery.
  *
  * **What is NOT restored:** files the checkout had already written. Nothing is
  * reset, because a reset is a second write on a tree in an unknown state. The
@@ -146,48 +157,36 @@ function wasKilled(err: unknown): boolean {
  * @param lockedBefore - Whether it existed before the write started.
  * @param err - What the write threw.
  */
-export function afterFailedWrite(lock: string, lockedBefore: boolean, err: unknown): void {
+export async function afterFailedWrite(
+  lock: string,
+  lockedBefore: boolean,
+  err: unknown,
+  context: InstallationRoomMutationContext
+): Promise<void> {
   if (lockedBefore || !wasKilled(err) || !existsSync(lock)) return;
+  // A lock first observed after child death is not an acquired inode receipt:
+  // another process can own it. The existing owned Git launcher proves child
+  // completion, not who opened this pathname. Preserve it rather than unlink
+  // foreign work under exclusion-only context.
   try {
-    rmSync(lock, { force: true });
+    await checkInstallationRoomMutationTarget(context, lock);
+    requireInstallationRoomMutationTarget(context, lock);
     logger.warn(
-      '[rooms] a fast-forward of an agent’s copy stopped partway; removed its lock. The copy may ' +
-        'hold half-written files from main, which must be discarded before it can sync again',
+      '[rooms] a fast-forward of an agent’s copy stopped partway. Its remaining lock was ' +
+        'not removed because its owning process/inode could not be established; inspect ' +
+        'the copy before clearing the lock or discarding partial checkout changes',
       { worktree: path.basename(path.dirname(lock)) }
     );
-  } catch (err) {
-    logger.warn('[rooms] could not remove the lock a stopped fast-forward left', {
+  } catch (error) {
+    logger.warn('[rooms] the stopped fast-forward’s remaining lock was preserved', {
       worktree: path.basename(path.dirname(lock)),
-      error: err instanceof Error ? err.message : String(err),
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
 /** A git failure that means "not this copy's own branch", not "unreadable". */
 const SYMBOLIC_REF_DETACHED_EXIT = 1;
-
-/**
- * Run one read-only query in the copy, without taking optional locks (a status
- * read would otherwise rewrite the index the agent's own git is using).
- *
- * @param target - The copy.
- * @param args - The git arguments after `--no-optional-locks`.
- */
-function query(target: RoomWorktreeRefreshTarget, args: string[]): Promise<string> {
-  return runGit(['--no-optional-locks', ...args], target.worktree, target.ceiling);
-}
-
-/**
- * Run one read-only `-z` query and answer its entries, untrimmed — a path may
- * begin or end with a space, and a porcelain status line begins with one.
- *
- * @param target - The copy.
- * @param args - The git arguments after `--no-optional-locks`; include `-z`.
- */
-async function queryList(target: RoomWorktreeRefreshTarget, args: string[]): Promise<string[]> {
-  const out = await runGitRaw(['--no-optional-locks', ...args], target.worktree, target.ceiling);
-  return nulList(out.toString('utf-8'));
-}
 
 /**
  * Split NUL-separated git output into its entries.
@@ -333,7 +332,8 @@ function unsafeConfig(
  */
 export async function refreshRoomWorktree(
   target: RoomWorktreeRefreshTarget,
-  deps: RoomWorktreeRefreshDeps
+  deps: RoomWorktreeRefreshDeps,
+  context?: InstallationRoomMutationContext
 ): Promise<{ outcome: WorktreeRefreshOutcome; mainTip: string | null }> {
   const log = { worktree: path.basename(target.worktree) };
   const unreadable = (
@@ -355,7 +355,7 @@ export async function refreshRoomWorktree(
   };
 
   // 0. The room's shared git settings name no program git would run. Every
-  //    command below re-asks (the audit sits in `runGitRaw`, cached by the
+  //    command below re-asks (the audit sits in the private fixed launchers, cached by the
   //    file's stamp), so settings written mid-refresh stop it too — including
   //    the fast-forward, whose checkout is what would run a smudge filter.
   try {
@@ -368,7 +368,12 @@ export async function refreshRoomWorktree(
   // 1. The target, captured once.
   let mainTip: string;
   try {
-    mainTip = await query(target, ['rev-parse', '--verify', '--quiet', 'refs/heads/main^{commit}']);
+    mainTip = await roomVerifiedTip(
+      target.worktree,
+      target.ceiling,
+      'refs/heads/main^{commit}',
+      true
+    );
     if (!/^[0-9a-f]{40,64}$/.test(mainTip)) throw new Error(`not a commit: ${mainTip}`);
   } catch (err) {
     return unreadable('main', err, null, null);
@@ -384,7 +389,7 @@ export async function refreshRoomWorktree(
     // 2. On its own branch.
     let head: string;
     try {
-      head = await query(target, ['symbolic-ref', '--quiet', 'HEAD']);
+      head = await roomSymbolicHead(target.worktree, target.ceiling);
     } catch (err) {
       if ((err as { code?: unknown }).code === SYMBOLIC_REF_DETACHED_EXIT) {
         return await held('off-branch');
@@ -394,32 +399,32 @@ export async function refreshRoomWorktree(
     if (head !== `refs/heads/${target.branch}`) return await held('off-branch');
 
     // 3. No tracked or untracked change.
-    const status = await queryList(target, [
-      'status',
-      '--porcelain=v1',
-      '--untracked-files=all',
-      '--ignore-submodules=none',
-      '-z',
-    ]);
+    const status = nulList(
+      (await roomStatusRaw(target.worktree, target.ceiling, 'all-submodules', true)).toString(
+        'utf-8'
+      )
+    );
     if (status.length > 0) return await held('changes');
     // `status` cannot see an edit to a file marked assume-unchanged or
     // skip-worktree — git has been told not to look — and a fast-forward
     // overwrites it. `ls-files -v` tags such a file with a lower-case letter
     // (assume-unchanged) or `S` (skip-worktree); either is work in progress
     // nobody can prove is not there.
-    const tagged = await queryList(target, ['ls-files', '-v', '-z']);
+    const tagged = nulList(
+      (await roomTrackedPathsRaw(target.worktree, target.ceiling, 'tagged')).toString('utf-8')
+    );
     if (tagged.some((entry) => /^[a-zS]/.test(entry))) return await held('changes');
 
     // 4. Nothing `main` lacks.
     const ahead = Number.parseInt(
-      await query(target, ['rev-list', '--count', `${mainTip}..HEAD`]),
+      await roomCommitCount(target.worktree, target.ceiling, mainTip, 'HEAD'),
       10
     );
     if (!Number.isFinite(ahead)) throw new Error('could not count commits ahead of main');
     if (ahead > 0) return await held('ahead');
 
     // 5. Already there.
-    const from = await query(target, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    const from = await roomVerifiedTip(target.worktree, target.ceiling, 'HEAD^{commit}');
     if (from === mainTip) return { outcome: { kind: 'current' }, mainTip };
 
     // 6. Nothing on disk in the way, in either direction. `--no-renames`, or a
@@ -427,15 +432,12 @@ export async function refreshRoomWorktree(
     //    `ls-files --others` with no exclude rules is every file git does not
     //    track — the ignored ones and the untracked ones together — listed file
     //    by file.
-    const moved = await queryList(target, [
-      'diff',
-      '--name-only',
-      '--no-renames',
-      '-z',
-      from,
-      mainTip,
-    ]);
-    const onDisk = await queryList(target, ['ls-files', '--others', '-z']);
+    const moved = nulList(
+      (await roomChangedPathsRaw(target.worktree, target.ceiling, from, mainTip)).toString('utf-8')
+    );
+    const onDisk = nulList(
+      (await roomTrackedPathsRaw(target.worktree, target.ceiling, 'others')).toString('utf-8')
+    );
     const collision = firstCollision(onDisk, moved);
     if (collision) {
       logger.info('[rooms] a file in an agent’s copy is in the way of main; not updating it', {
@@ -455,16 +457,20 @@ export async function refreshRoomWorktree(
     const lock = indexLockOf(target);
     const lockedBefore = existsSync(lock);
     try {
-      await runGit(
-        ['-c', 'merge.autoStash=false', 'merge', '--ff-only', '--quiet', '--no-stat', mainTip],
-        target.worktree,
-        target.ceiling,
-        { timeoutMs: deps.writeTimeoutMs ?? FAST_FORWARD_TIMEOUT_MS }
-      );
-      const landed = await query(target, ['rev-parse', '--verify', 'HEAD^{commit}']);
+      if (!context)
+        return unreadable(
+          'ownership',
+          new Error('Owning room refresh integration is unavailable.'),
+          mainTip,
+          null
+        );
+      await fastForwardRoomWorktree(target.worktree, mainTip, target.ceiling, context, {
+        timeoutMs: deps.writeTimeoutMs ?? FAST_FORWARD_TIMEOUT_MS,
+      });
+      const landed = await roomVerifiedTip(target.worktree, target.ceiling, 'HEAD^{commit}');
       if (landed !== mainTip) throw new Error(`landed on ${landed}, not ${mainTip}`);
     } catch (err) {
-      afterFailedWrite(lock, lockedBefore, err);
+      if (context) await afterFailedWrite(lock, lockedBefore, err, context);
       // Some of the moved files may have been written before it stopped.
       deps.forgetMoved(movedAbsPaths(target.worktree, moved));
       return unreadable('fast-forward', err, mainTip, null);
@@ -524,21 +530,24 @@ async function whatMoved(
   deps: Pick<RoomWorktreeRefreshDeps, 'describeCommits'>
 ): Promise<MainMoved | null> {
   try {
-    const base = await query(target, ['merge-base', 'HEAD', mainTip]);
-    const range = `${base}..${mainTip}`;
+    const base = await roomMergeBase(target.worktree, target.ceiling, mainTip);
     const total = Number.parseInt(
-      await query(target, ['rev-list', '--first-parent', '--count', range]),
+      await roomCommitCount(target.worktree, target.ceiling, base, mainTip, true),
       10
     );
     if (!Number.isFinite(total) || total === 0) return { commits: [], overflow: 0, overlap: [] };
-    const log = await queryList(target, [
-      'log',
-      '--first-parent',
-      `--max-count=${MAIN_MOVED_MAX_COMMITS}`,
-      '-z',
-      '--format=%H%x1f%s',
-      range,
-    ]);
+    const log = nulList(
+      (
+        await roomLogRaw(
+          target.worktree,
+          target.ceiling,
+          'first-parent-subjects',
+          MAIN_MOVED_MAX_COMMITS,
+          base,
+          mainTip
+        )
+      ).toString('utf-8')
+    );
     const listed = log.map((record) => {
       const cut = record.indexOf('\x1f');
       return { sha: record.slice(0, cut), subject: record.slice(cut + 1) };
@@ -548,14 +557,11 @@ async function whatMoved(
     for (const { sha, subject } of listed) {
       let files: string[] = [];
       try {
-        files = await queryList(target, [
-          'diff',
-          '--name-only',
-          '--no-renames',
-          '-z',
-          `${sha}^1`,
-          sha,
-        ]);
+        files = nulList(
+          (await roomChangedPathsRaw(target.worktree, target.ceiling, `${sha}^1`, sha)).toString(
+            'utf-8'
+          )
+        );
       } catch {
         // A commit with no parent on `main`'s side — nothing to name.
       }
@@ -569,18 +575,17 @@ async function whatMoved(
         fileCount: files.length,
       });
     }
-    const onMain = await queryList(target, [
-      'diff',
-      '--name-only',
-      '--no-renames',
-      '-z',
-      base,
-      mainTip,
-    ]);
+    const onMain = nulList(
+      (await roomChangedPathsRaw(target.worktree, target.ceiling, base, mainTip)).toString('utf-8')
+    );
     const mine = new Set([
-      ...(await queryList(target, ['diff', '--name-only', '--no-renames', '-z', base, 'HEAD'])),
+      ...nulList(
+        (await roomChangedPathsRaw(target.worktree, target.ceiling, base, 'HEAD')).toString('utf-8')
+      ),
       ...statusPaths(
-        await queryList(target, ['status', '--porcelain=v1', '--untracked-files=all', '-z'])
+        nulList(
+          (await roomStatusRaw(target.worktree, target.ceiling, 'all', true)).toString('utf-8')
+        )
       ),
     ]);
     const overlap = onMain.filter((file) => mine.has(file)).sort();
@@ -607,9 +612,10 @@ async function whatMoved(
 export async function launchFiles(
   target: RoomWorktreeRefreshTarget,
   placed: RoomContextFiles,
-  deps: RoomWorktreeRefreshDeps
+  deps: RoomWorktreeRefreshDeps,
+  context?: InstallationRoomMutationContext
 ): Promise<RoomContextFiles> {
-  const { outcome, mainTip } = await refreshRoomWorktree(target, deps);
+  const { outcome, mainTip } = await refreshRoomWorktree(target, deps, context);
   if (outcome.kind === 'refreshed' || outcome.kind === 'current') {
     return { ...placed, ahead: 0, behind: 0, refresh: outcome };
   }
