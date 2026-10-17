@@ -102,8 +102,8 @@ declare global {
       save(tabs: DesktopWindowTabs): void;
       /** File tabs the person closed under Recently closed, in strip order. */
       recordClosed(closed: Array<{ tab: DesktopSavedTab; index: number }>): void;
-      /** Take entry `index` (default the newest) out of Recently closed. */
-      reopen(index?: number): Promise<DesktopClosedTab | null>;
+      /** Take the entry `key` names (default the newest) out of Recently closed. */
+      reopen(key?: { tabId: string; closedAt: number }): Promise<DesktopClosedTab | null>;
       /** Recently closed, newest first. */
       getRecentlyClosed(): Promise<DesktopClosedTab[]>;
       /** Subscribe to Recently closed changing, in any window. */

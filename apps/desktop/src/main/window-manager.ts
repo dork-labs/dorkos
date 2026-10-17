@@ -12,7 +12,7 @@ import { applyContextMenu } from './context-menu';
 import { forwardFullscreenState } from './fullscreen';
 import { applyPermissionPolicy } from './permissions';
 import { forwardFocusState } from './window-focus';
-import { activeTabPathFor, bindTabSession, type WindowTabs } from './tab-session';
+import { bindTabSession, frontTabUrl, type WindowTabs } from './tab-session';
 import {
   attachWindowStatePersistence,
   clampSizeToWorkArea,
@@ -302,26 +302,9 @@ export function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): 
   if (options.initialUrl) {
     void win.loadURL(options.initialUrl);
   } else if (origin) {
-    void win.loadURL(withTabPath(origin, activeTabPathFor(win)));
+    void win.loadURL(frontTabUrl(win, origin));
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
-}
-
-/**
- * The app's entry, opened on the remembered front tab when there is one. Read
- * at load time rather than creation time, so a recovery reload lands on the
- * tab that was in front a moment ago, not the one the window opened with.
- *
- * @param origin - The app's own origin.
- * @param path - A router-relative location, or `undefined` for the entry.
- */
-function withTabPath(origin: string, path: string | undefined): string {
-  if (!path) return origin;
-  try {
-    return new URL(path, origin).toString();
-  } catch {
-    return origin;
   }
 }
 

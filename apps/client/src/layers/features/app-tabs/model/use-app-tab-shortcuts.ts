@@ -45,7 +45,9 @@ export function useAppTabShortcuts(): void {
         } else if (event.code === 'BracketRight') {
           event.preventDefault();
           actions.activateRelative(1);
-        } else if (event.code === 'KeyT') {
+        } else if (event.key.toLowerCase() === 't') {
+          // Matched on `key` like Cmd+T below, so it follows the letter on
+          // every layout rather than where T sits on a US keyboard.
           event.preventDefault();
           actions.reopenClosed();
         }

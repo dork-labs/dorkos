@@ -4,8 +4,8 @@
  * The desktop shell keeps the list (`main/tab-session/` in the desktop app),
  * shared by every window and kept across quits: tabs the person closed, a
  * window closed while others stay open, tabs a launch left out because nobody
- * looked at them for a week, and the whole strip when DorkOS is set to start
- * fresh. This module is the renderer's half: it reports closes, mirrors the
+ * looked at them for a week, restored tabs whose page seemed gone, and the
+ * whole strip when DorkOS is set to start fresh. This module is the renderer's half: it reports closes, mirrors the
  * list for the tab menu, and brings a tab back.
  *
  * **Desktop shell only**, like the tabs themselves. Outside it there is no
@@ -57,9 +57,7 @@ export function useRecentlyClosedSync(): void {
 
 /**
  * Report the tabs a change closed: every tab in `before` that `after` no longer
- * has, with the index it sat at. Call it around a close the person asked for —
- * never around tabs dropped because their page is gone, which are not worth
- * bringing back.
+ * has, with the index it sat at.
  *
  * @param before - The tab list before the close.
  * @param after - The tab list after it.
@@ -78,17 +76,23 @@ export function recordClosedTabs(before: readonly AppTab[], after: readonly AppT
   }
 }
 
+/** Which Recently closed entry to bring back: its tab id and when it closed. */
+export interface ClosedTabKey {
+  tabId: string;
+  closedAt: number;
+}
+
 /**
  * Bring a closed tab back into this window, where it was, and go to it.
  *
  * @param router - The router to navigate with.
- * @param index - Which entry, newest first. Defaults to the newest.
+ * @param key - Which entry. Defaults to the newest.
  * @returns Whether a tab came back.
  */
-export async function reopenClosedTab(router: TabRouter, index?: number): Promise<boolean> {
+export async function reopenClosedTab(router: TabRouter, key?: ClosedTabKey): Promise<boolean> {
   const shell = bridge();
   if (!shell) return false;
-  const entry = await shell.reopen(index);
+  const entry = await shell.reopen(key);
   if (!entry) return false;
   const before = useAppTabsStore.getState().activeTabId;
   useAppTabsStore.getState().reopenTab(entry.tab, entry.index);

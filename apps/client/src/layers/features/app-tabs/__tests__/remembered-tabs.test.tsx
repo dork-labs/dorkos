@@ -101,15 +101,15 @@ describe('closing tabs files them under Recently closed', () => {
     expect(bridge.recordClosed).not.toHaveBeenCalled();
   });
 
-  it('reopens entry n of Recently closed into this window', async () => {
+  it('reopens the Recently closed entry it names into this window', async () => {
     const bridge = installBridge({
       reopen: vi.fn(() => Promise.resolve({ tab: tab('z'), index: 0, closedAt: 1 })),
     });
     setTabs([tab('a')]);
     const { result } = renderHook(() => useAppTabActions());
-    result.current.reopenClosed(3);
+    result.current.reopenClosed({ tabId: 'z', closedAt: 1 });
     await waitFor(() => expect(hrefs()).toEqual(['/z', '/a']));
-    expect(bridge.reopen).toHaveBeenCalledWith(3);
+    expect(bridge.reopen).toHaveBeenCalledWith({ tabId: 'z', closedAt: 1 });
     expect(navigate).toHaveBeenCalledWith({ href: '/z' });
   });
 
@@ -199,7 +199,7 @@ describe('usePruneMissingTabs', () => {
     );
   }
 
-  it('drops restored tabs whose page is gone, quietly, and follows the front tab', async () => {
+  it('takes restored tabs whose page is gone out of the strip, into Recently closed', async () => {
     const bridge = installBridge();
     setTabs([tab('a', '/session?session=gone'), tab('b', '/team')], 'a');
     const transport = createMockTransport();
@@ -207,8 +207,10 @@ describe('usePruneMissingTabs', () => {
     renderHook(() => usePruneMissingTabs(), { wrapper: wrapperWith(transport) });
     await waitFor(() => expect(hrefs()).toEqual(['/team']));
     expect(navigate).toHaveBeenCalledWith({ href: '/team' });
-    // Nothing to reopen, so nothing filed.
-    expect(bridge.recordClosed).not.toHaveBeenCalled();
+    // One click away, in case the server was only slow to find it.
+    expect(bridge.recordClosed).toHaveBeenCalledWith([
+      { tab: tab('a', '/session?session=gone'), index: 0 },
+    ]);
   });
 
   it('checks nothing outside the desktop app', async () => {

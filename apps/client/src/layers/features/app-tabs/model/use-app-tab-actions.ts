@@ -18,7 +18,7 @@ import { useMemo } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useAppTabsStore } from '@/layers/shared/model';
 import { goToActiveTab, openTabAt } from './tab-navigation';
-import { recordClosedTabs, reopenClosedTab } from './recently-closed';
+import { recordClosedTabs, reopenClosedTab, type ClosedTabKey } from './recently-closed';
 
 /**
  * Where a brand-new tab lands: the dashboard, the cockpit's home. It is the one
@@ -59,10 +59,10 @@ export interface AppTabActions {
   reorder: (from: number, to: number) => void;
   /**
    * Bring back a closed tab, where it was, and go to it: the newest by
-   * default, or entry `index` of Recently closed. Does nothing when the list is
-   * empty or outside the desktop app.
+   * default, or the Recently closed entry `key` names. Does nothing when the
+   * list is empty or outside the desktop app.
    */
-  reopenClosed: (index?: number) => void;
+  reopenClosed: (key?: ClosedTabKey) => void;
 }
 
 /** Bind tab creation, selection and closing to the current router. */
@@ -81,7 +81,7 @@ export function useAppTabActions(): AppTabActions {
     };
 
     // Every close the person asks for goes through here, so every one of them
-    // lands in Recently closed. Tabs dropped for a missing page do not.
+    // lands in Recently closed.
     const closing = (change: () => void) => {
       const before = useAppTabsStore.getState().tabs;
       change();
@@ -148,8 +148,8 @@ export function useAppTabActions(): AppTabActions {
       },
       // Order is window furniture: nothing to navigate to.
       reorder: (from, to) => useAppTabsStore.getState().moveTab(from, to),
-      reopenClosed: (index) => {
-        reopenClosedTab(router, index).catch((error: unknown) => {
+      reopenClosed: (key) => {
+        reopenClosedTab(router, key).catch((error: unknown) => {
           console.error('[dorkos:tabs] could not reopen a closed tab', error);
         });
       },

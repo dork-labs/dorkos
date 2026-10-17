@@ -773,8 +773,10 @@ async function onResetAndRelaunch(): Promise<void> {
     lastFailureAt: readRendererHealth().lastFailureAt,
     disableHardwareAcceleration: false,
   });
-  // A recovery restart keeps every tab, whatever the person's setting.
-  markAppRestart();
+  // A recovery restart keeps every tab, whatever the person's setting, but
+  // Reset sets the front tab aside: it is the likeliest reason the window would
+  // not show, and reopening onto it would bring the same failure back.
+  markAppRestart({ setAsideFrontTabs: true });
   app.relaunch();
   app.quit();
 }

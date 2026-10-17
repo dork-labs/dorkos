@@ -167,10 +167,18 @@ describe('parseTabSessionFile — nothing unread is trusted', () => {
     expect(parseTabSessionFile([])).toBeNull();
   });
 
-  it('refuses a tab that points off the app (an absolute or protocol-relative URL)', () => {
-    for (const href of ['https://evil.example', '//evil.example/x', 'javascript:alert(1)']) {
-      const bad = { ...good, windows: [win([tab('a', { href, history: [href] })])] };
-      expect(parseTabSessionFile(bad)).toBeNull();
+  it('leaves out a tab that points off the app, or that a URL parser would send there', () => {
+    const hrefs = [
+      'https://evil.example',
+      '//evil.example/x',
+      'javascript:alert(1)',
+      '/\\evil.example',
+      '/\t/evil.example',
+      '/\n/evil.example',
+    ];
+    for (const href of hrefs) {
+      const bad = { ...good, windows: [win([tab('a', { href, history: [href] }), tab('ok')])] };
+      expect(parseTabSessionFile(bad)?.windows).toEqual([win([tab('ok')], 'ok')]);
     }
   });
 

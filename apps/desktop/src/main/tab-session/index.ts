@@ -47,8 +47,8 @@ import {
  * **Closing things.** A tab the person closes, a window closed while others
  * stay open, a stale tab and a Start fresh launch all go to Recently closed,
  * which every window can reopen from. The last window closing is not closing
- * its tabs: DorkOS keeps running in the tray, and the next window brings them
- * back by the same rules as a launch.
+ * its tabs: DorkOS keeps running in the tray, and the next window brings every
+ * one of them back.
  *
  * @module main/tab-session
  */
@@ -98,8 +98,25 @@ const live = new Map<number, Slot>();
 let detached: Slot[] = [];
 /** Next order for a secondary window. */
 let nextOrder = 1;
-/** Set by {@link markAppRestart}: windows closing from here on are the app restarting. */
-let restarting = false;
+/**
+ * When {@link markAppRestart} last said the app is restarting itself, or
+ * `null`. Read through {@link isRestarting}, which lets it lapse.
+ */
+let restartMarkedAt: number | null = null;
+
+/**
+ * How long a restart mark holds. A restart that has not quit the app by then
+ * did not happen: the installer stalled (the updater brings the app back after
+ * 15 seconds), or the person said Keep Working to the agents question. Left
+ * standing, the mark would keep every window that closes for the rest of the
+ * run and make the next ordinary quit restore as if it were an update.
+ */
+const RESTART_MARK_TTL_MS = 2 * 60 * 1000;
+
+/** Whether the app is restarting itself right now. */
+function isRestarting(): boolean {
+  return restartMarkedAt !== null && Date.now() - restartMarkedAt < RESTART_MARK_TTL_MS;
+}
 /** The pending debounced write. */
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 /** Whether {@link setupTabSession} has run. */
@@ -226,11 +243,20 @@ export function setupTabSession(options: TabSessionOptions): void {
     fileUnderRecentlyClosed(closed);
   });
 
-  ipcMain.handle(TAB_SESSION_REOPEN_CHANNEL, (event, rawIndex: unknown): ClosedTab | null => {
+  // Named by the entry's tab id and close time rather than by position: the
+  // renderer picks from its copy of the list, and another window may have
+  // changed the list since. No key means the newest.
+  ipcMain.handle(TAB_SESSION_REOPEN_CHANNEL, (event, key: unknown): ClosedTab | null => {
     if (!options.isOwnSender(event)) return null;
-    const index = rawIndex === undefined ? 0 : rawIndex;
-    if (!Number.isInteger(index)) return null;
-    const entry = session.recentlyClosed[index as number];
+    const index =
+      key === undefined
+        ? 0
+        : session.recentlyClosed.findIndex(
+            (entry) =>
+              entry.tab.id === (key as { tabId?: unknown })?.tabId &&
+              entry.closedAt === (key as { closedAt?: unknown })?.closedAt
+          );
+    const entry = session.recentlyClosed[index];
     if (!entry) return null;
     session = {
       ...session,
@@ -260,9 +286,12 @@ export function setupTabSession(options: TabSessionOptions): void {
 
   // After every window has closed and before the process goes: the only point
   // where "this run ended cleanly" is true. A restart the app asked for keeps
-  // its mark, so the next launch restores everything whatever the setting.
+  // its mark, so the next launch restores everything whatever the setting. So
+  // does a run that quit before it ever opened a window (the server would not
+  // start): the windows it was handed are still the last restart's.
   app.on('will-quit', () => {
-    session = { ...session, cleanExit: true, relaunch: restarting };
+    const unopenedRelaunch = !launchPlanned && launchKind === 'relaunch';
+    session = { ...session, cleanExit: true, relaunch: isRestarting() || unopenedRelaunch };
     flush();
   });
 }
@@ -272,10 +301,14 @@ export function setupTabSession(options: TabSessionOptions): void {
  * last window closed when DorkOS opens a window again from the tray or the
  * Dock. The plan runs here, so the setting is read at the moment it applies.
  *
+ * Reopening a window while DorkOS kept running brings back everything, like an
+ * app restart: on macOS closing the window is how people put the app away, and
+ * nobody quit anything.
+ *
  * @returns The windows to open, primary first. Empty means one home tab.
  */
 export function claimWindowsToRestore(): WindowTabs[] {
-  const kind: LaunchKind = launchPlanned ? 'normal' : launchKind;
+  const kind: LaunchKind = launchPlanned ? 'relaunch' : launchKind;
   launchPlanned = true;
   const kept = detached
     .filter((slot): slot is Slot & { tabs: WindowTabs } => slot.tabs !== null)
@@ -315,32 +348,77 @@ export function bindTabSession(
       // The app on its way out, or the last window going while DorkOS stays in
       // the tray: these tabs are the session, kept for the next window. One
       // window of several closing is the person closing those tabs.
-      if (restarting || isQuitting() || live.size === 0) detached.push(slot);
-      else fileUnderRecentlyClosed(setAsideWindow(slot.tabs, Date.now()));
+      if (isRestarting() || isQuitting() || live.size === 0) {
+        // The front tab was on screen until this moment. Its last stamp is
+        // from the last tab change, which can be days ago in a window left on
+        // one chat, and the 7-day rule must never take the tab being read.
+        detached.push({ ...slot, tabs: stampFrontTab(slot.tabs, Date.now()) });
+      } else {
+        fileUnderRecentlyClosed(setAsideWindow(slot.tabs, Date.now()));
+      }
     }
     scheduleWrite();
   });
 }
 
+/** A window's tabs with the front tab marked as seen at `now`. */
+function stampFrontTab(win: WindowTabs, now: number): WindowTabs {
+  return {
+    ...win,
+    tabs: win.tabs.map((tab) => (tab.id === win.activeTabId ? { ...tab, lastViewedAt: now } : tab)),
+  };
+}
+
 /**
- * The location a window's front tab holds, for the window to load straight
- * onto. `undefined` for a window with no tabs yet.
+ * The URL a window should load: the app's own origin, opened on the
+ * remembered front tab when there is one. Read at load time rather than
+ * creation time, so a recovery reload lands on the tab that was in front a
+ * moment ago, not the one the window opened with.
+ *
+ * The href was validated on the way in, and is resolved and checked here
+ * again: anything that would land on another origin loads the app's entry
+ * instead. `loadURL` skips the window's navigation guards, so this is the
+ * guard.
  *
  * @param win - The window about to load.
+ * @param origin - The app's own origin.
  */
-export function activeTabPathFor(win: BrowserWindow): string | undefined {
+export function frontTabUrl(win: BrowserWindow, origin: string): string {
   const tabs = live.get(win.webContents.id)?.tabs;
-  return tabs?.tabs.find((tab) => tab.id === tabs.activeTabId)?.href;
+  const href = tabs?.tabs.find((tab) => tab.id === tabs.activeTabId)?.href;
+  if (!href) return origin;
+  try {
+    const resolved = new URL(href, origin);
+    return resolved.origin === new URL(origin).origin ? resolved.toString() : origin;
+  } catch {
+    return origin;
+  }
+}
+
+/** Options for {@link markAppRestart}. */
+export interface AppRestartOptions {
+  /**
+   * Set each window's front tab aside in Recently closed and open on the next
+   * one. For Reset and Relaunch, the last resort when a window will not show:
+   * the tab in front is the likeliest cause, and reopening onto it would bring
+   * the same failure straight back.
+   */
+  setAsideFrontTabs?: boolean;
 }
 
 /**
  * Say the app is about to restart itself: an update, a renderer recovery, a
  * move into Applications. Every window closing from here on is kept, and the
  * next launch restores everything whatever the setting. Writes at once, so
- * the restart cannot outrun it.
+ * the restart cannot outrun it. The mark lapses on its own if the restart
+ * does not happen (see {@link RESTART_MARK_TTL_MS}); {@link cancelAppRestart}
+ * withdraws it at once.
+ *
+ * @param options - See {@link AppRestartOptions}.
  */
-export function markAppRestart(): void {
-  restarting = true;
+export function markAppRestart(options: AppRestartOptions = {}): void {
+  restartMarkedAt = Date.now();
+  if (options.setAsideFrontTabs) setAsideFrontTabs();
   session = { ...session, relaunch: true };
   flush();
 }
@@ -359,9 +437,33 @@ export function resetTabSessionModule(): void {
   live.clear();
   detached = [];
   nextOrder = 1;
-  restarting = false;
+  restartMarkedAt = null;
   initialised = false;
 }
 
 /** Re-exported for the preload's types. */
 export type { ClosedTab, StartupMode, WindowTabs };
+
+/** Withdraw a {@link markAppRestart} whose restart did not happen after all. */
+export function cancelAppRestart(): void {
+  restartMarkedAt = null;
+  session = { ...session, relaunch: false };
+  scheduleWrite();
+}
+
+/** Move every open window's front tab to Recently closed; see {@link AppRestartOptions}. */
+function setAsideFrontTabs(): void {
+  const now = Date.now();
+  const closed: ClosedTab[] = [];
+  for (const slot of live.values()) {
+    const win = slot.tabs;
+    const index = win?.tabs.findIndex((tab) => tab.id === win.activeTabId) ?? -1;
+    if (!win || index === -1) continue;
+    closed.push({ tab: win.tabs[index], index, closedAt: now });
+    const tabs = win.tabs.filter((_, i) => i !== index);
+    // A window left with nothing opens on one home tab next time.
+    slot.tabs =
+      tabs.length > 0 ? { tabs, activeTabId: tabs[Math.min(index, tabs.length - 1)].id } : null;
+  }
+  fileUnderRecentlyClosed(closed);
+}

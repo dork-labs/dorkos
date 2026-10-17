@@ -39,12 +39,25 @@ const MAX_WINDOWS = 20;
 /** Longest href kept. A location is a short router path, never a document. */
 const MAX_HREF_LENGTH = 8_192;
 
-/** A router-relative location: starts with one `/`, never `//host`. */
+/** A backslash or a control character: never in a router path, see below. */
+// eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+const UNSAFE_HREF_CHARACTER = /[\\\u0000-\u001f\u007f]/;
+
+/**
+ * A router-relative location: starts with one `/`, never `//host`, and holds no
+ * backslash or control character. The URL parser reads a backslash as `/` and
+ * drops tabs and newlines, so a backslash or tab after the first `/` would pass the
+ * prefix check and still resolve to another host. The window loader checks the
+ * resolved origin too (`frontTabUrl`); this keeps such a value off disk.
+ */
 const HrefSchema = z
   .string()
   .min(1)
   .max(MAX_HREF_LENGTH)
-  .refine((href) => href.startsWith('/') && !href.startsWith('//'), 'not a relative path');
+  .refine(
+    (href) => href.startsWith('/') && !href.startsWith('//') && !UNSAFE_HREF_CHARACTER.test(href),
+    'not a relative path'
+  );
 
 /** One tab, as the renderer's store holds it (`AppTab` in the client). */
 export const TabSchema = z.object({
@@ -61,7 +74,7 @@ export const TabSchema = z.object({
 export type SavedTab = z.infer<typeof TabSchema>;
 
 /** One window's tabs and which one is in front. */
-export const WindowTabsSchema = z.object({
+const WindowTabsSchema = z.object({
   tabs: z.array(TabSchema).min(1).max(MAX_TABS_PER_WINDOW),
   activeTabId: z.string().nullable(),
 });
@@ -94,12 +107,16 @@ export const TabSessionFileSchema = z.object({
   /** True when the app itself asked to restart: an update, a recovery, a move. */
   relaunch: z.boolean(),
   startup: StartupModeSchema,
-  windows: z.array(WindowTabsSchema).max(MAX_WINDOWS),
+  // Each window is read on its own by `parseWindowTabs`, so one bad tab costs
+  // that tab, not its window or the whole file.
+  windows: z.array(z.unknown()).max(MAX_WINDOWS),
   recentlyClosed: z.array(ClosedTabSchema).max(MAX_RECENTLY_CLOSED),
 });
 
-/** The whole file. */
-export type TabSessionFile = z.infer<typeof TabSessionFileSchema>;
+/** The whole file, its windows read. */
+export type TabSessionFile = Omit<z.infer<typeof TabSessionFileSchema>, 'windows'> & {
+  windows: WindowTabs[];
+};
 
 /** A file with nothing in it: the first launch, or what a bad file is replaced by. */
 export function emptyTabSession(): TabSessionFile {
@@ -131,26 +148,44 @@ function repairWindow(win: WindowTabs): WindowTabs {
 /**
  * Read one window's tabs from an untrusted value (the file, or a renderer).
  *
+ * Tab by tab: a tab that does not fit (an href past the length cap, one that
+ * points off the app) is left out and the rest are kept. Refusing the whole
+ * window for one bad tab would silently stop it saving, and the next launch
+ * would bring back a stale copy.
+ *
  * @param raw - Anything.
- * @returns The window, repaired, or `null` when it is not one.
+ * @returns The window, repaired, or `null` when it has no usable tab.
  */
 export function parseWindowTabs(raw: unknown): WindowTabs | null {
-  const parsed = WindowTabsSchema.safeParse(raw);
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { tabs, activeTabId } = raw as { tabs?: unknown; activeTabId?: unknown };
+  if (!Array.isArray(tabs)) return null;
+  const kept = tabs.flatMap((tab) => {
+    const parsed = TabSchema.safeParse(tab);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const parsed = WindowTabsSchema.safeParse({
+    tabs: kept.slice(0, MAX_TABS_PER_WINDOW),
+    activeTabId: typeof activeTabId === 'string' ? activeTabId : null,
+  });
   return parsed.success ? repairWindow(parsed.data) : null;
 }
 
 /**
  * Read the file's contents.
  *
- * Any failure (bad JSON was already caught by the caller; here a wrong
- * version, a wrong shape) answers `null`, and the caller starts from
- * {@link emptyTabSession}. All or nothing on purpose: half-trusting a file we
- * cannot read is how a bad write becomes a bad launch every time.
+ * A wrong version or a wrong shape answers `null` (bad JSON was already
+ * caught by the caller), and the caller starts from {@link emptyTabSession}:
+ * half-trusting a file we cannot read is how a bad write becomes a bad launch
+ * every time. Inside a file that fits, a bad window or tab is left out alone.
  *
  * @param raw - The parsed JSON.
  */
 export function parseTabSessionFile(raw: unknown): TabSessionFile | null {
   const parsed = TabSessionFileSchema.safeParse(raw);
   if (!parsed.success) return null;
-  return { ...parsed.data, windows: parsed.data.windows.map(repairWindow) };
+  const windows = parsed.data.windows
+    .map(parseWindowTabs)
+    .filter((win): win is WindowTabs => win !== null);
+  return { ...parsed.data, windows };
 }

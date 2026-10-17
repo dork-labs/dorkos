@@ -27,10 +27,10 @@ export interface AppTabMenuActions {
   /** Close the tab. */
   close: (id: string) => void;
   /**
-   * Bring back a closed tab: the newest, or entry `index` of Recently closed.
-   * Absent where there is nothing to reopen from (the Dev Playground).
+   * Bring back a closed tab: the newest, or the Recently closed entry `key`
+   * names. Absent where there is nothing to reopen from (the Dev Playground).
    */
-  reopenClosed?: (index?: number) => void;
+  reopenClosed?: (key?: { tabId: string; closedAt: number }) => void;
 }
 
 interface AppTabContextMenuProps {
@@ -142,11 +142,11 @@ export function AppTabContextMenu({
                 Recently closed
               </ContextMenuSubTrigger>
               <ContextMenuSubContent className="max-h-96 w-64 overflow-y-auto">
-                {recentlyClosed.map((entry, index) => (
+                {recentlyClosed.map((entry) => (
                   <RecentlyClosedItem
                     key={`${entry.tab.id}-${entry.closedAt}`}
                     href={entry.tab.href}
-                    onSelect={() => reopenClosed(index)}
+                    onSelect={() => reopenClosed({ tabId: entry.tab.id, closedAt: entry.closedAt })}
                   />
                 ))}
               </ContextMenuSubContent>

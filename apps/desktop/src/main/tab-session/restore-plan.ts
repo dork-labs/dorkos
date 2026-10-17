@@ -15,15 +15,15 @@ import {
  * | -------------------------------------------- | -------------------------- | ----------------------- |
  * | The app restarted itself (update, recovery)  | everything                 | everything              |
  * | It crashed (the quit never finished)         | everything                 | everything              |
- * | A normal quit, or the last window closed     | all but stale unpinned tabs | nothing; all to Recently closed |
+ * | A normal quit                                | all but stale unpinned tabs | nothing; all to Recently closed |
  *
  * "Stale" is an unpinned tab nobody looked at for {@link STALE_TAB_MS}.
  * Pinned tabs never go stale. Nothing a launch leaves behind is lost: it goes
  * to Recently closed, newest first.
  *
  * Tabs whose target is gone (a deleted chat, a room you left) are not judged
- * here. Only the renderer can ask the server, so it drops them itself once it
- * has (`usePruneMissingTabs` in the client).
+ * here. Only the renderer can ask the server, so it sets them aside itself
+ * (`usePruneMissingTabs` in the client).
  *
  * @module main/tab-session/restore-plan
  */

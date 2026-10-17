@@ -21,9 +21,10 @@ import {
   TAB_SESSION_REOPEN_CHANNEL,
   TAB_SESSION_SAVE_CHANNEL,
   TAB_SESSION_SET_STARTUP_CHANNEL,
-  activeTabPathFor,
   bindTabSession,
+  cancelAppRestart,
   claimWindowsToRestore,
+  frontTabUrl,
   markAppRestart,
   resetTabSessionModule,
   setupTabSession,
@@ -75,6 +76,16 @@ function eventFrom(win: MockBrowserWindow, url = OWN_URL) {
     sender: { id: win.webContents.id, getURL: () => url },
     returnValue: undefined as unknown,
   };
+}
+
+/**
+ * Windows as a person sees them: tab ids (pinned marked) and the front tab.
+ * Leaves out last-seen times, which a quit restamps on the front tab.
+ */
+function shape(windows: WindowTabs[]): string[][] {
+  return windows.map((win) =>
+    win.tabs.map((t) => `${t.id === win.activeTabId ? '*' : ''}${t.pinned ? '📌' : ''}${t.id}`)
+  );
 }
 
 /** Start a run of the app: read the file, answer IPC. */
@@ -133,7 +144,12 @@ describe('tab session — across launches', () => {
 
     restartProcess();
     launch();
-    expect(claimWindowsToRestore()).toEqual([twoTabs]);
+    const [restored] = claimWindowsToRestore();
+    expect(shape([restored])).toEqual([['a', '*📌b']]);
+    // Each tab whole: history and cursor come back as saved.
+    expect(restored.tabs.map(({ history, cursor }) => ({ history, cursor }))).toEqual(
+      twoTabs.tabs.map(({ history, cursor }) => ({ history, cursor }))
+    );
   });
 
   it('writes the tabs on change after the debounce, so a crash keeps the last state', () => {
@@ -177,7 +193,7 @@ describe('tab session — across launches', () => {
 
     restartProcess();
     launch();
-    expect(claimWindowsToRestore()).toEqual([twoTabs]);
+    expect(shape(claimWindowsToRestore())).toEqual([['a', '*📌b']]);
   });
 
   it('writes at once on an app restart, so the relaunch cannot outrun the debounce', () => {
@@ -233,7 +249,7 @@ describe('tab session — across launches', () => {
 
     restartProcess();
     launch();
-    expect(claimWindowsToRestore()).toEqual([twoTabs, other]);
+    expect(shape(claimWindowsToRestore())).toEqual([['a', '*📌b'], ['*x']]);
   });
 });
 
@@ -256,7 +272,32 @@ describe('tab session — while running', () => {
   it('loads a window straight onto its front tab', () => {
     launch();
     const win = openWindow({ tabs: [tab('a'), tab('b')], activeTabId: 'b' }, true);
-    expect(activeTabPathFor(win as unknown as Electron.BrowserWindow)).toBe('/session?session=b');
+    expect(frontTabUrl(win as unknown as Electron.BrowserWindow, 'http://localhost:4242')).toBe(
+      'http://localhost:4242/session?session=b'
+    );
+  });
+
+  it('never loads a front tab that resolves to another origin', () => {
+    launch();
+    for (const href of ['/\\evil.com', '/\t/evil.com', '/\n/evil.com', '//evil.com']) {
+      const win = openWindow(
+        { tabs: [{ id: 'x', href, history: [href], cursor: 0 }], activeTabId: 'x' },
+        true
+      );
+      expect(frontTabUrl(win as unknown as Electron.BrowserWindow, 'http://localhost:4242')).toBe(
+        'http://localhost:4242'
+      );
+    }
+  });
+
+  it('keeps a window’s good tabs when one tab will not fit', () => {
+    launch();
+    const win = openWindow(null, true);
+    const huge = '/session?prompt=' + 'x'.repeat(9_000);
+    const a = tab('a');
+    save(win, { tabs: [a, tab('big', { href: huge, history: [huge] })], activeTabId: 'big' });
+    vi.advanceTimersByTime(600);
+    expect(readSession().windows).toEqual([{ tabs: [a], activeTabId: 'a' }]);
   });
 
   it('answers nothing to a page that is not the app’s own', () => {
@@ -266,7 +307,9 @@ describe('tab session — while running', () => {
     listener('on', TAB_SESSION_INITIAL_CHANNEL)(event);
     expect(event.returnValue).toBeNull();
     listener('on', TAB_SESSION_SAVE_CHANNEL)(event, { tabs: [tab('evil')], activeTabId: 'evil' });
-    expect(activeTabPathFor(win as unknown as Electron.BrowserWindow)).toBe('/session?session=a');
+    expect(frontTabUrl(win as unknown as Electron.BrowserWindow, 'http://h')).toBe(
+      'http://h/session?session=a'
+    );
   });
 
   it('ignores a save that is not a tab list', () => {
@@ -278,7 +321,9 @@ describe('tab session — while running', () => {
       tabs: [tab('x', { href: 'https://evil.example', history: ['https://evil.example'] })],
       activeTabId: 'x',
     });
-    expect(activeTabPathFor(win as unknown as Electron.BrowserWindow)).toBe('/session?session=a');
+    expect(frontTabUrl(win as unknown as Electron.BrowserWindow, 'http://h')).toBe(
+      'http://h/session?session=a'
+    );
   });
 
   it('files closed tabs under Recently closed, newest first, and tells every window', () => {
@@ -303,6 +348,21 @@ describe('tab session — while running', () => {
     const reopen = listener('handle', TAB_SESSION_REOPEN_CHANNEL);
     expect(await reopen(eventFrom(win))).toMatchObject({ tab: { id: 'a' }, index: 2 });
     expect(await reopen(eventFrom(win))).toBeNull();
+  });
+
+  it('reopens the entry it was asked for by id, not by a position that may have moved', async () => {
+    launch();
+    const win = openWindow(null, true);
+    const closed = listener('on', TAB_SESSION_CLOSED_CHANNEL);
+    closed(eventFrom(win), [{ tab: tab('a'), index: 0 }]);
+    const closedAt = Date.now();
+    vi.advanceTimersByTime(10);
+    closed(eventFrom(win), [{ tab: tab('b'), index: 0 }]);
+    const reopen = listener('handle', TAB_SESSION_REOPEN_CHANNEL);
+    expect(await reopen(eventFrom(win), { tabId: 'a', closedAt })).toMatchObject({
+      tab: { id: 'a' },
+    });
+    expect(await reopen(eventFrom(win), { tabId: 'a', closedAt })).toBeNull();
   });
 
   it('files a window closed while others stay open under Recently closed', async () => {
@@ -330,14 +390,88 @@ describe('tab session — while running', () => {
     expect(claimWindowsToRestore()).toEqual([tabs]);
   });
 
-  it('applies Start fresh when the last window is reopened from the tray', async () => {
+  it('brings every tab back when the last window is reopened from the tray, even on Start fresh', async () => {
     launch();
     claimWindowsToRestore();
     const win = openWindow(null, true);
     listener('handle', TAB_SESSION_SET_STARTUP_CHANNEL)(eventFrom(win), 'fresh');
-    save(win, { tabs: [tab('a')], activeTabId: 'a' });
+    const old = tab('old', { lastViewedAt: Date.now() - 30 * DAY });
+    save(win, { tabs: [old, tab('a')], activeTabId: 'a' });
     await win.emit('closed');
-    expect(claimWindowsToRestore()).toEqual([]);
+    const [reopened] = claimWindowsToRestore();
+    expect(reopened.tabs.map((t) => t.id)).toEqual(['old', 'a']);
+  });
+
+  it('stamps the front tab as seen when its window closes, so a tab read for a week is kept', async () => {
+    launch();
+    claimWindowsToRestore();
+    const weekOld = Date.now() - 8 * DAY;
+    const win = openWindow(null, true);
+    save(win, {
+      tabs: [tab('front', { lastViewedAt: weekOld }), tab('back', { lastViewedAt: weekOld })],
+      activeTabId: 'front',
+    });
+    await quit([win]);
+
+    restartProcess();
+    launch();
+    expect(claimWindowsToRestore()).toEqual([
+      { tabs: [tab('front', { lastViewedAt: Date.now() })], activeTabId: 'front' },
+    ]);
+  });
+
+  it('lets a restart mark lapse when the restart never happens', async () => {
+    launch();
+    const primary = openWindow(null, true);
+    const second = openWindow(null, false);
+    save(second, { tabs: [tab('x')], activeTabId: 'x' });
+    markAppRestart();
+    vi.advanceTimersByTime(3 * 60 * 1000);
+    // The app is still up: closing a window is the person closing its tabs.
+    await second.emit('closed');
+    vi.advanceTimersByTime(600);
+    expect(readSession().recentlyClosed.map((entry) => entry.tab.id)).toEqual(['x']);
+    await quit([primary]);
+    expect(readSession().relaunch).toBe(false);
+  });
+
+  it('withdraws a restart mark at once when the restart is cancelled', async () => {
+    launch();
+    openWindow(null, true);
+    const second = openWindow(null, false);
+    save(second, { tabs: [tab('x')], activeTabId: 'x' });
+    markAppRestart();
+    cancelAppRestart();
+    await second.emit('closed');
+    vi.advanceTimersByTime(600);
+    expect(readSession()).toMatchObject({
+      relaunch: false,
+      recentlyClosed: [{ tab: { id: 'x' } }],
+    });
+  });
+
+  it('on Reset and Relaunch, sets the front tab aside so the window does not reopen onto it', () => {
+    launch();
+    const win = openWindow(null, true);
+    save(win, { tabs: [tab('a'), tab('broken'), tab('c')], activeTabId: 'broken' });
+    markAppRestart({ setAsideFrontTabs: true });
+    const file = readSession();
+    expect(file.windows).toEqual([{ tabs: [tab('a'), tab('c')], activeTabId: 'c' }]);
+    expect(file.recentlyClosed).toEqual([{ tab: tab('broken'), index: 1, closedAt: Date.now() }]);
+  });
+
+  it('keeps the restart mark when a relaunched run quits before opening a window', async () => {
+    writeSession({
+      relaunch: true,
+      startup: 'fresh',
+      windows: [{ tabs: [tab('a')], activeTabId: 'a' }],
+    });
+    launch();
+    // The server would not start: the app quits without planning a window.
+    await app.emit('will-quit');
+    restartProcess();
+    launch();
+    expect(claimWindowsToRestore()).toEqual([{ tabs: [tab('a')], activeTabId: 'a' }]);
   });
 
   it('refuses a startup mode that is not one of the two', async () => {

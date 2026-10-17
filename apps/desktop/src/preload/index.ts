@@ -213,9 +213,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** File tabs the person closed under Recently closed, in strip order. */
     recordClosed: (closed: Array<Pick<ClosedTab, 'tab' | 'index'>>): void =>
       ipcRenderer.send(TAB_SESSION_CLOSED_CHANNEL, closed),
-    /** Take entry `index` (default the newest) out of Recently closed, or `null` when there is none. */
-    reopen: (index?: number): Promise<ClosedTab | null> =>
-      ipcRenderer.invoke(TAB_SESSION_REOPEN_CHANNEL, index),
+    /**
+     * Take the entry `key` names (default the newest) out of Recently closed,
+     * or `null` when it is no longer there.
+     */
+    reopen: (key?: { tabId: string; closedAt: number }): Promise<ClosedTab | null> =>
+      ipcRenderer.invoke(TAB_SESSION_REOPEN_CHANNEL, key),
     /** Recently closed as it stands, newest first. */
     getRecentlyClosed: (): Promise<ClosedTab[]> => ipcRenderer.invoke(TAB_SESSION_RECENT_CHANNEL),
     /** Subscribe to Recently closed changing, in any window. Returns an unsubscribe. */

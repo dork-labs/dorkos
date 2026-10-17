@@ -1,14 +1,16 @@
 /**
- * Drop restored tabs whose chat or room is gone, quietly, once per window load.
+ * Take restored tabs whose chat or room is gone out of the strip, quietly,
+ * once per window load.
  *
  * A remembered tab can outlive its page: a chat deleted from another device, a
  * room left while DorkOS was closed. Showing one as an error page the moment
  * the app opens would greet the person with something broken they did not
  * ask for. So the tabs this window opened with are checked once
- * (`findMissingTabs`), and any the server definitely no longer has are removed
- * without a word and without going to Recently closed, since there is nothing
- * left to reopen. When the tab in front was one of them, the window moves to
- * the tab that takes its place.
+ * (`findMissingTabs`), and any the server answers "not found" for leave the
+ * strip without a word. They go to Recently closed rather than nowhere: a
+ * runtime still starting after an update can answer "not found" for a chat
+ * that is fine, and that tab must stay one click away. When the tab in front
+ * was one of them, the window moves to the tab that takes its place.
  *
  * **Desktop shell only**, like the tabs. Mounted once, by the shell.
  *
@@ -20,6 +22,7 @@ import { isDesktopShell } from '@/layers/shared/lib';
 import { useAppTabsStore, useTransport } from '@/layers/shared/model';
 import { findMissingTabs } from '../lib/missing-tabs';
 import { goToActiveTab } from './tab-navigation';
+import { recordClosedTabs } from './recently-closed';
 
 /** Check this window's opening tabs once, and drop the ones that are gone. */
 export function usePruneMissingTabs(): void {
@@ -38,9 +41,10 @@ export function usePruneMissingTabs(): void {
     })
       .then((missing) => {
         if (cancelled || missing.size === 0) return;
-        const before = useAppTabsStore.getState().activeTabId;
+        const { tabs: before, activeTabId } = useAppTabsStore.getState();
         useAppTabsStore.getState().dropTabs(missing);
-        if (useAppTabsStore.getState().activeTabId !== before) goToActiveTab(router);
+        recordClosedTabs(before, useAppTabsStore.getState().tabs);
+        if (useAppTabsStore.getState().activeTabId !== activeTabId) goToActiveTab(router);
       })
       .catch((error: unknown) => {
         console.error('[dorkos:tabs] could not check restored tabs', error);
