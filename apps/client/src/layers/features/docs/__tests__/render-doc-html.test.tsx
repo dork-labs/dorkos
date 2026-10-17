@@ -73,16 +73,18 @@ describe('renderDocToHtml', () => {
     expect(html).toContain('Shipped on Friday');
   });
 
-  it('shows the issues for an embed that does not validate', async () => {
+  it('shows readers a quiet note, not the author’s issues, for an embed that does not validate', async () => {
     const html = await renderDocToHtml(`::chart{kind="bar" data='[{"label":"a","value":-1}]'}`);
-    expect(html).toContain('data-doc-embed-problem="chart"');
-    expect(html).toContain('Can’t show this chart');
-    expect(html).toContain('data.0.value');
+    expect(html).toContain('data-doc-embed-unavailable');
+    expect(html).toContain('This part of the doc can’t be shown here.');
+    expect(html).not.toContain('data.0.value');
+    expect(html).not.toContain('Can’t show this chart');
   });
 
-  it('shows a placeholder for a name with no component', async () => {
-    const html = await renderDocToHtml('::note{text="hi"}');
-    expect(html).toContain('No embed called “note”');
+  it('shows the same note for a name with no component', async () => {
+    const html = await renderDocToHtml('::callout{text="hi"}');
+    expect(html).toContain('data-doc-embed-unavailable');
+    expect(html).not.toContain('callout');
   });
 
   it('keeps an escaped \\::name line as text', async () => {
@@ -109,13 +111,42 @@ describe('renderDocToHtml', () => {
     expect(html).toContain('See the roadmap.');
   });
 
-  it('turns a component that throws into the "can’t show this" state', async () => {
+  it('turns a component that throws into the reader’s note, never a failed render', async () => {
     function Broken(_props: EmbedProps): never {
       throw new Error('bad render');
     }
     const embeds: EmbedRegistry = { broken: { component: Broken } };
     const html = await renderDocToHtml('::broken', { embeds });
-    expect(html).toContain('bad render');
+    expect(html).toContain('data-doc-embed-unavailable');
+    expect(html).not.toContain('bad render');
+  });
+
+  describe('math', () => {
+    it('renders inline and display math as MathML', async () => {
+      const html = await renderDocToHtml('Area $\\pi r^2$ here.\n\n$$\nE = mc^2\n$$\n');
+      expect(html).toMatch(
+        /<p>Area <span class="katex"><math[^>]*>.*<\/math><\/span> here\.<\/p>/s
+      );
+      expect(html).toContain('display="block"');
+      expect(html).toContain('<mi>π</mi>');
+    });
+
+    it('draws a latex code block as math, as the editor does', async () => {
+      const html = await renderDocToHtml('```latex\nx^2\n```\n');
+      expect(html).toContain('<math');
+      expect(html).not.toContain('<code');
+    });
+
+    it('leaves a mermaid block as code', async () => {
+      const html = await renderDocToHtml('```mermaid\ngraph TD; A-->B\n```\n');
+      expect(html).toContain('<code class="language-mermaid">');
+    });
+
+    it('shows a formula KaTeX cannot read as its source, and never a link', async () => {
+      const html = await renderDocToHtml('$\\frac{1$ and $\\href{javascript:alert(1)}{x}$');
+      expect(html).toContain('<math');
+      expect(html).not.toContain('href=');
+    });
   });
 
   describe('sanitizing', () => {

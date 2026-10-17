@@ -25,9 +25,7 @@ describe('buildWebPage', () => {
   });
 
   it('styles the doc’s markdown but leaves embeds as the app draws them', () => {
-    expect(page()).toContain(
-      '.dorkos-doc-page ul:not(.dorkos-doc-embed *, [data-doc-embed-problem] *)'
-    );
+    expect(page()).toContain('.dorkos-doc-page ul:not(.dorkos-doc-embed *)');
   });
 
   it('escapes the title', () => {

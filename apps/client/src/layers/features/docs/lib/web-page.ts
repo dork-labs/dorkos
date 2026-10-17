@@ -1,6 +1,9 @@
 /**
  * Wrap a rendered doc in a standalone web page: one `.html` file that opens in
- * any browser with no app, no server and no network.
+ * any browser with no app and no server. Its text, styles, embeds and math are
+ * all inside the file. Images are not: an image with a web address loads from
+ * that address, and an image named by a path relative to the doc does not
+ * resolve once the page is out of the app, so it shows as missing.
  *
  * {@link buildWebPage} is a pure string function. {@link collectPageCss} is the
  * one browser-only step: it copies the stylesheets this tab already has, so the
@@ -21,8 +24,8 @@ export interface WebPageInput {
   theme: 'light' | 'dark';
 }
 
-/** Embeds and their notices carry their own styling; prose rules skip them. */
-const OUTSIDE_EMBEDS = ':not(.dorkos-doc-embed *, [data-doc-embed-problem] *)';
+/** Embeds carry their own styling; prose rules skip them. */
+const OUTSIDE_EMBEDS = ':not(.dorkos-doc-embed *)';
 
 /** Typography for the doc's own markdown, element by element. */
 const PROSE_RULES: readonly (readonly [selector: string, declarations: string])[] = [
