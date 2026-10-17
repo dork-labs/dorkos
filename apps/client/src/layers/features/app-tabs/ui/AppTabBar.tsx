@@ -29,7 +29,7 @@ interface AppTabBarProps {
 export function AppTabBar({ className }: AppTabBarProps) {
   const tabs = useAppTabs();
   const activeTabId = useAppTabsStore((s) => s.activeTabId);
-  const { activate, close, create, togglePin, duplicate, closeOthers, reorder } =
+  const { activate, close, create, togglePin, duplicate, closeOthers, reorder, reopenClosed } =
     useAppTabActions();
   // The menu closes as the item is picked, so nothing is left on screen to
   // show "copied" — the toast says it instead.
@@ -41,12 +41,13 @@ export function AppTabBar({ className }: AppTabBarProps) {
       duplicate,
       closeOthers,
       close,
+      reopenClosed,
       copyLink: (id) => {
         const tab = useAppTabsStore.getState().tabs.find((t) => t.id === id);
         if (tab) void copy(tabLinkUrl(tab.href));
       },
     }),
-    [togglePin, duplicate, closeOthers, close, copy]
+    [togglePin, duplicate, closeOthers, close, reopenClosed, copy]
   );
 
   return (

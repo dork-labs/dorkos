@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
-import { CopyPlus, Link, Pin, PinOff, X, XCircle } from 'lucide-react';
+import { CopyPlus, History, Link, Pin, PinOff, RotateCcw, X, XCircle } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/layers/shared/ui';
+import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import { useRecentlyClosed } from '../model/recently-closed';
+import { useTabIdentity } from '../model/use-tab-identity';
 
 /** What the tab menu can do. Each takes the id of the tab it was opened on. */
 export interface AppTabMenuActions {
@@ -20,6 +26,11 @@ export interface AppTabMenuActions {
   closeOthers: (id: string) => void;
   /** Close the tab. */
   close: (id: string) => void;
+  /**
+   * Bring back a closed tab: the newest, or entry `index` of Recently closed.
+   * Absent where there is nothing to reopen from (the Dev Playground).
+   */
+  reopenClosed?: (index?: number) => void;
 }
 
 interface AppTabContextMenuProps {
@@ -42,9 +53,22 @@ interface AppTabContextMenuProps {
   children: ReactNode;
 }
 
+/** One Recently closed entry, named the way its tab was. */
+function RecentlyClosedItem({ href, onSelect }: { href: string; onSelect: () => void }) {
+  const identity = useTabIdentity(href);
+  return (
+    <ContextMenuItem onSelect={onSelect}>
+      <span className="truncate">{identity.primary}</span>
+      {identity.secondary && (
+        <span className="text-muted-foreground ml-1.5 truncate">{identity.secondary}</span>
+      )}
+    </ContextMenuItem>
+  );
+}
+
 /**
  * The right-click menu on a tab: Pin or Unpin, Duplicate, Copy link, Close
- * others, Close.
+ * others, Close, and the way back — Reopen closed tab and Recently closed.
  *
  * A plain context menu rather than the responsive one: the strip only exists in
  * the desktop app, where a narrow window is still a mouse and a keyboard, and a
@@ -65,11 +89,13 @@ export function AppTabContextMenu({
   onClosed,
   children,
 }: AppTabContextMenuProps) {
+  const recentlyClosed = useRecentlyClosed();
+  const { reopenClosed } = actions;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent
-        className="w-44"
+        className="w-56"
         onCloseAutoFocus={
           onClosed
             ? (event) => {
@@ -100,6 +126,33 @@ export function AppTabContextMenu({
           <X className="mr-2 size-4" />
           Close
         </ContextMenuItem>
+        {reopenClosed && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem disabled={recentlyClosed.length === 0} onSelect={() => reopenClosed()}>
+              <RotateCcw className="mr-2 size-4" />
+              Reopen closed tab
+              <kbd className="text-muted-foreground ml-auto pl-4 text-xs">
+                {formatShortcutKey(SHORTCUTS.REOPEN_CLOSED_TAB)}
+              </kbd>
+            </ContextMenuItem>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger disabled={recentlyClosed.length === 0}>
+                <History className="mr-2 size-4" />
+                Recently closed
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="max-h-96 w-64 overflow-y-auto">
+                {recentlyClosed.map((entry, index) => (
+                  <RecentlyClosedItem
+                    key={`${entry.tab.id}-${entry.closedAt}`}
+                    href={entry.tab.href}
+                    onSelect={() => reopenClosed(index)}
+                  />
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

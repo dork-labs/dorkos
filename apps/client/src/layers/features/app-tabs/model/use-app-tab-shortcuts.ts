@@ -3,7 +3,8 @@
  *
  * The set every tabbed app ships, so nobody has to learn ours: `Cmd/Ctrl+T` for
  * a new tab, `Cmd/Ctrl+1-8` to jump to a tab, `Cmd/Ctrl+9` for the last one,
- * and `Cmd/Ctrl+Shift+[` / `]` to step left and right. Registered on `document`
+ * `Cmd/Ctrl+Shift+[` / `]` to step left and right, and `Cmd/Ctrl+Shift+T` to
+ * bring back the tab closed last. Registered on `document`
  * like every other global shortcut in the app.
  *
  * **Desktop shell only** (DOR-568), because the tabs they drive are. In a
@@ -44,6 +45,9 @@ export function useAppTabShortcuts(): void {
         } else if (event.code === 'BracketRight') {
           event.preventDefault();
           actions.activateRelative(1);
+        } else if (event.code === 'KeyT') {
+          event.preventDefault();
+          actions.reopenClosed();
         }
         return;
       }

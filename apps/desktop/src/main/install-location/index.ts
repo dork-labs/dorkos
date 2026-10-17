@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import log from 'electron-log';
 import { cancelPreconfirmedQuit, preconfirmQuit } from '../quit-guard';
+import { markAppRestart } from '../tab-session';
 
 /**
  * The wrong-home guard: one offer to move DorkOS into Applications.
@@ -206,6 +207,8 @@ function moveToApplications(location: string): boolean {
       // Driven deliberately rather than left to the API's own quit, so the exit
       // is this module's decision and not an implementation detail of Electron's.
       // A second quit is harmless: the guard's `quitting` latch lets it through.
+      // The moved copy is the same app restarting, so it reopens every tab.
+      markAppRestart();
       app.quit();
       return true;
     }
