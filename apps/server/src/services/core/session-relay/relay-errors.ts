@@ -68,6 +68,35 @@ export const RELAY_APPROVAL_REFUSED: RelayError = {
   message: 'Approvals from the web need a newer version of this computer.',
 };
 
+/**
+ * A relayed answer to a question the chat is waiting on: it would put words
+ * into a turn a person started at full power, so it waits for the passkey
+ * proof (spec B4), as an approval does.
+ */
+export const RELAY_ANSWER_REFUSED: RelayError = {
+  ...RELAY_APPROVAL_REFUSED,
+  message: 'Answers from the web need a newer version of this computer.',
+};
+
+/**
+ * A relayed message delivered any way but the queue. Staged or steered words
+ * join a turn that may not be held to the relay's ceiling.
+ */
+export const RELAY_DISPOSITION_REFUSED: RelayError = {
+  ...RELAY_INVALID,
+  message: 'Messages from the web wait their turn.',
+};
+
+/**
+ * A relayed message that starts with a slash command. A command can approve
+ * tools ahead of time (`allowed-tools`), which would skip the ask.
+ */
+export const RELAY_SLASH_COMMAND_REFUSED: RelayError = {
+  status: 403,
+  code: 'refused',
+  message: 'Slash commands run only at this computer.',
+};
+
 /** The chat's folder is outside what this computer allows. */
 export const RELAY_OUTSIDE_BOUNDARY: RelayError = {
   status: 403,

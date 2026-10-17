@@ -12,6 +12,7 @@
  *
  * @module services/core/hub-relay/hub-relay-registry
  */
+import { logger } from '../../../lib/logger.js';
 import type { HubComputerConnection } from './computer-connection.js';
 
 /** Most unproved dials one computer may have waiting at once. */
@@ -20,6 +21,22 @@ export const HUB_RELAY_MAX_PENDING_DIALS = 3;
 const live = new Map<string, HubComputerConnection>();
 /** Each computer's unproved dials, oldest first. */
 const pending = new Map<string, HubComputerConnection[]>();
+const promotedListeners = new Set<(connection: HubComputerConnection) => void>();
+
+/**
+ * Be told each time a connection becomes its computer's live one.
+ *
+ * @param listener - Called with the newly live connection. A throw is logged.
+ * @returns Stop listening.
+ */
+export function onConnectionPromoted(
+  listener: (connection: HubComputerConnection) => void
+): () => void {
+  promotedListeners.add(listener);
+  return () => {
+    promotedListeners.delete(listener);
+  };
+}
 
 /** Take a connection out of its computer's pending list. */
 function unpend(connection: HubComputerConnection): void {
@@ -54,6 +71,13 @@ export function promoteConnection(connection: HubComputerConnection): void {
   const older = live.get(connection.computerId);
   live.set(connection.computerId, connection);
   if (older && older !== connection) older.close(1000);
+  for (const listener of promotedListeners) {
+    try {
+      listener(connection);
+    } catch (error) {
+      logger.warn('[HubRelay] A connection listener threw', { error: (error as Error).name });
+    }
+  }
 }
 
 /**

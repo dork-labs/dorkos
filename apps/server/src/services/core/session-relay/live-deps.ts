@@ -15,11 +15,8 @@ import type { Session } from '@dorkos/shared/types';
 import { boundaryRefusal } from '../../../lib/route-utils.js';
 import { parseResumeCursor } from '../../../lib/stream-cursor.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
-import { getUserById, readOwnerAccount } from '../auth/index.js';
-import { configManager } from '../config-manager.js';
 import { runtimeRegistry } from '../runtime-registry.js';
 import { deliverSessionStream } from '../streams/session-stream-delivery.js';
-import { resolveAnswererName } from '../../identity/operator-profile.js';
 import { aggregateSessionList } from '../../session/catalog/aggregate-session-list.js';
 import { dispatchSessionMessage } from '../../session/launch/launch-session.js';
 import { sessionExists } from '../../session/launch/session-exists.js';
@@ -31,7 +28,6 @@ import { clearQueuedMessages } from '../../session/queued-message-edits.js';
 import { resolveSessionCwdOrNull } from '../../session/resolution/resolve-read-cwd.js';
 import { resolveSettingsKey } from '../../session/resolution/session-settings-overlay.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
-import { logger } from '../../../lib/logger.js';
 import type { RelayRequestServerDeps } from './relay-request-server.js';
 import type { RelayAgent, RelaySessionFacts } from './relay-serves.js';
 
@@ -162,24 +158,6 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
     roomSessionPlace: () => wiring()?.roomSessionPlace(),
     resolveRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
     clearQueuedMessages,
-
-    answererName: () => {
-      try {
-        return resolveAnswererName({
-          account: () => {
-            const id = readOwnerAccount()?.id;
-            return id ? getUserById(id) : null;
-          },
-          configDisplayName: () => configManager.get('profile')?.displayName ?? null,
-        });
-      } catch (error) {
-        // A cosmetic label never costs the owner their answer.
-        logger.warn('[SessionRelay] Could not resolve who is answering', {
-          error: (error as Error).name,
-        });
-        return undefined;
-      }
-    },
 
     recordAudit: (input) => {
       recordAudit(input);

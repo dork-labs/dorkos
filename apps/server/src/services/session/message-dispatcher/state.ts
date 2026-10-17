@@ -15,6 +15,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isRelayClientId } from '../../core/session-relay/relay-client-id.js';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,
@@ -82,21 +83,29 @@ export function setQueuedChatCeilingResolver(
 }
 
 /**
- * The ceiling a launching message runs under: the caller's own, plus, for a
- * row another chat sent, its senders' bound. A chat-sent row with no resolver
- * wired is held to the receiving runtime's default: it fails closed.
+ * The ceiling a launching message runs under: the caller's own, plus a bound
+ * read from who queued the row.
+ *
+ * - A row another chat sent adds its senders' bound; with no resolver wired it
+ *   is held to the receiving runtime's default: it fails closed.
+ * - A row the session relay sent adds the runtime's default, always. The relay
+ *   passes that ceiling itself, but a row adopted after a restart has no
+ *   in-memory plan to carry it, and words from the web must still ask before
+ *   anything that needs a person (spec `everything-is-a-space` B2, option 2).
  */
 export function launchCeiling(
   clientId: string,
   messageId: string,
   own: TurnPermissionCeiling | undefined
 ): TurnPermissionCeiling | undefined {
-  if (!isChatClientId(clientId)) return own;
-  const chat = queuedChatCeiling?.(messageId) ?? 'runtime-default';
-  if (own === undefined) return chat;
+  let bound: TurnPermissionCeiling;
+  if (isChatClientId(clientId)) bound = queuedChatCeiling?.(messageId) ?? 'runtime-default';
+  else if (isRelayClientId(clientId)) bound = 'runtime-default';
+  else return own;
+  if (own === undefined) return bound;
   const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>
     Array.isArray(c) ? (c as readonly TurnPermissionBound[]) : [c as TurnPermissionBound];
-  return [...list(own), ...list(chat)];
+  return [...list(own), ...list(bound)];
 }
 
 /**

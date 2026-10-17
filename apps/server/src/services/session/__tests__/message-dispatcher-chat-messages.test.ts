@@ -8,7 +8,10 @@
  * - **The level ceiling at launch.** A row another chat sent launches under the
  *   ceiling the chat-message service resolves for it AT LAUNCH, and under the
  *   receiving runtime's default when nothing is wired (fails closed). A
- *   person's row carries no chat ceiling.
+ *   person's row carries no chat ceiling. A row the session relay sent always
+ *   launches at the runtime's default, with or without a ceiling of its own,
+ *   so one adopted after a restart still asks before anything that needs a
+ *   person.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -32,6 +35,7 @@ import { getOrCreateProjector, disposeProjector } from '../session-state-project
 const PERSON = 'window-a';
 const CHAT_A = 'chat:chat-a';
 const CHAT_C = 'chat:chat-c';
+const RELAY = 'relay:connection-1';
 
 const TIGHT: TurnPermissionLevel = { asks: 'always', reach: 'edit' };
 const MIDDLE: TurnPermissionLevel = { asks: 'when-risky', reach: 'workspace' };
@@ -214,5 +218,23 @@ describe('the level ceiling of a row another chat sent', () => {
 
     expect(resolver).not.toHaveBeenCalled();
     expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+
+  it('launches a relayed row with no ceiling of its own at the runtime default', async () => {
+    // As a row adopted after a restart arrives: no in-memory plan, so no own ceiling.
+    const resolver = vi.fn(() => TIGHT);
+    setQueuedChatCeilingResolver(resolver);
+    runtime.withScenarios([quickTurn()]);
+    await send('from the web', RELAY);
+    await settle();
+    expect(resolver).not.toHaveBeenCalled();
+    expect(ceilingOfCall(0)).toEqual({ has: true, value: 'runtime-default' });
+  });
+
+  it('holds a relayed row to both its own ceiling and the runtime default', async () => {
+    runtime.withScenarios([quickTurn()]);
+    await send('from the web', RELAY, { permissionCeiling: MIDDLE });
+    await settle();
+    expect(ceilingOfCall(0)).toEqual({ has: true, value: [MIDDLE, 'runtime-default'] });
   });
 });
