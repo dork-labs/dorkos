@@ -33,7 +33,13 @@ export interface AuthUser {
 /** The resolved session + user, or `null` when signed out. */
 export interface AuthSession {
   user: AuthUser;
-  session: { id: string; expiresAt: string; userId: string };
+  session: {
+    id: string;
+    expiresAt: string;
+    userId: string;
+    /** Signed in on a shared or public computer: signed out when idle. */
+    publicComputer?: boolean;
+  };
 }
 
 /** A normalized error from an auth call (never thrown — returned in {@link AuthResult}). */
