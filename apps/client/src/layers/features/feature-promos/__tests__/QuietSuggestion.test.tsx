@@ -88,6 +88,7 @@ const mockContext: PromoContext = {
   daysSinceFirstUse: 0,
   isDesktopApp: false,
   remoteAccessConfigured: false,
+  isHub: false,
 };
 // Dismissals are config now (spec `sidebar-simplification` D4). The fake keeps
 // the ONE list both surfaces read, which is the property the cross-surface case

@@ -77,6 +77,22 @@ describe('ControlCenterSwitches', () => {
     );
   });
 
+  it('on a hub, shows neither remote access nor warm agents, as Settings hides them', async () => {
+    const transport = createMockTransport({
+      getConfig: vi
+        .fn()
+        .mockResolvedValue(makeConfig({ serverRole: 'hub' } as Partial<ServerConfig>)),
+      getMeshTopology: vi.fn().mockResolvedValue(CLOSED_MESH),
+    });
+    render(<ControlCenterSwitches />, { wrapper: harness(transport) });
+
+    await screen.findByRole('switch', { name: 'Limit automatic replies' });
+    await waitFor(() =>
+      expect(screen.queryByRole('switch', { name: 'Warm agents' })).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('switch', { name: 'Remote access' })).not.toBeInTheDocument();
+  });
+
   it('carries no Standing permissions switch: Always allow replaced it', async () => {
     const transport = createMockTransport({
       getConfig: vi.fn().mockResolvedValue(makeConfig()),
