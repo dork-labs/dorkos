@@ -1,3 +1,8 @@
+import {
+  DOC_VISIBLE_TRIGGER,
+  docBoundaryEntry,
+  assertDocBoundary,
+} from '../../__tests__/doc-events-boundary-fixture.js';
 /**
  * @vitest-environment node
  *
@@ -853,3 +858,40 @@ describe.skipIf(!LIVE)('OpenCode compaction against a live sidecar (DOR-1668)', 
     ).toHaveLength(1);
   });
 });
+
+it.skipIf(LIVE)(
+  'doc SDK boundary: OpenCode promptAsync receives fenced parts and a separate neutral trigger',
+  async () => {
+    const runtime = new OpenCodeRuntime({ provider: makeMockedProvider() });
+    const client = lastClient!;
+    const sessionId = 'doc-sdk-boundary';
+    runtime.ensureSession(sessionId, { cwd: PROJECT_DIR, permissionMode: 'default' });
+    for (let turn = 0; turn < 2; turn++) {
+      for await (const _event of runtime.sendMessage(sessionId, DOC_VISIBLE_TRIGGER, {
+        cwd: PROJECT_DIR,
+        additionalContext: [docBoundaryEntry],
+      })) {
+        /* Drain actual sidecar request. */
+      }
+    }
+    const calls = client.session.promptAsync.mock.calls as unknown as Array<
+      [{ body: { parts: Array<{ type: string; text?: string }>; system?: string } }]
+    >;
+    expect(calls).toHaveLength(2);
+    const nonces = calls.map(([request]) => {
+      const parts = request.body.parts;
+      const nonce = assertDocBoundary(parts[0]?.text ?? '', [
+        request.body.system ?? '',
+        ...parts
+          .slice(1)
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text ?? ''),
+      ]);
+      expect(parts).toHaveLength(2);
+      expect(parts[1]).toMatchObject({ type: 'text', text: DOC_VISIBLE_TRIGGER });
+      return nonce;
+    });
+    expect(nonces[0]).not.toBe(nonces[1]);
+    expect(client.session.create).toHaveBeenCalledTimes(1);
+  }
+);
