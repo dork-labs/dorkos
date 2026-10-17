@@ -1,15 +1,7 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import {
-  Badge,
-  HoverBorderGradient,
-  InlineCode,
-  Kbd,
-  PRESS_CARD,
-  PRESS_MARK,
-  PRESS_ROW,
-} from '@/layers/shared/ui';
+import { Badge, InlineCode, Kbd, PRESS_CARD, PRESS_MARK, PRESS_ROW } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 /**
@@ -148,15 +140,6 @@ export function ControlShowcases() {
           <Badge asChild variant="secondary">
             <a href="#badge-aschild">Open the docs</a>
           </Badge>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="HoverBorderGradient"
-        description="Animated gradient border button from Aceternity UI."
-      >
-        <ShowcaseDemo>
-          <HoverBorderGradient>Get Started</HoverBorderGradient>
         </ShowcaseDemo>
       </PlaygroundSection>
 
