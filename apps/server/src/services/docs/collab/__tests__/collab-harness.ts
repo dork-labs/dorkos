@@ -117,6 +117,7 @@ export function liveDocDeps(space: TestSpace) {
     retryBaseMs: 20,
     watch: false,
     maxEditors: 32,
+    persistDelayMs: 20,
   };
 }
 
@@ -242,7 +243,10 @@ export class TestEditor {
     const decoder = decoding.createDecoder(frame);
     const type = decoding.readVarUint(decoder);
     if (type === DOC_COLLAB_MESSAGE.note) {
-      const note = DocCollabNoteSchema.parse(JSON.parse(decoding.readVarString(decoder)));
+      // Notes this editor does not know are ignored, as a browser's are.
+      const parsed = DocCollabNoteSchema.safeParse(JSON.parse(decoding.readVarString(decoder)));
+      if (!parsed.success) return;
+      const note = parsed.data;
       this.notes.push(note);
       if (note.type !== 'hello') return;
       if (this.generation && this.generation !== note.generation) {

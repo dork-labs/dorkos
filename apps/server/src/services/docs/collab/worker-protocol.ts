@@ -37,6 +37,12 @@ export type MarkdownWorkerResult =
       base: Uint8Array;
       /** The merged document, as markdown. */
       markdown: string;
+      /**
+       * With a base: the base plus only this writer's change, self-contained
+       * (no deletions or items from anyone else). What a file written by this
+       * writer reflects, and the next base for the same writer's next change.
+       */
+      reflected?: Uint8Array;
     };
 
 /** Why a request did not work. */

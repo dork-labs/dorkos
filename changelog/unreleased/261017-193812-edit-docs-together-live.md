@@ -5,6 +5,8 @@ covers:
   - "refactor(desktop): build the server's side bundles in their own module"
   - "fix(docs): never lose a person's live doc edits, and hold doc tools to the agent's folders (DOR-2984)"
   - 'fix(docs): keep live doc edits through reconnects, and pick the version to restore (DOR-2984)'
+  - 'fix(docs): retry saves that meet a conflict, refuse unread writes, and survive a crash (DOR-2984)'
+  - 'fix(docs): end reconnect loops, and offer back only edits the file does not have (DOR-2984)'
 ---
 
 ### Added

@@ -66,6 +66,8 @@ export interface DocCollabServiceDeps {
   maxOpenDocs?: number;
   /** The most editors on one doc at once. */
   maxEditors?: number;
+  /** How soon after a change an open doc's whole state is saved to the data folder. Default 2 s. */
+  persistDelayMs?: number;
 }
 
 /** A writer outside the editors, and the session its base belongs to. */
@@ -85,12 +87,18 @@ export class DocChangedError extends Error {
   }
 }
 
-/** A write to a doc somebody has open, from a writer that never read it. */
+/** A write from a writer that never read the doc. */
 export class DocNotReadError extends Error {
-  /** A refusal that tells the writer to read first. */
-  constructor() {
+  /**
+   * A refusal that tells the writer to read first.
+   *
+   * @param open - Whether somebody has the doc open.
+   */
+  constructor(open: boolean) {
     super(
-      'Somebody has this doc open. Read it with doc_read first, so your change merges with theirs.'
+      open
+        ? 'Somebody has this doc open. Read it with doc_read first, so your change merges with theirs.'
+        : 'Read this doc with doc_read first, so your change is made against what it says now.'
     );
     this.name = 'DocNotReadError';
   }
@@ -159,6 +167,7 @@ export class DocCollabService {
       watch: true,
       maxOpenDocs: DEFAULT_MAX_OPEN_DOCS,
       maxEditors: DEFAULT_MAX_EDITORS,
+      persistDelayMs: 2_000,
       ...deps,
     };
   }
@@ -199,9 +208,14 @@ export class DocCollabService {
       live = await this.#open(doc);
       joined = live.join(peer, options.generation);
     }
-    if (joined === 'stale' || joined === 'closing') return NO_HANDLE;
-    if (joined === 'full') {
-      throw new DocRefusal(429, 'TOO_MANY_EDITORS', 'Too many people have this doc open.');
+    if (joined !== 'joined') {
+      // A doc opened only for an editor that was then turned away is not left
+      // open with nobody in it.
+      if (live.editors === 0) this.#linger(doc.file, live);
+      if (joined === 'full') {
+        throw new DocRefusal(429, 'TOO_MANY_EDITORS', 'Too many people have this doc open.');
+      }
+      return NO_HANDLE;
     }
     this.#cancelLinger(doc.file);
     let left = false;
@@ -248,7 +262,7 @@ export class DocCollabService {
    * @param ref - The doc.
    * @param markdown - What the agent wants the doc to say.
    * @param caller - Who is writing.
-   * @throws DocNotReadError when the doc is open and the agent never read it;
+   * @throws DocNotReadError when the agent never read the doc;
    *   DocChangedError when the doc moved past the agent's read in a way that
    *   cannot be merged.
    */
@@ -258,7 +272,7 @@ export class DocCollabService {
     const live = await this.#openNow(doc.file);
     if (live) {
       let base: Uint8Array;
-      if (!record) throw new DocNotReadError();
+      if (!record) throw new DocNotReadError(true);
       if (record.generation === live.generation && record.base) base = record.base;
       // A read of the closed file, which this open copy was loaded from.
       else if (record.generation === null && record.fileHash === live.fileHash) {
@@ -273,6 +287,8 @@ export class DocCollabService {
       });
       return { live: true, changed: result.changed };
     }
+    // An existing file is never replaced by a writer that has not seen it.
+    if (!record) throw new DocNotReadError(false);
     const changed = await this.#writeFile(doc, markdown, caller.writer, record);
     const hash = sha256(markdown);
     this.#remember(caller, doc, { generation: null, hash, fileHash: hash });
@@ -423,6 +439,7 @@ export class DocCollabService {
         retryBaseMs: this.#deps.retryBaseMs,
         watch: this.#deps.watch,
         maxEditors: this.#deps.maxEditors,
+        persistDelayMs: this.#deps.persistDelayMs,
       };
       // A reopen reads the file only after the copy before it wrote its last edits.
       const opening = closing.then(() => LiveDoc.open(doc, deps));

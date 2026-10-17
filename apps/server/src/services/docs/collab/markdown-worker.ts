@@ -87,18 +87,53 @@ export function handleMarkdownRequest(
     case 'merge': {
       const doc = docFrom(request.state);
       const before = Y.encodeStateVector(doc);
-      const { base } = applyMarkdownToYDoc(model, doc, request.markdown, {
-        ...(request.base ? { base: request.base } : {}),
-      });
+      let reflected: Uint8Array | undefined;
+      if (request.base) {
+        // The three-way merge `applyMarkdownToYDoc` does with a base, done
+        // here so the fork (base plus only this writer's change) can be
+        // handed back too: the doc's own update carries everyone's deletions,
+        // so it can never stand in for that.
+        assertBaseFrom(doc, request.base);
+        const fork = docFrom(request.base);
+        const forkBefore = Y.encodeStateVector(fork);
+        applyMarkdownToYDoc(model, fork, request.markdown);
+        const change = Y.encodeStateAsUpdate(fork, forkBefore);
+        reflected = Y.encodeStateAsUpdate(fork);
+        fork.destroy();
+        Y.applyUpdate(doc, change);
+      } else {
+        applyMarkdownToYDoc(model, doc, request.markdown);
+      }
       const update = Y.encodeStateAsUpdate(doc, before);
+      const base = Y.encodeStateAsUpdate(doc);
       const markdown = yDocToMarkdown(model, doc);
       doc.destroy();
-      return { op: 'merge', update, base, markdown };
+      return { op: 'merge', update, base, markdown, ...(reflected ? { reflected } : {}) };
     }
   }
 }
 
-/** Blintz names its `base` refusals; everything else is a plain failure. */
+/**
+ * A base must be state `doc` already has: everything in it, nothing more
+ * (Blintz's own rule for `applyMarkdownToYDoc`). One from another doc, or
+ * from a newer copy, cannot be merged.
+ */
+function assertBaseFrom(doc: Y.Doc, base: Uint8Array): void {
+  let wanted: Map<number, number>;
+  try {
+    wanted = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(base));
+  } catch (cause) {
+    throw new Error('`base` is not a Yjs update.', { cause });
+  }
+  const has = Y.decodeStateVector(Y.encodeStateVector(doc));
+  for (const [client, clock] of wanted) {
+    if ((has.get(client) ?? 0) < clock) {
+      throw new Error('`base` was read from a different copy of this document.');
+    }
+  }
+}
+
+/** Base refusals name the `base`; everything else is a plain failure. */
 function failureOf(id: number, error: unknown): MarkdownWorkerResponse {
   const message = error instanceof Error ? error.message : String(error);
   return { id, ok: false, code: message.includes('`base`') ? 'BASE_MISMATCH' : 'FAILED', message };
@@ -110,7 +145,7 @@ function transferablesOf(result: MarkdownWorkerResult): ArrayBuffer[] {
     result.op === 'seed'
       ? [result.state]
       : result.op === 'merge'
-        ? [result.update, result.base]
+        ? [result.update, result.base, ...(result.reflected ? [result.reflected] : [])]
         : [];
   return buffers.map((bytes) => bytes.buffer as ArrayBuffer);
 }

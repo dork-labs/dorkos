@@ -22,7 +22,8 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { createDocumentVersionRoutes } from '../documents-versions.js';
+import { createDocumentVersionRoutes, documentVersionsBodyRule } from '../documents-versions.js';
+import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import type { DocCollabService } from '../../services/docs/collab/index.js';
 import {
   makeService,
@@ -48,10 +49,13 @@ afterEach(async () => {
 
 function app() {
   return target.mount(
-    honoGroupListener({
-      path: '/api/documents/versions',
-      routes: createDocumentVersionRoutes({ enabled: () => enabled, service: () => service }),
-    })
+    honoGroupListener(
+      {
+        path: '/api/documents/versions',
+        routes: createDocumentVersionRoutes({ enabled: () => enabled, service: () => service }),
+      },
+      { bodyRules: [documentVersionsBodyRule] }
+    )
   );
 }
 
@@ -71,9 +75,9 @@ describe('/api/documents/versions', () => {
 
   it('lists a doc’s versions and restores one, keeping what it replaced', async () => {
     const rel = space.write('plan.md', 'Mine.\n');
-    await service.write({ cwd: space.space, path: rel }, 'The agent’s.\n', {
-      writer: { kind: 'agent', name: 'Ada' },
-    });
+    const ada = { writer: { kind: 'agent' as const, name: 'Ada' }, sessionKey: 'ada' };
+    await service.read({ cwd: space.space, path: rel }, ada);
+    await service.write({ cwd: space.space, path: rel }, 'The agent’s.\n', ada);
 
     const listed = await request(app())
       .get('/api/documents/versions')
@@ -111,6 +115,31 @@ describe('/api/documents/versions', () => {
       .post('/api/documents/versions/restore')
       .send({ cwd: space.space, path: rel, versionId: kept.body.version.id });
     expect(readFileSync(path.join(space.space, rel), 'utf8')).toBe('Typed offline.\n');
+  });
+
+  it('lets only a person keep a draft or restore, never an agent', async () => {
+    const rel = space.write('person.md', 'Mine.\n');
+    const keep = await request(app())
+      .post('/api/documents/versions')
+      .set(AGENT_IDENTITY_HEADER, 'agent-token')
+      .send({ cwd: space.space, path: rel, markdown: 'An agent’s draft.\n' });
+    expect(keep.status).toBe(403);
+    const restore = await request(app())
+      .post('/api/documents/versions/restore')
+      .set(AGENT_IDENTITY_HEADER, 'agent-token')
+      .send({ cwd: space.space, path: rel, versionId: '01JZZZZZZZZZZZZZZZZZZZZZZZ' });
+    expect(restore.status).toBe(403);
+    expect(readFileSync(path.join(space.space, rel), 'utf8')).toBe('Mine.\n');
+  });
+
+  it('keeps a draft as large as a doc may be', async () => {
+    const rel = space.write('large.md', 'Small.\n');
+    const markdown = `${'A long paragraph of text. '.repeat(80_000)}\n`;
+    expect(markdown.length).toBeGreaterThan(1024 * 1024);
+    const kept = await request(app())
+      .post('/api/documents/versions')
+      .send({ cwd: space.space, path: rel, markdown });
+    expect(kept.status).toBe(200);
   });
 
   it('refuses what the files routes refuse', async () => {

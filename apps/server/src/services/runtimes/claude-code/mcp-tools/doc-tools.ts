@@ -50,19 +50,18 @@ type DocAccess = 'write' | 'read' | 'none';
 
 /**
  * This session's reach over `file` (canonical): its own folder and write
- * grants may be written, read grants only read, anything else neither.
+ * grants may be written, read grants only read (and a read grant wins where
+ * it overlaps a write grant), anything else neither.
  */
 async function accessTo(file: string, session: DocToolSession): Promise<DocAccess> {
   const inside = (root: string) => file === root || file.startsWith(root + path.sep);
   const cwd = session.cwd ? await fs.realpath(session.cwd).catch(() => null) : null;
   if (cwd && inside(cwd)) return 'write';
-  let access: DocAccess = 'none';
-  for (const grant of session.grants ?? []) {
-    if (!inside(grant.path)) continue;
-    if (grant.access === 'write') return 'write';
-    access = 'read';
-  }
-  return access;
+  // A read grant is a deny rule for Write (`directory-grants.ts`), and a deny
+  // wins over any allow: a read grant anywhere above the file makes it read-only.
+  const covering = (session.grants ?? []).filter((grant) => inside(grant.path));
+  if (covering.some((grant) => grant.access === 'read')) return 'read';
+  return covering.length > 0 ? 'write' : 'none';
 }
 
 const OUTSIDE =

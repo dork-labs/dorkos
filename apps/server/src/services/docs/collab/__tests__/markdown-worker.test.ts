@@ -133,3 +133,44 @@ describe('MarkdownWorkerClient queue', () => {
     expect(await client.serialize(await second)).toContain('Second.');
   });
 });
+
+describe('handleMarkdownRequest merge with a base', () => {
+  it('hands back a reflected state with only the base and the writer’s change in it', async () => {
+    const { handleMarkdownRequest, loadMarkdownModel } = await import('../markdown-worker.js');
+    const model = await loadMarkdownModel();
+    const seeded = handleMarkdownRequest(model, { id: 0, op: 'seed', markdown: 'One.\n\nTwo.\n' });
+    if (seeded.op !== 'seed') throw new Error('unexpected');
+    // A person deletes "Two." on the live copy, unsaved.
+    const typed = handleMarkdownRequest(model, {
+      id: 0,
+      op: 'merge',
+      state: seeded.state,
+      markdown: 'One.\n',
+    });
+    if (typed.op !== 'merge') throw new Error('unexpected');
+    const live = new Y.Doc();
+    Y.applyUpdate(live, seeded.state);
+    Y.applyUpdate(live, typed.update);
+
+    const merged = handleMarkdownRequest(model, {
+      id: 0,
+      op: 'merge',
+      state: Y.encodeStateAsUpdate(live),
+      markdown: 'One, from disk.\n\nTwo.\n',
+      base: seeded.state,
+    });
+    if (merged.op !== 'merge' || !merged.reflected) throw new Error('no reflected state');
+    const reflected = new Y.Doc();
+    Y.applyUpdate(reflected, merged.reflected);
+    expect(reflected.store.pendingStructs).toBeNull();
+    expect(reflected.store.pendingDs).toBeNull();
+    const shown = handleMarkdownRequest(model, {
+      id: 0,
+      op: 'serialize',
+      state: merged.reflected,
+    });
+    // The person's deletion is not in it: it says what the file says.
+    expect(shown.op === 'serialize' && shown.markdown).toContain('Two.');
+    expect(shown.op === 'serialize' && shown.markdown).toContain('One, from disk.');
+  });
+});

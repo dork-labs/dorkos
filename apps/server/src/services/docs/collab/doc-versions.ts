@@ -13,8 +13,9 @@
  * a `doc.json` naming the file. The doc key names the resolved file, so every
  * folder that reaches one file shares its versions. Bounded: the newest
  * {@link DEFAULT_KEPT_VERSIONS} per doc, and {@link DEFAULT_TOTAL_BYTES} across
- * every doc (oldest go first); {@link DocVersionStore.sweep} also removes the
- * versions of a doc whose file has been gone for a while.
+ * every doc (oldest go first), with unsaved edits held to a separate, smaller
+ * quota they never give up to anything else; {@link DocVersionStore.sweep}
+ * also removes the versions of a doc whose file has been gone for a while.
  *
  * @module services/docs/collab/doc-versions
  */
@@ -35,6 +36,16 @@ export const DEFAULT_KEPT_VERSIONS = 10;
 
 /** How many bytes of versions every doc together keeps. */
 export const DEFAULT_TOTAL_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Unsaved edits are a person's own words that reached no file, so they have a
+ * quota of their own and never make room for versions before agent changes:
+ * this many per doc, and {@link UNSAVED_TOTAL_BYTES} across every doc.
+ */
+export const KEPT_UNSAVED_EDITS = 5;
+
+/** How many bytes of unsaved edits every doc together keeps. */
+export const UNSAVED_TOTAL_BYTES = 50 * 1024 * 1024;
 
 /** Ids sort in the order they were made, even within one millisecond. */
 const nextId = monotonicFactory();
@@ -173,20 +184,28 @@ export class DocVersionStore {
     return names.filter((name) => DOC_KEY.test(name));
   }
 
-  /** Remove the oldest versions, across every doc, until the total fits the cap. */
+  /**
+   * Remove the oldest versions, across every doc, until each kind fits its
+   * cap: versions before changes against theirs, unsaved edits against their own.
+   */
   async #capTotal(): Promise<void> {
     const all: { dir: string; version: DocVersion }[] = [];
     for (const docKey of await this.#docKeys()) {
       const dir = path.join(this.#root, docKey);
       for (const version of await this.#listIn(dir)) all.push({ dir, version });
     }
-    let total = all.reduce((sum, entry) => sum + entry.version.bytes, 0);
-    if (total <= this.#totalBytes) return;
     all.sort((a, b) => a.version.id.localeCompare(b.version.id));
-    for (const { dir, version } of all) {
-      if (total <= this.#totalBytes) break;
-      await this.#remove(dir, version.id);
-      total -= version.bytes;
+    for (const [reason, cap] of [
+      ['before-change', this.#totalBytes],
+      ['unsaved-edits', UNSAVED_TOTAL_BYTES],
+    ] as const) {
+      const kind = all.filter((entry) => entry.version.reason === reason);
+      let total = kind.reduce((sum, entry) => sum + entry.version.bytes, 0);
+      for (const { dir, version } of kind) {
+        if (total <= cap) break;
+        await this.#remove(dir, version.id);
+        total -= version.bytes;
+      }
     }
   }
 
@@ -221,7 +240,11 @@ export class DocVersionStore {
   }
 
   async #prune(dir: string): Promise<void> {
-    const stale = (await this.#listIn(dir)).slice(this.#kept);
+    const versions = await this.#listIn(dir);
+    const stale = [
+      ...versions.filter((v) => v.reason === 'before-change').slice(this.#kept),
+      ...versions.filter((v) => v.reason === 'unsaved-edits').slice(KEPT_UNSAVED_EDITS),
+    ];
     for (const version of stale) await this.#remove(dir, version.id);
   }
 

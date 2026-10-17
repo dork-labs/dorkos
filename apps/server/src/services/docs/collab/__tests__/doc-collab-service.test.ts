@@ -147,6 +147,7 @@ describe('an open doc', () => {
 describe('a closed doc', () => {
   it('writes an agent’s write straight to the file, keeping the old bytes', async () => {
     const rel = space.write('closed.md', '# Old\n');
+    await service.read(ref(rel), { writer: AGENT, sessionKey: 's1' });
     await service.write(ref(rel), '# New\n', { writer: AGENT, sessionKey: 's1' });
     expect(onDisk(rel)).toBe('# New\n');
     const doc = await service.resolve(ref(rel));
@@ -184,7 +185,8 @@ describe('a closed doc', () => {
 describe('restoring a previous version', () => {
   it('undoes an agent’s write while nobody has the doc open, and can be undone itself', async () => {
     const rel = space.write('restore.md', 'Mine.\n');
-    await service.write(ref(rel), 'The agent’s.\n', { writer: AGENT });
+    await service.read(ref(rel), { writer: AGENT, sessionKey: 's1' });
+    await service.write(ref(rel), 'The agent’s.\n', { writer: AGENT, sessionKey: 's1' });
     const doc = await service.resolve(ref(rel));
     const [before] = await versions.list(doc.scope);
 

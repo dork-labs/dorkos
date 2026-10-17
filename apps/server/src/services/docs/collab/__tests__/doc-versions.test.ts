@@ -79,3 +79,14 @@ describe('DocVersionStore bounds', () => {
     expect(kept?.reason).toBe('unsaved-edits');
   });
 });
+
+describe('DocVersionStore and unsaved edits', () => {
+  it('never prunes unsaved edits to make room for versions before agent changes', async () => {
+    const store = new DocVersionStore(root, 3, 40);
+    await store.keep(scope, 'draft one\n', { kind: 'person' }, 'unsaved-edits');
+    for (const n of [1, 2, 3, 4, 5, 6]) await store.keep(scope, `agent v${n}\n`, AGENT);
+    const reasons = (await store.list(scope)).map((version) => version.reason);
+    expect(reasons.filter((reason) => reason === 'unsaved-edits')).toHaveLength(1);
+    expect(reasons.filter((reason) => reason === 'before-change').length).toBeLessThanOrEqual(3);
+  });
+});

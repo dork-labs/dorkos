@@ -71,7 +71,10 @@ import {
 } from '../routes/extension-decisions.js';
 import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
 import { createFileRoutes } from '../routes/files.js';
-import { createDocumentVersionRoutes } from '../routes/documents-versions.js';
+import {
+  createDocumentVersionRoutes,
+  documentVersionsBodyRule,
+} from '../routes/documents-versions.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
@@ -319,7 +322,14 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
     // A hub's link path is open before its code is checked, so it reads 4 KB.
-    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
+    bodyRules: [
+      feedbackBodyRule,
+      docEventBodyRule,
+      relayWebhookBodyRule,
+      hubLinkBodyRule,
+      // A doc draft is a whole doc, up to the doc cap (DOR-2984).
+      documentVersionsBodyRule,
+    ],
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });

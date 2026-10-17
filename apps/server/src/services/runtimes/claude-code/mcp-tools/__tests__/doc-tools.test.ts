@@ -124,6 +124,7 @@ describe('doc tools', () => {
     const read = createDocReadHandler(deps, granted);
     const write = createDocWriteHandler(deps, granted);
 
+    await read({ path: 'own.md' });
     expect(parse(await write({ path: 'own.md', markdown: 'Mine, edited.\n' })).isError).toBe(false);
     expect(
       parse(await read({ path: 'plan.md', cwd: path.join(space.space, 'team-read') })).isError
@@ -136,6 +137,7 @@ describe('doc tools', () => {
       error: expect.stringContaining('can’t be written'),
     });
     expect(readFileSync(path.join(space.space, 'team-read/plan.md'), 'utf8')).toBe('Read only.\n');
+    await read({ path: 'plan.md', cwd: path.join(space.space, 'team-write') });
     expect(
       parse(
         await write({
@@ -152,6 +154,31 @@ describe('doc tools', () => {
       isError: true,
       error: expect.stringContaining('outside your folder'),
     });
+  });
+
+  it('let a read-only grant win where it overlaps a write grant, as Write’s deny rules do', async () => {
+    space.write('team/notes.md', 'Writable.\n');
+    space.write('team/locked/plan.md', 'Locked.\n');
+    const overlapping = () => ({
+      cwd: path.join(space.space, 'agent'),
+      sessionKey: 'overlap',
+      grants: [
+        { path: path.join(space.space, 'team'), access: 'write' as const },
+        { path: path.join(space.space, 'team', 'locked'), access: 'read' as const },
+      ],
+    });
+    const read = createDocReadHandler(deps, overlapping);
+    const write = createDocWriteHandler(deps, overlapping);
+    const locked = { path: 'plan.md', cwd: path.join(space.space, 'team', 'locked') };
+    await read(locked);
+    const refused = parse(await write({ ...locked, markdown: 'No.\n' }));
+    expect(refused).toMatchObject({
+      isError: true,
+      error: expect.stringContaining('can’t be written'),
+    });
+    const open = { path: 'notes.md', cwd: path.join(space.space, 'team') };
+    await read(open);
+    expect(parse(await write({ ...open, markdown: 'Edited.\n' })).isError).toBe(false);
   });
 
   it('refuse a write to an open doc the agent never read', async () => {

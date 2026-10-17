@@ -9,12 +9,16 @@
  *   said before is kept as a version first. While the doc is open the restore
  *   reaches its editors live.
  *
- * The same boundary checks as the files routes. The whole group answers the
- * `/api` 404 while the `docs.enabled` experiment is off.
+ * The same boundary checks as the files routes. Keeping a draft and restoring
+ * change what a person sees in their doc, so both are a person's alone
+ * ({@link clearsTheAgentBar}): an agent changes a doc through `doc_write`,
+ * which merges. The whole group answers the `/api` 404 while the
+ * `docs.enabled` experiment is off.
  *
  * @module routes/documents-versions
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import bodyParser from 'body-parser';
 import { z } from 'zod';
 import {
   DocRefSchema,
@@ -22,7 +26,9 @@ import {
   RestoreDocVersionRequestSchema,
 } from '@dorkos/shared/doc-collab';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '../http/request-body.js';
+import { readJsonBody, type BodyRule } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readQuery } from '../http/request-query.js';
 import { errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
@@ -43,6 +49,26 @@ export interface DocumentVersionRouteDeps {
 }
 
 const liveDeps: DocumentVersionRouteDeps = { enabled: docsEnabled, service: getDocCollab };
+
+/**
+ * A draft is a whole doc, up to the 5 MB doc cap, which the app-wide 1 MB JSON
+ * limit would refuse first. Only this one path gets the larger limit, and the
+ * request schema still holds the text itself to the doc cap.
+ */
+export const documentVersionsBodyRule: BodyRule = {
+  matches: (method, path) =>
+    method.toUpperCase() === 'POST' && path.replace(/\/$/, '') === '/api/documents/versions',
+  parse: bodyParser.json({ limit: '12mb' }),
+};
+
+/** The refusal for anything but a person, or `null` for a person. */
+function refuseUnlessPerson(c: Context<ApiEnv>): Response | null {
+  if (clearsTheAgentBar(honoRequestFacts(c))) return null;
+  return c.json(
+    errorBody('Only a person can change a doc’s versions. Agents use doc_write.', 'PERSON_ONLY'),
+    403
+  );
+}
 
 /** The answer for an error the doc service raised, or `null` for a bug. */
 function refusalOf(
@@ -92,6 +118,8 @@ export function createDocumentVersionRoutes(
   });
 
   router.post('/', async (c) => {
+    const refused = refuseUnlessPerson(c);
+    if (refused) return refused;
     const parsed = KeepDocDraftRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
       return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
@@ -109,6 +137,8 @@ export function createDocumentVersionRoutes(
   });
 
   router.post('/restore', async (c) => {
+    const refused = refuseUnlessPerson(c);
+    if (refused) return refused;
     const parsed = RestoreDocVersionRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
       return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
