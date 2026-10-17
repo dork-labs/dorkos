@@ -15,7 +15,7 @@ import {
   digest,
 } from '../../fixtures/doc-channel-consumer/writer.js';
 import { originalHeldTurnHasText } from '../../fixtures/doc-channel-consumer/live-session-snapshot.js';
-import { AuthPage } from '../../pages/AuthPage.js';
+import { signInOriginalConsumerHost } from '../../fixtures/doc-channel-consumer/browser-bootstrap.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
 import type { CanvasService as OriginalCanvasService } from '../../../server/src/services/canvas/index.js';
 
@@ -306,12 +306,7 @@ test('genuine frame host: busy→restart→one canonical turn→partial app ack 
   };
   try {
     await page.goto(host.origin + '/channels?id=' + host.roomId);
-    await new AuthPage(page).signIn(host.ownerEmail, host.ownerPassword);
-    // Each isolated host is a fresh installation outside globalSetup's server list.
-    await page.getByRole('button', { name: 'Skip all setup', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Welcome to DorkOS' })).toBeHidden();
-    await page.getByRole('button', { name: 'Keep asking me first', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'DorkOS runs at full power' })).toBeHidden();
+    await signInOriginalConsumerHost(page, host);
     const panel = new RightPanelPage(page);
     await panel.ensureTabStripOpen();
     await panel.browserTab.click();
@@ -547,12 +542,7 @@ for (const target of ['session', 'room'] as const) {
             ? '/channels?id=' + host.roomId
             : '/session?session=' + host.sessionId + '&dir=' + encodeURIComponent(host.root))
       );
-      await new AuthPage(page).signIn(host.ownerEmail, host.ownerPassword);
-      // Each isolated host is a fresh installation outside globalSetup's server list.
-      await page.getByRole('button', { name: 'Skip all setup', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Welcome to DorkOS' })).toBeHidden();
-      await page.getByRole('button', { name: 'Keep asking me first', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'DorkOS runs at full power' })).toBeHidden();
+      await signInOriginalConsumerHost(page, host);
       if (target === 'room') {
         const roomResponse = await page.request.get(host.origin + '/api/rooms/' + host.roomId);
         expect(roomResponse.status(), await roomResponse.text()).toBe(200); // Original cookie caller + registered SAME RoomService.
@@ -1034,11 +1024,7 @@ test('two original managed Doc frames correlate log-only receipts across tabs an
   try {
     expect(host.frameDeclarationAbsent).toBe(true);
     await page.goto(location);
-    await new AuthPage(page).signIn(host.ownerEmail, host.ownerPassword);
-    await page.getByRole('button', { name: 'Skip all setup', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Welcome to DorkOS' })).toBeHidden();
-    await page.getByRole('button', { name: 'Keep asking me first', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'DorkOS runs at full power' })).toBeHidden();
+    await signInOriginalConsumerHost(page, host);
     // Load the second authenticated tab while the first original frame mounts.
     second = await page.context().newPage();
     secondNavigation = second.goto(location);
