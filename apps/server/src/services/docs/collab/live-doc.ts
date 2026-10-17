@@ -159,20 +159,26 @@ export class LiveDoc {
     const hash = sha256(content);
     const seeded = await deps.worker.seed(content);
     const saved = await deps.states.load(ref.key, hash);
+    const check = saved ? await LiveDoc.#check(deps, saved, seeded) : null;
     let doc: LiveDoc | null = null;
-    if (saved && (await LiveDoc.#reconciles(deps, saved, seeded))) {
+    if (saved && check?.trusted) {
       try {
         doc = new LiveDoc(ref, deps, { state: saved.fileState, hash, content }, saved.generation);
         // The whole doc as it was last saved, unsaved edits included: those
-        // are written to the file now, as if just typed.
+        // are written to the file now, as if just typed. Judged by text, so
+        // edits that only delete count too.
         Y.applyUpdate(doc.#doc, saved.state, LOAD);
-        const whole = Y.encodeStateVector(doc.#doc);
-        const filed = Y.encodeStateVectorFromUpdate(saved.fileState);
-        if (Buffer.compare(Buffer.from(whole), Buffer.from(filed)) !== 0) doc.#changed();
+        if (check.wholeText !== check.fileText) doc.#changed();
       } catch (err) {
         logger.warn('[docs] a saved doc state could not be read; loading the file', { err });
         doc = null;
       }
+    } else if (saved && check?.wholeText != null && check.wholeText !== check.fileText) {
+      // A state that cannot be trusted as this copy still holds somebody's
+      // words: keep them as a version before starting from the file.
+      await deps.versions
+        .keep(ref.scope, check.wholeText, { kind: 'person' }, 'unsaved-edits')
+        .catch((err) => logger.warn('[docs] could not keep an untrusted state’s text', { err }));
     }
     if (!doc) {
       doc = new LiveDoc(ref, deps, { state: seeded, hash, content }, randomUUID());
@@ -192,29 +198,34 @@ export class LiveDoc {
   /**
    * Whether a saved state can be trusted: its file state must say what the
    * file says, as an editor would write it, and the whole state must hold it.
+   * Also the two texts, so a caller can tell unsaved edits (deletions
+   * included, which a state vector cannot show) and keep them.
    */
-  static async #reconciles(
+  static async #check(
     deps: LiveDocDeps,
     saved: { state: Uint8Array; fileState: Uint8Array },
     seeded: Uint8Array
-  ): Promise<boolean> {
+  ): Promise<{ trusted: boolean; wholeText: string | null; fileText: string | null }> {
+    const text = (state: Uint8Array) => deps.worker.serialize(state).catch(() => null);
+    const [wholeText, filedText, fileText] = await Promise.all([
+      text(saved.state),
+      text(saved.fileState),
+      text(seeded),
+    ]);
+    if (wholeText === null || filedText === null || filedText !== fileText) {
+      return { trusted: false, wholeText, fileText };
+    }
     try {
-      const [filed, file] = await Promise.all([
-        deps.worker.serialize(saved.fileState),
-        deps.worker.serialize(seeded),
-      ]);
-      if (filed !== file) return false;
       const whole = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(saved.state));
       for (const [client, clock] of Y.decodeStateVector(
         Y.encodeStateVectorFromUpdate(saved.fileState)
       )) {
-        if ((whole.get(client) ?? 0) < clock) return false;
+        if ((whole.get(client) ?? 0) < clock) return { trusted: false, wholeText, fileText };
       }
-      await deps.worker.serialize(saved.state);
-      return true;
     } catch {
-      return false;
+      return { trusted: false, wholeText, fileText };
     }
+    return { trusted: true, wholeText, fileText };
   }
 
   /** How many editors are here. */
@@ -342,12 +353,13 @@ export class LiveDoc {
 
   /** What the file holds now, for editors to tell their saved edits from their unsaved ones. */
   #savedNote(): DocCollabNote {
-    const stateVector = Buffer.from(Y.encodeStateVectorFromUpdate(this.#fileBase.state));
-    return {
-      type: 'saved',
-      hash: this.#fileBase.hash,
-      stateVector: stateVector.toString('base64'),
-    };
+    // A snapshot, not a state vector: a state vector cannot show deletions,
+    // and an edit that only deletes must not read as saved before it is.
+    const filed = new Y.Doc({ gc: false });
+    Y.applyUpdate(filed, this.#fileBase.state);
+    const snapshot = Buffer.from(Y.encodeSnapshot(Y.snapshot(filed))).toString('base64');
+    filed.destroy();
+    return { type: 'saved', hash: this.#fileBase.hash, snapshot };
   }
 
   /** Keep the doc's text as a version when it could not reach the file. Never throws. */
@@ -407,12 +419,23 @@ export class LiveDoc {
     // change, and none of the edits only the editors have.
     const reflected = merged.reflected;
     if (!reflected) throw new Error('A merge with a base came back without its reflected state.');
+    const writer: DocWriter = { kind: 'disk' };
+    const changed = merged.markdown !== previous;
+    // The version first: if it cannot be kept, nothing has moved, and the
+    // change is taken in on the next try (the file event, or the save's 409).
+    const kept = changed
+      ? await this.#deps.versions.keep(
+          this.ref.scope,
+          this.#unsaved ? previous : fileBase.content,
+          writer
+        )
+      : null;
+    // Always applied, even when it changes no text (an edit to a block an
+    // editor deleted): the file base below holds these items, and a base
+    // must never hold what the doc lacks.
+    Y.applyUpdate(this.#doc, merged.update, { kind: 'write', writer } satisfies WriteOrigin);
     this.#fileBase = { state: reflected, hash, content };
-    if (merged.markdown !== previous) {
-      const writer: DocWriter = { kind: 'disk' };
-      const bytes = this.#unsaved ? previous : fileBase.content;
-      const kept = await this.#deps.versions.keep(this.ref.scope, bytes, writer);
-      Y.applyUpdate(this.#doc, merged.update, { kind: 'write', writer } satisfies WriteOrigin);
+    if (changed) {
       this.notify({ type: 'changed', changedBy: writer });
       if (kept) this.notify({ type: 'versions' });
     }

@@ -211,7 +211,8 @@ describe('a doc whose file is deleted while it is open', () => {
     // Nothing recreates the file behind the person's back.
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(existsSync(path.join(space.space, rel))).toBe(false);
-  });
+    // Several file-watcher waits of up to 5 s each: the budget fits them.
+  }, 15_000);
 });
 
 describe('versions an agent write keeps', () => {

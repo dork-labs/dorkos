@@ -154,14 +154,15 @@ export const DocCollabNoteSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     /**
-     * The file now holds the doc as of `stateVector` (a Yjs state vector,
-     * base64): an editor whose own edits are all inside it has nothing
-     * unsaved. Sent after each save, and on joining.
+     * The file now holds the doc as of `snapshot` (an encoded Yjs snapshot,
+     * base64: what was inserted AND what was deleted). An editor whose doc
+     * the snapshot fully contains has nothing unsaved. Sent after each save,
+     * and on joining.
      */
     type: z.literal('saved'),
     /** The file's sha256 after the save: what a later save of this text is based on. */
     hash: z.string(),
-    stateVector: z.string(),
+    snapshot: z.string(),
   }),
 ]);
 

@@ -7,6 +7,8 @@ covers:
   - 'fix(docs): keep live doc edits through reconnects, and pick the version to restore (DOR-2984)'
   - 'fix(docs): retry saves that meet a conflict, refuse unread writes, and survive a crash (DOR-2984)'
   - 'fix(docs): end reconnect loops, and offer back only edits the file does not have (DOR-2984)'
+  - 'fix(docs): take changes on disk in whole, and count deletions as unsaved edits (DOR-2984)'
+  - 'fix(docs): judge saved edits by snapshot, and stop waiting for a first sync that never comes (DOR-2984)'
 ---
 
 ### Added
