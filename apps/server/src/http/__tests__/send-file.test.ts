@@ -12,12 +12,15 @@ import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { Hono } from 'hono';
 import { sendFileFromRoot } from '../send-file.js';
 
-const root = mkdtempSync(path.join(tmpdir(), 'send-file-root-'));
+// Under a dot folder, as every upload is (`<cwd>/.dork/.temp/uploads`).
+const root = path.join(mkdtempSync(path.join(tmpdir(), 'send-file-root-')), '.dork', 'files');
 let server: Server;
 let base = '';
 
 beforeAll(async () => {
+  mkdirSync(root, { recursive: true });
   writeFileSync(path.join(root, 'hello.txt'), 'hello');
+  writeFileSync(path.join(root, '.secret'), 'hidden');
   mkdirSync(path.join(root, 'folder'));
   const app = new Hono<{ Bindings: HttpBindings }>();
   app.on(['GET', 'HEAD'], '/files/:name', async (c) => {
@@ -36,7 +39,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  rmSync(root, { recursive: true, force: true });
+  rmSync(path.dirname(path.dirname(root)), { recursive: true, force: true });
 });
 
 /** A request that must answer within a second, never hang. */
@@ -51,6 +54,12 @@ describe('sendFileFromRoot', () => {
     expect(await res.text()).toBe('hello');
     expect(res.headers.get('content-length')).toBe('5');
     expect(res.headers.get('etag')).toBeTruthy();
+  });
+
+  it('still refuses a name that is itself a dotfile', async () => {
+    const res = await get('.secret');
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('hidden');
   });
 
   it('answers a HEAD with the headers and no body', async () => {

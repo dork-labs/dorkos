@@ -6,9 +6,9 @@
  * Built on `send`, the module `res.sendFile` is, for the reason
  * `http/client-files.ts` gives: the same `Content-Type`, `Content-Length`,
  * `ETag` and `Last-Modified`, `Cache-Control: public, max-age=0`, ranges with
- * `206` and `416`, conditional `304` and `412`, `HEAD`, and the same refusal
- * of any path with a dotfile segment in it, which `send` ignores (a `404`)
- * unless told otherwise. `send` writes the raw Node response itself, so the
+ * `206` and `416`, conditional `304` and `412`, `HEAD`, and the refusal of a
+ * name with a dotfile segment in it, which `send` ignores (a `404`) unless
+ * told otherwise. `send` writes the raw Node response itself, so the
  * route answers with the marker the adapter leaves alone.
  *
  * A file that cannot be sent is not answered here: the route gets the error,
@@ -44,9 +44,10 @@ type SendFileEnv = { Bindings: HttpBindings };
  * anywhere else.
  *
  * `name` is resolved against `root`, and must land inside it (or be it), the
- * check `routes/uploads.ts` made before `res.sendFile`. The resolved path is
- * then sent as an absolute path, as `res.sendFile` sent it, so the dotfile
- * rule sees every segment of it, the root's included.
+ * check `routes/uploads.ts` made before `res.sendFile`. It is then sent
+ * relative to `root`, so the dotfile rule sees only the name's own segments.
+ * Sending the whole absolute path, as `res.sendFile` did, made the rule see
+ * the root's too, and every upload lives under `.dork/` (DOR-2990).
  *
  * @param c - The Hono context.
  * @param root - The folder the file must be in.
@@ -90,8 +91,9 @@ export function sendFileFromRoot<E extends SendFileEnv>(
       settled = true;
       resolve({ kind: 'failed', error });
     };
-    // `res.sendFile` hands `send` the path URI-encoded, and `send` decodes it.
-    send(incoming, encodeURI(resolved))
+    // URI-encoded, as `res.sendFile` handed it; `send` decodes it.
+    const relative = path.relative(folder, resolved).split(path.sep).join('/');
+    send(incoming, encodeURI(`/${relative}`), { root: folder })
       .on('directory', () => failed(Object.assign(new Error('EISDIR, read'), { code: 'EISDIR' })))
       .on('error', failed)
       // Settled when the body starts, not on `headers`: `send` emits `headers`
