@@ -666,6 +666,24 @@ describe('CreateAgentDialog', () => {
     expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
+  it('on a hub, offers no import when the folder already holds a project', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderDialog(undefined, undefined, { serverRole: 'hub' });
+    vi.mocked(transport.browseDirectory).mockResolvedValue({
+      path: '/test',
+      entries: [{ name: '.dork', isDirectory: true }],
+      parent: null,
+    } as never);
+
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'taken-agent');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('conflict-status')).toHaveTextContent('This folder has a project')
+    );
+    expect(screen.queryByTestId('import-instead-link')).not.toBeInTheDocument();
+  });
+
   it('reports "Creates a new folder" for a fresh path', async () => {
     const user = userEvent.setup();
     renderDialog();

@@ -438,7 +438,8 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       switch (suggestionId) {
         case 'suggestion:agents-found':
           // Straight into the review-and-join dialog, which already holds the
-          // scan this suggestion is counting.
+          // scan this suggestion is counting. Never shown on a hub: only that
+          // dialog scans, and it never opens there.
           useImportProjectsStore.getState().open();
           return;
         case 'suggestion:add-agent':

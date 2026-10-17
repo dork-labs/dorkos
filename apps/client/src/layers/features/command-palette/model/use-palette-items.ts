@@ -21,6 +21,9 @@ import type { PaletteRecentEntry } from './palette-recent';
 import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
+/** Quick actions that look through this computer's folders, which a hub has none of. */
+const HUB_HIDDEN_ACTIONS: ReadonlySet<string> = new Set(['discover', 'browse']);
+
 export interface FeatureItem {
   id: string;
   label: string;
@@ -222,10 +225,12 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
 
   const quickActions = useMemo(
     () => [
-      ...allPaletteItems.filter((item) => item.category === 'quick-action'),
+      ...allPaletteItems.filter(
+        (item) => item.category === 'quick-action' && !(isHub && HUB_HIDDEN_ACTIONS.has(item.id))
+      ),
       ...remoteAccessActions,
     ],
-    [allPaletteItems, remoteAccessActions]
+    [allPaletteItems, remoteAccessActions, isHub]
   );
 
   const newActions = useMemo(
