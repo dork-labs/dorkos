@@ -2,13 +2,19 @@ import { MarkdownEditor, type MarkdownEditorProps } from 'blintz';
 import './blintz.css';
 import { cn } from '@/layers/shared/lib';
 import { useResolvedTheme } from '@/layers/shared/model';
+import { MERMAID_SETTINGS } from './mermaid-settings';
 
 /**
- * Loads mermaid the first time a diagram draws. A dynamic import, so Vite
- * splits mermaid into its own chunk and documents without diagrams never
- * fetch it. Module-level, so every render passes the same loader.
+ * Loads mermaid the first time a diagram draws, styled with the app's tokens.
+ * A dynamic import, so Vite splits mermaid into its own chunk and documents
+ * without diagrams never fetch it. Module-level, so every render passes the
+ * same loader.
  */
-const loadMermaid = () => import('mermaid');
+const loadMermaid = () =>
+  import('mermaid').then((module) => {
+    module.default.initialize(MERMAID_SETTINGS);
+    return module;
+  });
 
 /** Props for {@link BlintzCanvas}. */
 export interface BlintzCanvasProps extends Pick<

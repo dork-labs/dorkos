@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(client): draw mermaid diagrams in the app's colors, with sentence-case labels"
   - 'feat(config): add the docs.enabled experiment leaf, off by default (DOR-2993)'
   - 'feat(server): add the docs service domain with one way to name a doc and its space'
   - 'feat(client): upgrade to blintz 0.8.0 and draw mermaid diagrams in canvas docs'
@@ -8,7 +9,7 @@ covers:
 
 ### Added
 
-- Mermaid diagrams now draw in markdown documents on the canvas. The diagram code loads only when a document has one.
+- Mermaid diagrams now draw in markdown documents on the canvas, in the app's own colors in light and dark. The diagram code loads only when a document has one.
 
 ### Changed
 
