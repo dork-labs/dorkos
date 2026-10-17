@@ -2,8 +2,9 @@
  * Mocks for the `Transport` slices split out of `mock-factories.ts`: what
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
- * pause or resume succeeds, and held connected-app actions, where every cancel
- * succeeds. Heartbeats and a hub's computers come from their own mocks.
+ * pause or resume succeeds, held connected-app actions, where every cancel
+ * succeeds, and sign-in landing pages, where no landing is held. Heartbeats
+ * and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -23,7 +24,9 @@ type SliceMethods =
   | 'listAgentPauses'
   | 'pauseAgent'
   | 'resumeAgent'
-  | 'cancelHeldConnectorAction';
+  | 'cancelHeldConnectorAction'
+  | 'getSignInLanding'
+  | 'retrySignIn';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -52,5 +55,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     cancelHeldConnectorAction: vi
       .fn()
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
+    getSignInLanding: vi.fn().mockRejectedValue(new Error('No such sign-in')),
+    retrySignIn: vi.fn().mockResolvedValue({ kind: 'connected' }),
   };
 }

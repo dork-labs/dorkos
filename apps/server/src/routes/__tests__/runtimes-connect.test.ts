@@ -124,6 +124,7 @@ import {
   pullOllamaModel,
 } from '../../services/runtimes/opencode/providers/ollama.js';
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
+import { signInLandings } from '../../services/core/sign-in-landing/sign-in-landings.js';
 
 const admission = new MainRequestAdmission();
 const app = composedListener(admission);
@@ -641,13 +642,28 @@ describe('runtime connect endpoints', () => {
       expect(res.body).toEqual({ status: 'pending' });
     });
 
-    it('renders a success page when the callback connected', async () => {
+    /** The landing record a callback's redirect points at. */
+    function landingFrom(location: string) {
+      const id = new URL(location, 'http://localhost').searchParams.get('landing') ?? '';
+      const landing = signInLandings.get(id);
+      if (!landing) throw new Error(`no landing for ${location}`);
+      return landing;
+    }
+
+    it('redirects a connected callback to the app’s landing page', async () => {
       vi.mocked(handleOpenRouterCallback).mockResolvedValue({ status: 'connected' });
       const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'abc', code: 'auth_code' });
-      expect(res.status).toBe(200);
-      expect(res.text).toContain('Connected');
+      expect(res.status).toBe(303);
+      expect(res.headers.location).toMatch(/\/signed-in\?landing=[A-Za-z0-9_-]+$/);
+      expect(res.headers.location).not.toContain('auth_code');
+      expect(landingFrom(res.headers.location)).toMatchObject({
+        service: 'openrouter',
+        serviceName: 'OpenRouter',
+        status: 'connected',
+        canRetry: false,
+      });
       expect(handleOpenRouterCallback).toHaveBeenCalledWith({
         state: 'abc',
         code: 'auth_code',
@@ -661,11 +677,11 @@ describe('runtime connect endpoints', () => {
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'abc', code: 'auth_code' })
         .set('Referer', 'https://openrouter.ai/');
-      expect(res.status).toBe(200);
-      expect(res.text).toContain('Connected');
+      expect(res.status).toBe(303);
+      expect(landingFrom(res.headers.location).status).toBe('connected');
     });
 
-    it('renders an error page when the callback failed', async () => {
+    it('records an expired link, and Try again mints a fresh sign-in link', async () => {
       vi.mocked(handleOpenRouterCallback).mockResolvedValue({
         status: 'error',
         error: 'This sign-in link expired. Please try again.',
@@ -673,22 +689,25 @@ describe('runtime connect endpoints', () => {
       const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'bogus' });
-      expect(res.status).toBe(400);
-      expect(res.text).toContain('expired');
+      expect(res.status).toBe(303);
+      const landing = landingFrom(res.headers.location);
+      expect(landing).toMatchObject({ status: 'failed', reason: 'expired', canRetry: true });
+      const retried = await signInLandings.retry(landing.id);
+      expect(retried?.kind).toBe('authorize');
     });
 
-    it('HTML-escapes the interpolated error so a value cannot inject markup', async () => {
+    it('never carries the failure’s own words to the page', async () => {
       vi.mocked(handleOpenRouterCallback).mockResolvedValue({
         status: 'error',
         error: '<script>alert(1)</script>',
       });
       const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
-        .query({ state: 'bogus' });
-      expect(res.status).toBe(400);
-      // The raw tag never reaches the page; only its escaped form does.
-      expect(res.text).not.toContain('<script>alert(1)</script>');
-      expect(res.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+        .query({ state: 'bogus', code: 'x' });
+      const landing = landingFrom(res.headers.location);
+      // The page words a reason code itself; no server sentence reaches it.
+      expect(landing.reason).toBe('failed');
+      expect(JSON.stringify(landing)).not.toContain('script');
     });
   });
 

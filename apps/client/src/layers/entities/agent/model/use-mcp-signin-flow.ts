@@ -501,10 +501,13 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
     // per-fetch retry loop — one place decides how long the flow keeps trying.
     retry: false,
     // The observer stays enabled once the flow reaches a derived terminal step, so
-    // suppress the refetch triggers that would fire one more poll after
-    // connected/failed: a window refocus, and a network reconnect that would
-    // otherwise resurrect a settled flow. Both idempotent, both needless.
-    refetchOnWindowFocus: false,
+    // suppress the refetch triggers that would fire one more poll after it: a
+    // network reconnect, and a window refocus after `connected`. A refocus after
+    // `failed` is the one exception — the sign-in landing page's Try again
+    // restarts the flow under this same id, and coming back to this window is
+    // when the person expects to see it (DOR-2985). A pending answer resumes the
+    // poll through `refetchInterval`.
+    refetchOnWindowFocus: (query) => query.state.data?.status === 'failed',
     refetchOnReconnect: false,
     // Poll results are moments, not cache-worthy data.
     gcTime: 0,

@@ -128,7 +128,7 @@ async function signInFully(
   const started = await oauth.startSignin(TARGET, options);
   pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
   const cb = await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
-  expect(cb).toEqual({ connected: true, serverName: SERVER });
+  expect(cb).toMatchObject({ connected: true, serverName: SERVER });
   return started.flowId;
 }
 
@@ -207,8 +207,8 @@ describe('the connected port', () => {
       oauth.handleCallback({ state: started.flowId, code: AUTH_CODE }),
     ]);
 
-    expect(first).toEqual({ connected: true, serverName: SERVER });
-    expect(second).toEqual({ connected: true, serverName: SERVER });
+    expect(first).toMatchObject({ connected: true, serverName: SERVER });
+    expect(second).toMatchObject({ connected: true, serverName: SERVER });
     expect(connected).toHaveLength(1);
   });
 
@@ -271,9 +271,9 @@ describe('the connected port', () => {
     const started = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
     pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
 
-    await expect(oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })).resolves.toEqual(
-      { connected: true, serverName: SERVER }
-    );
+    await expect(
+      oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })
+    ).resolves.toMatchObject({ connected: true, serverName: SERVER });
     expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
   });
 });

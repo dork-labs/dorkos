@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShellRouteImport } from './routes/_shell'
+import { Route as SignedInRouteImport } from './routes/signed-in'
 import { Route as ShellHomeRouteImport } from './routes/_shell._home'
 import { Route as ShellAgentsRouteImport } from './routes/_shell.agents'
 import { Route as ShellChannelsRouteImport } from './routes/_shell.channels'
@@ -28,6 +29,11 @@ import { Route as ShellXExtensionIdSplatRouteImport } from './routes/_shell.x.$e
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignedInRoute = SignedInRouteImport.update({
+  id: '/signed-in',
+  path: '/signed-in',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellHomeRoute = ShellHomeRouteImport.update({
@@ -107,6 +113,7 @@ const ShellXExtensionIdSplatRoute = ShellXExtensionIdSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellHomeIndexRoute
+  '/signed-in': typeof SignedInRoute
   '/agents': typeof ShellAgentsRoute
   '/channels': typeof ShellChannelsRoute
   '/connections': typeof ShellConnectionsRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof ShellHomeIndexRoute
+  '/signed-in': typeof SignedInRoute
   '/agents': typeof ShellAgentsRoute
   '/channels': typeof ShellChannelsRoute
   '/connections': typeof ShellConnectionsRoute
@@ -140,6 +148,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/signed-in': typeof SignedInRoute
   '/_shell/_home': typeof ShellHomeRouteWithChildren
   '/_shell/agents': typeof ShellAgentsRoute
   '/_shell/channels': typeof ShellChannelsRoute
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/signed-in'
     | '/agents'
     | '/channels'
     | '/connections'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/signed-in'
     | '/agents'
     | '/channels'
     | '/connections'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_shell'
+    | '/signed-in'
     | '/_shell/_home'
     | '/_shell/agents'
     | '/_shell/channels'
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
+  SignedInRoute: typeof SignedInRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof ShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signed-in': {
+      id: '/signed-in'
+      path: '/signed-in'
+      fullPath: '/signed-in'
+      preLoaderRoute: typeof SignedInRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/_home': {
@@ -380,6 +400,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
+  SignedInRoute: SignedInRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
