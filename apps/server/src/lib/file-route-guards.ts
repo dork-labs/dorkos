@@ -26,7 +26,16 @@ import { currentServerRole } from './server-role.js';
  * @param contentType - The type the file is served as.
  */
 export function servesInlineHere(contentType: string): boolean {
-  if (currentServerRole() !== 'hub') return true;
+  return currentServerRole() !== 'hub' || isPassiveMedia(contentType);
+}
+
+/**
+ * Whether a browser only ever shows a file of this type and never runs it as
+ * a page: a picture (not an SVG), sound or video.
+ *
+ * @param contentType - The type the file is served as.
+ */
+export function isPassiveMedia(contentType: string): boolean {
   if (contentType === 'image/svg+xml') return false;
   return /^(image|audio|video)\//.test(contentType);
 }
