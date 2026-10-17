@@ -7,6 +7,8 @@ import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { sendFileFromRoot } from '../http/send-file.js';
+import { MEDIA_CONTENT_TYPES, servesInlineHere } from '../lib/file-route-guards.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
 
 const router = new Hono<ApiEnv>();
@@ -81,6 +83,10 @@ router.get('/:filename', async (c) => {
 
     const validatedCwd = await validateBoundary(cwd);
     const filename = path.basename(c.req.param('filename'));
+    const type = MEDIA_CONTENT_TYPES[path.extname(filename).toLowerCase()];
+    if (currentServerRole() === 'hub' && !(type && servesInlineHere(type))) {
+      downloadOnly(c.env.outgoing);
+    }
     const sent = await sendFileFromRoot(c, uploadHandler.getUploadDir(validatedCwd), filename);
     if (sent.kind === 'sent') return sent.response;
     if (sent.kind === 'outside') return c.json({ error: 'Access denied' }, 403);
@@ -96,5 +102,18 @@ router.get('/:filename', async (c) => {
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
+
+/**
+ * Make an upload a download of opaque bytes that run nothing even if opened:
+ * on a hub (DOR-2937), for every upload but a picture, sound or video. Set
+ * before `send`, which keeps a `Content-Type` already there; an error answer's
+ * own headers win. Everywhere else every upload is served as its type.
+ */
+function downloadOnly(outgoing: ApiEnv['Bindings']['outgoing']): void {
+  outgoing.setHeader('Content-Type', 'application/octet-stream');
+  outgoing.setHeader('Content-Disposition', 'attachment');
+  outgoing.setHeader('X-Content-Type-Options', 'nosniff');
+  outgoing.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+}
 
 export default router;

@@ -22,7 +22,7 @@ import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyHandler } from './http/extension-proxy.js';
-import { bridgeExpressRouter } from './http/express-bridge.js';
+import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
@@ -480,7 +480,7 @@ export class ExtensionServerLifecycle {
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
-        bridgeExpressRouter(router),
+        bridgeExpressRouterHere(id, router),
         this.proxyFor(id, record),
         fetch && createFetchHandler(record.manifest.name, fetch)
       );
