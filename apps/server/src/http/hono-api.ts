@@ -76,6 +76,7 @@ import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import { createHubComputerRoutes } from '../routes/hub-computers.js';
+import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
 import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
 import {
   createHeartbeatTriageRoutes,
@@ -313,7 +314,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // Feedback carries an opt-in screenshot, so it may be larger than the app-wide
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
-    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule],
+    // A hub's link path is open before its code is checked, so it reads 4 KB.
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
@@ -469,6 +471,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   // A hub's owner chatting with their linked computers; the `/api` 404 elsewhere.
   app.route('/api/hub/computers', createHubComputerRoutes());
+  // A computer redeeming its owner's link code; the `/api` 404 elsewhere.
+  app.route('/api/hub/link', createHubLinkRoutes());
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }

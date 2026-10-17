@@ -67,23 +67,53 @@ export interface HubRelayEndpointDeps {
 }
 
 let hubSign: HubRelaySigner['sign'] | null = null;
+let hubPublicKey: (() => string) | null = null;
 
 /**
- * Give the relay the hub's long-lived Ed25519 signing function. **The one
- * wiring point for the hub key** (lane A's `signWithHubKey`): until it is
- * called, every computer's dial is refused with 503. Pass `null` to withdraw it.
+ * Give the relay the hub's long-lived Ed25519 signing function and, for
+ * linking computers, its public half. **The one wiring point for the hub key**
+ * (lane A's `signWithHubKey` and `hubSigningPublicKey`): until it is called,
+ * every computer's dial is refused with 503, and so is every link request
+ * until the public half is given too. Pass `null` to withdraw both.
  *
  * @param sign - Signs relay transcripts with the hub's key, and nothing else.
+ * @param publicKey - The hub key's public half, raw 32 bytes base64url. May
+ *   throw while the hub cannot sign; a link is then refused with 503.
  */
-export function setHubRelaySigner(sign: HubRelaySigner['sign'] | null): void {
+export function setHubRelaySigner(
+  sign: HubRelaySigner['sign'] | null,
+  publicKey: (() => string) | null = null
+): void {
   hubSign = sign;
+  hubPublicKey = sign ? publicKey : null;
+}
+
+/** The hub key as linking a computer needs it: both halves, or `null`. */
+export interface HubLinkSigner {
+  /** Sign a relay transcript with the hub's key. */
+  sign: HubRelaySigner['sign'];
+  /** The key's public half, raw 32 bytes base64url. */
+  publicKey: string;
+}
+
+/**
+ * The hub's key for answering a link request, or `null` while the hub has no
+ * key wired in or cannot read its public half right now.
+ */
+export function hubLinkSigner(): HubLinkSigner | null {
+  if (!hubSign || !hubPublicKey) return null;
+  try {
+    return { sign: hubSign, publicKey: hubPublicKey() };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * The serving hub's origin, from the assignment it serves now: the origin the
  * transcript is signed over (see the module doc on address changes).
  */
-function liveServingOrigin(): string | null {
+export function liveServingOrigin(): string | null {
   const state = hubServingState();
   return state.state === 'serving' ? new URL(state.assignment.address).origin : null;
 }

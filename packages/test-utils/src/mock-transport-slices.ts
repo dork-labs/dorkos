@@ -3,7 +3,7 @@
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, and held connected-app actions, where every cancel
- * succeeds. Heartbeats come from their own mock.
+ * succeeds. Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -12,6 +12,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockComputerTransport } from './mock-computer-transport.js';
 import { createMockLocalBrowserTransport } from './mock-local-browser-transport.js';
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
+import { createMockHubTransport } from './mock-hub-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -28,11 +29,13 @@ type SliceMethods =
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockHeartbeatTransport> &
   ReturnType<typeof createMockLocalBrowserTransport> &
-  ReturnType<typeof createMockComputerTransport> {
+  ReturnType<typeof createMockComputerTransport> &
+  ReturnType<typeof createMockHubTransport> {
   return {
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),
+    ...createMockHubTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),

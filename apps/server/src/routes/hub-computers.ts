@@ -27,6 +27,9 @@
  * 401: that is the computer turning the hub away, never the person being
  * signed out here, so it is answered 502.
  *
+ * The owner's link routes (minting a link code, unlinking a computer) live in
+ * `hub-computer-links.ts` and sit behind the same guard.
+ *
  * @module routes/hub-computers
  */
 import { Hono, type Context } from 'hono';
@@ -55,6 +58,11 @@ import {
   type RelayCallRequest,
 } from '../services/core/hub-relay/index.js';
 import { relayedStream } from './hub-computer-stream.js';
+import {
+  liveHubComputerLinkDeps,
+  mountHubComputerLinkRoutes,
+  type HubComputerLinkDeps,
+} from './hub-computer-links.js';
 
 /** The part of a computer's connection these routes use. */
 export type RelayedComputer = Pick<
@@ -167,24 +175,29 @@ function auditRelayed(
 }
 
 /**
- * The `/api/hub/computers` routes.
+ * The `/api/hub/computers` routes, with the owner's link routes
+ * (`hub-computer-links.ts`) behind the same guard.
  *
  * @param deps - Override for tests; defaults to the live store, registry and waker.
+ * @param links - Override for tests; defaults to the live codes and store.
  */
-export function createHubComputerRoutes(deps: HubComputerRoutesDeps = liveDeps): Hono<ApiEnv> {
+export function createHubComputerRoutes(
+  deps: HubComputerRoutesDeps = liveDeps,
+  links: HubComputerLinkDeps = liveHubComputerLinkDeps
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   router.use('*', async (c, next) => {
     if (!deps.isHub()) return c.json(NOT_FOUND, 404);
     if (presentsAgentIdentity(honoRequestFacts(c))) {
-      return c.json(errorBody("Agents can't open chats on your computers.", 'FORBIDDEN'), 403);
+      return c.json(errorBody("Agents can't reach your computers.", 'FORBIDDEN'), 403);
     }
     // The gate already asked for a credential; this holds even if it ever did not.
     const user = c.get('user');
     if (!user) return c.json(errorBody('Sign in to reach your computers.', 'UNAUTHORIZED'), 401);
     if (user.credential !== 'cookie') {
       return c.json(
-        errorBody('Open your computers from your own signed-in browser.', 'FORBIDDEN'),
+        errorBody('Manage your computers from your own signed-in browser.', 'FORBIDDEN'),
         403
       );
     }
@@ -246,12 +259,21 @@ export function createHubComputerRoutes(deps: HubComputerRoutesDeps = liveDeps):
     return relayFailure(c, result.error.status === 401 ? COMPUTER_TURNED_AWAY : result.error);
   }
 
+  mountHubComputerLinkRoutes(router, links);
+
   router.get('/', (c) =>
     c.json({
       computers: deps.linkedComputerIds().map((computerId) => {
         const connection = deps.connection(computerId);
         const connected = connection?.connected === true;
-        return { computerId, connected, features: connected ? [...connection!.features] : [] };
+        const record = links.record(computerId);
+        return {
+          computerId,
+          computerName: record?.computerName ?? null,
+          linkedAt: record?.linkedAt ?? null,
+          connected,
+          features: connected ? [...connection!.features] : [],
+        };
       }),
     })
   );

@@ -23,6 +23,10 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **`/api/hub/link`, on a hub only, and only that exact path** — a computer
+ *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
+ *   step B3). The computer never signs in to the hub; the code is its
+ *   credential. A trailing slash or any sibling under `/api/hub/` stays gated.
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -39,6 +43,7 @@ import type { RequestFacts } from '../../../http/request-facts.js';
 import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
+import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -104,7 +109,7 @@ function isGatedHealthPath(path: string): boolean {
 
 /**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
- * sign-in is reachable) and the health probe.
+ * sign-in is reachable), the health probe, and on a hub the link path.
  */
 function isExemptPath(path: string): boolean {
   if (isGatedHealthPath(path)) return false;
@@ -113,7 +118,9 @@ function isExemptPath(path: string): boolean {
     path === '/api/health' ||
     path.startsWith('/api/health/') ||
     // Signed-token-authorized embedded-browser content (see the module doc).
-    path.startsWith('/api/workbench/serve/')
+    path.startsWith('/api/workbench/serve/') ||
+    // A computer redeeming a link code, on a hub only (see the module doc).
+    (path === RELAY_LINK_PATH && currentServerRole() === 'hub')
   );
 }
 

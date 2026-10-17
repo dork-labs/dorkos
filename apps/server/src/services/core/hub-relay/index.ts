@@ -24,6 +24,7 @@ import { HubViewerTracker } from './viewer-tracker.js';
 
 export {
   HUB_RELAY_MAX_COMPUTERS,
+  LinkedComputerKeyMismatchError,
   readLinkedComputers,
   relaySecretHash,
   type LinkComputerInput,
@@ -42,7 +43,22 @@ export {
   type RelayStreamFrame,
 } from './computer-connection.js';
 export { closeAllComputerConnections, computerConnection } from './hub-relay-registry.js';
-export { hubRelayComputerRoute, setHubRelaySigner } from './relay-endpoint.js';
+export {
+  hubLinkSigner,
+  hubRelayComputerRoute,
+  liveServingOrigin,
+  setHubRelaySigner,
+  type HubLinkSigner,
+} from './relay-endpoint.js';
+export {
+  HUB_LINK_FAILURE_WINDOW_MS,
+  HUB_LINK_MAX_FAILURES,
+  HUB_LINK_MAX_OUTSTANDING,
+  LinkCodeBook,
+  hubLinkCodes,
+  type LinkCodeRedemption,
+  type MintedLinkCode,
+} from './link-codes.js';
 export {
   ComputerWaker,
   HUB_RELAY_WAKE_DEBOUNCE_MS,
@@ -61,11 +77,12 @@ export const hubViewers = new HubViewerTracker({ lookup: computerConnection });
 onConnectionPromoted((connection) => hubViewers.connected(connection));
 
 /**
- * Link a computer (step B3), or link it again with a new secret and key. A
- * live connection it had was proved with the old key, so it is closed and the
- * computer redials with the new one.
+ * Link a computer (step B3), or link it again with a new secret under the same
+ * key. A live connection it had was proved with the old secret, so it is
+ * closed and the computer redials with the new one. An id already linked
+ * under another key is refused before anything is written or closed.
  *
- * @param input - The computer's id, secret hash and public key.
+ * @param input - The computer's id, secret hash, public key and name.
  * @param dorkHome - The data folder; defaults to the live one.
  * @returns The stored record.
  */

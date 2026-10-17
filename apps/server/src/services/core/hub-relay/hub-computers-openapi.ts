@@ -14,6 +14,7 @@ import {
   SESSION_RELAY_MAX_MESSAGE_LENGTH,
 } from '@dorkos/shared/session-relay';
 import { MessageDispositionSchema } from '@dorkos/shared/schemas';
+import { HubComputerListSchema } from '@dorkos/shared/session-relay-link';
 
 const TAGS = ['Hub'];
 
@@ -63,21 +64,10 @@ export function registerHubComputersOpenApi(registry: OpenAPIRegistry): void {
     tags: TAGS,
     summary: 'List linked computers',
     description:
-      'On a hub: each computer it serves, whether it is connected now, and the relay features it ' +
-      'advertised. Elsewhere this path is not found.',
+      'On a hub: each computer it serves, the name it linked with, whether it is connected now, ' +
+      'and the relay features it advertised. Elsewhere this path is not found.',
     responses: {
-      200: json(
-        z.object({
-          computers: z.array(
-            z.object({
-              computerId: z.string(),
-              connected: z.boolean(),
-              features: z.array(z.string()),
-            })
-          ),
-        }),
-        'The linked computers'
-      ),
+      200: json(HubComputerListSchema, 'The linked computers'),
       403: REFUSALS[403],
       404: REFUSALS[404],
     },
