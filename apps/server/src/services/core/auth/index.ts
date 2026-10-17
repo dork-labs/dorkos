@@ -47,6 +47,7 @@ import {
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { hubSignInPlugin } from '../hub/hub-sign-in.js';
 import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
@@ -80,7 +81,11 @@ import { discardSetupCode } from './setup-code.js';
  */
 type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
-  plugins: [ReturnType<typeof apiKey>, ReturnType<typeof desktopSignInPlugin>];
+  plugins: [
+    ReturnType<typeof apiKey>,
+    ReturnType<typeof desktopSignInPlugin>,
+    ReturnType<typeof hubSignInPlugin>,
+  ];
 };
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
@@ -180,7 +185,12 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     }),
     // Local accounts: email is an identifier only. No verification, no SMTP.
     // Password hashing stays the Better Auth default (scrypt).
-    emailAndPassword: { enabled: true, requireEmailVerification: false },
+    // A hub has no passwords: its owner signs in with their DorkOS account,
+    // so sign-in, sign-up and resets by password are off there (A4).
+    emailAndPassword: {
+      enabled: currentServerRole() !== 'hub',
+      requireEmailVerification: false,
+    },
     user: {
       additionalFields: {
         // Marks the first user as 'owner'; nullable + server-only (never
@@ -188,6 +198,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
         role: { type: 'string', required: false, input: false },
       },
     },
+    // A hub's only sign-in is its owner's DorkOS account, matched by account
+    // id, so no sign-in may link itself to an account by email (A4).
+    account: { accountLinking: { enabled: currentServerRole() !== 'hub' } },
     session: {
       // A sign-in lasts 30 days and each day of use pushes that back, so a
       // device used weekly never signs out (DOR-2968). Set here rather than
@@ -229,7 +242,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // rebuilding the table for zero behavior change.
     // The desktop window's own sign-in (F3, `desktop-sign-in.ts`): one
     // endpoint, server code only.
-    plugins: [apiKey({ rateLimit: { enabled: false } }), desktopSignInPlugin()],
+    // On a hub, the owner signs in with their DorkOS account
+    // (`services/core/hub/hub-sign-in.ts`); inert on a person's own computer.
+    plugins: [apiKey({ rateLimit: { enabled: false } }), desktopSignInPlugin(), hubSignInPlugin()],
     // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
     // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
     // list, so the origins this server already answers over HTTP and over the
