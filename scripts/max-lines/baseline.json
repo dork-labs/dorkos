@@ -132,7 +132,6 @@
     "packages/evals/src/suite/rooms-recall.ts": 520,
     "packages/evals/src/suite/rooms.ts": 506,
     "packages/harness/src/apply/apply.ts": 510,
-    "packages/harness/src/plan/installed-projector.ts": 512,
     "packages/marketplace/src/package-validator.ts": 670,
     "packages/relay/src/adapters/claude-code/agent-handler.ts": 581,
     "packages/relay/src/adapters/telegram/telegram-adapter.ts": 509,
