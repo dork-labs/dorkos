@@ -17,6 +17,7 @@
  *
  * @module http/send-file
  */
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
@@ -27,7 +28,7 @@ import send from 'send';
 export type SendFileResult =
   /** The response is on its way: return `response` from the handler. */
   | { kind: 'sent'; response: Response }
-  /** The name resolves outside `root`; nothing was read. */
+  /** The name resolves, or links, outside `root` (or is `root`); nothing was read. */
   | { kind: 'outside' }
   /**
    * Nothing was written. `status` is what `send` would have answered (`404`
@@ -43,8 +44,10 @@ type SendFileEnv = { Bindings: HttpBindings };
  * Send the file `name` names inside `root`, refusing a name that resolves
  * anywhere else.
  *
- * `name` is resolved against `root`, and must land inside it (or be it), the
- * check `routes/uploads.ts` made before `res.sendFile`. It is then sent
+ * `name` is resolved against `root` and must land inside it, both as written
+ * and once every link is followed, so a link planted in the folder cannot
+ * hand out a file from anywhere else. A link swapped in between that check
+ * and the read is the one gap left, and needs write access to the folder. It is then sent
  * relative to `root`, so the dotfile rule sees only the name's own segments.
  * Sending the whole absolute path, as `res.sendFile` did, made the rule see
  * the root's too, and every upload lives under `.dork/` (DOR-2990).
@@ -54,16 +57,26 @@ type SendFileEnv = { Bindings: HttpBindings };
  * @param name - The file, relative to `root`.
  * @returns See {@link SendFileResult}.
  */
-export function sendFileFromRoot<E extends SendFileEnv>(
+export async function sendFileFromRoot<E extends SendFileEnv>(
   c: Context<E>,
   root: string,
   name: string
 ): Promise<SendFileResult> {
-  const folder = path.resolve(root);
-  const resolved = path.resolve(path.join(root, name));
-  if (!resolved.startsWith(folder + path.sep) && resolved !== folder) {
-    return Promise.resolve({ kind: 'outside' });
+  const written = path.resolve(path.join(root, name));
+  if (!inside(path.resolve(root), written)) return { kind: 'outside' };
+  let folder: string;
+  let resolved: string;
+  try {
+    folder = await realpath(root);
+    resolved = await realpath(written);
+  } catch (error) {
+    // Missing, as `send` would say it: a 404 the route words itself.
+    return {
+      kind: 'failed',
+      error: Object.assign(error as NodeJS.ErrnoException, { status: 404 }),
+    };
   }
+  if (!inside(folder, resolved)) return { kind: 'outside' };
   const { incoming, outgoing } = c.env;
   return new Promise((resolve) => {
     let settled = false;
@@ -93,7 +106,7 @@ export function sendFileFromRoot<E extends SendFileEnv>(
     };
     // URI-encoded, as `res.sendFile` handed it; `send` decodes it.
     const relative = path.relative(folder, resolved).split(path.sep).join('/');
-    send(incoming, encodeURI(`/${relative}`), { root: folder })
+    send(incoming, encodeURI(`/${relative}`), { root: folder, dotfiles: 'ignore', index: false })
       .on('directory', () => failed(Object.assign(new Error('EISDIR, read'), { code: 'EISDIR' })))
       .on('error', failed)
       // Settled when the body starts, not on `headers`: `send` emits `headers`
@@ -105,4 +118,9 @@ export function sendFileFromRoot<E extends SendFileEnv>(
     outgoing.once('finish', sent);
     outgoing.once('close', sent);
   });
+}
+
+/** Whether `target` is strictly inside `folder`: never the folder itself. */
+function inside(folder: string, target: string): boolean {
+  return target.startsWith(folder + path.sep);
 }

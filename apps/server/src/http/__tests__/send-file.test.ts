@@ -2,7 +2,7 @@
  * `sendFileFromRoot` on a plain folder: the answers `res.sendFile` gave, and
  * every refusal `send` makes after its `headers` step reaching the route.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,10 @@ beforeAll(async () => {
   mkdirSync(root, { recursive: true });
   writeFileSync(path.join(root, 'hello.txt'), 'hello');
   writeFileSync(path.join(root, '.secret'), 'hidden');
+  // A file beside the folder, and a link inside the folder that points at it.
+  writeFileSync(path.join(root, '..', 'elsewhere.txt'), 'TOP SECRET');
+  symlinkSync(path.join(root, '..', 'elsewhere.txt'), path.join(root, 'link.png'));
+  symlinkSync('hello.txt', path.join(root, 'alias.txt'));
   mkdirSync(path.join(root, 'folder'));
   const app = new Hono<{ Bindings: HttpBindings }>();
   app.on(['GET', 'HEAD'], '/files/:name', async (c) => {
@@ -54,6 +58,18 @@ describe('sendFileFromRoot', () => {
     expect(await res.text()).toBe('hello');
     expect(res.headers.get('content-length')).toBe('5');
     expect(res.headers.get('etag')).toBeTruthy();
+  });
+
+  it('refuses a link that leads out of the folder, without reading it', async () => {
+    const res = await get('link.png');
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('TOP SECRET');
+  });
+
+  it('follows a link that stays inside the folder', async () => {
+    const res = await get('alias.txt');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('hello');
   });
 
   it('still refuses a name that is itself a dotfile', async () => {

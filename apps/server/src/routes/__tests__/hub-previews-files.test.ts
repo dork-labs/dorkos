@@ -172,6 +172,8 @@ describe('uploads', () => {
     const res = await upload('photo.png');
     expect(res.headers['content-type']).toBe('image/png');
     expect(res.headers['content-disposition']).toBeUndefined();
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
   });
 
   it('answers a missing upload as JSON, not as a download', async () => {
