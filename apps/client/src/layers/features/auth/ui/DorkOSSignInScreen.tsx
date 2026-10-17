@@ -4,9 +4,19 @@ import { Button, Notice } from '@/layers/shared/ui';
 import { describeAuthError } from '../lib/auth-error-copy';
 import { DORKOS_SIGN_IN_FAILED, useContinueWithDorkOS } from '../model/use-auth-session';
 
-/** Whether the page was reached back from a DorkOS sign-in that was refused. */
-function cameBackRefused(): boolean {
-  return new URLSearchParams(window.location.search).has(DORKOS_SIGN_IN_FAILED);
+/**
+ * What to say when the page was reached back from a DorkOS sign-in that did
+ * not finish, or `null` when it was not. Only a refused account (the sign-in
+ * turns away anyone but the owner, which Better Auth reports as
+ * `unable_to_get_user_info`) is told it cannot sign in here; a cancel or a
+ * passing fault is asked to try again.
+ */
+function cameBackFailed(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has(DORKOS_SIGN_IN_FAILED)) return null;
+  return params.get('error') === 'unable_to_get_user_info'
+    ? 'That DorkOS account can’t sign in here.'
+    : 'Sign-in didn’t finish. Try again.';
 }
 
 /**
@@ -17,10 +27,9 @@ function cameBackRefused(): boolean {
 export function DorkOSSignInScreen() {
   const errorId = useId();
   const { run, isPending, error } = useContinueWithDorkOS();
-  const [refused] = useState(cameBackRefused);
+  const [failed] = useState(cameBackFailed);
   const errorCopy = describeAuthError(error, window.location.origin);
-  const message =
-    errorCopy?.message ?? (refused ? 'That DorkOS account can’t sign in here.' : null);
+  const message = errorCopy?.message ?? failed;
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center p-6">

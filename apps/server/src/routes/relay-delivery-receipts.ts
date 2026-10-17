@@ -18,6 +18,7 @@ import { readOwnerAccount } from '../services/core/auth/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { logger } from '../lib/logger.js';
+import { authRequiredBody } from '../services/core/auth/session-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
 
 /** What publishing reads besides the message: the bus, and what an adapter delivery is recorded in. */
@@ -58,7 +59,7 @@ export async function publishRelayMessage(
   const tracked = isDetachedAgentSubject(data.subject);
   const enabled = loginEnabled(c);
   const userId = verifiedUserId(c);
-  if (enabled && !userId) return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
+  if (enabled && !userId) return c.json(authRequiredBody(), 401);
   try {
     const publishResult = await relayCore.publish(data.subject, data.payload, {
       from: data.from,
@@ -110,7 +111,7 @@ export function createReceiptStatusHandler(relayCore: RelayCore): Handler<ApiEnv
     const enabled = loginEnabled(c);
     const userId = verifiedUserId(c);
     if (enabled && !userId) {
-      return c.json({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 401);
+      return c.json(authRequiredBody(), 401);
     }
     const id = RelayMessageIdSchema.safeParse(c.req.param('messageId'));
     if (!id.success) {

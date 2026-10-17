@@ -41,13 +41,27 @@ export function getSignInWith(): SignInWith {
 }
 
 /**
- * Record how the server said to sign in. Set before {@link setAuthRequired},
- * whose listeners read it.
+ * Record how the server said to sign in, and tell the listeners of
+ * {@link setAuthRequired}, who read it. Once a `401` has said to sign in with
+ * a DorkOS account, a later one that says nothing (an older refusal) never
+ * turns it back to a form that cannot work there.
  *
  * @param value - What the `401` named.
  */
 export function setSignInWith(value: SignInWith): void {
+  if (signInWith === 'dorkos' && value === 'password') return;
+  if (signInWith === value) return;
   signInWith = value;
+  authRequiredListeners.forEach((l) => l());
+}
+
+/**
+ * Put the sign-in method back to the form. Tests only.
+ *
+ * @internal
+ */
+export function resetSignInWithForTests(): void {
+  signInWith = 'password';
 }
 
 /** Whether a gated request has reported that login is required. */

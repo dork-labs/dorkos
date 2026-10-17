@@ -4,7 +4,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, act, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setAuthRequired, setSignInWith } from '@/layers/shared/lib';
+import { resetSignInWithForTests, setAuthRequired, setSignInWith } from '@/layers/shared/lib';
 import { AuthGuard } from '../ui/AuthGuard';
 import { AuthClientProvider } from '../model/auth-client-context';
 import type { AuthClient } from '../model/auth-client';
@@ -42,7 +42,7 @@ function renderGuard() {
 describe('AuthGuard', () => {
   afterEach(() => {
     act(() => {
-      setSignInWith('password');
+      resetSignInWithForTests();
       setAuthRequired(false);
     });
     cleanup();

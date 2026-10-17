@@ -65,6 +65,18 @@ describe('DorkOSSignInScreen', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  it('asks to try again when the sign-in did not finish for another reason', () => {
+    vi.stubGlobal('location', {
+      ...window.location,
+      href: 'http://localhost:3000/?dorkos-sign-in=failed&error=access_denied',
+      origin: 'http://localhost:3000',
+      search: '?dorkos-sign-in=failed&error=access_denied',
+      assign,
+    });
+    renderScreen(createFakeAuthClient());
+    expect(screen.getByText('Sign-in didn’t finish. Try again.')).toBeInTheDocument();
+  });
+
   it('says when DorkOS turned the account away', () => {
     vi.stubGlobal('location', {
       ...window.location,

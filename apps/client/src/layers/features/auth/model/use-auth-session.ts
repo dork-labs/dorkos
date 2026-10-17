@@ -121,7 +121,7 @@ export function useContinueWithDorkOS(): AuthActionState<[]> {
     const here = new URL(window.location.href);
     here.searchParams.delete(DORKOS_SIGN_IN_FAILED);
     here.searchParams.delete('error');
-    const back = `${here.pathname}${here.search}`;
+    const back = `${here.pathname}${here.search}${here.hash}`;
     const failed = new URL(back, window.location.origin);
     failed.searchParams.set(DORKOS_SIGN_IN_FAILED, 'failed');
     const { data, error: err } = await client.signIn.social({

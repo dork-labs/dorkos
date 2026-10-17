@@ -32,6 +32,7 @@ export {
   setAuthRequired,
   getSignInWith,
   setSignInWith,
+  resetSignInWithForTests,
   type SignInWith,
   subscribeAuthRequired,
   getOwnerSetupRequest,
