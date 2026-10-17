@@ -29931,6 +29931,14 @@
                                     "type": "string"
                                   }
                                 },
+                                "trust": {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner",
+                                    "agent",
+                                    "outsider"
+                                  ]
+                                },
                                 "createdAt": {
                                   "type": "string"
                                 },
@@ -29947,6 +29955,7 @@
                                 "author",
                                 "body",
                                 "mentions",
+                                "trust",
                                 "createdAt",
                                 "editedAt"
                               ]
@@ -30341,6 +30350,14 @@
                                   "type": "string"
                                 }
                               },
+                              "trust": {
+                                "type": "string",
+                                "enum": [
+                                  "owner",
+                                  "agent",
+                                  "outsider"
+                                ]
+                              },
                               "createdAt": {
                                 "type": "string"
                               },
@@ -30357,6 +30374,7 @@
                               "author",
                               "body",
                               "mentions",
+                              "trust",
                               "createdAt",
                               "editedAt"
                             ]
@@ -30686,6 +30704,14 @@
                                   "type": "string"
                                 }
                               },
+                              "trust": {
+                                "type": "string",
+                                "enum": [
+                                  "owner",
+                                  "agent",
+                                  "outsider"
+                                ]
+                              },
                               "createdAt": {
                                 "type": "string"
                               },
@@ -30702,6 +30728,7 @@
                               "author",
                               "body",
                               "mentions",
+                              "trust",
                               "createdAt",
                               "editedAt"
                             ]
@@ -31029,6 +31056,14 @@
                                   "type": "string"
                                 }
                               },
+                              "trust": {
+                                "type": "string",
+                                "enum": [
+                                  "owner",
+                                  "agent",
+                                  "outsider"
+                                ]
+                              },
                               "createdAt": {
                                 "type": "string"
                               },
@@ -31045,6 +31080,7 @@
                               "author",
                               "body",
                               "mentions",
+                              "trust",
                               "createdAt",
                               "editedAt"
                             ]
@@ -31353,6 +31389,14 @@
                                   "type": "string"
                                 }
                               },
+                              "trust": {
+                                "type": "string",
+                                "enum": [
+                                  "owner",
+                                  "agent",
+                                  "outsider"
+                                ]
+                              },
                               "createdAt": {
                                 "type": "string"
                               },
@@ -31369,6 +31413,7 @@
                               "author",
                               "body",
                               "mentions",
+                              "trust",
                               "createdAt",
                               "editedAt"
                             ]

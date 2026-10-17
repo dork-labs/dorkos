@@ -305,7 +305,8 @@ describe('doc comment wakes', () => {
     ]);
     // No turn ran, so the hour's unit and the chain's wake are both handed back.
     expect(h.released).toEqual([`doc:${DOC.key}`]);
-    expect(h.store.wakesByAgentInCascade(result.thread.comments[0]!.cascadeRoot).size).toBe(0);
+    // A first comment begins its own chain, so the chain is named by its id.
+    expect(h.store.wakesByAgentInCascade(result.thread.comments[0]!.id).size).toBe(0);
   });
 
   it('hands the turn back when the send throws', async () => {
