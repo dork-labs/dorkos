@@ -3,6 +3,7 @@ import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { formatServerOutput } from './server-output';
 import { isQuitting } from './quit-guard';
+import { frontTabUrl } from './tab-session';
 import { noteDocumentReplaced } from './renderer-health/document-watermark';
 
 /**
@@ -205,7 +206,9 @@ export function pointWindowsAtServer(port: number): void {
     // needs a reload, which re-reads the port over IPC — navigating it to the
     // server would strand it away from the dev server.
     if (app.isPackaged) {
-      void win.loadURL(`http://localhost:${port}`);
+      // Back onto the tab that was in front, not the app's root: the location
+      // sync would otherwise rewrite that tab to `/`, and keep it that way.
+      void win.loadURL(frontTabUrl(win, `http://localhost:${port}`));
     } else {
       win.reload();
     }

@@ -10,6 +10,7 @@ import {
   type CommunityDeliverySnapshot,
 } from './community-deliveries.js';
 import type { HaltRoomResponse } from './room-schemas.js';
+import type { RemoteCommunityDmTransport } from './community-dm-views.js';
 import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireHandleSchema,
@@ -196,6 +197,8 @@ export const RemoteCommunityEnrollmentSchema = z.strictObject({
   ownerDisplayName: z.string().min(1),
   roomIds: z.array(id),
   active: z.boolean(),
+  /** Whether its owner lets people message it directly in this space, as this install set it. */
+  acceptsDms: z.boolean().optional(),
 });
 /** Enrollment details without bearer, filesystem path or local runtime settings. */
 export type RemoteCommunityEnrollment = z.infer<typeof RemoteCommunityEnrollmentSchema>;
@@ -279,7 +282,7 @@ export const RemoteCommunityEventSchema = z
 export type RemoteCommunityEvent = z.infer<typeof RemoteCommunityEventSchema>;
 
 /** Local-server-only operations; each room address always includes its connection ref. */
-export interface RemoteCommunityTransport {
+export interface RemoteCommunityTransport extends RemoteCommunityDmTransport {
   /** Discover visible rooms for one connection, including explicit stale cache state. */
   listRemoteCommunityRooms(ref: string): Promise<RemoteCommunityRoomsResponse>;
   /** Read permissions and metadata for one qualified room. */

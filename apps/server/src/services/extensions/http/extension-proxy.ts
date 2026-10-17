@@ -21,6 +21,8 @@ import {
   EXTENSION_PROXY_RATE_LIMITED_BODY,
 } from '../../../middleware/extension-proxy-rate-limit.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
+import { OUTBOUND_FORCED } from './reply-headers.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 /**
  * Headers that must not be forwarded to the upstream API.
@@ -306,8 +308,10 @@ export function createProxyForwarder(
       if (contentType) headers['Content-Type'] = contentType;
       // Forward `Location` so a caller that got a 3xx above can see where the
       // upstream pointed and decide for itself.
+      // Never on a hub (DOR-2937): there a `Location` to another site would
+      // make the hub's own address a redirect anywhere.
       const location = upstreamRes.headers.get('location');
-      if (location) headers.Location = location;
+      if (location && currentServerRole() !== 'hub') headers.Location = location;
 
       return { status: upstreamRes.status, headers, text: await upstreamRes.text() };
     } catch (err) {
@@ -330,13 +334,15 @@ const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 /**
  * The response Express's `res.json` and `res.send` wrote for an answer: JSON
  * as `application/json; charset=utf-8`, and text with `charset=utf-8` set on
- * whatever type it carries (`text/html` when it carries none).
+ * whatever type it carries (`text/html` when it carries none). Every answer
+ * also carries {@link OUTBOUND_FORCED}, as a fetch handler's does, so an
+ * upstream's HTML opened as a page runs nothing on DorkOS's origin.
  *
  * @param answer - What the forwarder answered.
  * @param extra - Headers to add (the rate limit's).
  */
 export function proxyResponse(answer: ProxyAnswer, extra: Record<string, string> = {}): Response {
-  const headers = new Headers({ ...extra, ...answer.headers });
+  const headers = new Headers({ ...extra, ...answer.headers, ...OUTBOUND_FORCED });
   let body: string;
   if (answer.json !== undefined) {
     body = JSON.stringify(answer.json);

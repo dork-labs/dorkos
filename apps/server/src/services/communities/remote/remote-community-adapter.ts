@@ -233,7 +233,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
    * What this space understands beyond the version 1 contract (DOR-2878). Read without a
    * credential, as the space serves it, so an old space's refusal can never ask to reconnect.
    */
-  private readonly features = new SpaceFeatures(async () => {
+  protected readonly features = new SpaceFeatures(async () => {
     const target = await this.endpoint(COMMUNITY_API_V1_ROUTES.features);
     return pinnedJson(target.origin, target.path, undefined, undefined, { method: 'GET' });
   });
@@ -324,7 +324,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       throw new AggregateError(failures, 'Failed to revoke the rejected community connection');
   }
 
-  private async request(
+  protected async request(
     path: string,
     body?: unknown,
     context?: CommunityReadContext,

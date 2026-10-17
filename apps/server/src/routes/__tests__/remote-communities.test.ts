@@ -171,6 +171,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../community-connections.js', () => ({
   resolveCommunityOwner: () => fixture.currentOwner,
 }));
+const dmsStore = vi.hoisted(() => ({
+  get: vi.fn(async () => [] as string[]),
+  set: vi.fn(async () => undefined),
+}));
+vi.mock('../../services/communities/remote/dms/agent-dms-store.js', () => ({
+  getAgentDmsStore: () => dmsStore,
+}));
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: (_ref: string, owner: string) => {
     fixture.adapterOwners.push(owner);
@@ -498,6 +505,7 @@ describe('qualified remote community writes and live projections', () => {
       'owner-a'
     );
     expect(fixture.adapter.revokeAgent).not.toHaveBeenCalled();
+    expect(dmsStore.set).toHaveBeenCalledWith(fixture.ref, 'owner-a', 'local-agent-a', false);
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
@@ -1098,7 +1106,10 @@ describe('qualified remote community writes and live projections', () => {
     expect(response.body.agent).toMatchObject({
       localAgentId: 'mesh-manifest-a',
       remoteMemberId: 'remote-enrolled-a',
+      acceptsDms: false,
     });
+    // The space starts every enrollment with direct messages off (DOR-2955); so does this record.
+    expect(dmsStore.set).toHaveBeenCalledWith(fixture.ref, 'owner-a', 'mesh-manifest-a', false);
 
     const unknown = await request(testServer)
       .post(`/api/communities/${fixture.ref}/agents/opaque-local-author-a/enroll`)

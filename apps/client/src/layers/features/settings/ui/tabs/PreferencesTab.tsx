@@ -12,7 +12,9 @@ import {
   FieldCard,
   FieldCardContent,
 } from '@/layers/shared/ui';
+import { isDesktopShell } from '@/layers/shared/lib';
 import { WelcomeBackCard } from '../WelcomeBackCard';
+import { StartupTabsRow } from './StartupTabsRow';
 import { configKeys } from '@/layers/entities/config';
 
 /**
@@ -171,6 +173,20 @@ export function PreferencesTab() {
           </FieldCardContent>
         </FieldCard>
       </section>
+
+      {/* The desktop app's tabs. A browser has its own, so this is not shown there. */}
+      {isDesktopShell() && (
+        <section className="space-y-2">
+          <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            Tabs
+          </h3>
+          <FieldCard>
+            <FieldCardContent>
+              <StartupTabsRow />
+            </FieldCardContent>
+          </FieldCard>
+        </section>
+      )}
 
       <WelcomeBackCard />
 

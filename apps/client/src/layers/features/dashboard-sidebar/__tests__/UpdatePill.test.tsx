@@ -100,6 +100,19 @@ describe('UpdatePill', () => {
     expect(screen.getByText('Update ready: v1.4.0')).toBeInTheDocument();
   });
 
+  it('offers no update command on a hub, which is updated for its owner', () => {
+    mockConfigData = {
+      version: '1.2.3',
+      latestVersion: '1.4.0',
+      isDevMode: false,
+      dismissedUpgradeVersions: [],
+      serverRole: 'hub',
+    };
+    const { container } = render(<PillHost />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('stays quiet about a version the operator already dismissed', () => {
     mockConfigData = {
       version: '1.2.3',

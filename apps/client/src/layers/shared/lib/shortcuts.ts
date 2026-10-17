@@ -152,6 +152,13 @@ export const SHORTCUTS = {
     group: 'navigation',
     desktopOnly: true,
   },
+  REOPEN_CLOSED_TAB: {
+    id: 'reopen-closed-tab',
+    key: 'mod+shift+t',
+    label: 'Reopen closed tab',
+    group: 'navigation',
+    desktopOnly: true,
+  },
   // The active tab's own Back and Forward (DOR-2107), registered by
   // `useTabHistoryShortcuts`. Desktop only: in a browser these keys and the
   // browser's own Back button already walk the page's history. Alt+Left/Right

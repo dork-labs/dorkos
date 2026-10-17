@@ -126,6 +126,7 @@ describe('promo-registry', () => {
       daysSinceFirstUse: 0,
       isDesktopApp: false,
       remoteAccessConfigured: false,
+      isHub: false,
     };
     for (const promo of PROMO_REGISTRY) {
       if (!promo.content.suggestion) continue;
@@ -152,6 +153,7 @@ describe('promo-registry', () => {
       daysSinceFirstUse: 6,
       isDesktopApp: false,
       remoteAccessConfigured: false,
+      isHub: false,
     };
     const speaking = PROMO_REGISTRY.filter(
       (p) => p.content.suggestion && p.shouldShow(usedInstallCtx)
@@ -175,6 +177,7 @@ describe('promo-registry', () => {
       daysSinceFirstUse: 6,
       isDesktopApp: false,
       remoteAccessConfigured: false,
+      isHub: false,
     };
     const schedules = PROMO_REGISTRY.find((p) => p.id === 'schedules');
     expect(schedules?.shouldShow(withSchedules)).toBe(false);
@@ -200,7 +203,11 @@ describe('promo-registry', () => {
     // table is the whole fix, so it is asserted as one.
     const remoteAccess = PROMO_REGISTRY.find((p) => p.id === 'remote-access');
 
-    function ctx(over: { isDesktopApp: boolean; remoteAccessConfigured: boolean }) {
+    function ctx(over: {
+      isDesktopApp: boolean;
+      remoteAccessConfigured: boolean;
+      isHub?: boolean;
+    }) {
       return {
         hasAdapter: () => false,
         isTasksEnabled: true,
@@ -210,6 +217,7 @@ describe('promo-registry', () => {
         agentCount: 2,
         taskCount: 1,
         daysSinceFirstUse: 30,
+        isHub: false,
         ...over,
       };
     }
@@ -235,6 +243,14 @@ describe('promo-registry', () => {
       const showing = cases.filter(([, , shows]) => shows);
       expect(showing).toEqual([[false, false, true]]);
     });
+
+    it('never shows on a hub, which has no remote access of its own', () => {
+      expect(
+        remoteAccess?.shouldShow(
+          ctx({ isDesktopApp: false, remoteAccessConfigured: false, isHub: true })
+        )
+      ).toBe(false);
+    });
   });
 
   it('all shouldShow functions are callable with a mock context', () => {
@@ -249,6 +265,7 @@ describe('promo-registry', () => {
       daysSinceFirstUse: 0,
       isDesktopApp: false,
       remoteAccessConfigured: false,
+      isHub: false,
     };
     for (const promo of PROMO_REGISTRY) {
       expect(() => promo.shouldShow(mockCtx)).not.toThrow();

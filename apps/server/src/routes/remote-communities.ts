@@ -35,6 +35,7 @@ import {
 import { RemoteConnectionAuthorizationError } from '../services/communities/remote/connection-store.js';
 import { attachmentHeaders, requestBytes } from './remote-community-attachment-http.js';
 import { registerRemoteCommunityAgentRoutes } from './remote-community-agents.js';
+import { registerRemoteCommunityDmRoutes } from './remote-community-dms.js';
 import { registerRemoteCommunityConductRoutes } from './remote-community-conduct.js';
 import { remoteRoomEvents } from './remote-community-events.js';
 import {
@@ -325,6 +326,7 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     }
   });
   registerRemoteCommunityAgentRoutes(router);
+  registerRemoteCommunityDmRoutes(router);
   registerRemoteCommunityConductRoutes(router);
   return router;
 }

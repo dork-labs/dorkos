@@ -61,6 +61,14 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./sign-in-landing": {
+      "types": "./src/sign-in-landing.ts",
+      "default": "./dist/sign-in-landing.js"
+    },
+    "./transport-sign-in-landing": {
+      "types": "./src/transport-sign-in-landing.ts",
+      "default": "./dist/transport-sign-in-landing.js"
+    },
     "./transport-onboarding": {
       "types": "./src/transport-onboarding.ts",
       "default": "./dist/transport-onboarding.js"
@@ -496,6 +504,10 @@
     "./community-views": {
       "types": "./src/community-views.ts",
       "default": "./dist/community-views.js"
+    },
+    "./community-dm-views": {
+      "types": "./src/community-dm-views.ts",
+      "default": "./dist/community-dm-views.js"
     },
     "./community-navigation": {
       "types": "./src/community-navigation.ts",

@@ -31,6 +31,7 @@ const MOCK_CTX = {
   // qualifies, now that it has a real trigger instead of `() => true`.
   isDesktopApp: false,
   remoteAccessConfigured: false,
+  isHub: false,
 };
 
 // ---------------------------------------------------------------------------

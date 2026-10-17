@@ -20,7 +20,7 @@ import { RemoteAnswerIn } from './wake/answer-in.js';
 import { AnswerInStore } from './wake/answer-in-store.js';
 import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
-import { RemoteCommunityAdapter } from './remote-community-adapter.js';
+import { RemoteDmCommunityAdapter } from './adapter/remote-dm-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxStore } from './community-outbox-store.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
@@ -41,7 +41,7 @@ let deliveryRetry:
   ((input: CommunityOutboxRetryInput) => Promise<CommunityOutboxRetryResult>) | undefined;
 const deliveryListeners = new Set<(ownerAuthorId: string) => void>();
 let localAgentResolver: RemoteCommunityLocalAgentResolver | undefined;
-const adapters = new Map<string, RemoteCommunityAdapter>();
+const adapters = new Map<string, RemoteDmCommunityAdapter>();
 
 /** One trusted local Mesh agent resolved from the browser's manifest id. */
 export interface RemoteCommunityLocalAgent {
@@ -338,11 +338,11 @@ export function getRemoteCommunityOriginIdempotencyKey(
 export function getRemoteCommunityAdapter(
   ref: CommunityRef,
   ownerAuthorId: string
-): RemoteCommunityAdapter {
+): RemoteDmCommunityAdapter {
   const key = `${ref}:${ownerAuthorId}`;
   let adapter = adapters.get(key);
   if (!adapter) {
-    adapter = new RemoteCommunityAdapter(
+    adapter = new RemoteDmCommunityAdapter(
       ref,
       ownerAuthorId,
       getRemoteConnectionStore(),

@@ -3,7 +3,9 @@ import { Link } from '@tanstack/react-router';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   communityAccessState,
+  remoteDmTitle,
   useCommunityConnections,
+  useRemoteCommunityDms,
   useRemoteCommunityRooms,
 } from '@/layers/entities/community';
 
@@ -110,6 +112,52 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
         ))}
       {rooms.data?.rooms.length === 0 && (
         <p className="text-muted-foreground px-2 py-1 text-xs">No channels available.</p>
+      )}
+      {access.verified && <CommunityDms connection={connection} />}
+    </section>
+  );
+}
+
+/**
+ * The person's direct messages with agents in this space, then the ones someone has with their
+ * own agents, read-only (DOR-2955). Nothing at all from a space that holds none.
+ */
+function CommunityDms({ connection }: { connection: CommunityConnectionDescriptor }) {
+  const access = communityAccessState(connection.access);
+  const dms = useRemoteCommunityDms(connection.ref, access.capabilities.read, access.fingerprint);
+  const search = useSafeSearch() as { community?: string; id?: string };
+  if (!dms.data?.available || (dms.data.dms.length === 0 && !dms.data.incomplete)) return null;
+  return (
+    <section className="mt-2" aria-label="Direct messages">
+      <h4 className="text-muted-foreground px-2 text-xs font-medium">Direct messages</h4>
+      {dms.data.dms.map((dm) => (
+        <Link
+          key={dm.roomId}
+          {...appRoutes.channels()}
+          search={{ community: connection.ref, id: dm.roomId }}
+          aria-current={
+            search.community === connection.ref && search.id === dm.roomId ? 'page' : undefined
+          }
+          className="hover:bg-accent aria-[current=page]:bg-accent flex min-h-9 items-center justify-between gap-2 rounded-md px-2 py-1 text-sm"
+        >
+          <span className="truncate">
+            {remoteDmTitle(dm)}
+            {dm.readOnly && <span className="text-muted-foreground"> · read-only</span>}
+          </span>
+          {!dm.readOnly && dm.unreadCount > 0 && (
+            <span
+              className="text-muted-foreground text-xs"
+              aria-label={`${dm.unreadCount} unread messages`}
+            >
+              {dm.unreadCount}
+            </span>
+          )}
+        </Link>
+      ))}
+      {dms.data.incomplete && (
+        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
+          Some direct messages couldn’t load.
+        </p>
       )}
     </section>
   );

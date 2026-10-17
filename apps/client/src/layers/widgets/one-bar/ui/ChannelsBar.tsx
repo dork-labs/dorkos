@@ -2,6 +2,8 @@ import { useSafeSearch } from '@/layers/shared/model';
 import { PageHeading } from '@/layers/shared/ui';
 import {
   communityAccessState,
+  remoteDmTitle,
+  useRemoteCommunityDm,
   useRemoteCommunityRoom,
   useCommunityConnections,
   useSpaceVisible,
@@ -124,10 +126,19 @@ function RemoteChannelsBar({ community, roomId }: { community: string; roomId: s
     access.capabilities.read,
     access.fingerprint
   );
+  // A direct message with an agent is named for who is in it, not its channel name (DOR-2955).
+  const { dm } = useRemoteCommunityDm(
+    community,
+    roomId,
+    access.capabilities.read,
+    access.fingerprint
+  );
   const label = connection?.label;
   return (
     <OneBar
-      identity={<BarTitle>{room.data?.title ?? 'Space channel'}</BarTitle>}
+      identity={
+        <BarTitle>{dm ? remoteDmTitle(dm) : (room.data?.title ?? 'Space channel')}</BarTitle>
+      }
       chips={<span className="text-muted-foreground truncate text-xs">{label ?? 'Space'}</span>}
     />
   );

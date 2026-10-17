@@ -22,6 +22,12 @@ export interface MirrorRoomInput {
   remoteRoomId: string;
   title: string;
   topic: string | null;
+  /**
+   * `dm` for a direct message with the enrolled agent (DOR-2955): every person's post in it is
+   * addressed to the agent. The local copy itself stays an ordinary room, so a direct message
+   * never collides with the owner's own local one with the same agent.
+   */
+  kind?: 'dm';
   ownerAuthorId: string;
   accessors: readonly MirrorAccessor[];
   authorizedAt: string;

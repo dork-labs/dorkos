@@ -179,6 +179,23 @@ describe('storeOpenRouterKeyReference', () => {
 });
 
 describe('OpenRouterOAuthStore', () => {
+  it('restarts a failed flow under its own state, never a connected or unknown one (DOR-2985)', () => {
+    const store = new OpenRouterOAuthStore();
+    const { state } = store.start();
+    store.claimVerifier(state);
+    store.markError(state, 'OpenRouter sign-in was cancelled.');
+
+    const again = store.restart(state);
+    expect(again?.state).toBe(state);
+    expect(store.status(state)).toEqual({ status: 'pending' });
+    // A fresh one-shot verifier for the new attempt.
+    expect(store.claimVerifier(state)).toEqual(expect.any(String));
+
+    store.markConnected(state);
+    expect(store.restart(state)).toBeNull();
+    expect(store.restart('nobody')).toBeNull();
+  });
+
   it('mints and claims a verifier by state, and rejects unknown state', () => {
     const store = new OpenRouterOAuthStore();
     const { state, challenge } = store.start();

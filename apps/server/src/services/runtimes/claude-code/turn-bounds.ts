@@ -16,7 +16,7 @@ import type { AgentSession } from './agent-types.js';
 export function assignTurnBounds(
   session: Pick<
     AgentSession,
-    'unattendedApprovals' | 'unattendedTurn' | 'turnPermissionCeiling' | 'teammateFence'
+    'unattendedApprovals' | 'unattendedTurn' | 'turnPermissionCeiling' | 'teammateTier'
   >,
   opts: MessageOpts | undefined
 ): void {
@@ -38,8 +38,8 @@ export function assignTurnBounds(
   // And the room a teammate's turn is fenced to (DOR-2955). Cleared the same
   // way, so the owner's next turn in this conversation reaches what it did.
   if (opts?.roomTurn?.teammate === true) {
-    session.teammateFence = { roomId: opts.roomTurn.roomId };
+    session.teammateTier = { roomId: opts.roomTurn.roomId };
   } else {
-    delete session.teammateFence;
+    delete session.teammateTier;
   }
 }

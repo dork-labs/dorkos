@@ -10,6 +10,7 @@ import { RemoteCommunitySurface } from './RemoteCommunitySurface';
 import { CommunityPageHeading } from './CommunityPageHeading';
 import { CommunityGonePanel, communityGoneState } from './CommunityGonePanel';
 import { CommunityOwnerNoticeBanner } from './CommunityOwnerNoticeBanner';
+import { RemoteDmRoom } from './dms/RemoteDmRoom';
 import {
   OfficialSpaceUnreachableNotice,
   useCommunityConnections,
@@ -75,15 +76,22 @@ function ChannelsPageBody() {
   if (community && id)
     return (
       <CommunityGoneGuard community={community}>
-        <RemoteCommunitySurface
-          key={JSON.stringify([community, id])}
-          community={community}
-          roomId={id}
-          threadId={thread}
-          onThread={(rootId) => {
-            void navigate({ ...appRoutes.channels(), search: { community, id, thread: rootId } });
-          }}
-        />
+        <RemoteDmRoom key={JSON.stringify([community, id])} community={community} roomId={id}>
+          {(dmAgentName) => (
+            <RemoteCommunitySurface
+              community={community}
+              roomId={id}
+              threadId={thread}
+              dmAgentName={dmAgentName}
+              onThread={(rootId) => {
+                void navigate({
+                  ...appRoutes.channels(),
+                  search: { community, id, thread: rootId },
+                });
+              }}
+            />
+          )}
+        </RemoteDmRoom>
       </CommunityGoneGuard>
     );
 

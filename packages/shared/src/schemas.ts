@@ -4188,8 +4188,8 @@ export const WorkbenchSignResponseSchema = z
     url: z.string().nullable(),
     /**
      * Why there is no URL:
-     * - `tunnel` — the caller reached DorkOS through a tunnel, which publishes
-     *   one port and not the preview's.
+     * - `tunnel` — the caller reached DorkOS through a tunnel or a hub's front
+     *   door, which publishes one address and not the preview's.
      * - `no-port` — every port in the configured preview range is in use.
      */
     unavailable: z.enum(['tunnel', 'no-port']).optional(),

@@ -34,6 +34,10 @@ vi.mock('../ui/RemoteCommunitySurface', () => ({
     return <p>Remote channel</p>;
   },
 }));
+// Whether the address names a direct message is `remote-dms.test.tsx`'s; here it is a channel.
+vi.mock('../ui/dms/RemoteDmRoom', () => ({
+  RemoteDmRoom: ({ children }: { children: () => React.ReactNode }) => children(),
+}));
 vi.mock('../ui/RoomSurface', () => ({
   RoomSurface: (props: unknown) => {
     local(props);

@@ -84,9 +84,20 @@
  * The order is the invariant, so the strip never has to sort, and a stored list
  * that breaks it (hand-edited, or from a bug) is put back in order on load.
  *
- * Persisted to `sessionStorage`, which is scoped per browser tab / per Electron
- * renderer: a reload restores your tabs, and a second DorkOS window gets its own
- * set instead of fighting over one.
+ * **Persisted by the desktop shell, per window** (`main/tab-session/` in the
+ * desktop app). The store reads its window's tabs synchronously before it is
+ * built and sends the whole list back on every change; the shell writes it to
+ * disk and decides what a launch brings back (everything after an update or a
+ * crash; the person's choice after a normal quit). `sessionStorage` stays as a
+ * second mirror, scoped per renderer, so a reload never depends on the bridge.
+ * `localStorage` would not survive either: a packaged build's origin carries a
+ * port that can change between launches.
+ *
+ * Each tab remembers when it was last on screen (`lastViewedAt`), so launch can
+ * leave out unpinned tabs nobody has looked at for a week. The times are kept
+ * beside the store rather than in it and folded in only when the shell is sent
+ * a copy: stamping a tab on every switch would change its object, and with it
+ * every reader that keys on a tab's identity, for a value only a launch reads.
  *
  * @module shared/model/app-tabs/app-tabs-store
  */
@@ -110,6 +121,11 @@ export interface AppTab {
    * existed reads back.
    */
   pinned?: boolean;
+  /**
+   * When the tab was last on screen, in ms since the epoch, as of the copy it
+   * was read from. Current only in what the shell is sent; see the module doc.
+   */
+  lastViewedAt?: number;
 }
 
 /**
@@ -243,10 +259,17 @@ function adoptLocation(tab: AppTab, href: string, replace: boolean): AppTab {
  */
 function repairTab(raw: unknown): AppTab | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { id, href, history, cursor, pinned } = raw as Partial<Record<keyof AppTab, unknown>>;
+  const { id, href, history, cursor, pinned, lastViewedAt } = raw as Partial<
+    Record<keyof AppTab, unknown>
+  >;
   if (typeof id !== 'string' || typeof href !== 'string' || href.length === 0) return null;
   // Only a literal `true` pins: anything else, absence included, is unpinned.
-  const pin = pinned === true ? { pinned: true } : {};
+  const pin = {
+    ...(pinned === true ? { pinned: true } : {}),
+    ...(typeof lastViewedAt === 'number' && Number.isFinite(lastViewedAt) && lastViewedAt >= 0
+      ? { lastViewedAt }
+      : {}),
+  };
   const historyIsSound =
     Array.isArray(history) &&
     history.length > 0 &&
@@ -261,11 +284,29 @@ function repairTab(raw: unknown): AppTab | null {
 }
 
 /**
- * Read the persisted tabs, or `null` when there is nothing usable — absent or
- * blocked storage (private mode), corrupt JSON, a shape with no usable tab. An
- * `activeTabId` that no longer names a tab falls back to the first. A tab whose
- * history is missing or broken is repaired, never dropped, and pinned tabs are
- * put back in front of the rest.
+ * Make a stored tab list usable, or `null` when there is nothing in it — a
+ * shape with no usable tab. An `activeTabId` that no longer names a tab falls
+ * back to the first. A tab whose history is missing or broken is repaired,
+ * never dropped, and pinned tabs are put back in front of the rest.
+ */
+function parsePersistedTabs(parsed: unknown): PersistedTabs | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { tabs, activeTabId } = parsed as { tabs?: unknown; activeTabId?: unknown };
+  const clean = Array.isArray(tabs)
+    ? pinnedFirst(tabs.map(repairTab).filter((tab): tab is AppTab => tab !== null))
+    : [];
+  if (clean.length === 0) return null;
+  const active =
+    typeof activeTabId === 'string' && clean.some((tab) => tab.id === activeTabId)
+      ? activeTabId
+      : clean[0].id;
+  return { tabs: clean, activeTabId: active };
+}
+
+/**
+ * Read the tabs mirrored in `sessionStorage`, or `null` when there is nothing
+ * usable — absent or blocked storage (private mode), corrupt JSON, or what
+ * {@link parsePersistedTabs} refuses.
  *
  * @internal Exported for testing only.
  */
@@ -273,18 +314,24 @@ export function readPersistedTabs(): PersistedTabs | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const { tabs, activeTabId } = parsed as { tabs?: unknown; activeTabId?: unknown };
-    const clean = Array.isArray(tabs)
-      ? pinnedFirst(tabs.map(repairTab).filter((tab): tab is AppTab => tab !== null))
-      : [];
-    if (clean.length === 0) return null;
-    const active =
-      typeof activeTabId === 'string' && clean.some((tab) => tab.id === activeTabId)
-        ? activeTabId
-        : clean[0].id;
-    return { tabs: clean, activeTabId: active };
+    return parsePersistedTabs(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read this window's tabs from the desktop shell, or `null` outside it, for a
+ * window it has nothing for, or when what it sent is unusable. Repaired by the
+ * same rules as {@link readPersistedTabs}: the shell validates what it keeps,
+ * and this side does not take that on trust either.
+ *
+ * @internal Exported for testing only.
+ */
+export function readDesktopTabs(): PersistedTabs | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return parsePersistedTabs(window.electronAPI?.tabSession?.getInitial() ?? null);
   } catch {
     return null;
   }
@@ -309,16 +356,42 @@ export function seedTabsFromLocation(): PersistedTabs {
   return { tabs: [tab], activeTabId: tab.id };
 }
 
-/** Persist the tab list. Non-fatal on failure — you just lose restore-on-reload. */
+/**
+ * Persist the tab list: to the desktop shell, which keeps it across quits, and
+ * to `sessionStorage`. The tab in front is stamped as seen now in what the shell
+ * keeps, so a quit records it as the last thing looked at. Non-fatal on failure
+ * — you just lose restore-on-reload.
+ */
 function writePersistedTabs(state: PersistedTabs): void {
+  const snapshot = { tabs: state.tabs, activeTabId: state.activeTabId };
   try {
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ tabs: state.tabs, activeTabId: state.activeTabId })
-    );
+    const bridge = typeof window === 'undefined' ? undefined : window.electronAPI?.tabSession;
+    if (bridge && snapshot.tabs.length > 0) {
+      if (state.activeTabId) lastViewed.set(state.activeTabId, Date.now());
+      bridge.save({ ...snapshot, tabs: withLastViewed(snapshot.tabs) });
+    }
+  } catch {
+    // A shell that cannot take it right now: the next change sends it again.
+  }
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
   } catch {
     // Storage blocked or full — tabs still work for this window's lifetime.
   }
+}
+
+/**
+ * When each tab in this window was last on screen, by id, from this page load
+ * on. A tab not in here is as old as the `lastViewedAt` it was loaded with.
+ */
+const lastViewed = new Map<string, number>();
+
+/** The tabs with their latest last-seen times folded in, for the shell to keep. */
+function withLastViewed(tabs: AppTab[]): AppTab[] {
+  return tabs.map((tab) => {
+    const seen = lastViewed.get(tab.id);
+    return seen === undefined ? tab : { ...tab, lastViewedAt: seen };
+  });
 }
 
 /**
@@ -391,6 +464,41 @@ export function closeOtherTabsIn(layout: AppTabsLayout, id: string): AppTabsLayo
   const tabs = layout.tabs.filter((t) => t.id === id || t.pinned);
   if (tabs.length === layout.tabs.length && layout.activeTabId === id) return layout;
   return { tabs, activeTabId: id };
+}
+
+/** {@link AppTabsState.reopenTab}, as a pure function. */
+export function reopenTabIn(layout: AppTabsLayout, closed: unknown, index: number): AppTabsLayout {
+  const repaired = repairTab(closed);
+  if (!repaired) return layout;
+  // A tab that comes back while a tab with its id is open (reopened twice from
+  // two windows) takes a fresh id; two tabs with one id would be one tab.
+  const tab = layout.tabs.some((t) => t.id === repaired.id)
+    ? { ...repaired, id: newTabId() }
+    : repaired;
+  const pinned = pinnedCount(layout.tabs);
+  // Back where it was, but on its own side of the pinned line.
+  const [low, high] = tab.pinned ? [0, pinned] : [pinned, layout.tabs.length];
+  const at = Number.isInteger(index) ? Math.min(Math.max(index, low), high) : high;
+  const tabs = [...layout.tabs];
+  tabs.splice(at, 0, tab);
+  return { tabs, activeTabId: tab.id };
+}
+
+/** {@link AppTabsState.dropTabs}, as a pure function. */
+export function dropTabsIn(layout: AppTabsLayout, ids: ReadonlySet<string>): AppTabsLayout {
+  if (!layout.tabs.some((t) => ids.has(t.id))) return layout;
+  const tabs = layout.tabs.filter((t) => !ids.has(t.id));
+  if (tabs.length === 0) {
+    const home = mintTab('/');
+    return { tabs: [home], activeTabId: home.id };
+  }
+  if (layout.activeTabId && !ids.has(layout.activeTabId)) {
+    return { tabs, activeTabId: layout.activeTabId };
+  }
+  // The nearest survivor to the right of where the front tab was, else the last.
+  const from = layout.tabs.findIndex((t) => t.id === layout.activeTabId);
+  const next = layout.tabs.slice(from + 1).find((t) => !ids.has(t.id)) ?? tabs[tabs.length - 1];
+  return { tabs, activeTabId: next.id };
 }
 
 /** {@link AppTabsState.moveTab}, as a pure function. */
@@ -501,6 +609,23 @@ interface AppTabsState extends PersistedTabs {
    * @param to - Index it should end up at.
    */
   moveTab: (from: number, to: number) => void;
+  /**
+   * Bring a closed tab back, with its history and pin, at the index it had
+   * (held on its own side of the pinned line), and make it active. Anything
+   * that is not a tab changes nothing.
+   *
+   * @param tab - The tab as Recently closed kept it.
+   * @param index - Where it sat in the strip.
+   */
+  reopenTab: (tab: unknown, index: number) => void;
+  /**
+   * Remove tabs without filing them anywhere — for tabs whose page no longer
+   * exists. The last one going leaves a single home tab, never an empty strip;
+   * when the active tab goes, the nearest survivor to its right takes over.
+   *
+   * @param ids - Ids of the tabs to drop.
+   */
+  dropTabs: (ids: ReadonlySet<string>) => void;
 }
 
 /**
@@ -508,7 +633,7 @@ interface AppTabsState extends PersistedTabs {
  * are window furniture, not part of any address.
  */
 export const useAppTabsStore = create<AppTabsState>((set) => ({
-  ...(readPersistedTabs() ?? seedTabsFromLocation()),
+  ...(readDesktopTabs() ?? readPersistedTabs() ?? seedTabsFromLocation()),
 
   openTab: (href) => set((state) => openTabIn(state, href)),
 
@@ -559,12 +684,22 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
   closeOtherTabs: (id) => set((state) => closeOtherTabsIn(state, id)),
 
   moveTab: (from, to) => set((state) => moveTabIn(state, from, to)),
+
+  reopenTab: (tab, index) => set((state) => reopenTabIn(state, tab, index)),
+
+  dropTabs: (ids) => set((state) => dropTabsIn(state, ids)),
 }));
 
 // Write-through persistence. Subscribing here (rather than inside each action)
 // keeps the transitions above pure state math and guarantees no future action
-// can forget to save.
-useAppTabsStore.subscribe((state) => writePersistedTabs(state));
+// can forget to save. A change of front tab marks the tab leaving as seen until
+// now; the one arriving is marked as each copy goes out.
+useAppTabsStore.subscribe((state, prev) => {
+  if (prev.activeTabId && state.activeTabId !== prev.activeTabId) {
+    lastViewed.set(prev.activeTabId, Date.now());
+  }
+  writePersistedTabs(state);
+});
 
 /** Subscribe to the ordered tab list. */
 export function useAppTabs(): AppTab[] {

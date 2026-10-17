@@ -50,6 +50,35 @@ describe('DorkOSSignInScreen', () => {
     });
   });
 
+  it('asks for a public-computer sign-in only when the box is ticked', async () => {
+    const social = vi.fn().mockResolvedValue({
+      data: { url: 'https://id.example/authorize', redirect: true },
+      error: null,
+    });
+    const written: string[] = [];
+    const cookie = vi.spyOn(document, 'cookie', 'set').mockImplementation((value) => {
+      written.push(value);
+    });
+    renderScreen(createFakeAuthClient({ signInSocial: social }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /shared or public computer/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await waitFor(() => expect(assign).toHaveBeenCalled());
+    expect(written.at(-1)).toMatch(/^__Host-dorkos-public-computer=1;.*Secure/);
+    cookie.mockRestore();
+  });
+
+  it('withdraws the ask when the box is left alone', async () => {
+    const written: string[] = [];
+    const cookie = vi.spyOn(document, 'cookie', 'set').mockImplementation((value) => {
+      written.push(value);
+    });
+    renderScreen(createFakeAuthClient());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with DorkOS' }));
+    await waitFor(() => expect(assign).toHaveBeenCalled());
+    expect(written.at(-1)).toMatch(/^__Host-dorkos-public-computer=;.*Max-Age=0/);
+    cookie.mockRestore();
+  });
+
   it('says so when DorkOS sign-in is unavailable, and stays put', async () => {
     const social = vi.fn().mockResolvedValue({
       data: null,

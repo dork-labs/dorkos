@@ -1,0 +1,144 @@
+<meta name="vc-title" content="Components" />
+<h2>Visual companion components</h2>
+<p class="subtitle">Every v2 component on one screen. Each section is the markup to copy.</p>
+
+<div class="section">
+  <div class="label">Before / after</div>
+  <div class="vc-compare" data-title="Session row" data-before="Today" data-after="Proposed">
+    <div class="vc-before" style="padding: 24px">
+      <div
+        style="
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          padding: 8px 10px;
+          border-radius: 8px;
+          background: var(--vc-tint);
+        "
+      >
+        <span
+          style="
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            background: hsl(var(--muted-foreground) / 0.5);
+          "
+        ></span>
+        <span style="font-weight: 500">Weekly review</span>
+        <span style="margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 12px"
+          >2h</span
+        >
+      </div>
+    </div>
+    <div class="vc-after" style="padding: 24px; background: var(--vc-raised)">
+      <div
+        style="display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px"
+      >
+        <span
+          style="width: 18px; height: 18px; border-radius: 999px; background: hsl(var(--brand))"
+        ></span>
+        <span style="font-weight: 600">Weekly review</span>
+        <span style="margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 12px"
+          >2h ago</span
+        >
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Both themes</div>
+  <div class="vc-themes">
+    <div class="options">
+      <div class="option" data-choice="calm" onclick="toggleSelect(this)">
+        <div class="letter">A</div>
+        <div class="content">
+          <h3>Calm card</h3>
+          <p>Tint, no border, soft shadow in light.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Phone frame</div>
+  <div class="vc-phones">
+    <div class="vc-phone" data-label="Today · 390 × 844">
+      <div style="padding: 8px 20px">
+        <h2 style="font-size: 28px; line-height: 34px">Today</h2>
+        <p class="subtitle">3 things need you</p>
+        <div class="options">
+          <div class="option" data-choice="phone-a" onclick="toggleSelect(this)">
+            <div class="letter">1</div>
+            <div class="content">
+              <h3>Approve the launch post</h3>
+              <p>Marketing · due 10am</p>
+            </div>
+          </div>
+          <div class="option" data-choice="phone-b" onclick="toggleSelect(this)">
+            <div class="letter">2</div>
+            <div class="content">
+              <h3>Review avatar tuning</h3>
+              <p>Design · 4 screens</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="vc-phone" data-theme="dark" data-label="Dark · 390 × 844">
+      <div style="padding: 8px 20px">
+        <h2 style="font-size: 28px; line-height: 34px">Today</h2>
+        <p class="subtitle">All clear</p>
+        <div class="placeholder">Nothing waiting on you</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Motion playground</div>
+  <div class="vc-motion" data-type="spring" data-stiffness="400" data-damping="30"></div>
+</div>
+
+<div class="section">
+  <div class="label">Classic parts (v1 classes, new look)</div>
+  <div class="cards">
+    <div class="card" data-choice="grid" onclick="toggleSelect(this)">
+      <div class="card-image"><div class="placeholder" style="width: 70%">Grid</div></div>
+      <div class="card-body">
+        <h3>Grid</h3>
+        <p>Everything at once.</p>
+      </div>
+    </div>
+    <div class="card" data-choice="list" onclick="toggleSelect(this)">
+      <div class="card-image"><div class="placeholder" style="width: 70%">List</div></div>
+      <div class="card-body">
+        <h3>List</h3>
+        <p>One thing at a time.</p>
+      </div>
+    </div>
+  </div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Pros</h4>
+      <ul>
+        <li>Calm</li>
+        <li>Fast to scan</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>Cons</h4>
+      <ul>
+        <li>Less at a glance</li>
+      </ul>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Preview: settings</div>
+    <div class="mockup-body" style="display: flex; gap: 12px; align-items: center">
+      <input class="mock-input" placeholder="Agent name" style="max-width: 240px" />
+      <button class="mock-button">Save</button>
+    </div>
+  </div>
+</div>

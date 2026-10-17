@@ -303,7 +303,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/hub/link');
     // 75 -> 76: a computer's own switch for chatting from the web (DOR-2946).
     expect(mounts).toContain('/api/session-relay');
-    expect(mounts).toHaveLength(76);
+    // 76 -> 77: the sign-in landing page's record and Try again (DOR-2985).
+    expect(mounts).toContain('/api/sign-in-landings');
+    expect(mounts).toHaveLength(77);
     const byHand = [
       '/',
       '/x/fixture',

@@ -67,7 +67,8 @@ function mount(
   connectionAccess: CommunityConnectionAccess = access,
   history: RemoteCommunityEntry[] = [],
   threadId?: string,
-  historyGate?: Promise<void>
+  historyGate?: Promise<void>,
+  dmAgentName?: string
 ) {
   const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
@@ -135,6 +136,7 @@ function mount(
             roomId="same"
             threadId={threadId}
             onThread={onThread}
+            dmAgentName={dmAgentName}
           />
         </TooltipProvider>
       </TransportProvider>
@@ -144,6 +146,18 @@ function mount(
 }
 
 describe('remote community surface', () => {
+  it('names the agent in a direct message and offers no way to leave it (DOR-2955)', async () => {
+    mount(access, [], undefined, undefined, 'Scout');
+    expect(await screen.findByRole('button', { name: 'Stop my agents' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Leave channel' })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Message Scout…')).toBeInTheDocument();
+  });
+
+  it('offers Leave channel in an ordinary channel', async () => {
+    mount();
+    expect(await screen.findByRole('button', { name: 'Leave channel' })).toBeInTheDocument();
+  });
+
   it('keeps an archived grant read-only without opening a stream or agent controls', async () => {
     const archivedAccess = {
       state: 'verified',

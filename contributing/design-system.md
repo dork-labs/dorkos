@@ -57,17 +57,31 @@ Portable palette values live in `packages/ui/tokens.css` as namespaced HSL chann
 
 ### Dark Mode
 
-| Tailwind class           | HSL value    | Usage                    |
-| ------------------------ | ------------ | ------------------------ |
-| `bg-background`          | `0 0% 4%`    | Page background          |
-| `bg-muted`               | `0 0% 9%`    | Subtle backgrounds       |
-| `bg-secondary`           | `0 0% 14%`   | User message tint        |
-| `bg-card`                | `0 0% 4%`    | Elevated cards, popovers |
-| `text-foreground`        | `0 0% 87%`   | Body text                |
-| `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata         |
-| `text-status-warning-fg` | `38 92% 50%` | Warning text             |
-| `text-brand-text`        | `24 88% 60%` | Orange text              |
-| `border-border`          | `0 0% 25%`   | Card borders, inputs     |
+| Tailwind class           | HSL value    | Usage                                                |
+| ------------------------ | ------------ | ---------------------------------------------------- |
+| `bg-background`          | `0 0% 4%`    | Page background                                      |
+| `bg-muted`               | `0 0% 9%`    | Subtle backgrounds                                   |
+| `bg-secondary`           | `0 0% 14%`   | User message tint                                    |
+| `bg-card`                | `0 0% 4%`    | Cards, popovers (height comes from elevation, below) |
+| `text-foreground`        | `0 0% 87%`   | Body text                                            |
+| `text-muted-foreground`  | `0 0% 64%`   | Labels, metadata                                     |
+| `text-status-warning-fg` | `38 92% 50%` | Warning text                                         |
+| `text-brand-text`        | `24 88% 60%` | Orange text                                          |
+| `border-border`          | `0 0% 25%`   | Card borders, inputs                                 |
+
+### Elevation in dark mode: height is light
+
+A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` tokens (in `apps/client/src/index.css`) show height with light. Each step has the same four layers, in the same order, so hover transitions interpolate:
+
+1. **Top-edge highlight:** `inset 0 1px 0` white, 8 → 12 → 16 → 20%. Light catches the upper lip. It isn't a rule, and it curves with the radius.
+2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
+   3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
+
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers, switches and outline buttons use `shadow-xs`, because they should read as recessed, not raised.
+
+**Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
+
+**Tints climb with the surface.** Inside anything at `shadow-md` or above in dark mode, `muted` and `accent` step up with it (13/16% → 16/19% → 19/22%), so a menu's hover or selected row is always a step above its lifted surface rather than a hole in it. They are computed from the `--elevation-lift-*` tokens (muted is 8% plus the lift, accent 3% above muted), so changing a lift moves its tints with it.
 
 ### Brand Accent
 

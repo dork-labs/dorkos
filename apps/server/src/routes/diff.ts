@@ -27,7 +27,12 @@ import {
   RevertDiffBaselineRequestSchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
-import { MEDIA_CONTENT_TYPES, resolveWithinCwd, pathErrorReply } from '../lib/file-route-guards.js';
+import {
+  MEDIA_CONTENT_TYPES,
+  resolveWithinCwd,
+  pathErrorReply,
+  servesInlineHere,
+} from '../lib/file-route-guards.js';
 import {
   editBaselineStore,
   resolveTextBaseline,
@@ -213,7 +218,7 @@ router.get('/baseline/raw', async (c) => {
       'Content-Type': contentType,
       'Content-Length': String(baseline.bytes.byteLength),
       'X-Content-Type-Options': 'nosniff',
-      'Content-Disposition': 'inline',
+      'Content-Disposition': servesInlineHere(contentType) ? 'inline' : 'attachment',
       // Baselines can advance mid-session (mark reviewed) — never cache.
       'Cache-Control': 'private, max-age=0, must-revalidate',
     };

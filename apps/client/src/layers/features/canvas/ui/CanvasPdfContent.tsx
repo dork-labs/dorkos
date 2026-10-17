@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useConfig } from '@/layers/entities/config';
 import { resolveCanvasMediaSrc, canvasMediaErrorMessage } from '../lib/media-src';
 
 interface CanvasPdfContentProps {
@@ -12,9 +13,14 @@ interface CanvasPdfContentProps {
  * PDF canvas renderer: the browser's native PDF viewer via `<object>`. When the
  * viewer can't render (no plugin, load failure), the `<object>`'s fallback
  * content shows an open-in-new-tab link instead.
+ *
+ * On a hub the server sends its own PDFs only as downloads (no file opens as a
+ * page at its address), so the panel offers the download rather than starting
+ * one on every render.
  */
 export function CanvasPdfContent({ content }: CanvasPdfContentProps) {
   const transport = useTransport();
+  const config = useConfig().data;
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const resolved = useMemo(
@@ -33,6 +39,26 @@ export function CanvasPdfContent({ content }: CanvasPdfContentProps) {
 
   const url = resolved.url;
   const title = content.title ?? 'PDF document';
+
+  // Only a PDF this server sends is a download; one from elsewhere still shows.
+  // Until the server says what it is, its own PDF waits, so a hub never
+  // starts a download on first render.
+  const servedHere = new URL(url, window.location.href).origin === window.location.origin;
+  if (servedHere && !config) return null;
+  if (servedHere && config?.serverRole === 'hub') {
+    return (
+      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+        <p>PDFs download here instead of opening.</p>
+        <a
+          href={url}
+          download
+          className="text-foreground focus-ring rounded-md underline underline-offset-4"
+        >
+          Download {title}
+        </a>
+      </div>
+    );
+  }
 
   return (
     <object data={url} type="application/pdf" title={title} className="h-full w-full">

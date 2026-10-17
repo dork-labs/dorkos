@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Start the brainstorm server and output connection info
+# Start the brainstorm server and output connection info.
+# Prefer `vc show <file>` / `vc start` (scripts/vc): a stable port, restarts that
+# keep history, no owner-PID tie. This script stays for v1 callers.
 # Usage: start-server.sh [--project-dir <path>] [--host <bind-host>] [--url-host <display-host>] [--foreground] [--background]
 #
 # Starts server on a random high port, outputs JSON with URL.
