@@ -850,6 +850,7 @@ export class PersistentDispatch {
             });
             yield* turnNotStarted(
               sessionId,
+              'account-pin',
               'This chat belongs to a different Claude account than the one its agent is running on, so the message was not sent. Restart the chat to run it on the right account.',
               err.message
             );
@@ -1185,10 +1186,13 @@ export class PersistentDispatch {
   /**
    * Say why a dispatch never reached the process, in words a person can act on.
    *
-   * Every one of these leaves the durable queue alone, which is the whole point:
-   * a row retires on correlated OUTPUT evidence — the `turn_start` a window
-   * mints — and none of these produced one, so the person's message is still
-   * theirs (`session-crash-recovery.ts`).
+   * Every one of these leaves this runtime's own queue alone: a row retires on
+   * correlated OUTPUT evidence — the `turn_start` a window mints — and none of
+   * these produced one (`session-crash-recovery.ts`). The dispatcher's queue row
+   * is NOT kept: it retired on the projector's own `turn_start`, before this
+   * dispatch was tried. So each refusal carries `turn_not_started` and a
+   * refusal kind, the turn settles `failed`, and a chat message it
+   * carried is reported not delivered rather than delivered (DOR-2994).
    *
    * @param sessionId - The session whose dispatch was refused
    * @param err - What the dispatch threw
@@ -1236,6 +1240,7 @@ export class PersistentDispatch {
       // the warning `SessionCrashRecovery` already logged.
       yield* turnNotStarted(
         sessionId,
+        'crash-loop',
         `This chat's agent keeps stopping, so DorkOS did not start it again. ${
           err.crash?.message ?? 'It ended without saying why.'
         } Send the message again to try once more.`,
@@ -1246,6 +1251,7 @@ export class PersistentDispatch {
     if (err instanceof PumpRefusedError && err.reason === 'warm-ceiling') {
       yield* turnNotStarted(
         sessionId,
+        'warm-ceiling',
         `Too many chats are holding an agent open right now (the limit is ${SESSIONS.MAX_WARM_SESSIONS}). Finish or close one and send this again.`,
         err.message
       );
@@ -1254,6 +1260,7 @@ export class PersistentDispatch {
     if (err instanceof PumpRefusedError && err.reason === 'pending-interaction') {
       yield* turnNotStarted(
         sessionId,
+        'pending-interaction',
         'This chat is waiting on an answer from you, so the message was not sent yet. Answer the open request and send it again.',
         err.message
       );

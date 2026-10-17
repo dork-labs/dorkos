@@ -195,7 +195,7 @@ describe('dispatchSessionMessage', () => {
     passed.onSettled?.('failed');
 
     expect(recordDispatchEnd).toHaveBeenCalledWith(expect.any(String), 'failed');
-    expect(onSettled).toHaveBeenCalledWith('failed');
+    expect(onSettled).toHaveBeenCalledWith('failed', undefined);
     expect(vi.mocked(recordDispatchEnd).mock.invocationCallOrder[0]).toBeLessThan(
       onSettled.mock.invocationCallOrder[0]
     );
@@ -325,7 +325,7 @@ describe('dispatchSessionMessage', () => {
 
       vi.mocked(dispatchMessage).mock.calls[0]![0].onSettled?.('ok');
 
-      expect(onSettled).toHaveBeenCalledWith('ok');
+      expect(onSettled).toHaveBeenCalledWith('ok', undefined);
       expect(isAgentLaunchCapFull()).toBe(false);
     });
 

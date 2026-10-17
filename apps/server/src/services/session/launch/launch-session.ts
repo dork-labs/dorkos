@@ -81,8 +81,9 @@ export interface DispatchSessionMessageOpts {
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
+   * `refusal` says why, when the runtime refused it before the agent saw it.
    */
-  onSettled?: (outcome: 'ok' | 'failed') => void;
+  onSettled?: (outcome: 'ok' | 'failed', refusal?: string) => void;
   /**
    * Count this launch against {@link AGENT_LAUNCH_MAX_LIVE}: a session nobody
    * typed into (an agent's `session_start`, an automatic carry-over) holds one
@@ -292,9 +293,9 @@ export async function dispatchSessionMessage(
   try {
     const result = await launchSessionMessage({
       ...opts,
-      onSettled: (outcome) => {
+      onSettled: (outcome, refusal) => {
         release();
-        opts.onSettled?.(outcome);
+        opts.onSettled?.(outcome, refusal);
       },
     });
     // Nothing is running for a launch that was refused or not accepted.
@@ -719,9 +720,9 @@ async function launchSessionMessage(
       // The 202 has long since gone out by the time this fires. It is the only
       // moment the server learns how a detached turn ended, which is exactly
       // what the debug buffer is asked for during an incident.
-      onSettled: (outcome) => {
+      onSettled: (outcome, refusal) => {
         recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered');
-        onSettled?.(outcome);
+        onSettled?.(outcome, refusal);
       },
     })
   );

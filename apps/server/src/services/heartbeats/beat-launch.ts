@@ -39,8 +39,8 @@ export interface BeatLaunchRequest {
   runtime: string;
   /** The beat prompt. */
   content: string;
-  /** Called once when the turn ends. */
-  onSettled: (outcome: 'ok' | 'failed') => void;
+  /** Called once when the turn ends; `refusal` when it never reached the agent. */
+  onSettled: (outcome: 'ok' | 'failed', refusal?: string) => void;
 }
 
 /** The seams the runner reaches a chat through. */

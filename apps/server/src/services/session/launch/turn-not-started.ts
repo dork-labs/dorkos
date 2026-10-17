@@ -16,16 +16,25 @@ import type { StreamEvent } from '@dorkos/shared/types';
 export const TURN_NOT_STARTED_CODE = 'turn_not_started';
 
 /**
+ * Why a turn never started, carried in the error's `reason`. The error's
+ * message is written for the person in the refusing chat; a chat that sent the
+ * message needs different words, chosen from this.
+ */
+export type TurnRefusal = 'warm-ceiling' | 'pending-interaction' | 'crash-loop' | 'account-pin';
+
+/**
  * The terminal pair for a turn refused before any output: an `error` carrying
  * {@link TURN_NOT_STARTED_CODE}, then `done`, so the projector settles rather
  * than pinning `streaming` on a turn that never ran.
  *
  * @param sessionId - The session whose turn was refused.
- * @param message - What a person reads.
+ * @param refusal - Why, for anyone but the person in this chat.
+ * @param message - What the person in this chat reads.
  * @param details - The raw cause, for logs and the error's detail line.
  */
 export function* turnNotStarted(
   sessionId: string,
+  refusal: TurnRefusal,
   message: string,
   details?: string
 ): Generator<StreamEvent> {
@@ -34,6 +43,7 @@ export function* turnNotStarted(
     data: {
       message,
       code: TURN_NOT_STARTED_CODE,
+      reason: refusal,
       category: 'execution_error',
       ...(details !== undefined ? { details } : {}),
     },
@@ -42,21 +52,20 @@ export function* turnNotStarted(
 }
 
 /**
- * The refusal's words when `event` says the turn never reached the agent, else
- * `undefined`.
+ * Why the turn never reached the agent when `event` says so, else `undefined`.
  *
  * @param event - One event from a turn's stream.
  */
-export function notStartedReason(event: StreamEvent): string | undefined {
+export function notStartedReason(event: StreamEvent): TurnRefusal | undefined {
   if (event.type !== 'error') return undefined;
-  const data = event.data as { code?: unknown; message?: unknown };
-  return data.code === TURN_NOT_STARTED_CODE && typeof data.message === 'string'
-    ? data.message
+  const data = event.data as { code?: unknown; reason?: unknown };
+  return data.code === TURN_NOT_STARTED_CODE && typeof data.reason === 'string'
+    ? (data.reason as TurnRefusal)
     : undefined;
 }
 
-/** How a turn settles: its outcome and, for a refused turn, the runtime's words. */
-export type SettledAs = ['ok' | 'failed'] | ['failed', string];
+/** How a turn settles: its outcome and, for a refused turn, why. */
+export type SettledAs = ['ok' | 'failed'] | ['failed', TurnRefusal];
 
 /** A turn's stream, watched for a refusal; see {@link watchNotStarted}. */
 export interface WatchedTurn {
@@ -75,7 +84,7 @@ export interface WatchedTurn {
  * @param source - The runtime's per-turn stream.
  */
 export function watchNotStarted(source: AsyncIterable<StreamEvent>): WatchedTurn {
-  let reason: string | undefined;
+  let reason: TurnRefusal | undefined;
   async function* stream(): AsyncIterable<StreamEvent> {
     for await (const event of source) {
       reason ??= notStartedReason(event);

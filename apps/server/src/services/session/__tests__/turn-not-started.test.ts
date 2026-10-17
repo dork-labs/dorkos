@@ -69,12 +69,19 @@ describe('a turn the runtime refused before the agent saw it', () => {
   it('settles failed, and says why on the settled event', async () => {
     runtime.withScenarios([
       async function* (): AsyncGenerator<StreamEvent> {
-        yield* turnNotStarted(SESSION, REFUSAL, 'cannot warm session: 12 warm sessions already');
+        yield* turnNotStarted(
+          SESSION,
+          'warm-ceiling',
+          REFUSAL,
+          'cannot warm session: 12 warm sessions already'
+        );
       },
     ]);
 
     expect(await send('hello')).toBe('failed');
-    expect(settled).toEqual([expect.objectContaining({ outcome: 'failed', reason: REFUSAL })]);
+    expect(settled).toEqual([
+      expect.objectContaining({ outcome: 'failed', reason: 'warm-ceiling' }),
+    ]);
   });
 
   it('still settles ok for a turn that ran and then hit an error', async () => {

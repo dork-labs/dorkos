@@ -263,7 +263,7 @@ describe('send — to a busy chat', () => {
     expect(sentByAna()[0]!.status).toBe('queued');
   });
 
-  it('says what is ahead of it: how many, and how many a person wrote (DOR-2994)', async () => {
+  it('says how many messages are ahead of it (DOR-2994)', async () => {
     chat('chat-b');
     busy.add('chat-b');
     queue.enqueue({ sessionId: 'chat-b', content: 'person words', clientId: PERSON });
@@ -279,7 +279,7 @@ describe('send — to a busy chat', () => {
 
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
 
-    expect(receipt).toMatchObject({ position: 3, ahead: 2, aheadFromPeople: 1 });
+    expect(receipt).toMatchObject({ position: 3, ahead: 2 });
   });
 });
 
@@ -862,14 +862,38 @@ describe('the lifecycle of a sent message', () => {
       messageId: queueId,
       sessionId: 'chat-b',
       outcome: 'failed',
-      reason: 'Too many chats are holding an agent open right now (the limit is 12).',
+      reason: 'pending-interaction',
     });
     for (const id of ids) {
+      // Written for the sender, never the refusing chat's "answer the open
+      // request", which the sender cannot do.
       expect(store.get(id)).toMatchObject({
         status: 'failed',
-        failureReason: expect.stringMatching(/^Not delivered: .*the limit is 12/),
+        failureReason: 'Not delivered: that chat is waiting on its person. Send it again later.',
       });
     }
+  });
+
+  it('says why in the receipt when the turn was refused before the send returned', async () => {
+    chat('chat-b');
+    dispatchImpl = async (opts) => {
+      lifecycle!({ phase: 'started', messageId: opts.messageId!, sessionId: 'chat-b' });
+      lifecycle!({
+        phase: 'settled',
+        messageId: opts.messageId!,
+        sessionId: 'chat-b',
+        outcome: 'failed',
+        reason: 'warm-ceiling',
+      });
+      return defaultDispatch(opts);
+    };
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
+
+    expect(receipt).toMatchObject({
+      status: 'failed',
+      failureReason: 'Not delivered: that computer has too many chats open. Send it again later.',
+    });
   });
 
   it('dropped → failed, saying why', async () => {

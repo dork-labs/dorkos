@@ -124,6 +124,8 @@ export interface ChatSendReceipt extends Partial<standing.QueueStanding> {
   chatId: string;
   /** Where it is now. */
   status: ChatMessageStatus;
+  /** Why, when it already failed before this answer. */
+  failureReason?: string;
   /** A plain sentence when it did not arrive exactly as asked. */
   note?: string;
 }
@@ -412,6 +414,9 @@ export class ChatMessageService {
       chatId,
       status,
       ...standing.waitingPlace(chatId, row, status, position),
+      ...(status === 'failed' && current?.failureReason
+        ? { failureReason: current.failureReason }
+        : {}),
       ...(note ? { note } : {}),
     };
   }

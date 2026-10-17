@@ -12,8 +12,8 @@ import type { ChatMessageStatus } from '@dorkos/shared/chat-messages';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { AGENT_LAUNCH_MAX_LIVE } from '../launch/launch-session.js';
-import { isChatClientId } from './chat-client-id.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+import type { TurnRefusal } from '../launch/turn-not-started.js';
 
 /**
  * What a send refused by the machine-load launch cap answers. Not the
@@ -34,8 +34,6 @@ export interface QueueStanding {
   position: number;
   /** How many messages run before it. */
   ahead: number;
-  /** How many of those a person wrote; a person's words run first. */
-  aheadFromPeople: number;
 }
 
 /**
@@ -61,12 +59,7 @@ export function queueStanding(chatId: string, queueMessageId: string): QueueStan
   const rows = getMessageQueueStore()?.list(queueKeyOf(chatId)) ?? [];
   const index = rows.findIndex((row) => row.id === queueMessageId);
   if (index < 0) return undefined;
-  const ahead = rows.slice(0, index);
-  return {
-    position: index + 1,
-    ahead: ahead.length,
-    aheadFromPeople: ahead.filter((row) => !isChatClientId(row.enqueuedBy)).length,
-  };
+  return { position: index + 1, ahead: index };
 }
 
 /**
@@ -90,15 +83,31 @@ export function waitingPlace(
 }
 
 /**
+ * What a sender is told when the chat it wrote to refused the turn before its
+ * agent saw the message. Written for the sender: the refusing chat's own error
+ * speaks to that chat's person ("answer the open request"), which the sender
+ * cannot do and must not try to.
+ */
+const NOT_DELIVERED: Record<TurnRefusal, string> = {
+  'warm-ceiling': 'Not delivered: that computer has too many chats open. Send it again later.',
+  'pending-interaction': 'Not delivered: that chat is waiting on its person. Send it again later.',
+  'crash-loop': 'Not delivered: that chat’s agent keeps stopping. Its person needs to look.',
+  'account-pin':
+    'Not delivered: that chat runs on another account. Its person needs to restart it.',
+};
+
+/**
  * Why a message's turn failed, for its sender.
  *
- * @param reason - The runtime's words when it refused the turn before the agent
- *   saw the message.
+ * @param refusal - Why the chat refused the turn before its agent saw the
+ *   message, when it did.
  */
-export function settledFailureReason(reason: string | undefined): string {
-  return reason !== undefined
-    ? `Not delivered: the chat could not start a turn. ${reason}`
-    : 'The chat’s turn ended with an error.';
+export function settledFailureReason(refusal: string | undefined): string {
+  if (refusal === undefined) return 'The chat’s turn ended with an error.';
+  return (
+    NOT_DELIVERED[refusal as TurnRefusal] ??
+    'Not delivered: that chat could not start. Send it again later.'
+  );
 }
 
 /**
@@ -115,9 +124,7 @@ export function yourMessagesTo(
   toSessionId: string
 ): YourMessage[] {
   return store
-    .listSentFrom(fromSessionId)
-    .filter((row) => row.toSessionId === toSessionId && row.kind !== 'stop')
-    .slice(-YOUR_MESSAGES_MAX)
+    .latestSentTo(fromSessionId, toSessionId, YOUR_MESSAGES_MAX)
     .map((row) => yourMessage(row, toSessionId));
 }
 

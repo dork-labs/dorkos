@@ -169,7 +169,7 @@ export const chatDomain: CapabilityDomain = {
           status: ChatMessageStatusSchema,
           position: z.number().int().positive().optional(),
           ahead: z.number().int().nonnegative().optional(),
-          aheadFromPeople: z.number().int().nonnegative().optional(),
+          failureReason: z.string().optional(),
           note: z.string().optional(),
         }),
         RefusalSchema,
@@ -310,7 +310,6 @@ export const chatDomain: CapabilityDomain = {
                 summary: z.string().optional(),
                 position: z.number().int().positive().optional(),
                 ahead: z.number().int().nonnegative().optional(),
-                aheadFromPeople: z.number().int().nonnegative().optional(),
                 failureReason: z.string().optional(),
               })
             )
