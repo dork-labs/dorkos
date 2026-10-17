@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocCollabProvider } from '../model/doc-collab-provider';
 import { FakeDocServer, textOf, typeInto } from './fake-doc-server';
+import type { Transport } from '@dorkos/shared/transport';
 
 const doc = { cwd: '/work', path: 'plan.md' };
 const providers: DocCollabProvider[] = [];
@@ -123,7 +124,8 @@ describe('DocCollabProvider', () => {
     server.reload('Fresh copy.');
     server.muted = true;
     // A server that is down: every connection opens and closes at once.
-    const realConnect = transport.connectDocCollab.getMockImplementation()!;
+    const realConnect =
+      transport.connectDocCollab.getMockImplementation() as Transport['connectDocCollab'];
     transport.connectDocCollab.mockImplementation((ref, handlers, options) => {
       if (!server.muted) return realConnect(ref, handlers, options);
       queueMicrotask(() => handlers.onClose({}));
