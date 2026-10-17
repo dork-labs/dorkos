@@ -103,9 +103,11 @@ class End implements RelaySocket, HubRelaySocket {
 function fakeServer(features: readonly string[]) {
   const streams = new Map<string, (frame: RelayComputerFrame) => void>();
   const closedStreams: string[] = [];
+  const handled: RelayWebFrame[] = [];
   const server: RelayRequestServer = {
     features: () => features,
     handle(frame: RelayWebFrame, emit) {
+      handled.push(frame);
       if (frame.type === 'stream.close') closedStreams.push(frame.streamId);
       if (frame.type !== 'request') return;
       const { id, request } = frame;
@@ -132,7 +134,7 @@ function fakeServer(features: readonly string[]) {
     closeAll: vi.fn(),
     endStream: () => false,
   };
-  return { server, streams, closedStreams };
+  return { server, streams, closedStreams, handled };
 }
 
 interface Options {
@@ -240,6 +242,30 @@ describe('HubComputerConnection', () => {
     // Nothing crossed the wire in the clear after the handshake.
     for (const text of wire.hub.sent.slice(1)) expect(JSON.parse(text).type).toBe('sealed');
     for (const text of wire.computer.sent.slice(1)) expect(JSON.parse(text).type).toBe('sealed');
+  });
+
+  it('names the browser to a computer that reads it, and never to one that does not', async () => {
+    const device = { id: 'browser-id-0001', label: 'Safari on iPhone' };
+    const named = (h: ReturnType<typeof setup>) =>
+      h.fake.handled.map((frame) => (frame.type === 'request' ? frame.device : null));
+
+    const current = setup();
+    const { hub, wire } = current.connect();
+    const listed = hub.request({ op: 'chats.list', agentId: AGENT }, device);
+    hub.openStream(SESSION, undefined, () => undefined, vi.fn(), device);
+    wire.pump();
+    await expect(listed).resolves.toMatchObject({ ok: true });
+    expect(named(current)).toEqual([device, device]);
+
+    // An older computer advertises no `request.device`; its strict frames would refuse it.
+    const older = setup({ features: ['chats.list', 'session.stream'] });
+    const old = older.connect();
+    const oldListed = old.hub.request({ op: 'chats.list', agentId: AGENT }, device);
+    old.hub.openStream(SESSION, undefined, () => undefined, vi.fn(), device);
+    old.wire.pump();
+    await expect(oldListed).resolves.toMatchObject({ ok: true });
+    expect(named(older)).toEqual([undefined, undefined]);
+    expect(old.hub.connected).toBe(true);
   });
 
   it('streams frames until the computer ends the stream', () => {

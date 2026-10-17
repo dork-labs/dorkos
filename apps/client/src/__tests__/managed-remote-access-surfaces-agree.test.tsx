@@ -24,6 +24,13 @@ import { useRemoteAccessPaletteItems } from '@/layers/features/command-palette';
 import { RemoteAccessRow } from '@/layers/widgets/control-center';
 import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 
+// The web-access indicator rides the beacon but needs the live event feed,
+// which these remote-access surfaces do not exercise.
+vi.mock('@/layers/features/web-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/web-access')>()),
+  RemoteSessionIndicator: () => null,
+}));
+
 vi.mock('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <div data-testid="qr-code">{value}</div>,
 }));
