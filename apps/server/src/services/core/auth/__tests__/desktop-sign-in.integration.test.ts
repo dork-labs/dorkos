@@ -144,6 +144,16 @@ describe('redeeming', () => {
     expect(who!.session.expiresAt.getTime() - Date.now()).toBeGreaterThan(twoDays);
   });
 
+  it('stamps the session as made at this computer', async () => {
+    const res = await redeem(mint());
+    expect(res.status).toBe(200);
+    const pairs = (res.headers['set-cookie'] as unknown as string[])
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const who = await auth.api.getSession({ headers: new Headers({ cookie: pairs }) });
+    expect(who?.session.route).toBe('local');
+  });
+
   it('ends the last desktop session when the window signs in again', async () => {
     await redeem(mint());
     const before = db.select().from(sessionTable).all().length;

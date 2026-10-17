@@ -1,5 +1,4 @@
 /** Program execution, exact granted access, and owner-scoped usage HTTP boundary. */
-import type { IncomingHttpHeaders } from 'node:http';
 import { Hono, type Context, type Handler } from 'hono';
 import { z } from 'zod';
 import {
@@ -9,7 +8,7 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
-import { honoRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -73,7 +72,9 @@ export interface ConnectorExecutionRouterDeps extends ConnectorOwnerBoundaryDeps
   /** Program-only independent receive-grant visibility. */
   readonly eventAccess: Pick<ConnectorEventAccessQueryService, 'listSubscriptions'>;
   /** Request verifier used when login-off middleware did not populate a user. */
-  readonly verifyUser?: (req: { headers: IncomingHttpHeaders }) => Promise<RequestUser | null>;
+  readonly verifyUser?: (
+    req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>
+  ) => Promise<RequestUser | null>;
 }
 
 /** The 401 for a call that did not prove a verified API key. */
@@ -110,7 +111,7 @@ async function resolveProgramPrincipal(
   if (headers.authorization === undefined) return executionKeyRequired(c);
   const verifier = deps.verifyUser ?? verifyRequestAuth;
   const existing = requestUser(c);
-  const user = existing?.credential === 'api-key' ? existing : await verifier({ headers });
+  const user = existing?.credential === 'api-key' ? existing : await verifier(honoRequestFacts(c));
   if (user?.credential !== 'api-key' || !user.credentialId) return executionKeyRequired(c);
   const owner = deps.resolveOwner(user);
   const principal = owner ? deps.programPrincipals.mint(user, owner) : undefined;

@@ -54,6 +54,11 @@ export const session = sqliteTable(
       .notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    // The way the sign-in that made this session came in: 'local', 'wifi',
+    // 'tunnel', 'managed', 'network' or 'hub'. A session works only on that
+    // route (DOR-2969). Null for a session made before it was recorded, which
+    // works only on this computer.
+    route: text('route'),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),

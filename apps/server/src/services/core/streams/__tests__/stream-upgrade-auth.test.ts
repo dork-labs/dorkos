@@ -113,7 +113,12 @@ describe('authorizeStreamUpgrade', () => {
 
     await authorizeStreamUpgrade(req);
 
-    expect(verifyRequestAuth).toHaveBeenCalledWith({ headers: req.headers });
+    // With its peer and listener, so a session counts only on the route it was made on.
+    expect(verifyRequestAuth).toHaveBeenCalledWith({
+      headers: req.headers,
+      peerAddress: req.socket.remoteAddress,
+      ingress: 'direct',
+    });
   });
 
   it('resolves an agent identity additively, never as a rejection', async () => {
