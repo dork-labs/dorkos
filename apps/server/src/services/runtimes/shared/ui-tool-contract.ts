@@ -40,6 +40,7 @@ import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-sc
 import { z } from 'zod';
 import { UiCanvasContentSchema, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/types';
+import { DOC_EMBED_NAMES } from '@dorkos/shared/doc-embeds';
 
 /**
  * The only thing the catalog generators need from a discriminated union: its
@@ -114,6 +115,18 @@ interface UiActionEntry {
 }
 
 /**
+ * How markdown embeds are written (DOR-2981). Blintz reads a line that is only
+ * a directive as an embed whether or not Docs is on, so the escape is always
+ * true; the catalog draws only while Docs is on. The names come from the
+ * catalog, so a new embed is taught without touching this sentence.
+ */
+const DOC_EMBEDS_SENTENCE =
+  'A line that is only ::name{…} is an embed, so write \\::name to mean the text. ' +
+  `While Docs is on, ::chart{kind="bar" data='[{"label":"Mon","value":4}]'} draws a chart, and ` +
+  `${DOC_EMBED_NAMES.filter((name) => name !== 'chart').join(', ')} take their dorkos-ui fields ` +
+  'the same way, arrays and objects as one-line JSON.';
+
+/**
  * The hand-written half of the canvas catalog: one sentence per content type.
  *
  * Total over `UiCanvasContent['type']` on purpose — a 15th variant added to
@@ -128,7 +141,8 @@ const CANVAS_CONTENT_CATALOG: Record<UiCanvasContent['type'], CanvasContentEntry
   markdown: {
     shape: '{ type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }',
     sentence:
-      'Markdown you pass inline — the text goes in "content", not "markdown" or "text". Pass sourcePath when the markdown came from a file, so the person can edit it and have the edits saved back to that file; leave it out for markdown you wrote yourself, which then renders read-only.',
+      'Markdown you pass inline — the text goes in "content", not "markdown" or "text". Pass sourcePath when the markdown came from a file, so the person can edit it and have the edits saved back to that file; leave it out for markdown you wrote yourself, which then renders read-only. ' +
+      DOC_EMBEDS_SENTENCE,
   },
   json: {
     shape: '{ type: "json", data: <any json value>, title?: string }',

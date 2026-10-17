@@ -31,6 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { UiCanvasContentSchema, UiCommandSchema } from '@dorkos/shared/schemas';
+import { DOC_EMBED_NAMES } from '@dorkos/shared/doc-embeds';
 
 import {
   CONTROL_UI_DESCRIPTION,
@@ -110,6 +111,19 @@ describe('CONTROL_UI_DESCRIPTION names exactly what the schema accepts', () => {
     for (const line of buildCanvasContentCatalog({ indent: '  ' }).split('\n')) {
       expect(line).toMatch(/ {2}\/\/ .+\./);
     }
+  });
+});
+
+describe('the markdown entry teaches Docs embeds (DOR-2981)', () => {
+  it('teaches the \\:: escape and a one-line JSON chart example', () => {
+    expect(CONTROL_UI_DESCRIPTION).toContain('write \\::name to mean the text');
+    expect(CONTROL_UI_DESCRIPTION).toContain(
+      `::chart{kind="bar" data='[{"label":"Mon","value":4}]'}`
+    );
+  });
+
+  it('names every embed in the catalog', () => {
+    expect(named(CONTROL_UI_DESCRIPTION, DOC_EMBED_NAMES)).toEqual([...DOC_EMBED_NAMES]);
   });
 });
 
