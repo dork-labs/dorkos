@@ -227,6 +227,11 @@ describe('Database Migrations', () => {
       'connector_runtime_bindings',
       'connector_usage_attempts',
       'connector_usage_terminal_receipts',
+      // Comment threads on docs, their comments, and the chat DorkOS keeps
+      // with each agent a doc comment mentions (DOR-2983).
+      'doc_comment_agent_chats',
+      'doc_comment_threads',
+      'doc_comments',
       // The chat an extension keeps with each agent it messages, and every
       // message it sent with ctx.agent.send (DOR-2683).
       'extension_agent_chats',

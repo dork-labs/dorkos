@@ -51,6 +51,7 @@ export const notifications = sqliteTable(
         'dm.received',
         'mention.received',
         'agent.note',
+        'doc.comment',
         'dead-letter.created',
         'agent.unreachable',
         'signin.required',

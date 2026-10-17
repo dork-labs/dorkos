@@ -156,6 +156,16 @@ export type TurnOrigin =
    */
   | { readonly kind: 'chat-message' }
   /**
+   * A comment on a doc mentioned an agent (DOR-2983), so DorkOS sent it the
+   * comment in the chat it keeps with that agent for doc comments. Nobody is
+   * watching that chat, the same as a room turn. The chat it OPENS is born at
+   * the operator's configured stop, as a chat another chat's message opens;
+   * a comment by anybody but the owner is then held to a ceiling at launch
+   * (the comment's author's own level, or the runtime's default), so the
+   * operator's stop is a ceiling's partner and never a grant on its own.
+   */
+  | { readonly kind: 'doc-comment' }
+  /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
    * The new session's settings row is copied from the source session before
@@ -289,6 +299,12 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // types into it gets the same stop a chat of their own starts at.
     case 'chat-message':
       return 'configured-stop-on-insert';
+    // A chat a doc comment's mention opens (DOR-2983). Like a chat message's:
+    // the operator's stop on a chat nobody started, and every turn a comment
+    // by anybody but the owner starts is held to a ceiling at launch, so it
+    // runs at the stricter of the two.
+    case 'doc-comment':
+      return 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule
@@ -392,6 +408,7 @@ export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 
     case 'extension-start':
     case 'extension-message':
     case 'chat-message':
+    case 'doc-comment':
       return 'space';
     // These never name a session first (they act on one already bound), and
     // the harness is not a real surface: if one ever does, the cautious answer

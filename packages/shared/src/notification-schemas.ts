@@ -74,6 +74,8 @@ export const NOTIFICATION_KINDS = [
   'mention.received',
   /** An agent said something to the operator on its own initiative. */
   'agent.note',
+  /** An agent commented on one of the operator's docs, or mentioned them in a doc comment. */
+  'doc.comment',
   /** A relay message could not be delivered. */
   'dead-letter.created',
   /** An agent stopped answering. */

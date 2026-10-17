@@ -570,8 +570,10 @@ describe('in-session tool exposure', () => {
     // tools (DOR-2929), reached when an agent explicitly uses the shared page.
     // 135 -> 136 total, deferred unchanged: `memory_read` (ADR 261017-153539)
     // is always loaded, because the prompt names it.
-    expect(tools).toHaveLength(136);
-    expect(deferred).toHaveLength(124);
+    // 136 -> 140 total, 124 -> 128 deferred: the four doc comment tools
+    // (DOR-2983), DEFERRED: a woken turn is told their names and searches.
+    expect(tools).toHaveLength(140);
+    expect(deferred).toHaveLength(128);
     for (const name of [
       'local_browser_state',
       'local_browser_observe',

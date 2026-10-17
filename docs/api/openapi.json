@@ -17445,6 +17445,7 @@
           "dm.received",
           "mention.received",
           "agent.note",
+          "doc.comment",
           "dead-letter.created",
           "agent.unreachable",
           "signin.required",
@@ -29745,107 +29746,296 @@
         }
       }
     },
-    "/api/documents/index": {
+    "/api/documents/comments": {
       "get": {
         "tags": [
-          "Docs"
+          "Doc comments"
         ],
-        "summary": "List the docs in a space",
-        "description": "Every `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/resolve`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).",
+        "summary": "List the comment threads on a doc",
+        "description": "Every thread on the doc named by `cwd` and `path`, resolved ones included.",
         "parameters": [
           {
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "string"
             },
             "required": true,
             "name": "cwd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "path",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "The docs in the space",
+            "description": "The threads, oldest first",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "root": {
-                      "type": "string"
-                    },
-                    "docs": {
+                    "threads": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
+                          "id": {
+                            "type": "string"
+                          },
                           "path": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "title": {
                             "type": "string"
                           },
-                          "slug": {
+                          "anchor": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          },
+                          "resolved": {
+                            "type": "boolean"
+                          },
+                          "resolvedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "resolvedBy": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "human",
+                                  "agent",
+                                  "system"
+                                ]
+                              },
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "handle": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "emoji": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "color": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "isOwner": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "displayName",
+                              "handle",
+                              "emoji",
+                              "color",
+                              "isOwner"
+                            ]
+                          },
+                          "createdAt": {
                             "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "comments": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "threadId": {
+                                  "type": "string"
+                                },
+                                "author": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "human",
+                                        "agent",
+                                        "system"
+                                      ]
+                                    },
+                                    "displayName": {
+                                      "type": "string"
+                                    },
+                                    "handle": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "emoji": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "color": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "isOwner": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "kind",
+                                    "displayName",
+                                    "handle",
+                                    "emoji",
+                                    "color",
+                                    "isOwner"
+                                  ]
+                                },
+                                "body": {
+                                  "type": "string"
+                                },
+                                "mentions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "createdAt": {
+                                  "type": "string"
+                                },
+                                "editedAt": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "threadId",
+                                "author",
+                                "body",
+                                "mentions",
+                                "createdAt",
+                                "editedAt"
+                              ]
+                            }
                           }
                         },
                         "required": [
+                          "id",
                           "path",
-                          "title",
-                          "slug"
+                          "anchor",
+                          "resolved",
+                          "resolvedAt",
+                          "resolvedBy",
+                          "createdAt",
+                          "updatedAt",
+                          "comments"
                         ]
                       }
-                    },
-                    "truncated": {
-                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "root",
-                    "docs",
-                    "truncated"
+                    "threads"
                   ]
                 }
               }
             }
           },
           "400": {
-            "description": "`cwd` is missing, not absolute, or not an existing folder",
+            "description": "The input or the doc path is malformed",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
           },
           "403": {
-            "description": "`cwd` is outside the directory boundary",
+            "description": "The folder or the doc is outside the directory boundary",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
           },
           "404": {
-            "description": "The `docs.enabled` experiment is off",
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The docs could not be listed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
@@ -29853,122 +30043,1559 @@
         }
       }
     },
-    "/api/documents/resolve": {
+    "/api/documents/comments/mentionable": {
       "get": {
         "tags": [
-          "Docs"
+          "Doc comments"
         ],
-        "summary": "Find the doc a wiki-link target names",
-        "description": "Looks for one target through the whole space, with the same rules as the index, for a link the truncated index could not place. The walk stops at 50000 docs, 20000 folders, 32 levels deep or 4000 ms; `complete: false` then says a `null` doc may not be missing. `from` is the linking doc's path, so the nearest of several matches wins. Part of the Docs experiment (`docs.enabled`).",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "cwd",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 1000
-            },
-            "required": true,
-            "name": "target",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "from",
-            "in": "query"
-          }
-        ],
+        "summary": "List who a comment can mention",
+        "description": "Every agent, and the owner once they have a handle.",
         "responses": {
           "200": {
-            "description": "The doc, or null, and whether the whole space was looked through",
+            "description": "The roster",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "doc": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "path": {
-                          "type": "string",
-                          "minLength": 1
+                    "people": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "human",
+                              "agent",
+                              "system"
+                            ]
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "handle": {
+                            "type": "string"
+                          },
+                          "emoji": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "isOwner": {
+                            "type": "boolean"
+                          }
                         },
-                        "title": {
-                          "type": "string"
-                        },
-                        "slug": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "title",
-                        "slug"
-                      ]
-                    },
-                    "complete": {
-                      "type": "boolean"
+                        "required": [
+                          "id",
+                          "kind",
+                          "displayName",
+                          "handle",
+                          "emoji",
+                          "color",
+                          "isOwner"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "doc",
-                    "complete"
+                    "people"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/comments/threads": {
+      "post": {
+        "tags": [
+          "Doc comments"
+        ],
+        "summary": "Open a comment thread",
+        "description": "Opens a thread on the words the anchor names, with its first comment. An agent the comment mentions is woken through the reply limits.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "anchor": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {}
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "path",
+                  "anchor",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The thread as it is now, and any mentioned agent that was not woken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "thread": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "anchor": {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": {}
+                        },
+                        "resolved": {
+                          "type": "boolean"
+                        },
+                        "resolvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "resolvedBy": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent",
+                                "system"
+                              ]
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "emoji": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isOwner": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "displayName",
+                            "handle",
+                            "emoji",
+                            "color",
+                            "isOwner"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "human",
+                                      "agent",
+                                      "system"
+                                    ]
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "emoji": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "color": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "isOwner": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "displayName",
+                                  "handle",
+                                  "emoji",
+                                  "color",
+                                  "isOwner"
+                                ]
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "mentions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "editedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "threadId",
+                              "author",
+                              "body",
+                              "mentions",
+                              "createdAt",
+                              "editedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "path",
+                        "anchor",
+                        "resolved",
+                        "resolvedAt",
+                        "resolvedBy",
+                        "createdAt",
+                        "updatedAt",
+                        "comments"
+                      ]
+                    },
+                    "unreached": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "authorId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "depth",
+                              "repeat",
+                              "unavailable"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "authorId",
+                          "name",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "thread",
+                    "unreached"
                   ]
                 }
               }
             }
           },
           "400": {
-            "description": "`cwd` or `target` is missing, or `cwd` is not an existing folder",
+            "description": "The input or the doc path is malformed",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
           },
           "403": {
-            "description": "`cwd` is outside the directory boundary",
+            "description": "The folder or the doc is outside the directory boundary",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }
           },
           "404": {
-            "description": "The `docs.enabled` experiment is off",
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/comments/threads/{threadId}/replies": {
+      "post": {
+        "tags": [
+          "Doc comments"
+        ],
+        "summary": "Reply in a comment thread",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "path",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The thread as it is now, and any mentioned agent that was not woken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "thread": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "anchor": {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": {}
+                        },
+                        "resolved": {
+                          "type": "boolean"
+                        },
+                        "resolvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "resolvedBy": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent",
+                                "system"
+                              ]
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "emoji": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isOwner": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "displayName",
+                            "handle",
+                            "emoji",
+                            "color",
+                            "isOwner"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "human",
+                                      "agent",
+                                      "system"
+                                    ]
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "emoji": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "color": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "isOwner": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "displayName",
+                                  "handle",
+                                  "emoji",
+                                  "color",
+                                  "isOwner"
+                                ]
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "mentions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "editedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "threadId",
+                              "author",
+                              "body",
+                              "mentions",
+                              "createdAt",
+                              "editedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "path",
+                        "anchor",
+                        "resolved",
+                        "resolvedAt",
+                        "resolvedBy",
+                        "createdAt",
+                        "updatedAt",
+                        "comments"
+                      ]
+                    },
+                    "unreached": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "authorId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "depth",
+                              "repeat",
+                              "unavailable"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "authorId",
+                          "name",
+                          "reason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "thread",
+                    "unreached"
+                  ]
                 }
               }
             }
           },
-          "500": {
-            "description": "The docs could not be looked through",
+          "400": {
+            "description": "The input or the doc path is malformed",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The folder or the doc is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/comments/threads/{threadId}": {
+      "patch": {
+        "tags": [
+          "Doc comments"
+        ],
+        "summary": "Resolve or reopen a comment thread",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "resolved": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "path",
+                  "resolved"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The thread as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "thread": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "anchor": {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": {}
+                        },
+                        "resolved": {
+                          "type": "boolean"
+                        },
+                        "resolvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "resolvedBy": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent",
+                                "system"
+                              ]
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "emoji": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isOwner": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "displayName",
+                            "handle",
+                            "emoji",
+                            "color",
+                            "isOwner"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "human",
+                                      "agent",
+                                      "system"
+                                    ]
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "emoji": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "color": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "isOwner": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "displayName",
+                                  "handle",
+                                  "emoji",
+                                  "color",
+                                  "isOwner"
+                                ]
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "mentions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "editedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "threadId",
+                              "author",
+                              "body",
+                              "mentions",
+                              "createdAt",
+                              "editedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "path",
+                        "anchor",
+                        "resolved",
+                        "resolvedAt",
+                        "resolvedBy",
+                        "createdAt",
+                        "updatedAt",
+                        "comments"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "thread"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input or the doc path is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The folder or the doc is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/comments/threads/{threadId}/comments/{commentId}": {
+      "patch": {
+        "tags": [
+          "Doc comments"
+        ],
+        "summary": "Change your own comment",
+        "description": "Its mentions stay what they were when it was written.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "threadId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "commentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "path",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The thread as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "thread": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "anchor": {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": {}
+                        },
+                        "resolved": {
+                          "type": "boolean"
+                        },
+                        "resolvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "resolvedBy": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent",
+                                "system"
+                              ]
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "handle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "emoji": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "isOwner": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "displayName",
+                            "handle",
+                            "emoji",
+                            "color",
+                            "isOwner"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "threadId": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "human",
+                                      "agent",
+                                      "system"
+                                    ]
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "handle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "emoji": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "color": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "isOwner": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "displayName",
+                                  "handle",
+                                  "emoji",
+                                  "color",
+                                  "isOwner"
+                                ]
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "mentions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "editedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "threadId",
+                              "author",
+                              "body",
+                              "mentions",
+                              "createdAt",
+                              "editedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "path",
+                        "anchor",
+                        "resolved",
+                        "resolvedAt",
+                        "resolvedBy",
+                        "createdAt",
+                        "updatedAt",
+                        "comments"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "thread"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input or the doc path is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Outside the boundary, or somebody else wrote the comment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/comments/anchors": {
+      "put": {
+        "tags": [
+          "Doc comments"
+        ],
+        "summary": "Save moved comment anchors",
+        "description": "Saves the anchors the editor reports after edits, so threads re-attach next time. Ids that are not threads on this doc are skipped.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "updates": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "anchor": {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "anchor"
+                      ]
+                    },
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "path",
+                  "updates"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many threads took a new anchor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "updated"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input or the doc path is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The folder or the doc is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off, or the thread is not on this doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }

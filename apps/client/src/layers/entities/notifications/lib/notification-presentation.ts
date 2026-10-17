@@ -83,6 +83,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'dm.received': MessageSquare,
   'mention.received': MessageSquare,
   'agent.note': Bell,
+  'doc.comment': MessageSquare,
   'dead-letter.created': Mail,
   'agent.unreachable': WifiOff,
   'signin.required': LogIn,

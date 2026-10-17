@@ -411,6 +411,34 @@ export const MCP_TOOL_TIERS = {
     title: 'Create a new agent workspace',
   },
 
+  // ── Doc comments (DOR-2983) ─────────────────────────────────────────────
+  // Reading a doc's threads only reads. Writing a comment messages whoever it
+  // mentions and tells the person, so it sits in Messages beside the other
+  // send tools; resolving is undoable (reopen), so every write is `act`.
+  doc_comment_list: {
+    tier: 'observe',
+    area: 'messages',
+    title: 'Read comments on a doc',
+  },
+  doc_comment_create: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['path', 'body'],
+    title: 'Comment on a doc',
+  },
+  doc_comment_reply: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['path', 'body'],
+    title: 'Reply to a comment on a doc',
+  },
+  doc_comment_resolve: {
+    tier: 'act',
+    area: 'messages',
+    approvalDisplayFields: ['path', 'resolved'],
+    title: 'Resolve or reopen a comment on a doc',
+  },
+
   // ── Extensions ──────────────────────────────────────────────────────────
   get_extension_api: {
     tier: 'observe',

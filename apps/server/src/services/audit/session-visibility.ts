@@ -75,6 +75,7 @@ const KNOWN_KINDS: Record<TurnOrigin['kind'], true> = {
   'extension-start': true,
   'extension-message': true,
   'chat-message': true,
+  'doc-comment': true,
   'account-handoff': true,
   'account-resume': true,
   'test-harness': true,

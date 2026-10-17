@@ -24,6 +24,7 @@ import {
 import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-store.js';
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
+import { wireDocComments } from '../../services/docs/comments/index.js';
 import { wireCommitments } from '../../services/commitments/commitment-wiring.js';
 import {
   setOnEveryAgentEnded,
@@ -128,6 +129,13 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   const chatMessaging = wireChatMessaging({
     db,
     store: new ChatMessageStore(db),
+    meshCore: () => refs.meshCore,
+    roomSessionPlace: () => refs.roomSessionPlacePort,
+  });
+  // Comments on docs (DOR-2983): the store, and the waker that hears every
+  // dispatch, so a comment's woken turn is known from the first turn on.
+  wireDocComments({
+    db,
     meshCore: () => refs.meshCore,
     roomSessionPlace: () => refs.roomSessionPlacePort,
   });

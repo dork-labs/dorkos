@@ -174,14 +174,17 @@ describe('createExternalMcpServer', () => {
     //
     // 55 → 56 for heartbeat_status (spec `heartbeats` §10, PR 6).
     //
+    // 57 → 61 for the four doc comment tools (DOR-2983), so an agent on any
+    // runtime can answer a comment that mentioned it.
+    //
     // These deps carry no `marketplaceDeps`, so the 10 marketplace capabilities are
     // absent here (`marketplace_link` made it 10, DOR-2696).
     // `docs/integrations/mcp-server.mdx` states the total for a fully
-    // wired server (these 57 + 10 marketplace), and that number is pinned by no
+    // wired server (these 61 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves. 56 -> 57 for
     // `memory_read` (ADR 261017-153539).
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(57);
+    expect(registeredTools).toHaveLength(61);
   });
 
   it('registers all expected tool names', () => {
@@ -317,7 +320,7 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(34); // memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
+    expect(coreTools).toHaveLength(38); // 4 doc_comment + memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(7); // 1 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

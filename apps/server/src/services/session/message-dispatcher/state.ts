@@ -16,6 +16,7 @@ import type {
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { isRelayClientId } from '../../core/session-relay/relay-client-id.js';
+import { isBoundedDocCommentClientId } from '../../docs/comments/doc-comment-client-id.js';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,
@@ -92,12 +93,16 @@ export function setQueuedChatCeilingResolver(
  *   passes that ceiling itself, but a row adopted after a restart has no
  *   in-memory plan to carry it, and words from the web must still ask before
  *   anything that needs a person (spec `everything-is-a-space` B2, option 2).
+ * - A row a doc comment by anybody but the owner sent keeps the ceiling it was
+ *   sent with, and is held to the runtime's default when a restart lost it
+ *   (DOR-2983).
  */
 export function launchCeiling(
   clientId: string,
   messageId: string,
   own: TurnPermissionCeiling | undefined
 ): TurnPermissionCeiling | undefined {
+  if (isBoundedDocCommentClientId(clientId)) return own ?? 'runtime-default';
   let bound: TurnPermissionCeiling;
   if (isChatClientId(clientId)) bound = queuedChatCeiling?.(messageId) ?? 'runtime-default';
   else if (isRelayClientId(clientId)) bound = 'runtime-default';

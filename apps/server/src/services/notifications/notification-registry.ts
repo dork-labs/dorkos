@@ -41,10 +41,7 @@ import {
   extensionDecisionHistoryBody,
   subjectIdForCopy,
 } from './extension-decision-copy.js';
-import {
-  CONNECTOR_HOLD_ENTRIES,
-  type ConnectorHoldPayloads,
-} from './connector-hold-notifications.js';
+import { DOMAIN_ENTRIES, type DomainPayloads } from './domain-notification-entries.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -67,7 +64,7 @@ export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
  * A payload carries ids and short, already-human sentences — never transcript
  * content, tool input, or anything that would be unsafe on a phone lock screen.
  */
-export interface NotificationPayloads extends ConnectorHoldPayloads {
+export interface NotificationPayloads extends DomainPayloads {
   /** An agent is parked on something only a person can answer. */
   'ask.pending': {
     sessionId: string;
@@ -1300,9 +1297,10 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
-  // An agent's held irreversible action in a connected app, and how it ended
-  // (spec `trusted-by-default-flip` §5.6). Declared beside its emitter.
-  ...CONNECTOR_HOLD_ENTRIES,
+  // Kinds declared beside their emitters: an agent's held irreversible action
+  // in a connected app and how it ended (spec `trusted-by-default-flip` §5.6),
+  // and an agent's comment on a doc (DOR-2983).
+  ...DOMAIN_ENTRIES,
 };
 
 /**
@@ -1389,6 +1387,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'dm.received',
   'mention.received',
   'agent.note',
+  'doc.comment',
   'dead-letter.created',
   'agent.unreachable',
   'signin.required',

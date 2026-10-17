@@ -29,6 +29,7 @@ import { getTraceTools } from './trace-tools.js';
 import { getMeshTools } from './mesh-tools.js';
 import { getAgentTools } from './agent-tools.js';
 import { getExtensionTools } from './extension-tools.js';
+import { getDocCommentTools } from './doc-comment-tools.js';
 import {
   capabilityMcpTools,
   registerClaudeConnectorCapabilityTools,
@@ -267,6 +268,17 @@ export function handRegisteredInSessionToolSet(
     // The same provenance the task tools read: present in a session, so a
     // Trusted install approves an extension our agent creates (ADR 261006-225605).
     ...getExtensionTools(deps, resolveTaskProvenance),
+    // The agent writes doc comments as itself; the calling chat is what lets a
+    // comment it writes in a woken turn continue that turn's reply chain.
+    ...getDocCommentTools(() => {
+      if (!identityPath) return undefined;
+      const callingSession = session?.sdkSessionId || sessionId;
+      return {
+        agentPath: identityPath,
+        ...(callingSession ? { sessionId: callingSession } : {}),
+        ...(session?.cwd ? { cwd: session.cwd } : {}),
+      };
+    }),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

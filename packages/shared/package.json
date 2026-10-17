@@ -549,6 +549,10 @@
       "types": "./src/chat-messages.ts",
       "default": "./dist/chat-messages.js"
     },
+    "./doc-comments": {
+      "types": "./src/doc-comments.ts",
+      "default": "./dist/doc-comments.js"
+    },
     "./commitment-schemas": {
       "types": "./src/commitment-schemas.ts",
       "default": "./dist/commitment-schemas.js"

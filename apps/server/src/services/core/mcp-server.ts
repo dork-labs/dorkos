@@ -9,6 +9,7 @@ import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
 import { registerAgentAndExtensionTools } from './external-mcp/agent-extension-tools.js';
+import { registerDocCommentTools } from './external-mcp/doc-comment-tools.js';
 import { registerDorkOsResources } from './mcp-resources/index.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp/marketplace-mcp-tools.js';
 import { registerCapabilitiesAsMcpTools } from './external-mcp/capability-mcp-tools.js';
@@ -114,6 +115,7 @@ export function createExternalMcpServer(
   registerBindingTools(registrar, deps);
   registerMeshTools(registrar, deps);
   registerAgentAndExtensionTools(registrar, deps);
+  registerDocCommentTools(registrar, identity);
 
   // ── Registry-backed tools (operator + marketplace + self-description) ─────
   const capabilityRegistry =

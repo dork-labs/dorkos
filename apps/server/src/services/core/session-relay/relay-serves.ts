@@ -73,7 +73,8 @@ export function relayServesLaunchOrigin(kind: TurnOrigin['kind']): boolean {
     // An agent's own work nobody typed into (a room turn, a scheduled run, a
     // beat), a chat bridged from off this machine, a conversation another
     // agent or an outside sender started over the bus, a connector event's
-    // chat, an extension's own app-data chat, and the test harness.
+    // chat, an extension's own app-data chat, a doc comment's chat, and the
+    // test harness.
     case 'room':
     case 'schedule':
     case 'heartbeat':
@@ -82,6 +83,7 @@ export function relayServesLaunchOrigin(kind: TurnOrigin['kind']): boolean {
     case 'outside-sender':
     case 'connector-event':
     case 'extension-message':
+    case 'doc-comment':
     case 'test-harness':
       return false;
     default: {
@@ -108,6 +110,7 @@ const KNOWN_LAUNCH_ORIGINS: Readonly<Record<TurnOrigin['kind'], true>> = {
   'extension-start': true,
   'extension-message': true,
   'chat-message': true,
+  'doc-comment': true,
   'account-handoff': true,
   'account-resume': true,
   heartbeat: true,

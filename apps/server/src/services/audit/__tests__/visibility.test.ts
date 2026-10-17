@@ -92,6 +92,7 @@ describe('sessionVisibilityForOrigin', () => {
       'extension-start': 'space',
       'extension-message': 'space',
       'chat-message': 'space',
+      'doc-comment': 'space',
       'account-handoff': 'participants',
       'account-resume': 'participants',
       'test-harness': 'participants',

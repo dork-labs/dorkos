@@ -53,6 +53,7 @@ export default defineConfig({
     './src/schema/commitments/commitments.ts',
     './src/schema/heartbeats/heartbeats.ts',
     './src/schema/remote/remote-commands.ts',
+    './src/schema/docs/doc-comments.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.

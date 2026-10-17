@@ -104,6 +104,7 @@ import roomRoutes from '../routes/rooms.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
+import { createDocCommentRoutes } from '../routes/docs-comments.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
@@ -481,6 +482,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/session-relay', createSessionRelayRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
   app.route('/api/documents', createDocLinkRoutes());
+  // Comments on docs (DOR-2983); 404 while the `docs.enabled` experiment is off.
+  app.route('/api/documents/comments', createDocCommentRoutes());
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }

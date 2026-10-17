@@ -56,3 +56,4 @@ export * from './session/chat-messages.js';
 export * from './commitments/commitments.js';
 export * from './heartbeats/heartbeats.js';
 export * from './remote/remote-commands.js';
+export * from './docs/doc-comments.js';

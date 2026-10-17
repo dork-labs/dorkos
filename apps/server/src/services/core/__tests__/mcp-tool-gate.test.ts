@@ -354,9 +354,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // `spin-off-chats` §7): the six relay send, inbox and endpoint tools
       // retire from both servers. The chat tools replacing them are
       // capabilities, so they move none of these hand-registered counts.
-      expect(registeredByServer['in-session']).toHaveLength(39);
-      expect(registeredByServer.external).toHaveLength(37);
-      expect(declaredNames).toHaveLength(39);
+      // 39 -> 43 (and 37 -> 41 external) for the four doc comment tools
+      // (DOR-2983), registered on both servers.
+      expect(registeredByServer['in-session']).toHaveLength(43);
+      expect(registeredByServer.external).toHaveLength(41);
+      expect(declaredNames).toHaveLength(43);
     });
 
     it('names exactly two tools destructive', () => {
