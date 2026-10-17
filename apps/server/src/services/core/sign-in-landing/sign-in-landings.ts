@@ -27,6 +27,7 @@ import type {
   SignInLandingService,
   SignInRetryResult,
 } from '@dorkos/shared/sign-in-landing';
+import { sessionPath } from '@dorkos/shared/session-link';
 import { env } from '../../../env.js';
 
 /** How long a landing record can be read after its sign-in finished. */
@@ -110,7 +111,7 @@ export class SignInLandingStore {
       ...(input.connected ? {} : { reason: input.reason ?? 'failed' }),
       ...(input.agentId ? { agentId: input.agentId } : {}),
       resumesConversation: input.connected && sessionId !== undefined,
-      ...(sessionId ? { returnPath: `/session?session=${sessionId}` } : {}),
+      ...(sessionId ? { returnPath: sessionPath({ session: sessionId }) } : {}),
       returnSurface: signInReturnSurface(),
       canRetry: !input.connected && input.retry !== undefined,
     };
