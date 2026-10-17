@@ -7,6 +7,7 @@ import { confirmInterruptingAgents } from './quit-guard';
 import { startServer, stopServer } from './server-process';
 import { pointWindowsAtServer } from './server-crash-recovery';
 import { purgeStaleStagedUpdates } from './updater/cache';
+import { cancelAppRestart, markAppRestart } from './tab-session';
 import {
   clearUpdateIntent,
   isAtLeastVersion,
@@ -551,6 +552,9 @@ export async function prepareUpdateRestart(): Promise<boolean> {
   // that tells the quit guard to stand aside, and it must not be standing if
   // the shutdown above never resolves.
   armUpdateRestart();
+  // From here every window closing is the restart, not the person closing
+  // tabs, and the next launch reopens them all (tab-session/).
+  markAppRestart();
   return true;
 }
 
@@ -599,6 +603,8 @@ async function recoverFromStalledRestart(reason: string): Promise<void> {
   if (!restartArmed) return;
   const offered = pendingInstallVersion();
   resetUpdateRestartState();
+  // The app is staying, so closing a window is closing tabs again.
+  cancelAppRestart();
   log.warn(`[updater] The restart did not happen (${reason}); bringing the server back up.`);
 
   try {

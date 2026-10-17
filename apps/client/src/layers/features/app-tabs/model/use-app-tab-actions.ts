@@ -18,6 +18,7 @@ import { useMemo } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useAppTabsStore } from '@/layers/shared/model';
 import { goToActiveTab, openTabAt } from './tab-navigation';
+import { recordClosedTabs, reopenClosedTab, type ClosedTabKey } from './recently-closed';
 
 /**
  * Where a brand-new tab lands: the dashboard, the cockpit's home. It is the one
@@ -56,6 +57,12 @@ export interface AppTabActions {
   closeOthers: (id: string) => void;
   /** Move the tab at `from` to `to`; never across the pinned line. */
   reorder: (from: number, to: number) => void;
+  /**
+   * Bring back a closed tab, where it was, and go to it: the newest by
+   * default, or the Recently closed entry `key` names. Does nothing when the
+   * list is empty or outside the desktop app.
+   */
+  reopenClosed: (key?: ClosedTabKey) => void;
 }
 
 /** Bind tab creation, selection and closing to the current router. */
@@ -71,6 +78,14 @@ export function useAppTabActions(): AppTabActions {
     const activate = (id: string) => {
       useAppTabsStore.getState().selectTab(id);
       goToActive();
+    };
+
+    // Every close the person asks for goes through here, so every one of them
+    // lands in Recently closed.
+    const closing = (change: () => void) => {
+      const before = useAppTabsStore.getState().tabs;
+      change();
+      recordClosedTabs(before, useAppTabsStore.getState().tabs);
     };
 
     const activateIndex = (index: number) => {
@@ -93,14 +108,14 @@ export function useAppTabActions(): AppTabActions {
         activate(tabs[next].id);
       },
       close: (id) => {
-        useAppTabsStore.getState().closeTab(id);
+        closing(() => useAppTabsStore.getState().closeTab(id));
         goToActive();
       },
       closeActive: () => {
         const { tabs, activeTabId } = useAppTabsStore.getState();
         if (!activeTabId) return false;
         const before = tabs.length;
-        useAppTabsStore.getState().closeTab(activeTabId);
+        closing(() => useAppTabsStore.getState().closeTab(activeTabId));
         // `closeTab` refuses the last tab, so the count is the honest answer to
         // "did anything close?" — never the caller's own guess at the rule.
         const closed = useAppTabsStore.getState().tabs.length < before;
@@ -128,11 +143,16 @@ export function useAppTabActions(): AppTabActions {
         goToActive();
       },
       closeOthers: (id) => {
-        useAppTabsStore.getState().closeOtherTabs(id);
+        closing(() => useAppTabsStore.getState().closeOtherTabs(id));
         goToActive();
       },
       // Order is window furniture: nothing to navigate to.
       reorder: (from, to) => useAppTabsStore.getState().moveTab(from, to),
+      reopenClosed: (key) => {
+        reopenClosedTab(router, key).catch((error: unknown) => {
+          console.error('[dorkos:tabs] could not reopen a closed tab', error);
+        });
+      },
     };
   }, [router]);
 }
