@@ -5,6 +5,26 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.121.0] - 2026-10-17
+
+> DorkOS 0.121.0 makes connecting apps work again, lets agents keep longer notes, and draws diagrams in documents.
+
+### Added
+
+- Agents can now keep **notes files** for things too long for their main memory file, like a checklist or how a tricky part of a project works. Each new notes file gets a one-line description, and an agent opens one only when it needs it, so notes cost nothing until they are used. They live in `.dork/memory/` next to the main file, and are never committed to git.
+- Mermaid diagrams now draw in markdown documents on the canvas, in the app's own colors in light and dark. The diagram code loads only when a document has one.
+
+### Changed
+
+- When an agent runs in DorkOS, Claude Code's own memory is now switched off, so the agent keeps one memory instead of two. Before, its notes could end up split between the two. An agent that already has notes in Claude Code's memory keeps using them until they are copied over, so nothing goes missing.
+- In canvas documents, `[[Page name]]` now shows as a link, and a line that is only `::name` shows as a placeholder block. Both are kept exactly as written when you save. Write `\::name` to keep such a line as plain text.
+- Tables you add while editing a document are saved without column alignment marks (`| - |` instead of `| :- |`).
+- Undo no longer reverses a change that arrived from outside the editor, such as an agent rewriting the file. Your own edits still undo as before.
+
+### Fixed
+
+- Connecting any app through DorkOS, such as Vercel, Cloudflare, Gmail or Slack, failed at once with "isn't available right now". It now opens the sign-in again.
+
 ## [0.120.0] - 2026-10-17
 
 > DorkOS 0.120.0 keeps your tabs when the desktop app restarts, shows a proper page after you sign in to a service, brings back picture previews in chat, and makes dark mode easier on the eyes.
@@ -343,47 +363,4 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Room posts from a chat an agent started are now stamped with that agent, never with you. Before, a chat an agent started in a folder of its own saved its channel posts under your name, so they could look like your approval
 - A chat with no agent behind it can no longer post, react or act in channels as you. It is refused instead
 
-## [0.110.0] - 2026-10-12
-
-> DorkOS 0.110.0 gives a new DorkOS a simple start: one screen, a short way to connect your own AI, and a first job from DorkBot in #team. Connecting an app like Gmail now shows both ways in, and messages between chats start the moment a chat is free.
-
-### Added
-
-- Extension authors can now serve an extension's own API with a fetch handler: a function that takes a standard web request and returns a response. Any handler of that shape, such as a Hono app, works as it is. It runs inside DorkOS on Node, so code that needs Bun or Deno's own features does not. The Express router still works, and both can be used together
-- People who run a Community server can now give one of its reserved web addresses, such as `official`, to a new space of their own. It takes a key made for that one job and a written reason, and the server keeps a record of who gave the address out and why. Everyone else is still refused every reserved address, and addresses that are pages of the server can never be given out. See "Giving a reserved web address to a community" in the server's operations guide
-
-### Changed
-
-- Every agent now follows the same rules for when to act and when to ask first. It does routine work and anything you asked for without checking in, and tells you what it did
-- Before an agent sends something people outside your team will see, spends money or deletes things, it asks first unless you asked or it is its job. Promises to customers, signing up for things, spending past its limit and giving someone new access always need a yes from you or the agent's manager
-- When an agent gets stuck on something only you can do, like a sign-in, it no longer just says it can't. It does every step it can, asks DorkOS for the access, suggests one way forward, and finishes once you choose
-- These rules apply even when an agent's DorkOS knowledge setting is off, and in chats that are not tied to an agent
-- A new DorkOS starts with one screen. **Use my own AI** lists every way in, one row each: an OpenAI, Anthropic or OpenRouter key, an AI app you already sign in to, or any other service. Paste a key and DorkOS picks the model. A model on your own computer is listed too, but it can't reach a first reply yet (DOR-2783)
-- **Continue with DorkOS** is on the same screen and signs you in with the code already filled in. Finishing that path with a card still waits on DorkOS Cloud, so for now use **Use my own AI** (DOR-2783)
-- Every path ends in #team, where DorkBot says hello and offers a first job: **Build me a tracker for my customers**, **Make a daily plan board**, or **Something else**. One press, and DorkBot starts on it. Skipped the account? The same spot opens the two ways to connect AI in Settings instead (DOR-2783)
-
-### Removed
-
-- The old first run is gone: the setup scan, the power-level step and the scripted chat with DorkBot. Set your name and the kind of work you do in Settings › Profile. Full power is still offered the first time an agent needs it (DOR-2783)
-
-### Fixed
-
-- The first time you connect an app like Gmail, DorkOS now offers both ways in: use a DorkOS account (sign in or create one), or paste your own Composio key. Before, someone without a DorkOS account saw only the key and could get stuck
-- If your DorkOS account is linked but can't connect apps right now, you can now link it again from that same step, or use your own key instead
-- When you ask an agent to connect an app like Gmail and DorkOS can't reach it yet, the agent now tells you your choices right away: sign in to a DorkOS account (or create one), or use your own Composio key. It asks which you want and helps you do it. Before, it waited quietly while you were left to work it out alone
-- When an agent asks you for access to a service, it now looks up that service's exact name first, so the request names the right app. Agents are also told that signing in to a service's command-line tool gives DorkOS no access (DOR-2236)
-- A message one chat sends another now starts as soon as that chat is free. Before, if the chat had finished its turn but was still wrapping up background work, the message could sit in its queue for up to five minutes after the work ended, even after an interrupt
-- A chat sending a second message to a busy chat now hears "queued" at once. Before, after a long wait, it could be held for up to five minutes before it heard back
-- A chat started from a room conversation is now told to report in the room. Before, it was told to message a chat that cannot take messages, and every try was refused
-- In a direct message that still lists a removed agent, the other agents are now told it is retired and will not reply, so they stop waiting on it. The app already showed it that way
-- A chat that hit an error in its very first moments could send two "stopped on an error" phone pings, or one after it had already recovered. It now sends at most one, and none once the error clears
-- A connection you just added no longer vanishes for a moment if DorkOS reloads its connection settings at the same time. Before, removing or editing it right away said it could not be found
-- A connection you remove stays removed. Before, a reload at the same moment could start it again and leave it answering messages, even though the app no longer listed it
-- Removing a connection can no longer remove a different one when the connection settings reload at the same moment
-- Two changes saved close together are now written in order, so an older save can no longer overwrite a newer one
-- Turning off or reloading an extension now stops every repeating task it started, including ones it started after it finished loading. Before, those kept running, so after a reload the old copy's tasks could run beside the new one's
-- Turning on a room's files, or keeping changes made outside DorkOS, no longer fails when your profile name is made only of symbols git cannot use, such as `<>`. DorkOS signs those saves with a plain name instead (DOR-2454)
-- `dorkos cloud login` now waits and tries again when DorkOS Cloud says it is busy, instead of giving up and making you start over (DOR-2496)
-- A Community server behind a proxy with `COMMUNITY_TRUSTED_PROXY_HEADER` set now counts sign-in attempts per visitor. Before, sign-in limits saw the proxy's address for everyone, so they either limited nobody or everybody together
-
-Older releases (v0.1.0 – v0.109.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.110.0) live in the [Changelog archive](/changelog-archive).
