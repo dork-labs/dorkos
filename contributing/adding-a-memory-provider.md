@@ -20,6 +20,7 @@ Spec: [`specs/agent-memory/02-specification.md`](../specs/agent-memory/02-specif
 | The config key                  | `packages/shared/src/config-schema.ts` (`memory.provider`)                                         |
 | Consumer: the injected block    | `apps/server/src/services/runtimes/shared/agent-context.ts` (`buildMemoryBlock`)                   |
 | Consumer: the agent's own write | `apps/server/src/services/memory/memory-capabilities.ts` (`memory_write`)                          |
+| Consumer: the agent's own read  | `apps/server/src/services/memory/memory-capabilities.ts` (`memory_read`, notes files)              |
 
 ## The four rules
 
@@ -34,12 +35,13 @@ Restated from the port's own docblock, because each means something specific abo
 
 ## What each method owes
 
-- **`info`** — your id (the value `memory.provider` names) and two capability flags. Static for the life of the instance. No descriptive colour: a flag nobody branches on is a claim nothing can check.
+- **`info`** — your id (the value `memory.provider` names) and three capability flags (`search`, `consolidate`, `notes`). Static for the life of the instance. No descriptive colour: a flag nobody branches on is a claim nothing can check.
 - **`getSnapshot(ref)`** — **three-way honest**: `'present'`, `'absent'`, `'error'`. Never throws for either of the last two. Collapsing `'error'` into `'absent'` is the failure this port exists to prevent: an agent told its memory is empty writes a fresh note over the top of everything it could not read.
 - **`write(ref, op)`** — one op union (`add` / `replace` / `remove`), applied atomically with respect to every other writer of the same agent's memory in your process. Every failure is a **refusal, not a partial write**: `MemoryMatchError` when a `replace`/`remove` does not name exactly one editable place, `MemoryNoteShapeError` when the note carries a line break (a forgery defence — see the port's docblock), `MemoryCapExceededError` past your cap, `MemoryIOError` when your own storage failed.
 - **`query(ref, q)`** — gated on `search`. Refuse loudly when it is off.
 - **`forget(ref, selector)`** — same unique-substring rule as `remove`. Forgetting the wrong note is worse than forgetting none.
 - **`consolidate(ref)`** — gated on `consolidate`. A caller must never block a turn on it.
+- **`listNotes(ref, q)`** and **`readNote(ref, name)`** — gated on `notes`: the second level, notes files the agent opens on demand (ADR `261017-153539`). `listNotes` pages newest first with a `query` filter and a cursor, and reports `recentlyMigrated` for the tidy nudge; `readNote` is three-way honest like `getSnapshot`. A `write` or `forget` that names a `note` is gated the same way. Creating a note without a `description` refuses with `MemoryNoteError('needs-description')`; editing one that does not exist refuses with `'no-such-note'`. The builtin provider keeps notes at `<agentPath>/.dork/memory/<name>.md`, names whitelisted by the jail.
 
 ## Steps
 

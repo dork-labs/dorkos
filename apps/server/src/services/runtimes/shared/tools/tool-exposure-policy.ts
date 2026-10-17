@@ -75,6 +75,10 @@
  * the warning line, and that is the turn with the least room to spend on a
  * lookup. An agent near its limit that has to search for the tool that frees
  * room is the DOR-1292 defect at its most expensive.
+ *
+ * **`memory_read` IS here** (ADR `261017-153539`): `<session_model>` and the
+ * memory block's notes line both name it on every agent turn, and the moment an
+ * agent needs a note is usually the middle of a reply.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -86,6 +90,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'read_canvas',
   'list_capabilities',
   'memory_write',
+  'memory_read',
   'request_permission',
   'compact_my_session',
 ]);

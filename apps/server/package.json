@@ -25,6 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "census:update": "UPDATE_ROUTE_CENSUS=1 vitest run src/http/__tests__/route-census.test.ts",
+    "migrate:claude-memory": "tsx src/scripts/migrate-claude-memory.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

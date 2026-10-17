@@ -91,12 +91,14 @@ function throwingProvider(err: unknown = new TypeError('acme backend exploded'))
     throw err;
   };
   return {
-    info: { id: CUSTOM, capabilities: { search: true, consolidate: true } },
+    info: { id: CUSTOM, capabilities: { search: true, consolidate: true, notes: true } },
     getSnapshot: fail,
     write: fail,
     query: fail,
     forget: fail,
     consolidate: fail,
+    listNotes: fail,
+    readNote: fail,
     calls: () => calls,
   };
 }

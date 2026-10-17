@@ -7702,6 +7702,16 @@
       "extractedFrom": null,
       "specSlug": "one-minute-onboarding",
       "amends": ["261008-052830"]
+    },
+    {
+      "id": "261017-153539",
+      "slug": "one-memory-per-agent",
+      "title": "One memory per agent — Claude Code auto-memory off on agent turns; DorkOS memory gains notes files",
+      "status": "accepted",
+      "created": "2026-10-17",
+      "extractedFrom": null,
+      "specSlug": "agent-memory",
+      "amends": ["0273"]
     }
   ]
 }

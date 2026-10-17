@@ -26,7 +26,7 @@ describe('the builtin memory provider', () => {
   it('declares who it is and what it cannot do', () => {
     expect(provider.info).toEqual({
       id: BUILTIN_MEMORY_PROVIDER_ID,
-      capabilities: { search: false, consolidate: false },
+      capabilities: { search: false, consolidate: false, notes: true },
     });
   });
 
