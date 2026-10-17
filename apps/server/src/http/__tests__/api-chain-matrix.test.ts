@@ -75,7 +75,11 @@ import { initAuth } from '../../services/core/auth/index.js';
 import type { Context } from 'hono';
 
 const GOOD_AGENT_TOKEN = 'good-agent-token';
-/** Set once the owner has signed in, before any cell runs. */
+/**
+ * Set once the owner has signed in, before any cell runs. Made in process, so
+ * it counts only at this computer: at a foreign `Host` it is no session at all
+ * (DOR-2969).
+ */
 let GOOD_COOKIE = '';
 /** A real per-user API key for the owner. */
 let GOOD_API_KEY = '';
@@ -334,7 +338,8 @@ function stable(answer: Comparable): Comparable {
   const hash = (id: string) => createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 12);
   let text = JSON.stringify(answer)
     .replaceAll(ownerId, '<owner>')
-    .replaceAll(hash(ownerId), '<owner-hash>');
+    .replaceAll(hash(ownerId), '<owner-hash>')
+    .replace(/"sessionId":"[^"]+"/g, '"sessionId":"<session>"');
   if (keyId) text = text.replaceAll(keyId, '<key>').replaceAll(hash(keyId), '<key-hash>');
   return JSON.parse(text) as Comparable;
 }

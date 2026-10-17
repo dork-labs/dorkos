@@ -40,6 +40,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 
 /** Nothing reaches the site: feedback history reads a closed local port. */
@@ -1575,6 +1576,7 @@ describe('contract: the same groups with login on', () => {
   });
 
   it('tells the owner signed in at another name it is not at this computer, and keeps setup here', async () => {
+    const cookie = await signInAt(server!.baseUrl, REMOTE_HOST, OWNER);
     await check(server, {
       path: '/api/config',
       headers: { ...cookie, host: REMOTE_HOST },

@@ -15,7 +15,8 @@ import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 
-const { initAuth } = await import('../../auth/index.js');
+const { initAuth, verifyRequestAuth } = await import('../../auth/index.js');
+const { withRegistrationCaller } = await import('../../auth/registration-policy.js');
 const { initConfigManager } = await import('../../config-manager.js');
 const runner = await import('../hub-assignment-runner.js');
 const serving = await import('../hub-serving.js');
@@ -96,8 +97,9 @@ async function signIn(
   const authorize = await fetch(url, { redirect: 'manual' });
   const location = new URL(authorize.headers.get('location')!);
   const sent = [cookiesOf(start), extraCookie].filter(Boolean).join('; ');
-  const back = await auth.handler(
-    new Request(location.href, { redirect: 'manual', headers: { cookie: sent } })
+  // Inside the request's class, as `http/better-auth.ts` runs the handler.
+  const back = await withRegistrationCaller({ kind: 'hub', route: 'hub' }, () =>
+    auth.handler(new Request(location.href, { redirect: 'manual', headers: { cookie: sent } }))
   );
   return { start, back, cookie: cookiesOf(back) };
 }
@@ -138,6 +140,14 @@ describe('continue with DorkOS on a hub', () => {
     const who = await auth.api.getSession({ headers: new Headers({ cookie }) });
     expect(who?.user.email).toBe('owner@hub-1.example.invalid');
     expect(db.select().from(user).all()).toHaveLength(1);
+    // Made on the hub, so it keeps working on the hub (DOR-2969).
+    expect(who?.session.route).toBe('hub');
+    const facts = { headers: { cookie }, peerAddress: '203.0.113.7', ingress: 'direct' as const };
+    expect(await verifyRequestAuth(facts)).toMatchObject({
+      userId: who!.user.id,
+      credential: 'cookie',
+      route: 'hub',
+    });
   });
 
   it('keeps a public-computer sign-in to the browser and to one working day', async () => {
