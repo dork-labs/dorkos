@@ -224,6 +224,47 @@ test('a written reply sends on its own, and the screen remembers what was sent',
   }
 });
 
+test('a long reply arrives whole, and one past the cap is cut to fit it', async () => {
+  const bodies = [];
+  const srv = await listen((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      if (req.method !== 'GET') bodies.push(JSON.parse(body || '{}'));
+      res.writeHead(req.method === 'GET' ? 200 : 202, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+  });
+  try {
+    const env = { DORKOS_PORT: String(srv.address().port) };
+    const dir = project();
+    dirs.push(dir);
+    const [r] = three(dir, String(port()), env, ['--wake', '--session', 'chat-w']);
+    const page = await b.newPage();
+    const send = async (screenName, text, n) => {
+      await page.goto(r.url + '?screen=' + screenName);
+      await page.locator('.vc-send-input').fill(text);
+      await page.locator('.vc-send-btn').click();
+      await waitFor(() => bodies.length >= n, 8000, 50, 'delivered ' + n);
+      return bodies[n - 1].payload;
+    };
+    // Well past the old 500-character clip, well inside the cap: untouched.
+    const long = 'word '.repeat(600).trim();
+    assert.equal((await send('one', long, 1)).screens[0].message, long);
+    // Past DorkOS's 8,192-character payload cap: shortened just enough.
+    const huge = 'x'.repeat(12000);
+    const payload = await send('two', huge, 2);
+    const message = payload.screens[0].message;
+    assert.ok(JSON.stringify(payload).length <= 8192, 'payload under the cap');
+    assert.ok(message.endsWith('…'), 'marked as cut');
+    assert.ok(message.length > 3000, 'kept as much as fits, got ' + message.length);
+    await page.close();
+  } finally {
+    srv.closeAllConnections();
+    srv.close();
+  }
+});
+
 test('the reply dock keeps working after a pin note is dropped', async () => {
   const dir = project();
   dirs.push(dir);

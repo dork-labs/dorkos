@@ -447,7 +447,13 @@ function screenTitle(name) {
   return f ? titleFor(name, read(f)) : name;
 }
 
-function buildPayload(batch) {
+// DorkOS refuses a ui-action whose serialized payload passes 8,192 characters
+// (UI_ACTION_PAYLOAD_MAX_LENGTH). Stay under it with room to spare, and spend
+// the room on what the person wrote: older pin notes go first, then the reply
+// is shortened only as far as it has to be.
+const PAYLOAD_BUDGET = 7500;
+
+function buildPayload(batch, messageMax = Infinity) {
   const groups = new Map();
   for (const e of batch) {
     const k = e.screen || '';
@@ -457,7 +463,7 @@ function buildPayload(batch) {
     if (Array.isArray(e.selection)) g.selection = e.selection;
     if (e.type === 'pin') g.newPins.push(e.n);
     if (e.type === 'send') g.trigger = 'send';
-    if (e.message) g.message = clip(e.message, 500);
+    if (e.message) g.message = clip(e.message, messageMax);
   }
   const screens = [];
   const lines = [];
@@ -501,6 +507,25 @@ function buildPayload(batch) {
   return { summary: lines, screens, events_file: EVENTS_FILE };
 }
 
+function fitPayload(batch) {
+  let messageMax = Infinity;
+  for (;;) {
+    const payload = buildPayload(batch, messageMax);
+    const size = () => JSON.stringify(payload).length;
+    while (size() > PAYLOAD_BUDGET && payload.screens.some((x) => x.pins.length)) {
+      for (const x of payload.screens) x.pins.shift();
+    }
+    const over = size() - PAYLOAD_BUDGET;
+    const longest = Math.max(0, ...payload.screens.map((x) => (x.message || '').length));
+    if (over <= 0 || longest <= 1) return payload;
+    // The reply appears twice (its screen and the summary line), so each
+    // character cut saves at least two.
+    const next = Math.max(1, Math.min(messageMax, longest) - Math.ceil(over / 2) - 1);
+    if (next >= messageMax) return payload;
+    messageMax = next;
+  }
+}
+
 async function deliverRoute() {
   if (!routeQueue.length) return;
   const r = readRoute(routeQueue[0].screen);
@@ -517,10 +542,7 @@ async function deliverRoute() {
   }
   // One delivery per chat: take the queued events that belong to this one.
   const batch = routeQueue.filter((e) => readRoute(e.screen)?.session === r.session);
-  const payload = buildPayload(batch);
-  while (JSON.stringify(payload).length > 7500 && payload.screens.some((x) => x.pins.length)) {
-    for (const x of payload.screens) x.pins.shift();
-  }
+  const payload = fitPayload(batch);
   const headers = { 'Content-Type': 'application/json' };
   const names = payload.screens.map((x) => x.title).join(', ');
   let url, body;

@@ -249,6 +249,6 @@ gitignored; `scripts/vc build` rebuilds them after the app's styles change.
 - `scripts/frame-template.html`, `frame.css`, `boot.js`, `helper.js`: the frame
 - `scripts/shoot.cjs`: screenshots; `scripts/locate.cjs` finds the repo, playwright-core and Chromium
 - `scripts/build-assets.mjs` (`vc build`): builds `scripts/assets/tokens.css` and `app.css` from the DorkOS repo
-- `tests/run.sh`: 42 headless checks (playwright-core + Chromium, about 90s)
+- `tests/run.sh`: 43 headless checks (playwright-core + Chromium, about 90s)
 - `examples/components.html`: every component on one screen
 - `scripts/start-server.sh`, `stop-server.sh`: the v1 entry points, still working
