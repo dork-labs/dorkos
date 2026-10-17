@@ -27,6 +27,7 @@ let mockContext: PromoContext = {
   daysSinceFirstUse: 0,
   isDesktopApp: false,
   remoteAccessConfigured: false,
+  isHub: false,
 };
 vi.mock('../model/use-promo-context', () => ({
   usePromoContext: () => mockContext,
@@ -80,6 +81,7 @@ describe('usePromoSlot', () => {
       daysSinceFirstUse: 0,
       isDesktopApp: false,
       remoteAccessConfigured: false,
+      isHub: false,
     };
   });
 

@@ -98,7 +98,11 @@ export function useUpdateReady(): UpdateReadiness {
     [dismissed, updateConfig]
   );
 
+  const isHub = config?.serverRole === 'hub';
+
   return useMemo(() => {
+    // A hub is updated for its owner; there is no command for them to run.
+    if (isHub) return { kind: 'none' };
     // Desktop reflects the native updater: `npm update -g dorkos` updates the
     // CLI, not the running `.app`.
     if (isDesktop) {
@@ -119,5 +123,5 @@ export function useUpdateReady(): UpdateReadiness {
     if (!ready) return { kind: 'none' };
 
     return { kind: 'command', latestVersion, dismiss: () => dismiss(latestVersion) };
-  }, [isDesktop, desktopStatus, restart, latestVersion, version, dismissed, dismiss]);
+  }, [isHub, isDesktop, desktopStatus, restart, latestVersion, version, dismissed, dismiss]);
 }

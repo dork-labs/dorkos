@@ -10,6 +10,7 @@ import {
 import {
   configKeys,
   useConfig,
+  useIsHub,
   useRoomTurnLimits,
   useUpdateConfig,
 } from '@/layers/entities/config';
@@ -45,12 +46,17 @@ const DEFAULT_CONCURRENCY = 4;
  *   its honest cost note travels with it.
  * - **Schedule concurrency** — `scheduler.maxConcurrentRuns`, a bounded stepper
  *   honouring the schema's 1–10 range.
+ *
+ * On a hub, remote access and warm agents are not shown: the hub has no
+ * remote access of its own and no agent runtime to keep warm, as Settings
+ * hides the same two there.
  */
 export function ControlCenterSwitches() {
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
   const { limits, setLimits } = useRoomTurnLimits();
+  const isHub = useIsHub();
 
   // Every config reader — the status bar, the sidebar, `useFeatureEnabled` —
   // sits on a broader key set than this flyout, and the server applies each
@@ -66,7 +72,7 @@ export function ControlCenterSwitches() {
   return (
     <FieldCard>
       <FieldCardContent>
-        <RemoteAccessRow />
+        {!isHub && <RemoteAccessRow />}
 
         <OpenMeshSwitch />
 
@@ -95,26 +101,28 @@ export function ControlCenterSwitches() {
           onCheckedChange={(next) => setLimits({ turnLimitsEnabled: next })}
         />
 
-        <SwitchSettingRow
-          label="Warm agents"
-          description={
-            <>
-              Replies start about 4× faster. Each warm agent uses up to about 1 GB.{' '}
-              <InfoTip label="About warm agents">
-                <p>Your agent stays running between messages.</p>
-                <p>At most twelve agents stay warm at once.</p>
-              </InfoTip>
-            </>
-          }
-          checked={persistentSession}
-          disabled={updateConfig.isPending}
-          onCheckedChange={(next) =>
-            updateConfig.mutate(
-              { runtimes: { claudeCode: { persistentSession: next } } },
-              { onSuccess: invalidate }
-            )
-          }
-        />
+        {!isHub && (
+          <SwitchSettingRow
+            label="Warm agents"
+            description={
+              <>
+                Replies start about 4× faster. Each warm agent uses up to about 1 GB.{' '}
+                <InfoTip label="About warm agents">
+                  <p>Your agent stays running between messages.</p>
+                  <p>At most twelve agents stay warm at once.</p>
+                </InfoTip>
+              </>
+            }
+            checked={persistentSession}
+            disabled={updateConfig.isPending}
+            onCheckedChange={(next) =>
+              updateConfig.mutate(
+                { runtimes: { claudeCode: { persistentSession: next } } },
+                { onSuccess: invalidate }
+              )
+            }
+          />
+        )}
 
         <SettingRow
           label="Scheduled runs at once"

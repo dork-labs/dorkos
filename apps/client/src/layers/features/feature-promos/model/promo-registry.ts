@@ -50,7 +50,8 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     // `sidebar-simplification` D4 this read `() => true`, which is the
     // definition of an ad: at priority 90 it was the card the sidebar showed
     // every morning forever, and there was no × to answer it with.
-    shouldShow: (ctx) => !ctx.isDesktopApp && !ctx.remoteAccessConfigured,
+    // Nor on a hub, which has no remote access of its own to set up.
+    shouldShow: (ctx) => !ctx.isDesktopApp && !ctx.isHub && !ctx.remoteAccessConfigured,
     content: {
       icon: Globe,
       title: 'Use DorkOS on the go',
