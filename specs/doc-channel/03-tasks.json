@@ -151,7 +151,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": "DOR-2669",
       "parentIssue": "DOR-2665"
     },
@@ -175,7 +175,7 @@
           "gate": "Actual Relay-backed document routing must remain disabled until namespace reservation for server-owned doc subjects is merged and verified."
         }
       ],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -242,7 +242,7 @@
           "gate": "Frame rollout requires verified containment of all served document responses, including top-level opening."
         }
       ],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -284,7 +284,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -341,7 +341,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": "DOR-2670",
       "parentIssue": "DOR-2665"
     },
@@ -401,7 +401,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -420,7 +420,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     },
@@ -440,7 +440,7 @@
       ],
       "parallelWith": [],
       "externalBlockers": [],
-      "status": "pending",
+      "status": "in_progress",
       "issue": null,
       "parentIssue": null
     }
