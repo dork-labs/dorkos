@@ -12,12 +12,24 @@ import type { CommunityWakeAgentsFrom } from './community-connections.js';
 /** The largest monthly limit a person may set, in US dollars. A sanity bound, not a price. */
 export const TEAMMATE_SPEND_LIMIT_MAX_USD = 100_000;
 
-/** A monthly limit in US dollars, to the cent, or `null` for none. */
+/** The smallest monthly limit a person may set, in US dollars: one cent. */
+export const TEAMMATE_SPEND_LIMIT_MIN_USD = 0.01;
+
+/**
+ * Round an amount to the cent, as a limit is kept. Checked AFTER rounding, so an amount that
+ * rounds to nothing (a tenth of a cent) is refused rather than saved as a limit of zero.
+ *
+ * @param usd - An amount in US dollars.
+ */
+export function roundToCents(usd: number): number {
+  return Math.round(usd * 100) / 100;
+}
+
+/** A monthly limit in US dollars, to the cent and at least one cent, or `null` for none. */
 export const TeammateSpendLimitSchema = z
   .number()
-  .positive()
-  .max(TEAMMATE_SPEND_LIMIT_MAX_USD)
-  .transform((usd) => Math.round(usd * 100) / 100)
+  .transform(roundToCents)
+  .pipe(z.number().min(TEAMMATE_SPEND_LIMIT_MIN_USD).max(TEAMMATE_SPEND_LIMIT_MAX_USD))
   .nullable();
 
 /** `PUT /api/community-connections/:ref/teammate-spend`: set or clear the monthly limit. */
@@ -43,6 +55,11 @@ export const CommunityTeammateSpendSchema = z.strictObject({
   approximate: z.boolean(),
   /** The month counted, `YYYY-MM` (UTC). */
   month: z.string().regex(/^\d{4}-\d{2}$/),
+  /**
+   * Whether the owner has an agent enrolled in this space, so the panel shows these settings even
+   * when the space no longer lets them add one.
+   */
+  hasAgentsHere: z.boolean(),
 });
 /** One space's teammate spending this month. */
 export type CommunityTeammateSpend = z.infer<typeof CommunityTeammateSpendSchema>;

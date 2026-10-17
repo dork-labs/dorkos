@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { expect, type Locator } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { channelEntries, composer, json, send, sendJson, type Desktop } from './desktop.js';
 import type { Entry, World } from './world.js';
 
@@ -18,8 +18,6 @@ export interface TeammateLimitStepNeeds {
   bAgent: { display?: string };
   /** Open a channel with the Members panel showing the agent controls. */
   openAgents: (local: Desktop, ref: string, roomId: string) => Promise<void>;
-  /** The "Your agents in this space" region. */
-  agentsRegion: (local: Desktop) => Locator;
 }
 
 /** One space's teammate spending, as B's server reports it. */
@@ -49,7 +47,7 @@ export async function teammateLimitStep(w: World, needs: TeammateLimitStepNeeds)
     async () => {
       // B sets a limit from the Teammates block in B's own app.
       await needs.openAgents(b, refB, room.roomId);
-      const teammates = needs.agentsRegion(b).getByRole('region', { name: 'Teammates' });
+      const teammates = b.page.getByRole('region', { name: 'Teammates' });
       await expect(teammates.getByText(/^No limit · /)).toBeVisible({ timeout: 30_000 });
       await teammates.getByLabel('Monthly limit for teammates').fill('0.10');
       const saved = b.page.waitForResponse(

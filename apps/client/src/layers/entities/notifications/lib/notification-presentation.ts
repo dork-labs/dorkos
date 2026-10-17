@@ -103,6 +103,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,
+  'community.teammate-limits-reset': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
   // An agent's high-risk action in a connected app, waiting or done.
   'connector.destructive_pending': Hourglass,
@@ -322,6 +323,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // The offer's card is on every agent's Heartbeat page; the team is where
     // those agents are.
     return { ...appRoutes.team(), search: {} };
+  }
+  if (kind === 'community.teammate-limits-reset') {
+    // Not about one space: the channels page, where each space's agents panel sets its limit.
+    return { ...appRoutes.channels(), search: {} };
   }
   if (kind === 'community.owner-replacement' || kind === 'community.teammate-limit') {
     // The subject is the owner's connection ref: the community's own page, where the banner

@@ -3,6 +3,7 @@ import { useCommunityConnections, useRemoteCommunityDms } from '@/layers/entitie
 import { Button } from '@/layers/shared/ui';
 import { RemoteCommunityAgents } from './RemoteCommunityAgents';
 import { RemoteDmButton } from './dms/RemoteDmButton';
+import { RemoteCommunityTeammates } from './teammates/RemoteCommunityTeammates';
 import { remoteAgentAvailabilityLabel } from '../lib/remote-agent-availability';
 
 /**
@@ -100,6 +101,7 @@ export function RemoteCommunityRoster({
           accessFingerprint={accessFingerprint}
         />
       )}
+      <RemoteCommunityTeammates community={community} online={online} canEnroll={canEnroll} />
     </div>
   );
 }

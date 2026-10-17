@@ -13,17 +13,28 @@
  * Both apply, and the owner's own posts count against neither.
  *
  * Kept in `teammate-spend.json` beside the connections and their wake setting, so a restart
- * neither forgets the limit nor resets the month. The gate reads it in memory: until the file is
- * read, a connection with a limit wakes no teammate, rather than one that might be over it.
+ * neither forgets the limit nor resets the month. The file is read when the counter is made, so
+ * the gate always answers from memory. A file that cannot be read (damaged, or written by a newer
+ * DorkOS in a shape this one does not know) is moved aside as `teammate-spend.json.corrupt-<time>`
+ * and the counter starts empty: no space then has a limit, so none is blocked, and the owner is
+ * told once that their limits need setting again. A space with no limit is never blocked by this
+ * counter, whatever state the file is in.
+ *
+ * A running turn is counted when it ends, so the turn that crosses the limit can take a space a
+ * little past it; the limit stops the turns after it.
  *
  * @module services/communities/remote/wake/teammate-spend
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFileSync, renameSync } from 'node:fs';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import type { CommunityTeammateSpend } from '@dorkos/shared/community-teammates';
+import {
+  TEAMMATE_SPEND_LIMIT_MIN_USD,
+  type CommunityTeammateSpend,
+} from '@dorkos/shared/community-teammates';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
 
@@ -36,7 +47,9 @@ export const TEAMMATE_TURN_ESTIMATE_USD = 0.25;
 /** The file, beside `connections.json` and the wake setting. */
 export const TEAMMATE_SPEND_FILE = 'teammate-spend.json';
 
-const MonthSchema = z.strictObject({
+// Not strict: a newer DorkOS may add a field, and an unknown field must not cost the owner the
+// limits they set.
+const MonthSchema = z.object({
   /** `YYYY-MM`, UTC. A different month reads as nothing spent. */
   month: z.string().regex(/^\d{4}-\d{2}$/),
   usd: z.number().nonnegative(),
@@ -47,19 +60,37 @@ const MonthSchema = z.strictObject({
 });
 type Month = z.infer<typeof MonthSchema>;
 
-const FileSchema = z.strictObject({
-  limits: z.record(z.string(), z.number().positive()),
+const FileSchema = z.object({
+  limits: z.record(z.string(), z.number().min(TEAMMATE_SPEND_LIMIT_MIN_USD)),
   months: z.record(z.string(), MonthSchema),
 });
 type SpendFile = z.infer<typeof FileSchema>;
 
-/** Told once a month, per connection, when teammates' turns reach its limit. */
+/**
+ * Told once a month, per connection and limit, when teammates' turns reach it. Resolves once the
+ * owner was told; a rejection leaves it untold, to be tried again by the next turn counted.
+ */
 export type TeammateLimitReached = (reached: {
   ref: CommunityRef;
   ownerKey: string;
   limitUsd: number;
   month: string;
-}) => void;
+}) => Promise<void>;
+
+/** What the owner is told about this counter. */
+export interface TeammateSpendNotices {
+  /** Teammates' turns reached a space's limit this month. */
+  reached?: TeammateLimitReached;
+  /** The file could not be read and was set aside, so every limit is gone until set again. */
+  reset?: () => void;
+}
+
+/** What a turn counts as: its reported cost when that is a real amount, otherwise the estimate. */
+function countedCost(costUsd: number | undefined): { usd: number; estimated: boolean } {
+  return typeof costUsd === 'number' && Number.isFinite(costUsd) && costUsd >= 0
+    ? { usd: costUsd, estimated: false }
+    : { usd: TEAMMATE_TURN_ESTIMATE_USD, estimated: true };
+}
 
 /** The current month, `YYYY-MM` in UTC. */
 function monthOf(now: number): string {
@@ -74,7 +105,7 @@ function key(ref: CommunityRef, ownerKey: string): string {
 export class TeammateSpend {
   private readonly directory: string;
   private readonly file: string;
-  private data: SpendFile | null = null;
+  private data: SpendFile;
   private writing: Promise<void> = Promise.resolve();
 
   /**
@@ -83,17 +114,19 @@ export class TeammateSpend {
    * @param dorkHome - The DorkOS data directory.
    * @param connections - The connection store, to refuse an unknown connection and forget a
    *   removed one.
-   * @param reached - Told once a month per connection when the limit is reached.
+   * @param notices - Who tells the owner a limit was reached, or that the file was reset.
    * @param now - The clock.
    */
   constructor(
     dorkHome: string,
     private readonly connections: RemoteConnectionStore,
-    private readonly reached: TeammateLimitReached = () => undefined,
+    private readonly notices: TeammateSpendNotices = {},
     private readonly now: () => number = Date.now
   ) {
     this.directory = path.join(dorkHome, 'communities', 'remote');
     this.file = path.join(this.directory, TEAMMATE_SPEND_FILE);
+    // Read now, so the gate never answers before the file is read.
+    this.data = this.readOrReset();
     connections.onChange((changes) => {
       const removed = changes.filter((change) => change.status === 'removed');
       if (!removed.length) return;
@@ -111,20 +144,19 @@ export class TeammateSpend {
     });
   }
 
-  /** Read the file into memory. Until it is read, a connection with a limit wakes no teammate. */
+  /** Read the file again into memory, as at startup. */
   async load(): Promise<void> {
     await this.exclusive(async () => false);
   }
 
   /**
    * Whether a teammate's post in this space may still wake an agent this month. Always, with no
-   * limit set; never, once this month's total has reached it, or before the file is read.
+   * limit set; never, once this month's total has reached it.
    *
    * @param ref - The connection.
    * @param ownerKey - The connection's local owner.
    */
   allows(ref: CommunityRef, ownerKey: string): boolean {
-    if (!this.data) return false;
     const limit = this.data.limits[key(ref, ownerKey)];
     if (limit === undefined) return true;
     return this.spentThisMonth(this.data.months[key(ref, ownerKey)]).usd < limit;
@@ -136,9 +168,13 @@ export class TeammateSpend {
    * @param ref - The connection.
    * @param ownerKey - The connection's local owner.
    */
-  async summary(ref: CommunityRef, ownerKey: string): Promise<CommunityTeammateSpend> {
+  async summary(
+    ref: CommunityRef,
+    ownerKey: string
+  ): Promise<Omit<CommunityTeammateSpend, 'hasAgentsHere'>> {
     await this.connections.get(ref, ownerKey);
-    const data = await this.read();
+    await this.writing;
+    const data = this.data;
     const spent = this.spentThisMonth(data.months[key(ref, ownerKey)]);
     return {
       monthlyLimitUsd: data.limits[key(ref, ownerKey)] ?? null,
@@ -179,22 +215,46 @@ export class TeammateSpend {
    */
   async record(ref: CommunityRef, ownerKey: string, costUsd: number | undefined): Promise<void> {
     let reached: Parameters<TeammateLimitReached>[0] | null = null;
+    const counted = countedCost(costUsd);
     await this.exclusive(async (data) => {
       const current = this.spentThisMonth(data.months[key(ref, ownerKey)]);
       const next: Month = {
         ...current,
-        usd: current.usd + (costUsd ?? TEAMMATE_TURN_ESTIMATE_USD),
-        estimated: current.estimated + (costUsd === undefined ? 1 : 0),
+        usd: current.usd + counted.usd,
+        estimated: current.estimated + (counted.estimated ? 1 : 0),
       };
       const limit = data.limits[key(ref, ownerKey)];
-      if (limit !== undefined && next.usd >= limit && !next.told) {
-        next.told = true;
+      if (limit !== undefined && next.usd >= limit && !next.told)
         reached = { ref, ownerKey, limitUsd: limit, month: next.month };
-      }
       data.months[key(ref, ownerKey)] = next;
       return true;
     });
-    if (reached) this.reached(reached);
+    if (reached) await this.tell(reached);
+  }
+
+  /** Tell the owner a limit was reached, and record it as told only once they were. */
+  private async tell(reached: Parameters<TeammateLimitReached>[0]): Promise<void> {
+    if (!this.notices.reached) return;
+    try {
+      await this.notices.reached(reached);
+    } catch (error) {
+      logger.warn('[TeammateSpend] Could not tell the owner a space reached its limit', {
+        communityRef: reached.ref,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    await this.exclusive(async (data) => {
+      const month = data.months[key(reached.ref, reached.ownerKey)];
+      // Only the same month and limit: a new one since is a new decision, told on its own.
+      if (
+        month?.month !== reached.month ||
+        data.limits[key(reached.ref, reached.ownerKey)] !== reached.limitUsd
+      )
+        return false;
+      month.told = true;
+      return true;
+    });
   }
 
   /** A connection's month as recorded, or a fresh one when the record is from another month. */
@@ -203,19 +263,45 @@ export class TeammateSpend {
     return recorded?.month === month ? recorded : { month, usd: 0, estimated: 0, told: false };
   }
 
-  private async read(): Promise<SpendFile> {
+  /**
+   * The file as it stands, or an empty counter when there is none. A file that cannot be read is
+   * moved aside, logged and told to the owner once, and the counter starts empty, so a damaged
+   * file never leaves every space unable to change its limit.
+   */
+  private readOrReset(): SpendFile {
+    let text: string;
     try {
-      return FileSchema.parse(JSON.parse(await readFile(this.file, 'utf8')));
+      text = readFileSync(this.file, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { limits: {}, months: {} };
-      throw error;
+      return this.reset(error);
     }
+    try {
+      return FileSchema.parse(JSON.parse(text));
+    } catch (error) {
+      return this.reset(error);
+    }
+  }
+
+  private reset(error: unknown): SpendFile {
+    const aside = `${this.file}.corrupt-${this.now()}`;
+    try {
+      renameSync(this.file, aside);
+    } catch {
+      // Unmovable too: the next write replaces it.
+    }
+    logger.error('[TeammateSpend] Teammates’ monthly limits could not be read; starting empty', {
+      setAside: aside,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    this.notices.reset?.();
+    return { limits: {}, months: {} };
   }
 
   /** Read, change and (when `change` says so) write, one at a time, keeping the copy in memory. */
   private exclusive(change: (data: SpendFile) => Promise<boolean>): Promise<void> {
     const run = async () => {
-      const data = await this.read();
+      const data = this.readOrReset();
       if (await change(data)) await this.write(data);
       this.data = data;
     };

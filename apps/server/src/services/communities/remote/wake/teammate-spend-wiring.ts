@@ -9,7 +9,7 @@ import { setTeammateTurnCostSink } from '../../../core/turn-power/teammate-turn-
 import { notify } from '../../../notifications/notification-service.js';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteMirrorStore } from '../mirror-store.js';
-import { getRemoteConnectionStore, getTeammateSpend, setTeammateLimitReached } from '../state.js';
+import { getRemoteConnectionStore, getTeammateSpend, setTeammateSpendNotices } from '../state.js';
 
 /**
  * Count each teammate turn against the space whose room it answered, and tell the owner when
@@ -18,23 +18,25 @@ import { getRemoteConnectionStore, getTeammateSpend, setTeammateLimitReached } f
  * @param mirrors - The mirror store, which knows which space each local room copies.
  */
 export function wireTeammateSpend(mirrors: Pick<RemoteMirrorStore, 'connectionOf'>): void {
-  setTeammateLimitReached(({ ref, ownerKey, limitUsd, month }) => {
-    void getRemoteConnectionStore()
-      .get(ref, ownerKey)
-      .then((connection) =>
-        notify('community.teammate-limit', {
-          ref,
-          communityLabel: connection.label,
-          limitUsd,
-          month,
-        })
-      )
-      .catch((error: unknown) => {
-        logger.warn('[teammate-spend] Could not tell the owner a space reached its limit', {
-          communityRef: ref,
+  setTeammateSpendNotices({
+    // Rejects when the owner could not be told, so the counter tries again next time.
+    reached: async ({ ref, ownerKey, limitUsd, month }) => {
+      const connection = await getRemoteConnectionStore().get(ref, ownerKey);
+      const told = await notify('community.teammate-limit', {
+        ref,
+        communityLabel: connection.label,
+        limitUsd,
+        month,
+      });
+      if (!told.notification && !told.deduped) throw new Error('No notification was raised');
+    },
+    reset: () => {
+      void notify('community.teammate-limits-reset', {}).catch((error: unknown) => {
+        logger.warn('[teammate-spend] Could not tell the owner their limits were reset', {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+    },
   });
   setTeammateTurnCostSink(({ roomId, costUsd }) => {
     const connection = mirrors.connectionOf(roomId);

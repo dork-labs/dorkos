@@ -18,7 +18,7 @@ import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
 import { RemoteAnswerIn } from './wake/answer-in.js';
 import { AnswerInStore } from './wake/answer-in-store.js';
-import { TeammateSpend, type TeammateLimitReached } from './wake/teammate-spend.js';
+import { TeammateSpend, type TeammateSpendNotices } from './wake/teammate-spend.js';
 import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteDmCommunityAdapter } from './adapter/remote-dm-adapter.js';
@@ -167,32 +167,42 @@ export function getRemoteWakePolicy(): RemoteWakePolicy {
   return wakePolicy;
 }
 
-/** Who is told when teammates' turns reach a space's monthly limit; set at startup. */
-let teammateLimitReached: TeammateLimitReached = () => undefined;
+/** Who tells the owner about the teammate counter; set at startup by `wireTeammateSpend`. */
+const teammateSpendNotices: Required<TeammateSpendNotices> = {
+  reached: async () => {
+    throw new Error('Nobody is wired to tell the owner yet');
+  },
+  // Kept until someone can tell: the counter reads its file before startup wires the notices.
+  reset: () => {
+    teammateSpendResetUntold = true;
+  },
+};
+let teammateSpendResetUntold = false;
 
 /**
- * Set who is told, once a month per space, that teammates' turns reached its limit (DOR-2956).
+ * Set who tells the owner a space reached its teammate limit, or that the limits were reset
+ * (DOR-2956). A reset that happened before this is told now.
  *
- * @param reached - The notifier.
+ * @param notices - The notifiers.
  */
-export function setTeammateLimitReached(reached: TeammateLimitReached): void {
-  teammateLimitReached = reached;
+export function setTeammateSpendNotices(notices: Required<TeammateSpendNotices>): void {
+  teammateSpendNotices.reached = notices.reached;
+  teammateSpendNotices.reset = notices.reset;
+  if (teammateSpendResetUntold) {
+    teammateSpendResetUntold = false;
+    notices.reset();
+  }
 }
 
 /**
  * Each space's monthly limit on what teammates' turns may cost, and this month's spending
- * (DOR-2956). The first call starts reading it; until that read lands, a space with a limit
- * wakes no teammate.
+ * (DOR-2956), read from its file on the first call.
  */
 export function getTeammateSpend(): TeammateSpend {
   if (teammateSpend) return teammateSpend;
-  teammateSpend = new TeammateSpend(resolveDorkHome(), getRemoteConnectionStore(), (reached) =>
-    teammateLimitReached(reached)
-  );
-  void teammateSpend.load().catch((error: unknown) => {
-    logger.warn('[remote-community] Could not read teammates’ monthly limits', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+  teammateSpend = new TeammateSpend(resolveDorkHome(), getRemoteConnectionStore(), {
+    reached: (reached) => teammateSpendNotices.reached(reached),
+    reset: () => teammateSpendNotices.reset(),
   });
   return teammateSpend;
 }

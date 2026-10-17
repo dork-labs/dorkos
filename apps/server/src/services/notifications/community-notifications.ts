@@ -37,6 +37,11 @@ export interface CommunityNotificationPayloads {
    * Teammates' turns in a space reached the monthly limit its owner set (DOR-2956). Raised by the
    * space's spending counter (`communities/remote/wake/teammate-spend.ts`), once a month.
    */
+  /**
+   * The file that holds teammates' monthly limits could not be read and was set aside, so every
+   * limit is gone until the owner sets it again (DOR-2956). Raised once per reset.
+   */
+  'community.teammate-limits-reset': Record<string, never>;
   'community.teammate-limit': {
     /** The owner's connection ref: the subject, and where "Open" goes. */
     ref: string;
@@ -49,8 +54,15 @@ export interface CommunityNotificationPayloads {
   };
 }
 
-/** The two space kinds. */
+/** The space kinds. */
 type CommunityKind = keyof CommunityNotificationPayloads;
+
+/** Every space kind, each wired to the emitter that raises it. */
+export const COMMUNITY_NOTIFICATION_KINDS: readonly CommunityKind[] = [
+  'community.owner-replacement',
+  'community.teammate-limit',
+  'community.teammate-limits-reset',
+];
 
 /**
  * How long one owner-replacement notice stays deduped: longer than any request can stay open,
@@ -112,8 +124,24 @@ export const COMMUNITY_NOTIFICATION_ENTRIES: {
     title: (p) => `Teammates reached your limit in ${p.communityLabel}`,
     body: () => 'Their messages won’t wake your agents until next month, or a higher limit.',
     actions: () => OPEN_ACTION,
-    dedupeKey: (p) => `teammate-limit:${p.ref}:${p.month}`,
+    // Per limit too: a new limit is a new decision, and reaching it is told again.
+    dedupeKey: (p) => `teammate-limit:${p.ref}:${p.month}:${p.limitUsd}`,
     dedupeWindowMs: TEAMMATE_LIMIT_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+  'community.teammate-limits-reset': {
+    // Raised when the counter's file could not be read and was moved aside
+    // (`communities/remote/wake/teammate-spend.ts`). `notable`: nothing is blocked, since no
+    // space has a limit now, but the owner should know their limits are gone.
+    kind: 'community.teammate-limits-reset',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'system',
+    locate: () => ({ subjectId: 'teammate-limits' }),
+    title: () => 'Teammates’ monthly limits were reset',
+    body: () => 'The saved limits couldn’t be read. Set them again in each space.',
+    actions: () => OPEN_ACTION,
+    dedupeKey: () => 'teammate-limits-reset',
     relay: 'never',
   },
 };
