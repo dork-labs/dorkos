@@ -451,13 +451,15 @@
   --msg-tool-border: hsl(var(--border) / 0.6);
 
   /* Elevation scale, consumed by the shadow-* and card-interactive utilities.
-     Ported from apps/site (DOR-191). Light mode uses low-alpha shadows so
-     panels lift gently against the near-white background. Named --elevation-*
-     (not --shadow-*) to avoid colliding with Tailwind's default shadow tokens. */
-  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
-  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
-  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
-  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.07), 0 8px 10px -6px rgb(0 0 0 / 0.07);
+     Ported from apps/site (DOR-191). Named --elevation-* (not --shadow-*) to
+     avoid colliding with Tailwind's default shadow tokens. Light mode is
+     exactly Tailwind's own sm/md/lg/xl (same offsets, 0.1 alpha): Tailwind's
+     shadow-sm/md/lg/xl are routed through this scale in @theme, so matching
+     its values is what keeps light mode unchanged for every one of them. */
+  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
 
   /* Nebula radar: gradient edge fades to the panel background */
   --nebula-edge: #e8e8e8;
@@ -591,18 +593,30 @@
      touch, so cards at rest stay close to the page; `card-interactive` stepping to `elevated`
      on hover is what lightens them, which doubles as the hover cue. Every step keeps the same four layers in
      the same order so a hover transition
-     interpolates instead of jumping. */
+     interpolates instead of jumping.
+
+     The surface lift of each step is its own token, so the tints that climb
+     with the surface (below) are computed from it rather than kept in step by
+     hand. */
+  --elevation-lift-soft: 2%;
+  --elevation-lift-elevated: 5%;
+  --elevation-lift-floating: 8%;
+  --elevation-lift-modal: 11%;
   --elevation-soft:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.08), inset 0 0 0 100vmax rgb(255 255 255 / 0.02),
-    0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+    inset 0 1px 0 0 rgb(255 255 255 / 0.08),
+    inset 0 0 0 100vmax rgb(255 255 255 / var(--elevation-lift-soft)), 0 1px 3px 0 rgb(0 0 0 / 0.5),
+    0 1px 2px -1px rgb(0 0 0 / 0.5);
   --elevation-elevated:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 100vmax rgb(255 255 255 / 0.05),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.12),
+    inset 0 0 0 100vmax rgb(255 255 255 / var(--elevation-lift-elevated)),
     0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
   --elevation-floating:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.16), inset 0 0 0 100vmax rgb(255 255 255 / 0.08),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.16),
+    inset 0 0 0 100vmax rgb(255 255 255 / var(--elevation-lift-floating)),
     0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.6);
   --elevation-modal:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.2), inset 0 0 0 100vmax rgb(255 255 255 / 0.11),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.2),
+    inset 0 0 0 100vmax rgb(255 255 255 / var(--elevation-lift-modal)),
     0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.7);
 
   /* Nebula radar: gradient edge fades to the panel background */
@@ -670,27 +684,28 @@
    selection tints (muted 9%, accent 12%) would sit at or below it: a menu's
    highlighted row would vanish, or read as a hole. Inside anything that floats,
    muted and accent step up with the surface so a highlight is always a step
-   above what it sits on. Both the client names and the @dork-labs/ui names are
-   set, because each was resolved once at the root and inherited as a value.
-   `soft` is left alone: cards at rest barely lift. Kept in step with the
-   surface-lift percentages in the dark --elevation-* scale above. */
+   above what it sits on: muted is 8% plus the surface's lift, accent 3% above
+   muted, both computed from the --elevation-lift-* tokens in the dark scale
+   above, so changing a lift moves its tints with it. Both the client names and
+   the @dork-labs/ui names are set, because each was resolved once at the root
+   and inherited as a value. `soft` is left alone: cards at rest barely lift. */
 .dark :where(.shadow-md, .shadow-elevated) {
-  --muted: 0 0% 13%;
-  --dui-muted: 0 0% 13%;
-  --accent: 0 0% 16%;
-  --dui-accent: 0 0% 16%;
+  --muted: 0 0% calc(8% + var(--elevation-lift-elevated));
+  --dui-muted: var(--muted);
+  --accent: 0 0% calc(11% + var(--elevation-lift-elevated));
+  --dui-accent: var(--accent);
 }
 .dark :where(.shadow-lg, .shadow-floating) {
-  --muted: 0 0% 16%;
-  --dui-muted: 0 0% 16%;
-  --accent: 0 0% 19%;
-  --dui-accent: 0 0% 19%;
+  --muted: 0 0% calc(8% + var(--elevation-lift-floating));
+  --dui-muted: var(--muted);
+  --accent: 0 0% calc(11% + var(--elevation-lift-floating));
+  --dui-accent: var(--accent);
 }
 .dark :where(.shadow-xl, .shadow-modal) {
-  --muted: 0 0% 19%;
-  --dui-muted: 0 0% 19%;
-  --accent: 0 0% 22%;
-  --dui-accent: 0 0% 22%;
+  --muted: 0 0% calc(8% + var(--elevation-lift-modal));
+  --dui-muted: var(--muted);
+  --accent: 0 0% calc(11% + var(--elevation-lift-modal));
+  --dui-accent: var(--accent);
 }
 
 @utility shadow-elevated {

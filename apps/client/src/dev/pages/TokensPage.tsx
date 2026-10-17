@@ -131,11 +131,11 @@ const RADII = [
 ] as const;
 
 const SHADOWS = [
-  { cls: 'shadow-sm', label: 'shadow-sm' },
-  { cls: 'shadow', label: 'shadow' },
-  { cls: 'shadow-md', label: 'shadow-md' },
-  { cls: 'shadow-lg', label: 'shadow-lg' },
-  { cls: 'shadow-xl', label: 'shadow-xl' },
+  { cls: 'shadow-xs', label: 'shadow-xs · inputs' },
+  { cls: 'shadow-soft', label: 'soft · sm' },
+  { cls: 'shadow-elevated', label: 'elevated · md' },
+  { cls: 'shadow-floating', label: 'floating · lg' },
+  { cls: 'shadow-modal', label: 'modal · xl' },
 ] as const;
 
 /** Client-local token reference; portable colors are shown in the shared UI catalog. */
@@ -385,11 +385,14 @@ function RadiiSection() {
 
 function ShadowsSection() {
   return (
-    <PlaygroundSection title="Shadows" description="Standard Tailwind shadow scale.">
+    <PlaygroundSection
+      title="Shadows"
+      description="The elevation scale. In dark mode, height is light. shadow-sm/md/lg/xl are the same four steps."
+    >
       <div className="flex flex-wrap gap-4">
         {SHADOWS.map((s) => (
           <div key={s.cls} className="space-y-1.5 text-center">
-            <div className={cn('bg-card h-16 w-24 rounded-lg border', s.cls)} />
+            <div className={cn('bg-card h-16 w-24 rounded-lg', s.cls)} />
             <p className="text-muted-foreground text-3xs font-mono">{s.label}</p>
           </div>
         ))}

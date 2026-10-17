@@ -75,11 +75,11 @@ A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` token
 2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
    3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
 
-Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. `shadow-xs`/`2xs` stay Tailwind's (inputs and buttons should read as recessed, not raised).
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers, switches and outline buttons use `shadow-xs`, because they should read as recessed, not raised.
 
 **Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
 
-**Tints climb with the surface.** Inside anything at `shadow-md` or above in dark mode, `muted` and `accent` step up with it (13/16% → 16/19% → 19/22%), so a menu's hover or selected row is always a step above its lifted surface rather than a hole in it. If you change a lift percentage, change these with it.
+**Tints climb with the surface.** Inside anything at `shadow-md` or above in dark mode, `muted` and `accent` step up with it (13/16% → 16/19% → 19/22%), so a menu's hover or selected row is always a step above its lifted surface rather than a hole in it. They are computed from the `--elevation-lift-*` tokens (muted is 8% plus the lift, accent 3% above muted), so changing a lift moves its tints with it.
 
 ### Brand Accent
 
