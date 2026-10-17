@@ -10,6 +10,9 @@ import { ImportProjectsDialog } from '../ui/ImportProjectsDialog';
 
 // Stand in for the heavy discovery UI: a single button that reports one join,
 // so the dialog's completion state can be driven deterministically.
+const hub = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+
 vi.mock('../ui/DiscoveryView', () => ({
   DiscoveryView: ({ onRegistered }: { onRegistered?: () => void }) => (
     <button data-testid="fake-join" onClick={() => onRegistered?.()}>
@@ -49,6 +52,7 @@ describe('ImportProjectsDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useImportProjectsStore.setState({ isOpen: false });
+    hub.value = false;
   });
 
   afterEach(cleanup);
@@ -62,6 +66,14 @@ describe('ImportProjectsDialog', () => {
     return waitFor(() =>
       expect(screen.getByText('Bring in existing projects')).toBeInTheDocument()
     );
+  });
+
+  it('never opens on a hub, whatever asked it to', async () => {
+    hub.value = true;
+    render(<ImportProjectsDialog />);
+    useImportProjectsStore.getState().open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('Done with nothing joined just closes — no navigation', async () => {

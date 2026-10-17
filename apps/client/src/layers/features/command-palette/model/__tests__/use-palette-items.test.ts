@@ -348,6 +348,16 @@ describe('usePaletteItems', () => {
     expect(ids).toContain('theme');
   });
 
+  it('on a hub, offers nothing that looks through this computer’s folders', () => {
+    hub.value = true;
+    const onHub = renderHook(() => usePaletteItems(null, NOW));
+    const ids = corpusOf(onHub.result.current, 'quick-action').map((q) => q.id);
+    hub.value = false;
+    expect(ids).not.toContain('discover');
+    expect(ids).not.toContain('browse');
+    expect(ids).toContain('create-agent');
+  });
+
   it('gives every feature row a name and something to run', () => {
     const { result } = renderHook(() => usePaletteItems(null, NOW));
     for (const row of corpusOf(result.current, 'feature')) {

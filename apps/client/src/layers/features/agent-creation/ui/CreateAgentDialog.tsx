@@ -91,6 +91,8 @@ export function CreateAgentDialog() {
         : null;
   const offerSchedules = useOfferSchedules(offerPackage);
   const { data: config } = useConfig();
+  // A hub holds none of the person's projects, so the wizard offers no import there.
+  const importHere = config?.serverRole === 'hub' ? undefined : handleImport;
   // Where a marketplace agent lives: its package's own folder, so updates find
   // it. The person's name for it is its display name.
   const packageDirectory =
@@ -320,7 +322,7 @@ export function CreateAgentDialog() {
                   <AgentGallery
                     onDesignYourOwn={handleDesignYourOwn}
                     onSelectTemplate={handleSelectTemplate}
-                    onImport={handleImport}
+                    onImport={importHere}
                   />
                 )}
                 {step === 'arrival' && seed && (
@@ -347,7 +349,7 @@ export function CreateAgentDialog() {
                     jobLine={jobLine}
                     previewCapabilities={previewCapabilities}
                     onBack={handleBackFromNaming}
-                    onImportInstead={handleImport}
+                    onImportInstead={importHere}
                     onCreate={() => handleCreate()}
                     isCreating={createAgent.isPending}
                     packageSchedules={offerSchedules.schedules}

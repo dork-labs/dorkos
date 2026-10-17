@@ -13,6 +13,7 @@ import {
   Button,
 } from '@/layers/shared/ui';
 import { useImportProjectsStore } from '@/layers/shared/model';
+import { useIsHub } from '@/layers/entities/config';
 import { DiscoveryView } from './DiscoveryView';
 
 /**
@@ -26,9 +27,12 @@ import { DiscoveryView } from './DiscoveryView';
  * on the Team page. Bringing in nothing is a sane no-op — Done just closes.
  *
  * Controlled entirely by `useImportProjectsStore`; mounted once in the app shell.
+ * Never opens on a hub, whose disk holds none of the person's projects: every
+ * way in is hidden there too, and this is the guard behind all of them.
  */
 export function ImportProjectsDialog() {
-  const isOpen = useImportProjectsStore((s) => s.isOpen);
+  const isHub = useIsHub();
+  const isOpen = useImportProjectsStore((s) => s.isOpen) && !isHub;
   const close = useImportProjectsStore((s) => s.close);
   const navigate = useNavigate();
 
