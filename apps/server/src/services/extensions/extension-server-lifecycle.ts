@@ -22,7 +22,7 @@ import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyHandler } from './http/extension-proxy.js';
-import { bridgeExpressRouter } from './http/express-bridge.js';
+import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
@@ -33,7 +33,6 @@ import {
   mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
-import { currentServerRole } from '../../lib/server-role.js';
 import { getExtensionInbox } from './inbox/extension-inbox.js';
 import { getAgentSendService } from './agent-send/agent-send.js';
 import { logger } from '../../lib/logger.js';
@@ -481,10 +480,7 @@ export class ExtensionServerLifecycle {
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
-        // An Express router writes straight to the socket, past the reply
-        // rules that keep a reply from running as a page (`reply-headers.ts`),
-        // so a hub mounts none (DOR-2937). Fetch handlers still answer there.
-        currentServerRole() === 'hub' ? hubRefusesRouter(id, router) : bridgeExpressRouter(router),
+        bridgeExpressRouterHere(id, router),
         this.proxyFor(id, record),
         fetch && createFetchHandler(record.manifest.name, fetch)
       );
@@ -992,12 +988,4 @@ function sealAgentTools(
     );
   }
   return agentTools;
-}
-
-/** On a hub, mount no Express router, and say so when there was one to mount. */
-function hubRefusesRouter(id: string, router: Router): null {
-  if (router.stack.length > 0) {
-    logger.warn(`[Extensions] ${id}: Express routes are off on a hub; use a fetch handler`);
-  }
-  return null;
 }

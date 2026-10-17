@@ -41,6 +41,8 @@ import type { AgentIdentity } from '../../core/agent-identity/agent-identity-ser
 import type { RequestUser } from '../../core/auth/session-gate.js';
 import { ingressOf } from '../../core/remote/ingress-mark.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
+import { logger } from '../../../lib/logger.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 
 /**
  * The facts of a request an extension's router is handling
@@ -105,4 +107,21 @@ export function bridgeExpressRouter(router: Router): ExtensionHttpHandler {
       });
     });
   };
+}
+
+/**
+ * {@link bridgeExpressRouter}, except on a hub, which mounts no Express router
+ * (DOR-2937): a router writes straight to the socket, past the reply rules that
+ * keep a reply from running as a page (`reply-headers.ts`). Fetch handlers
+ * still answer there. Says so in the log when there was a route to mount.
+ *
+ * @param id - The extension's id, for the log line.
+ * @param router - The router its `register()` filled.
+ */
+export function bridgeExpressRouterHere(id: string, router: Router): ExtensionHttpHandler | null {
+  if (currentServerRole() !== 'hub') return bridgeExpressRouter(router);
+  if (router.stack.length > 0) {
+    logger.warn(`[Extensions] ${id}: Express routes are off on a hub; use a fetch handler`);
+  }
+  return null;
 }
