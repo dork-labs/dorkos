@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components following the "Calm Tech" design language. Portable palette tokens live in `packages/ui/tokens.css`; the client bridges its existing names in `apps/client/src/index.css`, which still owns app-specific tokens and font scaling. The shared package also owns primitive animations, icon-size defaults and reduced-motion guards. Client font scaling remains a host bridge. See [Shared UI Package](shared-ui.md) for ownership, portal theme containers, imports, distribution checks and release.
+This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI components, following the [design system](design-system.md). Portable palette tokens live in `packages/ui/tokens.css`; the client bridges its existing names in `apps/client/src/index.css`, which still owns app-specific tokens and font scaling. The shared package also owns primitive animations, icon-size defaults and reduced-motion guards. Client font scaling remains a host bridge. See [Shared UI Package](shared-ui.md) for ownership, portal theme containers, imports, distribution checks and release.
 
 ## Key Files
 
@@ -267,7 +267,7 @@ Both cap tokens live in `index.css` next to the `--msg-*` family — widening a 
 
 ## FilterBar Styling
 
-The `FilterBar` compound component (`shared/ui/filter-bar/`) uses standard Calm Tech tokens. Its sub-components follow these styling conventions:
+The `FilterBar` compound component (`shared/ui/filter-bar/`) uses the standard design tokens. Its sub-components follow these styling conventions:
 
 | Sub-component       | Key styles                                                      |
 | ------------------- | --------------------------------------------------------------- |
@@ -339,10 +339,10 @@ See `contributing/design-system.md` for the full FilterBar component specificati
 ```tsx
 // ❌ Don't use pure black/white
 <div className="bg-white text-black dark:bg-black dark:text-white">
-  // Harsh, not Calm Tech philosophy
+  // Harsh: pure white glares, pure black is too stark
 </div>
 
-// ✅ Use tinted neutrals from tokens
+// ✅ Use the off-white and near-black neutrals from tokens
 <div className="bg-background text-foreground">
   // Rich neutrals: hsl(0 0% 98%) in light, hsl(0 0% 4%) in dark
 </div>
@@ -392,7 +392,7 @@ export function Button(props) {
 
 ## Design System Quick Reference
 
-The "Calm Tech" design language specifications:
+The design system's key numbers:
 
 | Element                | Specification                                           |
 | ---------------------- | ------------------------------------------------------- |
@@ -405,14 +405,9 @@ The "Calm Tech" design language specifications:
 | **Shadow hierarchy**   | soft → elevated → floating → modal                      |
 | **Container widths**   | narrow (42rem), default (56rem), wide (72rem)           |
 
-### Core Principles
+### Principles
 
-| Principle                   | Application                        |
-| --------------------------- | ---------------------------------- |
-| **Clarity over decoration** | Every element earns its place      |
-| **Soft depth over flat**    | Subtle shadows create hierarchy    |
-| **Generous space**          | Breathing room makes content shine |
-| **Micro-delight**           | Thoughtful, restrained animations  |
+The design principles live in one place: [design-system.md](design-system.md) → Design Philosophy and Anti-Patterns (honesty of materials, no fake depth, calm over stimulation, readability over decoration). This guide covers how to style, not what to design; where the two disagree, the design system wins.
 
 ## Adding a New Theme Token
 
@@ -562,7 +557,7 @@ export function AccentButton(props) {
 
 ## References
 
-- **[contributing/design-system.md](./design-system.md)** - Complete Calm Tech design language specification
+- **[contributing/design-system.md](./design-system.md)** - The design system: the source of truth for every design rule
 - **[contributing/animations.md](./animations.md)** - Motion library patterns and spring physics
 - **[apps/client/src/index.css](../apps/client/src/index.css)** - Live theme token definitions
 - **[Tailwind CSS v4 Docs](https://tailwindcss.com/docs)** - Official Tailwind CSS documentation
