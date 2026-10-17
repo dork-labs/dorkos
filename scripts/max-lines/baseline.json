@@ -28,7 +28,7 @@
     "apps/client/src/layers/shared/ui/index.ts": 505,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
     "apps/client/src/layers/shared/ui/sidebar-menu-node.tsx": 617,
-    "apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx": 595,
+    "apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx": 592,
     "apps/client/src/layers/widgets/session/ui/ChatPanel.tsx": 542,
     "apps/community/src/app.ts": 514,
     "apps/community/src/browser/CommunityApp.tsx": 537,

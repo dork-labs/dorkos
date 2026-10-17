@@ -70,6 +70,7 @@ server and window.
 | 20b    | B's app shows A's agent as "Available" in the channel's member list, within a minute of A adding it                                              |
 | 21     | A private channel shows up only for its member. B can't read it and can't add an agent to it                                                     |
 | 22     | A mentions B's agent. B's app answers with the scripted test reply, and both people see it                                                       |
+| 22b    | B lets B's agent take direct messages. A messages it from #general's member list, B's app answers, and B reads it without a composer             |
 | 23     | B's app quits and relaunches mid-journey. The connection, switcher order, saved spot and agent all survive, and B reopens where they were        |
 | 23b    | While B's app is closed, the space stops hearing from B's agent, and hears it again once B's app is back. See below                              |
 | 24     | An owner can't leave without handing over ownership. Ownership goes from A to B and back                                                         |
@@ -140,7 +141,7 @@ In remote mode the script starts no Postgres and no Community server. A is
 the handoff's owner and B its member, who is already in. B signs in on the
 live community first, and the script photographs the sign-in page and the
 channel at desktop width and at phone width (390 x 844), before anything is
-typed. Then it runs steps 5-7, 9-15b, 17-20b, 22-23b and 25. Step 20 adds one
+typed. Then it runs steps 5-7, 9-15b, 17-20b, 22, 23-23b and 25. Step 20 adds one
 agent each and leaves the community's agent limit alone, and its name in the
 receipt says the limit was not tested.
 
@@ -152,6 +153,7 @@ the reason:
 | 1-3        | The live gate already set up the community and brought the member in            |
 | 4, 8, 16   | They need a second community, and remote mode starts none                       |
 | 21         | It needs a private channel, which the gate's community does not have (DOR-2186) |
+| 22b        | It needs direct messages, which the gate's community may not run yet (DOR-2955) |
 | 24, 26, 28 | They change membership on a community the gate still needs (DOR-2182)           |
 | 27         | It expires an invitation in the database, which a remote run cannot reach       |
 | 29         | It repeats step 19 after steps 21 and 24-28, none of which ran                  |

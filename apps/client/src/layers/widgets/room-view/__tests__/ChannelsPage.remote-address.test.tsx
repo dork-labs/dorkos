@@ -66,6 +66,8 @@ vi.mock('@/layers/entities/community', () => ({
   // (spec `official-community-space` D5; `use-space-visible.test.tsx` covers that rule).
   useSpaceVisible: () => ({ visible: spaces.enabled, isLoading: spaces.isLoading }),
   OfficialSpaceUnreachableNotice: () => null,
+  communityAccessState: () => ({ capabilities: { read: true }, fingerprint: 'fp' }),
+  useRemoteCommunityDm: () => ({ dm: undefined, pending: false }),
 }));
 afterEach(() => {
   cleanup();

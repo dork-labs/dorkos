@@ -15,7 +15,7 @@ describe('two-Desktop step plan', () => {
     const all = [...REMOTE_RUN_STEPS, ...skipped];
     expect(new Set(all).size).toBe(all.length);
     expect([...all].sort()).toEqual([...ALL_STEPS].sort());
-    expect(ALL_STEPS).toHaveLength(32); // 1-29 with 15b, 20b and 23b
+    expect(ALL_STEPS).toHaveLength(33); // 1-29 with 15b, 20b, 22b and 23b
   });
 
   it('runs the remote journey the spec names and gives every skip a reason', () => {

@@ -171,6 +171,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../community-connections.js', () => ({
   resolveCommunityOwner: () => fixture.currentOwner,
 }));
+vi.mock('../../services/communities/remote/dms/agent-dms-store.js', () => ({
+  getAgentDmsStore: () => ({ get: async () => [], set: async () => undefined }),
+}));
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: (_ref: string, owner: string) => {
     fixture.adapterOwners.push(owner);

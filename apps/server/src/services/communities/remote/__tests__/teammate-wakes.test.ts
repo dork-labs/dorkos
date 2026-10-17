@@ -44,7 +44,7 @@ const members: RemoteWakeGate = {
 let seq = 0;
 
 /** A space mirror with Ana enrolled, a clock the test moves, and the gate production wires. */
-function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean } = {}) {
+function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean; kind?: 'dm' } = {}) {
   const clock = { now: START };
   const state: { mirrors?: RemoteMirrorStore } = {};
   const harness: RoomHarness = createRoomHarness({
@@ -83,6 +83,7 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean } = {}
     ownerAuthorId: harness.human,
     accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
     authorizedAt: new Date(START).toISOString(),
+    ...(opts.kind ? { kind: opts.kind } : {}),
   };
   const localRoom = mirrors.ensureRoom(room);
 
@@ -235,5 +236,56 @@ describe('the owner’s own post in the space', () => {
     await post(OWNER);
 
     expect(harness.runner.turns).toHaveLength(1);
+  });
+});
+
+describe('a direct message with the agent', () => {
+  /** Only the owner wakes agents: the setting that keeps teammates' mentions as history. */
+  const ownerOnly: RemoteWakeGate = {
+    ...members,
+    wakes: (ref, _owner, memberId) => ref === REF && memberId === OWNER_MEMBER,
+  };
+
+  it('is addressed to the agent without a mention, as a teammate’s turn', async () => {
+    const { harness, post } = space({ gate: members, kind: 'dm' });
+
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(1);
+    const turn = harness.runner.turns[0]!;
+    expect(turn.teammate).toBe(true);
+    expect(turn.permissionCeiling).toEqual(TEAMMATE_CEILING);
+  });
+
+  it('wakes nobody in an ordinary channel without a mention', async () => {
+    const { harness, post } = space({ gate: members });
+
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(0);
+  });
+
+  it('pays from the same budget per person', async () => {
+    const { harness, post } = space({ gate: members, kind: 'dm' });
+
+    for (let i = 0; i < 4; i += 1) await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(3);
+  });
+
+  it('stays history when the owner lets only themselves wake agents', async () => {
+    const { harness, post } = space({ gate: ownerOnly, kind: 'dm' });
+
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(0);
+  });
+
+  it('stays history on an agent whose runtime cannot hold a teammate’s turn', async () => {
+    const { harness, post } = space({ gate: members, kind: 'dm', runsTeammateTurns: false });
+
+    await post(TEAMMATE, []);
+
+    expect(harness.runner.turns).toHaveLength(0);
   });
 });

@@ -19,6 +19,11 @@ import {
   RemoteCommunityReportRequestSchema,
   type RemoteCommunityTransport,
 } from '@dorkos/shared/community-views';
+import {
+  RemoteCommunityAgentDmsResponseSchema,
+  RemoteCommunityDmsResponseSchema,
+  RemoteCommunityStartDmResponseSchema,
+} from '@dorkos/shared/community-dm-views';
 import { CommunityDeliverySnapshotSchema } from '@dorkos/shared/community-deliveries';
 import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
 import { fetchJSON, fetchNoContent, fetchResponse, buildQueryString } from './http-client';
@@ -249,6 +254,48 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
           body: file,
         })
       ).attachment;
+    },
+    async listRemoteCommunityDms(ref) {
+      return qualified(
+        RemoteCommunityDmsResponseSchema.parse(
+          await fetchJSON(baseUrl, `${communityPath(ref)}/dms`)
+        ),
+        ref
+      );
+    },
+    async startRemoteCommunityDm(ref, agentMemberId) {
+      return qualified(
+        RemoteCommunityStartDmResponseSchema.parse(
+          await fetchJSON(baseUrl, `${communityPath(ref)}/dms`, {
+            method: 'POST',
+            body: JSON.stringify({ agentMemberId }),
+          })
+        ).dm,
+        ref
+      );
+    },
+    async setRemoteCommunityAgentDms(ref, localAgentId, accepts) {
+      const result = RemoteCommunityAgentDmsResponseSchema.parse(
+        await fetchJSON(baseUrl, `${agentPath(ref, localAgentId)}/dms`, {
+          method: 'PUT',
+          body: JSON.stringify({ accepts }),
+        })
+      );
+      if (result.localAgentId !== localAgentId)
+        throw new Error('The space returned a different agent.');
+      return result;
+    },
+    async listRemoteCommunityAgentDmEntries(ref, roomId, localAgentId) {
+      return qualified(
+        RemoteCommunityHistoryResponseSchema.parse(
+          await fetchJSON(
+            baseUrl,
+            `${communityPath(ref)}/dms/${encodeURIComponent(roomId)}/entries${buildQueryString({ agent: localAgentId })}`
+          )
+        ),
+        ref,
+        roomId
+      );
     },
     async downloadRemoteCommunityAttachment(ref, roomId, attachmentId) {
       const response = await fetchResponse(

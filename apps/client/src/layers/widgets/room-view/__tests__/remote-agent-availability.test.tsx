@@ -11,6 +11,9 @@ import type {
   RemoteCommunityMembersResponse,
 } from '@dorkos/shared/community-views';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 import { formatOfflineSince, remoteAgentAvailabilityLabel } from '../lib/remote-agent-availability';
 import { RemoteCommunityRoster } from '../ui/RemoteCommunityRoster';
 
@@ -50,18 +53,22 @@ function renderRoster(members: RemoteCommunityMember[]) {
     stale: false,
   };
   render(
-    <RemoteCommunityRoster
-      roster={roster}
-      failed={false}
-      canMention
-      onMention={() => undefined}
-      community="ref"
-      roomId="room"
-      online
-      canEnroll={false}
-      agentsKey="k"
-      accessFingerprint="f"
-    />
+    <QueryClientProvider client={new QueryClient()}>
+      <TransportProvider transport={createMockTransport()}>
+        <RemoteCommunityRoster
+          roster={roster}
+          failed={false}
+          canMention
+          onMention={() => undefined}
+          community="ref"
+          roomId="room"
+          online
+          canEnroll={false}
+          agentsKey="k"
+          accessFingerprint="f"
+        />
+      </TransportProvider>
+    </QueryClientProvider>
   );
 }
 

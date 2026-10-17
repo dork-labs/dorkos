@@ -23,6 +23,7 @@ import {
 } from '../services/communities/remote/state.js';
 import { remoteRoomAccessOf } from '../services/communities/remote/remote-community-adapter.js';
 import { getRoomService } from '../services/rooms/index.js';
+import { getAgentDmsStore } from '../services/communities/remote/dms/agent-dms-store.js';
 import { communityFailure, communityTarget, verifiedConnection } from './remote-community-http.js';
 
 /**
@@ -37,9 +38,10 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
     const { owner, ref } = target;
     try {
       await verifiedConnection(ref, owner, 'enrollAgent');
-      const [agents, bindings] = await Promise.all([
+      const [agents, bindings, takingDms] = await Promise.all([
         getRemoteCommunityAdapter(ref, owner).listEnrolledAgents(),
         Promise.resolve(getRemoteCommunityEnrollmentStore().activeForOwner(ref, owner)),
+        getAgentDmsStore().get(ref, owner),
       ]);
       const author = getRoomService().authorRegistry.getById(owner);
       const byRemoteId = new Map(agents.map((agent) => [agent.memberId, agent]));
@@ -72,6 +74,7 @@ export function registerRemoteCommunityAgentRoutes(router: Hono<ApiEnv>): void {
                 ownerDisplayName: author?.displayName ?? 'Owner',
                 roomIds: joinedRooms.get(binding.localAgentId) ?? [],
                 active: true,
+                acceptsDms: takingDms.includes(binding.localAgentId),
               },
             ]
           : [];
