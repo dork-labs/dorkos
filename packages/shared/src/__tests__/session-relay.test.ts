@@ -1,3 +1,4 @@
+import { generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   RelayComputerFrameSchema,
@@ -14,11 +15,37 @@ import {
   missingRelayFeature,
   negotiateRelayVersion,
   relayFeatureFor,
+  relayFinishTranscript,
+  relayRefuseTranscript,
+  relayWelcomeTranscript,
+  RelayFinishFrameSchema,
+  RelayHandshakeAnswerSchema,
+  RelayHelloFrameSchema,
+  RelaySealedFrameSchema,
+  SESSION_RELAY_IDLE_CLOSE_MS,
   type RelayRequest,
 } from '../session-relay.js';
 
 const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
+const NONCE = randomBytes(32).toString('base64url');
+const EPHEMERAL = randomBytes(32).toString('base64url');
+const SIGNATURE = randomBytes(64).toString('base64url');
+const HUB_ORIGIN = 'https://hub.example.test';
+
+/** A valid `hello`, with any fields swapped in. */
+function hello(extra: Record<string, unknown> = {}) {
+  return {
+    type: 'hello',
+    computerId: 'computer-1',
+    versions: SESSION_RELAY_VERSIONS,
+    features: [...SESSION_RELAY_FEATURES],
+    appVersion: '0.118.0',
+    nonce: NONCE,
+    ephemeralKey: EPHEMERAL,
+    ...extra,
+  };
+}
 
 const PROOF = {
   challengeId: 'c1',
@@ -153,44 +180,84 @@ describe('relay requests carry chats and nothing else', () => {
   });
 });
 
-describe('frames', () => {
-  it('carries no identity in the hello: a computer cannot claim to be anyone', () => {
-    const hello = {
-      type: 'hello',
-      versions: SESSION_RELAY_VERSIONS,
-      features: [...SESSION_RELAY_FEATURES],
-      appVersion: '0.118.0',
-    };
-    expect(RelayComputerFrameSchema.safeParse(hello).success).toBe(true);
+describe('the handshake', () => {
+  it('names only its computer in the hello, and claims no person or power', () => {
+    expect(RelayHelloFrameSchema.safeParse(hello()).success).toBe(true);
     for (const claim of [
       { userId: 'u1' },
       { accountId: 'a1' },
       { local: true },
       { role: 'owner' },
     ]) {
-      expect(RelayComputerFrameSchema.safeParse({ ...hello, ...claim }).success).toBe(false);
+      expect(RelayHelloFrameSchema.safeParse(hello(claim)).success).toBe(false);
     }
   });
 
   it('carries a newer peer feature it does not know rather than refusing the hello', () => {
-    const hello = {
-      type: 'hello',
+    const frame = hello({
       versions: { min: 1, max: 3 },
       features: ['session.stream', 'session.fork'],
-      appVersion: '1.0.0',
-    };
-    expect(decodeRelayFrame(JSON.stringify(hello), RelayComputerFrameSchema)).toEqual(hello);
+    });
+    expect(decodeRelayFrame(JSON.stringify(frame), RelayHelloFrameSchema)).toEqual(frame);
   });
 
   it('refuses a version range that runs backwards', () => {
-    const hello = { type: 'hello', versions: { min: 2, max: 1 }, features: [], appVersion: '1' };
-    expect(RelayComputerFrameSchema.safeParse(hello).success).toBe(false);
+    expect(RelayHelloFrameSchema.safeParse(hello({ versions: { min: 2, max: 1 } })).success).toBe(
+      false
+    );
   });
 
-  it('round-trips every web frame', () => {
+  it.each([
+    ['nonce', 'abc'],
+    ['nonce', randomBytes(16).toString('base64url')],
+    ['ephemeralKey', randomBytes(31).toString('base64url')],
+    ['ephemeralKey', undefined],
+  ])('refuses a hello whose %s is %j', (field, value) => {
+    expect(RelayHelloFrameSchema.safeParse(hello({ [field]: value })).success).toBe(false);
+  });
+
+  it('takes a signed welcome or a signed refuse, and nothing unsigned', () => {
+    const welcome = { type: 'welcome', version: 1, ephemeralKey: EPHEMERAL, signature: SIGNATURE };
+    const refuse = { type: 'refuse', versions: SESSION_RELAY_VERSIONS, signature: SIGNATURE };
+    expect(RelayHandshakeAnswerSchema.safeParse(welcome).success).toBe(true);
+    expect(RelayHandshakeAnswerSchema.safeParse(refuse).success).toBe(true);
+    expect(RelayHandshakeAnswerSchema.safeParse({ ...welcome, signature: undefined }).success).toBe(
+      false
+    );
+    expect(
+      RelayHandshakeAnswerSchema.safeParse({ type: 'refuse', versions: SESSION_RELAY_VERSIONS })
+        .success
+    ).toBe(false);
+    // An Ed25519 signature is exactly 64 bytes.
+    for (const bytes of [63, 65]) {
+      const signature = randomBytes(bytes).toString('base64url');
+      expect(RelayHandshakeAnswerSchema.safeParse({ ...welcome, signature }).success).toBe(false);
+    }
+  });
+
+  it('never takes a handshake frame as a frame of the sealed phase, or the reverse', () => {
+    const welcome = { type: 'welcome', version: 1, ephemeralKey: EPHEMERAL, signature: SIGNATURE };
+    expect(decodeRelayFrame(JSON.stringify(welcome), RelayWebFrameSchema)).toBeNull();
+    expect(decodeRelayFrame(JSON.stringify(welcome), RelaySealedFrameSchema)).toBeNull();
+    expect(decodeRelayFrame(JSON.stringify(hello()), RelayComputerFrameSchema)).toBeNull();
+    const request = JSON.stringify({ type: 'request', id: 'r1', request: EVERY_REQUEST[0] });
+    expect(decodeRelayFrame(request, RelayHandshakeAnswerSchema)).toBeNull();
+    expect(decodeRelayFrame(request, RelayComputerFrameSchema)).toBeNull();
+  });
+});
+
+describe('sealed frames', () => {
+  it('takes a sealed box with a sequence number, and nothing else', () => {
+    const sealed = { type: 'sealed', seq: 0, box: randomBytes(48).toString('base64url') };
+    expect(RelaySealedFrameSchema.safeParse(sealed).success).toBe(true);
+    expect(RelaySealedFrameSchema.safeParse({ ...sealed, seq: -1 }).success).toBe(false);
+    expect(RelaySealedFrameSchema.safeParse({ ...sealed, box: 'not base64!' }).success).toBe(false);
+    expect(RelaySealedFrameSchema.safeParse({ ...sealed, extra: 1 }).success).toBe(false);
+  });
+
+  it('round-trips every inner web frame', () => {
     const frames = [
-      { type: 'welcome', version: 1 },
-      { type: 'refuse', versions: SESSION_RELAY_VERSIONS },
+      { type: 'viewers', count: 0 },
       ...EVERY_REQUEST.map((request, i) => ({ type: 'request', id: `r${i}`, request })),
       { type: 'stream.close', streamId: 's1' },
       { type: 'heartbeat' },
@@ -202,7 +269,7 @@ describe('frames', () => {
     }
   });
 
-  it('round-trips every computer frame', () => {
+  it('round-trips every inner computer frame', () => {
     const error = { status: 404, code: 'not_found', message: 'No such chat.' };
     const frames = [
       { type: 'result', id: 'r1', ok: true, body: { sessionId: SESSION } },
@@ -222,19 +289,6 @@ describe('frames', () => {
         frame
       );
     }
-  });
-
-  it('will not let a computer answer as if it were the web side, or the reverse', () => {
-    expect(decodeRelayFrame('{"type":"welcome","version":1}', RelayComputerFrameSchema)).toBeNull();
-    const request = JSON.stringify({ type: 'request', id: 'r1', request: EVERY_REQUEST[0] });
-    expect(decodeRelayFrame(request, RelayComputerFrameSchema)).toBeNull();
-    const hello = {
-      type: 'hello',
-      versions: SESSION_RELAY_VERSIONS,
-      features: [],
-      appVersion: '1',
-    };
-    expect(decodeRelayFrame(JSON.stringify(hello), RelayWebFrameSchema)).toBeNull();
   });
 
   it('drops a malformed or oversized frame instead of throwing', () => {
@@ -352,5 +406,68 @@ describe('needs an update for one feature', () => {
     )!;
     expect(missingRelayFeature(advertised, approve)).toBeNull();
     expect(missingRelayFeature([], EVERY_REQUEST[0])).toBe('chats.list');
+  });
+});
+
+describe('the hub proves itself to the computer', () => {
+  const helloText = JSON.stringify(hello());
+  const input = { helloText, hubOrigin: HUB_ORIGIN };
+
+  it('signs exactly these bytes, so every hub and computer agree', () => {
+    // A known answer: changing the label or the layout breaks self-hosted hubs.
+    expect(new TextDecoder().decode(relayWelcomeTranscript(input, 1, EPHEMERAL))).toBe(
+      ['dorkos-session-relay/v1', 'welcome', HUB_ORIGIN, helloText, '1', EPHEMERAL].join('\n')
+    );
+    expect(new TextDecoder().decode(relayRefuseTranscript(input, { min: 2, max: 3 }))).toBe(
+      ['dorkos-session-relay/v1', 'refuse', HUB_ORIGIN, helloText, '2-3'].join('\n')
+    );
+  });
+
+  it('verifies only for the same hello, version, hub key and origin', () => {
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const signature = sign(null, relayWelcomeTranscript(input, 1, EPHEMERAL), privateKey);
+    const verifies = (bytes: Uint8Array) => verify(null, bytes, publicKey, signature);
+
+    expect(verifies(relayWelcomeTranscript(input, 1, EPHEMERAL))).toBe(true);
+    // A replay to a new hello (another nonce), a downgrade, a swapped key, another hub.
+    const otherHello = {
+      ...input,
+      helloText: JSON.stringify(hello({ nonce: randomBytes(32).toString('base64url') })),
+    };
+    expect(verifies(relayWelcomeTranscript(otherHello, 1, EPHEMERAL))).toBe(false);
+    expect(verifies(relayWelcomeTranscript(input, 2, EPHEMERAL))).toBe(false);
+    expect(verifies(relayWelcomeTranscript(input, 1, randomBytes(32).toString('base64url')))).toBe(
+      false
+    );
+    expect(
+      verifies(
+        relayWelcomeTranscript({ ...input, hubOrigin: 'https://evil.example' }, 1, EPHEMERAL)
+      )
+    ).toBe(false);
+    // A welcome signature never passes as a refuse.
+    expect(verifies(relayRefuseTranscript(input, SESSION_RELAY_VERSIONS))).toBe(false);
+  });
+
+  it('signs the computer finish under its own line, so it never passes as a welcome', () => {
+    expect(new TextDecoder().decode(relayFinishTranscript(input, 1, EPHEMERAL))).toBe(
+      ['dorkos-session-relay/v1', 'finish', HUB_ORIGIN, helloText, '1', EPHEMERAL].join('\n')
+    );
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const signature = sign(null, relayFinishTranscript(input, 1, EPHEMERAL), privateKey);
+    expect(verify(null, relayWelcomeTranscript(input, 1, EPHEMERAL), publicKey, signature)).toBe(
+      false
+    );
+    const finish = { type: 'finish', signature: signature.toString('base64url') };
+    expect(RelayFinishFrameSchema.safeParse(finish).success).toBe(true);
+  });
+
+  it('refuses to sign an origin with a line break in it', () => {
+    const broken = { helloText, hubOrigin: 'https://a\nhttps://b' };
+    expect(() => relayWelcomeTranscript(broken, 1, EPHEMERAL)).toThrow();
+  });
+
+  it('closes an idle relay after three minutes, so a hub can sleep', () => {
+    expect(SESSION_RELAY_IDLE_CLOSE_MS).toBe(3 * 60 * 1000);
+    expect(RelayWebFrameSchema.safeParse({ type: 'viewers', count: -1 }).success).toBe(false);
   });
 });

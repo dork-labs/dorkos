@@ -28,10 +28,11 @@
  * journaled, and a command already under way is refused `refused:shutting-down`
  * at its next re-check, so no effect races the tunnel being torn down.
  *
- * Commands run one at a time, in the order they arrived. `inbox_pending`,
- * `viewer_open` and `hub_assignment_changed` carry no authority, and this
- * build has no seat path to signal, no session relay to dial and no hub mode,
- * so each is acknowledged `ignored`;
+ * Commands run one at a time, in the order they arrived. `viewer_open` goes to
+ * the session relay's dialer, which dials only the hub this computer pinned.
+ * `inbox_pending` and `hub_assignment_changed` carry no authority, and this
+ * build has no seat path to signal and no hub mode here, so each is
+ * acknowledged `ignored`;
  * `keepalive` never reaches here.
  *
  * Nothing here logs a value: lines name command ids, kinds and outcomes.
@@ -96,6 +97,11 @@ export interface CommandDispatcherDeps {
    * scan sees every call.
    */
   updateRemoteState: (subsystem: string, patch: Partial<RemoteState>) => RemoteState;
+  /**
+   * The session relay's dialer, for `viewer_open` (DOR-2945). Absent, the
+   * command is acknowledged `ignored`, as it was before the relay existed.
+   */
+  relayDialer?: { onViewerOpen(expiresAt: string): RemoteCommandOutcome };
 }
 
 /** How each refused open reads in an acknowledgement. */
@@ -260,13 +266,14 @@ export class CommandDispatcher {
   }
 
   private async apply(command: LeasedCommand, link: CommandLink): Promise<RemoteCommandOutcome> {
-    // Signals only: no authority, and no seat path or session relay in this
-    // build to wake.
-    if (
-      command.kind === 'inbox_pending' ||
-      command.kind === 'viewer_open' ||
-      command.kind === 'hub_assignment_changed'
-    ) {
+    // A viewer opened one of this computer's chats on its hub: dial the hub
+    // this computer pinned. The command carries no address and no authority;
+    // the dialer reads only the pin.
+    if (command.kind === 'viewer_open') {
+      return this.deps.relayDialer?.onViewerOpen(command.expiresAt) ?? 'ignored';
+    }
+    // Signals only: no authority, and no seat path or hub mode here to wake.
+    if (command.kind === 'inbox_pending' || command.kind === 'hub_assignment_changed') {
       return 'ignored';
     }
     const minted = mintCloudAuthority(command, {

@@ -47,6 +47,7 @@ import {
 import { realpathSync } from 'node:fs';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
@@ -79,7 +80,7 @@ import { discardSetupCode } from './setup-code.js';
  */
 type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
-  plugins: [ReturnType<typeof apiKey>];
+  plugins: [ReturnType<typeof apiKey>, ReturnType<typeof desktopSignInPlugin>];
 };
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
@@ -87,13 +88,7 @@ export type Auth = ReturnType<typeof betterAuth<AuthOptions>>;
 
 const isProduction = env.NODE_ENV === 'production';
 
-/**
- * Whether sign-in cookies are `Secure` and carry the `__Secure-` name prefix.
- * Browsers keep such a cookie only from `https` or `localhost`, so the Wi-Fi
- * listener (`services/core/lan-access/lan-cookies.ts`) reads this to undo both
- * on its plain-http connections.
- */
-export const AUTH_COOKIES_SECURE = isProduction;
+export { AUTH_COOKIES_SECURE } from './cookie-security.js';
 
 /**
  * Whether a Better Auth log call is the benign one-time "Base URL is not set"
@@ -194,9 +189,14 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       },
     },
     session: {
+      // A sign-in lasts 30 days and each day of use pushes that back, so a
+      // device used weekly never signs out (DOR-2968). Set here rather than
+      // left to the library default, which is 7 days.
+      expiresIn: SESSION_LIFETIME_SECONDS,
+      updateAge: SESSION_REFRESH_SECONDS,
       // Signed short-TTL session snapshot in a cookie so hot paths (SSE
       // reconnect, high-frequency polling) avoid a DB read per request.
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
+      cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
     //
@@ -227,7 +227,9 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     // backfill. The columns in `packages/db/src/schema/auth.ts` keep their
     // now-inert defaults on purpose: rewriting a SQLite column default means
     // rebuilding the table for zero behavior change.
-    plugins: [apiKey({ rateLimit: { enabled: false } })],
+    // The desktop window's own sign-in (F3, `desktop-sign-in.ts`): one
+    // endpoint, server code only.
+    plugins: [apiKey({ rateLimit: { enabled: false } }), desktopSignInPlugin()],
     // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
     // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
     // list, so the origins this server already answers over HTTP and over the
@@ -309,6 +311,19 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     hooks: { after: authAuditAfterHook },
   };
 }
+
+/** How long a person session lasts without use: 30 days, rolling (DOR-2968). */
+export const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+
+/** How often use extends a session: at most once a day. */
+export const SESSION_REFRESH_SECONDS = 24 * 60 * 60;
+
+/**
+ * How long a signed session snapshot in the cookie is trusted without a
+ * database read: 5 minutes. A revoked session can keep answering reads for at
+ * most this long, which `dorkos auth reset-password` says plainly.
+ */
+export const SESSION_COOKIE_CACHE_SECONDS = 5 * 60;
 
 let activeAuth: Auth | undefined;
 let activeDb: Db | undefined;

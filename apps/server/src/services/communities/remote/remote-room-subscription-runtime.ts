@@ -11,13 +11,14 @@ import type {
   CommunityReadContext,
 } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionAccess } from '@dorkos/shared/community-wire';
-import { StaleCommunityCursorError } from '@dorkos/shared/community-adapter';
 import { remoteRoomAccessOf, type RemoteNativeRoomEvent } from './remote-community-adapter.js';
 import {
   classifyNativeFrames,
   endsAccess,
+  restartsFresh,
   type RemoteResumeCursor,
 } from './subscription/remote-room-frames.js';
+import { SUBSCRIPTION_RETRY_MS } from './subscription/reconnect-timing.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import {
   RemoteRoomSubscriptionBridge,
@@ -158,7 +159,7 @@ export class RemoteRoomSubscriptionRuntime {
     }
     this.stopped = false;
     this.refresh();
-    this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? 5_000);
+    this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? SUBSCRIPTION_RETRY_MS);
     this.releaseTimer = setInterval(
       () => this.checkReleases(),
       this.deps.releaseCheckMs ?? READ_ONLY_RECHECK_MS
@@ -561,18 +562,14 @@ export class RemoteRoomSubscriptionRuntime {
             )
           );
         } catch (error) {
+          if (restartsFresh(error)) point.cursor = undefined;
           // Only a refusal turns the copy stale; a dropped link must not lock agents out of it.
-          // After one the next stream starts fresh, as a stale copy keeps only snapshots.
-          if (endsAccess(error)) {
-            point.cursor = undefined;
+          if (endsAccess(error))
             this.deps.bridge.markStale(desired.room.communityRef, desired.room.ownerAuthorId);
-          }
-          // A cursor the space no longer accepts: the next stream starts fresh instead.
-          if (error instanceof StaleCommunityCursorError) point.cursor = undefined;
         }
         if (receivedSnapshot) point.wasActive = true;
         if (abort.signal.aborted || this.stopped) break;
-        await delay(this.deps.retryMs ?? 5_000, abort.signal);
+        await delay(this.deps.retryMs ?? SUBSCRIPTION_RETRY_MS, abort.signal);
       }
     } finally {
       const current = this.running.get(desired.key);

@@ -23,8 +23,10 @@
  *      (`@dorkos/shared/secret-file`) and written `0600`, so two first boots at
  *      once settle on one token instead of overwriting each other's.
  *
- * The token is inactive when login is on (ADR-0320): it is resolved at boot only
- * in login-off mode, and the middleware consults it only while login is off.
+ * The token works only for a person at this computer that asks for no password
+ * (ADR-0320, `gate-policy.ts`): it is resolved at boot, or on first use, only
+ * while this computer asks for none, and the middleware honours it only for a
+ * caller the gate leaves open.
  * The token value is never logged — only its file path is.
  *
  * @module services/core/auth/mcp-local-token
@@ -35,6 +37,8 @@ import path from 'node:path';
 import { claimSecretText } from '@dorkos/shared/secret-file';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
+import { configManager } from '../config-manager.js';
 
 /**
  * File name of the persisted local MCP token under the dork home. A `0600`
@@ -60,13 +64,16 @@ const TOKEN_BYTES = 32;
 /**
  * The resolved token, cached so the middleware and the config DTO compare against
  * it without a per-request file read. `null` until {@link resolveMcpLocalToken}
- * (or {@link rotateMcpLocalToken}) has run in login-off mode; stays `null` when an
- * `MCP_API_KEY` env override is set or login is on.
+ * (or {@link rotateMcpLocalToken}) has run, at boot or on first use; stays
+ * `null` when an `MCP_API_KEY` env override is set.
  */
 let cachedToken: string | null = null;
 
 /** The resolved token file path, cached so a helpful 401 can name it. */
 let cachedPath: string | null = null;
+
+/** Set once a first-use resolve failed, so a broken file is not retried per request. */
+let lazyResolveFailed = false;
 
 /**
  * Resolve this instance's local MCP token.
@@ -76,9 +83,8 @@ let cachedPath: string | null = null;
  * the bearer, so no local token file is read or written). Precedence:
  * environment override → persisted file → freshly generated + persisted.
  *
- * Only meaningful in login-off mode; per ADR-0320 the token is inactive when
- * `config.auth.enabled` is `true` (the caller must gate this resolve on login-off
- * — see the boot wiring in `index.ts`).
+ * Only meaningful while this computer asks for no password; the caller gates
+ * this resolve on that (the boot wiring, and {@link getMcpLocalToken}).
  *
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  *   The token lives at `<dorkHome>/mcp-local-token`.
@@ -153,23 +159,52 @@ export function rotateMcpLocalToken(dorkHome: string): string {
   logger.info('[MCP] Rotated the per-instance local MCP token', { path: tokenPath });
   cachedToken = generated;
   cachedPath = tokenPath;
+  lazyResolveFailed = false;
   return generated;
 }
 
 /**
- * The resolved local token, or `null` when it does not apply (an `MCP_API_KEY`
- * env override is set, login is on, or it has not been resolved). The middleware
- * and the config DTO compare against this cached value without a file read.
+ * The local token, or `null` when an `MCP_API_KEY` env override is set (that
+ * key is the bearer instead).
+ *
+ * Resolved on first use when boot did not resolve it: boot skips it while this
+ * computer asks for a password, and a person who turns that off later must not
+ * need a restart before their MCP clients work (DOR-2968). Nothing is minted
+ * while it still asks. After the first
+ * call it is a cached value, with no file read per request. Whether a caller
+ * may USE the token is the gate's question (`gateAccessFor`), not this one's.
  */
 export function getMcpLocalToken(): string | null {
+  // Only while this computer asks for no password: the one posture the token
+  // works in. Asked while it does ask, there is nothing to mint.
+  if (
+    cachedToken === null &&
+    !lazyResolveFailed &&
+    !env.MCP_API_KEY?.trim() &&
+    configManager.get('auth')?.enabled !== true
+  ) {
+    try {
+      resolveMcpLocalToken(resolveDorkHome());
+    } catch (err) {
+      // A blank or unreadable token file, or a data folder DorkOS cannot
+      // write: answer as "no token" (Settings already says so) rather than
+      // failing `/api/config` and every `/mcp` call. Said once, not per request.
+      lazyResolveFailed = true;
+      logger.warn('[MCP] Could not load the local MCP token; apps on this computer need a key', {
+        error: (err as Error).message,
+      });
+    }
+  }
   return cachedToken;
 }
 
 /**
- * The resolved token file path, or `null` when no token has been resolved. The
- * middleware's helpful 401 names this path without needing to know `dorkHome`.
+ * The token file path, or `null` when an `MCP_API_KEY` env override is set.
+ * The middleware's helpful 401 names this path without needing to know
+ * `dorkHome`.
  */
 export function getMcpLocalTokenPath(): string | null {
+  getMcpLocalToken();
   return cachedPath;
 }
 

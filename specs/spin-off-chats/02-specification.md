@@ -64,7 +64,7 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 ## 4. Who can reach what
 
 - **Send and stop:** any chat in `CHAT_SENDABLE_ORIGINS` (agents are trusted by default, ADR 261006-225605; anyone in a space may message anyone, ADR 261006-235240).
-- **Read:** the chats a person in its role could read is the rule, and until roles exist it is the chats linked to the caller: its own chat, the chat that started it, chats it started (and theirs, down the chain), and chats it has exchanged chat messages with. Not widened beyond that here.
+- **Read:** the chats a person in its role could read is the rule, and until roles exist it is the chats linked to the caller: its own chat, the chat that started it, chats it started (and theirs, down the chain), and chats its agent has exchanged chat messages with, in either direction and from any of the agent's own chats (so a beat or scheduled run can read the chat it asked; widened 2026-10-16 from "chats that messaged this chat"). A stop never counts. Inside that, a person's own chat stays closed under `audit-trail` §3.4.
 
 ## 5. Automatic report-back (PR 2)
 

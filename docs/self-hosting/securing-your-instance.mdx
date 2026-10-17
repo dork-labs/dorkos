@@ -38,7 +38,7 @@ The email is a **local identifier only**: it is never verified and no email is e
 <Step>
 ### You're signed in
 
-Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 7 days and renews each time you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
+Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
 
 Turning **Ask for a password on this computer too** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and this computer opens DorkOS without a password again. Other devices still sign in as the owner.
 
@@ -53,6 +53,10 @@ If you create the owner account from a phone or another computer, DorkOS asks fo
 - After too many wrong codes, new tries wait ten minutes. Creating the owner on the computer itself always works.
 - Creating the owner on the computer itself never needs a code.
 - A Docker container with no owner yet doesn't ask, for one more release. It logs a warning instead.
+
+### "This browser can't keep the sign-in over plain http"
+
+A sign-in cookie in a built DorkOS is marked secure, and browsers throw secure cookies away over plain `http`, except at `localhost`. So signing in at an address like `http://192.168.1.5:4242` used to bring you straight back to the sign-in screen. DorkOS now says so instead. Reach DorkOS over `https` (a [reverse proxy](/docs/self-hosting/reverse-proxy) or [your tunnel](/docs/self-hosting/tunnel-setup)), or use **Let devices on my Wi-Fi in**, which handles plain `http` on your own network.
 
 ## Exposing DorkOS beyond localhost
 
@@ -181,6 +185,8 @@ There is no "forgot password" email: the local edition sends no email, and a lap
 # Reset the owner password (prompts, or pipe it in for non-interactive use)
 dorkos auth reset-password
 ```
+
+A reset signs you out on every browser and device, because a reset usually means the old password got out. Three things it can't cut off yet: a window already open can keep working for up to 5 minutes, live chat streams and terminals stay open until they reconnect, and API keys keep working until you revoke them in **Settings → Login & security**. Leave off `--password` so the new one doesn't land in your shell history.
 
 You can also create the owner and turn on the setting entirely from the CLI (useful before you ever open the UI, or when preparing a server to expose):
 

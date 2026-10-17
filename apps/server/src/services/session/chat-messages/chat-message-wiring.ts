@@ -142,14 +142,16 @@ export async function chatHistoryOf(sessionId: string): Promise<HistoryMessage[]
 
 /**
  * Every chat a chat may read (spec `spin-off-chats` §4): itself, the chat that
- * started it, the chats it started and theirs, and the chats that have sent it
- * a message. Sending a chat a message, or stopping it, does not make it
- * readable: send reaches further than read until roles exist.
+ * started it, the chats it started and theirs, and the chats its agent has
+ * exchanged chat messages with, from this chat or any other of its own. So a
+ * beat or a scheduled run can read the chat it asked a question, and the
+ * agent's next chat can read it too. Stopping a chat does not make it
+ * readable.
  *
  * Inside that, the reader rule still holds (spec `audit-trail` §3.4): a
  * person's own chat is read only under `canReadSession`'s one exception, when
- * that chat itself started the reader. A private chat that merely messaged the
- * reader, or one it reaches only as a descendant, is refused.
+ * that chat itself started the reader. A private chat the agent messaged, one
+ * that messaged it, or one it reaches only as a descendant, is refused.
  *
  * @param store - The chat-message store.
  * @param caller - The reading chat.
@@ -164,6 +166,7 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
   const related =
     involvedBy.startedReader ||
     store.sendersTo(caller.sessionId).has(target) ||
+    store.agentExchangedWith(caller.agentPath, target) ||
     (startedBy !== undefined && startedDescendant(startedBy, caller.sessionId, target));
   if (!related) return false;
   const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';

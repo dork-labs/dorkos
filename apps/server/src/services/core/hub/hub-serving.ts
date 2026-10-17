@@ -19,6 +19,14 @@
  * `HubAssignmentSchema`). The check is the managed
  * edge's own (`services/core/remote/edge-proof.ts`).
  *
+ * A browser request that changes something, opens a stream or opens a socket
+ * must also come from the hub's own page (DOR-2937, spec A5): its `Origin`,
+ * when it sends one, is the assignment's address, and its `Sec-Fetch-Site`,
+ * when it sends one, is `same-origin`. A browser sends both on every such
+ * request, so another site's page cannot ride the owner's sign-in. Plain
+ * reads stay open to a link from anywhere, and a caller that is not a browser
+ * sends neither and proves itself some other way.
+ *
  * The live keys of the assignment (its address and front-door proof) are
  * kept here in memory only, never on disk: a hub that restarts reads them from
  * Cloud again. A person's own computer always serves; nothing here applies to
@@ -147,6 +155,17 @@ function dropOpenConnections(): void {
   openConnections.clear();
 }
 
+/**
+ * The origins a serving hub's own page loads from: its address, and a new one
+ * it has read but not yet confirmed. Empty unless this is a hub that serves.
+ */
+export function hubServingOrigins(): string[] {
+  if (currentServerRole() !== 'hub' || current.state !== 'serving') return [];
+  return [current.assignment.address, offeredAddress]
+    .filter((address): address is string => address !== null)
+    .map((address) => new URL(address).origin);
+}
+
 /** The body a hub answers with while it does not serve. */
 export const HUB_NOT_SERVING_BODY = {
   error: 'This DorkOS is not ready yet.',
@@ -159,10 +178,16 @@ export const HUB_FRONT_DOOR_BODY = {
   code: 'HUB_FRONT_DOOR',
 } as const;
 
+/** The body a hub answers a request with that another site's page sent. */
+export const HUB_CROSS_SITE_BODY = {
+  error: 'This request must come from this DorkOS’s own page.',
+  code: 'HUB_CROSS_SITE',
+} as const;
+
 /** Why a hub refused a request, and what to answer it with. */
 export interface HubRefusal {
   status: 403 | 503;
-  body: typeof HUB_NOT_SERVING_BODY | typeof HUB_FRONT_DOOR_BODY;
+  body: typeof HUB_NOT_SERVING_BODY | typeof HUB_FRONT_DOOR_BODY | typeof HUB_CROSS_SITE_BODY;
 }
 
 /** The one path a hub answers without serving: Cloud reads it to know the hub is up. */
@@ -198,11 +223,38 @@ export function admitHubRequest(req: IncomingMessage): HubRefusal | null {
     return { status: 403, body: HUB_FRONT_DOOR_BODY };
   }
   stripEdgeProofHeaders(req, proofs);
-  if (!isAssignedHost(req.headers.host, [current.assignment.address, offeredAddress])) {
+  const addresses = [current.assignment.address, offeredAddress];
+  if (!isAssignedHost(req.headers.host, addresses)) {
     logger.warn('[Hub] Refused a request for another address');
     return { status: 403, body: HUB_FRONT_DOOR_BODY };
   }
+  if (needsOwnPage(req) && !fromOwnPage(req, addresses)) {
+    logger.warn('[Hub] Refused a request from another site');
+    return { status: 403, body: HUB_CROSS_SITE_BODY };
+  }
   return null;
+}
+
+/** Methods that read and change nothing. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** Whether a request changes something, opens a socket, or opens a stream. */
+function needsOwnPage(req: IncomingMessage): boolean {
+  if (!READ_METHODS.has(req.method ?? 'GET')) return true;
+  if (req.headers.upgrade !== undefined) return true;
+  return (req.headers.accept ?? '').includes('text/event-stream');
+}
+
+/**
+ * Whether what the browser says about where a request came from, it says is
+ * this hub's own page. A header the browser did not send says nothing.
+ */
+function fromOwnPage(req: IncomingMessage, addresses: (string | null)[]): boolean {
+  const site = req.headers['sec-fetch-site'];
+  if (site !== undefined && site !== 'same-origin') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  return addresses.some((address) => address !== null && new URL(address).origin === origin);
 }
 
 /**

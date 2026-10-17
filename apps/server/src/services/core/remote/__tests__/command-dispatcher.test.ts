@@ -125,7 +125,7 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
-  it('acknowledges viewer_open as a signal only: this build has no session relay to dial', async () => {
+  it('acknowledges viewer_open as ignored when no session relay dialer is wired', async () => {
     const viewer: LeasedCommand = {
       kind: 'viewer_open',
       id: 'cmd_viewer',
@@ -133,6 +133,28 @@ describe('every command', () => {
       expiresAt: '2026-11-03T12:02:00Z',
     };
     expect(await w.dispatcher.dispatch(viewer, w.link)).toBe('ignored');
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
+  it('hands viewer_open to the session relay dialer, with only its expiry, and acks its answer', async () => {
+    const onViewerOpen = vi.fn().mockReturnValue('applied');
+    const dispatcher = new CommandDispatcher({
+      journal: w.journal,
+      tunnelManager: w.tunnel,
+      remoteCredentials: w.credentials,
+      readRemoteState,
+      updateRemoteState,
+      onSettled: () => undefined,
+      relayDialer: { onViewerOpen },
+    });
+    const viewer: LeasedCommand = {
+      kind: 'viewer_open',
+      id: 'cmd_viewer_2',
+      leaseToken: 'lt_v2',
+      expiresAt: '2026-11-03T12:02:00Z',
+    };
+    expect(await dispatcher.dispatch(viewer, w.link)).toBe('applied');
+    expect(onViewerOpen).toHaveBeenCalledWith('2026-11-03T12:02:00Z');
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
