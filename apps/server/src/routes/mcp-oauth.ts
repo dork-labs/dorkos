@@ -32,7 +32,11 @@ const HTML = { 'Content-Type': 'text/html; charset=utf-8' };
 
 /**
  * Start the same sign-in a landing page is about again: the same agent and
- * server, and the same conversation to resume once it lands.
+ * server, the same conversation to resume once it lands, and the same flow id.
+ *
+ * The server URL is the one the flow recorded, not a fresh read of the agent's
+ * settings. A token is bound to its URL, so if the server was edited in the
+ * meantime the token is dropped the first time it is read for the new URL.
  *
  * @param oauth - The managed-MCP OAuth engine.
  * @param flow - The flow the callback finished.
@@ -44,6 +48,8 @@ function retryFor(oauth: AgentMcpOAuthService, flow: StartedFlow) {
       {
         ...(flow.originSessionId ? { originSessionId: flow.originSessionId } : {}),
         ...(flow.originCwd ? { originCwd: flow.originCwd } : {}),
+        // The same flow id, so a card or panel still polling it sees this attempt.
+        restartFlowId: flow.flowId,
       }
     );
     if (started.alreadyConnected || !started.authorizeUrl) return { kind: 'connected' };

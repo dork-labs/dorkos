@@ -10,6 +10,7 @@ import {
   GONE_COPY,
   landingCopy,
   RETRY_FAILED_COPY,
+  UNREACHABLE_COPY,
   type LandingCopy,
 } from '../lib/landing-copy';
 import { opensDesktopOnLoad, returnTarget, type ReturnTarget } from '../lib/return-target';
@@ -50,18 +51,23 @@ export function SignInLandingPage({ landingId }: SignInLandingPageProps) {
       </LandingFrame>
     );
   }
-  if (!landing.data) return <GoneLanding />;
+  if (!landing.data) {
+    // Only a 404 means the record is gone; anything else is DorkOS not answering.
+    const status = (landing.error as { status?: number } | null)?.status;
+    const gone = landingId.length === 0 || status === 404;
+    return <MissingLanding copy={gone ? GONE_COPY : UNREACHABLE_COPY} />;
+  }
   return <Landing landing={landing.data} />;
 }
 
-/** The record is gone (or the URL never named one): say so and point home. */
-function GoneLanding() {
+/** No record to show (gone, or DorkOS did not answer): say which and point home. */
+function MissingLanding({ copy }: { copy: LandingCopy }) {
   return (
-    <LandingFrame title={GONE_COPY.heading}>
+    <LandingFrame title={copy.heading}>
       <div className="bg-muted mx-auto flex size-12 items-center justify-center rounded-xl border">
         <Clock className="text-muted-foreground size-5" />
       </div>
-      <Heading copy={GONE_COPY} />
+      <Heading copy={copy} />
       <div className="mt-6 flex flex-col gap-2">
         <Button asChild variant="outline">
           <Link {...appRoutes.home()}>Back to DorkOS</Link>
@@ -128,9 +134,13 @@ function useDesktopHandOff(landing: SignInLanding, target: ReturnTarget): boolea
   const auto = opensDesktopOnLoad(landing);
   const [opening, setOpening] = useState(auto);
   useEffect(() => {
-    if (!auto || handedOff.current) return;
-    handedOff.current = true;
-    window.location.href = target.href;
+    if (!auto) return;
+    // The link fires once, even when StrictMode runs this effect twice; the
+    // note's timer is set on every run, so the one that survives clears it.
+    if (!handedOff.current) {
+      handedOff.current = true;
+      window.location.href = target.href;
+    }
     const timer = window.setTimeout(() => setOpening(false), OPENING_NOTE_MS);
     return () => window.clearTimeout(timer);
   }, [auto, target.href]);

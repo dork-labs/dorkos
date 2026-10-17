@@ -24,7 +24,8 @@ export const DESKTOP_FOREGROUND_LINK = 'dorkos://';
 /**
  * Whether a path stays on this origin: one leading slash, no second slash or
  * backslash after it (`//evil.example` and `/\evil.example` are other hosts to
- * a browser), and no whitespace or control characters.
+ * a browser), and no whitespace. The server builds the path from a plain id, so
+ * this is a second fence, not the first.
  *
  * @param path - The path the server recorded.
  */

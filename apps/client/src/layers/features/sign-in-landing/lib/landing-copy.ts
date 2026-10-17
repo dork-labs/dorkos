@@ -66,10 +66,16 @@ function connectedBody(
     : `${landing.serviceName} is ready to use.`;
 }
 
-/** What the page says when its record is gone: expired, or never written. */
+/** What the page says when its record is gone: expired, or never written (a 404). */
 export const GONE_COPY: LandingCopy = {
   heading: 'This page expired',
   body: 'Check DorkOS to see how the sign-in went.',
+};
+
+/** What the page says when DorkOS did not answer its request for the record. */
+export const UNREACHABLE_COPY: LandingCopy = {
+  heading: 'Couldn’t reach DorkOS',
+  body: 'Make sure DorkOS is running, then reload this page.',
 };
 
 /** What the page says when Try again could not start a new sign-in. */

@@ -118,6 +118,10 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
     queryFn: () => transport.getOpenRouterOAuthStatus(flowState as string),
     enabled: flowState !== null,
     refetchInterval: (query) => (query.state.data?.status === 'pending' ? 1500 : false),
+    // The sign-in landing page's Try again restarts a failed flow under this
+    // same state (DOR-2985): re-read it when the person comes back, and a
+    // pending answer resumes the poll above.
+    refetchOnWindowFocus: (query) => query.state.data?.status === 'error',
   });
 
   const status = statusQuery.data?.status;

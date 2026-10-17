@@ -175,7 +175,7 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
     // The same agent and server, and the same conversation to resume.
     expect(startSignin).toHaveBeenCalledWith(
       { agentId: 'agent-1', serverName: 'granola', serverUrl: FLOW.serverUrl },
-      { originSessionId: FLOW.originSessionId, originCwd: FLOW.originCwd }
+      { originSessionId: FLOW.originSessionId, originCwd: FLOW.originCwd, restartFlowId: 's1' }
     );
   });
 

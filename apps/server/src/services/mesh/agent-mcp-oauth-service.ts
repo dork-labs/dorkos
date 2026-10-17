@@ -252,17 +252,22 @@ export class AgentMcpOAuthService {
    * @param target - The agent, server, and server URL to authorize.
    * @param options - The session that asked for this sign-in, when one did
    *   (DOR-1004), and the directory it runs in (DOR-981) — both recorded on the
-   *   flow so the resume can find them after a restart.
+   *   flow so the resume can find them after a restart. `restartFlowId` names a
+   *   failed flow for the same target to start again under its own id (the
+   *   landing page's Try again), so a surface still polling that id sees the
+   *   new attempt; a flow that is gone, connected or for another target is not
+   *   reused, and a fresh id is minted instead.
    * @throws {McpSigninStartError} When the sign-in cannot be started at all,
    *   carrying the plain family a person reads and the raw detail behind it
    *   (DOR-982).
    */
   async startSignin(
     target: McpOAuthTarget,
-    options?: { originSessionId?: string; originCwd?: string }
+    options?: { originSessionId?: string; originCwd?: string; restartFlowId?: string }
   ): Promise<StartSigninResult> {
     return this.refresher.exclusive(targetKey(target), async () => {
-      const state = randomBytes(16).toString('hex');
+      const state =
+        this.reusableFlowId(target, options?.restartFlowId) ?? randomBytes(16).toString('hex');
       this.flows.start(state, {
         ...target,
         ...(options?.originSessionId ? { originSessionId: options.originSessionId } : {}),
@@ -290,6 +295,27 @@ export class AgentMcpOAuthService {
         throw new McpSigninStartError(failure, err);
       }
     });
+  }
+
+  /**
+   * The failed flow `startSignin` may start again under its own id, or
+   * `undefined`. Only a flow for the very same agent, server and URL, and only
+   * one that failed: a pending flow is still someone's live link, and a
+   * connected one is finished.
+   */
+  private reusableFlowId(target: McpOAuthTarget, flowId: string | undefined): string | undefined {
+    if (!flowId) return undefined;
+    const flow = this.flows.target(flowId);
+    if (
+      !flow ||
+      flow.agentId !== target.agentId ||
+      flow.serverName !== target.serverName ||
+      flow.serverUrl !== target.serverUrl ||
+      this.flows.status(flowId).status !== 'failed'
+    ) {
+      return undefined;
+    }
+    return flowId;
   }
 
   /**

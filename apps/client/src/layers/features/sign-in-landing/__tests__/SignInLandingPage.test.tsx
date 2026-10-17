@@ -30,7 +30,7 @@ function mount(landing: SignInLanding | null, overrides: Record<string, unknown>
   const transport = createMockTransport({
     getSignInLanding: landing
       ? vi.fn().mockResolvedValue(landing)
-      : vi.fn().mockRejectedValue(new Error('gone')),
+      : vi.fn().mockRejectedValue(Object.assign(new Error('gone'), { status: 404 })),
     getMeshAgent: vi.fn().mockResolvedValue({ id: 'agent-1', name: 'Scout' }),
     ...overrides,
   });
@@ -120,6 +120,34 @@ describe('SignInLandingPage', () => {
     expect(
       await screen.findByText('Couldn’t start a new sign-in. Try again from DorkOS.')
     ).toBeVisible();
+  });
+
+  it('says DorkOS could not be reached when the read fails for another reason', async () => {
+    mount(null, {
+      getSignInLanding: vi.fn().mockRejectedValue(Object.assign(new Error('x'), { status: 502 })),
+    });
+    expect(await screen.findByRole('heading', { name: 'Couldn’t reach DorkOS' })).toBeVisible();
+  });
+
+  it('hands a finished desktop sign-in to the app once, by its deep link', async () => {
+    const assigned: string[] = [];
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...original,
+        set href(url: string) {
+          assigned.push(url);
+        },
+      },
+    });
+    try {
+      mount({ ...LANDING, returnSurface: 'desktop' });
+      await screen.findByRole('link', { name: /Open DorkOS/ });
+      await waitFor(() => expect(assigned).toEqual(['dorkos://session?session=abc']));
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original });
+    }
   });
 
   it('says the page expired when its record is gone', async () => {

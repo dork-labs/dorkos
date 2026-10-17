@@ -714,6 +714,35 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
   });
 
+  it('restarts a failed flow under its own id, so a surface polling it sees the retry (DOR-2985)', async () => {
+    const pkce = { challenge: '' };
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));
+    tempDirs.push(dorkHome);
+    const oauth = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: CALLBACK_BASE,
+      fetchImpl: mockOAuthFetch(pkce),
+      cache: { scheduler: inertScheduler },
+      logger: { warn: () => {} },
+    });
+    const first = await oauth.startSignin(REFRESH_TARGET);
+    await oauth.handleCallback({ state: first.flowId, error: 'access_denied' });
+    expect((await oauth.pollSignin(first.flowId)).status).toBe('failed');
+
+    // A pending flow is someone's live link: never taken over.
+    const live = await oauth.startSignin(REFRESH_TARGET);
+    const notReused = await oauth.startSignin(REFRESH_TARGET, { restartFlowId: live.flowId });
+    expect(notReused.flowId).not.toBe(live.flowId);
+
+    const again = await oauth.startSignin(REFRESH_TARGET, { restartFlowId: first.flowId });
+    expect(again.flowId).toBe(first.flowId);
+    expect((await oauth.pollSignin(first.flowId)).status).toBe('pending');
+
+    pkce.challenge = new URL(again.authorizeUrl!).searchParams.get('code_challenge') ?? '';
+    await oauth.handleCallback({ state: first.flowId, code: AUTH_CODE });
+    expect((await oauth.pollSignin(first.flowId)).status).toBe('connected');
+  });
+
   it('keeps a connected flow connected when the callback is replayed', async () => {
     const pkce = { challenge: '' };
     const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));

@@ -271,8 +271,9 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     const error = typeof query.error === 'string' ? query.error : undefined;
     const result = await handleOpenRouterCallback({ state, code, error });
     const connected = result.status === 'connected';
-    // The page's Try again starts a new flow the same way the start route does,
-    // calling back to the same address this callback arrived on.
+    // The page's Try again restarts this flow under the same state when the
+    // store still holds it, so the app polling that state sees the new attempt;
+    // it calls back to the same address this callback arrived on.
     const callbackBase = openRouterCallbackBase(c);
     return respondWithSignInLanding(c, {
       service: 'openrouter',
@@ -284,7 +285,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
         : {
             retry: async () => ({
               kind: 'authorize' as const,
-              authorizeUrl: startOpenRouterOAuth(callbackBase).authorizeUrl,
+              authorizeUrl: startOpenRouterOAuth(callbackBase, state).authorizeUrl,
             }),
           }),
     });
@@ -762,9 +763,15 @@ function openRouterCallbackBase(c: Context<ApiEnv>): string {
  * embedding the state.
  *
  * @param callbackBase - The scheme and host OpenRouter should call back on.
+ * @param again - A flow to restart under its own state; a new one starts when
+ *   the store no longer holds it or it already connected.
  */
-function startOpenRouterOAuth(callbackBase: string): { authorizeUrl: string; state: string } {
-  const { state, challenge } = openRouterOAuthStore.start();
+function startOpenRouterOAuth(
+  callbackBase: string,
+  again?: string
+): { authorizeUrl: string; state: string } {
+  const { state, challenge } =
+    (again ? openRouterOAuthStore.restart(again) : null) ?? openRouterOAuthStore.start();
   const callbackUrl = `${callbackBase}/api/runtimes/opencode/openrouter/oauth/callback?state=${state}`;
   return { authorizeUrl: buildAuthorizeUrl(callbackUrl, challenge), state };
 }
