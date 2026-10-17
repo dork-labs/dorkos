@@ -84,4 +84,25 @@ describe('the teammate meter', () => {
 
     expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: 0.1 });
   });
+
+  it('counts nothing for a turn that failed before a model answered (review N1)', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+    const failed = { type: 'error', data: { message: 'no sign-in' } } as unknown as StreamEvent;
+
+    await drain(meterTeammateTurns(runtime([failed, done])).sendMessage('s', 'hi', teammate));
+
+    expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: 0 });
+  });
+
+  it('still counts the estimate for a turn that answered and then failed without a cost', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+    const wrote = { type: 'text_delta', data: { text: 'hi' } } as unknown as StreamEvent;
+    const failed = { type: 'error', data: { message: 'cut off' } } as unknown as StreamEvent;
+
+    await drain(meterTeammateTurns(runtime([wrote, failed])).sendMessage('s', 'hi', teammate));
+
+    expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: undefined });
+  });
 });

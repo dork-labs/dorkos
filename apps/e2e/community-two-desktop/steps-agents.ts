@@ -398,7 +398,7 @@ export async function agentSteps(w: World): Promise<void> {
 
   if (runs('22b')) await directMessageStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
   else skip('22b');
-  if (runs('22c')) await teammateLimitStep(w, { bAgent: bAgent!, openAgents, agentsRegion });
+  if (runs('22c')) await teammateLimitStep(w, { bAgent: bAgent!, openAgents });
   else skip('22c');
 
   // What A's app saw while B's app was closed, or why it could not watch; step 23b judges it.

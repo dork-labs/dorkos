@@ -163,6 +163,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     limitUsd: 20,
     month: '2026-10',
   },
+  'community.teammate-limits-reset': {},
   'heartbeat.credits-offer': {},
   'connector.destructive_pending': {
     holdId: 'hold-1',
@@ -217,6 +218,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'community.owner-replacement': 'notable',
   // Teammates' posts wake nobody until next month or a higher limit; nothing is broken (DOR-2956).
   'community.teammate-limit': 'notable',
+  'community.teammate-limits-reset': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
   // Everyone sees it before it runs, but nothing waits on a person: never
@@ -307,6 +309,7 @@ describe('notification registry', () => {
       'ask.pending',
       'community.owner-replacement',
       'community.teammate-limit',
+      'community.teammate-limits-reset',
       'connector.destructive_executed',
       'connector.destructive_pending',
       'credits.refused',

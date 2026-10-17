@@ -1,4 +1,5 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
+import { roundToCents, TEAMMATE_SPEND_LIMIT_MIN_USD } from '@dorkos/shared/community-teammates';
 import { useCommunityTeammates, useUpdateCommunityTeammates } from '@/layers/entities/community';
 import {
   Button,
@@ -19,31 +20,37 @@ function dollars(usd: number): string {
 /**
  * The owner's say over teammates in a space (DOR-2956): who may wake their agents here, and the
  * monthly limit on what teammates' turns may cost. "No limit" is the default, said plainly.
+ *
+ * Shown while the owner may add agents here, or has one here already, even when the space no
+ * longer lets them add another.
  */
 export function RemoteCommunityTeammates({
   community,
   online,
+  canEnroll,
 }: {
   community: string;
   online: boolean;
+  /** The owner may add an agent here, so the settings show even before one is added. */
+  canEnroll: boolean;
 }) {
   const id = useId();
   const teammates = useCommunityTeammates(community);
   const update = useUpdateCommunityTeammates(community);
   const spend = teammates.data?.spend;
-  const [limit, setLimit] = useState('');
-  // The field shows the saved limit until the person types; a save brings it back in step.
-  useEffect(() => {
-    setLimit(spend?.monthlyLimitUsd != null ? String(spend.monthlyLimitUsd) : '');
-  }, [spend?.monthlyLimitUsd]);
-  const typed = limit.trim() === '' ? null : Number(limit);
-  const valid = typed === null || (Number.isFinite(typed) && typed > 0);
+  // What the person typed, or `null` while the field shows the saved limit.
+  const [draft, setDraft] = useState<string | null>(null);
+  const saved = spend?.monthlyLimitUsd != null ? String(spend.monthlyLimitUsd) : '';
+  const limit = draft ?? saved;
+  const typed = limit.trim() === '' ? null : roundToCents(Number(limit));
+  const valid = typed === null || (Number.isFinite(typed) && typed >= TEAMMATE_SPEND_LIMIT_MIN_USD);
   const changed = typed !== (spend?.monthlyLimitUsd ?? null);
   function save(event: FormEvent) {
     event.preventDefault();
     if (!valid || !changed || update.isPending) return;
-    update.mutate({ monthlyLimitUsd: typed });
+    update.mutate({ monthlyLimitUsd: typed }, { onSuccess: () => setDraft(null) });
   }
+  if (!canEnroll && !spend?.hasAgentsHere) return null;
   return (
     <section className="mt-3 space-y-2 border-t pt-3" aria-labelledby={`${id}-heading`}>
       <h3 id={`${id}-heading`} className="text-sm font-medium">
@@ -87,7 +94,7 @@ export function RemoteCommunityTeammates({
                 id={`${id}-limit`}
                 inputMode="decimal"
                 value={limit}
-                onChange={(event) => setLimit(event.target.value)}
+                onChange={(event) => setDraft(event.target.value)}
                 placeholder="No limit"
                 aria-invalid={!valid}
                 disabled={!online || update.isPending}
@@ -108,11 +115,11 @@ export function RemoteCommunityTeammates({
               {` · ${dollars(spend.spentUsd)} spent this month${spend.approximate ? ', approximate' : ''}`}
             </p>
             <p className="text-muted-foreground text-xs">
-              Past the limit, teammates’ messages wake nobody until next month.
+              Past the limit, teammates’ messages wake nobody. A running turn may go slightly over.
             </p>
             {!valid && (
               <p role="alert" className="text-destructive text-xs">
-                Enter an amount above zero, or leave it empty.
+                Enter at least $0.01, or leave it empty.
               </p>
             )}
           </form>

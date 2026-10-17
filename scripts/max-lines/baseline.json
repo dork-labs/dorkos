@@ -78,7 +78,7 @@
     "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
     "apps/server/src/services/harness/status.ts": 520,
     "apps/server/src/services/marketplace/dev-links/dev-link-service.ts": 768,
-    "apps/server/src/services/notifications/notification-registry.ts": 611,
+    "apps/server/src/services/notifications/notification-registry.ts": 585,
     "apps/server/src/services/notifications/notification-store.ts": 534,
     "apps/server/src/services/relay/adapter-manager.ts": 892,
     "apps/server/src/services/relay/binding-router.ts": 651,
@@ -144,7 +144,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1332,
+    "packages/test-utils/src/mock-factories.ts": 1311,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
     "packages/test-utils/src/runtime-conformance.ts": 2432
   }

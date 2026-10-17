@@ -15,7 +15,13 @@ import { RemoteCommunityTeammates } from '../ui/teammates/RemoteCommunityTeammat
 afterEach(cleanup);
 
 function mount(
-  spend: Partial<{ monthlyLimitUsd: number | null; spentUsd: number; approximate: boolean }> = {}
+  spend: Partial<{
+    monthlyLimitUsd: number | null;
+    spentUsd: number;
+    approximate: boolean;
+    hasAgentsHere: boolean;
+  }> = {},
+  canEnroll = true
 ) {
   const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.getCommunityTeammateSpend).mockResolvedValue({
@@ -23,6 +29,7 @@ function mount(
     spentUsd: 0,
     approximate: false,
     month: '2026-10',
+    hasAgentsHere: false,
     ...spend,
   });
   render(
@@ -31,7 +38,7 @@ function mount(
     >
       <TransportProvider transport={transport}>
         <TooltipProvider>
-          <RemoteCommunityTeammates community="a" online />
+          <RemoteCommunityTeammates community="a" online canEnroll={canEnroll} />
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -40,6 +47,26 @@ function mount(
 }
 
 describe('the Teammates block', () => {
+  it('shows for an owner who has an agent here even when they can’t add one (review N3)', async () => {
+    mount({ hasAgentsHere: true }, false);
+    expect(await screen.findByText('Teammates')).toBeInTheDocument();
+  });
+
+  it('shows nothing to someone who can’t add an agent and has none here', async () => {
+    const transport = mount({}, false);
+    await waitFor(() => expect(transport.getCommunityTeammateSpend).toHaveBeenCalled());
+    expect(screen.queryByText('Teammates')).not.toBeInTheDocument();
+  });
+
+  it('says a running turn may go slightly past the limit (review S3)', async () => {
+    mount();
+    expect(
+      await screen.findByText(
+        'Past the limit, teammates’ messages wake nobody. A running turn may go slightly over.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('says "No limit" plainly by default, with what was spent', async () => {
     mount();
     expect(await screen.findByText(/^No limit · \$0\.00 spent this month$/)).toBeInTheDocument();
@@ -67,8 +94,9 @@ describe('the Teammates block', () => {
   it('refuses an amount that is not above zero', async () => {
     const transport = mount({ monthlyLimitUsd: 10 });
     const field = await screen.findByLabelText('Monthly limit for teammates');
-    fireEvent.change(field, { target: { value: '0' } });
-    expect(screen.getByText('Enter an amount above zero, or leave it empty.')).toBeInTheDocument();
+    // Review B1: a tenth of a cent rounds to nothing, so it is refused here as on the server.
+    fireEvent.change(field, { target: { value: '0.004' } });
+    expect(screen.getByText('Enter at least $0.01, or leave it empty.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     fireEvent.change(field, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

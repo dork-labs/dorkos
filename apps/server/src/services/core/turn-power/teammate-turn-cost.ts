@@ -5,8 +5,10 @@
  * (`communities/remote/wake/teammate-spend.ts`).
  *
  * Only a turn marked `roomTurn.teammate` is read; every other turn passes through untouched, so
- * the owner's own turns never count against the limit. A turn that reported no cost is still
- * handed over, as `costUsd: undefined`, so it counts at the estimate rather than not at all.
+ * the owner's own turns never count against the limit. A turn that ran but reported no cost is
+ * still handed over, as `costUsd: undefined`, so it counts at the estimate rather than not at
+ * all. A turn that failed with no sign a model answered (no text, no tool call, no usage) reached
+ * no model and counts as `0`.
  *
  * Rooms are the lower layer here and know nothing of spaces, so the counter is set from outside
  * ({@link setTeammateTurnCostSink}); with none set, nothing is counted.
@@ -59,20 +61,37 @@ export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
   });
 }
 
+/** Whether an event shows a model answered: it wrote, called a tool, or its usage was reported. */
+function answered(event: StreamEvent): boolean {
+  if (event.type === 'text_delta' || event.type === 'tool_call_start') return true;
+  if (event.type !== 'session_status') return false;
+  const data = event.data as Record<string, unknown>;
+  return ['turnInputTokens', 'turnOutputTokens', 'turnCostUsd', 'costUsd'].some(
+    (field) => typeof data[field] === 'number'
+  );
+}
+
 async function* metered(
   runtimeType: string,
   roomId: string,
   source: AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const cost = turnCostReader(runtimeType);
+  let ran = false;
+  let failed = false;
   try {
     for await (const event of source) {
       cost.see(event);
+      if (answered(event)) ran = true;
+      else if (event.type === 'error') failed = true;
       yield event;
     }
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
     try {
-      sink?.({ roomId, costUsd: cost.costUsd() });
+      sink?.({ roomId, costUsd: failed && !ran ? 0 : cost.costUsd() });
     } catch (error) {
       // Counting must never break the turn it counts.
       logger.warn('[teammate-turn-cost] Could not count a teammate turn', {

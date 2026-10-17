@@ -47,6 +47,7 @@ import {
 } from './connector-hold-notifications.js';
 import {
   COMMUNITY_NOTIFICATION_ENTRIES,
+  COMMUNITY_NOTIFICATION_KINDS,
   type CommunityNotificationPayloads,
 } from './community-notifications.js';
 
@@ -1320,7 +1321,8 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  *
  * `community.teammate-limit` joined them in DOR-2956. It is raised by a space's spending
  * counter (`communities/remote/wake/teammate-spend.ts`) once a month, when teammates' turns
- * reach the limit the owner set.
+ * reach the limit the owner set. `community.teammate-limits-reset` joined with it: raised once
+ * when the counter's file could not be read and was set aside.
  *
  * `connector.destructive_pending` and `connector.destructive_executed` joined
  * them in DOR-2739. They are raised by
@@ -1352,8 +1354,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'credits.refused',
   'extension.approval',
   'extension.decision',
-  'community.owner-replacement',
-  'community.teammate-limit',
+  ...COMMUNITY_NOTIFICATION_KINDS,
   'heartbeat.credits-offer',
   'connector.destructive_pending',
   'connector.destructive_executed',

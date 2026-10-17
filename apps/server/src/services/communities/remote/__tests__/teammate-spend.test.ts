@@ -5,7 +5,7 @@
  *
  * @vitest-environment node
  */
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -49,15 +49,20 @@ const ACCESS = {
 let directory: string;
 let connections: RemoteConnectionStore;
 const clock = { now: Date.parse('2026-10-17T12:00:00.000Z') };
-const reached = vi.fn();
+const reached = vi.fn(async (_reached: unknown) => undefined);
+const reset = vi.fn();
 
 function spend() {
-  return new TeammateSpend(directory, connections, reached, () => clock.now);
+  return new TeammateSpend(directory, connections, { reached, reset }, () => clock.now);
 }
+
+const spendFile = () => join(directory, 'communities', 'remote', TEAMMATE_SPEND_FILE);
 
 beforeEach(async () => {
   clock.now = Date.parse('2026-10-17T12:00:00.000Z');
   reached.mockReset();
+  reached.mockImplementation(async () => undefined);
+  reset.mockReset();
   directory = await mkdtemp(join(tmpdir(), 'teammate-spend-'));
   connections = new RemoteConnectionStore(directory, memoryCredentials());
   await connections.addPending(
@@ -82,7 +87,6 @@ afterEach(async () => {
 describe('the monthly limit', () => {
   it('is none by default: every teammate turn may wake, and nothing is told', async () => {
     const counter = spend();
-    await counter.load();
     for (let i = 0; i < 50; i += 1) await counter.record(REF, OWNER, 3);
     expect(counter.allows(REF, OWNER)).toBe(true);
     expect(await counter.summary(REF, OWNER)).toEqual({
@@ -96,7 +100,6 @@ describe('the monthly limit', () => {
 
   it('stops teammates waking agents once the month’s turns cost the limit', async () => {
     const counter = spend();
-    await counter.load();
     await counter.setLimit(REF, OWNER, 1);
     await counter.record(REF, OWNER, 0.6);
     expect(counter.allows(REF, OWNER)).toBe(true);
@@ -106,7 +109,6 @@ describe('the monthly limit', () => {
 
   it('tells the owner once a month, and again for a new limit or a new month', async () => {
     const counter = spend();
-    await counter.load();
     await counter.setLimit(REF, OWNER, 1);
     await counter.record(REF, OWNER, 1);
     await counter.record(REF, OWNER, 1);
@@ -128,7 +130,6 @@ describe('the monthly limit', () => {
 
   it('counts a turn that reported no cost at the estimate, and says the total is approximate', async () => {
     const counter = spend();
-    await counter.load();
     await counter.record(REF, OWNER, undefined);
     expect(await counter.summary(REF, OWNER)).toMatchObject({
       spentUsd: TEAMMATE_TURN_ESTIMATE_USD,
@@ -142,8 +143,7 @@ describe('the monthly limit', () => {
     await first.setLimit(REF, OWNER, 1);
     await first.record(REF, OWNER, 1.5);
     const restarted = spend();
-    expect(restarted.allows(REF, OWNER)).toBe(false); // not read yet: fails closed
-    await restarted.load();
+    // Read when it is made: the gate never answers before the file is read.
     expect(restarted.allows(REF, OWNER)).toBe(false);
     expect(await restarted.summary(REF, OWNER)).toMatchObject({
       monthlyLimitUsd: 1,
@@ -158,7 +158,6 @@ describe('the monthly limit', () => {
 
   it('belongs to its owner: another owner can neither read nor change it', async () => {
     const counter = spend();
-    await counter.load();
     await expect(counter.summary(REF, 'someone-else')).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
     );
@@ -169,7 +168,6 @@ describe('the monthly limit', () => {
 
   it('is forgotten with its connection', async () => {
     const counter = spend();
-    await counter.load();
     await counter.setLimit(REF, OWNER, 1);
     await counter.record(REF, OWNER, 2);
     await connections.disconnect(REF, OWNER);
@@ -186,16 +184,77 @@ describe('the monthly limit', () => {
       CommunityTeammateSpendLimitRequestSchema.safeParse({ monthlyLimitUsd });
     expect(parse(12.345).data).toEqual({ monthlyLimitUsd: 12.35 });
     expect(parse(null).data).toEqual({ monthlyLimitUsd: null });
+    expect(parse(0.005).data).toEqual({ monthlyLimitUsd: 0.01 });
+    // Review B1: checked after rounding, so a tenth of a cent is refused, never saved as $0.
+    expect(parse(0.004).success).toBe(false);
+    expect(parse(0.001).success).toBe(false);
     expect(parse(0).success).toBe(false);
     expect(parse(-5).success).toBe(false);
     expect(parse('5').success).toBe(false);
   });
 });
 
+describe('a file that can’t be read (review S1)', () => {
+  it('is set aside, starts empty, blocks no space, tells the owner once, and takes a new limit', async () => {
+    await mkdir(join(directory, 'communities', 'remote'), { recursive: true });
+    await writeFile(spendFile(), '{"limits":{"x":0},"months":{}}'); // a $0 limit: unreadable
+    const counter = spend();
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(counter.allows(REF, OWNER)).toBe(true);
+    const files = await readdir(join(directory, 'communities', 'remote'));
+    expect(files.some((name) => name.startsWith(`${TEAMMATE_SPEND_FILE}.corrupt-`))).toBe(true);
+    await counter.setLimit(REF, OWNER, 2);
+    expect((await counter.summary(REF, OWNER)).monthlyLimitUsd).toBe(2);
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads a file a newer DorkOS wrote with fields this one doesn’t know', async () => {
+    await mkdir(join(directory, 'communities', 'remote'), { recursive: true });
+    const key = `${OWNER}\0${REF}`;
+    await writeFile(
+      spendFile(),
+      JSON.stringify({
+        limits: { [key]: 1 },
+        months: { [key]: { month: '2026-10', usd: 3, estimated: 0, told: true, extra: 1 } },
+        future: true,
+      })
+    );
+    const counter = spend();
+    expect(reset).not.toHaveBeenCalled();
+    expect(counter.allows(REF, OWNER)).toBe(false);
+  });
+});
+
+describe('what a turn counts as', () => {
+  it('counts a cost that is not a real amount at the estimate, marked approximate (review S2)', async () => {
+    const counter = spend();
+    for (const cost of [Number.NaN, Number.POSITIVE_INFINITY, -1])
+      await counter.record(REF, OWNER, cost);
+    expect(await counter.summary(REF, OWNER)).toMatchObject({
+      spentUsd: 3 * TEAMMATE_TURN_ESTIMATE_USD,
+      approximate: true,
+    });
+    // And the file still reads.
+    expect(spend().allows(REF, OWNER)).toBe(true);
+    expect(reset).not.toHaveBeenCalled();
+  });
+});
+
+describe('telling the owner (review S4)', () => {
+  it('records it as told only once the owner was told, and tries again next turn', async () => {
+    const counter = spend();
+    await counter.setLimit(REF, OWNER, 1);
+    reached.mockRejectedValueOnce(new Error('notifications down'));
+    await counter.record(REF, OWNER, 1);
+    await counter.record(REF, OWNER, 0.1);
+    await counter.record(REF, OWNER, 0.1);
+    expect(reached).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('the wake gate', () => {
   it('answers from the counter, and with none configured, always', async () => {
     const counter = spend();
-    await counter.load();
     await counter.setLimit(REF, OWNER, 1);
     await counter.record(REF, OWNER, 1);
     expect(

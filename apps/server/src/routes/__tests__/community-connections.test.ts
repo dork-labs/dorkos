@@ -1269,7 +1269,12 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
   it('is no limit until the owner sets one, and the gate follows at once', async () => {
     const before = await request(spendServer).get(path).set('x-test-author', 'author-a');
     expect(before.status).toBe(200);
-    expect(before.body).toMatchObject({ monthlyLimitUsd: null, spentUsd: 0, approximate: false });
+    expect(before.body).toMatchObject({
+      monthlyLimitUsd: null,
+      spentUsd: 0,
+      approximate: false,
+      hasAgentsHere: false,
+    });
 
     const changed = await request(spendServer)
       .put(path)
@@ -1305,7 +1310,8 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
   });
 
   it('refuses a limit that is not dollars above zero, and a connection that is not there', async () => {
-    for (const monthlyLimitUsd of [0, -1, 'ten']) {
+    // Review B1: a tenth of a cent rounds to nothing and is refused, never saved as $0.
+    for (const monthlyLimitUsd of [0, 0.004, -1, 'ten']) {
       const malformed = await request(spendServer)
         .put(path)
         .set('x-test-author', 'author-a')
