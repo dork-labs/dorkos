@@ -55,6 +55,10 @@ chat that ran `vc show` with a `<ui_action>` turn carrying the screen's full
 selection, any written reply (as `message`), and every pin on it. Exploration (toggling options, sliders, theme,
 history) never wakes anyone.
 
+A long reply arrives whole. Only when a `<ui_action>` would pass DorkOS's 8 KB payload cap are older pins
+dropped and then the reply shortened, and that screen says `message_truncated: true`. The full text is
+always in `events_file`.
+
 - While you're mid-turn, DorkOS answers 409 and the companion retries until
   you're free (up to 30 minutes; at most 20 wakes an hour).
 - **Where a Send goes.** Each screen remembers the chat that showed it

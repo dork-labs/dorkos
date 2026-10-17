@@ -3,6 +3,8 @@
 // screen, and the reply dock sends a written reply and remembers what was sent.
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   project,
   vc,
@@ -248,16 +250,39 @@ test('a long reply arrives whole, and one past the cap is cut to fit it', async 
       await waitFor(() => bodies.length >= n, 8000, 50, 'delivered ' + n);
       return bodies[n - 1].payload;
     };
-    // Well past the old 500-character clip, well inside the cap: untouched.
+    // Well past the old 500-character clip, well inside the cap: untouched,
+    // and the summary line only quotes it.
     const long = 'word '.repeat(600).trim();
-    assert.equal((await send('one', long, 1)).screens[0].message, long);
-    // Past DorkOS's 8,192-character payload cap: shortened just enough.
+    const whole = await send('one', long, 1);
+    assert.equal(whole.screens[0].message, long);
+    assert.equal(whole.screens[0].message_truncated, undefined);
+    assert.ok(whole.summary[0].length < 250, 'summary quotes, got ' + whole.summary[0].length);
+    // Past DorkOS's 8,192-character ui-action cap: shortened just enough, and says so.
     const huge = 'x'.repeat(12000);
     const payload = await send('two', huge, 2);
     const message = payload.screens[0].message;
     assert.ok(JSON.stringify(payload).length <= 8192, 'payload under the cap');
     assert.ok(message.endsWith('…'), 'marked as cut');
-    assert.ok(message.length > 3000, 'kept as much as fits, got ' + message.length);
+    assert.equal(payload.screens[0].message_truncated, true);
+    assert.ok(payload.events_file, 'points at the whole reply');
+    assert.ok(message.length > 6000, 'kept as much as fits, got ' + message.length);
+    // A plain message has no 8 KB cap, so the same reply goes through whole.
+    const dorkos = 'http://127.0.0.1:' + srv.address().port;
+    // Written directly: `vc route on` checks the session over HTTP, and the
+    // synchronous vc helper would block this process's fake DorkOS from answering.
+    const s = vc(dir, ['status']);
+    fs.writeFileSync(
+      path.join(s.state_dir || path.join(s.session_dir, 'state'), 'route.json'),
+      JSON.stringify({ mode: 'message', session: 'chat-w', dorkos, label: null })
+    );
+    await page.goto(r.url + '?screen=three');
+    await page.locator('.vc-send-input').fill(huge);
+    await page.locator('.vc-send-btn').click();
+    await waitFor(() => bodies.length >= 3, 8000, 50, 'delivered as a message');
+    const sent = JSON.parse(
+      bodies[2].content.split('<visual_companion>\n')[1].split('\n</visual_companion>')[0]
+    );
+    assert.equal(sent.screens[0].message, huge);
     await page.close();
   } finally {
     srv.closeAllConnections();
