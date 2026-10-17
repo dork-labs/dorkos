@@ -250,6 +250,7 @@ export {
   TIME_UNITS,
   SSE_RESILIENCE,
   SETTINGS_TAB_DIRECTORY,
+  settingsTabsFor,
   SETTINGS_ADVANCED_GROUP,
   type BuiltInSettingsTab,
   type SettingsTabEntry,

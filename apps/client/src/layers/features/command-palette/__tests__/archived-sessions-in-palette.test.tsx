@@ -103,6 +103,8 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
 });
 Element.prototype.scrollIntoView = vi.fn();
 
+// The palette asks whether it runs on a hub; these cases run on a computer.
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => false }));
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => mockNavigate,

@@ -61,6 +61,7 @@ import { hasAnyApiKey, readOwnerEmail } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
@@ -126,6 +127,7 @@ router.get('/', async (c) => {
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
     isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    serverRole: currentServerRole(),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],

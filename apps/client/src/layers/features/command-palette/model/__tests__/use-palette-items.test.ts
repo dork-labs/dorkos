@@ -134,6 +134,9 @@ const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
 const mockUseSlotContributions = vi.fn(() => DEFAULT_PALETTE_CONTRIBUTIONS);
 const mockUseMenuExtensionPages = vi.fn((): ExtensionPageContribution[] => []);
 
+// Whether the palette runs on a hub; a computer unless a case says otherwise.
+const hub = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => mockUseMeshAgentPaths(),
 }));
@@ -250,6 +253,7 @@ describe('usePaletteItems', () => {
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
     mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
     mockUseMenuExtensionPages.mockReturnValue([]);
+    hub.value = false;
   });
 
   // --- Static content groups ---
@@ -304,6 +308,32 @@ describe('usePaletteItems', () => {
     expect(ids).toContain('relay');
     expect(ids).toContain('mesh');
     expect(ids).toContain('settings');
+  });
+
+  it('offers no row on a hub for a Settings tab a hub does not have', () => {
+    const settingsRow = (id: string) => ({
+      id: `settings-${id}`,
+      label: `${id} — Settings`,
+      icon: 'Settings',
+      action: `openSettingsTab:${id}`,
+      category: 'feature' as const,
+      priority: 30,
+    });
+    mockUseSlotContributions.mockReturnValue([
+      ...DEFAULT_PALETTE_CONTRIBUTIONS,
+      settingsRow('runtimes'),
+      settingsRow('appearance'),
+    ]);
+    hub.value = true;
+    const onHub = renderHook(() => usePaletteItems(null, NOW));
+    const ids = corpusOf(onHub.result.current, 'feature').map((f) => f.id);
+    expect(ids).toContain('settings-appearance');
+    expect(ids).not.toContain('settings-runtimes');
+    hub.value = false;
+    const onComputer = renderHook(() => usePaletteItems(null, NOW));
+    expect(corpusOf(onComputer.result.current, 'feature').map((f) => f.id)).toContain(
+      'settings-runtimes'
+    );
   });
 
   it('offers every registered quick action as a searchable row', () => {

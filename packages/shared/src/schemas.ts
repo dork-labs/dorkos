@@ -4588,6 +4588,10 @@ export const ServerConfigSchema = z
     isDevMode: z
       .boolean()
       .openapi({ description: 'Whether the server is running a development build' }),
+    serverRole: z.enum(['computer', 'hub']).optional().openapi({
+      description:
+        'What this server is: a person`s own computer, or a hub (their own DorkOS in the cloud), where the settings that only make sense on a computer do not apply. Absent from an older server, which is a computer',
+    }),
     isLocalCaller: z.boolean().openapi({
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',

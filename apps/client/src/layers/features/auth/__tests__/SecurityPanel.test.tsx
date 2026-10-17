@@ -55,15 +55,27 @@ const WRONG_PASSWORD = {
   error: { message: 'Invalid email or password', status: 401, code: 'INVALID_EMAIL_OR_PASSWORD' },
 };
 
-function configWith(authEnabled: boolean, ownerEmail: string | null): ServerConfig {
-  return { auth: { enabled: authEnabled, ownerEmail } } as unknown as ServerConfig;
+function configWith(
+  authEnabled: boolean,
+  ownerEmail: string | null,
+  serverRole?: 'computer' | 'hub'
+): ServerConfig {
+  return {
+    auth: { enabled: authEnabled, ownerEmail },
+    ...(serverRole ? { serverRole } : {}),
+  } as unknown as ServerConfig;
 }
 
-function setup(opts: { authEnabled: boolean; ownerEmail?: string | null; client?: AuthClient }) {
+function setup(opts: {
+  authEnabled: boolean;
+  ownerEmail?: string | null;
+  client?: AuthClient;
+  serverRole?: 'computer' | 'hub';
+}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const transport = createMockTransport();
   vi.mocked(transport.getConfig).mockResolvedValue(
-    configWith(opts.authEnabled, opts.ownerEmail ?? null)
+    configWith(opts.authEnabled, opts.ownerEmail ?? null, opts.serverRole)
   );
   const client = opts.client ?? createFakeAuthClient();
 
@@ -82,6 +94,16 @@ function setup(opts: { authEnabled: boolean; ownerEmail?: string | null; client?
 describe('SecurityPanel', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
+
+  it('has no "this computer" password switch on a hub, which signs in with DorkOS', async () => {
+    setup({ authEnabled: true, ownerEmail: 'owner@example.com', serverRole: 'hub' });
+    expect(
+      await screen.findByText('You sign in here with your DorkOS account.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('switch', { name: /ask for a password on this computer too/i })
+    ).not.toBeInTheDocument();
+  });
 
   it('renders no user affordances when auth is disabled', async () => {
     setup({ authEnabled: false });
