@@ -441,6 +441,10 @@
       "types": "./src/community-navigation.ts",
       "default": "./dist/community-navigation.js"
     },
+    "./canvas-doc-frame-wire": {
+      "types": "./src/canvas-doc-frame-wire.ts",
+      "default": "./dist/canvas-doc-frame-wire.js"
+    },
     "./canvas-bridge-wire": {
       "types": "./src/canvas-bridge-wire.ts",
       "default": "./dist/canvas-bridge-wire.js"
