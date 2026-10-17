@@ -869,12 +869,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // The agent this turn is dispatched AS, in the runtime-neutral field
         // every named-agent dispatch uses (spec `agent-home-desk` §4.1).
         forAgent: request.agentPath,
-        // Exactly the folders placement granted THIS turn (invariant I5): the
-        // agent's copy of the room's files and the room's shared tree. Absent
-        // for a room without files, which grants nothing.
-        ...(request.additionalDirectories.length > 0
-          ? { additionalDirectories: request.additionalDirectories }
-          : {}),
         // Run at LAUNCH — immediately, or when a turn queued behind this
         // session's running one is released — never at placement (§5.9, §6.1).
         //
@@ -950,7 +944,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // And the bound on THIS turn, from who wrote the message: applied by the
         // runtime on top of whatever the conversation is set to, and never
         // stored (spec `trusted-by-default-flip` §4).
-        // A teammate's turn also has nobody to ask (DOR-2955).
+        // A teammate's turn also has nobody to ask (DOR-2955). And the folders
+        // placement granted THIS turn (invariant I5): the agent's copy of the
+        // room's files and the room's shared tree; none for a room without
+        // files, nor for a teammate's turn (DOR-2956).
         ...turnBoundsOf(request),
         projector,
         runtime,

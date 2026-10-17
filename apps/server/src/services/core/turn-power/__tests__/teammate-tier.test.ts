@@ -7,14 +7,14 @@ import { DORKOS_AGENT_TOOLS } from '../../../runtimes/claude-code/messaging/inte
 import { IN_SESSION_TOOL_PREFIX } from '../../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import {
   TEAMMATE_DORKOS_TOOLS,
-  TEAMMATE_FENCE_DENIAL,
-  teammateFenceRefusal,
-} from '../teammate-fence.js';
+  TEAMMATE_TIER_DENIAL,
+  teammateTierRefusal,
+} from '../teammate-tier.js';
 
 const FENCE = { roomId: 'room-answered' };
 
 const dorkos = (name: string, input: Record<string, unknown> = {}) =>
-  teammateFenceRefusal(FENCE, { source: 'dorkos', name, input });
+  teammateTierRefusal(FENCE, { source: 'dorkos', name, input });
 
 describe('the teammate fence', () => {
   it('decides every DorkOS tool an agent may call without a card', () => {
@@ -36,8 +36,8 @@ describe('the teammate fence', () => {
   it.each(['post_to_room', 'read_room_history', 'search_room_history', 'get_room', 'read_canvas'])(
     'refuses %s in any other room, or with no room named',
     (name) => {
-      expect(dorkos(name, { roomId: 'room-of-the-owner' })).toBe(TEAMMATE_FENCE_DENIAL);
-      expect(dorkos(name, {})).toBe(TEAMMATE_FENCE_DENIAL);
+      expect(dorkos(name, { roomId: 'room-of-the-owner' })).toBe(TEAMMATE_TIER_DENIAL);
+      expect(dorkos(name, {})).toBe(TEAMMATE_TIER_DENIAL);
     }
   );
 
@@ -57,12 +57,12 @@ describe('the teammate fence', () => {
     'request_permission',
     'control_ui',
   ])('refuses %s even when it names the room', (name) => {
-    expect(dorkos(name, { roomId: 'room-answered' })).toBe(TEAMMATE_FENCE_DENIAL);
+    expect(dorkos(name, { roomId: 'room-answered' })).toBe(TEAMMATE_TIER_DENIAL);
   });
 
   it('refuses a DorkOS tool nobody decided about', () => {
-    expect(dorkos('tasks_create', { roomId: 'room-answered' })).toBe(TEAMMATE_FENCE_DENIAL);
-    expect(dorkos('__proto__')).toBe(TEAMMATE_FENCE_DENIAL);
+    expect(dorkos('tasks_create', { roomId: 'room-answered' })).toBe(TEAMMATE_TIER_DENIAL);
+    expect(dorkos('__proto__')).toBe(TEAMMATE_TIER_DENIAL);
   });
 
   // The review's BLOCKER: a name-only allowance let these reach every directory the owner's
@@ -76,18 +76,18 @@ describe('the teammate fence', () => {
     ['LS', { path: '/' }],
     ['NotebookRead', { notebook_path: 'analysis.ipynb' }],
   ])('refuses %s at any path (%o)', (name, input) => {
-    expect(teammateFenceRefusal(FENCE, { source: 'built-in', name, input })).toBe(
-      TEAMMATE_FENCE_DENIAL
+    expect(teammateTierRefusal(FENCE, { source: 'built-in', name, input })).toBe(
+      TEAMMATE_TIER_DENIAL
     );
   });
 
   it('lets the to-do list through and nothing else the runtime has', () => {
     expect(
-      teammateFenceRefusal(FENCE, { source: 'built-in', name: 'TodoWrite', input: {} })
+      teammateTierRefusal(FENCE, { source: 'built-in', name: 'TodoWrite', input: {} })
     ).toBeNull();
     for (const name of ['Bash', 'Edit', 'Write', 'WebFetch', 'WebSearch', 'Task', 'Agent']) {
-      expect(teammateFenceRefusal(FENCE, { source: 'built-in', name, input: {} })).toBe(
-        TEAMMATE_FENCE_DENIAL
+      expect(teammateTierRefusal(FENCE, { source: 'built-in', name, input: {} })).toBe(
+        TEAMMATE_TIER_DENIAL
       );
     }
   });
@@ -95,20 +95,20 @@ describe('the teammate fence', () => {
   it('lists the room’s canvas but reads no document on it, which can be a file off disk', () => {
     expect(dorkos('read_canvas', { roomId: 'room-answered' })).toBeNull();
     expect(dorkos('read_canvas', { roomId: 'room-answered', documentId: 'doc-1' })).toBe(
-      TEAMMATE_FENCE_DENIAL
+      TEAMMATE_TIER_DENIAL
     );
   });
 
   it('counts any attachments value but an empty list as a file', () => {
     expect(dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: '' })).toBe(
-      TEAMMATE_FENCE_DENIAL
+      TEAMMATE_TIER_DENIAL
     );
   });
 
   it('refuses a post to the room that carries a file, and lets one without through', () => {
     expect(
       dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: ['.env'] })
-    ).toBe(TEAMMATE_FENCE_DENIAL);
+    ).toBe(TEAMMATE_TIER_DENIAL);
     expect(
       dorkos('post_to_room', { roomId: 'room-answered', text: 'here', attachments: [] })
     ).toBeNull();
@@ -117,11 +117,11 @@ describe('the teammate fence', () => {
 
   it('refuses every tool another MCP server serves, the owner’s connected apps included', () => {
     expect(
-      teammateFenceRefusal(FENCE, {
+      teammateTierRefusal(FENCE, {
         source: 'mcp',
         name: 'mcp__github__create_issue',
         input: { roomId: 'room-answered' },
       })
-    ).toBe(TEAMMATE_FENCE_DENIAL);
+    ).toBe(TEAMMATE_TIER_DENIAL);
   });
 });

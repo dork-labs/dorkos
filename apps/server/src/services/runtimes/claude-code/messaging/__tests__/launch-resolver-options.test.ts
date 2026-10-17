@@ -154,7 +154,7 @@ describe('the launch options every Claude Code turn is given', () => {
     const signal = { signal: new AbortController().signal };
 
     expect(await hook(call, 'tool-1', signal)).toEqual({});
-    session.teammateFence = { roomId: 'room-answered' };
+    session.teammateTier = { roomId: 'room-answered' };
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
     });
@@ -204,6 +204,47 @@ describe('the launch options every Claude Code turn is given', () => {
     // And an ordinary turn after an ordinary turn relaunches for none of this.
     expect(compareLaunchFingerprints(pin(owner), pin(ownerAgain)).action).not.toBe('relaunch');
     // Back to the file's own stub, which `clearAllMocks` would not restore.
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>mock</env>',
+      stable: '<env>mock</env>',
+    });
+  });
+
+  it('launches a teammate’s turn without the owner’s profile, folder or grants (DOR-2956)', async () => {
+    // Red when: the launcher stops asking the append for the teammate form, or applies a
+    // caller's folder grants to a teammate's turn. Owner turns are unchanged.
+    const asked: Array<Record<string, unknown> | undefined> = [];
+    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => {
+      asked.push(options as Record<string, unknown> | undefined);
+      return { text: '<env>mock</env>', stable: '<env>mock</env>' };
+    });
+    const grants = [{ path: '/elsewhere/private-repo', access: 'read' as const }];
+    const resolve = (messageOpts: MessageOpts) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session: makeSession(),
+        opts: makeOpts(),
+        messageOpts,
+        effectiveCwd: '/mock/project',
+      });
+    const reach = (launch: Awaited<ReturnType<typeof resolve>>) =>
+      (launch.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
+        ?.permissions?.additionalDirectories ?? [];
+
+    const teammate = await resolve({
+      additionalDirectories: grants,
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+    });
+    const owner = await resolve({
+      additionalDirectories: grants,
+      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' },
+    });
+
+    expect(asked[0]).toMatchObject({ memory: false, teammate: true });
+    expect(asked[1]?.teammate).toBeUndefined();
+    expect(reach(teammate)).toEqual([]);
+    expect(reach(owner)).toContain('/elsewhere/private-repo');
     vi.mocked(buildSystemPromptAppend).mockResolvedValue({
       text: '<env>mock</env>',
       stable: '<env>mock</env>',

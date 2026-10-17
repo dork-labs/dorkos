@@ -1,25 +1,22 @@
 /**
- * The teammate fence in Claude Code (DOR-2955): a `PreToolUse` hook that refuses every call a
+ * The teammate tier in Claude Code (DOR-2955, DOR-2956): a `PreToolUse` hook that refuses every call a
  * teammate's turn may not make, before Claude Code's own permission rules are read.
  *
  * **A hook, not `canUseTool`, on purpose.** `canUseTool` is asked only about calls the CLI's own
  * rules did not already settle: a rule saved by an "Always allow" click, or an `allow` line in a
  * settings file, runs the tool without ever reaching it. A `PreToolUse` deny is decided first and
  * cannot be overridden by an allow rule, in every permission mode, for helper agents' calls too.
- * The decision itself lives in `core/turn-power/teammate-fence.ts`; this file only reads the call
+ * The decision itself lives in `core/turn-power/teammate-tier.ts`; this file only reads the call
  * Claude Code hands it.
  *
  * Read at CALL time from the session, never captured at launch: a warm process serves many turns,
- * and the fence belongs to whichever turn is running (`turn-bounds.ts` assigns it per send).
+ * and the tier belongs to whichever turn is running (`turn-bounds.ts` assigns it per send).
  *
- * @module services/runtimes/claude-code/teammate-fence-hook
+ * @module services/runtimes/claude-code/teammate-tier-hook
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import { logRefusal } from '../../observability/refusals.js';
-import {
-  teammateFenceRefusal,
-  type TeammateFenceCall,
-} from '../../core/turn-power/teammate-fence.js';
+import { teammateTierRefusal, type TeammateTierCall } from '../../core/turn-power/teammate-tier.js';
 import type { AgentSession } from './agent-types.js';
 import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from './mcp-tools/tool-exposure.js';
 
@@ -33,7 +30,7 @@ import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from './mcp-tools/
 function sourceOf(
   toolName: string,
   provenance: { source: string } | undefined
-): Pick<TeammateFenceCall, 'source' | 'name'> {
+): Pick<TeammateTierCall, 'source' | 'name'> {
   if (toolName.startsWith(IN_SESSION_TOOL_PREFIX) && isHostServedOrUnattributed(provenance)) {
     return { source: 'dorkos', name: toolName.slice(IN_SESSION_TOOL_PREFIX.length) };
   }
@@ -47,18 +44,16 @@ function sourceOf(
  *
  * @param session - The session whose running turn may be fenced.
  */
-export function createTeammateFenceHook(
-  session: Pick<AgentSession, 'teammateFence'>
-): HookCallback {
+export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier'>): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
-    const fence = session.teammateFence;
+    const fence = session.teammateTier;
     if (!fence) return {};
     const input =
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    const refusal = teammateFenceRefusal(fence, {
+    const refusal = teammateTierRefusal(fence, {
       ...sourceOf(hookInput.tool_name, hookInput.mcp_server),
       input,
     });
