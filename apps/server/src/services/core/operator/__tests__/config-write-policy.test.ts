@@ -95,6 +95,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].transport',
       'connectors.rawMcpServers[].url',
+      // Whether the Docs experiment is on (DOR-2993).
+      'docs.enabled',
       'extensions.approvedPermissions',
       'extensions.approvedSources',
       'extensions.approvedToRun',

@@ -229,6 +229,8 @@ export const CONFIG_DISCLOSURE = {
   // Whether chatting from the web is on (DOR-2946): a plain boolean. The hub's
   // address and the relay secret live in the relay's own file, never in config.
   'sessionRelay.enabled': 'expose',
+  // Whether the Docs experiment is on (DOR-2993): a plain boolean.
+  'docs.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a

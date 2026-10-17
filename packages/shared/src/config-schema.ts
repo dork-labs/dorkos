@@ -678,6 +678,22 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({ enabled: false })),
   /**
+   * Docs: markdown documents people and agents write together, with embeds,
+   * wiki links, comments and live editing (DOR-2981 to DOR-2984).
+   *
+   * An experiment, OFF by default: while it is off the `/api/documents`
+   * routes answer 404 and the canvas editor gets no embed components, wiki
+   * link resolution, comments or live editing (the editor still parses the
+   * `::name` and `[[link]]` syntax either way). Read on every request, so a
+   * change takes effect at once. It joins Settings → Experiments with the
+   * first Docs feature; graduation is DOR-2993.
+   */
+  docs: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false })),
+  /**
    * Letting agents on other systems talk to the agents on this one.
    *
    * A2A is a shared language for agents built by different people. Turn this on

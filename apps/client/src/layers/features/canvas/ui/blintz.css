@@ -37,3 +37,12 @@
   --blintz-code-type: hsl(var(--status-info-fg));
   --blintz-code-operator: hsl(var(--foreground));
 }
+
+/* Blintz labels a diagram's preview in letterspaced capitals; the design
+   system keeps small labels in sentence case. */
+.dorkos-markdown .preview-panel .preview-label {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+}

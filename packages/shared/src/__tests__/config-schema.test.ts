@@ -65,6 +65,7 @@ describe('UserConfigSchema', () => {
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       sessionRelay: { enabled: false },
+      docs: { enabled: false },
       tunnel: {
         enabled: false,
         domain: null,
@@ -484,6 +485,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       browser: { enabled: false },
       spaces: { enabled: false, official: { url: '' } },
       sessionRelay: { enabled: false },
+      docs: { enabled: false },
       tunnel: {
         enabled: false,
         domain: null,

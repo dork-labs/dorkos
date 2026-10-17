@@ -381,6 +381,9 @@ export const CONFIG_WRITE_POLICY = {
   // (DOR-2946). A "who can reach this computer" door, so a person opens it,
   // never an agent.
   'sessionRelay.enabled': 'operator-only',
+  // Whether the Docs experiment is on (DOR-2993). Like every experiment, a
+  // person tries it, never an agent.
+  'docs.enabled': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
@@ -1176,6 +1179,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'welcomeBack.offersEnabled',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
+      // Docs: a mention in a doc comment wakes the agent it names (DOR-2983).
+      'docs.enabled',
     ],
   },
   {
