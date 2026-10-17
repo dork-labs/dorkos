@@ -73,36 +73,51 @@ export function LiveDocEditor({ doc, renderEditor, fallback, onFileChanged }: Li
     fileChanged.current = onFileChanged;
   });
 
-  // A fresh copy replaced one that held edits of its own: keep them as a version.
-  const [lostEdits, setLostEdits] = useState<'kept' | { failed: string } | null>(null);
+  // Text that never reached the file, offered back once: from a fresh copy
+  // replacing one with unsaved edits (when keeping them as a version failed),
+  // or from live editing stopping for good after the person typed.
+  type Offer = { draft: string; basedOn: string | null; reason: 'stopped' | 'replaced' };
+  const [offer, setOffer] = useState<Offer | null>(null);
+  const [keptLost, setKeptLost] = useState(false);
   const handledLost = useRef(0);
+  const savedHash = live.savedHash;
   useEffect(() => {
     if (live.lostEdits <= handledLost.current) return;
     handledLost.current = live.lostEdits;
     const text = latest.current;
     if (text === null) return;
     transport.keepDocDraft(doc, text).then(
-      () => setLostEdits('kept'),
-      () => setLostEdits({ failed: text })
+      () => setKeptLost(true),
+      () => setOffer({ draft: text, basedOn: savedHash, reason: 'replaced' })
     );
-  }, [live.lostEdits, transport, doc]);
+  }, [live.lostEdits, transport, doc, savedHash]);
 
-  // Live editing stopped for good after being live: offer the text back, and
-  // let the fallback editor show the file as it is now.
-  const [draft, setDraft] = useState<string | null>(null);
+  const ownEditsUnsaved = live.ownEditsUnsaved;
   useEffect(() => {
     if (live.status !== 'unavailable' || !live.everLive) return;
-    setDraft(latest.current);
+    const text = latest.current;
+    // Only text the file does not have: edits that were all saved need nothing.
+    if (text !== null && ownEditsUnsaved) {
+      setOffer((current) => current ?? { draft: text, basedOn: savedHash, reason: 'stopped' });
+    }
     fileChanged.current?.();
-  }, [live.status, live.everLive]);
-  const draftDone = useCallback((changed: boolean) => {
-    setDraft(null);
+  }, [live.status, live.everLive, savedHash, ownEditsUnsaved]);
+  const offerDone = useCallback((changed: boolean) => {
+    setOffer(null);
     if (changed) fileChanged.current?.();
   }, []);
-  const lostDone = useCallback(() => setLostEdits(null), []);
   const restored = useCallback((wasLive: boolean) => {
     if (!wasLive) fileChanged.current?.();
   }, []);
+  const notice = offer && (
+    <UnsavedDraftNotice
+      doc={doc}
+      draft={offer.draft}
+      basedOn={offer.basedOn}
+      reason={offer.reason}
+      onDone={offerDone}
+    />
+  );
 
   if (live.status === 'unavailable') {
     return (
@@ -110,7 +125,7 @@ export function LiveDocEditor({ doc, renderEditor, fallback, onFileChanged }: Li
         <div className="flex justify-end px-2 pt-1">
           <VersionsMenu doc={doc} onRestored={restored} />
         </div>
-        {draft !== null && <UnsavedDraftNotice doc={doc} draft={draft} onDone={draftDone} />}
+        {notice}
         <div className="min-h-0 flex-1">{fallback}</div>
       </div>
     );
@@ -118,7 +133,12 @@ export function LiveDocEditor({ doc, renderEditor, fallback, onFileChanged }: Li
   // Never an editor on a copy that has not arrived: it would show an empty
   // page, and its first paragraph would merge in beside the real ones.
   if (!live.synced || !live.plugins) {
-    return <div className="text-muted-foreground p-4 text-sm">Loading editor…</div>;
+    return (
+      <div className="flex h-full flex-col">
+        {notice}
+        <div className="text-muted-foreground p-4 text-sm">Loading editor…</div>
+      </div>
+    );
   }
 
   const status =
@@ -126,7 +146,7 @@ export function LiveDocEditor({ doc, renderEditor, fallback, onFileChanged }: Li
       ? 'Reconnecting. Your edits sync when it’s back.'
       : live.gone
         ? 'This file was moved or deleted. Its text is kept as a version.'
-        : lostEdits === 'kept'
+        : keptLost
           ? 'Your edits from before the reconnect are kept as a version.'
           : live.recentChange
             ? changeLine(live.recentChange)
@@ -148,9 +168,7 @@ export function LiveDocEditor({ doc, renderEditor, fallback, onFileChanged }: Li
           {editing ? <Check className="size-4" /> : <Pencil className="size-4" />}
         </Button>
       </div>
-      {lostEdits !== null && lostEdits !== 'kept' && (
-        <UnsavedDraftNotice doc={doc} draft={lostEdits.failed} onDone={lostDone} />
-      )}
+      {notice}
       <div className="min-h-0 flex-1">
         {/* eslint-disable-next-line react-hooks/refs -- onChange writes the ref when the editor changes, never during render */}
         {renderEditor({

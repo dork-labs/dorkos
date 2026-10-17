@@ -25,8 +25,14 @@ export class FakeDocServer {
   readonly peers = new Set<Peer>();
   /** When set, the next connection is refused with this status. */
   refuseWith: number | null = null;
+  /** When set, every connection is refused with this status (Docs turned off). */
+  refuseAll: number | null = null;
+  /** When set, start refusing every connection with it once a stale copy has been turned away. */
+  refuseAfterStale: number | null = null;
   /** While true, nothing reaches editors and nothing closes: a half-open socket. */
   muted = false;
+  /** How long the server takes to answer a sync request: a large doc over a slow link. */
+  syncDelayMs = 0;
 
   constructor(text = '') {
     if (text) this.doc.getXmlFragment('prosemirror').insert(0, [new Y.XmlText(text)]);
@@ -72,6 +78,12 @@ export class FakeDocServer {
     }
   }
 
+  /** Save: tell every editor the file now holds the doc as it is. */
+  save(hash = 'saved-hash'): void {
+    const stateVector = btoa(String.fromCharCode(...Y.encodeStateVector(this.doc)));
+    this.note({ type: 'saved', hash, stateVector });
+  }
+
   /** Say something to every editor. */
   note(note: DocCollabNote): void {
     const encoder = encoding.createEncoder();
@@ -88,7 +100,7 @@ export class FakeDocServer {
       connectDocCollab: vi.fn(
         (_doc, handlers: DocCollabHandlers, options: { generation?: string } = {}) => {
           const peer: Peer = { handlers, open: false };
-          const refused = this.refuseWith;
+          const refused = this.refuseAll ?? this.refuseWith;
           this.refuseWith = null;
           queueMicrotask(() => {
             if (refused !== null) {
@@ -105,6 +117,7 @@ export class FakeDocServer {
                 JSON.stringify({ type: 'hello', generation: this.generation })
               );
               handlers.onMessage(encoding.toUint8Array(hello));
+              if (this.refuseAfterStale !== null) this.refuseAll = this.refuseAfterStale;
               handlers.onClose({});
               return;
             }
@@ -151,7 +164,12 @@ export class FakeDocServer {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, DOC_COLLAB_MESSAGE.sync);
       syncProtocol.readSyncMessage(decoder, encoder, this.doc, peer);
-      if (encoding.length(encoder) > 1) peer.handlers.onMessage(encoding.toUint8Array(encoder));
+      if (encoding.length(encoder) > 1) {
+        const reply = encoding.toUint8Array(encoder);
+        if (this.syncDelayMs > 0)
+          setTimeout(() => peer.handlers.onMessage(reply), this.syncDelayMs);
+        else peer.handlers.onMessage(reply);
+      }
     } else if (type === DOC_COLLAB_MESSAGE.awareness) {
       applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), peer);
     }

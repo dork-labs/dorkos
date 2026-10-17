@@ -9,6 +9,14 @@ export interface UnsavedDraftNoticeProps {
   doc: DocRef;
   /** The doc's text as this editor last held it. */
   draft: string;
+  /**
+   * The file's hash the draft was written against (the last save the editor
+   * heard of). Saving checks it, so a change somebody made since is never
+   * replaced without asking. `null` when unknown: the file as it is now.
+   */
+  basedOn: string | null;
+  /** Why the text is offered: live editing stopped, or the doc was reloaded under it. */
+  reason: 'stopped' | 'replaced';
   /** The notice is done: `changed` when the file now holds the draft. */
   onDone: (changed: boolean) => void;
 }
@@ -22,13 +30,21 @@ type State =
   | { kind: 'error'; hash?: string };
 
 /**
- * Text that never reached the file when live editing stopped (DOR-2984): the
- * server stopped serving the doc live (Docs turned off, the file too large)
- * after this editor typed into it. Offered back rather than dropped, through
- * the same save the file editor uses, conflict check included. Says nothing
- * when the file already holds it.
+ * Text that never reached the file (DOR-2984): the server stopped serving the
+ * doc live (Docs turned off, the file too large) after this editor typed into
+ * it, or reloaded the doc under it and could not keep the text as a version.
+ * Offered back rather than dropped, through the same save the file editor
+ * uses, checked against the file the text was based on, so a change somebody
+ * made since is never replaced without asking. Says nothing when the file
+ * already holds it.
  */
-export function UnsavedDraftNotice({ doc, draft, onDone }: UnsavedDraftNoticeProps) {
+export function UnsavedDraftNotice({
+  doc,
+  draft,
+  basedOn,
+  reason,
+  onDone,
+}: UnsavedDraftNoticeProps) {
   const transport = useTransport();
   const [state, setState] = useState<State>({ kind: 'checking' });
   const [attempt, setAttempt] = useState(0);
@@ -39,14 +55,14 @@ export function UnsavedDraftNotice({ doc, draft, onDone }: UnsavedDraftNoticePro
       (file) => {
         if (cancelled) return;
         if (file.content === draft) onDone(false);
-        else setState({ kind: 'differs', hash: file.hash });
+        else setState({ kind: 'differs', hash: basedOn ?? file.hash });
       },
       () => !cancelled && setState({ kind: 'error' })
     );
     return () => {
       cancelled = true;
     };
-  }, [transport, doc.cwd, doc.path, draft, onDone, attempt]);
+  }, [transport, doc.cwd, doc.path, draft, basedOn, onDone, attempt]);
 
   const save = async (expectedHash?: string) => {
     setState({ kind: 'saving' });
@@ -79,7 +95,9 @@ export function UnsavedDraftNotice({ doc, draft, onDone }: UnsavedDraftNoticePro
       ? 'The file changed since. Saving replaces those changes.'
       : state.kind === 'error'
         ? 'Couldn’t save your last edits. Try again.'
-        : 'Live editing stopped before your last edits reached the file.';
+        : reason === 'replaced'
+          ? 'This doc was reloaded. Your earlier edits weren’t merged into it.'
+          : 'Live editing stopped before your last edits reached the file.';
   return (
     <div
       role="status"

@@ -210,6 +210,7 @@ describe('LiveDocSlot', () => {
     });
     renderSlot(transport, { on: true, onFileChanged });
     await screen.findByTestId('live-editor', {}, LAZY);
+    typeLive('Typed before it stopped.');
     editorChange.current?.('# Plan\n\nTyped before it stopped.');
 
     // Docs turned off: the server refuses the reconnect.
@@ -229,6 +230,83 @@ describe('LiveDocSlot', () => {
       )
     );
     await waitFor(() => expect(onFileChanged).toHaveBeenCalledTimes(2));
+  });
+
+  it('offers the edits back, even while the fresh copy is still loading, when they could not be kept', async () => {
+    const server = new FakeDocServer('# Old');
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+      keepDocDraft: vi.fn().mockRejectedValue(new Error('offline')),
+      readFileContent: vi
+        .fn()
+        .mockResolvedValue({ content: '# Fresh', hash: 'h1', encoding: 'utf-8' }),
+    });
+    renderSlot(transport, { on: true });
+    await screen.findByTestId('live-editor', {}, LAZY);
+    typeLive('Typed on the old copy.');
+    editorChange.current?.('# Old\n\nTyped on the old copy.');
+    server.dropAll();
+    server.reload('# Fresh');
+    // The fresh copy never arrives: what the editor sends is lost on the way.
+    server.muted = true;
+
+    expect(await screen.findByText(/weren’t merged into it/, {}, RECONNECT)).toBeInTheDocument();
+    expect(screen.getByText('Loading editor…')).toBeInTheDocument();
+  });
+
+  it('saves offered edits against the file they were based on, so a later change is not replaced silently', async () => {
+    const server = new FakeDocServer('# Plan');
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+      // Somebody changed the file after the last save this editor heard of.
+      readFileContent: vi
+        .fn()
+        .mockResolvedValue({ content: '# Changed', hash: 'h-later', encoding: 'utf-8' }),
+      writeFile: vi.fn().mockResolvedValue({
+        ok: false,
+        conflict: { currentHash: 'h-later', currentContent: '# Changed' },
+      }),
+    });
+    renderSlot(transport, { on: true });
+    await screen.findByTestId('live-editor', {}, LAZY);
+    server.save('h-saved');
+    typeLive('Typed after the last save.');
+    editorChange.current?.('# Plan\n\nTyped after the last save.');
+    server.refuseWith = 404;
+    server.dropAll();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save them' }, RECONNECT));
+    await waitFor(() =>
+      expect(transport.writeFile).toHaveBeenCalledWith(
+        '/work',
+        'plan.md',
+        '# Plan\n\nTyped after the last save.',
+        { expectedHash: 'h-saved' }
+      )
+    );
+    expect(await screen.findByText(/Saving replaces those changes/)).toBeInTheDocument();
+  });
+
+  it('offers nothing when every edit already reached the file', async () => {
+    const server = new FakeDocServer('# Plan');
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+      readFileContent: vi
+        .fn()
+        .mockResolvedValue({ content: '# Other', hash: 'h', encoding: 'utf-8' }),
+    });
+    renderSlot(transport, { on: true });
+    await screen.findByTestId('live-editor', {}, LAZY);
+    typeLive('Saved words.');
+    editorChange.current?.('# Plan\n\nSaved words.');
+    server.save('h-saved');
+    server.refuseWith = 404;
+    server.dropAll();
+    expect(await screen.findByTestId('file-editor', {}, RECONNECT)).toBeInTheDocument();
+    // An offer would read the file to compare; nothing is offered, so nothing is read.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(transport.readFileContent).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Save them' })).not.toBeInTheDocument();
   });
 
   it('keeps edits as a version when a fresh copy of the doc replaces this one', async () => {

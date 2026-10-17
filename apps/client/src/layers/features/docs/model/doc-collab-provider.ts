@@ -18,8 +18,12 @@
  *   drops the connection and reconnects, so a socket that died without closing
  *   is noticed, and the edits typed meanwhile sync when it returns.
  * - **Edits a fresh copy cannot take are reported, never dropped.** When the
- *   copy is replaced while this one held edits of its own, `lostEdits` goes up;
+ *   copy is replaced while this one held edits of its own that the file does
+ *   not have yet (the server's `saved` notes say which), `lostEdits` goes up;
  *   the editor keeps that text as a version.
+ *
+ * The connect timeout covers the handshake only (up to the `hello`): the first
+ * sync of a large doc over a slow link takes as long as it takes.
  *
  * A doc the server will not serve (Docs off, an old server, a refused file)
  * ends as `unavailable`, the editor's cue to save the file the old way.
@@ -68,8 +72,12 @@ export interface DocCollabSnapshot {
   synced: boolean;
   /** Whether this provider was ever live: a later `unavailable` is a lost connection, not a refusal. */
   everLive: boolean;
-  /** How many times a fresh copy replaced one that held edits of its own. */
+  /** How many times a fresh copy replaced one that held unsaved edits of its own. */
   lostEdits: number;
+  /** The file's hash at the last save this editor heard of, or `null` before one. */
+  savedHash: string | null;
+  /** Whether this editor typed something the file does not have yet. */
+  ownEditsUnsaved: boolean;
 }
 
 /** Statuses after which reconnecting cannot help. */
@@ -87,7 +95,7 @@ export interface DocCollabProviderOptions {
   maxDelayMs?: number;
   /** Failed attempts before a doc that never synced counts as unavailable. Default 3. */
   attemptsBeforeUnavailable?: number;
-  /** How long one attempt may take to sync. Default 10 s. */
+  /** How long one attempt may take to reach the server's hello. Default 10 s. */
   connectTimeoutMs?: number;
   /** Silence after which a live connection counts as dead. Default 2.5 heartbeats. */
   silenceTimeoutMs?: number;
@@ -106,6 +114,8 @@ export class DocCollabProvider {
     synced: false,
     everLive: false,
     lostEdits: 0,
+    savedHash: null,
+    ownEditsUnsaved: false,
   };
   readonly #listeners = new Set<() => void>();
   readonly #noteListeners = new Set<(note: DocCollabNote) => void>();
@@ -119,8 +129,8 @@ export class DocCollabProvider {
   #connectTimer: ReturnType<typeof setTimeout> | null = null;
   #watchdog: ReturnType<typeof setInterval> | null = null;
   #lastFrameAt = 0;
-  /** This copy holds edits typed here. */
-  #localEdits = false;
+  /** A fresh copy was adopted and not fetched yet: the next close reconnects at once. */
+  #fetchFresh = false;
   #destroyed = false;
   readonly #unbind: Array<() => void> = [];
 
@@ -205,8 +215,8 @@ export class DocCollabProvider {
     );
     this.#connection = current;
     this.#connectTimer = setTimeout(() => {
-      // An attempt that never syncs is a failed attempt, even if it never closes.
-      if (isCurrent() && this.#snapshot.status !== 'live') this.#drop();
+      // An attempt that never says hello is a failed attempt, even if it never closes.
+      if (isCurrent() && !this.#confirmed) this.#drop();
     }, this.#options.connectTimeoutMs);
   }
 
@@ -226,14 +236,16 @@ export class DocCollabProvider {
     // Others' cursors go with the connection; ours stays for when it returns.
     const others = [...this.awareness.getStates().keys()].filter((id) => id !== this.ydoc.clientID);
     if (others.length > 0) removeAwarenessStates(this.awareness, others, this);
-    if (this.#snapshot.epoch > 0 && !this.#snapshot.synced) {
-      // A fresh copy was just adopted: reconnect at once to fetch it.
+    const refused = status !== undefined && REFUSED.has(status);
+    if (!refused && this.#fetchFresh) {
+      // A fresh copy was just adopted: reconnect at once, one time, to fetch it.
+      this.#fetchFresh = false;
       this.#retry = setTimeout(() => this.#connect(), 0);
       this.#set({ status: this.#snapshot.everLive ? 'reconnecting' : 'connecting' });
       return;
     }
+    this.#fetchFresh = false;
     this.#failures += 1;
-    const refused = status !== undefined && REFUSED.has(status);
     if (
       refused ||
       (!this.#snapshot.everLive && this.#failures >= this.#options.attemptsBeforeUnavailable)
@@ -266,8 +278,6 @@ export class DocCollabProvider {
       if (encoding.length(encoder) > 1) this.#connection?.send(encoding.toUint8Array(encoder));
       if (kind === syncProtocol.messageYjsSyncStep2) {
         this.#failures = 0;
-        if (this.#connectTimer) clearTimeout(this.#connectTimer);
-        this.#connectTimer = null;
         this.#startWatchdog();
         this.#set({ status: 'live', synced: true, everLive: true });
       }
@@ -278,6 +288,10 @@ export class DocCollabProvider {
 
   #note(note: DocCollabNote): void {
     if (note.type === 'heartbeat') return;
+    if (note.type === 'saved') {
+      this.#saved(note.hash, note.stateVector);
+      return;
+    }
     if (note.type === 'hello') {
       if (this.#generation !== null && this.#generation !== note.generation) {
         // The server holds a fresh copy; this one cannot merge into it. The
@@ -287,6 +301,8 @@ export class DocCollabProvider {
       }
       this.#generation = note.generation;
       this.#confirmed = true;
+      if (this.#connectTimer) clearTimeout(this.#connectTimer);
+      this.#connectTimer = null;
       // Now ask for what the server has, and say who is here.
       this.#sendSyncStep1();
       this.#sendAwareness([this.ydoc.clientID]);
@@ -295,8 +311,21 @@ export class DocCollabProvider {
     for (const listener of this.#noteListeners) listener(note);
   }
 
+  /** The file holds the doc as of `stateVector`: are this editor's own edits all in it? */
+  #saved(hash: string, stateVector: string): void {
+    let saved: Map<number, number>;
+    try {
+      saved = Y.decodeStateVector(fromBase64(stateVector));
+    } catch {
+      return;
+    }
+    const own = Y.decodeStateVector(Y.encodeStateVector(this.ydoc)).get(this.ydoc.clientID) ?? 0;
+    const allSaved = (saved.get(this.ydoc.clientID) ?? 0) >= own;
+    this.#set({ savedHash: hash, ...(allSaved ? { ownEditsUnsaved: false } : {}) });
+  }
+
   #replaceDoc(generation: string): void {
-    const lost = this.#localEdits;
+    const lost = this.#snapshot.ownEditsUnsaved;
     const user = this.awareness.getLocalState()?.user;
     this.#unbindDoc();
     this.awareness.destroy();
@@ -304,20 +333,21 @@ export class DocCollabProvider {
     this.ydoc = new Y.Doc();
     this.awareness = new Awareness(this.ydoc);
     if (user) this.awareness.setLocalStateField('user', user);
-    this.#localEdits = false;
     this.#generation = generation;
+    this.#fetchFresh = true;
     this.#bind();
     this.#set({
       epoch: this.#snapshot.epoch + 1,
       synced: false,
       lostEdits: this.#snapshot.lostEdits + (lost ? 1 : 0),
+      ownEditsUnsaved: false,
     });
   }
 
   #bind(): void {
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === this) return;
-      this.#localEdits = true;
+      if (!this.#snapshot.ownEditsUnsaved) this.#set({ ownEditsUnsaved: true });
       // Held while unconfirmed: answering the server's step 1 sends it then.
       if (!this.#confirmed) return;
       const encoder = encoding.createEncoder();
@@ -386,6 +416,14 @@ export class DocCollabProvider {
     this.#connectTimer = null;
     this.#watchdog = null;
   }
+}
+
+/** Bytes from base64, without Node's `Buffer`. */
+function fromBase64(text: string): Uint8Array {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 function safeJson(raw: string): unknown {

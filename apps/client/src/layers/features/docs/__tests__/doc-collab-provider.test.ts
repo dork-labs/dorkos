@@ -97,6 +97,71 @@ describe('DocCollabProvider', () => {
     expect(provider.getSnapshot().lostEdits).toBe(1);
   });
 
+  it('stops when the server refuses right after a fresh copy was adopted, instead of looping', async () => {
+    const server = new FakeDocServer('Old copy.');
+    const { provider, transport } = connect(server);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    server.dropAll();
+    server.reload('Fresh copy.');
+    // The reconnect is told about the fresh copy; right after that, Docs are off.
+    server.refuseAfterStale = 404;
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('unavailable'));
+    expect(provider.getSnapshot().epoch).toBe(1);
+    const calls = transport.connectDocCollab.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(transport.connectDocCollab.mock.calls.length).toBe(calls);
+    expect(calls).toBeLessThanOrEqual(4);
+  });
+
+  it('backs off when the server is down after a fresh copy was adopted', async () => {
+    const server = new FakeDocServer('Old copy.');
+    const transport = server.transport();
+    const provider = new DocCollabProvider({ transport, doc, baseDelayMs: 100, maxDelayMs: 100 });
+    providers.push(provider);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    server.dropAll();
+    server.reload('Fresh copy.');
+    server.muted = true;
+    // A server that is down: every connection opens and closes at once.
+    const realConnect = transport.connectDocCollab.getMockImplementation()!;
+    transport.connectDocCollab.mockImplementation((ref, handlers, options) => {
+      if (!server.muted) return realConnect(ref, handlers, options);
+      queueMicrotask(() => handlers.onClose({}));
+      return { send: vi.fn(), close: vi.fn() };
+    });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    // Backoff of 100 ms: a handful of attempts, never a tight loop.
+    expect(transport.connectDocCollab.mock.calls.length).toBeLessThan(10);
+  });
+
+  it('does not count edits the file already has as lost when a fresh copy arrives', async () => {
+    const server = new FakeDocServer('Old copy.');
+    const { provider } = connect(server);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    typeInto(provider.ydoc, 'Saved words. ');
+    expect(provider.getSnapshot().ownEditsUnsaved).toBe(true);
+    server.save('h-after');
+    expect(provider.getSnapshot()).toMatchObject({ ownEditsUnsaved: false, savedHash: 'h-after' });
+
+    server.dropAll();
+    server.reload('Fresh copy.');
+    await vi.waitFor(() => expect(provider.getSnapshot().epoch).toBe(1));
+    expect(provider.getSnapshot().lostEdits).toBe(0);
+  });
+
+  it('gives a large first sync all the time it needs once the server said hello', async () => {
+    const server = new FakeDocServer('A large doc.');
+    server.syncDelayMs = 200;
+    const provider = new DocCollabProvider({
+      transport: server.transport(),
+      doc,
+      connectTimeoutMs: 50,
+    });
+    providers.push(provider);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    expect(textOf(provider.ydoc)).toContain('A large doc.');
+  });
+
   it('is not synced on a fresh copy until the server has sent it', async () => {
     const server = new FakeDocServer('Body.');
     const { provider } = connect(server);

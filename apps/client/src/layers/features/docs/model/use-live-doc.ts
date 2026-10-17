@@ -37,8 +37,12 @@ export interface LiveDoc {
   synced: boolean;
   /** Whether it was ever live: a later `unavailable` means live editing stopped. */
   everLive: boolean;
-  /** How many times a fresh copy replaced one that held edits of its own. */
+  /** How many times a fresh copy replaced one that held unsaved edits of its own. */
   lostEdits: number;
+  /** The file's hash at the last save this editor heard of. */
+  savedHash: string | null;
+  /** Whether this editor typed something the file does not have yet. */
+  ownEditsUnsaved: boolean;
   /** The file was moved or deleted while open. */
   gone: boolean;
   /** The plugins that make the editor live, or `null` before there is a provider. */
@@ -55,6 +59,8 @@ const CONNECTING: DocCollabSnapshot = {
   synced: false,
   everLive: false,
   lostEdits: 0,
+  savedHash: null,
+  ownEditsUnsaved: false,
 };
 const NO_PROVIDER = () => () => undefined;
 
@@ -166,6 +172,8 @@ export function useLiveDoc(doc: DocRef | null, user: LiveDocUser): LiveDoc {
     synced: snapshot.synced,
     everLive: snapshot.everLive,
     lostEdits: snapshot.lostEdits,
+    savedHash: snapshot.savedHash,
+    ownEditsUnsaved: snapshot.ownEditsUnsaved,
     gone,
     plugins,
     others,
