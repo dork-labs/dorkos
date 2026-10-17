@@ -84,6 +84,53 @@ describe('readChat — include status', () => {
   });
 });
 
+describe('readChat — your own messages (DOR-2994)', () => {
+  /** A message the caller sent the target. */
+  function sent(id: string, status: 'queued' | 'delivered' | 'failed', extra = {}) {
+    store.insert({
+      id,
+      toSessionId: TARGET,
+      fromSessionId: CALLER.sessionId,
+      fromAgentPath: CALLER.agentPath,
+      fromAgentId: 'agent-ana',
+      fromAgentName: 'Ana',
+      fromChatTitle: null,
+      kind: 'message',
+      text: 'words',
+      summary: null,
+      nonce: id.slice(0, 8),
+      delivery: 'queue',
+      status,
+      queueMessageId: null,
+      ceilingJson: '"runtime-default"',
+      replyToId: null,
+      ...extra,
+    });
+  }
+
+  it('tells the sender which of its messages were delivered and which failed, and why', async () => {
+    sent('aaaa1111', 'delivered');
+    sent('bbbb2222', 'failed');
+    store.update('bbbb2222', { failureReason: 'Not delivered: the chat could not start a turn.' });
+
+    const result = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
+
+    expect(result.yourMessages).toEqual([
+      expect.objectContaining({ id: 'aaaa1111', status: 'delivered' }),
+      expect.objectContaining({
+        id: 'bbbb2222',
+        status: 'failed',
+        failureReason: 'Not delivered: the chat could not start a turn.',
+      }),
+    ]);
+  });
+
+  it('says nothing about messages the caller never sent', async () => {
+    const result = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
+    expect(result.yourMessages).toBeUndefined();
+  });
+});
+
 describe('readChat — since', () => {
   it('last-read (default) gives the newest 10, then only what is newer', async () => {
     history = Array.from({ length: 15 }, (_, i) => msg(i + 1));

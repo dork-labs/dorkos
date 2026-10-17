@@ -170,7 +170,7 @@ export function launchDispatchInner(
       queueWaitMs: remainingMs,
       messageId,
       onError: turn.onError,
-      onSettled: (turnOutcome) => {
+      onSettled: (turnOutcome, reason) => {
         // This turn has let go of the write-lock, so whatever the lock refused
         // may try again now. Its boundary is no substitute: a turn that ends and
         // then drains background work announces `turn_end` long before it lets
@@ -181,8 +181,14 @@ export function launchDispatchInner(
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
         }
-        emitLifecycle({ phase: 'settled', messageId, sessionId: sessionKey, outcome: turnOutcome });
-        turn.onSettled?.(turnOutcome);
+        emitLifecycle({
+          phase: 'settled',
+          messageId,
+          sessionId: sessionKey,
+          outcome: turnOutcome,
+          ...(reason !== undefined ? { reason } : {}),
+        });
+        turn.onSettled?.(turnOutcome, reason);
       },
     });
   } catch (err) {

@@ -169,6 +169,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
+import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-started.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
@@ -410,6 +411,32 @@ describe('warmth is answered honestly', () => {
     expect(starts).toHaveLength(1);
     // The relaunch is the recovery, and it is the second process — not a third,
     // which is what a crash handled twice would produce.
+    expect(cli.launches).toBe(2);
+  });
+
+  // DOR-2994. A refusal ends in an `error` and `done`, never a throw, so it must
+  // say it never reached the agent: otherwise the turn settles `ok` and a chat
+  // message it carried is reported delivered.
+  it('marks a dispatch refused for a crash loop as never started, with its kind', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    cli.processes[0]!.crash(new Error('first death'));
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+    // The relaunch dies before it ever answers: a session that cannot stay up.
+    cli.deferNextInit = true;
+    const second = turn(sessionId, 'once more');
+    await vi.waitFor(() => expect(cli.launches).toBe(2));
+    cli.latest!.crash(new Error('crashed straight back'));
+    await second.catch(() => undefined);
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+
+    const refused = await turn(sessionId, 'never reaches the agent');
+
+    expect(refused.find((e) => e.type === 'error')?.data).toMatchObject({
+      code: TURN_NOT_STARTED_CODE,
+      reason: 'crash-loop',
+    });
+    // Refused, not relaunched: the words reached no process.
     expect(cli.launches).toBe(2);
   });
 

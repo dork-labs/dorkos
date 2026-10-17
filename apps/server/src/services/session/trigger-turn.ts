@@ -120,6 +120,7 @@ import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
 import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
+import { watchNotStarted } from './launch/turn-not-started.js';
 import type {
   PrivateSessionMessageClaimResult,
   PreparedPrivateSessionMessage,
@@ -627,9 +628,11 @@ export interface TriggerTurnOpts {
    * down work that has already succeeded. An observability hook must be
    * structurally unable to kill a turn.
    *
-   * @param outcome - `'failed'` when the turn reported an error, else `'ok'`.
+   * @param outcome - `'failed'` when the turn threw, or when the runtime refused
+   *   it before the agent saw the message (code `turn_not_started`); else `'ok'`.
+   * @param reason - The runtime's words for a refused turn (DOR-2994).
    */
-  onSettled?(outcome: 'ok' | 'failed'): void;
+  onSettled?(outcome: 'ok' | 'failed', reason?: string): void;
   /**
    * Receives the `seq` of THIS turn's `turn_start` — its identity on the durable
    * stream.
@@ -994,7 +997,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       }
       source = decision.stream;
     }
-    const tapped = tapEachEvent(source, () => {
+    // A runtime that refuses a turn before the agent sees it settles without a
+    // throw, so the refusal is read off the stream (DOR-2994).
+    const watched = watchNotStarted(source);
+    const tapped = tapEachEvent(watched.stream, () => {
       signalFirstEvent();
       tryRekey();
       // Proof of life for the write-lock: a turn that is visibly producing
@@ -1027,9 +1033,8 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       onStall: () => deps.interruptQuery(sessionId),
       onError: (err) => opts.onError?.(err),
     });
-    let failed = false;
     const guarded = guardTurnErrors(projector, stallGuarded, (err) => {
-      failed = true;
+      watched.threw = true;
       opts.onError?.(err);
     });
     // The trigger content rides the turn_start (userMessage) so the EventLog is a
@@ -1048,7 +1053,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       // of defense against a feedProjector-internal rejection so the detached
       // promise never becomes an unhandled rejection. The lock still releases below.
       .catch((err) => {
-        failed = true;
+        watched.threw = true;
         turnSpan.markError();
         return opts.onError?.(err);
       })
@@ -1067,7 +1072,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // unable to kill a turn, so the guarantee is enforced here rather than
         // asked for in the hook's doc.
         try {
-          opts.onSettled?.(failed ? 'failed' : 'ok');
+          opts.onSettled?.(...watched.settledAs());
         } catch (err) {
           logger.warn('[trigger-turn] a turn-settled observer threw', {
             sessionId,

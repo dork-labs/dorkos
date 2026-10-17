@@ -146,7 +146,14 @@ export interface PendingAgentCompaction {
  */
 export type DispatchLifecycleEvent =
   | { phase: 'started'; messageId: string; sessionId: string }
-  | { phase: 'settled'; messageId: string; sessionId: string; outcome: 'ok' | 'failed' }
+  | {
+      phase: 'settled';
+      messageId: string;
+      sessionId: string;
+      outcome: 'ok' | 'failed';
+      /** The runtime's words when it refused the turn before the agent saw it. */
+      reason?: string;
+    }
   | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
 
 /** Inputs for {@link dispatchMessage}. */
@@ -255,8 +262,11 @@ export interface DispatchMessageOpts {
   queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
-  /** Fired once when the detached turn settles, however it settles. */
-  onSettled?(outcome: 'ok' | 'failed'): void;
+  /**
+   * Fired once when the detached turn settles, however it settles; `refusal`
+   * says why when the runtime refused it before the agent saw it (DOR-2994).
+   */
+  onSettled?(outcome: 'ok' | 'failed', refusal?: string): void;
   /** Receives the `seq` of this turn's `turn_start` — its identity on the stream. */
   onTurnStart?(seq: number): void;
   /** Server-owned receipt for a protected automatic follow-up. */
