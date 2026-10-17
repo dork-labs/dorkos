@@ -157,6 +157,12 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     claimable: false,
     claimableAfter: '2026-10-04T10:00:00.000Z',
   },
+  'community.teammate-limit': {
+    ref: 'remote_owner_a',
+    communityLabel: 'Night shift',
+    limitUsd: 20,
+    month: '2026-10',
+  },
   'heartbeat.credits-offer': {},
   'connector.destructive_pending': {
     holdId: 'hold-1',
@@ -209,6 +215,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Nothing is stuck and the wait is at least a week: it badges the bell and never reaches a
   // phone (DOR-2543).
   'community.owner-replacement': 'notable',
+  // Teammates' posts wake nobody until next month or a higher limit; nothing is broken (DOR-2956).
+  'community.teammate-limit': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
   // Everyone sees it before it runs, but nothing waits on a person: never
@@ -298,6 +306,7 @@ describe('notification registry', () => {
       'approval.pending',
       'ask.pending',
       'community.owner-replacement',
+      'community.teammate-limit',
       'connector.destructive_executed',
       'connector.destructive_pending',
       'credits.refused',

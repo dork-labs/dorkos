@@ -1,0 +1,51 @@
+/**
+ * Connect the card limit (DOR-2956) to the rest of the server at startup: each finished teammate
+ * turn's cost reaches its space's monthly counter, and the owner is told once a month when the
+ * limit is reached.
+ *
+ * @module services/communities/remote/wake/teammate-spend-wiring
+ */
+import { setTeammateTurnCostSink } from '../../../core/turn-power/teammate-turn-cost.js';
+import { notify } from '../../../notifications/notification-service.js';
+import { logger } from '../../../../lib/logger.js';
+import type { RemoteMirrorStore } from '../mirror-store.js';
+import { getRemoteConnectionStore, getTeammateSpend, setTeammateLimitReached } from '../state.js';
+
+/**
+ * Count each teammate turn against the space whose room it answered, and tell the owner when
+ * that space's limit is reached. A turn in a room that mirrors no space counts against nothing.
+ *
+ * @param mirrors - The mirror store, which knows which space each local room copies.
+ */
+export function wireTeammateSpend(mirrors: Pick<RemoteMirrorStore, 'connectionOf'>): void {
+  setTeammateLimitReached(({ ref, ownerKey, limitUsd, month }) => {
+    void getRemoteConnectionStore()
+      .get(ref, ownerKey)
+      .then((connection) =>
+        notify('community.teammate-limit', {
+          ref,
+          communityLabel: connection.label,
+          limitUsd,
+          month,
+        })
+      )
+      .catch((error: unknown) => {
+        logger.warn('[teammate-spend] Could not tell the owner a space reached its limit', {
+          communityRef: ref,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  });
+  setTeammateTurnCostSink(({ roomId, costUsd }) => {
+    const connection = mirrors.connectionOf(roomId);
+    if (!connection) return;
+    void getTeammateSpend()
+      .record(connection.communityRef, connection.ownerAuthorId, costUsd)
+      .catch((error: unknown) => {
+        logger.warn('[teammate-spend] Could not count a teammate turn', {
+          communityRef: connection.communityRef,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  });
+}

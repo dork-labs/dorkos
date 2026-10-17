@@ -278,6 +278,20 @@ export class RemoteRoomSubscriptionBridge {
     ) {
       return;
     }
+    // The card limit (DOR-2956): once teammates' turns this month cost what the owner allowed for
+    // this space, a teammate's post wakes nobody. Claimed first, so it never starts a turn later.
+    if (
+      !owner &&
+      this.wakeGate?.withinTeammateSpend?.(room.communityRef, room.ownerAuthorId) === false
+    ) {
+      logRefusal('[RemoteRoomSubscriptionBridge] teammate limit reached; post kept as history', {
+        reason: 'teammate_spend_limit',
+        visibility: 'silent',
+        entryId: saved.id,
+        detail: { communityRef: room.communityRef },
+      });
+      return;
+    }
     // Paid for only once the claim is won, so a post that reaches this bridge twice (one stream
     // per enrolled agent, or a frame repeated after a reconnect) is charged once. A post past the
     // budget stays claimed: it is handled, with no turn, and never starts one later.

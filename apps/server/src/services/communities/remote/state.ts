@@ -18,6 +18,7 @@ import { officialSpaceUrl, spacesEnabled } from '../spaces-config.js';
 import { RemoteWakePolicy } from './wake/wake-policy.js';
 import { RemoteAnswerIn } from './wake/answer-in.js';
 import { AnswerInStore } from './wake/answer-in-store.js';
+import { TeammateSpend, type TeammateLimitReached } from './wake/teammate-spend.js';
 import { DEFAULT_WAKE_AGENTS_FROM, OFFICIAL_WAKE_AGENTS_FROM } from './wake/wake-setting.js';
 import { RemoteCommunityPairingService, type RemoteInstallationAgent } from './pairing-service.js';
 import { RemoteDmCommunityAdapter } from './adapter/remote-dm-adapter.js';
@@ -32,6 +33,7 @@ import type {
 let store: RemoteConnectionStore | undefined;
 let officialSpace: OfficialSpace | undefined;
 let wakePolicy: RemoteWakePolicy | undefined;
+let teammateSpend: TeammateSpend | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
@@ -157,11 +159,42 @@ export function getRemoteWakePolicy(): RemoteWakePolicy {
       getOfficialSpace().isOfficialConnection(place)
         ? OFFICIAL_WAKE_AGENTS_FROM
         : DEFAULT_WAKE_AGENTS_FROM,
-    answerIn
+    answerIn,
+    getTeammateSpend()
   );
   void wakePolicy.reload();
   void answerIn.reload();
   return wakePolicy;
+}
+
+/** Who is told when teammates' turns reach a space's monthly limit; set at startup. */
+let teammateLimitReached: TeammateLimitReached = () => undefined;
+
+/**
+ * Set who is told, once a month per space, that teammates' turns reached its limit (DOR-2956).
+ *
+ * @param reached - The notifier.
+ */
+export function setTeammateLimitReached(reached: TeammateLimitReached): void {
+  teammateLimitReached = reached;
+}
+
+/**
+ * Each space's monthly limit on what teammates' turns may cost, and this month's spending
+ * (DOR-2956). The first call starts reading it; until that read lands, a space with a limit
+ * wakes no teammate.
+ */
+export function getTeammateSpend(): TeammateSpend {
+  if (teammateSpend) return teammateSpend;
+  teammateSpend = new TeammateSpend(resolveDorkHome(), getRemoteConnectionStore(), (reached) =>
+    teammateLimitReached(reached)
+  );
+  void teammateSpend.load().catch((error: unknown) => {
+    logger.warn('[remote-community] Could not read teammates’ monthly limits', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  return teammateSpend;
 }
 
 /** The production pairing service over the same protected connection store. */
