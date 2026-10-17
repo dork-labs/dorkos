@@ -42,6 +42,10 @@ const policy = z.object({
   type: z.enum(['default', 'custom']),
   credentials: credentials.optional(),
   shared_credentials: z.object({}).strict().optional(),
+  // Composio added this to every config read in October 2026. Like
+  // `shared_credentials` it holds values given to every connected account,
+  // so only an empty object is known to carry nothing.
+  shared_connection_fields: z.object({}).strict().optional(),
   proxy_config: z.null().optional(),
   restrict_to_following_tools: z.array(z.string()).max(0).optional(),
   tool_access_config: toolAccess,
@@ -69,6 +73,7 @@ const knownKeys = new Set([
   'proxy_config',
   'restrict_to_following_tools',
   'shared_credentials',
+  'shared_connection_fields',
 ]);
 function scopes(value: string | string[] | undefined): string[] {
   return [
