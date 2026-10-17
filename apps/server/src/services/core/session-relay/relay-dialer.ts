@@ -34,6 +34,7 @@ import {
   decodeRelayFrame,
   encodeRelayFrame,
   type RelayComputerFrame,
+  type RelayError,
   type RelayWebFrame,
 } from '@dorkos/shared/session-relay';
 import { logger } from '../../../lib/logger.js';
@@ -44,6 +45,7 @@ import {
   type RelayChannel,
 } from './channel.js';
 import type { RelayPin } from './pin-store.js';
+import { RELAY_BACKLOGGED, RELAY_FRAME_TOO_LARGE } from './relay-errors.js';
 
 /** How long the hub has to answer `hello` before the dial is dropped. */
 export const RELAY_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -59,12 +61,20 @@ export const RELAY_COMPUTER_PATH = '/api/relay/computer';
  */
 export const RELAY_SILENCE_TIMEOUT_MS = 90_000;
 
+/**
+ * The most a stream may leave waiting in the socket's send buffer. Past it the
+ * hub is not reading fast enough, and the stream ends rather than grow it.
+ */
+export const RELAY_SEND_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+
 /** After a dial fails, how long `viewer_open` is ignored before dialing again. */
 export const RELAY_REDIAL_BACKOFF_MS = 15_000;
 
 /** The few things the dialer needs from a WebSocket, so tests can stand in for one. */
 export interface RelaySocket {
   send(text: string): void;
+  /** Bytes queued but not yet written to the network (`ws` keeps this). */
+  readonly bufferedAmount: number;
   close(code?: number, reason?: string): void;
   on(event: 'open', listener: () => void): void;
   on(event: 'message', listener: (data: unknown, isBinary?: boolean) => void): void;
@@ -85,6 +95,14 @@ export interface RelayRequestServer {
   handle(frame: RelayWebFrame, emit: (frame: RelayComputerFrame) => void): void;
   /** The connection ended: stop every stream it opened. */
   closeAll(): void;
+  /**
+   * Stop one stream from this side, telling the hub why with one `stream.end`.
+   * Returns `false` when no such stream is open, so the caller sends the end.
+   *
+   * @param streamId - The stream to stop.
+   * @param error - What to tell the hub.
+   */
+  endStream(streamId: string, error: RelayError): boolean;
 }
 
 /** What the dialer reads and calls. */
@@ -300,6 +318,13 @@ export class RelayDialer {
   private emit(socket: RelaySocket, frame: RelayComputerFrame): void {
     const current = this.current;
     if (current.state !== 'open' || current.socket !== socket) return;
+    // A hub that stops reading must not grow this side's send buffer without
+    // bound: past the ceiling a stream ends, and the page reopens it from its
+    // cursor once the link drains.
+    if (frame.type === 'stream.frame' && socket.bufferedAmount > RELAY_SEND_BUFFER_MAX_BYTES) {
+      this.endStream(socket, frame.streamId, RELAY_BACKLOGGED);
+      return;
+    }
     const text = encodeRelayFrame(frame);
     const sealed = text === null ? null : current.channel.seal(text);
     if (!sealed) {
@@ -313,15 +338,18 @@ export class RelayDialer {
           error: { status: 500, code: 'internal', message: 'The answer was too large to relay.' },
         });
       } else if (frame.type === 'stream.frame') {
-        this.emit(socket, {
-          type: 'stream.end',
-          streamId: frame.streamId,
-          error: { status: 500, code: 'internal', message: 'A frame was too large to relay.' },
-        });
+        this.endStream(socket, frame.streamId, RELAY_FRAME_TOO_LARGE);
       }
       return;
     }
     socket.send(encodeRelayFrame(sealed)!);
+  }
+
+  /** End one stream on both sides: the server stops it and tells the hub once. */
+  private endStream(socket: RelaySocket, streamId: string, error: RelayError): void {
+    if (!this.deps.server.endStream(streamId, error)) {
+      this.emit(socket, { type: 'stream.end', streamId, error });
+    }
   }
 
   private startIdleTimer(): void {

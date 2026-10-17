@@ -25,6 +25,7 @@ import { answerHello, pinnableKey, type RelayChannel } from '../channel.js';
 import {
   RELAY_HANDSHAKE_TIMEOUT_MS,
   RELAY_REDIAL_BACKOFF_MS,
+  RELAY_SEND_BUFFER_MAX_BYTES,
   RELAY_SILENCE_TIMEOUT_MS,
   RelayDialer,
   type RelayRequestServer,
@@ -39,6 +40,7 @@ const LATER = '2099-01-01T00:00:00.000Z';
 class FakeSocket implements RelaySocket {
   sent: string[] = [];
   closed = false;
+  bufferedAmount = 0;
   private listeners = new Map<string, ((...args: unknown[]) => void)[]>();
   constructor(
     readonly url: string,
@@ -90,6 +92,7 @@ function setup(
   let pin = overrides.pin === undefined ? pinFor(hub) : overrides.pin;
   const sockets: FakeSocket[] = [];
   const handled: RelayWebFrame[] = [];
+  const ended: { streamId: string; code: string }[] = [];
   let reply: ((frame: RelayComputerFrame) => void) | null = null;
   const server: RelayRequestServer = {
     features: () => ['session.stream', 'not-a-feature'],
@@ -98,6 +101,10 @@ function setup(
       reply = emit;
     },
     closeAll: vi.fn(),
+    endStream: (streamId, error) => {
+      ended.push({ streamId, code: error.code });
+      return false;
+    },
   };
   const dialer = new RelayDialer({
     readPin: () => pin,
@@ -144,6 +151,7 @@ function setup(
     dialer,
     sockets,
     handled,
+    ended,
     server,
     hubAnswers,
     hubSends,
@@ -211,6 +219,43 @@ describe('RelayDialer', () => {
       ok: true,
       body: { ok: true },
     });
+  });
+
+  it('ends a stream on both sides when one of its frames is too large to send', () => {
+    const h = setup();
+    h.dialer.onViewerOpen(LATER);
+    const channel = h.hubAnswers()!;
+    h.hubSends(channel, {
+      type: 'request',
+      id: 'r1',
+      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+    });
+    h.reply()!({
+      type: 'stream.frame',
+      streamId: 's1',
+      frame: { event: 'text_delta', data: 'x'.repeat(2_000_000) },
+    });
+    expect(h.lastFromComputer(channel)).toMatchObject({ type: 'stream.end', streamId: 's1' });
+    expect(h.ended).toEqual([{ streamId: 's1', code: 'internal' }]);
+  });
+
+  it('ends a stream, rather than buffer without bound, when the hub stops reading', () => {
+    const h = setup();
+    h.dialer.onViewerOpen(LATER);
+    const channel = h.hubAnswers()!;
+    h.hubSends(channel, {
+      type: 'request',
+      id: 'r1',
+      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+    });
+    h.sockets[0]!.bufferedAmount = RELAY_SEND_BUFFER_MAX_BYTES + 1;
+    h.reply()!({ type: 'stream.frame', streamId: 's1', frame: { event: 'text_delta' } });
+    expect(h.lastFromComputer(channel)).toMatchObject({
+      type: 'stream.end',
+      streamId: 's1',
+      error: { code: 'rate_limited' },
+    });
+    expect(h.ended).toEqual([{ streamId: 's1', code: 'rate_limited' }]);
   });
 
   it('serves nothing to a hub that does not hold the pinned key, and hangs up', () => {
