@@ -25,7 +25,7 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} eleven on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} twelve on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other

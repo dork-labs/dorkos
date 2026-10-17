@@ -95,6 +95,7 @@ import type { MessageSenderOpts } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
+import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
 
@@ -418,9 +419,11 @@ export async function resolveLaunch(args: {
       type: 'preset',
       preset: 'claude_code',
       append: systemPromptAppend,
-      // Suppress the preset's native working-directory/auto-memory/git sections so
-      // DorkOS's own server-derived <git_status> block is the single source of truth.
-      // Ends the per-turn double-injection of git status (ADR-0273 decision A2).
+      // Move the preset's native working-directory/auto-memory/git sections out of
+      // the system prompt so DorkOS's own server-derived <git_status> block is the
+      // single source of truth there (ADR-0273 decision A2). The SDK re-injects
+      // them as the first user message rather than dropping them, which is why
+      // auto-memory is switched off separately, in the env below.
       excludeDynamicSections: true,
     },
     toolConfig: {
@@ -460,10 +463,22 @@ export async function resolveLaunch(args: {
         // fixtures keep supplying the blocks a real model would have stopped
         // sending — so this is verified by one live turn per bump.
         CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-        // And none of Claude Code's own auto-memory for the folder, which it
-        // reads from the account whatever the setting layers say (DOR-2955).
-        // In the env, so it is in the relaunch digest with the layers above.
-        ...(teammate ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {}),
+        // **One memory per agent: Claude Code's own auto-memory is off for every
+        // turn that runs as an agent** (ADR 261017-153539), and for a teammate's
+        // turn wherever it stands (DOR-2955). An agent's memory is its DorkOS
+        // memory, `MEMORY.md` plus its notes files, written through
+        // `memory_write` with stamps and the outsider rule. Left on, Claude Code
+        // keeps a second, unstamped memory per folder and splits the notes in two.
+        // `excludeDynamicSections` does NOT do this: it only moves the
+        // auto-memory section into the first user message (SDK 0.3.280 docs on
+        // `systemPrompt`). The variable beats every setting layer, including
+        // `autoMemoryEnabled: true`. Two cases keep Claude Code's memory: a
+        // plain-folder session, which has no DorkOS memory to use instead, and an
+        // agent whose old Claude Code notes have not been copied over yet, so an
+        // upgrade never hides them. In the env, so it is in the relaunch digest.
+        ...(teammate || (turnAgentPath && !hasUnmovedClaudeMemory(accountRoot, turnAgentPath))
+          ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }
+          : {}),
         // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
         // untouched. DorkOS used to raise it to the approval hold's cap, because
         // the variable governs every MCP server in the subprocess and a low value

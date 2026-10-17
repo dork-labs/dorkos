@@ -771,8 +771,9 @@ describe('MCP Tool Handlers', () => {
       // chat tools, which these deps do not compose (spec `spin-off-chats` §7).
       // 51 -> 52 for `end_beat` (spec `heartbeats` §8), every agent's.
       // 52 -> 53 for `heartbeat_status` (spec `heartbeats` §10 PR 6), every agent's.
+      // 53 -> 54 for `memory_read` (ADR 261017-153539), every agent's.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(53);
+      expect(server.tools).toHaveLength(54);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',

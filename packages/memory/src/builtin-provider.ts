@@ -8,6 +8,9 @@ import {
   MemoryUnsupportedError,
   type AgentMemoryRef,
   type MemoryHits,
+  type MemoryNoteList,
+  type MemoryNoteListQuery,
+  type MemoryNoteName,
   type MemoryProvider,
   type MemoryQuery,
   type MemorySelector,
@@ -16,6 +19,7 @@ import {
   type MemoryWriteResult,
 } from '@dorkos/shared/memory-provider';
 
+import { listNotes, readNote } from './notes.js';
 import { forgetMemory, readMemorySnapshot, writeMemory } from './store.js';
 
 /**
@@ -36,7 +40,9 @@ export { BUILTIN_MEMORY_PROVIDER_ID };
  * so one instance serves every agent on this machine, and there is nothing to
  * dispose.
  *
- * **Both capabilities are off, and each is off for a reason worth stating.**
+ * **`notes` is on**: `<agentPath>/.dork/memory/<name>.md`, the second level
+ * an agent reads on demand. **The other two are off, and each is off for a
+ * reason worth stating.**
  * `search` is off because the whole of this backend's memory is already in the
  * prompt, capped: searching it would answer a question the reader can answer by
  * looking, and the refusal is what keeps "this backend cannot search" from
@@ -49,7 +55,7 @@ export function createBuiltinMemoryProvider(): MemoryProvider {
   return {
     info: {
       id: BUILTIN_MEMORY_PROVIDER_ID,
-      capabilities: { search: false, consolidate: false },
+      capabilities: { search: false, consolidate: false, notes: true },
     },
 
     getSnapshot(ref: AgentMemoryRef): Promise<MemorySnapshot> {
@@ -84,6 +90,14 @@ export function createBuiltinMemoryProvider(): MemoryProvider {
           'tidying up this file is something the agent does itself, not a background rewrite'
         )
       );
+    },
+
+    listNotes(ref: AgentMemoryRef, query: MemoryNoteListQuery): Promise<MemoryNoteList> {
+      return listNotes(ref, query);
+    },
+
+    readNote(ref: AgentMemoryRef, name: MemoryNoteName): Promise<MemorySnapshot> {
+      return readNote(ref, name);
     },
   };
 }

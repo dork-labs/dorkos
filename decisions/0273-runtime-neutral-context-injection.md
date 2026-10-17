@@ -15,6 +15,8 @@ Accepted — 2026-06-16. Ratified and realized by spec-258 (`specs/runtime-neutr
 
 **Refined 2026-06-16 by spec-258 ideation** (`specs/runtime-neutral-context-channel/01-ideation.md`) on `@anthropic-ai/claude-agent-sdk@0.3.177` evidence: the principle below is unchanged, but two mechanisms were corrected — (a) Claude materialization is a **structured tagged prepend + adapter strip**, _not_ the `UserPromptSubmit` hook; (b) git de-dup adopts **A2** (`excludeDynamicSections` + forward DorkOS's canonical block), which **collapses** the de-dup matrix. See the Decision and Consequences below.
 
+**Amended 2026-10-17 by [261017-153539](261017-153539-one-memory-per-agent.md):** `excludeDynamicSections` does not drop the preset's auto-memory section; the SDK moves the working-directory, auto-memory and git-status sections into the first user message instead (SDK 0.3.280 docs). Claude Code's auto-memory is now switched off on agent turns by `CLAUDE_CODE_DISABLE_AUTO_MEMORY`. Whether git status still reaches the model twice is a separate question.
+
 ## Context
 
 DorkOS injects per-message context — git status, UI state, and the queued-message note — by **mutating the user message body**. Two mechanisms do this today, both runtime-specific and both leaking into the transcript:

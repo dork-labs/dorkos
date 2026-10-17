@@ -1,6 +1,6 @@
 ---
 title: Agent Memory
-description: Your agent keeps a short notes file, so what it learns in one room or chat it knows in the next
+description: Your agent keeps a short notes file and longer notes files, so what it learns in one room or chat it knows in the next
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -64,6 +64,28 @@ When the file fills up, the agent is asked to tidy it rather than grow it: combi
 
 Editing past the limit by hand deletes nothing. The agent reads the first 8,000 characters, and it is told plainly that the file is longer than that, so it can ask you to trim it.
 
+## Notes files, for the longer stuff
+
+Some things are too long for the main file: a release checklist, the history of a decision, how a tricky part of a project works. For those, the agent keeps notes files in `.dork/memory/`, one topic per file.
+
+Notes files are not read every turn. The agent sees one line saying how many it has and which ones changed last, and it opens the one it needs. So they cost nothing until they are used. Each one holds up to 32,000 characters.
+
+When the agent starts a notes file, it writes a one-line description of what it is about, so it can pick the right one from its list later. The same rules apply as in the main file: each line the agent saves says where it was learned, and anything in a notes file can come up in any room or chat the agent joins. The folder has its own `.gitignore`, so notes are never committed to a git repository the agent lives in.
+
+When an agent has more than 150 notes files, it is reminded to tidy them up. That is only a reminder: it can still save. Removing the last line of a notes file removes the file.
+
+## One memory, not two
+
+Agents that run on Claude Code used to keep a second memory of their own, in Claude Code's folders, next to the DorkOS one. So an agent's notes were split in two places. Now, when an agent runs in DorkOS, Claude Code's own memory is switched off, and the DorkOS memory is the only one.
+
+There is one exception, so nothing goes missing: an agent that already has notes in Claude Code's own memory keeps using them until they are copied into its notes files. Copying them is not in the app yet. When a copy is made, it never changes or deletes the originals, and each copied note says where it came from:
+
+```markdown
+_Copied in by DorkOS (migrated from Claude Code memory, 2026-10-17)_
+```
+
+If you run `claude` in a terminal, outside DorkOS, it still uses Claude Code's own memory.
+
 ## What memory costs, honestly
 
 It depends on which tool the agent runs on.
@@ -75,7 +97,7 @@ Keeping the file lean keeps it cheap on all three. That is the other reason for 
 
 ## What does not travel
 
-Only the notes file crosses between rooms and chats. What was said in them never does.
+Only the agent's notes cross between rooms and chats. What was said in them never does.
 
 The agent runs separately in every channel, direct message, and [chat](/docs/concepts/sessions). Each one shares the agent's identity files and its notes. They do not share transcripts. Your agent is told this in plain words, so when it is asked about work it cannot see, it should say so instead of guessing.
 
@@ -83,9 +105,6 @@ The practical version: if you want an agent to carry something from one room or 
 
 ## What is not built yet
 
-Two things people ask for, neither of which exists today:
+- **Storing memory somewhere else.** The files on this computer are the only option right now.
 
-- **Finding a room it has not been pointed at.** An agent can read and search a room it is in, but only one it can already name — there is no way yet for it to list its own rooms and go looking.
-- **Storing memory somewhere else.** The file is the only option right now.
-
-Both are planned. This guide gets updated when either one ships, and not before.
+It is planned. This guide gets updated when it ships, and not before.

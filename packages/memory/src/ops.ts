@@ -5,6 +5,7 @@
  *
  * @module memory/ops
  */
+import { MIGRATED_PROVENANCE_PHRASE } from '@dorkos/shared/convention-files';
 import {
   MemoryMatchError,
   MemoryNoteShapeError,
@@ -113,9 +114,26 @@ function appendNote(content: string, text: string, provenance?: MemoryProvenance
  * @returns Index just past the header's closing `-->`, or `0`.
  */
 function headerEnd(content: string): number {
-  if (!content.trimStart().startsWith('<!--')) return 0;
-  const close = content.indexOf('-->');
-  return close === -1 ? 0 : close + '-->'.length;
+  const front = frontmatterEnd(content);
+  const rest = content.slice(front);
+  if (!rest.trimStart().startsWith('<!--')) return front;
+  const close = rest.indexOf('-->');
+  return close === -1 ? front : front + close + '-->'.length;
+}
+
+/**
+ * The end of a notes file's leading `---` frontmatter, or `0` when there is none.
+ *
+ * Protected for the same reason the comment header is: it holds the file's
+ * name, its description and, on a migrated note, where it came from — the
+ * notes-file equivalent of a stamp. A person can still edit it by hand.
+ *
+ * @param content - The file as it stands.
+ */
+function frontmatterEnd(content: string): number {
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return 0;
+  const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(content.slice(3));
+  return close ? 3 + close.index + close[0].length : 0;
 }
 
 /**
@@ -147,13 +165,17 @@ function findEditable(content: string, needle: string): number {
 }
 
 /**
- * A stamp: `(noted in …, YYYY-MM-DD)` after a space, matched wherever it sits.
+ * A stamp: `(noted in …, YYYY-MM-DD)` or `(migrated from Claude Code memory,
+ * YYYY-MM-DD)` after a space, matched wherever it sits.
  * Anywhere rather than only at a line's end, so a stamp a hand edit (or text
  * that merely looks like one) left mid-line is protected too: over-protecting
  * a note's own words costs a rephrase, under-protecting a stamp costs its
  * meaning.
  */
-const STAMP = / \(noted in [^\n]*?, \d{4}-\d{2}-\d{2}\)/g;
+const STAMP = new RegExp(
+  ` \\((?:noted in [^\\n]*?|${MIGRATED_PROVENANCE_PHRASE}), \\d{4}-\\d{2}-\\d{2}\\)`,
+  'g'
+);
 
 /**
  * Refuse a `replace` whose span reaches into a note's stamp.

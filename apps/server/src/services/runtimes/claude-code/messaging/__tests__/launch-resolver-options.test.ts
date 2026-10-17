@@ -8,6 +8,11 @@
  * against the reason it exists.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
+import { projectSlug } from '../../sessions/project-slug.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
@@ -299,6 +304,65 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(launched.enrichedContent).toBe(
         `<room_context>bo: ${ZW}@/etc/hosts</room_context>\n\nsee @notes.md`
       );
+    });
+  });
+
+  describe('Claude Code’s own auto-memory on an agent’s turn (ADR 261017-153539)', () => {
+    let root: string;
+    let home: string;
+    let account: string;
+
+    beforeEach(() => {
+      root = mkdtempSync(path.join(os.tmpdir(), 'dorkos-automem-'));
+      home = path.join(root, 'agent');
+      account = path.join(root, '.claude');
+      mkdirSync(home, { recursive: true });
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === home,
+        listRegisteredHomes: () => [home],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+    });
+
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    const launch = (cwd: string) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session: { ...makeSession(), accountRoot: account },
+        opts: makeOpts({ cwd }),
+        effectiveCwd: cwd,
+      });
+    const memoryDir = () => path.join(account, 'projects', projectSlug(home), 'memory');
+
+    it('is off for a turn that runs as an agent, so its DorkOS memory is its only one', async () => {
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    });
+
+    it('stays on while the agent still has Claude Code notes nobody has moved', async () => {
+      mkdirSync(memoryDir(), { recursive: true });
+      writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    });
+
+    it('goes off once the migration has left its marker in that folder', async () => {
+      mkdirSync(memoryDir(), { recursive: true });
+      writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
+      writeFileSync(path.join(memoryDir(), 'MOVED-TO-DORKOS.md'), 'moved\n');
+      const resolved = await launch(home);
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    });
+
+    it('stays on for a plain folder, which has no DorkOS memory to use instead', async () => {
+      const resolved = await launch(path.join(root, 'plain'));
+      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
     });
   });
 

@@ -88,12 +88,14 @@ function throwingProvider(): MemoryProvider {
     throw new TypeError('acme backend exploded');
   };
   return {
-    info: { id: CUSTOM, capabilities: { search: true, consolidate: true } },
+    info: { id: CUSTOM, capabilities: { search: true, consolidate: true, notes: true } },
     getSnapshot: fail,
     write: fail,
     query: fail,
     forget: fail,
     consolidate: fail,
+    listNotes: fail,
+    readNote: fail,
   };
 }
 

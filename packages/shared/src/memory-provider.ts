@@ -84,7 +84,7 @@ export type AgentMemoryRef = z.infer<typeof AgentMemoryRefSchema>;
 /**
  * What a memory backend can do beyond the universal read/write surface.
  *
- * Only two flags exist, and each gates exactly one method. Reading a snapshot,
+ * Three flags exist, and each gates its own methods. Reading a snapshot,
  * writing an entry and forgetting one are universal: a backend that cannot do
  * all three is not a memory backend, so none of them has a flag. **Nothing here
  * is descriptive colour** — no display name, no storage kind, no version — for
@@ -111,6 +111,17 @@ export const MemoryCapabilitiesSchema = z.object({
    * operator can open in an editor.
    */
   consolidate: z.boolean(),
+  /**
+   * Can this backend keep NOTES FILES beside the capped memory — the second
+   * level, read on demand rather than carried in every prompt
+   * ({@link MemoryProvider.listNotes}, {@link MemoryProvider.readNote}, and a
+   * write or forget that names a `note`)?
+   *
+   * The builtin provider declares `true`: `<agentPath>/.dork/memory/<name>.md`.
+   * A backend without it refuses all four loudly, so "this backend keeps no
+   * notes" never arrives as "you have no notes".
+   */
+  notes: z.boolean(),
 });
 /** What a memory backend can do beyond read/write. See {@link MemoryCapabilitiesSchema}. */
 export type MemoryCapabilities = z.infer<typeof MemoryCapabilitiesSchema>;
@@ -126,7 +137,7 @@ export type MemoryCapabilities = z.infer<typeof MemoryCapabilitiesSchema>;
  * today, and that is a property of having minted no descriptive flags rather
  * than a coincidence.
  */
-export const MEMORY_GATED_CAPABILITIES = ['search', 'consolidate'] as const;
+export const MEMORY_GATED_CAPABILITIES = ['search', 'consolidate', 'notes'] as const;
 /** One capability that gates a method. See {@link MEMORY_GATED_CAPABILITIES}. */
 export type MemoryGatedCapability = (typeof MEMORY_GATED_CAPABILITIES)[number];
 
@@ -307,6 +318,38 @@ export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 // 4. Writing
 // ---------------------------------------------------------------------------
 
+/** File names Windows keeps for devices, whatever the extension. */
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com\d|lpt\d)$/;
+
+/**
+ * A notes file's name: lowercase letters, digits, `-` and `_`, starting with a
+ * letter or digit, at most 80 characters, with no extension.
+ *
+ * **This is the jail's input, so it is a whitelist rather than a sanitiser.**
+ * No `.`, no separator, nothing that could resolve outside
+ * `<agentPath>/.dork/memory/`: the name becomes `<name>.md` and nothing else.
+ * Windows device names (`con`, `nul`, `com1` …) are refused too.
+ */
+export const MemoryNoteNameSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9_-]{0,79}$/,
+    'a note name is lowercase letters, digits, - and _, starting with a letter or digit, ' +
+      'at most 80 characters, with no extension'
+  )
+  // Names Windows reserves for devices: `con.md` cannot be created there.
+  .refine((name) => !WINDOWS_RESERVED_NAME.test(name), 'that name is reserved on Windows');
+/** A notes file's name. See {@link MemoryNoteNameSchema}. */
+export type MemoryNoteName = z.infer<typeof MemoryNoteNameSchema>;
+
+/** A notes file's one-line description: what it is about, so a list can be chosen from. */
+export const MemoryNoteDescriptionSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !/[\r\n\u0085\u2028\u2029]/.test(value), 'a description is one line');
+
 /**
  * Where a note came from — **derived by the caller from the turn it happened
  * in, never supplied by the model.**
@@ -335,6 +378,13 @@ export const MemoryProvenanceSchema = z.object({
    * never reads it as the operator's own.
    */
   outsider: z.boolean().optional(),
+  /**
+   * True only for a note a migration copied in from Claude Code's own memory,
+   * never for one an agent saved: the stamp then reads
+   * `(migrated from Claude Code memory, <date>)` instead of naming a room.
+   * Set by the migration script, which has no turn to derive a room from.
+   */
+  migrated: z.boolean().optional(),
 });
 /** Where a note came from. See {@link MemoryProvenanceSchema}. */
 export type MemoryProvenance = z.infer<typeof MemoryProvenanceSchema>;
@@ -358,6 +408,14 @@ export const MemoryWriteOpSchema = z.discriminatedUnion('action', [
     text: z.string().min(1),
     /** Where it was learned. Omitted only by a caller with no turn context, e.g. a migration. */
     provenance: MemoryProvenanceSchema.optional(),
+    /** Which notes file to write, or omitted for the capped memory itself. Gated on `notes`. */
+    note: MemoryNoteNameSchema.optional(),
+    /**
+     * What the notes file is about, in one line. REQUIRED when this `add`
+     * creates the file and ignored otherwise: a list of bare names gives an
+     * agent nothing to choose by.
+     */
+    description: MemoryNoteDescriptionSchema.optional(),
   }),
   z.object({
     /** Rewrite an existing note. */
@@ -366,12 +424,16 @@ export const MemoryWriteOpSchema = z.discriminatedUnion('action', [
     oldText: z.string().min(1),
     /** What replaces it. */
     text: z.string().min(1),
+    /** Which notes file to edit, or omitted for the capped memory itself. */
+    note: MemoryNoteNameSchema.optional(),
   }),
   z.object({
     /** Forget an existing note. */
     action: z.literal('remove'),
     /** Text that must appear EXACTLY ONCE in the current memory. */
     oldText: z.string().min(1),
+    /** Which notes file to edit, or omitted for the capped memory itself. */
+    note: MemoryNoteNameSchema.optional(),
   }),
 ]);
 /** One change to an agent's memory. See {@link MemoryWriteOpSchema}. */
@@ -449,9 +511,69 @@ export type MemoryHits = z.infer<typeof MemoryHitsSchema>;
 export const MemorySelectorSchema = z.object({
   /** Text that must appear EXACTLY ONCE in the current memory. */
   text: z.string().min(1),
+  /** Which notes file to forget from, or omitted for the capped memory itself. */
+  note: MemoryNoteNameSchema.optional(),
 });
 /** What to forget. See {@link MemorySelectorSchema}. */
 export type MemorySelector = z.infer<typeof MemorySelectorSchema>;
+
+// ---------------------------------------------------------------------------
+// 5b. Notes files — the second level, gated on `notes`
+// ---------------------------------------------------------------------------
+
+/** One page of an agent's notes list. */
+export const MemoryNoteListQuerySchema = z.object({
+  /** Only notes whose name or description contains this, case-insensitively. */
+  query: z.string().trim().min(1).max(200).optional(),
+  /** Where the previous page stopped: the `nextCursor` it returned. */
+  cursor: z.string().min(1).max(200).optional(),
+  /** How many notes at most. A backend may return fewer. */
+  limit: z.number().int().positive().max(200).optional(),
+});
+/** One page of an agent's notes list. See {@link MemoryNoteListQuerySchema}. */
+export type MemoryNoteListQuery = z.infer<typeof MemoryNoteListQuerySchema>;
+
+/** One notes file, as a list shows it. */
+export const MemoryNoteEntrySchema = z.object({
+  /** The file's name, which is what `readNote` and a write's `note` take. */
+  name: MemoryNoteNameSchema,
+  /**
+   * What it is about: its `description:` frontmatter, or its first line of text
+   * when it has none (a note written before descriptions were required).
+   */
+  description: z.string(),
+  /** Size on disk, in bytes. */
+  bytes: z.number().int().min(0),
+  /** When it last changed, ISO 8601. The list is newest first. */
+  updatedAt: z.string().min(1),
+  /** When a migration copied it in from Claude Code's memory, ISO date. Absent for the agent's own. */
+  migratedAt: z.string().min(1).optional(),
+});
+/** One notes file, as a list shows it. See {@link MemoryNoteEntrySchema}. */
+export type MemoryNoteEntry = z.infer<typeof MemoryNoteEntrySchema>;
+
+/**
+ * One page of an agent's notes, newest first.
+ *
+ * Two-way honest rather than three: an agent with no notes folder has an empty
+ * list, which is a true answer, and a folder that could not be read is
+ * `'error'` with no entries, never an empty list that looks like the first.
+ */
+export const MemoryNoteListSchema = z.object({
+  status: z.enum(['ok', 'error']),
+  /** This page of notes, newest first. */
+  notes: z.array(MemoryNoteEntrySchema),
+  /** How many notes match, across every page. */
+  total: z.number().int().min(0),
+  /** How many of those a migration copied in within the last week, for the tidy nudge. */
+  recentlyMigrated: z.number().int().min(0),
+  /** Pass back as `cursor` for the next page. Absent on the last page. */
+  nextCursor: z.string().min(1).optional(),
+  /** Why the read failed. Present iff `status === 'error'`; for the server log. */
+  error: z.string().min(1).optional(),
+});
+/** One page of an agent's notes. See {@link MemoryNoteListSchema}. */
+export type MemoryNoteList = z.infer<typeof MemoryNoteListSchema>;
 
 // ---------------------------------------------------------------------------
 // 6. Typed errors
@@ -610,6 +732,38 @@ export class MemoryNoteShapeError extends Error {
 }
 
 /**
+ * Rejected when a write names a notes file in a way that cannot work: it would
+ * create a file without saying what the file is about, or it edits a file that
+ * does not exist.
+ *
+ * A port-level refusal for the same reason {@link MemoryMatchError} is one:
+ * every backend that keeps notes owes it, and a caller must be able to tell
+ * "add a description" from "the disk is full" without knowing the engine.
+ */
+export class MemoryNoteError extends Error {
+  /**
+   * Build the refusal, naming the note and what to do instead.
+   *
+   * @param kind - `'needs-description'` when an `add` would create the file
+   *   with no description; `'no-such-note'` when a `replace` or `remove` names
+   *   a file that does not exist.
+   * @param note - The note's name.
+   */
+  constructor(
+    readonly kind: 'needs-description' | 'no-such-note',
+    readonly note: string
+  ) {
+    super(
+      kind === 'needs-description'
+        ? `There is no note called "${note}" yet, and a new note needs a one-line ` +
+            '`description` saying what it is about. Pass one and save again. Nothing was saved.'
+        : `There is no note called "${note}". \`memory_read\` lists your notes. Nothing was changed.`
+    );
+    this.name = 'MemoryNoteError';
+  }
+}
+
+/**
  * Rejected when the backend could not complete a write for a reason that is
  * neither the caller's fault nor a rule of this port: the disk is full, the
  * file is not readable, the lock could not be taken.
@@ -656,10 +810,13 @@ export class MemoryIOError extends Error {
  * caller adds an op kind without widening the port; `forget` is separated from
  * `write`'s `remove` because deleting is an act a surface may offer on its own;
  * `query` is what a backend with real search offers instead of handing back the
- * whole file; and `consolidate` is the one method that may take its time.
+ * whole file; `consolidate` is the one method that may take its time; and
+ * `listNotes` and `readNote` are the second level, the notes files an agent
+ * reads only when it needs them.
  *
- * Both gated methods reject with {@link MemoryUnsupportedError} when their
- * capability is off. Neither may quietly degrade to the universal surface — a
+ * Every gated method rejects with {@link MemoryUnsupportedError} when its
+ * capability is off, and so does a `write` or `forget` that names a `note` on a
+ * backend without `notes`. None may quietly degrade to the universal surface — a
  * `query` that fell back to returning everything would report the whole file as
  * a match for every question.
  */
@@ -727,4 +884,24 @@ export interface MemoryProvider {
    * @param ref - Whose memory to consolidate.
    */
   consolidate(ref: AgentMemoryRef): Promise<void>;
+
+  /**
+   * One page of this agent's notes files, newest first. Gated on `notes`;
+   * otherwise rejects with {@link MemoryUnsupportedError}. Never throws for an
+   * unreadable folder: that is `status: 'error'`.
+   *
+   * @param ref - Whose notes to list.
+   * @param query - Filter, cursor and page size.
+   */
+  listNotes(ref: AgentMemoryRef, query: MemoryNoteListQuery): Promise<MemoryNoteList>;
+
+  /**
+   * Read one notes file whole. Gated on `notes`. Three-way honest like
+   * {@link MemoryProvider.getSnapshot}: present, confirmed absent, or a read
+   * that failed — and, like it, never throws for the last two.
+   *
+   * @param ref - Whose note to read.
+   * @param name - Which note.
+   */
+  readNote(ref: AgentMemoryRef, name: MemoryNoteName): Promise<MemorySnapshot>;
 }

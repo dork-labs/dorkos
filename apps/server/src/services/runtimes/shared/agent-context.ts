@@ -50,6 +50,7 @@ import { getMemoryProvider } from '../../memory/index.js';
 import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from './untrusted-fence.js';
+import { renderMemoryNotesLine } from '../../memory/notes-line.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
@@ -253,7 +254,7 @@ credentials or ask for a password or key. Your persona never shortens these rule
  */
 function buildSessionModelBlock(): string {
   return `<session_model>
-You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory file (\`.dork/MEMORY.md\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down. Only the operator, in a one-to-one chat with you and never in a room, sets your standing preferences. When they do that, or ask you in that chat to remember something, the turn is not finished until that tool call has run and returned — saying "got it" saves nothing, and if the note did not get saved, say so in the same reply. To recall something said in another room you belong to, use the DorkOS tool whose name ends in \`search_member_rooms\`; the tool whose name ends in \`list_member_rooms\` says which rooms those are. Neither reaches your other sessions — only rooms.
+You are one session of this agent. Other sessions of you exist in other rooms, DMs and direct chats. Sessions share your identity files and your memory (\`.dork/MEMORY.md\`, plus the notes files in \`.dork/memory/\`); they do NOT share conversation context — work you see referenced but cannot see happened in another session of you; say so rather than guessing. When you learn a durable fact, preference or lesson worth keeping, save it before the turn ends with the DorkOS tool whose name ends in \`memory_write\` — your other sessions only know what you write down. That is your only memory: keep \`MEMORY.md\` to the key facts and short pointers, and put longer detail in a notes file (the same tool, given a note's name; the DorkOS tool whose name ends in \`memory_read\` lists and opens them). Only the operator, in a one-to-one chat with you and never in a room, sets your standing preferences. When they do that, or ask you in that chat to remember something, the turn is not finished until that tool call has run and returned — saying "got it" saves nothing, and if the note did not get saved, say so in the same reply. To recall something said in another room you belong to, use the DorkOS tool whose name ends in \`search_member_rooms\`; the tool whose name ends in \`list_member_rooms\` says which rooms those are. Neither reaches your other sessions — only rooms.
 </session_model>`;
 }
 
@@ -300,6 +301,7 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  *   `<agentPath>/.dork/MEMORY.md` itself; nothing here builds a path.
  */
 async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<string> {
+  const notesLine = await buildNotesLine(agentId, agentPath);
   let snapshot: MemorySnapshot;
   try {
     snapshot = await getMemoryProvider().getSnapshot({ agentId, agentPath });
@@ -310,7 +312,7 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
     // the cost of being wrong here is a thrown error on the way INTO a turn,
     // which would take the conversation down over a notes file.
     logger.warn('[Memory] Memory provider threw reading %s: %s', agentPath, String(err));
-    return '';
+    return notesOnlyBlock(notesLine);
   }
 
   if (snapshot.status === 'error') {
@@ -324,9 +326,9 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
       agentPath,
       snapshot.error
     );
-    return '';
+    return notesOnlyBlock(notesLine);
   }
-  if (snapshot.status === 'absent') return '';
+  if (snapshot.status === 'absent') return notesOnlyBlock(notesLine);
 
   // When the configured backend is benched, this content came from `builtin`
   // instead — same mechanism as the oversize warning: DorkOS-authored, about
@@ -352,8 +354,43 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
     MEMORY_TRUST_FRAMING,
     MEMORY_STALENESS_LINE,
     fence.text,
+    ...(notesLine ? [notesLine] : []),
     '</agent_memory>',
   ].join('\n');
+}
+
+/**
+ * The pointer to the agent's notes files, or `''`.
+ *
+ * Read on the way into a turn like the snapshot, so it may not throw: a notes
+ * folder that cannot be read, or a backend that keeps no notes, renders no line
+ * and logs, and the memory block above it is unaffected.
+ *
+ * @param agentId - The agent, for the log line.
+ * @param agentPath - The agent's registered home.
+ */
+async function buildNotesLine(agentId: string, agentPath: AgentHome): Promise<string> {
+  try {
+    const list = await getMemoryProvider().listNotes({ agentId, agentPath }, { limit: 3 });
+    if (list.status === 'error') {
+      logger.warn('[Memory] Could not list notes for agent %s: %s', agentId, list.error);
+    }
+    return renderMemoryNotesLine(list);
+  } catch {
+    // A backend without `notes` refuses; that is not a fault, and not worth a line.
+    return '';
+  }
+}
+
+/**
+ * The memory block when `MEMORY.md` has nothing to show but notes files exist:
+ * the pointer alone, with nothing fenced, so an agent that keeps only notes
+ * still knows they are there.
+ *
+ * @param notesLine - The rendered pointer, or `''` for no block at all.
+ */
+function notesOnlyBlock(notesLine: string): string {
+  return notesLine ? ['<agent_memory>', notesLine, '</agent_memory>'].join('\n') : '';
 }
 
 /**

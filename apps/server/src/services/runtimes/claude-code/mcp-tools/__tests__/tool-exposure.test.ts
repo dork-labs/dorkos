@@ -369,7 +369,7 @@ describe('in-session tool exposure', () => {
     expect(notForOthers).not.toHaveBeenCalled();
   });
 
-  it('always-loads exactly the eleven a turn cannot search for first', async () => {
+  it('always-loads exactly the twelve a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -388,6 +388,9 @@ describe('in-session tool exposure', () => {
         // it learns before the turn ends; a tool named in that instruction and
         // then deferred costs the turn it was written to save.
         'memory_write',
+        // ADR 261017-153539, the same rule: `<session_model>` and the memory
+        // block's notes line both name the tool that opens a notes file.
+        'memory_read',
         // DOR-1532, the same rule applied to the same prompt. `<session_model>`
         // now names `search_member_rooms` as what to do when a turn is asked
         // about something said in another room — and names `list_member_rooms`
@@ -565,7 +568,9 @@ describe('in-session tool exposure', () => {
     // held action is a deliberate step a turn can search for.
     // 131 -> 135 total, 120 -> 124 deferred: the four scoped local-browser
     // tools (DOR-2929), reached when an agent explicitly uses the shared page.
-    expect(tools).toHaveLength(135);
+    // 135 -> 136 total, deferred unchanged: `memory_read` (ADR 261017-153539)
+    // is always loaded, because the prompt names it.
+    expect(tools).toHaveLength(136);
     expect(deferred).toHaveLength(124);
     for (const name of [
       'local_browser_state',
@@ -633,6 +638,7 @@ describe('in-session tool exposure', () => {
         'search_member_rooms',
         'read_canvas',
         'memory_write',
+        'memory_read',
         'request_permission',
         'compact_my_session',
         'mesh_list',
