@@ -151,6 +151,10 @@ const PROVED: Record<string, Prover> = {
     renderHook(() => useAppTabShortcuts());
     return press({ key: '}', code: 'BracketRight', metaKey: true, shiftKey: true });
   },
+  'reopen-closed-tab': () => {
+    renderHook(() => useAppTabShortcuts());
+    return press({ key: 'T', code: 'KeyT', metaKey: true, shiftKey: true });
+  },
   // The active tab's own Back/Forward (DOR-2107). `mod` is Cmd on a Mac and
   // Ctrl elsewhere, and this hook takes only the platform's own modifier, so
   // the chord is pressed with whichever one this runner's platform means.
