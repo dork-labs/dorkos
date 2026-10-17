@@ -2,7 +2,7 @@
  * @vitest-environment node
  *
  * The relayed caller's adapter: which chats the session relay serves, what a
- * relayed send may carry, that approvals are refused, the per-connection
+ * relayed send may carry, that approvals and answers are refused, the per-connection
  * limits, the stream's framing and teardown, and the audit entry for each op.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -120,7 +120,6 @@ function harness(
     clearQueuedMessages: vi.fn(() => [
       { id: 'q1', content: 'later', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'x' },
     ]) as unknown as RelayRequestServerDeps['clearQueuedMessages'],
-    answererName: () => 'Dorian',
     recordAudit: (input) => {
       audits.push(input);
     },
@@ -154,9 +153,10 @@ function harness(
 }
 
 describe('SessionRelayRequestServer', () => {
-  it('advertises everything but approvals', () => {
+  it('advertises everything but approvals and answers', () => {
     expect(harness().server.features()).toEqual(RELAY_SERVED_FEATURES);
     expect(RELAY_SERVED_FEATURES).not.toContain('interaction.approval');
+    expect(RELAY_SERVED_FEATURES).not.toContain('interaction.question');
   });
 
   describe('which chats it serves', () => {
@@ -198,9 +198,11 @@ describe('SessionRelayRequestServer', () => {
         message: 'No such chat on this computer.',
       };
       expect(h.frames).toContainEqual({ type: 'stream.end', streamId: 'st', error: notFound });
-      for (const id of ['m', 'i', 'q']) {
+      for (const id of ['m', 'i']) {
         expect(h.answerTo(id)).toEqual({ type: 'error', id, ok: false, error: notFound });
       }
+      // Every relayed answer is refused, served chat or not, so this says nothing either.
+      expect(h.answerTo('q')).toMatchObject({ ok: false, error: { code: 'refused' } });
       expect(h.answerTo('l')).toEqual({ type: 'result', id: 'l', ok: true, body: { chats: [] } });
       expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
       expect(h.runtime.interruptQuery).not.toHaveBeenCalled();
@@ -284,7 +286,7 @@ describe('SessionRelayRequestServer', () => {
       h.send('m', {
         op: 'session.send',
         sessionId: CHAT,
-        content: '/compact please',
+        content: 'tidy up please',
         clientMessageId: 'c1',
         disposition: 'queue',
       });
@@ -298,14 +300,72 @@ describe('SessionRelayRequestServer', () => {
       const call = h.dispatchSessionMessage.mock.calls[0]![0];
       expect(call.origin).toEqual({ kind: 'session-relay' });
       expect(call.clientId).toBe('relay:test');
-      // The folder is the one this server placed the chat in, never the caller's.
+      // Whatever the chat's own level, a relayed turn asks before anything
+      // that needs a person (option 2).
+      expect(call.permissionCeiling).toBe('runtime-default');
+      // The folder is the one this server placed the chat in, never the
+      // caller's, and no disposition is passed on: the send path queues it.
       expect(call.request).toEqual({
-        content: '/compact please',
+        content: 'tidy up please',
         clientMessageId: 'c1',
-        disposition: 'queue',
         cwd: PROJECT,
       });
     });
+
+    it.each(['stage', 'steer'] as const)(
+      'refuses a %s, which would skip the turn ceiling',
+      async (disposition) => {
+        const h = harness();
+        h.send('m', { op: 'session.send', sessionId: CHAT, content: 'hi', disposition });
+        await h.settle();
+        expect(h.answerTo('m')).toEqual({
+          type: 'error',
+          id: 'm',
+          ok: false,
+          error: {
+            status: 400,
+            code: 'invalid',
+            message: 'Messages from the web wait their turn.',
+          },
+        });
+        expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+        expect(h.audits.at(-1)).toMatchObject({
+          action: 'relay.session.send',
+          outcome: 'refused',
+        });
+      }
+    );
+
+    it.each(['/compact please', '  /review', '/plugin:cmd arg', '/deploy'])(
+      'refuses the slash command %j, whose allowed tools would skip the ask',
+      async (content) => {
+        const h = harness();
+        h.send('m', { op: 'session.send', sessionId: CHAT, content });
+        await h.settle();
+        expect(h.answerTo('m')).toEqual({
+          type: 'error',
+          id: 'm',
+          ok: false,
+          error: {
+            status: 403,
+            code: 'refused',
+            message: 'Slash commands run only at this computer.',
+          },
+        });
+        expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['look at /usr/bin', '/usr/bin is slow', '/ 2 is half'])(
+      'sends %j, which is not a slash command',
+      async (content) => {
+        const h = harness();
+        h.send('m', { op: 'session.send', sessionId: CHAT, content });
+        await h.settle();
+        expect(h.answerTo('m')).toMatchObject({ ok: true });
+        expect(h.dispatchSessionMessage.mock.calls[0]![0].request.content).toBe(content);
+      }
+    );
 
     it('refuses a request naming a folder, a runtime or an agent path', async () => {
       const h = harness();
@@ -333,6 +393,7 @@ describe('SessionRelayRequestServer', () => {
         cwd: PROJECT,
         agentPath: PROJECT,
       });
+      expect(h.dispatchSessionMessage.mock.calls[0]![0].permissionCeiling).toBe('runtime-default');
       expect(h.audits.at(-1)).toMatchObject({ action: 'relay.session.send', operation: 'create' });
     });
 
@@ -442,7 +503,7 @@ describe('SessionRelayRequestServer', () => {
   });
 
   describe('interactions', () => {
-    it('answers a question through submitAnswers, naming the owner', async () => {
+    it('refuses every answer to a question, and never answers one', async () => {
       const h = harness();
       h.send('q', {
         op: 'interaction.respond',
@@ -450,15 +511,23 @@ describe('SessionRelayRequestServer', () => {
         answer: { kind: 'answer', toolCallId: 't1', answers: { '0': 'Blue' } },
       });
       await h.settle();
-      expect(h.answerTo('q')).toEqual({ type: 'result', id: 'q', ok: true, body: { ok: true } });
-      expect(h.runtime.submitAnswers).toHaveBeenCalledWith(
-        CHAT,
-        't1',
-        { '0': 'Blue' },
-        {
-          answeredBy: 'Dorian',
-        }
-      );
+      expect(h.answerTo('q')).toEqual({
+        type: 'error',
+        id: 'q',
+        ok: false,
+        error: {
+          status: 403,
+          code: 'refused',
+          message: 'Answers from the web need a newer version of this computer.',
+        },
+      });
+      expect(h.runtime.submitAnswers).not.toHaveBeenCalled();
+      expect(h.deps.resolveRuntime).not.toHaveBeenCalled();
+      expect(h.audits.at(-1)).toMatchObject({
+        action: 'relay.interaction.respond',
+        outcome: 'refused',
+        target: { type: 'session', id: CHAT },
+      });
     });
 
     it('refuses every approval and challenge, and never approves a tool', async () => {

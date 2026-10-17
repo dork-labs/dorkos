@@ -37,14 +37,19 @@
  * - serves only person-facing chats of registered agents, in `chats.list` and
  *   in every request naming a session (never a room turn, a task run or a
  *   heartbeat), whatever UUID a request names;
- * - runs a turn a relayed message started at the chat's own trust level, as a
- *   message typed at this computer runs (ADR rule 5 names the limit: a
- *   compromised Cloud could send a harmful message), and never answers an
- *   approval over the relay without the signed proof (B4);
+ * - holds a turn a relayed message started to the runtime's default level, so
+ *   whatever the chat's own trust level, anything that needs a person waits
+ *   for one (a hub or a Cloud that was broken into could have written the
+ *   words), and never answers an approval over the relay without the signed
+ *   proof (B4);
  * - verifies every approval proof itself (its own challenge, unexpired, used
  *   once, signed by the passkey it pinned) and refuses an approval without one;
- * - takes a relayed question answer as having no more power than a relayed
- *   message: it is words for the agent, not a person's decision;
+ * - refuses a relayed question answer until it too carries the signed proof
+ *   (B4): it puts words into a turn a person started at the chat's own level,
+ *   which the turn ceiling on a relayed message does not reach;
+ * - accepts a relayed message only as a queued turn of its own, never staged
+ *   or steered into another turn, and never as a slash command, whose
+ *   `allowed-tools` would approve tools ahead of time;
  * - decides what to allow from its own level and rules, never from the
  *   features it advertised or anything the web side says about the viewer;
  * - enforces {@link SESSION_RELAY_MAX_OPEN_STREAMS} and

@@ -251,11 +251,13 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // one that may also claim a row their own settings change created.
     case 'interactive':
       return 'configured-stop';
-    // The owner on the web, with the chat's stream open through the relay. The
-    // chat runs at its own trust level, the same as at this computer (the
-    // operator's decision on spec `everything-is-a-space` B2, option 1). To make
-    // a relayed chat ask before every tool instead (option 2), return 'none'
-    // here; the relay already refuses approvals until B4's passkey proof.
+    // The owner on the web, with the chat's stream open through the relay. A
+    // new chat is born at the operator's configured stop, as one started here
+    // is, so the chat is the same chat when its owner comes back to this
+    // computer. What a relayed TURN may do is bounded separately: every one is
+    // held to the runtime's default by the relay (`RELAY_TURN_CEILING`), so it
+    // asks before anything that needs a person (spec `everything-is-a-space`
+    // B2, the operator's option 2).
     case 'session-relay':
       return 'configured-stop';
     // Nobody is watching a room turn either, and that is the reason it follows
