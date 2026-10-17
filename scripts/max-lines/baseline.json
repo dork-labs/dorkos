@@ -3,7 +3,7 @@
   "files": {
     ".claude/scripts/spec-manifest-ops.ts": 589,
     "apps/client/src/AppShell.tsx": 505,
-    "apps/client/src/dev/sections/components-sections.ts": 516,
+    "apps/client/src/dev/sections/components-sections.ts": 509,
     "apps/client/src/dev/sections/content/conversation-sections.ts": 840,
     "apps/client/src/dev/showcases/CommandPaletteShowcases.tsx": 511,
     "apps/client/src/dev/showcases/ConnectionsShowcases.tsx": 608,
@@ -25,7 +25,7 @@
     "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 533,
     "apps/client/src/layers/shared/lib/transport/system-methods.ts": 548,
     "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 694,
-    "apps/client/src/layers/shared/ui/index.ts": 505,
+    "apps/client/src/layers/shared/ui/index.ts": 504,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
     "apps/client/src/layers/shared/ui/sidebar-menu-node.tsx": 617,
     "apps/client/src/layers/widgets/room-view/ui/RemoteCommunitySurface.tsx": 595,
