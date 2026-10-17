@@ -16,6 +16,7 @@ import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { Auth } from '../services/core/auth/index.js';
 import { takeDesktopSignInCode } from '../services/core/auth/desktop-sign-in.js';
+import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
 
@@ -33,8 +34,9 @@ export function mountDesktopSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     if (env.DORKOS_MANAGED_BY !== 'desktop') return c.json({ error: 'Not found' }, 404);
     const facts = honoRequestFacts(c);
     const site = facts.headers['sec-fetch-site'];
+    const requestClass = classifyRequest(facts, currentServerRole());
     if (
-      classifyRequest(facts, currentServerRole()).kind !== 'this-computer' ||
+      requestClass.kind !== 'this-computer' ||
       (site !== undefined && !OWN_PAGE_OR_NONE.has(String(site)))
     ) {
       return c.json({ error: 'Only this computer’s DorkOS window can do this.' }, 403);
@@ -42,10 +44,11 @@ export function mountDesktopSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     const body = (await c.req.json().catch(() => null)) as { code?: unknown } | null;
     const userId = typeof body?.code === 'string' ? takeDesktopSignInCode(body.code) : null;
     if (!userId) return c.json({ error: 'This sign-in has expired. Restart DorkOS.' }, 401);
-    const { headers } = await auth.api.signInDesktopOwner({
-      body: { userId },
-      returnHeaders: true,
-    });
+    // Inside the request's class, so the session is stamped `local` like any
+    // other sign-in made at this computer (`session-route.ts`, DOR-2969).
+    const { headers } = await withRegistrationCaller(requestClass, () =>
+      auth.api.signInDesktopOwner({ body: { userId }, returnHeaders: true })
+    );
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
     return c.json({ ok: true });
   });
