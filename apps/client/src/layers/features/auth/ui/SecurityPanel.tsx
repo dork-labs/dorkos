@@ -12,7 +12,7 @@ import {
   SettingRow,
   Switch,
 } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useConfig, useIsHub, useUpdateConfig } from '@/layers/entities/config';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { OwnerSignInScreen } from './OwnerSignInScreen';
 import { ApiKeysSection } from './ApiKeysSection';
@@ -37,6 +37,7 @@ type EnableStep = { kind: 'create' } | { kind: 'sign-in'; email: string };
  * dialog draws the panel's heading.
  */
 export function SecurityPanel() {
+  const isHub = useIsHub();
   const { data: config, refetch: refetchConfig } = useConfig();
   const updateConfig = useUpdateConfig();
   const currentUser = useCurrentUser();
@@ -75,26 +76,31 @@ export function SecurityPanel() {
         {/* No heading here: the Settings dialog draws the panel's own
             ("Login & security"). This is its explainer. */}
         <p className="text-muted-foreground text-sm">
-          Other devices always need your password. This computer can ask for it too.
+          {isHub
+            ? 'You sign in here with your DorkOS account.'
+            : 'Other devices always need your password. This computer can ask for it too.'}
         </p>
       </div>
 
       <FieldCard>
         <FieldCardContent>
-          <SettingRow
-            label="Ask for a password on this computer too"
-            description={
-              authEnabled
-                ? 'This computer asks for your password before DorkOS opens.'
-                : 'This computer opens DorkOS without a password.'
-            }
-          >
-            <Switch
-              checked={authEnabled}
-              onCheckedChange={handleToggle}
-              aria-label="Ask for a password on this computer too"
-            />
-          </SettingRow>
+          {/* A hub is never "this computer", and always asks. */}
+          {!isHub && (
+            <SettingRow
+              label="Ask for a password on this computer too"
+              description={
+                authEnabled
+                  ? 'This computer asks for your password before DorkOS opens.'
+                  : 'This computer opens DorkOS without a password.'
+              }
+            >
+              <Switch
+                checked={authEnabled}
+                onCheckedChange={handleToggle}
+                aria-label="Ask for a password on this computer too"
+              />
+            </SettingRow>
+          )}
 
           {/* Signed in from any device, not only when this computer asks. */}
           {currentUser && (

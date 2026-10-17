@@ -4,7 +4,7 @@ import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
-import { configKeys } from '@/layers/entities/config';
+import { configKeys, useIsHub } from '@/layers/entities/config';
 import { SchedulerSettings } from './tools/SchedulerSettings';
 import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
 import { SleepSettings } from './tools/SleepSettings';
@@ -21,6 +21,7 @@ import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
  * used to carry. Those only ever left tool docs out of an agent's context.
  */
 export function ToolsTab() {
+  const isHub = useIsHub();
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const transport = useTransport();
@@ -89,7 +90,8 @@ export function ToolsTab() {
           </FieldCardContent>
         </FieldCard>
       )}
-      <SleepSettings />
+      {/* A hub never holds a computer awake: it has none of its own. */}
+      {!isHub && <SleepSettings />}
       {serverConfig?.mcp && (
         <div data-section="external-mcp">
           <ExternalMcpCard

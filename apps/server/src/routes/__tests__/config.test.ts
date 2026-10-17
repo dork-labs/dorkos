@@ -775,6 +775,11 @@ describe('PATCH /api/config', () => {
     });
   });
 
+  it('says what the server is, so the app can drop settings that cannot apply', async () => {
+    const res = await request(server).get('/api/config').expect(200);
+    expect(res.body.serverRole).toBe('computer');
+  });
+
   describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
     async function stored(): Promise<unknown> {
       const { configManager } = await import('../../services/core/config-manager.js');
