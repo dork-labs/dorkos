@@ -31,7 +31,14 @@ export function placementNote(placement: ThreadPlacement): string | null {
  * @param unreached - Who, and why.
  */
 export function unreachedNote({ name, reason }: DocCommentUnreached): string {
-  return reason === 'unavailable'
-    ? `${name} couldn’t take it right now. Try again later.`
-    : `${name} wasn’t woken. The reply limit was reached.`;
+  return `${name} wasn’t woken. ${UNREACHED_REASON[reason]}`;
 }
+
+/** Why a mention woke nobody, one short sentence each. */
+const UNREACHED_REASON: Record<DocCommentUnreached['reason'], string> = {
+  depth: 'The reply limit was reached.',
+  repeat: 'It already answered as often as allowed.',
+  budget: 'This hour’s automatic turns are used up.',
+  unprompted: 'Agents can only bring in agents when replying to a comment.',
+  unavailable: 'It couldn’t take it right now. Try again later.',
+};

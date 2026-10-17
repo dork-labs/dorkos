@@ -45,7 +45,7 @@ const mockFileSave = {
   status: 'idle' as 'idle' | 'saving' | 'saved' | 'error' | 'conflict',
   conflict: null as { currentHash: string; currentContent: string } | null,
   canSave: true,
-  save: vi.fn(),
+  save: vi.fn(async (_content: string) => ({ status: 'idle' as const })),
   prepareFinalSave: (content: string) => ({
     cancel: vi.fn(),
     flush: () => mockFileSave.save(content),

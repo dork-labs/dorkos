@@ -25,7 +25,8 @@ export function docRefFor(
   cwd: string | null | undefined,
   sourcePath: string | null | undefined
 ): DocRef | null {
-  if (!cwd || !sourcePath || !/\.(md|markdown)$/i.test(sourcePath)) return null;
+  // A doc is a `.md` file (the server refuses anything else).
+  if (!cwd || !sourcePath || !/\.md$/i.test(sourcePath)) return null;
   const path = slashed(sourcePath);
   const isAbsolute = path.startsWith('/') || /^[A-Za-z]:\//.test(path);
   if (!isAbsolute) return { cwd, path };

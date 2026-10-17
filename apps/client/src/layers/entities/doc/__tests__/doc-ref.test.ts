@@ -22,5 +22,6 @@ describe('docRefFor', () => {
     expect(docRefFor('/work', '/workshop/plan.md')).toBeNull();
     expect(docRefFor(null, 'plan.md')).toBeNull();
     expect(docRefFor('/work', 'script.ts')).toBeNull();
+    expect(docRefFor('/work', 'notes.markdown')).toBeNull();
   });
 });

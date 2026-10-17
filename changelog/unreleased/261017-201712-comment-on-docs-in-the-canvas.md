@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): comment on markdown docs in the canvas and mention agents (DOR-2983)'
+  - 'fix(docs): save comment anchors only for markdown on disk, and keep the editor mounted (DOR-2983)'
 ---
 
 ### Added

@@ -24,11 +24,20 @@ const BASE = '/documents/comments';
 /**
  * Create the doc comment methods bound to a base URL.
  *
+ * Every write carries this window's `X-Client-Id`: with login off it is how
+ * the server tells the app from a program on this machine, and only the app's
+ * comments count as the owner's request (`routes/doc-comment-caller.ts`).
+ *
  * @param baseUrl - Server base URL (already includes `/api`).
+ * @param getClientId - This window's client id.
  */
-export function createDocCommentMethods(baseUrl: string) {
+export function createDocCommentMethods(baseUrl: string, getClientId: () => string) {
   const write = <T>(path: string, method: 'POST' | 'PATCH' | 'PUT', body: unknown): Promise<T> =>
-    fetchJSON(baseUrl, path, { method, body: JSON.stringify(body) });
+    fetchJSON(baseUrl, path, {
+      method,
+      headers: { 'X-Client-Id': getClientId() },
+      body: JSON.stringify(body),
+    });
   const thread = (threadId: string) => `${BASE}/threads/${encodeURIComponent(threadId)}`;
 
   return {

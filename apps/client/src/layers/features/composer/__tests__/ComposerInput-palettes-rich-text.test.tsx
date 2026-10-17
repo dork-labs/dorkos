@@ -2,7 +2,7 @@
 import { createRef, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { insertMention } from '@/layers/features/mentions/lib/mention-rows';
+import { insertMention } from '@/layers/entities/room';
 import { ComposerInput, type ComposerInputHandle } from '../ui/ComposerInput';
 
 afterEach(() => cleanup());

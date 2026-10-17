@@ -192,6 +192,18 @@ export { LoudnessMeter } from './ui/LoudnessMeter';
 export { RoomLoudnessLine } from './ui/RoomLoudnessLine';
 export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
+export {
+  useMentionAutocomplete,
+  mentionRowId,
+  MENTION_LISTBOX_ID,
+} from './model/mentions/use-mention-autocomplete';
+export {
+  insertMention,
+  SECTION_LABELS,
+  type MentionInsert,
+  type MentionRow,
+  type MentionSection,
+} from './lib/mention-rows';
 export { RoomTitle } from './ui/RoomTitle';
 export { OriginMark } from './ui/OriginMark';
 export { RetiredMark } from './ui/RetiredMark';

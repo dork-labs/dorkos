@@ -1,12 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence } from 'motion/react';
 import type { DocCommentMentionable } from '@dorkos/shared/doc-comments';
-import type { AuthorRef } from '@/layers/entities/room';
-import {
-  MentionPalette,
-  useMentionAutocomplete,
-  type MentionRow,
-} from '@/layers/features/mentions';
+import { useMentionAutocomplete, type AuthorRef, type MentionRow } from '@/layers/entities/room';
+import { MentionPalette } from '@/layers/features/mentions';
 import { Button, Textarea } from '@/layers/shared/ui';
 
 /** Props for {@link DocCommentComposer}. */

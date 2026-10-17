@@ -3,7 +3,7 @@
  * does to the text around it.
  */
 import { describe, it, expect } from 'vitest';
-import type { AuthorRef } from '@/layers/entities/room';
+import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import {
   buildMentionRows,
   filterMentionRows,

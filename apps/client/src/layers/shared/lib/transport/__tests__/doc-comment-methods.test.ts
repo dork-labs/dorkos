@@ -26,7 +26,7 @@ function sent() {
 const DOC = { cwd: '/work', path: 'notes/plan.md' };
 
 describe('createDocCommentMethods', () => {
-  const methods = createDocCommentMethods('/api');
+  const methods = createDocCommentMethods('/api', () => 'tab-1');
 
   it('lists a doc’s threads with the doc in the query', async () => {
     await methods.listDocCommentThreads(DOC);
@@ -40,6 +40,9 @@ describe('createDocCommentMethods', () => {
   it('writes each change to its own route', async () => {
     await methods.createDocCommentThread({ ...DOC, anchor: { v: 1 }, body: 'Hi' });
     expect(sent()).toMatchObject({ url: '/api/documents/comments/threads', method: 'POST' });
+    // With login off, the client id is how the server knows the app wrote it.
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Client-Id')).toBe('tab-1');
 
     fetchMock.mockClear();
     await methods.replyDocComment('t/1', { ...DOC, body: 'Yes' });

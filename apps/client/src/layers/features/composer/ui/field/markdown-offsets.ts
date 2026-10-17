@@ -45,7 +45,7 @@
  *
  * - `features/chat/model/use-input-autocomplete.ts` runs
  *   `detectFileTrigger(value, cursor)` / `detectCommandTrigger`
- * - `features/mentions/model/use-mention-autocomplete.ts` matches
+ * - `entities/room/model/mentions/use-mention-autocomplete.ts` matches
  *   `MENTION_TRIGGER` against `text.slice(0, cursorPos)` and writes back through
  *   `insertMention`, which slices by the same offsets
  * - `widgets/room-view/ui/ChannelComposer.tsx` then calls `focusAt(cursorPos)`

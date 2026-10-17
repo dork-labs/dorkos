@@ -88,6 +88,9 @@ export function FileEditor({
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState(loaded);
+  // The markdown known to be on disk while editing (what the edit began from,
+  // then each confirmed save): doc comments save moved anchors only against it.
+  const [onDisk, setOnDisk] = useState(loaded);
   const [documentSaveBinding, setDocumentSaveBinding] = useState<FileSaveBinding>();
   const observedBindingRef = useRef(observedBinding);
   useLayoutEffect(() => {
@@ -165,7 +168,11 @@ export function FileEditor({
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      void saveRef.current(draftRef.current);
+      void saveRef.current(draftRef.current).then((outcome) => {
+        if (outcome.status === 'changed' || outcome.status === 'no_op') {
+          setOnDisk(outcome.confirmed.content);
+        }
+      });
     }, AUTOSAVE_DELAY_MS);
   }, []);
 
@@ -197,6 +204,7 @@ export function FileEditor({
     editRevisionRef.current += 1;
     draftRef.current = loaded;
     setDraft(loaded);
+    setOnDisk(loaded);
     onEditingChange(true);
     setDocumentEditing(documentId, true);
   };
@@ -216,6 +224,7 @@ export function FileEditor({
     // it. A conflict is owned by the banner's Reload / Overwrite; an error keeps
     // the "Couldn't save" label up next to the checkmark so the user can retry.
     if (outcome.status !== 'changed' && outcome.status !== 'no_op') return;
+    setOnDisk(outcome.confirmed.content);
     // Acknowledging an older write must not close a newer edit or finish attempt.
     if (
       editRevisionRef.current !== revision ||
@@ -416,7 +425,11 @@ export function FileEditor({
         >
           {markdown ? (
             <div className="px-2 pb-6">
-              <DocCommentsFrame doc={docRefFor(cwd, content.sourcePath)}>
+              <DocCommentsFrame
+                doc={docRefFor(cwd, content.sourcePath)}
+                value={value}
+                saved={isEditing ? onDisk : loaded}
+              >
                 {(plugins) => (
                   <BlintzCanvas
                     value={value}

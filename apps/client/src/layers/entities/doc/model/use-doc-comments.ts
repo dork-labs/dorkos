@@ -30,16 +30,14 @@ export function useDocCommentThreads(doc: DocRef | null) {
  * Everybody a comment can `@`-mention: every agent, then the owner once they
  * have a handle.
  *
- * @param options - `enabled: false` holds the read until a composer opens.
  * @returns The TanStack Query result for `GET /api/documents/comments/mentionable`.
  */
-export function useDocCommentMentionable(options: { enabled?: boolean } = {}) {
+export function useDocCommentMentionable() {
   const transport = useTransport();
   return useQuery({
     queryKey: docCommentKeys.mentionable(),
     queryFn: () => transport.listDocCommentMentionable(),
     select: (data) => data.people,
     staleTime: ROSTER_STALE_MS,
-    enabled: options.enabled ?? true,
   });
 }

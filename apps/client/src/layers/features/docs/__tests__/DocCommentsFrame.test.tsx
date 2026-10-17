@@ -14,11 +14,11 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { DocCommentsFrame } from '../ui/DocCommentsFrame';
 
-const experiment = vi.hoisted(() => ({ enabled: false }));
+const experiment = vi.hoisted(() => ({ enabled: false, isLoading: false }));
 vi.mock('@/layers/entities/config', () => ({
   useExperimentEnabledState: (path: string) => ({
     enabled: path === 'docs.enabled' && experiment.enabled,
-    isLoading: false,
+    isLoading: experiment.isLoading,
   }),
 }));
 vi.mock('@blintz/comments', () => ({
@@ -39,7 +39,7 @@ function mount(doc: typeof DOC | null) {
     <TransportProvider transport={transport}>
       <QueryClientProvider client={new QueryClient()}>
         <Suspense fallback={<div>Loading editor…</div>}>
-          <DocCommentsFrame doc={doc}>
+          <DocCommentsFrame doc={doc} value="# Plan" saved="# Plan">
             {(plugins) => (
               <div data-testid="editor" data-plugins={plugins ? plugins.length : 'none'} />
             )}
@@ -54,12 +54,22 @@ function mount(doc: typeof DOC | null) {
 afterEach(() => {
   cleanup();
   experiment.enabled = false;
+  experiment.isLoading = false;
 });
 
 describe('DocCommentsFrame', () => {
-  it('hands the editor no Docs additions while the experiment is off', () => {
+  it('mounts no editor until the config says whether the experiment is on', () => {
+    experiment.isLoading = true;
+    mount(DOC);
+    expect(screen.queryByTestId('editor')).not.toBeInTheDocument();
+  });
+
+  it('hands the editor no Docs additions while the experiment is off', async () => {
     const transport = mount(DOC);
-    expect(screen.getByTestId('editor')).toHaveAttribute('data-plugins', 'none');
+    expect(await screen.findByTestId('editor', {}, { timeout: 10_000 })).toHaveAttribute(
+      'data-plugins',
+      'none'
+    );
     expect(screen.queryByRole('complementary', { name: 'Comments' })).not.toBeInTheDocument();
     expect(transport.listDocCommentThreads).not.toHaveBeenCalled();
   });

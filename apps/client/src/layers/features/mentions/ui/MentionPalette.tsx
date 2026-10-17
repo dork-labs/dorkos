@@ -1,7 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { MENTION_LISTBOX_ID, mentionRowId } from '../model/use-mention-autocomplete';
-import { SECTION_LABELS, type MentionRow, type MentionSection } from '../lib/mention-rows';
+import {
+  MENTION_LISTBOX_ID,
+  mentionRowId,
+  SECTION_LABELS,
+  type MentionRow,
+  type MentionSection,
+} from '@/layers/entities/room';
 
 interface MentionPaletteProps {
   /** The rows to draw, flat and already in section order. */

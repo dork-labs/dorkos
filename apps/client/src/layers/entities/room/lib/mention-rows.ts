@@ -10,9 +10,9 @@
  * row the keyboard acts on. Sectioned rendering re-derives the headings from
  * `section` at paint time.
  *
- * @module features/mentions/lib/mention-rows
+ * @module entities/room/lib/mention-rows
  */
-import type { AuthorRef } from '@/layers/entities/room';
+import type { AuthorRef } from '@dorkos/shared/room-schemas';
 
 /** Which heading a row renders under. */
 export type MentionSection = 'people' | 'agents';

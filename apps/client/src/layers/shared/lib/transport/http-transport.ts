@@ -161,7 +161,7 @@ export class HttpTransport implements Transport {
       createHubMethods(baseUrl),
       createSignInLandingMethods(baseUrl),
       createDocLinkMethods(baseUrl),
-      createDocCommentMethods(baseUrl)
+      createDocCommentMethods(baseUrl, () => this.clientId)
     );
   }
 }

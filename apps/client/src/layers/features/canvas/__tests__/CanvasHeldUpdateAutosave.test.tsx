@@ -42,6 +42,10 @@ vi.mock('../ui/CodeMirrorEditor', () => ({
   ),
 }));
 
+// Docs is off, its default: reading the experiment needs a server config
+// these tests don't serve (see ./docs-off).
+vi.mock('@/layers/features/docs', () => import('./docs-off'));
+
 // jsdom cannot load Milkdown/ProseMirror. The stub exposes a button that fires
 // `onChange`, which stands in for a keystroke and arms the autosave debounce.
 vi.mock('../ui/BlintzCanvas', () => ({

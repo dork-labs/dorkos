@@ -8,6 +8,7 @@
  * woke nobody reported.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -92,25 +93,51 @@ function thread(id: string, overrides: Partial<DocCommentThread> = {}): DocComme
   };
 }
 
-function mount(threads: DocCommentThread[], people: DocCommentMentionable[] = [SCOUT, OWNER]) {
+/** How many times the stub editor mounted: a remount shows up as a second. */
+let editorMounts = 0;
+function Editor({ plugins }: { plugins: unknown[] | undefined }) {
+  useEffect(() => {
+    editorMounts += 1;
+  }, []);
+  return <div data-testid="editor" data-plugins={plugins ? plugins.length : 'none'} />;
+}
+
+interface SurfaceProps {
+  enabled?: boolean;
+  value?: string;
+  saved?: string;
+}
+
+function mount(
+  threads: DocCommentThread[],
+  people: DocCommentMentionable[] = [SCOUT, OWNER],
+  props: SurfaceProps = {}
+) {
   const transport = createMockTransport({
     listDocCommentThreads: vi.fn().mockResolvedValue({ threads }),
     listDocCommentMentionable: vi.fn().mockResolvedValue({ people }),
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(
+  const tree = (next: SurfaceProps) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <DocCommentsSurface doc={DOC}>
-          {(plugins) => <div data-testid="editor" data-plugins={plugins.length} />}
+        <DocCommentsSurface
+          doc={DOC}
+          enabled={next.enabled ?? true}
+          value={next.value ?? '# Plan'}
+          saved={next.saved ?? '# Plan'}
+        >
+          {(plugins) => <Editor plugins={plugins} />}
         </DocCommentsSurface>
       </QueryClientProvider>
     </TransportProvider>
   );
-  return transport;
+  const view = render(tree(props));
+  return Object.assign(transport, { rerender: (next: SurfaceProps) => view.rerender(tree(next)) });
 }
 
 beforeEach(() => {
+  editorMounts = 0;
   blintz.options = undefined;
   blintz.anchor = null;
   blintz.matches = new Map();
@@ -252,6 +279,42 @@ describe('DocCommentsSurface', () => {
     expect(within(palette).queryByText('@dorian')).not.toBeInTheDocument();
     fireEvent.keyDown(field, { key: 'Enter' });
     expect(field).toHaveValue('Ask @scout ');
+  });
+
+  it('holds anchors reported against a draft until that draft is on disk', async () => {
+    const transport = mount([thread('t1')], undefined, { value: 'draft 1', saved: '# Plan' });
+    await screen.findByText('First on t1');
+    const moved = { v: 1, quote: 'words of t1', prefix: '', suffix: '', start: 9, end: 13 };
+    act(() => blintz.options?.onAnchorsChange?.([{ id: 't1', anchor: moved as never }]));
+    expect(transport.updateDocCommentAnchors).not.toHaveBeenCalled();
+    // The draft's save is confirmed: now the anchor describes the file.
+    transport.rerender({ value: 'draft 1', saved: 'draft 1' });
+    await waitFor(() =>
+      expect(transport.updateDocCommentAnchors).toHaveBeenCalledWith({
+        ...DOC,
+        updates: [{ id: 't1', anchor: moved }],
+      })
+    );
+  });
+
+  it('drops anchors reported against a draft that was thrown away', async () => {
+    const transport = mount([thread('t1')], undefined, { value: 'draft 1', saved: '# Plan' });
+    await screen.findByText('First on t1');
+    act(() => blintz.options?.onAnchorsChange?.([{ id: 't1', anchor: { v: 1 } as never }]));
+    // Reload: the editor shows the file again, and the draft never saved.
+    transport.rerender({ value: '# Plan', saved: '# Plan' });
+    transport.rerender({ value: 'draft 2', saved: 'draft 2' });
+    expect(transport.updateDocCommentAnchors).not.toHaveBeenCalled();
+  });
+
+  it('keeps the editor mounted when the experiment is switched off, and shows nothing', async () => {
+    const transport = mount([thread('t1')]);
+    await screen.findByText('First on t1');
+    transport.rerender({ enabled: false });
+    expect(screen.queryByRole('complementary', { name: 'Comments' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('editor')).toHaveAttribute('data-plugins', 'none');
+    expect(blintz.options?.threads).toEqual([]);
+    expect(editorMounts).toBe(1);
   });
 
   it('saves anchors the editor moved, and brings a clicked thread forward', async () => {

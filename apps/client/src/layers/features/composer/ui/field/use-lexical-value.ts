@@ -59,7 +59,7 @@ export interface UseLexicalValueResult {
  * surface in the product, so this path is why the typing budget is reachable.
  *
  * **The emission order is fixed by an existing contract.**
- * `features/mentions/model/use-mention-autocomplete.ts` documents it: text
+ * `entities/room/model/mentions/use-mention-autocomplete.ts` documents it: text
  * first, then cursor. So a document change emits `onChange(markdown)` and THEN
  * `onCursorChange(offset)`, synchronously, in one listener call. The other
  * order — or two separate effects — makes the room picker match a trigger

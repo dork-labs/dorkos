@@ -21,11 +21,7 @@ import {
   isComposerField,
   useJumpBackInPopover,
 } from '@/layers/features/jump-back-in';
-import {
-  MentionPalette,
-  useMentionAutocomplete,
-  type MentionRow,
-} from '@/layers/features/mentions';
+import { MentionPalette } from '@/layers/features/mentions';
 import {
   JOIN_ROOM_VERB,
   NOT_IN_ROOM_SENTENCE,
@@ -37,6 +33,8 @@ import {
   useRoomDraft,
   useRoomDraftStore,
   type RoomWithRoster,
+  useMentionAutocomplete,
+  type MentionRow,
 } from '@/layers/entities/room';
 import type { useRoomAttachments } from '../model/use-room-attachments';
 

@@ -2,10 +2,10 @@
  * The `@` mention picker's state: trigger detection, one merged row list, and
  * one selection cursor that crosses section boundaries.
  *
- * @module features/mentions/model/use-mention-autocomplete
+ * @module entities/room/model/mentions/use-mention-autocomplete
  */
 import { useState, useMemo, useCallback, useRef } from 'react';
-import type { AuthorRef } from '@/layers/entities/room';
+import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import {
   buildMentionRows,
   filterMentionRows,
@@ -15,7 +15,7 @@ import {
   type MentionInsert,
   type MentionRow,
   type MentionSection,
-} from '../lib/mention-rows';
+} from '../../lib/mention-rows';
 import { useLatest } from '@/layers/shared/lib';
 
 /**

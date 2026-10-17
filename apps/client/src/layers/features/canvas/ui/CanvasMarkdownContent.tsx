@@ -124,10 +124,18 @@ export function CanvasMarkdownContent({
   // Persist the edited document: sync the rendered view and write through to the
   // source file. Gated by the owning session so a stale draft can never land in
   // (or save over) a different session's document.
+  // The markdown known to be on disk while editing: what the edit began from,
+  // then each save the server confirmed. Doc comments save moved anchors only
+  // against it, never against a draft that may yet be thrown away.
+  const [onDisk, setOnDisk] = useState(content.content);
   const persist = useCallback((markdown: string) => {
     if (useAppStore.getState().canvasSessionId !== owningSessionRef.current) return;
     onContentChangeRef.current({ ...contentRef.current, content: markdown });
-    void saveRef.current(markdown);
+    void saveRef.current(markdown).then((outcome) => {
+      if (outcome.status === 'changed' || outcome.status === 'no_op') {
+        setOnDisk(outcome.confirmed.content);
+      }
+    });
   }, []);
 
   const handleChange = useCallback(
@@ -150,6 +158,7 @@ export function CanvasMarkdownContent({
   const enterEdit = () => {
     owningSessionRef.current = useAppStore.getState().canvasSessionId;
     setDraft(content.content);
+    setOnDisk(content.content);
     setIsEditing(true);
     setDocumentEditing(documentId, true);
   };
@@ -286,7 +295,11 @@ export function CanvasMarkdownContent({
               remount — so a single mounted editor toggles between view and edit
               without losing scroll or selection. In edit mode `value` tracks the
               draft; in view mode it shows the document. */}
-          <DocCommentsFrame doc={doc}>
+          <DocCommentsFrame
+            doc={doc}
+            value={editing ? draft : content.content}
+            saved={editing ? onDisk : content.content}
+          >
             {(plugins) => (
               <BlintzCanvas
                 value={editing ? draft : content.content}
