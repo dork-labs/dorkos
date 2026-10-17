@@ -35,6 +35,8 @@ const transport = {
   closeSessionCanvasDocument: close,
   setSessionCanvasEditing: vi.fn(async () => ({ editingBy: null, expiresAt: null })),
 };
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => transport,

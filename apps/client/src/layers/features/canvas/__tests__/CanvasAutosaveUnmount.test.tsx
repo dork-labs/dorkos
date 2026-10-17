@@ -33,6 +33,8 @@ const writeFile = vi.fn(
   }
 );
 const transport = { readFileContent, writeFile };
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (state: typeof mockState) => unknown) => selector(mockState);
   useAppStore.getState = () => mockState;

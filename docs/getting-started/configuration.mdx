@@ -1381,3 +1381,21 @@ Settings → Advanced → Experiments lists **Spaces**, off by default. While it
 />
 
 Settings → Advanced → Experiments lists **Chat from the web**, off by default. It is early: it needs your own DorkOS in the cloud, which is not available yet. While it is off, the **Chat from the web** section in Settings → DorkOS account is hidden, and this computer never connects to the cloud for it, even if you linked it before. Linking, pausing and unlinking happen only in the app on this computer, never from another device. Linking, resuming and allowing more ask for your password for this computer again. Agents can read this setting but cannot change it.
+
+### Docs experiment
+
+<TypeTable
+  type={{
+    'docs.enabled': {
+      description: 'Link markdown docs to each other with wiki links. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Docs**, off by default. Turn it on, and a markdown file open in the canvas can link to another one. Type `[[` and pick a doc from the list, or write a doc's title or file name between double brackets, like `[[Launch plan]]`. To change the words the link shows, add `|` and your own words: `[[Launch plan|the plan]]`. A link with a heading, like `[[Launch plan#Goals]]`, opens Launch plan too.
+
+Click a link while reading to open that doc in the canvas. While editing, Cmd-click it (Ctrl-click on Windows and Linux). A link to a doc that does not exist yet looks different from the others, and starts working once the doc is there.
+
+Links find the `.md` files in the folder your chat works in and every folder inside it. Hidden folders and folders such as `node_modules` are skipped, and a very large folder lists its first 2,000 docs. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.

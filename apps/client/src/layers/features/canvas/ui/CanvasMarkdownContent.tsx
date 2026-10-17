@@ -3,6 +3,7 @@ import { Check, Pencil } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
+import { useDocWikiLinks } from '@/layers/features/docs';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
 
 // Lazy: the Blintz chunk (Milkdown + ProseMirror + CodeMirror + KaTeX) loads
@@ -83,6 +84,13 @@ export function CanvasMarkdownContent({
     loadedContent: content.content,
   });
   const fileBacked = fileSave.canSave;
+  // Wiki links to the other docs in this space: file-backed docs only, and
+  // only with the Docs experiment on (undefined otherwise).
+  const wikiLinks = useDocWikiLinks({
+    cwd,
+    sourcePath: fileBacked ? content.sourcePath : null,
+    saved: fileSave.status === 'saved',
+  });
 
   // The session that owned the edit, captured when edit mode begins.
   const owningSessionRef = useRef<string | null>(null);
@@ -266,6 +274,7 @@ export function CanvasMarkdownContent({
             value={editing ? draft : content.content}
             editable={editing}
             onChange={editing ? handleChange : undefined}
+            wikiLinks={wikiLinks}
           />
         </Suspense>
       </div>
