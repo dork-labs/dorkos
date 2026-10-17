@@ -94,6 +94,14 @@ describe('GET /api/documents/index', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'Invalid query' });
   });
 
+  it('refuses a cwd that is relative or not an existing folder', async () => {
+    for (const cwd of ['space', path.join(space, 'missing'), path.join(space, 'README.md')]) {
+      const res = await getIndex(app(), cwd);
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({ code: 'INVALID_DOC_SPACE' });
+    }
+  });
+
   it('refuses a cwd outside the directory boundary', async () => {
     const res = await getIndex(app(), base);
     expect(res.status).toBe(403);

@@ -29807,7 +29807,7 @@
             }
           },
           "400": {
-            "description": "The query has no `cwd`",
+            "description": "`cwd` is missing, not absolute, or not an existing folder",
             "content": {
               "application/json": {
                 "schema": {

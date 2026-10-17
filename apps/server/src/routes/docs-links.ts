@@ -18,7 +18,7 @@ import { readQuery } from '../http/request-query.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { errorBody } from '../lib/route-utils.js';
-import { resolveDocSpace } from '../services/docs/doc-space.js';
+import { DocPathError, resolveDocSpace } from '../services/docs/doc-space.js';
 import { docsEnabled } from '../services/docs/docs-enabled.js';
 import { buildDocIndex } from '../services/docs/links/doc-index.js';
 
@@ -60,6 +60,9 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
     } catch (err) {
       if (err instanceof BoundaryError) {
         return c.json(errorBody(err.message, err.code), 403);
+      }
+      if (err instanceof DocPathError) {
+        return c.json(errorBody(err.message, 'INVALID_DOC_SPACE'), 400);
       }
       logger.error('[docs] GET /index failed', { err, cwd: parsed.data.cwd });
       return c.json(errorBody('Couldn’t list the docs here.', 'DOC_INDEX_FAILED'), 500);

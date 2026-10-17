@@ -41,7 +41,7 @@ export function registerDocLinksOpenApi(registry: OpenAPIRegistry): void {
         description: 'The docs in the space',
         content: { 'application/json': { schema: DocIndexSchema } },
       },
-      400: error('The query has no `cwd`'),
+      400: error('`cwd` is missing, not absolute, or not an existing folder'),
       403: error('`cwd` is outside the directory boundary'),
       404: error('The `docs.enabled` experiment is off'),
       500: error('The docs could not be listed'),
