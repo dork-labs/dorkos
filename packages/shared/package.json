@@ -69,6 +69,14 @@
       "types": "./src/transport-sign-in-landing.ts",
       "default": "./dist/transport-sign-in-landing.js"
     },
+    "./doc-collab": {
+      "types": "./src/doc-collab.ts",
+      "default": "./dist/doc-collab.js"
+    },
+    "./transport-doc-collab": {
+      "types": "./src/transport-doc-collab.ts",
+      "default": "./dist/transport-doc-collab.js"
+    },
     "./transport-onboarding": {
       "types": "./src/transport-onboarding.ts",
       "default": "./dist/transport-onboarding.js"

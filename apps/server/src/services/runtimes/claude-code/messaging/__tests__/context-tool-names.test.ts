@@ -513,7 +513,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // the memory block name it as a searchable ending, and it is always loaded.
     // 136 -> 140 for the four doc comment tools (DOR-2983): only a comment's
     // wake names them, so they stay deferred and unprefixed.
-    expect(advertised.size).toBe(140);
+    // 140 -> 142 for `doc_read` and `doc_write` (DOR-2984): no prompt block
+    // names them, so both stay deferred and unprefixed.
+    expect(advertised.size).toBe(142);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

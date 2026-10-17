@@ -481,6 +481,32 @@ async function buildCLI() {
   });
   await assertNoUnexpectedWarnings('extension child', childBundle.warnings);
 
+  // 2.2: The markdown worker for live docs (DOR-2984). The server starts it as
+  // a worker thread for every markdown <-> Yjs conversion, so it is ONE
+  // self-contained ESM file with Blintz and Yjs inlined, beside the server
+  // bundle where `services/docs/collab/worker-entry.ts` looks for it
+  // (MARKDOWN_WORKER_FILE). The smoke run proves the emitted file loads Blintz
+  // in Node and round-trips a doc. Name and entry are pinned by
+  // scripts/__tests__/docs-markdown-worker-build-entry.test.ts.
+  const markdownWorkerOutfile = path.join(OUT, 'server/docs-markdown-worker.mjs');
+  const markdownWorkerBundle = await build({
+    entryPoints: [path.join(ROOT, 'apps/server/src/services/docs/collab/markdown-worker.ts')],
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'esm',
+    outfile: markdownWorkerOutfile,
+    banner: {
+      js: "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);",
+    },
+    plugins: [dorkosSourcePlugin()],
+  });
+  await assertNoUnexpectedWarnings('markdown worker', markdownWorkerBundle.warnings);
+  execSync(
+    `"${process.execPath}" "${path.join(ROOT, 'scripts/smoke-docs-markdown-worker.mjs')}" "${markdownWorkerOutfile}"`,
+    { stdio: 'inherit' }
+  );
+
   // 2.5: Copy Drizzle migration files alongside bundled server.
   // At runtime, `migrationsFolder()` (packages/db/src/migrations-folder.ts) resolves them via
   // path.join(dirname(fileURLToPath(import.meta.url)), '../drizzle'). In the CLI bundle that

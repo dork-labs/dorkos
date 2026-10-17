@@ -356,9 +356,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // capabilities, so they move none of these hand-registered counts.
       // 39 -> 43 (and 37 -> 41 external) for the four doc comment tools
       // (DOR-2983), registered on both servers.
-      expect(registeredByServer['in-session']).toHaveLength(43);
+      // 43 -> 45 (external unchanged) for `doc_read` and `doc_write`
+      // (DOR-2984): in-session only, since a read's base is its session's.
+      expect(registeredByServer['in-session']).toHaveLength(45);
       expect(registeredByServer.external).toHaveLength(41);
-      expect(declaredNames).toHaveLength(43);
+      expect(declaredNames).toHaveLength(45);
     });
 
     it('names exactly two tools destructive', () => {

@@ -38,6 +38,7 @@ import { terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
 import { tunnelIngressesFor } from './services/core/remote/tunnel-ingresses.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
+import { liveDocRoute } from './routes/documents-live-socket.js';
 import {
   closeAllComputerConnections,
   hubRelayComputerRoute,
@@ -295,7 +296,7 @@ async function start() {
       logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
       // One upgrade listener for the whole server (ADR 260805-041016): the three
-      // durable event streams plus the embedded terminal's byte channel. A second
+      // durable event streams, the embedded terminal's byte channel and live docs. A second
       // `server.on('upgrade')` listener beside this one would not work — every
       // listener sees every upgrade, and any that does not recognize a path
       // destroys the socket out from under the one that does.
@@ -304,6 +305,8 @@ async function start() {
         ...durableStreamRoutes,
         terminalUpgradeRoute(refs.terminalManager!),
         hubRelayComputerRoute(),
+        // Live doc editing (DOR-2984); refuses everything while Docs are off.
+        liveDocRoute,
       ];
       attachUpgradeRouter(server, upgradeRoutes, mainRequestAdmission);
       logger.info('[DorkOS] WebSocket upgrade router attached');

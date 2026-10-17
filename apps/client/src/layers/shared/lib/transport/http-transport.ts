@@ -51,6 +51,7 @@ import { createAuditMethods } from './audit-methods';
 import { createHubMethods } from './hub-methods';
 import { createSignInLandingMethods } from './sign-in-landing-methods';
 import { createDocLinkMethods } from './doc-link-methods';
+import { createDocCollabMethods } from './doc-collab-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -104,7 +105,8 @@ export interface HttpTransport
     ReturnType<typeof createHubMethods>,
     ReturnType<typeof createSignInLandingMethods>,
     ReturnType<typeof createDocLinkMethods>,
-    ReturnType<typeof createDocCommentMethods> {}
+    ReturnType<typeof createDocCommentMethods>,
+    ReturnType<typeof createDocCollabMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -161,7 +163,8 @@ export class HttpTransport implements Transport {
       createHubMethods(baseUrl),
       createSignInLandingMethods(baseUrl),
       createDocLinkMethods(baseUrl),
-      createDocCommentMethods(baseUrl, () => this.clientId)
+      createDocCommentMethods(baseUrl, () => this.clientId),
+      createDocCollabMethods(baseUrl)
     );
   }
 }

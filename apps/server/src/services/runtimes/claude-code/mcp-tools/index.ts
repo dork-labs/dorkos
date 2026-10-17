@@ -30,6 +30,7 @@ import { getMeshTools } from './mesh-tools.js';
 import { getAgentTools } from './agent-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import { getDocCommentTools } from './doc-comment-tools.js';
+import { getDocTools } from './doc-tools.js';
 import {
   capabilityMcpTools,
   registerClaudeConnectorCapabilityTools,
@@ -279,6 +280,12 @@ export function handRegisteredInSessionToolSet(
         ...(session?.cwd ? { cwd: session.cwd } : {}),
       };
     }),
+    // Live docs (DOR-2984): bases are this session's own, read at call time.
+    ...getDocTools(deps, () => ({
+      cwd: session?.cwd,
+      sessionKey: session?.sdkSessionId || sessionId,
+      agentName: async () => (await resolveContext?.())?.identity?.displayName,
+    })),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

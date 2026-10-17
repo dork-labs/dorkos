@@ -78,6 +78,7 @@
     "giget": "^3.3.1",
     "hono": "^4.13.9",
     "ip-address": "^10.7.1",
+    "lib0": "^0.2.119",
     "mdast-util-from-markdown": "2.0.3",
     "mdast-util-frontmatter": "2.0.1",
     "mdast-util-gfm-task-list-item": "2.0.0",

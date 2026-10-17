@@ -4,8 +4,8 @@
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
  * succeeds, sign-in landing pages, where no landing is held, and a space's
- * docs, where there are none. Heartbeats, a hub's computers and doc comments
- * come from their own mocks.
+ * docs, where there are none. Heartbeats, a hub's computers, doc comments and
+ * live docs come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -16,6 +16,7 @@ import { createMockLocalBrowserTransport } from './mock-local-browser-transport.
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
 import { docCommentTransportMocks } from './mock-doc-comments.js';
+import { createMockDocCollabTransport } from './mock-doc-collab-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -39,7 +40,8 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockComputerTransport> &
   ReturnType<typeof createMockHubTransport> &
   ReturnType<typeof createMockSessionRelayTransport> &
-  ReturnType<typeof docCommentTransportMocks> {
+  ReturnType<typeof docCommentTransportMocks> &
+  ReturnType<typeof createMockDocCollabTransport> {
   return {
     ...docCommentTransportMocks(),
     ...createMockHeartbeatTransport(),
@@ -47,6 +49,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     ...createMockLocalBrowserTransport(),
     ...createMockHubTransport(),
     ...createMockSessionRelayTransport(),
+    ...createMockDocCollabTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),

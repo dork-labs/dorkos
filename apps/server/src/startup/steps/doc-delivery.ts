@@ -3,6 +3,8 @@
  * connector access and execution broker.
  *
  * Moved out of `index.ts` unchanged; it runs at the same point in `start()`.
+ * Live docs (DOR-2984) start here too, because they write through the same
+ * installation file writer and must stop before it drains.
  *
  * @module startup/steps/doc-delivery
  */
@@ -17,6 +19,8 @@ import { logger, logError } from '../../lib/logger.js';
 import { DocBatchDeliveryPump } from '../../services/canvas/doc-channel/delivery/pump.js';
 import { createPrivateDocPumpGates } from '../../services/canvas/doc-channel/delivery/private-gates.js';
 import { DocDeliveryRunner } from '../../services/canvas/doc-channel/delivery/runner.js';
+import { initDocCollab, stopDocCollab } from '../../services/docs/collab/index.js';
+import { resolveDorkHome } from '../../lib/dork-home.js';
 import {
   onProjectorTurnBoundary,
   onProjectorInteractionChange,
@@ -179,7 +183,11 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
   const stopDocInteractionHints = onProjectorInteractionChange((change) => {
     if (change.type === 'resolved') docDeliveryRunner?.wake();
   });
+  // Live docs write through the same file writer as every save (DOR-2984).
+  initDocCollab({ dorkHome: resolveDorkHome(), writer: docChannelHttp.fileWrites });
   refs.stopDocDelivery = async () => {
+    // Open docs write their last edits before the shared writer drains.
+    await stopDocCollab();
     stopDocInputHints();
     stopDocTurnHints();
     stopDocInteractionHints();

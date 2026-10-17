@@ -439,6 +439,23 @@ export const MCP_TOOL_TIERS = {
     title: 'Resolve or reopen a comment on a doc',
   },
 
+  // ── Docs (DOR-2984) ─────────────────────────────────────────────────────
+  // No area: these reach the same files an agent's own Read and Write tools
+  // already reach, inside the same folder boundary. The write is the safer of
+  // the two paths: it merges with people's typing and keeps a version.
+  doc_read: {
+    tier: 'observe',
+    area: null,
+    areaNote: 'reads a file the agent can already read with its own tools',
+    title: 'Read a doc',
+  },
+  doc_write: {
+    tier: 'act',
+    area: null,
+    areaNote: 'writes a file the agent can already write, merged and with the old version kept',
+    title: 'Change a doc',
+  },
+
   // ── Extensions ──────────────────────────────────────────────────────────
   get_extension_api: {
     tier: 'observe',

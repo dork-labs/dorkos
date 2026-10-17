@@ -572,8 +572,10 @@ describe('in-session tool exposure', () => {
     // is always loaded, because the prompt names it.
     // 136 -> 140 total, 124 -> 128 deferred: the four doc comment tools
     // (DOR-2983), DEFERRED: a woken turn is told their names and searches.
-    expect(tools).toHaveLength(140);
-    expect(deferred).toHaveLength(128);
+    // 140 -> 142 total, 128 -> 130 deferred: `doc_read` and `doc_write`
+    // (DOR-2984), reached when an agent sets out to change a doc.
+    expect(tools).toHaveLength(142);
+    expect(deferred).toHaveLength(130);
     for (const name of [
       'local_browser_state',
       'local_browser_observe',

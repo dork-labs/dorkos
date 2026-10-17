@@ -309,7 +309,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/documents');
     // 78 -> 79: comments on docs, a mount of their own (DOR-2983).
     expect(mounts).toContain('/api/documents/comments');
-    expect(mounts).toHaveLength(79);
+    // 79 -> 80: a doc's saved versions, a mount of their own (DOR-2984).
+    expect(mounts).toContain('/api/documents/versions');
+    expect(mounts).toHaveLength(80);
     const byHand = [
       '/',
       '/x/fixture',

@@ -71,6 +71,7 @@ import {
 } from '../routes/extension-decisions.js';
 import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
 import { createFileRoutes } from '../routes/files.js';
+import { createDocumentVersionRoutes } from '../routes/documents-versions.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
@@ -357,6 +358,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.use('/api/communities/*', gateRemoteCommunities());
   app.route('/api/communities', createRemoteCommunitiesRoutes());
   app.route('/api/files', createFileRoutes(deps.docChannel?.fileWrites));
+  // A doc's saved versions and their restore (DOR-2984); the `/api` 404 while Docs are off.
+  app.route('/api/documents/versions', createDocumentVersionRoutes());
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);

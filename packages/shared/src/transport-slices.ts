@@ -25,6 +25,7 @@ import type { HubComputersTransport, SessionRelayTransport } from './transport-h
 import type { SignInLandingTransport } from './transport-sign-in-landing.js';
 import type { DocLinksTransport } from './transport-doc-links.js';
 import type { DocCommentTransport } from './transport-doc-comments.js';
+import type { DocCollabTransport } from './transport-doc-collab.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -47,4 +48,5 @@ export interface TransportSlices
     SessionRelayTransport,
     SignInLandingTransport,
     DocLinksTransport,
-    DocCommentTransport {}
+    DocCommentTransport,
+    DocCollabTransport {}

@@ -268,6 +268,10 @@ asarUnpack:
   # app.asar is an archive entry, not a file the model can grant, so it must be
   # a real file on disk. `isolation/child-entry.ts` prefers this unpacked twin.
   - 'dist/server/extension-child.cjs'
+  # The live docs markdown worker (DOR-2984), started as a worker thread from
+  # its path. Unpacked so it is an ordinary file whatever the asar support of
+  # the worker loader; `docs/collab/worker-entry.ts` prefers this unpacked twin.
+  - 'dist/server/docs-markdown-worker.mjs'
   # ensureCoreExtensions's fs.cp() (staging bundled extensions into
   # DORK_HOME) can't read this source tree from inside app.asar either —
   # same class of read limitation as dist/renderer above.
