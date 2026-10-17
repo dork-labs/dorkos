@@ -1,8 +1,8 @@
 /**
  * The computer's answers to relayed requests (spec `everything-is-a-space`
  * B2): the owner's own DorkOS on the web listing an agent's chats, holding a
- * chat's stream open, sending, stopping and answering a question, all over
- * the one connection this computer dialed out to its pinned hub.
+ * chat's stream open, sending and stopping, all over the one connection this
+ * computer dialed out to its pinned hub.
  *
  * Who is calling is decided here, not by the protocol: everything that
  * arrives over the relay is the `relayed` caller, never a person and never
@@ -11,10 +11,14 @@
  * - it serves only a person's own chats with a registered, non-system agent
  *   (`relay-serves.ts`), and a chat it does not serve is answered exactly as
  *   one that does not exist;
- * - a message starts its turn as `session-relay`, which runs the chat at its
- *   own trust level, the same as at this computer;
- * - an approval is refused until it can carry a passkey proof (spec B4), so
- *   `interaction.approval` is not advertised and nothing here approves a tool;
+ * - a message starts its turn as `session-relay`, held to
+ *   `RELAY_TURN_CEILING` (`relay-send.ts`), so it asks before anything that
+ *   needs a person, whatever the chat's own level (spec B2, option 2);
+ * - an approval, and an answer to a question, are refused until they can carry
+ *   a passkey proof (spec B4): an answer puts words into a turn a person
+ *   started at full power. So neither `interaction.approval` nor
+ *   `interaction.question` is advertised, and nothing here approves a tool or
+ *   answers a question;
  * - nothing a request carries names a folder, a runtime, an account or a
  *   permission: a new chat's folder comes from Mesh, never from the request;
  * - every request, stream and the connection's end is written to the audit
@@ -58,6 +62,7 @@ import {
   type RelaySessionFacts,
 } from './relay-serves.js';
 import {
+  RELAY_ANSWER_REFUSED,
   RELAY_APPROVAL_REFUSED,
   RELAY_INTERNAL,
   RELAY_INVALID,
@@ -70,19 +75,20 @@ import {
 } from './relay-errors.js';
 import { recordRelayAudit, type RelayAuditEntry } from './relay-audit.js';
 import { relayChatSummaries } from './relay-chat-list.js';
-import { relayedMessage } from './relay-send.js';
+import { relayClientId } from './relay-client-id.js';
+import { RELAY_TURN_CEILING, relayedMessage } from './relay-send.js';
 import { RelayStreamSink } from './relay-stream-sink.js';
 
 /**
- * What this computer serves over the relay. `interaction.approval` is left
- * out on purpose: an approval from the web needs a passkey proof (spec B4).
+ * What this computer serves over the relay. `interaction.approval` and
+ * `interaction.question` are left out on purpose: an approval or an answer
+ * from the web needs a passkey proof (spec B4).
  */
 export const RELAY_SERVED_FEATURES: readonly SessionRelayFeature[] = [
   'chats.list',
   'session.stream',
   'session.send',
   'session.interrupt',
-  'interaction.question',
 ];
 
 /** The few things the relay asks of a chat's runtime. */
@@ -91,13 +97,6 @@ export interface RelayRuntime {
   readonly type: string;
   /** Stop the chat's running turn. */
   interruptQuery(sessionId: string): Promise<InterruptReceipt>;
-  /** Answer a question the chat is waiting on. */
-  submitAnswers(
-    sessionId: string,
-    toolCallId: string,
-    answers: Record<string, string>,
-    options?: { answeredBy?: string }
-  ): boolean;
 }
 
 /** Everything the request server reads and calls. */
@@ -131,8 +130,6 @@ export interface RelayRequestServerDeps {
   resolveRuntime: (sessionId: string) => Promise<RelayRuntime>;
   /** Empty a chat's queue, returning what was waiting. */
   clearQueuedMessages: (sessionId: string) => QueuedMessage[];
-  /** The owner's name for an answer's receipt, or `undefined` when none is known. */
-  answererName: () => string | undefined;
   /** Write one audit entry. */
   recordAudit: (input: RecordAuditInput) => void;
   /** The owner of this computer, as the audit log names them. */
@@ -225,7 +222,7 @@ export class SessionRelayRequestServer implements RelayRequestServer {
   }
 
   private freshConnection(): Connection {
-    const mint = this.deps.mintClientId ?? (() => `relay:${randomUUID()}`);
+    const mint = this.deps.mintClientId ?? (() => relayClientId(randomUUID()));
     return { clientId: mint(), inflight: 0, streams: new Map() };
   }
 
@@ -313,11 +310,9 @@ export class SessionRelayRequestServer implements RelayRequestServer {
           this.refuseApproval(request.sessionId, refuse);
           return;
         case 'interaction.respond':
-          if (request.answer.kind !== 'answer') {
-            this.refuseApproval(request.sessionId, refuse);
-            return;
-          }
-          return await this.answerQuestion(request.sessionId, request.answer, answer, refuse);
+          if (request.answer.kind === 'answer') this.refuseAnswer(request.sessionId, refuse);
+          else this.refuseApproval(request.sessionId, refuse);
+          return;
       }
     } catch (error) {
       logger.warn('[SessionRelay] A relayed request failed', {
@@ -500,6 +495,7 @@ export class SessionRelayRequestServer implements RelayRequestServer {
         clientId: conn.clientId,
         meshCore: this.deps.meshCore(),
         roomSessionPlace: this.deps.roomSessionPlace(),
+        permissionCeiling: RELAY_TURN_CEILING,
         onSettled: () => release(),
       });
     } catch (error) {
@@ -522,10 +518,8 @@ export class SessionRelayRequestServer implements RelayRequestServer {
       sessionId,
       summary: placed.startsChat ? 'Started a chat from the web' : 'Sent a message from the web',
     });
-    const canonical = result.canonicalId;
-    answer({
-      sessionId: canonical && /^[0-9a-f-]{36}$/.test(canonical) ? canonical : sessionId,
-    });
+    const id = result.canonicalId;
+    answer({ sessionId: id && /^[0-9a-f-]{36}$/.test(id) ? id : sessionId });
   }
 
   private async interrupt(
@@ -564,44 +558,6 @@ export class SessionRelayRequestServer implements RelayRequestServer {
     answer({ receipt, cancelledQueued });
   }
 
-  private async answerQuestion(
-    sessionId: string,
-    reply: { toolCallId: string; answers: Record<string, string> },
-    answer: (body: unknown) => void,
-    refuse: (error: RelayError) => void
-  ): Promise<void> {
-    if (!(await this.relayServesSession(sessionId))) {
-      this.audit({
-        action: 'relay.interaction.respond',
-        operation: 'execute',
-        outcome: 'refused',
-        sessionId,
-        summary: 'Refused an answer from the web',
-      });
-      refuse(RELAY_NOT_FOUND);
-      return;
-    }
-    const runtime = await this.deps.resolveRuntime(sessionId);
-    // Words for the agent, no more power than a relayed message. The receipt
-    // names the owner as the route does; the runtime has no field for "from
-    // the web", so that fact lives in the audit entry below.
-    const name = this.deps.answererName();
-    const ok = runtime.submitAnswers(
-      sessionId,
-      reply.toolCallId,
-      reply.answers,
-      name ? { answeredBy: name } : {}
-    );
-    this.audit({
-      action: 'relay.interaction.respond',
-      operation: 'execute',
-      outcome: ok ? 'ok' : 'failed',
-      sessionId,
-      summary: 'Answered a question from the web',
-    });
-    answer({ ok });
-  }
-
   /** An approval, or a challenge for one: refused until B4's passkey proof. */
   private refuseApproval(sessionId: string, refuse: (error: RelayError) => void): void {
     this.audit({
@@ -612,6 +568,18 @@ export class SessionRelayRequestServer implements RelayRequestServer {
       summary: 'Refused an approval from the web',
     });
     refuse(RELAY_APPROVAL_REFUSED);
+  }
+
+  /** An answer to a question: refused until B4's passkey proof, as an approval is. */
+  private refuseAnswer(sessionId: string, refuse: (error: RelayError) => void): void {
+    this.audit({
+      action: 'relay.interaction.respond',
+      operation: 'execute',
+      outcome: 'refused',
+      sessionId,
+      summary: 'Refused an answer from the web',
+    });
+    refuse(RELAY_ANSWER_REFUSED);
   }
 
   /** Record one relayed action (see `relay-audit.ts`). */
