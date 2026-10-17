@@ -55,6 +55,10 @@ chat that ran `vc show` with a `<ui_action>` turn carrying the screen's full
 selection, any written reply (as `message`), and every pin on it. Exploration (toggling options, sliders, theme,
 history) never wakes anyone.
 
+A long reply arrives whole. Only when a `<ui_action>` would pass DorkOS's 8 KB payload cap are older pins
+dropped and then the reply shortened, and that screen says `message_truncated: true`. The full text is
+always in `events_file`.
+
 - While you're mid-turn, DorkOS answers 409 and the companion retries until
   you're free (up to 30 minutes; at most 20 wakes an hour).
 - **Where a Send goes.** Each screen remembers the chat that showed it
@@ -249,6 +253,6 @@ gitignored; `scripts/vc build` rebuilds them after the app's styles change.
 - `scripts/frame-template.html`, `frame.css`, `boot.js`, `helper.js`: the frame
 - `scripts/shoot.cjs`: screenshots; `scripts/locate.cjs` finds the repo, playwright-core and Chromium
 - `scripts/build-assets.mjs` (`vc build`): builds `scripts/assets/tokens.css` and `app.css` from the DorkOS repo
-- `tests/run.sh`: 42 headless checks (playwright-core + Chromium, about 90s)
+- `tests/run.sh`: 43 headless checks (playwright-core + Chromium, about 90s)
 - `examples/components.html`: every component on one screen
 - `scripts/start-server.sh`, `stop-server.sh`: the v1 entry points, still working

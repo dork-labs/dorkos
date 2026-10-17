@@ -447,7 +447,18 @@ function screenTitle(name) {
   return f ? titleFor(name, read(f)) : name;
 }
 
-function buildPayload(batch) {
+// Each delivery spends a size budget on what the person wrote: older pin notes
+// go first, then the reply is shortened only as far as it has to be, and says
+// so (`message_truncated`, with `events_file` holding the whole reply).
+// DorkOS refuses a ui-action whose serialized payload passes 8,192 characters
+// (UI_ACTION_PAYLOAD_MAX_LENGTH), so that path stays under it with room for
+// the envelope. A plain message has no length cap of its own, only the
+// server's 1 MB request limit, so that path gets a budget no typed reply meets.
+const PAYLOAD_BUDGET = { 'ui-action': 7500, message: 100000 };
+// The summary line only quotes the reply; the screen carries it in full.
+const SUMMARY_QUOTE = 140;
+
+function buildPayload(batch, messageMax = Infinity) {
   const groups = new Map();
   for (const e of batch) {
     const k = e.screen || '';
@@ -457,7 +468,7 @@ function buildPayload(batch) {
     if (Array.isArray(e.selection)) g.selection = e.selection;
     if (e.type === 'pin') g.newPins.push(e.n);
     if (e.type === 'send') g.trigger = 'send';
-    if (e.message) g.message = clip(e.message, 500);
+    if (e.message) g.message = e.message;
   }
   const screens = [];
   const lines = [];
@@ -483,7 +494,8 @@ function buildPayload(batch) {
       selection,
       pins,
       new_pins: g.newPins,
-      message: g.message,
+      message: clip(g.message, messageMax),
+      ...(g.message && g.message.length > messageMax ? { message_truncated: true } : {}),
       url: '/?screen=' + encodeURIComponent(name),
     });
     const parts = [];
@@ -495,10 +507,27 @@ function buildPayload(batch) {
           (pins.length === 1 ? ' note' : ' notes') +
           (g.newPins.length ? ' (' + g.newPins.length + ' new)' : '')
       );
-    if (g.message) parts.push('said "' + g.message + '"');
+    if (g.message) parts.push('said "' + clip(g.message, SUMMARY_QUOTE) + '"');
     lines.push(title + ': ' + (parts.join('; ') || 'sent with nothing selected'));
   }
   return { summary: lines, screens, events_file: EVENTS_FILE };
+}
+
+function fitPayload(batch, budget) {
+  let messageMax = Infinity;
+  for (;;) {
+    const payload = buildPayload(batch, messageMax);
+    const size = () => JSON.stringify(payload).length;
+    while (size() > budget && payload.screens.some((x) => x.pins.length)) {
+      for (const x of payload.screens) x.pins.shift();
+    }
+    const over = size() - budget;
+    const longest = Math.max(0, ...payload.screens.map((x) => (x.message || '').length));
+    if (over <= 0 || longest <= 1) return payload;
+    const next = Math.max(1, Math.min(messageMax, longest) - over - 1);
+    if (next >= messageMax) return payload;
+    messageMax = next;
+  }
 }
 
 async function deliverRoute() {
@@ -517,10 +546,7 @@ async function deliverRoute() {
   }
   // One delivery per chat: take the queued events that belong to this one.
   const batch = routeQueue.filter((e) => readRoute(e.screen)?.session === r.session);
-  const payload = buildPayload(batch);
-  while (JSON.stringify(payload).length > 7500 && payload.screens.some((x) => x.pins.length)) {
-    for (const x of payload.screens) x.pins.shift();
-  }
+  const payload = fitPayload(batch, PAYLOAD_BUDGET[r.mode]);
   const headers = { 'Content-Type': 'application/json' };
   const names = payload.screens.map((x) => x.title).join(', ');
   let url, body;
