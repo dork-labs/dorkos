@@ -4,8 +4,8 @@
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
  * succeeds, sign-in landing pages, where no landing is held, and a space's
- * docs, where there are none. Heartbeats and a hub's computers come from their
- * own mocks.
+ * docs, where there are none. Heartbeats, a hub's computers and doc comments
+ * come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -15,6 +15,7 @@ import { createMockComputerTransport } from './mock-computer-transport.js';
 import { createMockLocalBrowserTransport } from './mock-local-browser-transport.js';
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
+import { docCommentTransportMocks } from './mock-doc-comments.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -37,8 +38,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockLocalBrowserTransport> &
   ReturnType<typeof createMockComputerTransport> &
   ReturnType<typeof createMockHubTransport> &
-  ReturnType<typeof createMockSessionRelayTransport> {
+  ReturnType<typeof createMockSessionRelayTransport> &
+  ReturnType<typeof docCommentTransportMocks> {
   return {
+    ...docCommentTransportMocks(),
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),

@@ -25,6 +25,7 @@ export interface BlintzCanvasProps extends Pick<
   | 'onTaskToggleRequest'
   | 'wikiLinks'
   | 'embeds'
+  | 'plugins'
 > {
   /** Current markdown document. Seeds the editor; on divergence it re-seeds. */
   value: string;
@@ -61,6 +62,7 @@ export function BlintzCanvas({
   onTaskToggleRequest,
   wikiLinks,
   embeds,
+  plugins,
 }: BlintzCanvasProps) {
   const resolvedTheme = useResolvedTheme();
   return (
@@ -81,6 +83,7 @@ export function BlintzCanvas({
         onSourceSelection={onSourceSelection}
         onTaskToggleRequest={onTaskToggleRequest}
         wikiLinks={wikiLinks}
+        plugins={plugins}
         mermaid={loadMermaid}
         embeds={embeds}
         className={cn('desktop:select-text', className)}

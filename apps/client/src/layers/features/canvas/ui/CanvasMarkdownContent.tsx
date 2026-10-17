@@ -3,7 +3,13 @@ import { Check, Pencil } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import { SaveAsWebPageButton, useDocEmbeds, useDocWikiLinks } from '@/layers/features/docs';
+import { docRefFor } from '@/layers/entities/doc';
+import {
+  DocCommentsFrame,
+  SaveAsWebPageButton,
+  useDocEmbeds,
+  useDocWikiLinks,
+} from '@/layers/features/docs';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
 
 // Lazy: the Blintz chunk (Milkdown + ProseMirror + CodeMirror + KaTeX) loads
@@ -93,6 +99,8 @@ export function CanvasMarkdownContent({
     content: draft,
     saved: fileSave.status === 'saved',
   });
+  // Comments need a file to hang off: generated markdown has none.
+  const doc = fileBacked ? docRefFor(cwd, content.sourcePath) : null;
 
   // The session that owned the edit, captured when edit mode begins.
   const owningSessionRef = useRef<string | null>(null);
@@ -278,13 +286,18 @@ export function CanvasMarkdownContent({
               remount — so a single mounted editor toggles between view and edit
               without losing scroll or selection. In edit mode `value` tracks the
               draft; in view mode it shows the document. */}
-          <BlintzCanvas
-            value={editing ? draft : content.content}
-            editable={editing}
-            onChange={editing ? handleChange : undefined}
-            wikiLinks={wikiLinks}
-            embeds={embeds}
-          />
+          <DocCommentsFrame doc={doc}>
+            {(plugins) => (
+              <BlintzCanvas
+                value={editing ? draft : content.content}
+                editable={editing}
+                onChange={editing ? handleChange : undefined}
+                wikiLinks={wikiLinks}
+                embeds={embeds}
+                plugins={plugins}
+              />
+            )}
+          </DocCommentsFrame>
         </Suspense>
       </div>
     </div>

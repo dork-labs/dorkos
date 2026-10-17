@@ -150,8 +150,15 @@ describe('BlintzCanvas public source callbacks', () => {
     expect(editorControl.props?.embeds).toBeUndefined();
   });
 
+  it('forwards editor plugins, such as doc comments, untouched', () => {
+    const plugins = [() => undefined] as unknown as NonNullable<MarkdownEditorProps['plugins']>;
+    render(<BlintzCanvas value="# raw" editable={false} plugins={plugins} />);
+    expect(editorControl.props?.plugins).toBe(plugins);
+  });
+
   it('keeps legacy callers callback-free', () => {
     render(<BlintzCanvas value="# raw" editable={false} />);
+    expect(editorControl.props?.plugins).toBeUndefined();
     expect(editorControl.props?.sourceRevision).toBeUndefined();
     expect(editorControl.props?.onSourceReady).toBeUndefined();
     expect(editorControl.props?.onSourceSelection).toBeUndefined();

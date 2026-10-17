@@ -1,0 +1,16 @@
+/* Keep the comment highlights in the editor's layer, above the app reset and
+   below the app utilities, the same pin `features/canvas/ui/blintz.css` uses. */
+@import '@blintz/comments/styles.css' layer(blintz);
+
+/* Highlights in the app's own warning tint, so they read in both themes. In
+   the same layer, and never on a resolved thread, which keeps its own look. */
+@layer blintz {
+  .dorkos-markdown .milkdown .blintz-comment:not(.is-resolved) {
+    background: hsl(var(--status-warning) / 0.18);
+    border-bottom-color: hsl(var(--status-warning) / 0.7);
+  }
+  .dorkos-markdown .milkdown .blintz-comment.is-active:not(.is-resolved) {
+    background: hsl(var(--status-warning) / 0.36);
+    border-bottom-color: hsl(var(--status-warning-dot));
+  }
+}

@@ -50,6 +50,9 @@ vi.mock('@/layers/features/docs', () => {
     useDocEmbeds: () => (docs.on ? embeds : undefined),
     SaveAsWebPageButton: ({ sourcePath }: { sourcePath: string }) =>
       docs.on ? <button type="button" aria-label={`Save ${sourcePath} as web page`} /> : null,
+    // Doc comments are tested in features/docs; the frame hands the editor through.
+    DocCommentsFrame: ({ children }: { children: (plugins: undefined) => unknown }) =>
+      children(undefined),
   };
 });
 vi.mock('@/layers/shared/model', () => {

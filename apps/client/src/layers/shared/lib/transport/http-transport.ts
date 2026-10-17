@@ -36,6 +36,7 @@ import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
 import { createCommitmentMethods } from './commitment-methods';
+import { createDocCommentMethods } from './doc-comment-methods';
 import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
 import { createPushMethods } from './push-methods';
@@ -102,7 +103,8 @@ export interface HttpTransport
     ReturnType<typeof createAuditMethods>,
     ReturnType<typeof createHubMethods>,
     ReturnType<typeof createSignInLandingMethods>,
-    ReturnType<typeof createDocLinkMethods> {}
+    ReturnType<typeof createDocLinkMethods>,
+    ReturnType<typeof createDocCommentMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -158,7 +160,8 @@ export class HttpTransport implements Transport {
       createAuditMethods(baseUrl),
       createHubMethods(baseUrl),
       createSignInLandingMethods(baseUrl),
-      createDocLinkMethods(baseUrl)
+      createDocLinkMethods(baseUrl),
+      createDocCommentMethods(baseUrl)
     );
   }
 }

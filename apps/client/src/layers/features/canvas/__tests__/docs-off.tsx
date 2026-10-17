@@ -8,6 +8,7 @@
  *
  * @module features/canvas/__tests__/docs-off
  */
+import type { ReactNode } from 'react';
 
 /** Docs off: the editor gets no wiki links. */
 export function useDocWikiLinks(): undefined {
@@ -17,6 +18,15 @@ export function useDocWikiLinks(): undefined {
 /** Docs off: the editor gets no embeds. */
 export function useDocEmbeds(): undefined {
   return undefined;
+}
+
+/** Docs off: the comments frame hands the editor straight through, with no plugins. */
+export function DocCommentsFrame({
+  children,
+}: {
+  children: (plugins: undefined) => ReactNode;
+}): ReactNode {
+  return children(undefined);
 }
 
 /** Docs off: no "Save as web page". */

@@ -30,6 +30,8 @@ const mockState = {
 /** Document id passed to the editor under test. */
 const DOC_ID = 'doc-1';
 
+const docFrame = vi.hoisted(() => ({ docs: [] as unknown[] }));
+
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -60,6 +62,17 @@ vi.mock('../model/use-canvas-file-save', () => ({
 // Wiki links are tested there too, and stay off here.
 const docs = vi.hoisted(() => ({ embeds: undefined as Record<string, unknown> | undefined }));
 vi.mock('@/layers/features/docs', () => ({
+  // The comments frame hands the editor through, and records the doc it was named.
+  DocCommentsFrame: ({
+    doc,
+    children,
+  }: {
+    doc: unknown;
+    children: (plugins: undefined) => unknown;
+  }) => {
+    docFrame.docs.push(doc);
+    return children(undefined);
+  },
   useDocWikiLinks: () => undefined,
   useDocEmbeds: () => docs.embeds,
   SaveAsWebPageButton: ({ markdown, sourcePath }: { markdown: string; sourcePath: string }) =>
@@ -147,6 +160,17 @@ describe('CanvasMarkdownContent', () => {
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('title: T');
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('# Body');
     expect(screen.getByRole('button', { name: 'Edit document' })).toBeInTheDocument();
+  });
+
+  it('names the file to the comments frame only when the markdown is a file', async () => {
+    docFrame.docs = [];
+    await renderEditor();
+    expect(docFrame.docs.at(-1)).toEqual({ cwd: '/work', path: 'doc.md' });
+    cleanup();
+    docFrame.docs = [];
+    mockFileSave.canSave = false;
+    await renderEditor(generated);
+    expect(docFrame.docs.at(-1)).toBeNull();
   });
 
   it('offers no edit control for generated (non-file-backed) content', async () => {
