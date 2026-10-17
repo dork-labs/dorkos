@@ -11,7 +11,7 @@
  * @module commands/auth-commands
  */
 import { parseArgs } from 'node:util';
-import { user, eq, type Db } from '@dorkos/db';
+import { user, session, eq, type Db } from '@dorkos/db';
 import type { ConfigStore } from '../config-commands.js';
 
 /**
@@ -235,7 +235,8 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
 }
 
 /**
- * `dorkos auth reset-password`: set a new password on the owner account.
+ * `dorkos auth reset-password`: set a new password on the owner account and
+ * end every sign-in made with the old one.
  *
  * Works with no running server and no SMTP: it hashes the new password with the
  * same scrypt configuration the server uses and writes it directly to the
@@ -253,6 +254,11 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     return 1;
   }
 
+  if (options.password !== undefined) {
+    io.log(
+      'Note: --password leaves the new password in your shell history. Leave it off to be asked.'
+    );
+  }
   const password = options.password ?? (await prompt.password({ confirm: true }));
   if (!password) {
     io.error('A password is required.');
@@ -282,7 +288,18 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     });
   }
 
+  // A reset is what someone does after a password leaks, so every sign-in
+  // made with the old one ends here, on every browser and device (DOR-2968).
+  const signedOut = db.delete(session).where(eq(session.userId, owner.id)).run().changes;
+
   io.log(`Password reset for ${owner.email}.`);
-  io.log('You can now sign in with the new password.');
+  io.log(
+    `Signed out everywhere (${signedOut} ${signedOut === 1 ? 'sign-in' : 'sign-ins'} ended). ` +
+      'Sign in again with the new password.'
+  );
+  io.log('What this cannot cut off yet:');
+  io.log('  - a window already open may keep working for up to 5 minutes;');
+  io.log('  - live chat streams and terminals stay open until they reconnect;');
+  io.log('  - API keys keep working. Revoke them in Settings > Login & security.');
   return 0;
 }

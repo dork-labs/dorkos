@@ -10,7 +10,7 @@
  *
  * @vitest-environment node
  */
-import { createServer, request as httpRequest, type Server } from 'node:http';
+import { request as httpRequest, type Server } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 
@@ -28,6 +28,8 @@ vi.mock('../../config-manager.js', () => ({
     set: vi.fn(),
   },
 }));
+// As in a built DorkOS, so the hub's cookie names apply.
+vi.mock('../../auth/cookie-security.js', () => ({ AUTH_COOKIES_SECURE: true }));
 vi.mock('../../tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
@@ -37,7 +39,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 const { createApiApp } = await import('../../../../http/api-chain.js');
-const { frontDoorListener } = await import('../../../../http/front-door.js');
+const { createFrontDoorServer } = await import('../../../../http/front-door.js');
 const { MainRequestAdmission } = await import('../../lifecycle/main-request-admission.js');
 const { attachUpgradeRouter } = await import('../../streams/upgrade-router.js');
 const serving = await import('../hub-serving.js');
@@ -81,13 +83,23 @@ beforeEach(async () => {
         c.json({ ok: true, proofSeen: c.req.header(PROOF.header) ?? null })
       );
       early.get('/api/open', (c) => c.json({ proofSeen: c.req.header(PROOF.header) ?? null }));
+      early.post('/api/change', (c) => c.json({ changed: true }));
+      early.get('/api/events', (c) => c.json({ stream: true }));
+      early.get('/api/cookie', (c) => {
+        c.header(
+          'Set-Cookie',
+          '__Secure-better-auth.session_token=new; Domain=example.invalid; Path=/api; HttpOnly; Secure'
+        );
+        return c.json({ cookie: c.req.header('cookie') ?? null });
+      });
       early.get('/api/held', () => {
         entered();
         return new Promise<Response>(() => {});
       });
     },
   });
-  server = createServer(frontDoorListener(app));
+  // Built as the server builds its own listeners, upgrade hooks included.
+  server = createFrontDoorServer(app);
   attachUpgradeRouter(
     server,
     [
@@ -99,6 +111,16 @@ beforeEach(async () => {
         authorize: ({ headers }) => ({
           ok: true,
           open: (ws) => ws.send(headers[PROOF.header] === undefined ? 'open' : 'proof leaked'),
+        }),
+      },
+      {
+        name: 'cookie-stream',
+        pattern: /^\/api\/cookie-stream$/,
+        credential: 'bearer-of-id',
+        // Says which sign-in cookie the stream's authorization would read.
+        authorize: ({ headers }) => ({
+          ok: true,
+          open: (ws) => ws.send(String(headers.cookie ?? '(none)')),
         }),
       },
     ],
@@ -121,14 +143,20 @@ afterEach(async () => {
  */
 function get(
   path: string,
-  headers: [string, string][] = Object.entries(THROUGH_FRONT_DOOR)
-): Promise<{ status: number; body: unknown } | 'dropped'> {
+  headers: [string, string][] = Object.entries(THROUGH_FRONT_DOOR),
+  method = 'GET'
+): Promise<{ status: number; body: unknown; setCookie?: string[] } | 'dropped'> {
   return new Promise((resolve) => {
-    const req = httpRequest({ host: '127.0.0.1', port, path, headers: headers.flat() }, (res) => {
+    const options = { host: '127.0.0.1', port, path, method, headers: headers.flat() };
+    const req = httpRequest(options, (res) => {
       let text = '';
       res.on('data', (chunk) => (text += chunk));
       res.on('end', () =>
-        resolve({ status: res.statusCode ?? 0, body: JSON.parse(text || 'null') })
+        resolve({
+          status: res.statusCode ?? 0,
+          body: JSON.parse(text || 'null'),
+          ...(res.headers['set-cookie'] ? { setCookie: res.headers['set-cookie'] } : {}),
+        })
       );
     });
     req.on('error', () => resolve('dropped'));
@@ -136,15 +164,24 @@ function get(
   });
 }
 
-/** The status of one GET. */
-async function status(path: string, headers?: [string, string][]): Promise<number | 'dropped'> {
-  const res = await get(path, headers);
+/** The status of one request. */
+async function status(
+  path: string,
+  headers?: [string, string][],
+  method?: string
+): Promise<number | 'dropped'> {
+  const res = await get(path, headers, method);
   return res === 'dropped' ? res : res.status;
+}
+
+/** The front-door headers plus `extra`. */
+function through(...extra: [string, string][]): [string, string][] {
+  return [...(Object.entries(THROUGH_FRONT_DOOR) as [string, string][]), ...extra];
 }
 
 /** One upgrade, resolving to its refused status or its first message. */
 function upgrade(
-  headers: Record<string, string> = THROUGH_FRONT_DOOR
+  headers: Record<string, string> = { ...THROUGH_FRONT_DOOR, origin: `https://${HOST}` }
 ): Promise<{ status?: number; message?: string; closed?: true }> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/stream`, { headers });
   const outcome = new Promise<{ status?: number; message?: string; closed?: true }>((resolve) => {
@@ -307,6 +344,66 @@ describe('a hub that serves', () => {
     serving.setHubServingState({ state: 'refused' });
     await closed;
     expect(await upgrade()).toEqual({ status: 503 });
+  });
+});
+
+describe('a serving hub, against other sites (A5)', () => {
+  beforeEach(() => serving.setHubServingState(servingWith()));
+  const OWN = `https://${HOST}`;
+
+  it('takes a change, a stream or a socket from its own page', async () => {
+    const ownPage = through(['origin', OWN], ['sec-fetch-site', 'same-origin']);
+    expect(await status('/api/change', ownPage, 'POST')).toBe(200);
+    const stream = through(['accept', 'text/event-stream'], ['sec-fetch-site', 'same-origin']);
+    expect(await status('/api/events', stream)).toBe(200);
+    expect(await upgrade()).toEqual({ message: 'open' });
+  });
+
+  it('refuses a change, a stream or a socket from another site', async () => {
+    for (const headers of [
+      through(['origin', 'https://elsewhere.example.invalid']),
+      through(['sec-fetch-site', 'same-site']),
+      through(['sec-fetch-site', 'cross-site']),
+      through(['origin', 'null']),
+    ]) {
+      expect(await get('/api/change', headers, 'POST')).toEqual({
+        status: 403,
+        body: serving.HUB_CROSS_SITE_BODY,
+      });
+    }
+    const stream = through(['accept', 'text/event-stream'], ['sec-fetch-site', 'cross-site']);
+    expect(await status('/api/events', stream)).toBe(403);
+    const elsewhere = { ...THROUGH_FRONT_DOOR, origin: 'https://elsewhere.example.invalid' };
+    expect(await upgrade(elsewhere)).toEqual({ status: 403 });
+  });
+
+  it('lets a plain read through from a link anywhere, and a caller that is not a browser', async () => {
+    expect(await status('/api/open', through(['sec-fetch-site', 'cross-site']))).toBe(200);
+    expect(await status('/api/change', through(), 'POST')).toBe(200);
+  });
+
+  it('hands a stream the sign-in cookie under the name the auth stack set', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/api/cookie-stream`, {
+      headers: {
+        ...THROUGH_FRONT_DOOR,
+        origin: OWN,
+        cookie: '__Secure-better-auth.session_token=planted; __Host-better-auth.session_token=real',
+      },
+    });
+    const [message] = await once(ws, 'message');
+    ws.terminate();
+    expect(String(message)).toBe('__Secure-better-auth.session_token=real');
+  });
+
+  it('gives sign-in cookies the __Host- prefix and believes only that one', async () => {
+    const cookies =
+      '__Secure-better-auth.session_token=planted; __Host-better-auth.session_token=real';
+    const res = await get('/api/cookie', through(['cookie', cookies]));
+    expect(res).toMatchObject({
+      status: 200,
+      body: { cookie: '__Secure-better-auth.session_token=real' },
+      setCookie: ['__Host-better-auth.session_token=new; HttpOnly; Path=/; Secure'],
+    });
   });
 });
 

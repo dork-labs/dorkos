@@ -32,10 +32,8 @@
  * @module services/core/lan-access/lan-cookies
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { rewriteResponseSetCookies } from '../../../http/set-cookie-rewrite.js';
 import { isLanAccessHost, lanCookiesNeedAdapting } from './lan-trust.js';
-
-/** Every shape a header value takes on its way into a response. */
-type HeaderValue = number | string | readonly string[];
 
 /** The prefix Better Auth gives its cookies when they are `Secure`. */
 const SECURE_PREFIX = '__Secure-';
@@ -75,32 +73,6 @@ export function restoreSecureCookieNames(header: string): string {
     .join('; ');
 }
 
-/** Apply {@link relaxSetCookie} to whatever shape a `Set-Cookie` value arrives in. */
-function relaxHeaderValue<T extends HeaderValue>(value: T): T {
-  if (Array.isArray(value)) return value.map(relaxSetCookie) as unknown as T;
-  return (typeof value === 'string' ? relaxSetCookie(value) : value) as T;
-}
-
-/** Relax `Set-Cookie` inside the headers argument `writeHead` was given. */
-function relaxHeaders(headers: unknown): unknown {
-  // A flat `[name, value, name, value]` list.
-  if (Array.isArray(headers)) {
-    return headers.map((entry, index) =>
-      index % 2 === 1 && String(headers[index - 1]).toLowerCase() === 'set-cookie'
-        ? relaxHeaderValue(entry as HeaderValue)
-        : entry
-    );
-  }
-  if (headers && typeof headers === 'object') {
-    const record = { ...(headers as Record<string, HeaderValue>) };
-    for (const key of Object.keys(record)) {
-      if (key.toLowerCase() === 'set-cookie') record[key] = relaxHeaderValue(record[key]!);
-    }
-    return record;
-  }
-  return headers;
-}
-
 /**
  * Adapt one request and its response to plain `http`, in place: restore the
  * cookie names on the way in, relax `Set-Cookie` on the way out. A no-op when
@@ -119,20 +91,7 @@ export function adaptCookiesForPlainHttp(
   if (!secureCookies) return;
   const cookie = req.headers.cookie;
   if (cookie) req.headers.cookie = restoreSecureCookieNames(cookie);
-  if (!res) return;
-
-  const setHeader = res.setHeader.bind(res);
-  res.setHeader = (name, value) =>
-    setHeader(name, name.toLowerCase() === 'set-cookie' ? relaxHeaderValue(value) : value);
-  const appendHeader = res.appendHeader.bind(res);
-  res.appendHeader = (name, value) =>
-    appendHeader(name, name.toLowerCase() === 'set-cookie' ? relaxHeaderValue(value) : value);
-  const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => ServerResponse;
-  res.writeHead = ((...args: unknown[]) => {
-    const headersAt = typeof args[1] === 'string' ? 2 : 1;
-    if (args[headersAt] !== undefined) args[headersAt] = relaxHeaders(args[headersAt]);
-    return writeHead(...args);
-  }) as ServerResponse['writeHead'];
+  if (res) rewriteResponseSetCookies(res, relaxSetCookie);
 }
 
 /**

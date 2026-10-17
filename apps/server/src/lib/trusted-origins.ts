@@ -22,6 +22,7 @@ import { isIP, isIPv4 } from 'node:net';
 import { env } from '../env.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { getLanAccessOrigins } from '../services/core/lan-access/lan-trust.js';
+import { hubServingOrigins } from '../services/core/hub/hub-serving.js';
 
 /**
  * Host names that resolve to this machine and nowhere else. Used both for bind
@@ -299,10 +300,17 @@ export function getTunnelHosts(): string[] {
  *
  * The Wi-Fi origins have to be here, not only in the host allowlist: Better
  * Auth refuses a sign-in whose `Origin` is not on its list, so without them a
- * phone would load the app and fail at the sign-in button.
+ * phone would load the app and fail at the sign-in button. A serving hub's
+ * own address is here for the same reason (DOR-2937); its front door has
+ * already refused any other address and any other site's page.
  */
 export function resolveTrustedOrigins(): string[] {
-  return [...getStaticLocalOrigins(), ...getTunnelOrigins(), ...getLanAccessOrigins()];
+  return [
+    ...getStaticLocalOrigins(),
+    ...getTunnelOrigins(),
+    ...getLanAccessOrigins(),
+    ...hubServingOrigins(),
+  ];
 }
 
 /**

@@ -18,6 +18,7 @@ import { getAuth } from '../services/core/auth/index.js';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
+import { mountDesktopSignIn } from './desktop-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
 import type { Db } from '@dorkos/db';
@@ -315,6 +316,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
+      if (auth) mountDesktopSignIn(early, auth);
       if (deps.connectorEventIngress) {
         mountConnectorSignedIngress(early, deps.connectorEventIngress);
       }

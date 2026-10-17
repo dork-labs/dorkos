@@ -70,6 +70,16 @@ function onParentMessage(handler: (msg: unknown) => void): void {
   }
 }
 
+/** Whether a parent message is `{ type }`. */
+function isMessage(msg: unknown, type: string): boolean {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    'type' in msg &&
+    (msg as { type: unknown }).type === type
+  );
+}
+
 async function main() {
   exitWhenOrphaned();
   const port = Number(process.env.DORKOS_PORT);
@@ -86,6 +96,15 @@ async function main() {
   // Listen for shutdown signal from main process
   let shutdownRequested = false;
   onParentMessage((msg) => {
+    // The window signs in by itself (F3): the server's mint lives in this
+    // process, under a global it sets only when the desktop app runs it.
+    if (isMessage(msg, 'mint-sign-in-code')) {
+      const mint = (globalThis as Record<symbol, unknown>)[
+        Symbol.for('dorkos.desktop.mintSignInCode')
+      ] as (() => string | null) | undefined;
+      sendToParent({ type: 'sign-in-code', code: mint ? mint() : null });
+      return;
+    }
     if (
       msg &&
       typeof msg === 'object' &&

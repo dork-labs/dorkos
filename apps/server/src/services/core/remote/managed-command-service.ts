@@ -67,6 +67,7 @@ import { setManagedAdmissionListener, setManagedUpgradeListener } from './ingres
 import { MANAGED_DRAIN_DEADLINE_MS } from './managed-ingress.js';
 import { errorName } from './managed-remote-support.js';
 import { remoteCredentials } from './remote-credentials.js';
+import { closeSessionRelay, sessionRelayDialer } from '../session-relay/index.js';
 import {
   isEnrolledUnder,
   readRemoteState,
@@ -293,6 +294,8 @@ export class ManagedCommandService {
     const session = this.session;
     this.session = null;
     session?.stream.stop();
+    // The session relay goes with the command stream that wakes it.
+    closeSessionRelay();
     const dispatcher = this.dispatcher;
     if (dispatcher) {
       dispatcher.halt();
@@ -477,6 +480,7 @@ export const managedRemoteCommands: ManagedCommandService = new ManagedCommandSe
       updateRemoteState,
       onSettled,
       onOpened,
+      relayDialer: sessionRelayDialer(),
     }),
   openStream: (context, signal) => openCloudV1Stream(context, V1_ROUTES.remoteCommands, signal),
   activity: {

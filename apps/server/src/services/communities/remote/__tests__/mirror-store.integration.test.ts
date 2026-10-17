@@ -25,6 +25,7 @@ import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
 import { CommunityOutboxStore } from '../community-outbox-store.js';
 import { RemoteRoomSubscriptionBridge } from '../remote-room-subscription-bridge.js';
+import { RECONNECT_FRESH_MS } from '../subscription/reconnect-timing.js';
 
 const REF_A = 'remote_a' as CommunityRef;
 const REF_B = 'remote_b' as CommunityRef;
@@ -260,7 +261,10 @@ describe('RemoteMirrorStore', () => {
       {
         ...stale,
         author: { ...stale.author, kind: 'human' },
-        serverCreatedAt: '2026-09-16T00:59:29.000Z',
+        // Just past the reconnect freshness window, measured from the bridge's clock above.
+        serverCreatedAt: new Date(
+          Date.parse('2026-09-16T01:00:00.000Z') - RECONNECT_FRESH_MS - 1_000
+        ).toISOString(),
       },
       { reconnect: true, wasActiveBeforeDisconnect: true, readOnly: false }
     );

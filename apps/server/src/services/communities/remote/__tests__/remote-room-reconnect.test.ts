@@ -29,6 +29,7 @@ import {
 } from '../remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from '../remote-room-subscription-runtime.js';
 import { endsAccess } from '../subscription/remote-room-frames.js';
+import { RECONNECT_FRESH_MS } from '../subscription/reconnect-timing.js';
 import { RemoteConnectionAuthorizationError } from '../connection-store.js';
 import { CommunityDeletedError } from '../remote-community-adapter.js';
 
@@ -223,6 +224,41 @@ describe('a dropped link to a space', () => {
     await t.harness.service.triggersIdle();
     expect(t.opened).toEqual([undefined, 'cursor-1']);
     expect(t.harness.runner.turns).toHaveLength(1);
+    t.stop();
+  });
+
+  it('answers a mention missed early in a silent drop, which takes up to 50 seconds to notice', async () => {
+    // Catches a freshness window shorter than the time to notice a dead link: a mention sent a
+    // minute before the stream came back was once kept as history and never answered.
+    const t = setup({
+      missed: [entry(2, new Date(Date.now() - 60_000).toISOString())],
+      drop: new PinnedOriginError('REMOTE_UNAVAILABLE'),
+    });
+    t.runtime.start();
+    await settleUntil(() => t.observation()?.replayComplete === true, 'the first stream is in');
+    t.dropLink();
+    await settleUntil(
+      () => t.observation()?.dispatchesSinceBoot === 1,
+      'the minute-old mention is dispatched'
+    );
+    t.stop();
+  });
+
+  it('keeps a mention older than the freshness window as history', async () => {
+    // Catches the window having no edge: an outage longer than a reconnect wakes nobody late.
+    const t = setup({
+      missed: [entry(2, new Date(Date.now() - RECONNECT_FRESH_MS - 5_000).toISOString())],
+      drop: new PinnedOriginError('REMOTE_UNAVAILABLE'),
+    });
+    t.runtime.start();
+    await settleUntil(() => t.observation()?.replayComplete === true, 'the first stream is in');
+    t.dropLink();
+    await settleUntil(
+      () => t.observation()?.generation === 2 && t.observation()?.replayComplete === true,
+      'the resumed stream is in'
+    );
+    await t.harness.service.triggersIdle();
+    expect(t.observation()?.dispatchesSinceBoot).toBe(0);
     t.stop();
   });
 

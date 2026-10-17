@@ -234,8 +234,7 @@ export class ChatMessageStore {
 
   /**
    * The chats that have sent this chat a message (a message, a report or a
-   * first message; never a stop). Sending a chat a message does not make it
-   * readable; being written to by it does (spec `spin-off-chats` §4).
+   * first message; never a stop).
    *
    * @param sessionId - The chat.
    */
@@ -253,6 +252,50 @@ export class ChatMessageStore {
     const out = new Set(rows.map((row) => row.from));
     out.delete(sessionId);
     return out;
+  }
+
+  /**
+   * Whether an agent has exchanged chat messages with a chat, from any of its
+   * own chats (spec `spin-off-chats` §4): one of them sent it a message, or it
+   * sent one to a chat of the agent's that has itself sent messages. Stops
+   * never count. Says nothing about whether that chat may be read: the reader
+   * rule decides that.
+   *
+   * @param agentPath - The agent's home.
+   * @param sessionId - The other chat.
+   */
+  agentExchangedWith(agentPath: string, sessionId: string): boolean {
+    const kinds = inArray(chatMessages.kind, ['message', 'report', 'start']);
+    const sent = this.db
+      .select({ id: chatMessages.id })
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.fromAgentPath, agentPath),
+          eq(chatMessages.toSessionId, sessionId),
+          kinds
+        )
+      )
+      .limit(1)
+      .all();
+    if (sent.length > 0) return true;
+    const ownChats = this.db
+      .selectDistinct({ id: chatMessages.fromSessionId })
+      .from(chatMessages)
+      .where(eq(chatMessages.fromAgentPath, agentPath));
+    const received = this.db
+      .select({ id: chatMessages.id })
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.fromSessionId, sessionId),
+          inArray(chatMessages.toSessionId, ownChats),
+          kinds
+        )
+      )
+      .limit(1)
+      .all();
+    return received.length > 0;
   }
 
   /**
