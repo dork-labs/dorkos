@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { motion, useReducedMotion } from 'motion/react';
-import { ArrowUpRight, Clock, Loader2, RotateCw } from 'lucide-react';
+import { ArrowUpRight, Clock, RotateCw } from 'lucide-react';
 import type { SignInLanding } from '@dorkos/shared/sign-in-landing';
 import { appRoutes } from '@/layers/shared/lib';
-import { Button, Notice } from '@/layers/shared/ui';
+import { Button, Notice, Spinner } from '@/layers/shared/ui';
 import {
   closeTabHint,
   GONE_COPY,
@@ -45,8 +45,8 @@ export function SignInLandingPage({ landingId }: SignInLandingPageProps) {
   if (landing.isPending && landingId.length > 0) {
     return (
       <LandingFrame title="Finishing sign-in">
-        <div className="flex justify-center py-10" role="status" aria-label="Finishing sign-in">
-          <Loader2 className="text-muted-foreground size-5 motion-safe:animate-spin" />
+        <div className="flex justify-center py-10">
+          <Spinner size="md" label="Finishing sign-in" className="text-muted-foreground" />
         </div>
       </LandingFrame>
     );
@@ -100,7 +100,7 @@ function Landing({ landing }: { landing: SignInLanding }) {
       <div className="mt-6 flex flex-col gap-2">
         {!connected && landing.canRetry && (
           <Button onClick={() => retry.mutate()} disabled={retry.isPending}>
-            {retry.isPending ? <Loader2 className="motion-safe:animate-spin" /> : <RotateCw />}
+            {retry.isPending ? <Spinner /> : <RotateCw />}
             Try again
           </Button>
         )}

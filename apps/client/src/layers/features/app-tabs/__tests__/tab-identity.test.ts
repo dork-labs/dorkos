@@ -403,6 +403,7 @@ describe('the route map (drift guard)', () => {
       '/marketplace': 'Marketplace',
       '/marketplace/sources': 'Marketplace',
       '/session': 'Chat',
+      '/signed-in': 'Signed in',
       '/tasks': 'Schedules',
       '/team': 'Team',
       '/workspaces': 'Workspaces',
