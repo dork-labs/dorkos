@@ -60,7 +60,10 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
 import { credentialGated } from '../../services/core/auth/gate-policy.js';
-import { wireSessionRelay } from '../../services/core/session-relay/index.js';
+import {
+  watchSessionRelaySwitch,
+  wireSessionRelay,
+} from '../../services/core/session-relay/index.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -338,6 +341,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     origins,
     roomSessionPlace: () => refs.roomSessionPlacePort,
   });
+  // Switching Chat from the web off closes a live relay at once.
+  watchSessionRelaySwitch();
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list

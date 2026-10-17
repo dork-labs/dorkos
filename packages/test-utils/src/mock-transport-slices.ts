@@ -12,7 +12,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockComputerTransport } from './mock-computer-transport.js';
 import { createMockLocalBrowserTransport } from './mock-local-browser-transport.js';
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
-import { createMockHubTransport } from './mock-hub-transport.js';
+import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -30,12 +30,14 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockHeartbeatTransport> &
   ReturnType<typeof createMockLocalBrowserTransport> &
   ReturnType<typeof createMockComputerTransport> &
-  ReturnType<typeof createMockHubTransport> {
+  ReturnType<typeof createMockHubTransport> &
+  ReturnType<typeof createMockSessionRelayTransport> {
   return {
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),
     ...createMockHubTransport(),
+    ...createMockSessionRelayTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),

@@ -13,7 +13,9 @@
  *   signed with it, so a stolen relay secret cannot stand in for the computer.
  *
  * Both are files in `<data folder>/session-relay/`, mode `0600`, and nothing
- * else: no config field, no environment variable. Reads follow symlinks, which
+ * else: no config field, no environment variable. The pin also carries the
+ * owner's two switches, the level (Chat or Full control) and the pause, so
+ * `PATCH /api/config` and the agents' config tool can never reach either. Reads follow symlinks, which
  * matters only to someone who can already write the data folder. Removing the
  * pin turns the relay off at once, with the network up or down (B3's "revoke
  * works offline").
@@ -27,6 +29,10 @@ import { z } from 'zod';
 import { claimSecretText } from '@dorkos/shared/secret-file';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { RelayPinnedHubKeySchema } from '@dorkos/shared/session-relay';
+import {
+  RelayLinkComputerNameSchema,
+  SessionRelayLevelSchema,
+} from '@dorkos/shared/session-relay-link';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
 import { pinnableKey, signingKeyFromPem } from './channel.js';
@@ -37,10 +43,14 @@ const PIN_FILE = 'pin.json';
 const KEY_FILE = 'computer-key.pem';
 const FILE_MODE = 0o600;
 
-/** A pin, as stored. */
+/**
+ * A pin, as stored. Format 2 added the level, the pause, the name and the hub
+ * owner's account; format 1 was never written by a released build, so a pin in
+ * it reads as no pin at all and the owner links again.
+ */
 export const RelayPinSchema = z.strictObject({
   /** The store's own format, so a later release can read an older pin. */
-  v: z.literal(1),
+  v: z.literal(2),
   /** This computer's id as its hub knows it. */
   computerId: z
     .string()
@@ -61,10 +71,26 @@ export const RelayPinSchema = z.strictObject({
     .regex(/^[A-Za-z0-9_-]+$/),
   /** When the owner pinned it (ISO 8601). */
   pinnedAt: z.string().datetime(),
+  /** The name this computer linked with, as the hub shows it. */
+  computerName: RelayLinkComputerNameSchema,
+  /**
+   * What the web may do here. Only the owner at this computer raises it. The
+   * relay serves both alike today: every relayed turn is held to Chat.
+   */
+  level: SessionRelayLevelSchema.default('chat'),
+  /** The owner's away switch: a paused pin is never dialed. */
+  paused: z.boolean().default(false),
+  /** The issuer of the hub owner's account, when the hub named one. */
+  issuer: z.string().min(1).max(512).optional(),
+  /** The hub owner's account id at {@link RelayPinSchema} `issuer`, when named. */
+  accountId: z.string().min(1).max(128).optional(),
 });
 
 /** See {@link RelayPinSchema}. */
 export type RelayPin = z.infer<typeof RelayPinSchema>;
+
+/** A pin as a writer hands it over: the level and the pause may be left to their defaults. */
+export type RelayPinInput = z.input<typeof RelayPinSchema>;
 
 /** Whether a string is exactly an https origin: scheme, host, optional port. */
 function isHttpsOrigin(value: string): boolean {
@@ -111,13 +137,51 @@ export function readRelayPin(dorkHome: string = resolveDorkHome()): RelayPin | n
  * @param dorkHome - The data folder; defaults to the live one.
  */
 export async function writeRelayPin(
-  pin: RelayPin,
+  pin: RelayPinInput,
   dorkHome: string = resolveDorkHome()
 ): Promise<void> {
   const checked = RelayPinSchema.parse(pin);
   await writeFileAtomic(path.join(folder(dorkHome), PIN_FILE), JSON.stringify(checked), {
     mode: FILE_MODE,
   });
+}
+
+/** The tail of the queue every pin change waits in. */
+let pinQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run one change to the pin after every change before it has finished, so
+ * two can never interleave: a resume racing an unlink cannot bring the pin
+ * back, and two links cannot both pass "not linked yet". Every writer of the
+ * pin (link, level, pause, resume, unlink) goes through here, and checks the
+ * pin again inside `change`, never before it.
+ *
+ * @param change - The change; it reads the pin itself.
+ * @returns What `change` returned.
+ */
+export function withRelayPinLock<T>(change: () => T | Promise<T>): Promise<T> {
+  const run = pinQueue.then(change, change);
+  // The queue goes on whatever this change came to.
+  pinQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Change the owner's switches on the pin there is, atomically as a whole file.
+ *
+ * @param patch - The level, the pause, or both.
+ * @param dorkHome - The data folder; defaults to the live one.
+ * @returns The pin as now stored, or `null` when there is none to change.
+ */
+export async function updateRelayPin(
+  patch: Partial<Pick<RelayPin, 'level' | 'paused'>>,
+  dorkHome: string = resolveDorkHome()
+): Promise<RelayPin | null> {
+  const pin = readRelayPin(dorkHome);
+  if (!pin) return null;
+  const next = RelayPinSchema.parse({ ...pin, ...patch });
+  await writeRelayPin(next, dorkHome);
+  return next;
 }
 
 /**

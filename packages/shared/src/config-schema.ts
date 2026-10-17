@@ -662,6 +662,22 @@ export const UserConfigSchema = z.object({
    */
   spaces: SpacesSettingsSchema,
   /**
+   * Chatting with this computer's agents from the web, through the owner's own
+   * DorkOS in the cloud (spec `everything-is-a-space` step B3, DOR-2946).
+   *
+   * An experiment, OFF by default: while it is off `/api/session-relay`
+   * answers 404, the Settings section is hidden, and this computer never dials
+   * its hub even with a link saved. The link itself, its level and its pause
+   * live in the relay's own file (`session-relay/pin.json`), never here, so no
+   * config write can link a computer or raise what the web may do. Read on
+   * every request, so a change takes effect at once.
+   */
+  sessionRelay: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false })),
+  /**
    * Letting agents on other systems talk to the agents on this one.
    *
    * A2A is a shared language for agents built by different people. Turn this on

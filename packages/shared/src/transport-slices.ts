@@ -20,7 +20,7 @@ import type { LocalBrowserTransport } from './transport-local-browser.js';
 import type { OnboardingTransport } from './transport-onboarding.js';
 import type { HistoryTransport } from './transport-history.js';
 import type { ConnectorHoldTransport } from './transport-connector-holds.js';
-import type { HubComputersTransport } from './transport-hub.js';
+import type { HubComputersTransport, SessionRelayTransport } from './transport-hub.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -39,4 +39,5 @@ export interface TransportSlices
     LocalBrowserTransport,
     HistoryTransport,
     ConnectorHoldTransport,
-    HubComputersTransport {}
+    HubComputersTransport,
+    SessionRelayTransport {}

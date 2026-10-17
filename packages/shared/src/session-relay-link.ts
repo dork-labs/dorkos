@@ -305,3 +305,98 @@ export const HubLinkCodeSchema = z.object({
 
 /** See {@link HubLinkCodeSchema}. */
 export type HubLinkCode = z.infer<typeof HubLinkCodeSchema>;
+
+// === The computer's own switch (`/api/session-relay`) ===
+
+/**
+ * What the web may do on a linked computer. `chat` reads and sends messages;
+ * questions and approvals wait at the computer. `full` is stored for a later
+ * step and changes nothing on the relay yet. Only the owner at the computer
+ * sets it: it is never raised from the web.
+ */
+export const SessionRelayLevelSchema = z.enum(['chat', 'full']);
+
+/** See {@link SessionRelayLevelSchema}. */
+export type SessionRelayLevel = z.infer<typeof SessionRelayLevelSchema>;
+
+/** `GET /api/session-relay/status`: where the link stands. Never the secret. */
+export const SessionRelayStatusSchema = z.object({
+  linked: z.boolean(),
+  /** The hub's origin; `null` when not linked. */
+  hubOrigin: z.string().nullable(),
+  /** The name this computer linked with; `null` when not linked. */
+  computerName: z.string().nullable(),
+  level: SessionRelayLevelSchema,
+  paused: z.boolean(),
+  /** Whether the relay connection is open right now. */
+  connected: z.boolean(),
+  /** When it was linked (ISO 8601); `null` when not linked. */
+  pinnedAt: z.string().nullable(),
+  /** The name to offer when linking: this computer's own host name. */
+  suggestedName: z.string(),
+});
+
+/** See {@link SessionRelayStatusSchema}. */
+export type SessionRelayStatus = z.infer<typeof SessionRelayStatusSchema>;
+
+/**
+ * The install owner's password, asked again before any change that opens this
+ * computer wider through the API (and so through the agents' DorkOS tools):
+ * linking, raising the level, resuming. An agent calling those routes like the
+ * app does not have the password. It does not make linking agent-proof:
+ * anything that can write the data folder (an agent with a shell, say) can
+ * write a relay pin directly, as it could open any other channel. That is the
+ * DOR-505 class, tracked separately. Never stored, logged or audited.
+ */
+const StepUpPasswordSchema = z.string().max(1024);
+
+/** `POST /api/session-relay/link`. */
+export const SessionRelayLinkBodySchema = z.object({
+  /** The `<code>@<host>` string the owner copied from their hub. */
+  linkCode: z.string().min(1).max(512),
+  /** The name to link with; this computer's own name when absent. */
+  computerName: RelayLinkComputerNameSchema.optional(),
+  /** The owner's password; see `StepUpPasswordSchema`. */
+  password: StepUpPasswordSchema.optional(),
+});
+
+/** See {@link SessionRelayLinkBodySchema}. */
+export type SessionRelayLinkBody = z.infer<typeof SessionRelayLinkBodySchema>;
+
+/** `PATCH /api/session-relay/level`. Raising to `full` needs the owner's password. */
+export const SessionRelayLevelBodySchema = z.object({
+  level: SessionRelayLevelSchema,
+  password: StepUpPasswordSchema.optional(),
+});
+
+/** `POST /api/session-relay/resume`: the owner's password. */
+export const SessionRelayResumeBodySchema = z.object({
+  password: StepUpPasswordSchema.optional(),
+});
+
+/** Why linking this computer to a hub did not happen. */
+export const SessionRelayLinkRefusalSchema = z.enum([
+  /** The pasted text is not a link code. */
+  'bad-code',
+  /** No answer from the hub, a redirect, a timeout or an unreadable answer. */
+  'hub-unreachable',
+  /** The hub said no: a wrong, expired or used code, or it cannot link now. */
+  'hub-refused',
+  /** The hub's answer was not signed by the key it handed over. */
+  'signature-failed',
+  /**
+   * On a computer linked to a DorkOS account, the hub's answer names another
+   * account or issuer, or none: a check against linking the wrong hub by
+   * mistake, not proof of whose hub it is.
+   */
+  'different-account',
+  /** The code names this computer, an address on a private network, or one that resolves there. */
+  'not-public',
+  /** This computer is already linked, here or on the hub. */
+  'already-linked',
+  /** This computer is linked to a DorkOS account that could not be read just now. */
+  'account-unreadable',
+]);
+
+/** See {@link SessionRelayLinkRefusalSchema}. */
+export type SessionRelayLinkRefusal = z.infer<typeof SessionRelayLinkRefusalSchema>;

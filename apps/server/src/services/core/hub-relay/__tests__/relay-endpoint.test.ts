@@ -186,12 +186,15 @@ describe('a computer dialing its hub for real', () => {
     });
     const dialer = new RelayDialer({
       readPin: () => ({
-        v: 1,
+        v: 2,
         computerId: 'computer-1',
         hubOrigin: ORIGIN,
         hubKey: pinnableKey(hubKey),
         relaySecret,
         pinnedAt: '2026-10-16T21:00:00.000Z',
+        computerName: 'Studio Mac',
+        level: 'chat',
+        paused: false,
       }),
       ownerExists: () => true,
       computerKey: () => computerKey,

@@ -295,14 +295,15 @@ export class RelayDialer {
       return;
     }
     this.heardFromHub(socket);
+    // A backstop for "removing the pin turns the relay off": recheck the pin
+    // (none while paused or switched off) and the owner on every frame, not
+    // only at the dial, so no request is served once either is gone.
+    if (!this.deps.readPin() || !this.deps.ownerExists()) {
+      this.close();
+      return;
+    }
     switch (frame.type) {
       case 'viewers':
-        // A backstop for "removing the pin turns the relay off": recheck the
-        // pin and the owner on every report, not only at the dial.
-        if (!this.deps.readPin() || !this.deps.ownerExists()) {
-          this.close();
-          return;
-        }
         if (frame.count === 0) this.startIdleTimer();
         else this.clearIdleTimer();
         return;

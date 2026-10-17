@@ -1295,4 +1295,23 @@ export const CONFIG_MIGRATIONS = {
   // Writes `server.lanAccess: false` into a stored `server` section that lacks
   // it, and touches nothing else (DOR-2930). See `seedLanAccess`.
   '0.116.0': seedLanAccess,
+  // v0.119.0 is the newest tag, so this opens 0.120.0. Frozen from merge;
+  // anything further opens `'0.121.0'`.
+  //
+  // Disjoint from every other key here: `sessionRelay` is a new top-level
+  // section, which conf persists before migration selection. This anchor also
+  // heals a stored section missing its `enabled` leaf, as `'0.114.0'` does for
+  // `computers` (spec `everything-is-a-space` step B3, DOR-2946).
+  '0.120.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const sessionRelay = store.get('sessionRelay');
+    if (sessionRelay !== null && typeof sessionRelay === 'object' && !Array.isArray(sessionRelay)) {
+      store.set('sessionRelay', {
+        ...sessionRelay,
+        enabled: (sessionRelay as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
 } as const;

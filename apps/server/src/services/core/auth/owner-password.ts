@@ -1,0 +1,144 @@
+/**
+ * Asking for the install owner's password again before an action that opens
+ * this computer wider (a step-up), such as linking it to a hub so it can be
+ * reached from the web (DOR-2946).
+ *
+ * The bars on who is calling cannot tell the app from a program on this
+ * computer while it does not ask for a password (DOR-505): an agent's shell
+ * can call loopback with no headers and look like the app. An agent does not
+ * have the owner's password, so asking for it closes that gap on the API and
+ * MCP paths for the few actions that widen reach, in every gate posture.
+ *
+ * It covers those paths only. Anything that can write the data folder (an
+ * agent with a shell, say) can still change what these actions guard
+ * directly on disk, as it could open any other channel; that is the DOR-505
+ * class, tracked separately. Nothing here makes such an action agent-proof.
+ *
+ * The password is checked by Better Auth's own machinery, the same way its
+ * `/verify-password` endpoint does: the owner's credential account through
+ * `internalAdapter.findCredentialAccount`, then `context.password.verify`.
+ * That endpoint needs a session cookie, which the app at this computer does
+ * not carry while no password is asked, so this reads the context directly.
+ * The password is never logged, stored or audited.
+ *
+ * Wrong passwords are throttled globally, never per address (every caller
+ * here is on loopback): past {@link OWNER_PASSWORD_MAX_FAILURES} in
+ * {@link OWNER_PASSWORD_FAILURE_WINDOW_MS}, every attempt is refused until the
+ * window clears, right or wrong, as `setup-code.ts` does for setup codes.
+ *
+ * @module services/core/auth/owner-password
+ */
+import { logger } from '../../../lib/logger.js';
+import { getAuth, readOwnerAccount } from './index.js';
+
+/** Wrong passwords allowed in one window, from anywhere. */
+export const OWNER_PASSWORD_MAX_FAILURES = 5;
+
+/** The window wrong passwords are counted over. */
+export const OWNER_PASSWORD_FAILURE_WINDOW_MS = 10 * 60 * 1000;
+
+/** What checking the owner's password came to. */
+export type OwnerPasswordCheck =
+  /** It matched. */
+  | 'ok'
+  /** None was sent. */
+  | 'required'
+  /** It did not match. */
+  | 'wrong'
+  /** Too many wrong passwords lately, from anywhere. */
+  | 'too-many-attempts'
+  /** There is no owner account. */
+  | 'no-owner'
+  /** The owner has no password to check against. */
+  | 'no-password';
+
+/** The two Better Auth pieces the check uses. */
+export interface PasswordVerifier {
+  /** The owner's stored password hash, or `null` when there is none. */
+  storedHash: (userId: string) => Promise<string | null>;
+  /** Better Auth's own verify. */
+  verify: (input: { hash: string; password: string }) => Promise<boolean>;
+  /** The longest password Better Auth accepts. */
+  maxLength: number;
+}
+
+/** What the check reads, injectable for tests. */
+export interface OwnerPasswordDeps {
+  /** The owner's id, or `null`. */
+  ownerId: () => string | null;
+  /** Better Auth's verifier, or `null` while auth is not initialized. */
+  verifier: () => Promise<PasswordVerifier | null>;
+  /** The clock. */
+  now: () => number;
+}
+
+/** The live verifier: the initialized Better Auth context. */
+async function liveVerifier(): Promise<PasswordVerifier | null> {
+  const auth = getAuth();
+  if (!auth) return null;
+  const context = await auth.$context;
+  return {
+    storedHash: async (userId) =>
+      (await context.internalAdapter.findCredentialAccount(userId))?.password ?? null,
+    verify: (input) => context.password.verify(input),
+    maxLength: context.password.config.maxPasswordLength,
+  };
+}
+
+const liveDeps: OwnerPasswordDeps = {
+  ownerId: () => readOwnerAccount()?.id ?? null,
+  verifier: liveVerifier,
+  now: () => Date.now(),
+};
+
+/** When each recent wrong password arrived, oldest first. */
+let failures: number[] = [];
+
+function recentFailures(now: number): number {
+  failures = failures.filter((at) => now - at < OWNER_PASSWORD_FAILURE_WINDOW_MS);
+  return failures.length;
+}
+
+/**
+ * Check a password against the install owner's. Never throws; a verifier that
+ * fails reads as a wrong password, so nothing opens on an error.
+ *
+ * @param password - What the person typed, or `undefined`.
+ * @param deps - Seams for tests; the live owner and Better Auth by default.
+ */
+export async function checkOwnerPassword(
+  password: string | undefined,
+  deps: OwnerPasswordDeps = liveDeps
+): Promise<OwnerPasswordCheck> {
+  const now = deps.now();
+  // Checked first, so a throttled caller learns nothing about the password.
+  if (recentFailures(now) >= OWNER_PASSWORD_MAX_FAILURES) return 'too-many-attempts';
+  if (password === undefined || password === '') return 'required';
+  const ownerId = deps.ownerId();
+  if (!ownerId) return 'no-owner';
+  let matched = false;
+  try {
+    const verifier = await deps.verifier();
+    if (!verifier) return 'no-password';
+    const hash = await verifier.storedHash(ownerId);
+    if (!hash) return 'no-password';
+    matched = password.length <= verifier.maxLength && (await verifier.verify({ hash, password }));
+  } catch (error) {
+    logger.warn('[Auth] The owner password could not be checked', {
+      error: (error as Error).name,
+    });
+  }
+  if (matched) return 'ok';
+  failures.push(now);
+  logger.warn('[Auth] A wrong owner password was given for a step-up');
+  return 'wrong';
+}
+
+/**
+ * Forget every recorded wrong password.
+ *
+ * @internal Tests only.
+ */
+export function resetOwnerPasswordFailuresForTests(): void {
+  failures = [];
+}
