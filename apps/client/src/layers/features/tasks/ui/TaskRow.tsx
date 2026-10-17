@@ -364,7 +364,7 @@ export function TaskRow({
           {!isMinimal && isScheduleAwaitingApproval(task) ? (
             <div className="flex gap-1">
               <button
-                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-sm transition-colors"
+                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-xs transition-colors"
                 onClick={handleApprove}
               >
                 Approve
@@ -378,7 +378,7 @@ export function TaskRow({
             </div>
           ) : isCompact ? (
             <button
-              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-sm transition-colors"
+              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
               onClick={handleRunNow}
               aria-label={`Run ${task.name}`}
             >
@@ -417,7 +417,7 @@ export function TaskRow({
                 />
               ) : (
                 <button
-                  className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-sm transition-colors"
+                  className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
                   onClick={handleRunNow}
                   aria-label={`Run ${task.name}`}
                 >
@@ -525,7 +525,7 @@ export function TaskRow({
             <DialogFooter>
               <button
                 onClick={() => setDeleteConfirmOpen(false)}
-                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-xs transition-colors"
               >
                 Cancel
               </button>
