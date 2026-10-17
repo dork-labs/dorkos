@@ -21,8 +21,9 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 
 // jsdom cannot load Milkdown/ProseMirror. The stub surfaces the value and the
 // editable flag, which is how these cases read "is the person still editing".
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
+// Docs is off, its default: reading the experiment needs a server config
+// these tests don't serve (see ./docs-off).
+vi.mock('@/layers/features/docs', () => import('./docs-off'));
 vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({ value, editable }: { value: string; editable: boolean }) => (
     <div data-testid="blintz-canvas" data-editable={String(editable)}>

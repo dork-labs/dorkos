@@ -35,8 +35,9 @@ const mockResolvedTheme = { value: 'light' as 'light' | 'dark' };
 /** Document id passed to the viewer under test. */
 const DOC_ID = 'doc-1';
 
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
+// Docs is off, its default: reading the experiment needs a server config
+// these tests don't serve (see ./docs-off).
+vi.mock('@/layers/features/docs', () => import('./docs-off'));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;

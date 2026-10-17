@@ -30,8 +30,6 @@ const mockState = {
 /** Document id passed to the editor under test. */
 const DOC_ID = 'doc-1';
 
-// Wiki links belong to the Docs feature and are tested there (`features/docs`).
-vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
@@ -57,20 +55,41 @@ vi.mock('../model/use-canvas-file-save', () => ({
   useCanvasFileSave: () => mockFileSave,
 }));
 
+// The Docs feature, switched on and off per test. Its own gate is tested in
+// features/docs; here the question is what the markdown canvas does with it.
+// Wiki links are tested there too, and stay off here.
+const docs = vi.hoisted(() => ({ embeds: undefined as Record<string, unknown> | undefined }));
+vi.mock('@/layers/features/docs', () => ({
+  useDocWikiLinks: () => undefined,
+  useDocEmbeds: () => docs.embeds,
+  SaveAsWebPageButton: ({ markdown, sourcePath }: { markdown: string; sourcePath: string }) =>
+    docs.embeds ? (
+      <button type="button" data-testid="save-web-page" data-source={sourcePath}>
+        {markdown}
+      </button>
+    ) : null,
+}));
+
 // Mock the heavy Blintz wrapper: jsdom never loads the real editor. The stub
-// surfaces `value`/`editable` and a button that fires `onChange`, standing in
-// for a keystroke.
+// surfaces `value`/`editable`, whether it got embeds, and a button that fires
+// `onChange`, standing in for a keystroke.
 vi.mock('../ui/BlintzCanvas', () => ({
   BlintzCanvas: ({
     value,
     editable,
     onChange,
+    embeds,
   }: {
     value: string;
     editable: boolean;
     onChange?: (md: string) => void;
+    embeds?: Record<string, unknown>;
   }) => (
-    <div data-testid="blintz-canvas" data-editable={String(editable)}>
+    <div
+      data-testid="blintz-canvas"
+      data-editable={String(editable)}
+      data-embeds={embeds ? Object.keys(embeds).join(',') : 'none'}
+    >
       <span data-testid="blintz-value">{value}</span>
       <button data-testid="blintz-fire-change" onClick={() => onChange?.('edited body')}>
         fire change
@@ -105,6 +124,7 @@ describe('CanvasMarkdownContent', () => {
     mockFileSave.conflict = null;
     mockFileSave.canSave = true;
     mockFileSave.adoptDisk.mockReturnValue(undefined);
+    docs.embeds = undefined;
   });
 
   async function renderEditor(content: MarkdownContent = fileBacked, onContentChange = vi.fn()) {
@@ -224,5 +244,34 @@ describe('CanvasMarkdownContent', () => {
       expect(screen.getByRole('button', { name: 'Edit document' })).toBeInTheDocument()
     );
     expect(mockState.setDocumentEditing).toHaveBeenCalledWith(DOC_ID, false);
+  });
+
+  describe('with Docs', () => {
+    it('passes no embeds and no save action while Docs is off', async () => {
+      await renderEditor();
+      expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-embeds', 'none');
+      expect(screen.queryByTestId('save-web-page')).not.toBeInTheDocument();
+    });
+
+    it('passes the embeds to the editor, file-backed or not, while Docs is on', async () => {
+      docs.embeds = { chart: {} };
+      await renderEditor(generated);
+      expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-embeds', 'chart');
+    });
+
+    it('offers Save as web page for a file-backed doc only, with what it shows', async () => {
+      docs.embeds = { chart: {} };
+      await renderEditor();
+      expect(screen.getByTestId('save-web-page')).toHaveAttribute('data-source', 'doc.md');
+      fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
+      fireEvent.click(screen.getByTestId('blintz-fire-change'));
+      // While editing, the saved page is the draft, not the last saved copy.
+      expect(screen.getByTestId('save-web-page')).toHaveTextContent('edited body');
+      cleanup();
+
+      mockFileSave.canSave = false;
+      await renderEditor(generated);
+      expect(screen.queryByTestId('save-web-page')).not.toBeInTheDocument();
+    });
   });
 });
