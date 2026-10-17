@@ -48,7 +48,11 @@ function readAgents(dorkHome: string): MigrationAgent[] {
 }
 
 async function main(): Promise<void> {
+  // `pnpm run x -- --flag` hands the script a literal `--` first, which
+  // parseArgs would read as "everything after this is positional".
+  const argv = process.argv.slice(2);
   const { values } = parseArgs({
+    args: argv[0] === '--' ? argv.slice(1) : argv,
     options: {
       'dork-home': { type: 'string' },
       apply: { type: 'boolean', default: false },
