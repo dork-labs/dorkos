@@ -225,7 +225,9 @@ export class ChatMessageStore {
           eq(chatMessages.fromSessionId, fromSessionId),
           eq(chatMessages.toSessionId, toSessionId),
           inArray(chatMessages.kind, ['message', 'start']),
-          inArray(chatMessages.status, ['queued', 'working', 'delivered', 'steered'])
+          // Not `queued`: a message still waiting has not been read, so nothing
+          // sent meanwhile can be its answer (DOR-2994).
+          inArray(chatMessages.status, ['working', 'delivered', 'steered'])
         )
       )
       .orderBy(desc(chatMessages.createdAt))

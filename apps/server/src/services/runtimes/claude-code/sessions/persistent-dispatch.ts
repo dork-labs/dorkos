@@ -153,6 +153,7 @@ import type {
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { enrichContent } from '../enrich-content.js';
 import { SESSIONS } from '../../../../config/constants.js';
+import { turnNotStarted } from '../../../session/launch/turn-not-started.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -281,27 +282,6 @@ export interface PersistentDispatchArgs {
   session: AgentSession;
   opts: MessageSenderOpts;
   messageOpts?: MessageOpts;
-}
-
-/**
- * Turn a failure that happened before any output into the same terminal pair a
- * turn error always produces, so the projector settles rather than pinning
- * `streaming` on a turn that never ran.
- */
-function* terminalFailure(
-  sessionId: string,
-  message: string,
-  details?: string
-): Generator<StreamEvent> {
-  yield {
-    type: 'error',
-    data: {
-      message,
-      category: 'execution_error',
-      ...(details !== undefined ? { details } : {}),
-    },
-  };
-  yield { type: 'done', data: { sessionId } };
 }
 
 /**
@@ -868,7 +848,7 @@ export class PersistentDispatch {
               session: sessionId,
               error: err.message,
             });
-            yield* terminalFailure(
+            yield* turnNotStarted(
               sessionId,
               'This chat belongs to a different Claude account than the one its agent is running on, so the message was not sent. Restart the chat to run it on the right account.',
               err.message
@@ -1254,7 +1234,7 @@ export class PersistentDispatch {
       // The raw error leads with the session id, which is a UUID nobody reads.
       // The operator gets the plain sentence; the id stays in `details` and in
       // the warning `SessionCrashRecovery` already logged.
-      yield* terminalFailure(
+      yield* turnNotStarted(
         sessionId,
         `This chat's agent keeps stopping, so DorkOS did not start it again. ${
           err.crash?.message ?? 'It ended without saying why.'
@@ -1264,7 +1244,7 @@ export class PersistentDispatch {
       return;
     }
     if (err instanceof PumpRefusedError && err.reason === 'warm-ceiling') {
-      yield* terminalFailure(
+      yield* turnNotStarted(
         sessionId,
         `Too many chats are holding an agent open right now (the limit is ${SESSIONS.MAX_WARM_SESSIONS}). Finish or close one and send this again.`,
         err.message
@@ -1272,7 +1252,7 @@ export class PersistentDispatch {
       return;
     }
     if (err instanceof PumpRefusedError && err.reason === 'pending-interaction') {
-      yield* terminalFailure(
+      yield* turnNotStarted(
         sessionId,
         'This chat is waiting on an answer from you, so the message was not sent yet. Answer the open request and send it again.',
         err.message

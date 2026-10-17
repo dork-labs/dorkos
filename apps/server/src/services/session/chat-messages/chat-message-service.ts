@@ -76,6 +76,7 @@ import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import { ChatMessageError } from './chat-message-error.js';
+import * as standing from './chat-queue-standing.js';
 import { assertChatSendable, resolveChatTarget, sameChat, type ChatTarget } from './chat-target.js';
 
 export { ChatMessageError } from './chat-message-error.js';
@@ -115,16 +116,14 @@ export interface ChatSendInput {
   replyTo?: string;
 }
 
-/** What `chat_send` answers. */
-export interface ChatSendReceipt {
+/** What `chat_send` answers; while it waits, with its place in line. */
+export interface ChatSendReceipt extends Partial<standing.QueueStanding> {
   /** The chat message's id. */
   messageId: string;
   /** The chat it went to. */
   chatId: string;
   /** Where it is now. */
   status: ChatMessageStatus;
-  /** Its place in the receiving chat's queue while it waits (1 is next). */
-  position?: number;
   /** A plain sentence when it did not arrive exactly as asked. */
   note?: string;
 }
@@ -379,7 +378,7 @@ export class ChatMessageService {
     if (isSessionLaunchRefusal(result)) {
       throw new ChatMessageError(
         result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
-        result.message
+        result.refused === 'LAUNCH_CAP_FULL' ? standing.CHAT_LAUNCH_CAP_MESSAGE : result.message
       );
     }
     if (!result.accepted) {
@@ -412,7 +411,7 @@ export class ChatMessageService {
       messageId: row.id,
       chatId,
       status,
-      ...(position !== undefined && status === 'queued' ? { position } : {}),
+      ...standing.waitingPlace(chatId, row, status, position),
       ...(note ? { note } : {}),
     };
   }
@@ -442,7 +441,7 @@ export class ChatMessageService {
       messageId: row.id,
       chatId: sessionId,
       status: 'queued',
-      position: rows.length,
+      ...(standing.queueStanding(sessionId, tail.id) ?? { position: rows.length }),
       note: 'It joins the other agent messages waiting there, and they run as one turn.',
     };
   }
@@ -745,18 +744,11 @@ export class ChatMessageService {
       }
       return agentNames.get(id)!;
     };
-    const queue = getMessageQueueStore();
     const sent: SentChatMessage[] = [];
     for (const row of sentRows) {
       const to = await agentOf(row.toSessionId);
       const chatTitle = await titleOf(row.toSessionId);
-      let position: number | undefined;
-      if (row.status === 'queued' && row.queueMessageId && queue) {
-        const index = queue
-          .list(queueKeyOf(row.toSessionId))
-          .findIndex((q) => q.id === row.queueMessageId);
-        if (index >= 0) position = index + 1;
-      }
+      const { position } = standing.waitingPlace(row.toSessionId, row, row.status, undefined);
       const reply = this.deps.store
         .listSentFrom(row.toSessionId)
         .find((other) => other.replyToId === row.id);
@@ -811,7 +803,7 @@ export class ChatMessageService {
       if (event.phase === 'started' && row.status === 'queued') status = 'working';
       else if (event.phase === 'settled' && (row.status === 'working' || row.status === 'queued')) {
         status = event.outcome === 'ok' ? 'delivered' : 'failed';
-        if (event.outcome !== 'ok') failureReason = 'The chat’s turn ended with an error.';
+        if (event.outcome !== 'ok') failureReason = standing.settledFailureReason(event.reason);
       } else if (event.phase === 'dropped' && row.status === 'queued') {
         status = 'failed';
         failureReason =

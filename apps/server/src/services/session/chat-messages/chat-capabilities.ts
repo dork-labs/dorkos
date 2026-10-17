@@ -130,7 +130,8 @@ export const chatDomain: CapabilityDomain = {
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
         'Waking an idle chat starts its turn at once. Give a short `summary` (a few words) for ' +
         'the card the person sees. Use `replyTo` with a message id to answer a message another ' +
-        'chat sent you. Their reply comes back as a new message in this chat. The result names ' +
+        'chat sent you. Their reply comes back as a new message in this chat. A queued result ' +
+        'says how many messages are `ahead` of yours. The result names ' +
         'the chat (`chatTitle`) and gives `link`, a ready markdown link to it: when you tell a ' +
         'person, use that link, never the id.',
       tier: 'act',
@@ -167,6 +168,8 @@ export const chatDomain: CapabilityDomain = {
           link: z.string(),
           status: ChatMessageStatusSchema,
           position: z.number().int().positive().optional(),
+          ahead: z.number().int().nonnegative().optional(),
+          aheadFromPeople: z.number().int().nonnegative().optional(),
           note: z.string().optional(),
         }),
         RefusalSchema,
@@ -215,7 +218,9 @@ export const chatDomain: CapabilityDomain = {
         'newest n instead; `since` also takes a message id or an ISO time. `include: "status"` ' +
         'is the cheapest check (no messages); `"tools"` adds one line per tool call. A long read ' +
         'is cut at `maxChars` (default 8000) and `cursor` continues it. `query` finds messages ' +
-        'matching words. You can read your own chat, the chat that started you, chats you ' +
+        'matching words. `yourMessages` lists your own latest messages to that chat: queued (with ' +
+        'how many are ahead), working, delivered, replied, or failed (with why). You can read ' +
+        'your own chat, the chat that started you, chats you ' +
         'started, and chats you have messaged or that messaged you. `chat.link` is a ready ' +
         'markdown link to the chat: when you tell a person about it, use that, never the id.',
       tier: 'observe',
@@ -296,6 +301,20 @@ export const chatDomain: CapabilityDomain = {
           ),
           more: z.boolean(),
           cursor: z.string().optional(),
+          yourMessages: z
+            .array(
+              z.object({
+                id: z.string(),
+                status: ChatMessageStatusSchema,
+                sentAt: z.string(),
+                summary: z.string().optional(),
+                position: z.number().int().positive().optional(),
+                ahead: z.number().int().nonnegative().optional(),
+                aheadFromPeople: z.number().int().nonnegative().optional(),
+                failureReason: z.string().optional(),
+              })
+            )
+            .optional(),
         }),
         RefusalSchema,
       ]),

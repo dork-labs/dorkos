@@ -146,7 +146,14 @@ export interface PendingAgentCompaction {
  */
 export type DispatchLifecycleEvent =
   | { phase: 'started'; messageId: string; sessionId: string }
-  | { phase: 'settled'; messageId: string; sessionId: string; outcome: 'ok' | 'failed' }
+  | {
+      phase: 'settled';
+      messageId: string;
+      sessionId: string;
+      outcome: 'ok' | 'failed';
+      /** The runtime's words when it refused the turn before the agent saw it. */
+      reason?: string;
+    }
   | { phase: 'dropped'; messageId: string; reason: 'removed' | 'session_gone' };
 
 /** Inputs for {@link dispatchMessage}. */
