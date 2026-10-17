@@ -305,7 +305,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/session-relay');
     // 76 -> 77: the sign-in landing page's record and Try again (DOR-2985).
     expect(mounts).toContain('/api/sign-in-landings');
-    expect(mounts).toHaveLength(77);
+    // 77 -> 78: the docs in a space, for wiki links (DOR-2982).
+    expect(mounts).toContain('/api/documents');
+    expect(mounts).toHaveLength(78);
     const byHand = [
       '/',
       '/x/fixture',
