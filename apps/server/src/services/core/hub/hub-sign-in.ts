@@ -28,12 +28,18 @@
  */
 import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { setSessionCookie } from 'better-auth/cookies';
 import type { OAuthProvider } from 'better-auth/oauth2';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 
 import { currentServerRole } from '../../../lib/server-role.js';
 import { logger } from '../../../lib/logger.js';
 import { hubServingState } from './hub-serving.js';
+import {
+  asksForPublicComputer,
+  PUBLIC_COMPUTER_LIFETIME_MS,
+  PUBLIC_COMPUTER_MARKER,
+} from './public-computer.js';
 
 /** The provider id: in the callback path and in the owner's account row. */
 export const HUB_SIGN_IN_PROVIDER_ID = 'dorkos';
@@ -332,6 +338,39 @@ export function hubSignInPlugin(
                 message: 'Sign-in with DorkOS is unavailable right now. Try again soon.',
               });
             }
+          }),
+        },
+      ],
+      after: [
+        {
+          // A sign-in the person asked to keep for a public computer
+          // (`public-computer.ts`): mark the session, cap it at a working
+          // day, and set its cookie again with no expiry, so it ends with the
+          // browser and Better Auth never renews it.
+          matcher: (ctx) =>
+            ctx.path === `/callback/${HUB_SIGN_IN_PROVIDER_ID}` ||
+            (ctx.path === '/callback/:id' &&
+              (ctx.params as { id?: string } | undefined)?.id === HUB_SIGN_IN_PROVIDER_ID),
+          handler: createAuthMiddleware(async (ctx) => {
+            const created = ctx.context.newSession;
+            const cookie = ctx.headers?.get('cookie') ?? ctx.request?.headers.get('cookie');
+            if (!created || !asksForPublicComputer(cookie)) return;
+            const expiresAt = new Date(Date.now() + PUBLIC_COMPUTER_LIFETIME_MS);
+            await ctx.context.internalAdapter.updateSession(created.session.token, {
+              publicComputer: true,
+              expiresAt,
+            });
+            await setSessionCookie(
+              ctx,
+              { session: { ...created.session, expiresAt }, user: created.user },
+              true
+            );
+            ctx.setCookie(PUBLIC_COMPUTER_MARKER, '', {
+              maxAge: 0,
+              path: '/',
+              secure: true,
+              sameSite: 'lax',
+            });
           }),
         },
       ],

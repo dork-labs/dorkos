@@ -43,6 +43,7 @@ import type { RequestFacts } from '../../../http/request-facts.js';
 import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
+import { publicComputerSessionExpired } from '../hub/public-computer.js';
 import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
@@ -205,7 +206,9 @@ export async function verifyRequestAuth(
         ? { query: { disableCookieCache: true, disableRefresh: true } }
         : {}),
     });
-    if (result?.user?.id) {
+    // A public-computer sign-in never outlives its day, whatever its expiry
+    // says (`public-computer.ts`).
+    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
       return { userId: result.user.id, credential: 'cookie' };
     }
   } catch (error) {
