@@ -13,7 +13,7 @@
  * - **Read-only.** The turn is held to the runtime's default AND to read access
  *   (`READ_ONLY_LEVEL`); see `turn-ceiling.ts`.
  * - **This room only, and no files.** The DorkOS tools it may use reach only the room it answers,
- *   and it reads no files at all (`core/turn-power/teammate-fence.ts`), so it cannot read the
+ *   and it reads no files at all (`core/turn-power/teammate-tier.ts`), so it cannot read the
  *   owner's other rooms, chats or files and post them back.
  * - **None of the owner's notes.** Its prompt leaves the agent's memory out
  *   (`core/turn-power/teammate-turn-context.ts`).
@@ -66,20 +66,37 @@ export function refuseTeammateTurnOn(
 }
 
 /**
- * The per-turn bounds a room turn sends: its ceiling as the dispatcher derived it, and for a
- * teammate's turn `unattended`, so nothing it does can ask anybody.
+ * The per-turn bounds a room turn sends: its ceiling as the dispatcher derived it, the folders
+ * placement granted it ({@link turnDirectoriesOf}), and for a teammate's turn `unattended`, so
+ * nothing it does can ask anybody.
  *
  * @param request - The turn about to start.
  */
 export function turnBoundsOf(
-  request: Pick<RoomTurnRequest, 'permissionCeiling' | 'teammate'>
-): Pick<MessageOpts, 'permissionCeiling' | 'unattended'> {
+  request: Pick<RoomTurnRequest, 'permissionCeiling' | 'teammate' | 'additionalDirectories'>
+): Pick<MessageOpts, 'permissionCeiling' | 'unattended' | 'additionalDirectories'> {
   return {
     ...(request.permissionCeiling !== undefined
       ? { permissionCeiling: request.permissionCeiling }
       : {}),
+    ...turnDirectoriesOf(request),
     ...(request.teammate ? { unattended: true } : {}),
   };
+}
+
+/**
+ * The folders a room turn reaches beyond the agent's own (`MessageOpts.additionalDirectories`).
+ * A teammate's turn reaches none (DOR-2956): Claude Code reads without asking inside every folder
+ * it is granted, so a grant would be a read the teammate tier never decided on. Every other turn
+ * gets exactly what placement granted it, and a room without files grants nothing.
+ *
+ * @param request - The turn's grants and whether a teammate started it.
+ */
+function turnDirectoriesOf(
+  request: Pick<RoomTurnRequest, 'additionalDirectories' | 'teammate'>
+): Pick<MessageOpts, 'additionalDirectories'> {
+  if (request.teammate || request.additionalDirectories.length === 0) return {};
+  return { additionalDirectories: request.additionalDirectories };
 }
 
 /**

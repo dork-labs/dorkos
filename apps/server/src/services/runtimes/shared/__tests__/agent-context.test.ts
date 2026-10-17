@@ -494,6 +494,44 @@ describe('buildAgentContextAppend <user_profile> integration', () => {
   });
 });
 
+describe('a teammate’s turn (DOR-2956)', () => {
+  beforeEach(() => {
+    vi.mocked(readManifest).mockResolvedValue(null);
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+    vi.mocked(configManager.getAll).mockReturnValue({
+      profile: {
+        roles: ['hiring'],
+        tools: [],
+        displayName: 'Dorian',
+        rolePromptDismissedAt: null,
+      },
+    } as ReturnType<typeof configManager.getAll>);
+  });
+
+  it('is told neither who the owner is nor where their files are, only the platform', async () => {
+    const cwd = '/Users/owner/agents/ana';
+    const append = await buildAgentContextAppend(testHome(cwd), cwd, {
+      memory: false,
+      teammate: true,
+    });
+    for (const half of [append.text, append.stable]) {
+      expect(half).not.toContain('<user_profile>');
+      expect(half).not.toContain('Dorian');
+      expect(half).not.toContain(cwd);
+      expect(half).not.toContain('Hostname:');
+      expect(half).toContain(`<env>\nPlatform: ${process.platform}\n</env>`);
+    }
+  });
+
+  it('leaves the owner’s own turn as it was', async () => {
+    const cwd = '/Users/owner/agents/ana';
+    const append = (await buildAgentContextAppend(testHome(cwd), cwd)).text;
+    expect(append).toContain('Name: Dorian');
+    expect(append).toContain(`Working directory: ${cwd}`);
+    expect(append).toContain('Hostname:');
+  });
+});
+
 describe('HEARTBEAT.md is never injected into an ordinary turn', () => {
   it('reads every convention file but HEARTBEAT.md, and carries none of its text', async () => {
     // Spec `heartbeats` §2: only a beat's prompt carries HEARTBEAT.md, so a

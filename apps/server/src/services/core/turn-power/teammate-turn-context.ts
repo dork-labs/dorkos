@@ -8,9 +8,9 @@
  * turn must not reuse one launched without them. Constant text, so ordinary turns never change
  * the digest and never relaunch for it.
  *
- * Still in a teammate's prompt, on purpose until C7 decides it: the owner's profile block (the
- * name and details they gave DorkOS) and the `<env>` block (the folder path, the platform). The
- * teammate tier settles what a teammate's turn may know about the owner and their machine.
+ * Left out of a teammate's prompt as well (DOR-2956, the teammate tier): the owner's profile block
+ * (the name and details they gave DorkOS), and everything in the `<env>` block but the platform,
+ * so the turn is told neither who the owner is nor where their files are (`agent-context.ts`).
  *
  * @module services/core/turn-power/teammate-turn-context
  */

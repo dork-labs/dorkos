@@ -4,7 +4,7 @@
  * runner sends read-only, with nobody to ask and fenced to its room. The owner's own posts keep
  * today's power. Walked from the live stream bridge through the real RoomService and trigger
  * dispatcher to the turn request the runner receives; the runner's and runtime's halves are pinned
- * in `room-turn-runner.test.ts` and `teammate-fence-hook.test.ts`.
+ * in `room-turn-runner.test.ts` and `teammate-tier-hook.test.ts`.
  *
  * @module services/communities/remote/__tests__/teammate-wakes
  */

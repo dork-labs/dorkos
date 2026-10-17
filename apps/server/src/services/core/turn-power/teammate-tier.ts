@@ -1,31 +1,39 @@
 /**
- * What a teammate's turn may use: the DorkOS tools that reach only the room it answers, and a
- * to-do list (DOR-2955). Everything else is refused, unasked, files included.
+ * The teammate tier (DOR-2956, `specs/everything-is-a-space` C7): what a turn that a teammate in a
+ * shared space started may use, on the computer that runs it. Today that is the DorkOS tools that
+ * reach only the room it answers, and a to-do list (DOR-2955). Everything else is refused, unasked,
+ * files included. One table, so every decision about a teammate's reach is made, and reviewed, here.
  *
- * ## Why a fence, on top of "nobody is asked" and "read-only"
+ * The tier is more than this table. The rest of it lives beside the turn: nobody to ask and read
+ * access (`rooms/limits/teammate-turn.ts`), no folder grants (`rooms/room-turn-runner.ts`), no
+ * settings layers, auto-memory or notes, and a prompt without the owner's profile or folder path
+ * (`runtimes/claude-code/messaging/launch-resolver.ts`). This file is the part that decides per
+ * tool, enforced by a hook that sees every call.
+ *
+ * ## Why per tool, on top of "nobody is asked" and "read-only"
  *
  * A teammate turn already has nobody to ask and is held to read access
  * (`rooms/limits/teammate-turn.ts`). Neither stops the DorkOS agent tools: they skip the card on
  * purpose, because each carries its own authorization, and that authorization is the AGENT's.
  * The agent is a member of the owner's other rooms and chats, so on a teammate's say-so it could
  * read them (`read_room_history`, `search_member_rooms`, `chat_read`) and post what it found back
- * into the space. The fence takes the room the turn answers as the only room there is.
+ * into the space. The tier takes the room the turn answers as the only room there is.
  *
  * It is enforced where nothing can skip it: a hook that sees every call before the runtime's own
  * permission rules, so a rule the owner once saved ("Always allow" on a tool) does not carry a
- * teammate past it either (`runtimes/claude-code/teammate-fence-hook.ts`).
+ * teammate past it either (`runtimes/claude-code/teammate-tier-hook.ts`).
  *
  * ## No files, at any path
  *
  * Claude Code reads without asking inside the agent's folder AND inside every extra directory a
  * person's settings grant, which on a real machine can be another private repository or the
  * whole transcript store. A name-only allowance for `Read` therefore let a teammate read
- * whatever those grants covered. So until the teammate tier brings scoped reads (C7: "the shared
- * project and public notes only"), a teammate's turn reads no files at all, and it may not attach
+ * whatever those grants covered. So until the tier brings scoped reads (C7: "the shared project
+ * and public notes only"), a teammate's turn reads no files at all, and it may not attach
  * one to a post either: the agent's own folder can hold `.env` files, keys, its memory file and
  * MCP tokens.
  *
- * ## Built to be extended by the teammate tier, not replaced
+ * ## Extended row by row, never replaced
  *
  * C7 of `specs/everything-is-a-space` gives a teammate "ask the owner": a card that shows the exact
  * operation and its arguments. That is one more {@link TeammateToolRule} kind beside the two here,
@@ -33,11 +41,11 @@
  * nobody decided about stays refused. Nothing here is a list of what is dangerous; it is the list
  * of what a teammate may reach, and everything not on it is out.
  *
- * @module services/core/turn-power/teammate-fence
+ * @module services/core/turn-power/teammate-tier
  */
 
 /** The room a teammate's turn answers, and so the only room its DorkOS tools may reach. */
-export interface TeammateFence {
+export interface TeammateTierScope {
   /** The local room id the turn answers in (`MessageOpts.roomTurn.roomId`). */
   roomId: string;
 }
@@ -111,8 +119,8 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
  */
 export const TEAMMATE_BUILT_IN_TOOLS: ReadonlySet<string> = new Set(['TodoWrite']);
 
-/** One tool call, as the fence sees it. */
-export interface TeammateFenceCall {
+/** One tool call, as the tier sees it. */
+export interface TeammateTierCall {
   /** Where the tool comes from: DorkOS's own server, another MCP server, or the runtime. */
   source: 'dorkos' | 'mcp' | 'built-in';
   /** The tool's bare name (no server prefix for a DorkOS tool). */
@@ -121,8 +129,8 @@ export interface TeammateFenceCall {
   input: Record<string, unknown>;
 }
 
-/** The reason the model is handed when the fence refuses a call. */
-export const TEAMMATE_FENCE_DENIAL =
+/** The reason the model is handed when the tier refuses a call. */
+export const TEAMMATE_TIER_DENIAL =
   'Refused: a teammate in a shared space started this turn, so it can only read and post in ' +
   'this room, with no files. Tell them what you could not do.';
 
@@ -131,21 +139,23 @@ export const TEAMMATE_FENCE_DENIAL =
  * reason it is refused. Another MCP server's tool is always refused: those are the owner's
  * connected apps and tools.
  *
- * @param fence - The room the turn answers.
+ * @param scope - The room the turn answers.
  * @param call - The tool, where it comes from, and its arguments.
  */
-export function teammateFenceRefusal(fence: TeammateFence, call: TeammateFenceCall): string | null {
+export function teammateTierRefusal(
+  scope: TeammateTierScope,
+  call: TeammateTierCall
+): string | null {
   if (call.source === 'built-in') {
-    return TEAMMATE_BUILT_IN_TOOLS.has(call.name) ? null : TEAMMATE_FENCE_DENIAL;
+    return TEAMMATE_BUILT_IN_TOOLS.has(call.name) ? null : TEAMMATE_TIER_DENIAL;
   }
-  if (call.source === 'mcp') return TEAMMATE_FENCE_DENIAL;
+  if (call.source === 'mcp') return TEAMMATE_TIER_DENIAL;
   const rule = Object.hasOwn(TEAMMATE_DORKOS_TOOLS, call.name)
     ? TEAMMATE_DORKOS_TOOLS[call.name]!
     : undefined;
-  if (rule?.kind !== 'this-room' || call.input.roomId !== fence.roomId)
-    return TEAMMATE_FENCE_DENIAL;
+  if (rule?.kind !== 'this-room' || call.input.roomId !== scope.roomId) return TEAMMATE_TIER_DENIAL;
   const carries = (rule.without ?? []).some((arg) => present(call.input[arg]));
-  return carries ? TEAMMATE_FENCE_DENIAL : null;
+  return carries ? TEAMMATE_TIER_DENIAL : null;
 }
 
 /** Whether an argument was given at all: only an absent one, or an empty list, carries nothing. */
