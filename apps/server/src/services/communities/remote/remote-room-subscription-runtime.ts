@@ -25,10 +25,11 @@ import {
   type RemoteLiveEntry,
 } from './remote-room-subscription-bridge.js';
 import type { MirrorRoomInput } from './mirror-store.js';
+import { agentRooms, type AgentRoomsAdapter } from './dms/dm-rooms.js';
 import { REDACTION_SYNC_INTERVAL_MS, type RemoteRedactionSync } from './remote-redaction-sync.js';
 
 /** A shared native adapter resolved for the exact community and local owner. */
-export interface RemoteRoomSubscriptionAdapter extends Pick<CommunityAdapter, 'listRooms'> {
+export interface RemoteRoomSubscriptionAdapter extends AgentRoomsAdapter {
   subscribeNativeRoom(
     roomId: string,
     sinceCursor?: CommunityEntry['cursor'],
@@ -401,9 +402,7 @@ export class RemoteRoomSubscriptionRuntime {
           if (!authorId) continue;
           // Read as the enrolled agent, not as the owner. A single owner token
           // must never keep a stream open for an agent removed from the room.
-          for (const room of await adapter.listRooms({
-            actingMemberId: enrollment.remoteMemberId,
-          })) {
+          for (const room of await agentRooms(adapter, enrollment.remoteMemberId)) {
             if (!this.isJoinedRoom(room)) continue;
             const existing = rooms.get(room.roomId);
             const member = {
@@ -448,6 +447,7 @@ export class RemoteRoomSubscriptionRuntime {
             remoteRoomId: room.roomId,
             title: room.title,
             topic: room.topic,
+            ...(room.kind === 'dm' ? { kind: 'dm' as const } : {}),
             ownerAuthorId: connection.ownerAuthorId,
             accessors,
             authorizedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),

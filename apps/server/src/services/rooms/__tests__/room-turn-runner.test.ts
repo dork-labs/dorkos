@@ -1217,6 +1217,25 @@ describe('createSessionRoomTurnRunner', () => {
     }
   });
 
+  it('grants a teammate’s turn no folder, whatever placement granted (DOR-2956)', async () => {
+    // Red when: the runner forwards placement's grants on a teammate's turn. Claude Code reads
+    // without asking inside every granted folder, so a grant is a read the tier never decided.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    const grants = [{ path: '/dork/rooms/r1/repo', access: 'read' as const }];
+
+    await createSessionRoomTurnRunner().run(
+      request({ agentPath: '/repo/ana', additionalDirectories: grants, teammate: true })
+    );
+
+    const call = triggered[triggered.length - 1]!;
+    expect(call).not.toHaveProperty('additionalDirectories');
+    expect(call.roomTurn).toMatchObject({ teammate: true });
+  });
+
   it('grants nothing and names no copy for a room without files', async () => {
     turnBehaviour = (opts) => {
       openTurn(opts);

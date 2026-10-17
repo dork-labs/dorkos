@@ -9,6 +9,7 @@ import {
   isCommunityContentAuthorityCurrent,
   useCommunityContentAuthority,
   useRemoteCommunityAgents,
+  useRemoteCommunityDms,
 } from '@/layers/entities/community';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useTransport } from '@/layers/shared/model';
@@ -21,6 +22,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Switch,
   AlertDialog,
   AlertDialogTrigger,
   AlertDialogContent,
@@ -51,6 +53,7 @@ export function RemoteCommunityAgents({
   const authority = useCommunityContentAuthority(true, accessFingerprint, community);
   const agents = useRemoteCommunityAgents(community, canEnroll, accessFingerprint);
   const local = useRegisteredAgents();
+  const dms = useRemoteCommunityDms(community, canEnroll, accessFingerprint);
   const [selected, setSelected] = useState('');
   const [handle, setHandle] = useState('');
   const [pending, setPending] = useState(false);
@@ -111,6 +114,7 @@ export function RemoteCommunityAgents({
           roomId={roomId}
           online={online}
           canEnroll={canEnroll}
+          takesDms={dms.data?.available === true}
           onChanged={refresh}
           onNotice={setNotice}
         />
@@ -167,6 +171,7 @@ function EnrolledAgent({
   roomId,
   online,
   canEnroll,
+  takesDms,
   onChanged,
   onNotice,
 }: {
@@ -174,6 +179,8 @@ function EnrolledAgent({
   roomId: string;
   online: boolean;
   canEnroll: boolean;
+  /** The space holds direct messages, so the owner's switch for them is shown. */
+  takesDms: boolean;
   onChanged: () => Promise<void>;
   onNotice: (message: string) => void;
 }) {
@@ -181,6 +188,7 @@ function EnrolledAgent({
   const [pending, setPending] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const joined = agent.roomIds.includes(roomId);
+  const dmSwitchId = useId();
   async function run(name: string, work: () => Promise<unknown>) {
     if (pending) return;
     setPending(name);
@@ -278,6 +286,23 @@ function EnrolledAgent({
           </AlertDialogContent>
         </AlertDialog>
       </div>
+      {takesDms && agent.active && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={dmSwitchId}
+            checked={agent.acceptsDms === true}
+            disabled={pending !== null || !canEnroll || !online}
+            onCheckedChange={(accepts) =>
+              void run('dms', () =>
+                transport.setRemoteCommunityAgentDms(agent.community, agent.localAgentId, accepts)
+              )
+            }
+          />
+          <Label htmlFor={dmSwitchId} className="text-xs font-normal">
+            Takes direct messages
+          </Label>
+        </div>
+      )}
       {notice && (
         <p role="status" className="text-muted-foreground text-xs">
           {notice}

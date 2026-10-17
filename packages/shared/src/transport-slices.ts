@@ -21,6 +21,7 @@ import type { OnboardingTransport } from './transport-onboarding.js';
 import type { HistoryTransport } from './transport-history.js';
 import type { ConnectorHoldTransport } from './transport-connector-holds.js';
 import type { HubComputersTransport, SessionRelayTransport } from './transport-hub.js';
+import type { SignInLandingTransport } from './transport-sign-in-landing.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -40,4 +41,5 @@ export interface TransportSlices
     HistoryTransport,
     ConnectorHoldTransport,
     HubComputersTransport,
-    SessionRelayTransport {}
+    SessionRelayTransport,
+    SignInLandingTransport {}

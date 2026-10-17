@@ -10,10 +10,9 @@ import type { LocalBrowserService } from '../services/session/local-browser/serv
  *
  * @module http/hono-api
  */
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Hono } from 'hono';
 import { env } from '../env.js';
+import { clientDistPath } from './client-dist.js';
 import { getAuth } from '../services/core/auth/index.js';
 import type { MainRequestAdmission } from '../services/core/lifecycle/main-request-admission.js';
 import { createApiApp, type ApiEnv } from './api-chain.js';
@@ -87,6 +86,7 @@ import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/ma
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
 import mcpConfigRoutes from '../routes/mcp-config.js';
 import { createMcpOAuthRoutes } from '../routes/mcp-oauth.js';
+import { createSignInLandingRoutes } from '../routes/sign-in-landings.js';
 import { createMeshRoutes, type MeshRouterDeps } from '../routes/mesh.js';
 import { createMockMcpOAuthRoutes } from '../routes/mock-mcp-oauth-server.js';
 import modelRoutes from '../routes/models.js';
@@ -445,6 +445,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
+  // What the app's `/signed-in` page reads after any sign-in's callback.
+  app.route('/api/sign-in-landings', createSignInLandingRoutes());
   if (deps.commitments) {
     app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
     app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
@@ -489,12 +491,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   return app;
 }
 
-/** Where the client build is when nothing names it: beside this package, from source or dist. */
-const DEFAULT_CLIENT_DIST = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../client/dist'
-);
-
 /**
  * The server's routing, as `index.ts` serves it: every route group, the client
  * build in production (`CLIENT_DIST_PATH`, or the client package's own build),
@@ -510,9 +506,7 @@ export function composeFrontDoor(
   admission: MainRequestAdmission,
   deps?: HonoApiDeps
 ): Hono<ApiEnv> {
-  const clientDist =
-    env.NODE_ENV === 'production' ? (env.CLIENT_DIST_PATH ?? DEFAULT_CLIENT_DIST) : undefined;
-  const app = createHonoApi({ admission, deps, clientDist });
+  const app = createHonoApi({ admission, deps, clientDist: clientDistPath() });
   if (env.DORKOS_TEST_RUNTIME) serveRouteCensus(app);
   return app;
 }

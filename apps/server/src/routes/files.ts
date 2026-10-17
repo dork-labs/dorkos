@@ -19,6 +19,7 @@ import {
   resolveWithinCwd,
   pathErrorReply,
   parseByteRange,
+  servesInlineHere,
 } from '../lib/file-route-guards.js';
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
@@ -117,7 +118,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     const headers: Record<string, string> = {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
-      'Content-Disposition': 'inline',
+      'Content-Disposition': servesInlineHere(contentType) ? 'inline' : 'attachment',
       'Cache-Control': 'private, max-age=0, must-revalidate',
       // Advertise Range support so browsers know they can seek audio/video.
       'Accept-Ranges': 'bytes',

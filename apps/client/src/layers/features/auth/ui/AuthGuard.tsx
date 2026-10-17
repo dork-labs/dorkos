@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useAuthRequired, useSignInWith } from '../model/use-auth-signal';
+import { usePublicComputerIdleSignOut } from '../model/use-auth-session';
 import { DorkOSSignInScreen } from './DorkOSSignInScreen';
 import { LoginScreen } from './LoginScreen';
 
@@ -16,6 +17,7 @@ interface AuthGuardProps {
 export function AuthGuard({ children }: AuthGuardProps) {
   const authRequired = useAuthRequired();
   const signInWith = useSignInWith();
+  usePublicComputerIdleSignOut();
   if (authRequired) {
     return signInWith === 'dorkos' ? <DorkOSSignInScreen /> : <LoginScreen />;
   }

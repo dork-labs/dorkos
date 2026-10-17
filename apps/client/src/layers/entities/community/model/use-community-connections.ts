@@ -84,6 +84,14 @@ export const communityKeys = {
     [...communityKeys.room(authority, ref, roomId), 'members'] as const,
   agents: (authority: CommunityContentAuthority, ref: string) =>
     [...communityKeys.content(authority, ref), 'agents'] as const,
+  dms: (authority: CommunityContentAuthority, ref: string) =>
+    [...communityKeys.content(authority, ref), 'dms'] as const,
+  agentDmEntries: (
+    authority: CommunityContentAuthority,
+    ref: string,
+    roomId: string,
+    localAgentId: string
+  ) => [...communityKeys.room(authority, ref, roomId), 'as-agent', localAgentId] as const,
 };
 
 /** Complete a protected read only while its captured owner generation remains current. */

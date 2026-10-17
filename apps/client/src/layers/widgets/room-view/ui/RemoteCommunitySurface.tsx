@@ -28,6 +28,7 @@ import {
   type ConversationTarget,
 } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
+import { authorityAddresses } from '../lib/authority-addresses';
 import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
 import {
   conductHoldReason,
@@ -67,26 +68,21 @@ export function RemoteCommunitySurface({
   roomId,
   threadId,
   onThread,
+  dmAgentName,
 }: {
   community: string;
   roomId: string;
   threadId?: string;
   onThread: (rootId?: string) => void;
+  /** Set when the room is the person's direct message with this agent (DOR-2955): no leaving it. */
+  dmAgentName?: string;
 }) {
   const transport = useTransport();
   const connections = useCommunityConnections();
   const connection = connections.data?.find((item) => item.ref === community);
   const access = communityAccessState(connection?.access);
   const authority = useCommunityContentAuthority(true, access.fingerprint, community);
-  const ownerAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
-  const contextAddress = authority
-    ? JSON.stringify([
-        authority.ownerKey,
-        authority.epoch,
-        authority.route.epoch,
-        authority.accessFingerprint,
-      ])
-    : '';
+  const { ownerAddress, contextAddress } = authorityAddresses(authority);
   const queries = useQueryClient();
   const navigation = useCommunityNavigation();
   const rememberNavigation = useRememberCommunityNavigation();
@@ -328,7 +324,9 @@ export function RemoteCommunitySurface({
   const target: ConversationTarget = {
     kind: 'room',
     id: JSON.stringify([community, roomId, threadId]),
-    placeholder: threadId ? 'Reply in thread…' : `Message ${room?.title ?? 'this channel'}…`,
+    placeholder: threadId
+      ? 'Reply in thread…'
+      : `Message ${dmAgentName ?? room?.title ?? 'this channel'}…`,
     canSend,
     canSendReason: removed
       ? 'You no longer have access to this channel.'
@@ -447,7 +445,7 @@ export function RemoteCommunitySurface({
               {action === 'stop' ? 'Stopping…' : 'Stop my agents'}
             </Button>
           )}
-          {access.capabilities.post && room?.joined && (
+          {access.capabilities.post && room?.joined && !dmAgentName && (
             <Button
               variant="ghost"
               size="sm"

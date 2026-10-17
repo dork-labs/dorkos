@@ -343,6 +343,24 @@ export class OpenRouterOAuthStore {
   }
 
   /**
+   * Start a flow again under the same `state`, for the landing page's Try again:
+   * a fresh PKCE pair, back to pending. Keeping the `state` is the point — the
+   * app that began the sign-in is still polling it, so it sees the new attempt
+   * finish. A flow that connected, or one this store no longer holds, is not
+   * restarted (`null`).
+   *
+   * @param state - The flow to restart.
+   */
+  restart(state: string): { state: string; challenge: string } | null {
+    this.prune();
+    const flow = this.flows.get(state);
+    if (!flow || flow.status === 'connected') return null;
+    const { verifier, challenge } = generatePkce();
+    this.flows.set(state, { verifier, createdAt: Date.now(), status: 'pending' });
+    return { state, challenge };
+  }
+
+  /**
    * The verifier for a live, non-expired flow, or `null` when unknown/expired/
    * already claimed. One-shot: the verifier is consumed (nulled) on first claim
    * so a replayed callback cannot re-run the code→key exchange. The flow entry

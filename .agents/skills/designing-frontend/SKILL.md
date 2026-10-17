@@ -1,72 +1,54 @@
 ---
 name: designing-frontend
-description: Guides design thinking and decision-making using the Calm Tech design language. Use when planning UI, reviewing designs, or making design decisions. For implementation details, see styling-with-tailwind-shadcn.
+description: Guides design thinking and decision-making for DorkOS UI, pointing at contributing/design-system.md for the rules. Use when planning UI, reviewing designs, or making design decisions. For implementation details, see styling-with-tailwind-shadcn.
 license: Complete terms in LICENSE.txt
 ---
 
-# Frontend Design: Calm Tech Design Language
+# Frontend Design: Thinking Through a Screen
 
-This skill guides **design thinking** and decision-making for frontend interfaces. It focuses on the **what** and **why** of design, not the implementation details.
+This skill guides **design thinking** and decision-making for frontend interfaces: the questions to ask, in order, before you build. It focuses on the **what** and **why**, not the implementation.
 
 **For implementation (how to code it)**: Use the `styling-with-tailwind-shadcn` skill.
 
-## Design Philosophy: Calm Tech
+## Where the rules live
 
-Our design system embraces **"Calm Tech"** — interfaces that feel sophisticated, spacious, and effortless.
+**`contributing/design-system.md` is the source of truth for every design rule** — principles, colour, type, spacing, motion, surfaces and states. This skill does not restate those rules; it points at them. If this skill and the design system ever disagree, the design system wins, and this skill is the one to fix.
 
-### Core Principles
+A DorkOS style guide is being written. When it lands, it becomes the top source, above the design system, and this skill will point there first.
 
-1. **Clarity over decoration** — Every element earns its place
-2. **Soft depth over flat** — Subtle shadows and layers create hierarchy without noise
-3. **Generous space _on content surfaces_** — Breathing room makes content shine; control surfaces run dense (see below)
-4. **Micro-delight** — Thoughtful animations that feel tactile and responsive
+Read these sections of the design system before you design anything:
 
-### Two Spatial Modes
+| Section                                                            | What it settles                                                                                 |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| **Design Philosophy**, **What We Optimize For**, **Anti-Patterns** | Honesty of materials, no fake depth, calm over stimulation, no bounces                          |
+| **Color** and **Brand Accent**                                     | 0%-saturation neutrals, never pure black or white, where orange may appear                      |
+| **Typography → Scale**                                             | The type scale. Use its tokens, never a literal size: tokens carry the user's font-size setting |
+| **Spacing → Two Spatial Modes**                                    | Content surfaces read, control surfaces operate; the numbers for each                           |
+| **Motion**                                                         | Durations, curves, springs, and what never animates                                             |
+| **Separation by tint, not by borders**                             | Whitespace, then tint, then a scroll-edge shadow; the sidebar's one tint ramp                   |
+| **Interaction States**                                             | Hover, focus, press, disabled, loading, and the two unread tiers                                |
+| **Accessibility**                                                  | Contrast, focus rings, reduced motion                                                           |
 
-"Generous space" is a **content** rule. Control surfaces follow density instead.
+### Two spatial modes: the test
 
-|             | Content surface                           | Control surface                                   |
-| ----------- | ----------------------------------------- | ------------------------------------------------- |
-| Examples    | Pages, cards, empty states, reading views | Sidebars, toolbars, list panes, menus, table rows |
-| Body text   | 15–16px                                   | 13px, metadata 11px                               |
-| Row height  | —                                         | 28–32px (4px-grid multiples)                      |
-| Inset       | 16–24px and up                            | **16px total**, panel edge to first glyph         |
-| Panel width | —                                         | 240–280px for nav sidebars                        |
+The numbers are in the design system. The judgement is here.
 
-**The test:** does the user _operate_ this surface many times an hour, or _read_ it? Operating wants density; reading wants air.
+**The test:** does the user _operate_ this surface many times an hour, or _read_ it? Operating wants density; reading wants air. Sidebars, toolbars, list panes, menus and table rows are control surfaces. Pages, cards, empty states and reading views are content surfaces.
 
 Density is not noise — a compact nav fits about 1.5x more items in the same space and reads calmer, because the eye travels less. The failure this rule prevents is real: "generous space" read without the nuance produced a sidebar with a 30px left inset (12px container + 8px section + 10px row). **Budget the inset once. Never stack container + section + row padding.**
 
-### Design Rules
-
-| Rule                        | Reasoning                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| **No pure black or white**  | Rich, tinted neutrals feel warmer and more sophisticated                        |
-| **Desaturated accents**     | Vibrant but not harsh — easier on the eyes                                      |
-| **WCAG AA contrast**        | Accessibility is non-negotiable (4.5:1 text, 3:1 large text)                    |
-| **Generous radius**         | Soft corners feel friendly and modern                                           |
-| **Soft shadows**            | Diffused shadows create depth without visual noise                              |
-| **Tint, not lines**         | Whitespace separates, tint groups, elevation floats — hairline rules read dated |
-| **Nothing renders at rest** | Row and section actions appear on hover and focus; idle chrome is noise         |
-
-#### Tint, not lines
-
-Separate two regions with, in order of preference:
+### Separation and chrome: the order to try
 
 1. **Whitespace** — a gap is the cheapest separator
-2. **Background tint** — a 5–10% shift (a zone rendered on `muted/40`)
+2. **Background tint** — a 5–10% step (in the sidebar, the `--sidebar-accent` ramp; never `--muted` there)
 3. **Elevation** — scarce, only for things that genuinely float (popovers, drag previews)
 
-No `border-b` under a panel header, no `border-t` above a footer. Where a header needs to detach from scrolled content, use a **scroll-edge shadow** that appears only once content scrolls under it. Hover uses the same 5–10% tint step, so grouping and hover share one mechanism.
+A hairline is the last resort, not the first. Where a header needs to detach from scrolled content, use a **scroll-edge shadow** that appears only once content scrolls under it.
 
-#### Nothing renders at rest
-
-Row and section actions (`+`, kebab, drag handles) are invisible until hover or focus-visible. Two obligations come with that:
+**Nothing renders at rest.** Row and section actions (`+`, kebab, drag handles) are invisible until hover or focus-visible. Each one owes two twins:
 
 - **A keyboard path** — `focus-visible` reveals the same action a pointer reveals.
 - **A touch path** — visible on touch pointers, or reachable by long-press / context menu. For anything draggable, WCAG 2.2 §2.5.7 requires a non-drag alternative.
-
-Keep reserved gutters minimal; a vertical kebab (⋮) needs less width than a horizontal one (⋯).
 
 ## Design Thinking Process
 
@@ -108,15 +90,7 @@ Before writing any code, work through these questions:
 
 ### Typography Hierarchy
 
-| Role           | Purpose                     |
-| -------------- | --------------------------- |
-| Display (48px) | Hero moments, landing pages |
-| H1 (36px)      | Page titles — one per page  |
-| H2 (30px)      | Major sections              |
-| H3 (24px)      | Subsections, card titles    |
-| Body (15px)    | Primary content             |
-| Small (13px)   | Secondary content, captions |
-| XS (11px)      | Metadata, labels            |
+Use the scale in `contributing/design-system.md` → Typography → Scale, and its weights (400, 500, 600). Never invent a size: a literal like `text-[13px]` ignores the mobile scale and the user's font-size setting.
 
 **Typography decisions:**
 
@@ -204,7 +178,7 @@ Agent state is not human presence. Borrowing presence design — a green dot, a 
 - **Status is composed:** process state × heartbeat × activity. "Running but silent past a grace period" reads as _starting_ or _wedged_ (a warning), never _offline_.
 - **Only "working" pulses.** Idle, done and error are static. A pulse means _right now_; if everything pulses, nothing does.
 - **Live activity verbs are the best glanceable signal** a fleet UI can show — "reviewing PR…" beats a status word.
-- **Unread is two-tier.** Bold label + dot means _there is activity here_. A numbered badge is reserved for _this is directed at you_ — a mention, a permission prompt, a needs-you. Numbering everything spends the scarce signal.
+- **Unread is two-tier.** A bold label alone means _there is activity here_ — no dot, no badge. A numbered badge is reserved for _this is directed at you_ — a mention, a permission prompt, a needs-you. Numbering everything spends the scarce signal. The rule and its reasons: `contributing/design-system.md` → Unread — Two Tiers.
 
 Tokens and recipes: `styling-with-tailwind-shadcn` → Control Surfaces. The identity disc's `working` pulse is specified in `contributing/design-system.md` → Identity.
 
@@ -222,22 +196,19 @@ Tokens and recipes: `styling-with-tailwind-shadcn` → Control Surfaces. The ide
 
 ### Animation Philosophy
 
-**One well-orchestrated moment beats many scattered interactions.**
+**One well-orchestrated moment beats many scattered interactions.** Motion explains where something came from, where it went, or that your input registered. If it does none of those, cut it. Calm over stimulation: no bounces, no loops that run forever, no decoration that moves.
 
-Focus animation budget on:
+Spend motion on:
 
-1. **Page entry** — First impression, establish brand
-2. **Modal/dialog** — Focus transition, importance signal
-3. **Success states** — Celebration, confirmation
-4. **Error states** — Attention, importance signal
+1. **Page and panel entry** — orientation: where did this come from?
+2. **Modal/dialog** — the focus moved, and why
+3. **State changes** — something finished, failed or needs you. Confirm it plainly; never cheer (see the `writing-app-copy` skill)
+
+The durations, curves and springs are in `contributing/design-system.md` → Motion; the implementation patterns are in `contributing/animations.md`.
 
 ### Accessibility
 
-Always respect `prefers-reduced-motion`. Users who enable this setting should see:
-
-- Instant state changes (no transitions)
-- No parallax or complex motion
-- Essential animations only (loading spinners)
+Always respect `prefers-reduced-motion`: movement becomes instant, and loops and decorative effects stop entirely. Motion's global setting does not stop opacity, colour or infinite loops, so a loop needs its own reduced-motion path. The mechanics: `contributing/design-system.md` → Accessibility and Identity → The interaction grammar.
 
 ## Design Review Checklist
 
@@ -246,14 +217,14 @@ Before implementation, verify:
 - [ ] **Purpose is clear** — User knows what to do
 - [ ] **Spatial mode is right** — Content surface or control surface, spaced accordingly
 - [ ] **Hierarchy is established** — Eye path is intentional
-- [ ] **Typography is consistent** — Using type scale correctly
+- [ ] **Typography is consistent** — Using the design system's type tokens, no literal sizes
 - [ ] **Colors are semantic** — Not hardcoded, using design tokens
 - [ ] **Spacing is systematic** — Using spacing scale; inset paid once, not stacked
 - [ ] **Separation is earned** — Gap or tint before a border
 - [ ] **Edge cases are designed** — Empty, error, loading states
 - [ ] **Accessibility is considered** — Contrast, focus states, screen readers
 - [ ] **Hover-only affordances have twins** — A keyboard path and a touch path
-- [ ] **Animation is intentional** — Adding value, not decoration
+- [ ] **Animation is intentional** — Explains a change, never decorates; has a reduced-motion path
 
 ## What NOT to Do
 
@@ -269,7 +240,7 @@ Before implementation, verify:
 
 ## References
 
-- `contributing/design-system.md` — Full design specifications
+- `contributing/design-system.md` — The source of truth for every design rule
 - `styling-with-tailwind-shadcn` skill — Implementation patterns
 - `contributing/styling-theming.md` — Styling patterns
 - `contributing/animations.md` — Animation patterns

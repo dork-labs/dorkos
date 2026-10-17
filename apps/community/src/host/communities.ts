@@ -140,7 +140,7 @@ export async function revokeTenantAccess(client: PoolClient, communityId: string
     [communityId]
   );
   await client.query(
-    'UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
+    'UPDATE agents SET active=false,accepts_dms=false,revoked_at=COALESCE(revoked_at,now()) WHERE community_id=$1',
     [communityId]
   );
   await notifyLive(client, { k: 'community', c: communityId });

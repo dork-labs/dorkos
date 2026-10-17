@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { Button, Notice } from '@/layers/shared/ui';
+import { Button, Checkbox, Notice } from '@/layers/shared/ui';
 import { describeAuthError } from '../lib/auth-error-copy';
 import { DORKOS_SIGN_IN_FAILED, useContinueWithDorkOS } from '../model/use-auth-session';
 
@@ -26,6 +26,8 @@ function cameBackFailed(): string | null {
  */
 export function DorkOSSignInScreen() {
   const errorId = useId();
+  const publicId = useId();
+  const [publicComputer, setPublicComputer] = useState(false);
   const { run, isPending, error } = useContinueWithDorkOS();
   const [failed] = useState(cameBackFailed);
   const errorCopy = describeAuthError(error, window.location.origin);
@@ -51,11 +53,27 @@ export function DorkOSSignInScreen() {
           </Notice>
         )}
 
+        <div className="mb-4 flex items-start gap-2.5">
+          <Checkbox
+            id={publicId}
+            checked={publicComputer}
+            onCheckedChange={(value) => setPublicComputer(value === true)}
+            disabled={isPending}
+            className="mt-0.5"
+          />
+          <label htmlFor={publicId} className="space-y-1 text-sm leading-snug">
+            <span className="font-medium">This is a shared or public computer</span>
+            <span className="text-muted-foreground block text-xs">
+              Signs you out when the browser closes or sits idle.
+            </span>
+          </label>
+        </div>
+
         <Button
           className="w-full"
           disabled={isPending}
           aria-describedby={message ? errorId : undefined}
-          onClick={() => void run()}
+          onClick={() => void run(publicComputer)}
         >
           {isPending ? 'Opening DorkOS…' : 'Continue with DorkOS'}
         </Button>

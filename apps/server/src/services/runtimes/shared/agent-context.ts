@@ -438,6 +438,14 @@ async function buildEnvBlock(cwd: string): Promise<string> {
 }
 
 /**
+ * The `<env>` block of a teammate's turn (DOR-2956): the platform, so the agent still writes
+ * commands for the right system, and nothing that names the owner's folder, machine or setup.
+ */
+function buildTeammateEnvBlock(): string {
+  return `<env>\nPlatform: ${os.platform()}\n</env>`;
+}
+
+/**
  * Build the `<agent_browser>` notice: said only when the agent has an enabled
  * signed-in browser (spec `agent-browser-sessions`) whose saved session signs
  * in to nothing: the operator has saved no site yet (the browser starts signed
@@ -611,6 +619,12 @@ export interface AgentContextOptions {
    * started in a shared space (DOR-2955). Default on.
    */
   readonly memory?: boolean;
+  /**
+   * `true` for a turn a teammate in a shared space started (DOR-2956): the owner's `<user_profile>`
+   * block is left out, and the `<env>` block says the platform and nothing else, so the turn is
+   * told neither who the owner is nor where their files are.
+   */
+  readonly teammate?: boolean;
 }
 
 /** What every form of the append is when there is nothing to say. */
@@ -649,8 +663,8 @@ export async function buildAgentContextAppend(
 ): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
     home ? settle(buildAgentBlock(home, options), EMPTY_APPEND) : EMPTY_APPEND,
-    settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
-    settle(buildEnvBlock(cwd), ''),
+    options.teammate ? '' : settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
+    options.teammate ? buildTeammateEnvBlock() : settle(buildEnvBlock(cwd), ''),
   ]);
 
   // A session with no agent (no home, no manifest, or a failed read) still gets

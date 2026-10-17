@@ -18,6 +18,8 @@ import {
   type CommunityWireDirectMessage,
 } from '@dorkos/shared/community-wire';
 import { eraseMembership } from '../erasure/erasure.js';
+import { clearFormerMembership } from '../routes/community/members.js';
+import { revokeTenantAccess } from '../host/communities.js';
 import { uuidv5 } from '../imports/derived-id.js';
 import { sweepImports } from '../imports/worker.js';
 import { banEmailKey } from '../moderation/bans.js';
@@ -765,3 +767,119 @@ describe('what reaches a direct message from outside it', { timeout: 60_000 }, (
     expect((await listDms({ cookie: alice.cookie })).map((row) => row.id)).toContain(own.id);
   });
 });
+
+describe(
+  'an agent that stops running here no longer takes direct messages',
+  { timeout: 60_000 },
+  () => {
+    async function accepts(agentId: string): Promise<boolean> {
+      return (
+        await h.pool.query<{ accepts_dms: boolean }>('SELECT accepts_dms FROM agents WHERE id=$1', [
+          agentId,
+        ])
+      ).rows[0]!.accepts_dms;
+    }
+
+    it('is off once its owner removes it, and stays off when it is enrolled again', async () => {
+      const cy = await enroll(alice, 'cy');
+      await expectStatus(await setDms({ cookie: alice.cookie }, cy.id, true), 200, 'turn on');
+      await expectStatus(
+        await h.call(`${base}/agents/${cy.id}`, { method: 'DELETE', cookie: alice.cookie }),
+        204,
+        'remove agent'
+      );
+      expect(await accepts(cy.id)).toBe(false);
+      // Enrolled again from the same installation: the space reuses the row, and the switch
+      // starts off, as the app shows it.
+      const again = await body<{ agent: { memberId: string; acceptsDms?: boolean } }>(
+        await h.call(`${base}/agents`, {
+          bearer: cy.grant,
+          body: { localAgentId: 'local-cy', displayName: 'Agent cy' },
+        }),
+        201,
+        're-enroll'
+      );
+      expect(again.agent.memberId).toBe(cy.id);
+      expect(await accepts(cy.id)).toBe(false);
+      expect(await code(await startDm({ cookie: carol.cookie }, cy.id))).toEqual({
+        status: 409,
+        code: 'AGENT_NOT_TAKING_DMS',
+      });
+    });
+
+    it('is off once its reused row comes back, even if a removal missed it', async () => {
+      const dee = await enroll(alice, 'dee');
+      await expectStatus(
+        await h.call(`${base}/agents/${dee.id}`, { method: 'DELETE', cookie: alice.cookie }),
+        204,
+        'remove agent'
+      );
+      // A row left on by some older path: re-enrolling must still start it off.
+      await h.pool.query('UPDATE agents SET accepts_dms=true WHERE id=$1', [dee.id]);
+      await expectStatus(
+        await h.call(`${base}/agents`, {
+          bearer: dee.grant,
+          body: { localAgentId: 'local-dee', displayName: 'Agent dee' },
+        }),
+        201,
+        're-enroll'
+      );
+      expect(await accepts(dee.id)).toBe(false);
+    });
+
+    it('is off once its owner is removed from the space', async () => {
+      const owner = await person('Erin Owner');
+      const erins = await enroll(owner, 'erin');
+      await expectStatus(await setDms({ cookie: owner.cookie }, erins.id, true), 200, 'turn on');
+      await expectStatus(
+        await h.call(`${base}/members/${owner.memberId}`, {
+          method: 'DELETE',
+          cookie: olga.cookie,
+        }),
+        204,
+        'remove member'
+      );
+      expect(await accepts(erins.id)).toBe(false);
+    });
+
+    it('is off once a former membership is cleared for its return', async () => {
+      const owner = await person('Finn Owner');
+      const finns = await enroll(owner, 'finn');
+      await expectStatus(await setDms({ cookie: owner.cookie }, finns.id, true), 200, 'turn on');
+      const client = await h.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await clearFormerMembership(client, owner.memberId, communityId);
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+      expect(await accepts(finns.id)).toBe(false);
+    });
+
+    it('is off once its owner is erased', async () => {
+      const owner = await person('Gus Owner');
+      const guss = await enroll(owner, 'gus');
+      await expectStatus(await setDms({ cookie: owner.cookie }, guss.id, true), 200, 'turn on');
+      expect(
+        await eraseMembership(h.pool, communityId, owner.memberId, { log: () => undefined })
+      ).toBe('erased');
+      expect(await accepts(guss.id)).toBe(false);
+    });
+
+    // Last: it ends every credential in the space, as a host takedown does.
+    it('is off once the host ends access to the whole space', async () => {
+      const hals = await enroll(alice, 'hal');
+      await expectStatus(await setDms({ cookie: alice.cookie }, hals.id, true), 200, 'turn on');
+      const client = await h.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await revokeTenantAccess(client, communityId);
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+      expect(await accepts(hals.id)).toBe(false);
+    });
+  }
+);

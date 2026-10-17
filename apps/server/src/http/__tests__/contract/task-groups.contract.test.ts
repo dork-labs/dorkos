@@ -392,12 +392,14 @@ contractSuite(
       expect: { status: 200, headers: JSON_TYPE, schema: z.object({ status: z.string() }).loose() },
     },
     {
-      name: 'GET /api/runtimes/opencode/openrouter/oauth/callback answers a page for an unknown state',
+      name: 'GET /api/runtimes/opencode/openrouter/oauth/callback sends an unknown state to the landing page',
       path: '/api/runtimes/opencode/openrouter/oauth/callback?state=nobody&code=nothing',
       expect: {
-        status: 400,
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-        schema: z.string().startsWith('<!doctype html>').includes('Sign-in failed'),
+        status: 303,
+        headers: {
+          location: /\/signed-in\?landing=[A-Za-z0-9_-]+$/,
+          'cache-control': 'no-store',
+        },
       },
     },
 

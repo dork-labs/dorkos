@@ -57,6 +57,10 @@ export const session = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    // A sign-in on a shared or public computer (A4, DOR-2936): the cookie ends
+    // with the browser, the session cannot outlive a working day, and the app
+    // signs it out when it sits idle.
+    publicComputer: integer('public_computer', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [index('session_userId_idx').on(table.userId)]
 );

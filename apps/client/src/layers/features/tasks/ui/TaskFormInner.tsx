@@ -286,7 +286,7 @@ export function ScheduleForm({
                   <Label htmlFor="schedule-name">Name *</Label>
                   <input
                     id="schedule-name"
-                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -306,7 +306,7 @@ export function ScheduleForm({
                   <Label htmlFor="schedule-description">Description *</Label>
                   <input
                     id="schedule-description"
-                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -325,7 +325,7 @@ export function ScheduleForm({
                   <Label htmlFor="schedule-prompt">Prompt *</Label>
                   <textarea
                     id="schedule-prompt"
-                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
@@ -508,7 +508,7 @@ export function ScheduleForm({
                     </p>
                     <input
                       id="schedule-max-runtime"
-                      className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                      className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
                       value={field.state.value}
                       onChange={(e) => field.handleChange(e.target.value)}
                       onBlur={field.handleBlur}

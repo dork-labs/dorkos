@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDb, runMigrations, user, type Db } from '@dorkos/db';
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
@@ -21,6 +21,8 @@ const runner = await import('../hub-assignment-runner.js');
 const serving = await import('../hub-serving.js');
 const { HUB_SIGN_IN_CALLBACK_PATH, isTheOwner } = await import('../hub-sign-in.js');
 const { startFakePublicIssuer } = await import('./fake-public-issuer.js');
+const { PUBLIC_COMPUTER_MARKER, PUBLIC_COMPUTER_LIFETIME_MS } =
+  await import('../public-computer.js');
 
 const ADDRESS = 'https://hub-1.example.invalid';
 const OWNER = 'acct_owner';
@@ -69,15 +71,22 @@ function call(route: string, init: { method?: string; cookie?: string; body?: un
   );
 }
 
+/** The cookies a browser keeps from a response: the last one set under each name wins. */
 function cookiesOf(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(';')[0])
-    .join('; ');
+  const kept = new Map<string, string>();
+  for (const value of response.headers.getSetCookie()) {
+    const pair = value.split(';')[0]!;
+    const name = pair.slice(0, pair.indexOf('='));
+    if (pair.endsWith('=')) kept.delete(name);
+    else kept.set(name, pair);
+  }
+  return [...kept.values()].join('; ');
 }
 
 /** Drive a whole sign-in as a browser would; returns the callback's answer. */
-async function signIn(): Promise<{ start: Response; back?: Response; cookie: string }> {
+async function signIn(
+  extraCookie = ''
+): Promise<{ start: Response; back?: Response; cookie: string }> {
   const start = await call('sign-in/social', {
     method: 'POST',
     body: { provider: 'dorkos', callbackURL: '/', errorCallbackURL: '/signed-out' },
@@ -86,8 +95,9 @@ async function signIn(): Promise<{ start: Response; back?: Response; cookie: str
   const { url } = (await start.json()) as { url: string };
   const authorize = await fetch(url, { redirect: 'manual' });
   const location = new URL(authorize.headers.get('location')!);
+  const sent = [cookiesOf(start), extraCookie].filter(Boolean).join('; ');
   const back = await auth.handler(
-    new Request(location.href, { redirect: 'manual', headers: { cookie: cookiesOf(start) } })
+    new Request(location.href, { redirect: 'manual', headers: { cookie: sent } })
   );
   return { start, back, cookie: cookiesOf(back) };
 }
@@ -128,6 +138,40 @@ describe('continue with DorkOS on a hub', () => {
     const who = await auth.api.getSession({ headers: new Headers({ cookie }) });
     expect(who?.user.email).toBe('owner@hub-1.example.invalid');
     expect(db.select().from(user).all()).toHaveLength(1);
+  });
+
+  it('keeps a public-computer sign-in to the browser and to one working day', async () => {
+    const { back, cookie } = await signIn(`${PUBLIC_COMPUTER_MARKER}=1`);
+    expect(back?.status).toBe(302);
+    const set = back!.headers.getSetCookie();
+    const token = set.filter((c) => c.includes('session_token=')).at(-1)!;
+    expect(token).not.toMatch(/max-age=[1-9]|expires=/i);
+    // The ask is used once.
+    expect(set.some((c) => c.startsWith(`${PUBLIC_COMPUTER_MARKER}=;`))).toBe(true);
+    const who = await auth.api.getSession({ headers: new Headers({ cookie }) });
+    expect(who?.user.email).toBe('owner@hub-1.example.invalid');
+    // What the app is told, from the cookie cache it reads first, says so too.
+    expect((who?.session as { publicComputer?: boolean }).publicComputer).toBe(true);
+    const row = db
+      .select()
+      .from(session)
+      .all()
+      .find((r) => r.id === who!.session.id)!;
+    expect(row.publicComputer).toBe(true);
+    const lifetime = row.expiresAt.getTime() - Date.now();
+    expect(lifetime).toBeLessThanOrEqual(PUBLIC_COMPUTER_LIFETIME_MS);
+    expect(lifetime).toBeGreaterThan(PUBLIC_COMPUTER_LIFETIME_MS - 60_000);
+  });
+
+  it('keeps an ordinary sign-in an ordinary one', async () => {
+    const { cookie } = await signIn();
+    const who = await auth.api.getSession({ headers: new Headers({ cookie }) });
+    const row = db
+      .select()
+      .from(session)
+      .all()
+      .find((r) => r.id === who!.session.id)!;
+    expect(row.publicComputer).toBe(false);
   });
 
   it('turns away anyone else, and makes no account for them', async () => {

@@ -94,7 +94,7 @@ import { createEditBaselineCapture, detectSlashCommandName } from './message-sen
 import type { MessageSenderOpts } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
-import { createTeammateFenceHook } from '../teammate-fence-hook.js';
+import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
 
@@ -287,12 +287,13 @@ export async function resolveLaunch(args: {
   // A teammate's turn (DOR-2955) is shown none of the agent's notes, and is told what it may
   // do. The block rides BOTH halves below, so it is in the relaunch digest: a warm process
   // launched with the owner's notes is never reused for a teammate, nor the other way round.
+  // Nor the owner's profile, nor their folder path or machine (DOR-2956).
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
-    ...(teammate ? { memory: false } : {}),
+    ...(teammate ? { memory: false, teammate: true } : {}),
   });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
   // base — onto BOTH halves, so the caller's own per-run instructions are
@@ -411,7 +412,7 @@ export async function resolveLaunch(args: {
     // A teammate's turn (DOR-2955) loads no settings layer: each one would add
     // the owner's CLAUDE.md files (and their @imports) to the prompt. Nothing
     // that bounds the turn comes from them: the mode, the hooks (the teammate
-    // fence) and the tool gate are all options of this launch.
+    // tier) and the tool gate are all options of this launch.
     settingSources: teammate ? [] : ['local', 'project', 'user'],
     systemPrompt: {
       type: 'preset',
@@ -735,7 +736,13 @@ export async function resolveLaunch(args: {
   // This turn's folder grants, merged into the same settings object, and the
   // variable that would make a granted folder's CLAUDE.md load stripped from the
   // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
-  applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
+  // None for a teammate's turn (DOR-2956), whatever a caller passed: the room runner already
+  // drops them, and this is the last place a grant could reach the CLI.
+  applyDirectoryGrants(
+    sdkOptions,
+    teammate ? undefined : messageOpts?.additionalDirectories,
+    effectiveCwd
+  );
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
@@ -790,9 +797,9 @@ export async function resolveLaunch(args: {
   });
   sdkOptions.hooks = {
     PreToolUse: [
-      // The teammate fence (DOR-2955): every tool, every mode, before the CLI's
+      // The teammate tier (DOR-2956): every tool, every mode, before the CLI's
       // own allow rules. It answers nothing unless a teammate's turn is running.
-      { hooks: [createTeammateFenceHook(session)] },
+      { hooks: [createTeammateTierHook(session)] },
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',
         hooks: [

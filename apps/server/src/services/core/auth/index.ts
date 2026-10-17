@@ -210,6 +210,11 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Signed short-TTL session snapshot in a cookie so hot paths (SSE
       // reconnect, high-frequency polling) avoid a DB read per request.
       cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
+      // A sign-in on a shared or public computer (`public-computer.ts`). Set
+      // only by the server, at sign-in.
+      additionalFields: {
+        publicComputer: { type: 'boolean', required: false, input: false, defaultValue: false },
+      },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
     //

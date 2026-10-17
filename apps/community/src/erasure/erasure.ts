@@ -130,7 +130,7 @@ async function endAccess(target: Target): Promise<void> {
       ids
     );
     await client.query(
-      `UPDATE agents SET active=false,revoked_at=COALESCE(revoked_at,now())
+      `UPDATE agents SET active=false,accepts_dms=false,revoked_at=COALESCE(revoked_at,now())
        WHERE owner_member_id=$1 AND community_id=$2 AND active`,
       ids
     );

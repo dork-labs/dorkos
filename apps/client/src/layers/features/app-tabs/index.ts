@@ -19,6 +19,8 @@ export { TabIdentityCard } from './ui/TabHoverCard';
 export { TabHistoryControls } from './ui/TabHistoryControls';
 export { useAppTabsSync } from './model/use-app-tabs-sync';
 export { useAppTabShortcuts } from './model/use-app-tab-shortcuts';
+// The strip's background work in one hook, for the app shell to mount once.
+export { useAppTabsShell } from './model/use-app-tabs-shell';
 export { useTabHistoryShortcuts } from './model/use-tab-history-shortcuts';
 export { useAppTabActions, NEW_TAB_HREF, type AppTabActions } from './model/use-app-tab-actions';
 export { openTabAt, goToActiveTab, type TabRouter } from './model/tab-navigation';

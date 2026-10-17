@@ -129,12 +129,41 @@ describe('useAppTabShortcuts', () => {
     expect(activeHref()).toBe('/');
   });
 
-  it('ignores a shifted key that is not a bracket', () => {
+  it('ignores a shifted key that is not a bracket or T', () => {
     setTabs(['/', '/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
-    expect(press({ key: 'T', code: 'KeyT', metaKey: true, shiftKey: true })).toBe(false);
+    expect(press({ key: 'Y', code: 'KeyY', metaKey: true, shiftKey: true })).toBe(false);
     expect(useAppTabsStore.getState().tabs).toHaveLength(2);
+  });
+
+  it('brings back the tab closed last on Cmd+Shift+T, where it was', async () => {
+    setTabs(['/', '/team'], 0);
+    const closed = { id: 'gone', href: '/tasks', history: ['/', '/tasks'], cursor: 1 };
+    const reopen = vi.fn(() => Promise.resolve({ tab: closed, index: 1, closedAt: 1 }));
+    window.electronAPI = {
+      ...window.electronAPI,
+      tabSession: { reopen } as unknown as NonNullable<ElectronAPI['tabSession']>,
+    } as ElectronAPI;
+    // The router lands where it is sent, so the reconcile after the navigation
+    // agrees with the tab rather than pulling it back to `/`.
+    navigate.mockImplementationOnce(({ href }) => {
+      router.state.location.href = href;
+      return Promise.resolve();
+    });
+    renderHook(() => useAppTabShortcuts());
+
+    expect(press({ key: 'T', code: 'KeyT', metaKey: true, shiftKey: true })).toBe(true);
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
+    router.state.location.href = '/';
+    expect(activeHref()).toBe('/tasks');
+
+    expect(reopen).toHaveBeenCalledWith(undefined);
+    const { tabs } = useAppTabsStore.getState();
+    expect(tabs.map((tab) => tab.href)).toEqual(['/', '/tasks', '/team']);
+    // Its own Back stack comes back with it.
+    expect(tabs[1]).toMatchObject({ id: 'gone', history: ['/', '/tasks'], cursor: 1 });
+    expect(navigate).toHaveBeenCalledWith({ href: '/tasks' });
   });
 
   it('stops listening once the shell unmounts', () => {

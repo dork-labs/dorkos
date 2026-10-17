@@ -77,13 +77,15 @@ describe('route headers', () => {
     return createAppRouter(new QueryClient(), createMockTransport() as Transport);
   }
 
-  // `/agents` is the one addressable route with no bar of its own: it's a
+  // Two addressable routes have no bar of their own. `/agents` is a
   // `beforeLoad` redirect to `/team` and never renders a page, so the shell
-  // never draws a header for it. Excluded by name rather than by loosening the
-  // guard, so a route that genuinely forgets its header still fails.
-  const HEADERLESS_ROUTES: readonly string[] = ['/agents'];
+  // never draws a header for it. `/signed-in` is the page a sign-in's browser
+  // tab lands on, outside the app shell on purpose (DOR-2985). Excluded by name
+  // rather than by loosening the guard, so a route that genuinely forgets its
+  // header still fails.
+  const HEADERLESS_ROUTES: readonly string[] = ['/agents', '/signed-in'];
 
-  it('declares a component header for every addressable route except /agents', () => {
+  it('declares a component header for every addressable route except the headerless two', () => {
     // Asserts the POSITIVE shape, not the absence of one wrong value. `.not
     // .toBeNull()` was the first spelling here and it was no guard at all: a
     // route that omitted `staticData` entirely reads `undefined`, which is not

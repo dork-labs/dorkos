@@ -12,6 +12,7 @@ import { applyContextMenu } from './context-menu';
 import { forwardFullscreenState } from './fullscreen';
 import { applyPermissionPolicy } from './permissions';
 import { forwardFocusState } from './window-focus';
+import { bindTabSession, frontTabUrl, type WindowTabs } from './tab-session';
 import {
   attachWindowStatePersistence,
   clampSizeToWorkArea,
@@ -67,6 +68,12 @@ export interface CreateWindowOptions {
   initialUrl?: string;
   /** Defaults to `primary`. See {@link WindowRole}. */
   role?: WindowRole;
+  /**
+   * The tabs this window reopens with, from the last session (`tab-session/`).
+   * The window loads straight onto the tab that was in front. Absent or `null`
+   * for a window that starts wherever it was opened.
+   */
+  restoredTabs?: WindowTabs | null;
 }
 
 /**
@@ -245,7 +252,8 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
   // has no navigation UI — a dead end the person cannot get back out of.
   win.webContents.setWindowOpenHandler(({ url }: HandlerDetails): WindowOpenHandlerResponse => {
     if (isOwnOrigin(url, getRendererUrl?.())) {
-      createWindow({ ...options, initialUrl: url, role: 'secondary' });
+      // A new window, so none of the opener's remembered tabs come with it.
+      createWindow({ ...options, restoredTabs: null, initialUrl: url, role: 'secondary' });
       return { action: 'deny' };
     }
     if (isWebLink(url)) void shell.openExternal(url);
@@ -290,12 +298,11 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
  */
 export function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): void {
   const rendererUrl = options.getRendererUrl?.();
+  const origin = process.env.ELECTRON_RENDERER_URL || rendererUrl;
   if (options.initialUrl) {
     void win.loadURL(options.initialUrl);
-  } else if (process.env.ELECTRON_RENDERER_URL) {
-    void win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else if (rendererUrl) {
-    void win.loadURL(rendererUrl);
+  } else if (origin) {
+    void win.loadURL(frontTabUrl(win, origin));
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
@@ -357,6 +364,9 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
     isOwnOrigin(url, options.getRendererUrl?.())
   );
   revealWhenReady(win, state);
+  // Before the load: the renderer asks for its tabs as its first act, and the
+  // load goes straight to the one in front.
+  bindTabSession(win, options.restoredTabs ?? null, isPrimary);
   loadRenderer(win, options);
   forwardFullscreenState(win);
   forwardFocusState(win);
