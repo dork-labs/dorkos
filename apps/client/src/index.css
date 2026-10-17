@@ -586,22 +586,23 @@
      3. the black drop, kept, because it still reads wherever the surface sits
         over something lighter: the sidebar, a muted panel, an image
 
-     Each step up raises all three. `soft` lifts no surface, because cards at
-     rest sit flush with the page; `card-interactive` stepping to `elevated`
+     Each step up raises all three, in steps big enough to see at a glance
+     (Dorian, 2026-10-17: the first pass was too subtle). `soft` lifts only a
+     touch, so cards at rest stay close to the page; `card-interactive` stepping to `elevated`
      on hover is what lightens them, which doubles as the hover cue. Every step keeps the same four layers in
-     the same order (soft's lift is transparent) so a hover transition
+     the same order so a hover transition
      interpolates instead of jumping. */
   --elevation-soft:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.04), inset 0 0 0 100vmax rgb(255 255 255 / 0),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.08), inset 0 0 0 100vmax rgb(255 255 255 / 0.02),
     0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
   --elevation-elevated:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.06), inset 0 0 0 100vmax rgb(255 255 255 / 0.025),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 100vmax rgb(255 255 255 / 0.05),
     0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
   --elevation-floating:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.08), inset 0 0 0 100vmax rgb(255 255 255 / 0.04),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.16), inset 0 0 0 100vmax rgb(255 255 255 / 0.08),
     0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.6);
   --elevation-modal:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.1), inset 0 0 0 100vmax rgb(255 255 255 / 0.05),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.2), inset 0 0 0 100vmax rgb(255 255 255 / 0.11),
     0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.7);
 
   /* Nebula radar: gradient edge fades to the panel background */
@@ -661,6 +662,35 @@
       7px scroll no-repeat,
     radial-gradient(farthest-side at 50% 100%, hsl(var(--sidebar-scroll-edge)), transparent)
       bottom / 100% 7px scroll no-repeat;
+}
+
+/* Tints that climb with the surface (dark only).
+
+   A lifted surface is lighter than the page, so the page's own hover and
+   selection tints (muted 9%, accent 12%) would sit at or below it: a menu's
+   highlighted row would vanish, or read as a hole. Inside anything that floats,
+   muted and accent step up with the surface so a highlight is always a step
+   above what it sits on. Both the client names and the @dork-labs/ui names are
+   set, because each was resolved once at the root and inherited as a value.
+   `soft` is left alone: cards at rest barely lift. Kept in step with the
+   surface-lift percentages in the dark --elevation-* scale above. */
+.dark :where(.shadow-md, .shadow-elevated) {
+  --muted: 0 0% 13%;
+  --dui-muted: 0 0% 13%;
+  --accent: 0 0% 16%;
+  --dui-accent: 0 0% 16%;
+}
+.dark :where(.shadow-lg, .shadow-floating) {
+  --muted: 0 0% 16%;
+  --dui-muted: 0 0% 16%;
+  --accent: 0 0% 19%;
+  --dui-accent: 0 0% 19%;
+}
+.dark :where(.shadow-xl, .shadow-modal) {
+  --muted: 0 0% 19%;
+  --dui-muted: 0 0% 19%;
+  --accent: 0 0% 22%;
+  --dui-accent: 0 0% 22%;
 }
 
 @utility shadow-elevated {
