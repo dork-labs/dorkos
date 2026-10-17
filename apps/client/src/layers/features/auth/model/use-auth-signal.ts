@@ -10,6 +10,7 @@
 import { useSyncExternalStore } from 'react';
 import {
   getAuthRequired,
+  getSignInWith,
   subscribeAuthRequired,
   getOwnerSetupRequest,
   subscribeOwnerSetupRequest,
@@ -19,6 +20,14 @@ import {
 /** Subscribe to the app-wide "login required" flag (set when a gated request 401s). */
 export function useAuthRequired(): boolean {
   return useSyncExternalStore(subscribeAuthRequired, getAuthRequired, getAuthRequired);
+}
+
+/**
+ * How the server said to sign in. Read with the auth-required flag: it is set
+ * just before that flag flips.
+ */
+export function useSignInWith(): ReturnType<typeof getSignInWith> {
+  return useSyncExternalStore(subscribeAuthRequired, getSignInWith, getSignInWith);
 }
 
 /** Subscribe to the pending owner-setup request (the tunnel exposure handoff), or `null`. */

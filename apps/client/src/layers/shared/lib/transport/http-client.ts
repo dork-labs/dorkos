@@ -3,7 +3,7 @@
  *
  * @module shared/lib/transport/http-client
  */
-import { setAuthRequired } from '../auth-signal';
+import { setAuthRequired, setSignInWith } from '../auth-signal';
 import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
 
 /**
@@ -93,6 +93,9 @@ async function request(
     // A gated request without a valid credential (server task 1.2) flips the
     // app-wide auth-required state so the AuthGuard renders the login screen.
     if (res.status === 401 && error.code === 'AUTH_REQUIRED') {
+      setSignInWith(
+        (error as { signInWith?: unknown }).signInWith === 'dorkos' ? 'dorkos' : 'password'
+      );
       setAuthRequired(true);
     }
     if (res.status === 409 && error.code === 'COMMUNITY_OWNER_CHANGED') {

@@ -101,6 +101,47 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
   return { run, isPending, error, reset: () => setError(null) };
 }
 
+/** The query parameter a failed DorkOS sign-in comes back with. */
+export const DORKOS_SIGN_IN_FAILED = 'dorkos-sign-in';
+
+/**
+ * Sign in with a DorkOS account, on a person's own DorkOS in the cloud: asks
+ * the server where to send the browser, then goes there. The DorkOS account
+ * page sends the person back to the page they were on, signed in, or with
+ * {@link DORKOS_SIGN_IN_FAILED} set when the sign-in was refused.
+ */
+export function useContinueWithDorkOS(): AuthActionState<[]> {
+  const client = useAuthClient();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<AuthError | null>(null);
+
+  const run = useCallback(async (): Promise<AuthActionResult> => {
+    setIsPending(true);
+    setError(null);
+    const here = new URL(window.location.href);
+    here.searchParams.delete(DORKOS_SIGN_IN_FAILED);
+    here.searchParams.delete('error');
+    const back = `${here.pathname}${here.search}${here.hash}`;
+    const failed = new URL(back, window.location.origin);
+    failed.searchParams.set(DORKOS_SIGN_IN_FAILED, 'failed');
+    const { data, error: err } = await client.signIn.social({
+      provider: 'dorkos',
+      callbackURL: back,
+      errorCallbackURL: `${failed.pathname}${failed.search}`,
+    });
+    if (err || !data?.url) {
+      const refused = err ?? { message: 'No sign-in address came back.', status: 0 };
+      setIsPending(false);
+      setError(refused);
+      return { ok: false, error: refused };
+    }
+    window.location.assign(data.url);
+    return { ok: true };
+  }, [client]);
+
+  return { run, isPending, error, reset: () => setError(null) };
+}
+
 /**
  * Create the owner account (first-run sign-up). On success clears the
  * auth-required signal and refetches session state.

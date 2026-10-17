@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
 import { createProfileMethods } from '../profile-methods';
-import { getAuthRequired, setAuthRequired } from '../../auth-signal';
+import {
+  getAuthRequired,
+  getSignInWith,
+  resetSignInWithForTests,
+  setAuthRequired,
+} from '../../auth-signal';
 import {
   confirmCommunityAuthority,
   getCommunityAuthority,
@@ -104,6 +109,21 @@ describe('fetchJSON', () => {
     expect(getAuthRequired()).toBe(false);
     await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
     expect(getAuthRequired()).toBe(true);
+  });
+
+  it('remembers how the 401 says to sign in, and never steps back from DorkOS', async () => {
+    const answer = (body: object) =>
+      vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 401 }));
+    answer({ error: 'Unauthorized', code: 'AUTH_REQUIRED', signInWith: 'dorkos' });
+    await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
+    expect(getSignInWith()).toBe('dorkos');
+    // An older refusal that names nothing never turns it back to the form.
+    answer({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+    await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Unauthorized');
+    expect(getSignInWith()).toBe('dorkos');
+    resetSignInWithForTests();
   });
 
   it('does not flip the auth-required signal on other 401s', async () => {
