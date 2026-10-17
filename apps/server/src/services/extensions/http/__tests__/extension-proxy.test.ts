@@ -50,6 +50,9 @@ vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
   },
 }));
 
+const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
+vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
+
 // Import after mocks
 import {
   createProxyForwarder,
@@ -190,6 +193,7 @@ describe('the extension data proxy', () => {
     originalFetch = globalThis.fetch;
     limiter.hits = 0;
     limiter.refuse = false;
+    role.value = 'computer';
   });
 
   afterEach(() => {
@@ -946,6 +950,38 @@ describe('the extension data proxy', () => {
       expect(res._status).toBe(302);
       expect(res._headers.Location).toBe('http://169.254.169.254/latest/meta-data/');
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops the redirect target on a hub, so its address redirects nowhere', async () => {
+      role.value = 'hub';
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 302,
+        headers: new Headers({ location: 'https://elsewhere.example/' }),
+        text: () => Promise.resolve(''),
+      });
+
+      const res = makeRes();
+      await getProxyHandler()(makeReq(), res);
+
+      expect(res._status).toBe(302);
+      expect(res._headers.Location).toBeUndefined();
+    });
+  });
+
+  describe('an upstream page opened at DorkOS', () => {
+    it('runs nothing: every answer is sandboxed and never sniffed', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html' }),
+        text: () => Promise.resolve('<script>alert(1)</script>'),
+      });
+
+      const res = await request(fixtureTarget.mount(proxyApp())).get('/api/ext/test-ext/proxy/x');
+
+      expect(res.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
     });
   });
 

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { useIsHub } from '@/layers/entities/config';
+import { useConfig } from '@/layers/entities/config';
 import { resolveCanvasMediaSrc, canvasMediaErrorMessage } from '../lib/media-src';
 
 interface CanvasPdfContentProps {
@@ -20,7 +20,7 @@ interface CanvasPdfContentProps {
  */
 export function CanvasPdfContent({ content }: CanvasPdfContentProps) {
   const transport = useTransport();
-  const isHub = useIsHub();
+  const config = useConfig().data;
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const resolved = useMemo(
@@ -41,7 +41,11 @@ export function CanvasPdfContent({ content }: CanvasPdfContentProps) {
   const title = content.title ?? 'PDF document';
 
   // Only a PDF this server sends is a download; one from elsewhere still shows.
-  if (isHub && new URL(url, window.location.href).origin === window.location.origin) {
+  // Until the server says what it is, its own PDF waits, so a hub never
+  // starts a download on first render.
+  const servedHere = new URL(url, window.location.href).origin === window.location.origin;
+  if (servedHere && !config) return null;
+  if (servedHere && config?.serverRole === 'hub') {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         <p>PDFs download here instead of opening.</p>

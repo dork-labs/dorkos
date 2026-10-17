@@ -17,8 +17,13 @@ vi.mock('@/layers/shared/model', () => {
   return { useAppStore, useTransport: () => ({ mediaUrl }) };
 });
 
-const hub = { value: false };
-vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+const hub = { value: false as boolean | null };
+vi.mock('@/layers/entities/config', () => ({
+  // `null`: the server has not said what it is yet.
+  useConfig: () => ({
+    data: hub.value === null ? undefined : { serverRole: hub.value ? 'hub' : 'computer' },
+  }),
+}));
 
 import { CanvasImageContent } from '../ui/CanvasImageContent';
 import { CanvasPdfContent } from '../ui/CanvasPdfContent';
@@ -138,6 +143,12 @@ describe('CanvasPdfContent', () => {
       'href',
       '/api/files/raw?cwd=/work&path=docs/spec.pdf'
     );
+  });
+
+  it('waits to show its own PDF until the server says what it is', () => {
+    hub.value = null;
+    render(<CanvasPdfContent content={{ type: 'pdf', src: 'docs/spec.pdf' }} />);
+    expect(document.querySelector('object')).not.toBeInTheDocument();
   });
 
   it('still shows a PDF from elsewhere on a hub', () => {
