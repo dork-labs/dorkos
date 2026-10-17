@@ -13,12 +13,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initBoundary } from '../../../../lib/boundary.js';
 import { resolveDocSpace, type DocSpace } from '../../doc-space.js';
-import {
-  buildDocIndex,
-  DOC_INDEX_LIMITS,
-  docTitleFromHead,
-  resetDocIndexCacheForTests,
-} from '../doc-index.js';
+import { execFileSync } from 'node:child_process';
+import { DOC_TITLE_BYTES } from '@dorkos/shared/doc-links';
+import { buildDocIndex, DOC_INDEX_LIMITS, resetDocIndexCacheForTests } from '../doc-index.js';
 
 let base: string;
 let root: string;
@@ -45,35 +42,6 @@ afterEach(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-describe('docTitleFromHead', () => {
-  it('takes the frontmatter title first', () => {
-    expect(docTitleFromHead('---\ntitle: "Launch plan"\n---\n# Heading\n', 'a.md')).toBe(
-      'Launch plan'
-    );
-    expect(docTitleFromHead("---\nowner: me\ntitle: 'Q3'\n---\n", 'a.md')).toBe('Q3');
-    expect(docTitleFromHead('---\ntitle: Roadmap # draft\n---\n', 'a.md')).toBe('Roadmap');
-    expect(docTitleFromHead('---\ntitle: >\n  Folded\n---\n# Heading\n', 'a.md')).toBe('Heading');
-  });
-
-  it('falls back to the first # heading, skipping code blocks and deeper headings', () => {
-    expect(docTitleFromHead('Intro\n## Part\n# Real title #\n', 'a.md')).toBe('Real title');
-    expect(docTitleFromHead('```\n# not this\n```\n# This\n', 'a.md')).toBe('This');
-    expect(docTitleFromHead('---\ntitle:\n---\n# After empty title\n', 'a.md')).toBe(
-      'After empty title'
-    );
-  });
-
-  it('falls back to the file name without .md', () => {
-    expect(docTitleFromHead('just text\n#hashtag\n', 'Meeting Notes.md')).toBe('Meeting Notes');
-    expect(docTitleFromHead('', 'README.MD')).toBe('README');
-  });
-
-  it('ignores a byte order mark and Windows line ends', () => {
-    expect(docTitleFromHead('\uFEFF# Hello\r\nbody', 'a.md')).toBe('Hello');
-    expect(docTitleFromHead('---\r\ntitle: Win\r\n---\r\n', 'a.md')).toBe('Win');
-  });
-});
-
 describe('buildDocIndex', () => {
   it('lists every .md file with its path, title and slug, sorted by path', async () => {
     put('README.md', '# Welcome\n');
@@ -82,6 +50,7 @@ describe('buildDocIndex', () => {
     put('notes/image.png', 'x');
     put('notes/draft.txt', '# Not a doc\n');
     await expect(buildDocIndex(space)).resolves.toEqual({
+      root,
       docs: [
         { path: 'README.md', title: 'Welcome', slug: 'readme' },
         { path: 'notes/Meeting Notes.md', title: 'Meeting Notes', slug: 'meeting-notes' },
@@ -116,8 +85,8 @@ describe('buildDocIndex', () => {
   });
 
   it('reads only the start of a doc for its title', async () => {
-    put('long.md', `${'x'.repeat(DOC_INDEX_LIMITS.titleBytes)}\n# Too far down\n`);
-    put('cut.md', `${'y\n'.repeat(DOC_INDEX_LIMITS.titleBytes / 2 - 2)}# Cut short by the read`);
+    put('long.md', `${'x'.repeat(DOC_TITLE_BYTES)}\n# Too far down\n`);
+    put('cut.md', `${'y\n'.repeat(DOC_TITLE_BYTES / 2 - 2)}# Cut short by the read`);
     const { docs } = await buildDocIndex(space);
     expect(docs.map((doc) => doc.title)).toEqual(['cut', 'long']);
   });
@@ -153,24 +122,67 @@ describe('buildDocIndex', () => {
   });
 
   it('reads a title again only when the file changed', async () => {
+    const file = path.join(root, 'doc.md');
     put('doc.md', '# Before\n');
-    await buildDocIndex(space);
-    const open = vi.spyOn(fs, 'open');
+    const pinned = new Date('2026-01-01T00:00:00Z');
+    utimesSync(file, pinned, pinned);
     expect((await buildDocIndex(space)).docs[0]?.title).toBe('Before');
-    expect(open).not.toHaveBeenCalled();
+
+    // Same size and modified time: the cached title stands, so the file was not read.
+    writeFileSync(file, '# Behind\n');
+    utimesSync(file, pinned, pinned);
+    expect((await buildDocIndex(space)).docs[0]?.title).toBe('Before');
 
     put('doc.md', '# After, longer\n');
-    const later = new Date(Date.now() + 5_000);
-    utimesSync(path.join(root, 'doc.md'), later, later);
     expect((await buildDocIndex(space)).docs[0]?.title).toBe('After, longer');
-    expect(open).toHaveBeenCalledTimes(1);
   });
 
-  it('shares one walk between two requests at once', async () => {
+  it('answers a request made during a walk with a walk that started after it', async () => {
+    put('first.md', '# First\n');
+    const running = buildDocIndex(space);
+    // Created after the first walk started: that walk may or may not see it.
+    put('second.md', '# Second\n');
+    const later = buildDocIndex(space);
+    const laterStill = buildDocIndex(space);
+    expect(later).not.toBe(running);
+    expect(laterStill).toBe(later);
+    await running;
+    expect((await later).docs.map((doc) => doc.title)).toEqual(['First', 'Second']);
+  });
+
+  it('runs one follow-up walk however many requests arrive during a walk', async () => {
     put('doc.md', '# Doc\n');
     const readdir = vi.spyOn(fs, 'readdir');
-    const [a, b] = await Promise.all([buildDocIndex(space), buildDocIndex(space)]);
-    expect(a).toBe(b);
-    expect(readdir).toHaveBeenCalledTimes(1);
+    const all = await Promise.all([1, 2, 3, 4].map(() => buildDocIndex(space)));
+    expect(all[1]).toBe(all[3]);
+    expect(readdir).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops at its time budget and says so', async () => {
+    put('a/x.md', '# X\n');
+    put('top.md', '# Top\n');
+    const { docs, truncated } = await buildDocIndex(space, { ...DOC_INDEX_LIMITS, budgetMs: 0 });
+    expect(truncated).toBe(true);
+    expect(docs).toEqual([]);
+  });
+
+  it('never reads a symlink or FIFO swapped in after the folder was listed', async () => {
+    const outside = path.join(base, 'outside');
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, 'secret.md'), '# Secret\n');
+    put('linked.md', '# Linked\n');
+    put('piped.md', '# Piped\n');
+    const realReaddir = fs.readdir.bind(fs);
+    vi.spyOn(fs, 'readdir').mockImplementation((async (...args: Parameters<typeof fs.readdir>) => {
+      const entries = await realReaddir(...args);
+      // Swap both docs after the listing, before their titles are read.
+      rmSync(path.join(root, 'linked.md'));
+      symlinkSync(path.join(outside, 'secret.md'), path.join(root, 'linked.md'));
+      rmSync(path.join(root, 'piped.md'));
+      execFileSync('mkfifo', [path.join(root, 'piped.md')]);
+      return entries;
+    }) as typeof fs.readdir);
+    const { docs } = await buildDocIndex(space);
+    expect(docs.map((doc) => doc.title)).toEqual(['linked', 'piped']);
   });
 });

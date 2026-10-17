@@ -26,6 +26,14 @@
  */
 import { z } from 'zod';
 
+export {
+  DOC_TITLE_BYTES,
+  docFileStem,
+  docTitleFromBytes,
+  docTitleFromHead,
+  docTitleFromText,
+} from './doc-title.js';
+
 /** One doc in a space's index. */
 export const DocIndexEntrySchema = z.object({
   /** Relative to the space root: forward slashes, no leading slash, `.md` kept. */
@@ -41,8 +49,18 @@ export type DocIndexEntry = z.infer<typeof DocIndexEntrySchema>;
 
 /** `GET /api/documents/index`: every doc in one space. */
 export const DocIndexSchema = z.object({
+  /**
+   * The space's folder on the server, symlinks resolved. A file the canvas
+   * opened by an absolute path is placed in the space against this as well as
+   * against the working directory the client asked with.
+   */
+  root: z.string(),
   docs: z.array(DocIndexEntrySchema),
-  /** True when the walk stopped at a limit, so some docs are not listed. */
+  /**
+   * True when the walk stopped at a limit (docs, folders, depth or time), so
+   * some docs are not listed. A target that matches nothing listed is then
+   * not missing until `GET /api/documents/resolve` says so.
+   */
   truncated: z.boolean(),
 });
 
@@ -53,6 +71,29 @@ export type DocIndex = z.infer<typeof DocIndexSchema>;
 export const DocIndexQuerySchema = z.object({
   cwd: z.string().min(1),
 });
+
+/** `GET /api/documents/resolve` query: one target, looked for beyond the index's limits. */
+export const DocResolveQuerySchema = z.object({
+  cwd: z.string().min(1),
+  /** What the author typed before `#` and `|`. */
+  target: z.string().min(1).max(1000),
+  /** The linking doc's path in the space, for the nearest-doc rule. */
+  from: z.string().min(1).optional(),
+});
+
+/** `GET /api/documents/resolve`: the doc a target names, if one was found. */
+export const DocResolveSchema = z.object({
+  /** The doc, or `null` when none was found. */
+  doc: DocIndexEntrySchema.nullable(),
+  /**
+   * True when the whole space was looked through, so a `null` doc really is
+   * missing. False when the look stopped at a limit first.
+   */
+  complete: z.boolean(),
+});
+
+/** The answer to one targeted resolve. */
+export type DocResolve = z.infer<typeof DocResolveSchema>;
 
 /** The file extension a doc has. */
 export const DOC_EXTENSION = '.md';
@@ -153,9 +194,12 @@ export function relativeDocHref(
   heading: string | null = null
 ): string {
   const anchor = heading && heading.trim() !== '' ? `#${docHeadingAnchor(heading)}` : '';
-  if (fromPath === toPath && anchor) return anchor;
-  const from = segments(fromPath === null ? '' : folderOf(fromPath));
-  const to = toPath.split('/');
+  // Compared in one normal form: a file system may hand back NFD names.
+  const fromNfc = fromPath === null ? null : fromPath.normalize('NFC');
+  const toNfc = toPath.normalize('NFC');
+  if (fromNfc === toNfc && anchor) return anchor;
+  const from = segments(fromNfc === null ? '' : folderOf(fromNfc));
+  const to = toNfc.split('/');
   let common = 0;
   while (common < from.length && common < to.length - 1 && from[common] === to[common]) common += 1;
   const up = Array.from({ length: from.length - common }, () => '..');

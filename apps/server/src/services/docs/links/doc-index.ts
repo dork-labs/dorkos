@@ -2,27 +2,36 @@
  * The docs in one space, for wiki links and the `[[` menu (DOR-2982).
  *
  * A doc is a `.md` file under the space's root ({@link resolveDocSpace}). The
- * walk skips dot-folders, dependency and build folders, and symlinks (a link
- * could point outside the space), and it stops at {@link DOC_INDEX_LIMITS},
- * saying so with `truncated`. Each doc's title comes from the first few KB of
- * the file only: frontmatter `title:`, else the first `# ` heading outside a
- * code block, else the file name.
+ * walk goes breadth first, nearest folders first, and skips dot-folders,
+ * dependency and build folders, and symlinks (a link could point outside the
+ * space). It stops at its {@link DocIndexLimits} (docs, folders, depth, and a
+ * time budget) and says so with `truncated`. Each doc's title comes from its
+ * first few KB only (`@dorkos/shared/doc-title`).
  *
  * **Why the folders are walked on every request, and only the titles are
- * cached.** The client asks again right after a doc is created, renamed or
- * saved, so a link to it stops showing as missing; a cache over the listing
- * would answer that request with the old list. Listing folders is cheap.
- * Reading files is the cost, so a title is kept per file and reused while the
- * file's modified time and size are unchanged. Two requests for one space at
- * once share one walk.
+ * cached.** The client asks again right after a doc is created or renamed, so
+ * a link to it stops showing as missing; a cache over the listing would
+ * answer that request with the old list. Listing folders is cheap. Reading
+ * files is the cost, so a title is kept per file and reused while the file's
+ * identity, modified time and size are unchanged.
+ *
+ * **Requests that arrive during a walk wait for the next one.** A walk that
+ * is already running may have listed a folder before the change the new
+ * request is asking about, so its answer is never handed to a request that
+ * arrived after it started. Every request that arrives while one walk runs
+ * shares one follow-up walk, started when the running one ends.
  *
  * @module server/services/docs/links/doc-index
  */
+import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   DOC_EXTENSION,
+  DOC_TITLE_BYTES,
+  docFileStem,
   docSlug,
+  docTitleFromBytes,
   type DocIndex,
   type DocIndexEntry,
 } from '@dorkos/shared/doc-links';
@@ -37,16 +46,16 @@ export interface DocIndexLimits {
   maxDepth: number;
   /** The most folders read. */
   maxFolders: number;
-  /** How much of each doc is read for its title, in bytes. */
-  titleBytes: number;
+  /** How long one walk may take, titles included, before it stops. */
+  budgetMs: number;
 }
 
-/** The limits every live walk uses. */
+/** The limits the doc index walks with: enough for the `[[` menu, quick to answer. */
 export const DOC_INDEX_LIMITS: DocIndexLimits = {
   maxDocs: 2000,
   maxDepth: 8,
   maxFolders: 2000,
-  titleBytes: 4096,
+  budgetMs: 1500,
 };
 
 /** Folders that hold dependencies or build output, never a person's docs. */
@@ -60,105 +69,62 @@ const SKIPPED_FOLDERS = new Set([
 ]);
 
 /** How many doc heads are read at once. */
-const READ_CONCURRENCY = 32;
+const READ_CONCURRENCY = 8;
 
 /** Titles kept before the cache starts over. */
 const TITLE_CACHE_LIMIT = 20_000;
 
+/**
+ * Opens a doc for its title without following a symlink, and without waiting
+ * on a FIFO or device that was swapped in after the folder was listed.
+ * `O_NOFOLLOW` does not exist on Windows, where it is left out.
+ */
+const OPEN_FLAGS =
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
+
 /** A title, and the file state it was read from. */
 interface CachedTitle {
+  ino: number;
   mtimeMs: number;
   size: number;
   title: string;
 }
 
 const titleCache = new Map<string, CachedTitle>();
-const inFlight = new Map<string, Promise<DocIndex>>();
-
-/** The file name without `.md`. */
-function fileStem(fileName: string): string {
-  return fileName.slice(0, fileName.length - DOC_EXTENSION.length);
-}
 
 /**
- * A one-line frontmatter value: without the quotes YAML allows around it, or
- * without a trailing ` # comment` when unquoted. A block scalar (`|`, `>`)
- * starts on the next lines, which this does not read, so it gives `''`.
+ * A doc's title, read through one handle: the file is opened first, checked
+ * to be a regular file on that same handle, and only then read, so nothing
+ * swapped in between the listing and the read is ever read. The cached title
+ * is reused while the file is unchanged.
  */
-function frontmatterValue(value: string): string {
-  const trimmed = value.trim();
-  const quoted = /^(["'])(.*)\1$/.exec(trimmed);
-  if (quoted) return quoted[2]!.trim();
-  if (/^[|>][+-]?\d*$/.test(trimmed)) return '';
-  return trimmed.replace(/\s+#.*$/, '').trim();
-}
-
-/**
- * A doc's title from the start of its text.
- *
- * @param head - The first bytes of the doc, decoded. A last line cut short
- *   by the read must already be dropped.
- * @param fileName - The doc's file name, the title when the text gives none.
- */
-export function docTitleFromHead(head: string, fileName: string): string {
-  const lines = head.replace(/^\uFEFF/, '').split(/\r?\n/);
-  let line = 0;
-  if (lines[0] === '---') {
-    for (line = 1; line < lines.length; line += 1) {
-      const text = lines[line]!;
-      if (text === '---' || text === '...') break;
-      const title = /^title:(.*)$/.exec(text);
-      if (title) {
-        const value = frontmatterValue(title[1]!);
-        if (value !== '') return value;
-      }
-    }
-    line += 1;
-  }
-  let fence: string | null = null;
-  for (; line < lines.length; line += 1) {
-    const text = lines[line]!;
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(text)?.[1];
-    if (marker) {
-      if (fence === null) fence = marker[0]!;
-      else if (marker[0] === fence) fence = null;
-      continue;
-    }
-    if (fence !== null) continue;
-    const heading = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(text);
-    if (heading && heading[1]!.trim() !== '') return heading[1]!.trim();
-  }
-  return fileStem(fileName);
-}
-
-/** Read the start of one doc and work out its title. */
-async function readTitle(absolute: string, fileName: string, limit: number): Promise<string> {
-  const handle = await fs.open(absolute, 'r');
+async function titleFor(absolute: string, fileName: string): Promise<string> {
+  let handle: fs.FileHandle | undefined;
   try {
-    const buffer = Buffer.alloc(limit);
-    const { bytesRead } = await handle.read(buffer, 0, limit, 0);
-    let head = buffer.subarray(0, bytesRead).toString('utf8');
-    // A read that filled the buffer may have cut the last line in half.
-    if (bytesRead === limit) head = head.slice(0, Math.max(0, head.lastIndexOf('\n')));
-    return docTitleFromHead(head, fileName);
-  } finally {
-    await handle.close();
-  }
-}
-
-/** A doc's title, read again only when the file changed since last time. */
-async function titleFor(absolute: string, fileName: string, limits: DocIndexLimits) {
-  try {
-    const stat = await fs.stat(absolute);
+    handle = await fs.open(absolute, OPEN_FLAGS);
+    const stat = await handle.stat();
+    if (!stat.isFile()) return docFileStem(fileName);
     const cached = titleCache.get(absolute);
-    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.title;
-    const title = await readTitle(absolute, fileName, limits.titleBytes);
+    if (
+      cached &&
+      cached.ino === stat.ino &&
+      cached.mtimeMs === stat.mtimeMs &&
+      cached.size === stat.size
+    ) {
+      return cached.title;
+    }
+    const buffer = Buffer.alloc(DOC_TITLE_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, DOC_TITLE_BYTES, 0);
+    const title = docTitleFromBytes(buffer.subarray(0, bytesRead), fileName);
     if (titleCache.size >= TITLE_CACHE_LIMIT) titleCache.clear();
-    titleCache.set(absolute, { mtimeMs: stat.mtimeMs, size: stat.size, title });
+    titleCache.set(absolute, { ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size, title });
     return title;
   } catch {
-    // Gone or unreadable since the folder was listed: the name still links.
-    return fileStem(fileName);
+    // Gone, unreadable, or swapped for a symlink since the folder was listed:
+    // nothing is read, and the file name still links.
+    return docFileStem(fileName);
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -172,7 +138,8 @@ interface FoundDoc {
 /** Walk the space's folders, breadth first, and collect its doc files. */
 async function walk(
   root: string,
-  limits: DocIndexLimits
+  limits: DocIndexLimits,
+  deadline: number
 ): Promise<{ found: FoundDoc[]; truncated: boolean }> {
   const found: FoundDoc[] = [];
   const queue: { absolute: string; relative: string; depth: number }[] = [
@@ -181,6 +148,7 @@ async function walk(
   let folders = 1;
   let truncated = false;
   for (let next = 0; next < queue.length; next += 1) {
+    if (next > 0 && Date.now() >= deadline) return { found, truncated: true };
     const folder = queue[next]!;
     let entries;
     try {
@@ -211,42 +179,91 @@ async function walk(
   return { found, truncated };
 }
 
-/** Walk once and title every doc. */
+/** Walk once and title every doc, within the time budget. */
 async function build(space: DocSpace, limits: DocIndexLimits): Promise<DocIndex> {
-  const { found, truncated } = await walk(space.root, limits);
+  const deadline = Date.now() + limits.budgetMs;
+  const walked = await walk(space.root, limits, deadline);
+  let truncated = walked.truncated;
   const docs: DocIndexEntry[] = [];
-  for (let start = 0; start < found.length; start += READ_CONCURRENCY) {
-    const batch = found.slice(start, start + READ_CONCURRENCY);
-    const titles = await Promise.all(
-      batch.map((doc) => titleFor(doc.absolute, doc.fileName, limits))
-    );
+  for (let start = 0; start < walked.found.length; start += READ_CONCURRENCY) {
+    if (Date.now() >= deadline) {
+      truncated = true;
+      break;
+    }
+    const batch = walked.found.slice(start, start + READ_CONCURRENCY);
+    const titles = await Promise.all(batch.map((doc) => titleFor(doc.absolute, doc.fileName)));
     batch.forEach((doc, i) => {
-      docs.push({ path: doc.relative, title: titles[i]!, slug: docSlug(fileStem(doc.fileName)) });
+      docs.push({
+        path: doc.relative,
+        title: titles[i]!,
+        slug: docSlug(docFileStem(doc.fileName)),
+      });
     });
   }
   docs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { docs, truncated };
+  return { root: space.root, docs, truncated };
+}
+
+/** The walk running for one space, and the one queued behind it. */
+interface Walks {
+  running?: Promise<DocIndex>;
+  queued?: Promise<DocIndex>;
+}
+
+/** Walks per limits (the index and the targeted resolve never share one), per space. */
+const walksByLimits = new WeakMap<DocIndexLimits, Map<string, Walks>>();
+
+/** Start a walk now and record it as running until it ends. */
+function startWalk(
+  walks: Map<string, Walks>,
+  state: Walks,
+  space: DocSpace,
+  limits: DocIndexLimits
+): Promise<DocIndex> {
+  const started = build(space, limits);
+  state.running = started;
+  const settle = () => {
+    if (state.running === started) state.running = undefined;
+    if (!state.running && !state.queued) walks.delete(space.key);
+  };
+  started.then(settle, settle);
+  return started;
 }
 
 /**
- * Every doc in one space: its path, title and slug, sorted by path.
+ * Every doc in one space: its path, title and slug, sorted by path, with the
+ * space's resolved root.
+ *
+ * The answer always comes from a walk that started after this call: one
+ * already running is waited out, never reused (see the module comment).
  *
  * @param space - The space, from {@link resolveDocSpace}.
- * @param limits - How far to walk; {@link DOC_INDEX_LIMITS} unless a test says otherwise.
+ * @param limits - How far to walk; {@link DOC_INDEX_LIMITS} unless said otherwise.
  */
 export function buildDocIndex(
   space: DocSpace,
   limits: DocIndexLimits = DOC_INDEX_LIMITS
 ): Promise<DocIndex> {
-  const running = inFlight.get(space.key);
-  if (running) return running;
-  const started = build(space, limits).finally(() => inFlight.delete(space.key));
-  inFlight.set(space.key, started);
-  return started;
+  let walks = walksByLimits.get(limits);
+  if (!walks) {
+    walks = new Map();
+    walksByLimits.set(limits, walks);
+  }
+  const map = walks;
+  const state = map.get(space.key) ?? {};
+  map.set(space.key, state);
+  if (!state.running) return startWalk(map, state, space, limits);
+  if (!state.queued) {
+    const after = () => {
+      state.queued = undefined;
+      return startWalk(map, state, space, limits);
+    };
+    state.queued = state.running.then(after, after);
+  }
+  return state.queued;
 }
 
-/** Forget every cached title and running walk. For tests. */
+/** Forget every cached title. For tests. */
 export function resetDocIndexCacheForTests(): void {
   titleCache.clear();
-  inFlight.clear();
 }
