@@ -339,10 +339,10 @@ See `contributing/design-system.md` for the full FilterBar component specificati
 ```tsx
 // ❌ Don't use pure black/white
 <div className="bg-white text-black dark:bg-black dark:text-white">
-  // Harsh, not Calm Tech philosophy
+  // Harsh: pure white glares, pure black is too stark
 </div>
 
-// ✅ Use tinted neutrals from tokens
+// ✅ Use the off-white and near-black neutrals from tokens
 <div className="bg-background text-foreground">
   // Rich neutrals: hsl(0 0% 98%) in light, hsl(0 0% 4%) in dark
 </div>
@@ -405,14 +405,9 @@ The "Calm Tech" design language specifications:
 | **Shadow hierarchy**   | soft → elevated → floating → modal                      |
 | **Container widths**   | narrow (42rem), default (56rem), wide (72rem)           |
 
-### Core Principles
+### Principles
 
-| Principle                   | Application                        |
-| --------------------------- | ---------------------------------- |
-| **Clarity over decoration** | Every element earns its place      |
-| **Soft depth over flat**    | Subtle shadows create hierarchy    |
-| **Generous space**          | Breathing room makes content shine |
-| **Micro-delight**           | Thoughtful, restrained animations  |
+The design principles live in one place: [design-system.md](design-system.md) → Design Philosophy and Anti-Patterns (honesty of materials, no fake depth, calm over stimulation, readability over decoration). This guide covers how to style, not what to design; where the two disagree, the design system wins.
 
 ## Adding a New Theme Token
 
