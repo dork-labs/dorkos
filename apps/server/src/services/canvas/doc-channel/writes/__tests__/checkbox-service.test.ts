@@ -1,0 +1,948 @@
+import { randomUUID } from 'node:crypto';
+import {
+  readFile,
+  realpath,
+  stat,
+  chmod,
+  writeFile,
+  readdir,
+  unlink,
+  link,
+} from 'node:fs/promises';
+import { join } from 'node:path';
+import { fork } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
+import { afterEach, expect, it } from 'vitest';
+import { canvasDocChannels, eq, type DbTransaction } from '@dorkos/db';
+import { fixture as makeFixture, AuthorityRefused } from './checkbox-fixture.js';
+import { DocCheckboxWriteService } from '../checkbox-service.js';
+import {
+  CanonicalFileWriteCoordinator,
+  CanonicalFileIdentityChangedError,
+} from '../canonical-writer.js';
+import type {
+  CheckboxAuthorityPorts,
+  CheckboxRequest,
+  VerifiedCheckboxAuthority,
+  CheckboxCompletionPorts,
+  CheckboxServiceOptions,
+} from '../checkbox-service.js';
+import type { DocChannelActor } from '../../authorization.js';
+import type { DocWriteIntentRow } from '../../store.js';
+import { rawByteHash } from '../checkbox-bytes.js';
+import { recoverCheckboxPage } from '../write-recovery.js';
+import { VerifiedCheckboxAuthoritySchema } from '../checkbox-evidence.js';
+import { FROM } from '../../__tests__/batch-fixtures.js';
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
+});
+async function fixture(options: CheckboxServiceOptions = {}) {
+  const h = await makeFixture(options);
+  cleanups.push(h.cleanup);
+  return h;
+}
+it('writes exactly one raw marker, preserves mode/BOM/CRLF and atomically completes original event/outbox/receipt', async () => {
+  const h = await fixture();
+  await chmod(h.path, 0o640);
+  const input = await h.request();
+  const before = await readFile(h.path);
+  const result = await h.service.toggle(input, h.actor);
+  expect(result.status).toBe('changed');
+  const after = await readFile(h.path);
+  expect([...after].filter((value, index) => value !== before[index])).toHaveLength(1);
+  expect(after.toString()).toBe('\ufeff- [x] café😀\r\n- [ ] repeated\r\n');
+  expect((await stat(h.path)).mode & 0o777).toBe(0o640);
+  expect(h.row().status).toBe('committed');
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  expect(await h.service.toggle(input, h.actor)).toEqual(result);
+  expect(await h.service.toggle({ ...input, done: false }, h.actor)).toMatchObject({
+    status: 'conflict',
+  });
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  expect(h.notices).toEqual([h.documentId]);
+});
+it('no-op and verified stale version produce durable original receipts and no changed work', async () => {
+  const h = await fixture();
+  const noOp = await h.request(false);
+  expect((await h.service.toggle(noOp, h.actor)).status).toBe('no_op');
+  const conflict = { ...(await h.request()), expectedFileVersion: '0'.repeat(64) };
+  expect((await h.service.toggle(conflict, h.actor)).status).toBe('conflict');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+it('checks current grant/editor lock before effects and rechecks authority after async staging', async () => {
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point) => {
+      if (point === 'staged') h.revoke();
+    },
+  });
+  const before = await readFile(h.path);
+  const input = await h.request();
+  await expect(h.service.toggle(input, h.actor)).rejects.toThrow('authority');
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row().status).toBe('conflict');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  const other = await fixture();
+  other.lock();
+  await expect(other.service.toggle(await other.request(), other.actor)).rejects.toThrow(
+    'authority'
+  );
+  expect(other.row()).toBeUndefined();
+});
+it('post-effect revoked authority retains evidence and fence without completing work', async () => {
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point) => {
+      if (point === 'verified') h.revoke();
+    },
+  });
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('authority');
+  expect((await readFile(h.path)).toString()).toContain('[x]');
+  expect(h.row().status).toBe('in_doubt');
+  expect(h.service.fenced(h.path)).toBe(true);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+it('completion rollback preserves replaced evidence and recovery commits once without another rename', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  const input = await h.request();
+  await expect(h.service.toggle(input, h.actor)).rejects.toThrow('completion rollback');
+  expect(h.row().status).toBe('replaced');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  const inode = (await stat(h.path)).ino;
+  h.failCompletion(false);
+  const [a, b] = await Promise.all([
+    h.service.recover(h.row().intentId),
+    h.service.recover(h.row().intentId),
+  ]);
+  expect(a).toEqual(b);
+  expect(a.status).toBe('changed');
+  expect((await stat(h.path)).ino).toBe(inode);
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+});
+it('rejects async current/host ports, retires SQL handles and rolls back all completion rows', async () => {
+  const h = await fixture();
+  const input = await h.request();
+  h.completion.completeVerified = (async (_intent: DocWriteIntentRow, tx: DbTransaction) => {
+    await Promise.resolve();
+    tx.update(canvasDocChannels).set({ closedAt: new Date().toISOString() }).run();
+    throw new Error('late');
+  }) as unknown as CheckboxCompletionPorts['completeVerified'];
+  await expect(h.service.toggle(input, h.actor)).rejects.toThrow('synchronous');
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(h.store.getChannel(h.documentId)?.closedAt).toBeNull();
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+it('stop drains held FS preparation before DB disposal and prevents completion', async () => {
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    start = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  const h = await fixture({
+    checkpoint: async (point) => {
+      if (point === 'prepared') {
+        entered();
+        await held;
+      }
+    },
+  });
+  const operation = h.service.toggle(await h.request(), h.actor);
+  const refusal = expect(operation).rejects.toThrow('not available');
+  await start;
+  let drained = false;
+  const stop = h.service.stop().then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  expect(drained).toBe(false);
+  release();
+  await stop;
+  await refusal;
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  await expect(recoverCheckboxPage(h.service)).rejects.toThrow('not available');
+});
+it('quarantines corrupted evidence and unknown after-state, retaining path fences and zero changed work', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  await writeFile(h.path, 'external unknown');
+  expect((await h.service.recover(h.row().intentId)).status).toBe('in_doubt');
+  expect(h.service.fenced(h.path)).toBe(true);
+  h.db.$client.prepare("UPDATE canvas_doc_write_intents SET evidence='{}'").run();
+  const page = await recoverCheckboxPage(h.service);
+  expect(page).toMatchObject({ selected: 1, verified: 0, retryableFailures: 1, hasMore: false });
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('requires current access before duplicate disclosure without reinterpreting relocated inputs', async () => {
+  const h = await fixture();
+  const input = await h.request();
+  const original = await h.service.toggle(input, h.actor);
+  const hash = h.row().envelopeHash;
+  h.authority.requireAccess = () => {
+    throw new AuthorityRefused('private access');
+  };
+  await expect(h.service.toggle(input, h.actor)).rejects.toThrow('private access');
+  expect(h.row().envelopeHash).toBe(hash);
+  h.authority.requireAccess = () => undefined;
+  h.authority.preflight = async () => {};
+  h.approved.binding.canonicalPath = join(h.dir, 'relocated.md');
+  expect(await h.service.toggle(input, h.actor)).toEqual(original);
+  expect(h.row().envelopeHash).toBe(hash);
+});
+it('retains replaced evidence on transient recovery errors and quarantines only typed authority loss', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  const original = h.row();
+  h.authority.prepareRecovery = async () => {
+    throw new Error('storage unavailable');
+  };
+  await expect(h.service.recover(original.intentId)).rejects.toThrow('storage unavailable');
+  expect(h.row()).toEqual(original);
+  h.authority.prepareRecovery = async () => {
+    throw new AuthorityRefused('owner lost');
+  };
+  await expect(h.service.recover(original.intentId)).rejects.toThrow('owner lost');
+  expect(h.row().status).toBe('in_doubt');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+it.each(['thenable', 'throw', 'nonboolean'] as const)(
+  'classification %s never destroys retryable recovery evidence',
+  async (kind) => {
+    const h = await fixture();
+    h.failCompletion(true);
+    await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+    const original = h.row();
+    h.authority.prepareRecovery = async () => {
+      throw new Error('unavailable');
+    };
+    h.authority.isAuthorityRefusal = (() => {
+      if (kind === 'throw') throw new Error('classifier unavailable');
+      if (kind === 'thenable') return Promise.reject(new Error('late classifier'));
+      return 'yes';
+    }) as unknown as CheckboxAuthorityPorts['isAuthorityRefusal'];
+    await expect(h.service.recover(original.intentId)).rejects.toThrow('unavailable');
+    await Promise.resolve();
+    expect(h.row()).toEqual(original);
+  }
+);
+it('refuses async final authority before preparing any durable or filesystem effect', async () => {
+  const h = await fixture();
+  const before = await readFile(h.path);
+  h.authority.requireCurrent = (async (
+    _request: CheckboxRequest,
+    _actor: DocChannelActor,
+    _approved: VerifiedCheckboxAuthority,
+    tx: DbTransaction
+  ) => {
+    await Promise.resolve();
+    tx.update(canvasDocChannels).set({ closedAt: new Date().toISOString() }).run();
+    return h.approved;
+  }) as unknown as CheckboxAuthorityPorts['requireCurrent'];
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('synchronous');
+  await Promise.resolve();
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row()).toBeUndefined();
+  expect(h.store.getChannel(h.documentId)?.closedAt).toBeNull();
+});
+
+it.each(['prepared', 'staged', 'replaced'] as const)(
+  'recovers genuine process loss at %s without reapplying a marker',
+  async (point) => {
+    const seed = await fixture();
+    const request = await seed.request();
+    const originalPhysical = await stat(seed.path, { bigint: true });
+    await seed.service.stop();
+    seed.db.$client.close();
+    const child = fork(
+      fileURLToPath(new URL('./checkbox-crash-worker.ts', import.meta.url)),
+      [
+        point,
+        JSON.stringify({
+          dir: seed.dir,
+          documentId: seed.documentId,
+          grantId: seed.grantId,
+          approved: seed.approved,
+          request,
+        }),
+      ],
+      { execArgv: ['--import', 'tsx'], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }
+    );
+    let stderr = '';
+    child.stderr!.on('data', (data) => {
+      stderr += String(data);
+    });
+    const message = await new Promise<{
+      dir: string;
+      documentId: string;
+      grantId: string;
+      eventId: string;
+    }>((resolve, reject) => {
+      child.once('message', (data) =>
+        resolve(data as { dir: string; documentId: string; grantId: string; eventId: string })
+      );
+      child.once('exit', (code) => reject(new Error(`Worker exited ${code}: ${stderr}`)));
+    });
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    const h = await makeFixture({}, message);
+    cleanups.push(h.cleanup);
+    const original = h.row();
+    expect(original.eventId).toBe(message.eventId);
+    expect(original.status).toBe('prepared');
+    expect(h.service.validate(original)).toMatchObject({
+      v: 2,
+      originalIdentity: {
+        device: String(originalPhysical.dev),
+        inode: String(originalPhysical.ino),
+      },
+    });
+    const bytes = await readFile(h.path),
+      inode = (await stat(h.path)).ino;
+    const receipt = await h.service.recover(original.intentId);
+    expect(receipt.status).toBe(point === 'replaced' ? 'changed' : 'in_doubt');
+    expect(await readFile(h.path)).toEqual(bytes);
+    expect((await stat(h.path)).ino).toBe(inode);
+    expect(h.counts()).toEqual({
+      events: { n: point === 'replaced' ? 1 : 0 },
+      batches: { n: point === 'replaced' ? 1 : 0 },
+    });
+    if (point === 'replaced') expect(await h.service.recover(original.intentId)).toEqual(receipt);
+    expect(h.row().envelopeHash).toBe(original.envelopeHash);
+    expect((await readdir(h.dir)).filter((name) => name.startsWith('.dork-checkbox-'))).toEqual([]);
+  }
+);
+
+it('refuses a newer grant revision after staging and freezes the original approval evidence', async () => {
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point) => {
+      if (point === 'staged') h.approved.grantRevision++;
+    },
+  });
+  const before = await readFile(h.path);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('authority changed');
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row().status).toBe('conflict');
+  expect(
+    h.service.validate(h.store.getWriteIntent(h.row().intentId)!).authority.grantRevision
+  ).toBe(1);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+it.each(['staged', 'verified'] as const)(
+  'external byte changes at %s never produce routable changed work',
+  async (point) => {
+    const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+      checkpoint: async (current) => {
+        if (current === point) await writeFile(h.path, 'external source');
+      },
+    });
+    await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('changed');
+    expect(await readFile(h.path, 'utf8')).toBe('external source');
+    expect(h.row().status).toBe(point === 'staged' ? 'conflict' : 'in_doubt');
+    expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  }
+);
+it('recovery rejects internally inconsistent marker evidence even when the after hash matches', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  h.db.$client
+    .prepare("UPDATE canvas_doc_write_intents SET evidence=json_set(evidence,'$.markerOffset',20)")
+    .run();
+  expect((await h.service.recover(h.row().intentId)).status).toBe('in_doubt');
+  expect(h.row().status).toBe('in_doubt');
+  expect(h.service.fenced(h.path)).toBe(true);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('bounded recovery progresses through 101 original intents with a stable keyset and no effects', async () => {
+  const h = await fixture();
+  const before = await readFile(h.path);
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  await writeFile(h.path, before);
+  const base = h.store.getWriteIntent(h.row().intentId)!;
+  h.db.$client.prepare("UPDATE canvas_doc_write_intents SET status='prepared'").run();
+  for (let i = 0; i < 100; i++) {
+    const intentId = randomUUID(),
+      eventId = randomUUID();
+    const input = { ...(base.input as CheckboxRequest), eventId };
+    const evidence = {
+      ...h.service.validate(base),
+      tempPath: join(h.dir, `.dork-checkbox-${intentId}.tmp`),
+    };
+    h.store.transaction((tx) =>
+      h.store.insertWriteIntent(
+        {
+          ...base,
+          intentId,
+          eventId,
+          input,
+          envelopeHash: rawByteHash(Buffer.from(JSON.stringify(input))),
+          evidence,
+          status: 'prepared',
+        },
+        tx
+      )
+    );
+  }
+  const one = await recoverCheckboxPage(h.service);
+  expect(one).toMatchObject({ selected: 100, verified: 0, retryableFailures: 0, hasMore: true });
+  const two = await recoverCheckboxPage(h.service, one.cursor);
+  expect(two).toMatchObject({ selected: 1, verified: 0, retryableFailures: 0, hasMore: false });
+  expect(one.cursor).not.toEqual(two.cursor);
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  await expect(
+    recoverCheckboxPage(h.service, { updatedAt: 'invalid', intentId: 'x' })
+  ).rejects.toThrow('cursor');
+  await expect(recoverCheckboxPage(h.service, undefined, 101)).rejects.toThrow('limit');
+});
+
+it('does not remove an unowned exclusive-create collider during failure or recovery', async () => {
+  let colliding = '';
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point, intent) => {
+      if (point === 'prepared') {
+        colliding = join(h.dir, `.dork-checkbox-${intent.intentId}.tmp`);
+        await writeFile(colliding, 'unowned');
+      }
+    },
+  });
+  const before = await readFile(h.path);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toMatchObject({
+    code: 'EEXIST',
+  });
+  expect(await readFile(colliding, 'utf8')).toBe('unowned');
+  expect((await h.service.recover(h.row().intentId)).status).toBe('in_doubt');
+  expect(await readFile(colliding, 'utf8')).toBe('unowned');
+  expect(await readFile(h.path)).toEqual(before);
+});
+it('rejects replaced staging inode before it can replace the source', async () => {
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point, intent) => {
+      if (point === 'staged') {
+        const path = join(h.dir, `.dork-checkbox-${intent.intentId}.tmp`);
+        await unlink(path);
+        await writeFile(path, 'unowned replacement');
+      }
+    },
+  });
+  const before = await readFile(h.path);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('replacement');
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row().status).toBe('conflict');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+it('retains the actual replacement lease against a new cooperating hardlink writer until host completion', async () => {
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((r) => {
+      release = r;
+    }),
+    started = new Promise<void>((r) => {
+      entered = r;
+    });
+  const h: Awaited<ReturnType<typeof fixture>> = await fixture({
+    checkpoint: async (point) => {
+      if (point === 'replaced') {
+        entered();
+        await held;
+      }
+    },
+  });
+  const input = await h.request();
+  const operation = h.service.toggle(input, h.actor);
+  await started;
+  const alias = join(h.dir, 'alias');
+  await link(h.path, alias);
+  let writes = 0;
+  const other = h.coordinator.withFiles([alias], async () => {
+    writes++;
+    await writeFile(alias, 'cooperating next write');
+  });
+  let result;
+  try {
+    await new Promise<void>((r) => setTimeout(r, 25));
+    expect(writes).toBe(0);
+  } finally {
+    release();
+    result = await operation;
+    await other;
+  }
+  expect(result!.status).toBe('changed');
+  expect(writes).toBe(1);
+  expect(h.row().status).toBe('committed');
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  expect(await h.service.toggle(input, h.actor)).toEqual(result);
+});
+
+it('cleans its exclusively-created temp if authority is lost before staging evidence can commit', async () => {
+  const h = await fixture();
+  const gate = h.authority.requireCurrent;
+  let checks = 0;
+  h.authority.requireCurrent = (...args) => {
+    if (++checks === 2) throw new AuthorityRefused('owner lost');
+    return gate(...args);
+  };
+  const before = await readFile(h.path);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('owner lost');
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row().status).toBe('conflict');
+  expect((await readdir(h.dir)).filter((name) => name.startsWith('.dork-checkbox-'))).toEqual([]);
+});
+
+it('retains exact evidence when a genuine exclusive SQLite read lock is released before recovery handles its error', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  const original = h.row(),
+    reader = h.store.getWriteIntent.bind(h.store),
+    lock = new Database(h.file);
+  h.db.$client.pragma('busy_timeout = 0');
+  h.db.$client.pragma('journal_mode = DELETE');
+  lock.exec('BEGIN EXCLUSIVE');
+  h.store.getWriteIntent = (...args) => {
+    try {
+      return reader(...args);
+    } catch (error) {
+      lock.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  try {
+    await expect(h.service.recover(original.intentId)).rejects.toThrow();
+    expect(h.row()).toEqual(original);
+  } finally {
+    if (lock.inTransaction) lock.exec('ROLLBACK');
+    lock.close();
+    h.store.getWriteIntent = reader;
+  }
+});
+
+it('does not let a final callback rewrite the frozen approval baseline', async () => {
+  const h = await fixture();
+  const before = await readFile(h.path);
+  h.authority.requireCurrent = (_request, _actor, approved) => {
+    approved.grantRevision++;
+    return approved;
+  };
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow();
+  expect(await readFile(h.path)).toEqual(before);
+  expect(h.row()).toBeUndefined();
+});
+
+async function simultaneous(
+  kind: 'distinct' | 'same' | 'different-hash' = 'distinct',
+  resolveError?: Error,
+  expectedFileVersion?: string
+) {
+  const h = await fixture();
+  let release!: () => void, entered!: () => void, queued!: () => void, prepareBoth!: () => void;
+  const held = new Promise<void>((r) => {
+      release = r;
+    }),
+    prepared = new Promise<void>((r) => {
+      entered = r;
+    }),
+    pending = new Promise<void>((r) => {
+      queued = r;
+    }),
+    both = new Promise<void>((r) => {
+      prepareBoth = r;
+    });
+  let calls = 0,
+    preparations = 0;
+  const prepare = h.authority.prepare;
+  h.authority.prepare = async (...args) => {
+    const result = await prepare(...args);
+    if (++preparations === 2) prepareBoth();
+    await both;
+    return result;
+  };
+  const coordinator = new CanonicalFileWriteCoordinator({
+    assertOutsideTransaction: () => {
+      if (h.db.$client.inTransaction) throw new Error('SQL boundary');
+    },
+    resolve: async (path) => {
+      const canonicalPath = await realpath(path),
+        info = await stat(path, { bigint: true });
+      if (++calls === 3) queued();
+      if (calls === 5 && resolveError) throw resolveError;
+      return { canonicalPath, device: String(info.dev), inode: String(info.ino) };
+    },
+  });
+  const service = new DocCheckboxWriteService(
+    h.db,
+    h.store,
+    coordinator,
+    h.authority,
+    h.completion,
+    {
+      checkpoint: async (point) => {
+        if (point === 'prepared') {
+          entered();
+          await held;
+        }
+      },
+    }
+  );
+  cleanups.unshift(() => service.stop());
+  const firstInput = await h.request(),
+    secondInput =
+      kind === 'distinct'
+        ? {
+            ...(await h.request()),
+            ...(expectedFileVersion === undefined ? {} : { expectedFileVersion }),
+          }
+        : { ...firstInput, done: kind === 'same' ? firstInput.done : !firstInput.done };
+  const first = service.toggle(firstInput, h.actor);
+  const second = service.toggle(secondInput, h.actor).then(
+    (value) => ({ value, error: undefined }),
+    (error) => ({ value: undefined, error: error as unknown })
+  );
+  await prepared;
+  await pending;
+  return { ...h, service, firstInput, secondInput, release, first, second };
+}
+it('records a typed durable reload conflict for the exact simultaneous distinct stale-save case', async () => {
+  const h = await simultaneous();
+  h.release();
+  const first = await h.first,
+    second = await h.second;
+  expect(first.status).toBe('changed');
+  expect(second.value).toEqual({
+    status: 'conflict',
+    eventId: h.secondInput.eventId,
+    action: 'reload',
+  });
+  const row = h.service.find(h.documentId, h.secondInput.eventId)!;
+  expect(row).toMatchObject({
+    status: 'conflict',
+    errorCode: 'identity_changed_before_effect',
+    input: h.secondInput,
+    expectedVersion: h.secondInput.expectedFileVersion,
+  });
+  expect(h.service.validate(row)).toMatchObject({
+    preEffectRefusal: 'identity_changed',
+    markerOffset: null,
+    beforeMarker: null,
+    tempPath: null,
+    tempIdentity: null,
+    lineHash: null,
+  });
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  const inode = (await stat(h.path)).ino;
+  expect(await h.service.toggle(h.secondInput, h.actor)).toEqual(second.value);
+  expect(await h.service.recover(row.intentId)).toEqual(second.value);
+  expect((await stat(h.path)).ino).toBe(inode);
+});
+it.each(['same', 'different-hash'] as const)(
+  'simultaneous %s identity preserves the original receipt/hash without another intent',
+  async (kind) => {
+    const h = await simultaneous(kind);
+    h.release();
+    const first = await h.first,
+      second = await h.second;
+    expect(second.value).toEqual(
+      kind === 'same'
+        ? first
+        : { status: 'conflict', eventId: h.firstInput.eventId, action: 'reload' }
+    );
+    expect(
+      h.db.$client.prepare('SELECT count(*) AS n FROM canvas_doc_write_intents').get()
+    ).toEqual({ n: 1 });
+    expect(h.service.find(h.documentId, h.firstInput.eventId)!.envelopeHash).toBe(
+      rawByteHash(Buffer.from(JSON.stringify(h.firstInput)))
+    );
+    expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  }
+);
+it.each(['access', 'revoked', 'binding'] as const)(
+  'does not turn current %s refusal after waiting into a version conflict',
+  async (kind) => {
+    const h = await simultaneous();
+    const access = h.authority.requireAccess;
+    h.authority.requireAccess = (...args) => {
+      if (kind === 'access') throw new AuthorityRefused('access refused');
+      if (kind === 'revoked') h.revoke();
+      if (kind === 'binding') h.approved.binding.canonicalPath = join(h.dir, 'moved.md');
+      return access(...args);
+    };
+    h.release();
+    expect((await h.first).status).toBe('changed');
+    expect((await h.second).error).toBeInstanceOf(AuthorityRefused);
+    expect(h.service.find(h.documentId, h.secondInput.eventId)).toBeUndefined();
+    expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  }
+);
+it('does not launder corrupt original same-ID evidence into a normal hash conflict', async () => {
+  const h = await simultaneous('different-hash'),
+    access = h.authority.requireAccess;
+  h.authority.requireAccess = (...args) => {
+    h.db.$client.prepare("UPDATE canvas_doc_write_intents SET evidence='{}'").run();
+    return access(...args);
+  };
+  h.release();
+  expect((await h.first).status).toBe('changed');
+  expect((await h.second).error).toBeTruthy();
+  expect(h.db.$client.prepare('SELECT count(*) AS n FROM canvas_doc_write_intents').get()).toEqual({
+    n: 1,
+  });
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+});
+it('preserves arbitrary pre-callback resolver IO errors without a fabricated conflict', async () => {
+  const error = new Error('temporary IO');
+  const h = await simultaneous('distinct', error);
+  h.release();
+  await h.first;
+  expect((await h.second).error).toBe(error);
+  expect(h.service.find(h.documentId, h.secondInput.eventId)).toBeUndefined();
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+});
+it('rolls back a refused conflict insert without masking its real SQLite storage error', async () => {
+  const h = await simultaneous();
+  h.db.$client.exec(
+    "CREATE TRIGGER refuse_conflict BEFORE INSERT ON canvas_doc_write_intents WHEN NEW.status='conflict' BEGIN SELECT RAISE(ABORT,'conflict storage refused'); END"
+  );
+  h.release();
+  await h.first;
+  expect((await h.second).error).toBeTruthy();
+  expect(h.service.find(h.documentId, h.secondInput.eventId)).toBeUndefined();
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+});
+it('does not reinterpret identity-class errors from an already-entered callback as pre-effect conflicts', async () => {
+  const h = await fixture();
+  const error = new CanonicalFileIdentityChangedError();
+  h.completion.completeVerified = () => {
+    throw error;
+  };
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toBe(error);
+  expect(h.row().status).toBe('replaced');
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
+
+async function fileBackedFixture() {
+  const seed = await fixture();
+  const document = seed.canvas.open(FROM, 'agent-1', {
+    type: 'markdown',
+    sourcePath: seed.path,
+    content: (await readFile(seed.path)).toString(),
+  });
+  expect(document.id).toMatch(/^[a-f0-9]{32}$/);
+  expect(seed.documents.lookupIdentity(document.id)?.sourceKey).not.toBeNull();
+  seed.db
+    .update(canvasDocChannels)
+    .set({ openerAgentId: 'agent-1' })
+    .where(eq(canvasDocChannels.documentId, document.id))
+    .run();
+  seed.grants.configure(
+    document.id,
+    {
+      routes: [
+        {
+          id: 'route',
+          on: 'task.*',
+          to: 'agent:owner',
+          turn: { mode: 'coalesce', windowMs: 1000, maxBatch: 100 },
+        },
+      ],
+    },
+    seed.actor
+  );
+  const result = seed.grants.grant(
+    { documentId: document.id, routeId: 'route', expiresAt: '2026-10-02T00:00:00.000Z' },
+    seed.actor
+  );
+  if (result.kind !== 'granted') throw new Error('Expected actual file-backed grant');
+  await seed.service.stop();
+  seed.db.$client.close();
+  const h = await makeFixture(
+    {},
+    { dir: seed.dir, documentId: document.id, grantId: result.grant.grantId }
+  );
+  cleanups.push(h.cleanup);
+  return h;
+}
+it('accepts actual file-backed document identifiers through write, original retry and recovery without a second effect', async () => {
+  const h = await fileBackedFixture();
+  const input = await h.request();
+  const before = await readFile(h.path);
+  h.failCompletion(true);
+  await expect(h.service.toggle(input, h.actor)).rejects.toThrow('completion rollback');
+  expect(h.row()).toMatchObject({
+    documentId: h.documentId,
+    eventId: input.eventId,
+    status: 'replaced',
+  });
+  const after = await readFile(h.path);
+  expect([...after].filter((v, i) => v !== before[i])).toHaveLength(1);
+  const inode = (await stat(h.path)).ino;
+  h.failCompletion(false);
+  const receipt = await h.service.recover(h.row().intentId);
+  expect(receipt).toMatchObject({ receipt: { id: input.eventId }, status: 'changed' });
+  expect(await h.service.toggle(input, h.actor)).toEqual(receipt);
+  expect((await stat(h.path)).ino).toBe(inode);
+  expect(await readFile(h.path)).toEqual(after);
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  expect(h.store.getEvent(h.documentId, input.eventId)?.eventId).toBe(input.eventId);
+  expect(h.notices).toEqual([h.documentId]);
+});
+it.each(['', 'x'.repeat(201)])(
+  'rejects malformed document identity in requests and stored authority: %s',
+  async (documentId) => {
+    const h = await fixture();
+    const input = await h.request();
+    expect(VerifiedCheckboxAuthoritySchema.safeParse({ ...h.approved, documentId }).success).toBe(
+      false
+    );
+    expect(() => h.service.toggle({ ...input, documentId }, h.actor)).toThrow();
+    expect(h.row()).toBeUndefined();
+    expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  }
+);
+
+it.each(['not-a-sha256', 'opaque-revision:λ', 'v'.repeat(500)])(
+  'preserves opaque request version in unobserved pre-effect refusal through validation, retry and recovery: %s',
+  async (version) => {
+    const h = await simultaneous('distinct', undefined, version);
+    h.release();
+    expect((await h.first).status).toBe('changed');
+    const second = await h.second;
+    expect(second.error).toBeUndefined();
+    expect(second.value).toEqual({
+      status: 'conflict',
+      eventId: h.secondInput.eventId,
+      action: 'reload',
+    });
+    const row = h.service.find(h.documentId, h.secondInput.eventId)!;
+    expect(row).toMatchObject({
+      beforeHash: version,
+      afterHash: version,
+      expectedVersion: version,
+      input: h.secondInput,
+      errorCode: 'identity_changed_before_effect',
+    });
+    expect(h.service.validate(row)).toMatchObject({
+      preEffectRefusal: 'identity_changed',
+      markerOffset: null,
+      beforeMarker: null,
+      lineHash: null,
+      tempPath: null,
+      tempIdentity: null,
+    });
+    const before = await readFile(h.path),
+      inode = (await stat(h.path)).ino;
+    expect(await h.service.toggle(h.secondInput, h.actor)).toEqual(second.value);
+    expect(await h.service.recover(row.intentId)).toEqual(second.value);
+    expect(h.service.find(h.documentId, h.secondInput.eventId)).toEqual(row);
+    expect((await stat(h.path)).ino).toBe(inode);
+    expect(await readFile(h.path)).toEqual(before);
+    expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+  }
+);
+it('keeps opaque ordinary observed conflicts valid while requiring real observed hashes', async () => {
+  const h = await fixture();
+  const input = { ...(await h.request()), expectedFileVersion: 'not-a-sha256' };
+  const before = await readFile(h.path),
+    inode = (await stat(h.path)).ino;
+  const receipt = await h.service.toggle(input, h.actor);
+  expect(receipt).toEqual({ status: 'conflict', eventId: input.eventId, action: 'reload' });
+  const row = h.row();
+  expect(row.beforeHash).toBe(rawByteHash(before));
+  expect(row.afterHash).toBe(rawByteHash(before));
+  expect(h.service.validate(row).preEffectRefusal).toBeUndefined();
+  expect(await h.service.toggle(input, h.actor)).toEqual(receipt);
+  expect(await h.service.recover(row.intentId)).toEqual(receipt);
+  expect((await stat(h.path)).ino).toBe(inode);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  expect(() =>
+    h.service.validate({
+      ...row,
+      beforeHash: input.expectedFileVersion,
+      afterHash: input.expectedFileVersion,
+    })
+  ).toThrow();
+  expect(() =>
+    h.service.validate({
+      ...row,
+      evidence: { ...h.service.validate(row), preEffectRefusal: 'identity_changed' },
+    })
+  ).toThrow();
+});
+it.each(['', 'v'.repeat(501)])(
+  'refuses versions outside the shared opaque domain before any durable work: %s',
+  async (version) => {
+    const h = await fixture();
+    const input = { ...(await h.request()), expectedFileVersion: version };
+    const before = await readFile(h.path);
+    expect(() => h.service.toggle(input, h.actor)).toThrow();
+    expect(h.row()).toBeUndefined();
+    expect(await readFile(h.path)).toEqual(before);
+    expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+  }
+);
+it('does not let forged terminal flags bypass status, original version, identity or observed proof checks', async () => {
+  const h = await simultaneous('distinct', undefined, 'opaque-version');
+  h.release();
+  await h.first;
+  await h.second;
+  const row = h.service.find(h.documentId, h.secondInput.eventId)!;
+  const evidence = h.service.validate(row);
+  const mutations: DocWriteIntentRow[] = [
+    { ...row, status: 'prepared' },
+    { ...row, status: 'replaced' },
+    { ...row, errorCode: 'source_conflict' },
+    { ...row, beforeHash: 'different-version' },
+    { ...row, afterHash: 'different-version' },
+    { ...row, expectedVersion: 'different-version' },
+    { ...row, evidence: { ...evidence, preEffectRefusal: undefined } },
+    { ...row, evidence: { ...evidence, markerOffset: 5 } },
+    { ...row, evidence: { ...evidence, beforeMarker: 32 } },
+    { ...row, evidence: { ...evidence, lineHash: 'a'.repeat(64) } },
+    { ...row, evidence: { ...evidence, tempPath: h.path } },
+    { ...row, evidence: { ...evidence, tempIdentity: { device: '1', inode: '2' } } },
+    {
+      ...row,
+      evidence: {
+        ...evidence,
+        receipt: { status: 'conflict', eventId: randomUUID(), action: 'reload' },
+      },
+    },
+    {
+      ...row,
+      evidence: {
+        ...evidence,
+        receipt: { status: 'no_op', eventId: row.eventId, fileVersion: row.beforeHash },
+      },
+    },
+  ];
+  for (const corrupt of mutations) expect(() => h.service.validate(corrupt)).toThrow();
+  expect(h.service.find(h.documentId, h.secondInput.eventId)).toEqual(row);
+  expect(h.counts()).toEqual({ events: { n: 1 }, batches: { n: 1 } });
+});
+it('keeps every observed and mutation lifecycle hash strict regardless of an opaque original expected version', async () => {
+  const h = await fixture();
+  h.failCompletion(true);
+  await expect(h.service.toggle(await h.request(), h.actor)).rejects.toThrow('completion rollback');
+  const row = h.row();
+  for (const status of [
+    'prepared',
+    'replaced',
+    'in_doubt',
+    'committed',
+    'no_op',
+    'conflict',
+  ] as const) {
+    expect(() => h.service.validate({ ...row, status, beforeHash: 'opaque-version' })).toThrow();
+    expect(() => h.service.validate({ ...row, status, afterHash: 'opaque-version' })).toThrow();
+  }
+  expect(h.row()).toEqual(row);
+  expect(h.counts()).toEqual({ events: { n: 0 }, batches: { n: 0 } });
+});
