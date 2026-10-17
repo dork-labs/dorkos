@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(desktop): remember open tabs across quits, restarts and crashes (DOR-2986)'
+  - 'fix(desktop): harden tab restore after review (DOR-2986)'
 ---
 
 ### Added
