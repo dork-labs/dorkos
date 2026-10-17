@@ -17,6 +17,10 @@
 import WebSocket from 'ws';
 import { SESSION_RELAY_MAX_FRAME_LENGTH } from '@dorkos/shared/session-relay';
 import { logger } from '../../../lib/logger.js';
+import { recordAudit } from '../../audit/audit-trail.js';
+import { notify } from '../../notifications/notification-service.js';
+import { operatorAudience } from '../../notifications/notification-entitlement.js';
+import { eventFanOut } from '../event-fan-out.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { canExpose } from '../auth/exposure-guard.js';
 import { configManager } from '../config-manager.js';
@@ -27,7 +31,10 @@ import {
   withRelayPinLock,
   type RelayPin,
 } from './pin-store.js';
-import { liveRelayDeps, type SessionRelayWiring } from './live-deps.js';
+import { liveRelayDeps, relayOwnerActor, type SessionRelayWiring } from './live-deps.js';
+import { recordRelayAudit } from './relay-audit.js';
+import { RelayDeviceStore, announceNewDevice } from './relay-devices.js';
+import { RelayPresence } from './relay-presence.js';
 import { RelayDialer, type RelaySocket } from './relay-dialer.js';
 import { SessionRelayRequestServer } from './relay-request-server.js';
 
@@ -67,6 +74,38 @@ export function dialablePin(read: () => RelayPin | null = () => readRelayPin()):
   return pin && !pin.paused ? pin : null;
 }
 
+let devices: RelayDeviceStore | null = null;
+
+/**
+ * The browsers that have used chat from the web here, made on first use. A
+ * new one raises one `web.new_device` notification and one audit entry,
+ * naming the hub's label for it and nothing it said.
+ */
+export function sessionRelayDevices(): RelayDeviceStore {
+  devices ??= new RelayDeviceStore({
+    onNewDevice: announceNewDevice({
+      notify: (notice) => notify('web.new_device', notice),
+      audit: (entry) => recordRelayAudit({ owner: relayOwnerActor, recordAudit }, entry),
+    }),
+  });
+  return devices;
+}
+
+let presence: RelayPresence | null = null;
+
+/**
+ * Whether someone is using this computer from the web now, made on first use.
+ * Each change goes out as `session_relay_presence` on the global stream, to
+ * the owner's windows only.
+ */
+export function sessionRelayPresence(): RelayPresence {
+  presence ??= new RelayPresence({
+    devices: sessionRelayDevices(),
+    onChange: (next) => eventFanOut.broadcast('session_relay_presence', next, operatorAudience),
+  });
+  return presence;
+}
+
 let dialer: RelayDialer | null = null;
 
 /** This computer's relay dialer, made on first use. */
@@ -78,6 +117,11 @@ export function sessionRelayDialer(): RelayDialer {
     computerKey: () => computerSigningKey(),
     appVersion: SERVER_VERSION,
     server: new SessionRelayRequestServer(liveRelayDeps(() => wiring)),
+    onLinkState: (state) => sessionRelayPresence().update(state),
+    onDevice: (device) => {
+      sessionRelayDevices().seen(device);
+      sessionRelayPresence().deviceSeen(device.id);
+    },
     connect: (url, headers) =>
       new WebSocket(url, {
         headers,

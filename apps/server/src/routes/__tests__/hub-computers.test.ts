@@ -14,6 +14,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import {
   SESSION_RELAY_FEATURES,
+  type RelayDevice,
   type RelayError,
   type RelayRequest,
 } from '@dorkos/shared/session-relay';
@@ -47,6 +48,7 @@ const BASE = `/api/hub/computers/${COMPUTER}`;
 interface OpenedStream {
   sessionId: string;
   resume: string | undefined;
+  device: RelayDevice | undefined;
   onFrame: (frame: RelayStreamFrame) => void;
   onEnd: (error?: RelayError) => void;
   close: ReturnType<typeof vi.fn>;
@@ -64,10 +66,11 @@ function fakeComputer() {
         sessionId: string,
         resume: string | undefined,
         onFrame: OpenedStream['onFrame'],
-        onEnd: OpenedStream['onEnd']
+        onEnd: OpenedStream['onEnd'],
+        device?: RelayDevice
       ) => {
         const close = vi.fn();
-        streams.push({ sessionId, resume, onFrame, onEnd, close });
+        streams.push({ sessionId, resume, device, onFrame, onEnd, close });
         return close;
       }
     ),
@@ -299,7 +302,10 @@ describe('requests', () => {
   it('relays chats.list with only the agent id', async () => {
     const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
     expect(res.status).toBe(200);
-    expect(fake.computer.request).toHaveBeenCalledWith({ op: 'chats.list', agentId: AGENT });
+    expect(fake.computer.request).toHaveBeenCalledWith(
+      { op: 'chats.list', agentId: AGENT },
+      undefined
+    );
   });
 
   it('refuses ids that are not the protocol`s shapes', async () => {
@@ -314,12 +320,15 @@ describe('requests', () => {
       .post(`${BASE}/sessions/${SESSION}/messages`)
       .send({ content: 'secret plans', newChat: { agentId: AGENT } });
     expect(res.status).toBe(200);
-    expect(fake.computer.request).toHaveBeenCalledWith({
-      op: 'session.send',
-      sessionId: SESSION,
-      content: 'secret plans',
-      newChat: { agentId: AGENT },
-    });
+    expect(fake.computer.request).toHaveBeenCalledWith(
+      {
+        op: 'session.send',
+        sessionId: SESSION,
+        content: 'secret plans',
+        newChat: { agentId: AGENT },
+      },
+      undefined
+    );
     expect(audit.record).toHaveBeenCalledTimes(1);
     const entry = audit.record.mock.calls[0]![0];
     expect(entry).toMatchObject({
@@ -355,10 +364,13 @@ describe('requests', () => {
   it('interrupts, and records it', async () => {
     const res = await request(server).post(`${BASE}/sessions/${SESSION}/interrupt`);
     expect(res.status).toBe(200);
-    expect(fake.computer.request).toHaveBeenCalledWith({
-      op: 'session.interrupt',
-      sessionId: SESSION,
-    });
+    expect(fake.computer.request).toHaveBeenCalledWith(
+      {
+        op: 'session.interrupt',
+        sessionId: SESSION,
+      },
+      undefined
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'hub.relay.session.interrupt', outcome: 'ok' })
     );
@@ -373,11 +385,14 @@ describe('requests', () => {
       .post(`${BASE}/sessions/${SESSION}/answers`)
       .send({ toolCallId: 'tool_1', answers: { '0': 'yes' } });
     expect(res.status).toBe(409);
-    expect(fake.computer.request).toHaveBeenCalledWith({
-      op: 'interaction.respond',
-      sessionId: SESSION,
-      answer: { kind: 'answer', toolCallId: 'tool_1', answers: { '0': 'yes' } },
-    });
+    expect(fake.computer.request).toHaveBeenCalledWith(
+      {
+        op: 'interaction.respond',
+        sessionId: SESSION,
+        answer: { kind: 'answer', toolCallId: 'tool_1', answers: { '0': 'yes' } },
+      },
+      undefined
+    );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'hub.relay.interaction.answer', outcome: 'refused' })
     );
@@ -392,6 +407,63 @@ describe('requests', () => {
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
     expect(fake.computer.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('which browser asked', () => {
+  const IPHONE_SAFARI =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ' +
+    '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const SESSION_TOKEN = 'session-token-that-must-never-cross';
+
+  it('gives a browser without one its own device cookie, and names no device yet', async () => {
+    const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
+    expect(res.status).toBe(200);
+    const cookie = String(res.headers['set-cookie']);
+    expect(cookie).toMatch(
+      /^dorkos-device=[A-Za-z0-9_-]{22}; Path=\/; Max-Age=\d+; HttpOnly; SameSite=Lax/
+    );
+    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it('names the browser from its cookie and User-Agent, never with the sign-in token', async () => {
+    const res = await request(server)
+      .get(`${BASE}/agents/${AGENT}/chats`)
+      .set('Cookie', `better-auth.session_token=${SESSION_TOKEN}; dorkos-device=browser-id-0001`)
+      .set('User-Agent', IPHONE_SAFARI);
+    expect(res.status).toBe(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
+    const device = { id: 'browser-id-0001', label: 'Safari on iPhone' };
+    expect(fake.computer.request).toHaveBeenCalledWith(
+      { op: 'chats.list', agentId: AGENT },
+      device
+    );
+    expect(JSON.stringify(fake.computer.request.mock.calls)).not.toContain(SESSION_TOKEN);
+
+    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`, {
+      Cookie: `better-auth.session_token=${SESSION_TOKEN}; dorkos-device=browser-id-0001`,
+      'User-Agent': IPHONE_SAFARI,
+    });
+    await until(() => fake.streams.length === 1);
+    expect(fake.streams[0]!.device).toEqual(device);
+    sse.destroy();
+  });
+
+  it('gives a browser its device cookie on the chat stream too, which writes its own head', async () => {
+    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`);
+    await until(() => fake.streams.length === 1);
+    await until(() => sse.headers() !== undefined);
+    const cookie = String(sse.headers()?.['set-cookie']);
+    expect(cookie).toMatch(/^dorkos-device=[A-Za-z0-9_-]{22}; Path=\/;/);
+    expect(fake.streams[0]!.device).toBeUndefined();
+    sse.destroy();
+  });
+
+  it('names no device from a cookie this hub could not have set', async () => {
+    await request(server)
+      .get(`${BASE}/agents/${AGENT}/chats`)
+      .set('Cookie', 'dorkos-device=../../etc');
+    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), undefined);
   });
 });
 

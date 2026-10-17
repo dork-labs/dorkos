@@ -147,6 +147,12 @@ export const GENERIC_EVENTS = [
   // straight into the query cache the top-bar cup and Settings read. Counts
   // only; nothing in it names a session.
   'keep_awake_status',
+  // Whether someone is using this computer from the web right now, and from
+  // which browsers (step B3, DOR-2946): the whole presence, pushed on every
+  // change. `useRemotePresence` (features/web-access) writes it straight into
+  // the query cache the top-bar indicator reads. ADDRESSED: it names the
+  // owner's browsers, so no agent receives it.
+  'session_relay_presence',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

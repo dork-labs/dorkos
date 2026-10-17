@@ -21,6 +21,7 @@ import {
   Mail,
   MessageCircleQuestion,
   MessageSquare,
+  MonitorSmartphone,
   Puzzle,
   RotateCcw,
   ShieldQuestion,
@@ -43,6 +44,9 @@ const RUNTIMES_SETTINGS_TAB = 'runtimes';
 
 /** The Settings tab that lists every extension, where one can be turned on (DOR-2517). */
 const EXTENSIONS_SETTINGS_TAB = 'extensions';
+
+/** The Settings tab that holds Chat from the web, where it can be paused (DOR-2946). */
+const ACCOUNT_SETTINGS_TAB = 'account';
 
 /**
  * Where a notification row navigates.
@@ -102,6 +106,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // An agent's high-risk action in a connected app, waiting or done.
   'connector.destructive_pending': Hourglass,
   'connector.destructive_executed': CheckCircle2,
+  // A browser this computer had never seen used chat from the web (DOR-2946).
+  'web.new_device': MonitorSmartphone,
 };
 
 /** How loudly a notification draws. */
@@ -306,6 +312,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // the same place its phone-free arrival deep-links to
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
+  }
+  if (kind === 'web.new_device') {
+    // Where the owner pauses chat from the web if it wasn't them.
+    return { ...appRoutes.home(), search: { settings: ACCOUNT_SETTINGS_TAB } };
   }
   if (kind === 'heartbeat.credits-offer') {
     // The offer's card is on every agent's Heartbeat page; the team is where

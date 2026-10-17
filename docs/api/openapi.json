@@ -17458,7 +17458,8 @@
           "community.owner-replacement",
           "heartbeat.credits-offer",
           "connector.destructive_pending",
-          "connector.destructive_executed"
+          "connector.destructive_executed",
+          "web.new_device"
         ]
       },
       "NotificationTier": {
@@ -28865,6 +28866,318 @@
           },
           "404": {
             "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/presence": {
+      "get": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Whether someone is using this computer from the web",
+        "description": "Active while the relay is connected and the hub has at least one of its chats open, with when that began and the browsers seen since. Pushed as `session_relay_presence` on `GET /api/events` whenever it changes.",
+        "responses": {
+          "200": {
+            "description": "Whether someone is using this computer from the web",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "type": "string"
+                    },
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A caller presenting agent identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/devices": {
+      "get": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Browsers that used chat from the web here",
+        "description": "Every browser the hub named on a relayed request, by the hub's label, with when it was first and last seen. Most recent first; at most 50.",
+        "responses": {
+          "200": {
+            "description": "The browsers seen here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A caller presenting agent identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/presence/end": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "End use from the web now",
+        "description": "Closes the live connection and pauses the link, as Pause does. Resuming needs the owner's password.",
+        "responses": {
+          "200": {
+            "description": "Whether someone is using this computer from the web",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "type": "string"
+                    },
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This computer is not linked",
             "content": {
               "application/json": {
                 "schema": {
