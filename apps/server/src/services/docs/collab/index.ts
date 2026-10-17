@@ -22,12 +22,10 @@ export {
   DocChangedError,
   type DocAgentCaller,
   type DocJoinHandle,
-  type DocWriteResult,
 } from './doc-collab-service.js';
-export { DocRefusal, type ResolvedDoc } from './resolve-doc.js';
+export { DocRefusal } from './resolve-doc.js';
 export { docsEnabled } from './docs-enabled.js';
 export type { DocPeer } from './doc-sync.js';
-export type { DocFileWriter } from './live-doc.js';
 
 let service: DocCollabService | null = null;
 

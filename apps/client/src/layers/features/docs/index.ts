@@ -15,10 +15,4 @@ export { useDocEmbeds } from './model/use-doc-embeds';
 export { SaveAsWebPageButton, type SaveAsWebPageButtonProps } from './ui/SaveAsWebPageButton';
 export { DocCommentsFrame, type DocCommentsFrameProps } from './ui/DocCommentsFrame';
 export { LiveDocEditor, type LiveDocEditorProps } from './ui/LiveDocEditor';
-export { RestoreVersionAction, type RestoreVersionActionProps } from './ui/RestoreVersionAction';
-export {
-  DocCollabProvider,
-  type DocCollabProviderOptions,
-  type DocCollabSnapshot,
-  type LiveDocStatus,
-} from './model/doc-collab-provider';
+export { DocCollabProvider } from './model/doc-collab-provider';

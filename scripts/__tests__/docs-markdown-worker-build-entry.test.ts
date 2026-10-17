@@ -10,7 +10,8 @@
  * plus a real bundle of the worker run the way the builds' smoke step runs it:
  *
  * - both the CLI and the desktop server builds bundle the worker entry to
- *   `server/docs-markdown-worker.mjs`, as ESM, and smoke-test the result;
+ *   `server/docs-markdown-worker.mjs`, as ESM, and smoke-test the result
+ *   (the desktop build through `build-side-bundles.ts`);
  * - that file name is the one the server looks for;
  * - the desktop app unpacks it from `app.asar`;
  * - a bundle made with the builds' options runs in a worker thread and
@@ -61,7 +62,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 describe('docs markdown worker build entry', () => {
   // Purpose: each production build bundles the worker to the right file, as
   // one self-contained ES module, and smoke-tests what it emitted.
-  it.each([['packages/cli/scripts/build.ts'], ['apps/desktop/scripts/build-server.ts']])(
+  it.each([['packages/cli/scripts/build.ts'], ['apps/desktop/scripts/build-side-bundles.ts']])(
     '%s bundles and smoke-tests the worker',
     (script) => {
       const source = read(script);
@@ -78,6 +79,11 @@ describe('docs markdown worker build entry', () => {
       expect(call).toMatch(/platform:\s*'node'/);
     }
   );
+
+  // Purpose: the desktop server build actually runs its worker step.
+  it('runs in the desktop server build', () => {
+    expect(read('apps/desktop/scripts/build-server.ts')).toMatch(/await buildSideBundles\(/);
+  });
 
   // Purpose: the name the builds emit is the name the server looks for.
   it('matches the name the server resolves', () => {

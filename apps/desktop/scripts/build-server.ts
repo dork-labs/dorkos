@@ -12,6 +12,7 @@ import { isBuiltin } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
+import { buildSideBundles } from './build-side-bundles';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../../..');
@@ -986,64 +987,14 @@ async function buildServer() {
     throw err;
   }
 
-  // The extension child (DOR-2686): the file DorkOS forks for every extension
-  // that runs separately, with Node's permission model on and read access to
-  // nothing but this file and the extension's own. One self-contained
-  // CommonJS file (express and the extension API inlined), emitted beside the
-  // server bundle where `isolation/child-entry.ts` looks for it, and unpacked
-  // from app.asar (electron-builder.yml) because the permission model grants
-  // real files, not archive entries. Same entry and name as the CLI build;
-  // scripts/__tests__/extension-child-build-entry.test.ts pins both.
-  const childOutfile = path.join(OUT, 'server/extension-child.cjs');
-  const childResult = await build({
-    entryPoints: [
-      path.join(ROOT, 'apps/server/src/services/extensions/isolation/child/bootstrap.ts'),
-    ],
-    bundle: true,
-    platform: 'node',
-    target: 'node22.22',
-    format: 'cjs',
-    outfile: childOutfile,
-    plugins: [dorkosSourcePlugin()],
+  // The extension child and the live docs markdown worker, each bundled on
+  // its own beside the server bundle (build-side-bundles.ts).
+  await buildSideBundles({
+    root: ROOT,
+    out: OUT,
+    plugin: dorkosSourcePlugin(),
+    assertNoUnexpectedWarnings,
   });
-  try {
-    await assertNoUnexpectedWarnings(childResult.warnings);
-    execFileSync(process.execPath, ['--check', childOutfile], { stdio: 'inherit' });
-  } catch (err) {
-    rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
-    throw err;
-  }
-
-  // The markdown worker for live docs (DOR-2984): the server starts it as a
-  // worker thread, so it is one self-contained ESM file emitted beside the
-  // server bundle where `services/docs/collab/worker-entry.ts` looks for it,
-  // and unpacked from app.asar (electron-builder.yml). Same entry and name as
-  // the CLI build; scripts/__tests__/docs-markdown-worker-build-entry.test.ts
-  // pins both. The smoke run proves it loads Blintz and round-trips a doc.
-  const markdownWorkerOutfile = path.join(OUT, 'server/docs-markdown-worker.mjs');
-  const markdownWorkerResult = await build({
-    entryPoints: [path.join(ROOT, 'apps/server/src/services/docs/collab/markdown-worker.ts')],
-    bundle: true,
-    platform: 'node',
-    target: 'node22.22',
-    format: 'esm',
-    outfile: markdownWorkerOutfile,
-    banner: {
-      js: "import { createRequire as __cjsRequire } from 'module'; const require = __cjsRequire(import.meta.url);",
-    },
-    plugins: [dorkosSourcePlugin()],
-  });
-  try {
-    await assertNoUnexpectedWarnings(markdownWorkerResult.warnings);
-    execFileSync(
-      process.execPath,
-      [path.join(ROOT, 'scripts/smoke-docs-markdown-worker.mjs'), markdownWorkerOutfile],
-      { stdio: 'inherit' }
-    );
-  } catch (err) {
-    rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
-    throw err;
-  }
 
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.

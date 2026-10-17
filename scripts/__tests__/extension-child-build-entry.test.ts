@@ -47,7 +47,7 @@ function childBuildCall(source: string): string | null {
 describe('extension child build entry', () => {
   // Purpose: each production build bundles the bootstrap to the right file,
   // as CommonJS, inlining dependencies (bundle: true).
-  it.each([['packages/cli/scripts/build.ts'], ['apps/desktop/scripts/build-server.ts']])(
+  it.each([['packages/cli/scripts/build.ts'], ['apps/desktop/scripts/build-side-bundles.ts']])(
     '%s bundles the child',
     (script) => {
       const source = read(script);
