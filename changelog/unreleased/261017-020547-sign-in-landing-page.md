@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): a finished sign-in lands on a real DorkOS page that takes you back to the right app (DOR-2985)'
+  - 'fix(client): Try again on the sign-in landing page reaches the app that is still watching (DOR-2985)'
 ---
 
 ### Changed
