@@ -111,9 +111,16 @@ export interface UpgradeRoute {
    *   durable streams.
    * - `bearer-of-id` — authorized by holding an unguessable id minted by an
    *   already-gated route, and `authorize` checks that id itself. The terminal
-   *   (ADR 260708-185521).
+   *   (ADR 260708-185521), and a hub's computer relay, whose bearer is the
+   *   relay secret the linking flow minted (`services/core/hub-relay/`).
    */
   readonly credential: 'required' | 'bearer-of-id';
+  /**
+   * The WebSocket server that completes this route's handshake, for a route
+   * whose socket needs its own limits (a smaller `maxPayload`, no
+   * compression). Must be `noServer`. Defaults to the router's shared one.
+   */
+  readonly webSocketServer?: WebSocketServer;
   /**
    * Authorize the claimed upgrade. Every credential check a route needs lives
    * here, because none of the chain's ran (see the module doc). Returning a
@@ -340,7 +347,7 @@ export function attachUpgradeRouter(
       // pausing the socket for the duration.
       if (socket.destroyed) return;
 
-      wss.handleUpgrade(req, socket, head, (ws) => {
+      (claimed.route.webSocketServer ?? wss).handleUpgrade(req, socket, head, (ws) => {
         if (decision.ok) {
           decision.open(ws);
           // Managed remote access counts it only now, past every check above.
