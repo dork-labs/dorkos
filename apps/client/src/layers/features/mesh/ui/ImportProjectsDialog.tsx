@@ -1,5 +1,5 @@
 import { appRoutes } from '@/layers/shared/lib';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { CheckCircle2 } from 'lucide-react';
 import {
@@ -34,6 +34,10 @@ export function ImportProjectsDialog() {
   const isHub = useIsHub();
   const isOpen = useImportProjectsStore((s) => s.isOpen) && !isHub;
   const close = useImportProjectsStore((s) => s.close);
+  // Asked to open before the server said it is a hub: put the store back too.
+  useEffect(() => {
+    if (isHub && useImportProjectsStore.getState().isOpen) close();
+  }, [isHub, close]);
   const navigate = useNavigate();
 
   // Projects brought in during this open. Reset each time the dialog opens.

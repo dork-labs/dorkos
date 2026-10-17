@@ -13,7 +13,7 @@ import {
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
 import { EveryAgentAccessNotice, useEveryAgentConnectorGrants } from '@/layers/entities/connectors';
-import { useConfig } from '@/layers/entities/config';
+import { useConfig, useIsHub } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -92,7 +92,7 @@ export function CreateAgentDialog() {
   const offerSchedules = useOfferSchedules(offerPackage);
   const { data: config } = useConfig();
   // A hub holds none of the person's projects, so the wizard offers no import there.
-  const importHere = config?.serverRole === 'hub' ? undefined : handleImport;
+  const importHere = useIsHub() ? undefined : handleImport;
   // Where a marketplace agent lives: its package's own folder, so updates find
   // it. The person's name for it is its display name.
   const packageDirectory =
