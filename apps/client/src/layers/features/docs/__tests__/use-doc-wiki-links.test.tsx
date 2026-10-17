@@ -6,7 +6,7 @@
  * index after a save.
  */
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { WikiLink } from 'blintz';
@@ -56,11 +56,11 @@ function link(target: string, heading: string | null = null): WikiLink {
 
 let queryClient: QueryClient;
 let transport: Transport;
-let getDocIndex: ReturnType<typeof vi.fn>;
+let getDocIndex: Mock<Transport['getDocIndex']>;
 
 function setup(options: { on?: boolean } = {}) {
   const config = configWith(options.on ?? true);
-  getDocIndex = vi.fn().mockResolvedValue(INDEX);
+  getDocIndex = vi.fn<Transport['getDocIndex']>().mockResolvedValue(INDEX);
   transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue(config), getDocIndex });
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(configKeys.current(), config);

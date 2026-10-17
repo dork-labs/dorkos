@@ -7,7 +7,7 @@
  * opens the target through `open_file`; with it off, or for markdown with no
  * file behind it, the editor gets no `wikiLinks` and links stay plain text.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -53,7 +53,7 @@ const DOC_ID = 'doc-plan';
 const BODY = '# Plan\n\nSee [[Welcome]] and [[Nowhere]].\n';
 
 let transport: Transport;
-let getDocIndex: ReturnType<typeof vi.fn>;
+let getDocIndex: Mock<Transport['getDocIndex']>;
 
 function renderWith(ui: React.ReactElement, docsOn: boolean) {
   const config = {
@@ -61,7 +61,7 @@ function renderWith(ui: React.ReactElement, docsOn: boolean) {
       { key: 'docs.enabled', title: 'Docs', description: '', enabled: docsOn, lockedByEnv: false },
     ],
   };
-  getDocIndex = vi.fn().mockResolvedValue({
+  getDocIndex = vi.fn<Transport['getDocIndex']>().mockResolvedValue({
     docs: [
       { path: 'README.md', title: 'Welcome', slug: 'readme' },
       { path: 'notes/plan.md', title: 'Plan', slug: 'plan' },
