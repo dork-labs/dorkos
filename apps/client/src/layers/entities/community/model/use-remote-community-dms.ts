@@ -99,9 +99,9 @@ export function remoteDmTitle(dm: RemoteCommunityDm): string {
 }
 
 /**
- * The direct message a space room id names, if it names one, and whether the list that says so
- * has arrived. A caller that must never open a direct message as an ordinary channel waits on
- * `loading` and stops on `error`.
+ * The direct message a space room id names, once the space's list says it is one. `undefined`
+ * while the list is on its way, when it couldn't be read, and from a space without direct
+ * messages: every one of those reads as an ordinary channel, so no channel waits on this list.
  *
  * @param ref - The space's connection ref.
  * @param roomId - The room id the address names.
@@ -113,16 +113,7 @@ export function useRemoteCommunityDm(
   roomId: string,
   enabled = true,
   accessFingerprint = 'legacy'
-): {
-  dm: RemoteCommunityDm | undefined;
-  status: 'loading' | 'error' | 'ready';
-  retry: () => void;
-} {
+): { dm: RemoteCommunityDm | undefined } {
   const dms = useRemoteCommunityDms(ref, enabled, accessFingerprint);
-  return {
-    dm: dms.data?.dms.find((item) => item.roomId === roomId),
-    // Pending until the list lands, including while the owner's authority is still resolving.
-    status: dms.data ? 'ready' : dms.isError ? 'error' : 'loading',
-    retry: () => void dms.refetch(),
-  };
+  return { dm: dms.data?.dms.find((item) => item.roomId === roomId) };
 }

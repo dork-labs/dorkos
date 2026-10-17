@@ -23,7 +23,7 @@ vi.mock('@/layers/entities/community', () => ({
     fingerprint: 'fp',
   }),
   useCommunityConnections: () => ({ data: state.connections, fetchStatus: 'idle' }),
-  useRemoteCommunityDm: () => ({ dm: undefined, status: 'ready', retry: () => undefined }),
+  useRemoteCommunityDm: () => ({ dm: undefined }),
   remoteDmTitle: () => 'unused',
   useRemoteCommunityRoom: (...args: unknown[]) => {
     roomQuery(...args);

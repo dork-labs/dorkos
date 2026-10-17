@@ -278,32 +278,43 @@ describe('the owner’s switch', () => {
 });
 
 describe('a direct message', () => {
-  it('opens nothing until the space says whether the room is one', async () => {
+  // #2999 merge queue: gating every space room on this list held ordinary channels back in
+  // every browser test whose mock space serves no `/dms`. A channel never waits on it.
+  it('opens an ordinary channel at once while the list is on its way', async () => {
     const transport = transportFor(true, [dm()]);
     vi.mocked(transport.listRemoteCommunityDms).mockReturnValue(new Promise(() => undefined));
     wrap(
       transport,
-      <RemoteDmRoom community={ref} roomId="dm-1">
+      <RemoteDmRoom community={ref} roomId="general">
         {() => <p>the room</p>}
       </RemoteDmRoom>
     );
-    // Long enough for the connection list and the owner's authority to land.
-    await waitFor(() => expect(transport.listRemoteCommunityDms).toHaveBeenCalled());
-    expect(screen.queryByText('the room')).not.toBeInTheDocument();
+    expect(await screen.findByText('the room')).toBeInTheDocument();
   });
 
-  it('says so, and opens no room, when the list can’t be read', async () => {
+  it('opens an ordinary channel when the list can’t be read, as a space with none', async () => {
     const transport = transportFor(true, [dm()]);
-    vi.mocked(transport.listRemoteCommunityDms).mockRejectedValue(new Error('down'));
+    vi.mocked(transport.listRemoteCommunityDms).mockRejectedValue(new Error('not found'));
+    wrap(
+      transport,
+      <RemoteDmRoom community={ref} roomId="general">
+        {() => <p>the room</p>}
+      </RemoteDmRoom>
+    );
+    expect(await screen.findByText('the room')).toBeInTheDocument();
+    expect(screen.queryByText(/can read this/)).not.toBeInTheDocument();
+  });
+
+  it('never opens a direct message the list names as the owner’s read-only copy as a room', async () => {
+    const transport = transportFor(true, [dm({ readOnly: true, localAgentId: 'local-scout' })]);
+    vi.mocked(transport.listRemoteCommunityAgentDmEntries).mockResolvedValue(page(1, 1) as never);
     wrap(
       transport,
       <RemoteDmRoom community={ref} roomId="dm-1">
         {() => <p>the room</p>}
       </RemoteDmRoom>
     );
-    expect(
-      await screen.findByText(/Couldn’t load this space’s direct messages\./)
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Only Ada and Scout can post here.')).toBeInTheDocument();
     expect(screen.queryByText('the room')).not.toBeInTheDocument();
   });
 

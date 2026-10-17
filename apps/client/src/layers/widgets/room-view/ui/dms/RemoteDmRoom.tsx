@@ -6,7 +6,6 @@ import {
   useRemoteCommunityDm,
   useRemoteCommunityMembers,
 } from '@/layers/entities/community';
-import { Button } from '@/layers/shared/ui';
 import { RemoteDmTranscript } from './RemoteDmTranscript';
 
 /**
@@ -15,10 +14,11 @@ import { RemoteDmTranscript } from './RemoteDmTranscript';
  * is and who can read it, then the room. Someone's direct message with the owner's agent opens
  * read-only, read through that agent.
  *
- * It never guesses: until the list of direct messages has arrived, or when it couldn't be read,
- * it shows a quiet state of its own, so a direct message is never opened as an ordinary channel
- * with the person's own access. Only a space that can't be reached live (a saved copy) opens the
- * room directly, since nothing can be asked of it.
+ * An ordinary channel never waits on the list of direct messages: until it arrives, when it
+ * can't be read, and in a space without direct messages, the room renders as it always has. A
+ * room the list names as someone's direct message with the owner's agent is never opened with the
+ * person's own access; arriving there before the list does, the room is shown for a moment and
+ * the space refuses to read it to anyone but its two members (DOR-2955, review of #2999).
  */
 export function RemoteDmRoom({
   community,
@@ -33,23 +33,14 @@ export function RemoteDmRoom({
    */
   children: (dmAgentName?: string) => ReactNode;
 }) {
-  const connections = useCommunityConnections();
-  const connection = connections.data?.find((item) => item.ref === community);
+  const connection = useCommunityConnections().data?.find((item) => item.ref === community);
   const access = communityAccessState(connection?.access);
-  const live = access.verified && access.capabilities.read;
-  const { dm, status, retry } = useRemoteCommunityDm(community, roomId, live, access.fingerprint);
-  if (!connection) return <RoomPending />;
-  if (!live) return children();
-  if (status === 'loading') return <RoomPending />;
-  if (status === 'error')
-    return (
-      <div role="alert" className="text-muted-foreground p-6 text-center text-sm">
-        Couldn’t load this space’s direct messages.{' '}
-        <Button variant="ghost" size="sm" onClick={retry}>
-          Retry
-        </Button>
-      </div>
-    );
+  const { dm } = useRemoteCommunityDm(
+    community,
+    roomId,
+    access.verified && access.capabilities.read,
+    access.fingerprint
+  );
   if (!dm) return children();
   if (dm.readOnly && dm.localAgentId)
     return (
@@ -61,11 +52,6 @@ export function RemoteDmRoom({
       <div className="min-h-0 flex-1">{children(dm.agent.displayName)}</div>
     </div>
   );
-}
-
-/** A quiet stand-in while the room's kind is still unknown. */
-function RoomPending() {
-  return <div className="h-full" aria-busy="true" />;
 }
 
 /** Whose agent this is, that its owner can read along, and whether it can answer right now. */
