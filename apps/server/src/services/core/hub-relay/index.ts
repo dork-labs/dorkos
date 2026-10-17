@@ -15,7 +15,12 @@ import {
   type LinkComputerInput,
   type LinkedComputer,
 } from './computer-store.js';
-import { dropComputerConnection } from './hub-relay-registry.js';
+import {
+  computerConnection,
+  dropComputerConnection,
+  onConnectionPromoted,
+} from './hub-relay-registry.js';
+import { HubViewerTracker } from './viewer-tracker.js';
 
 export {
   HUB_RELAY_MAX_COMPUTERS,
@@ -38,6 +43,22 @@ export {
 } from './computer-connection.js';
 export { closeAllComputerConnections, computerConnection } from './hub-relay-registry.js';
 export { hubRelayComputerRoute, setHubRelaySigner } from './relay-endpoint.js';
+export {
+  ComputerWaker,
+  HUB_RELAY_WAKE_DEBOUNCE_MS,
+  hubComputerWaker,
+  setHubRelayWaker,
+  type HubRelayWake,
+} from './computer-waker.js';
+export { HubViewerTracker, type ViewerCountTarget } from './viewer-tracker.js';
+
+/**
+ * The hub's open chat streams per computer. Each computer's live connection is
+ * told its count whenever it changes, and the moment the connection proves
+ * itself.
+ */
+export const hubViewers = new HubViewerTracker({ lookup: computerConnection });
+onConnectionPromoted((connection) => hubViewers.connected(connection));
 
 /**
  * Link a computer (step B3), or link it again with a new secret and key. A

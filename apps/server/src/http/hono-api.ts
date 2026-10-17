@@ -75,6 +75,7 @@ import { createFileRoutes } from '../routes/files.js';
 import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
+import { createHubComputerRoutes } from '../routes/hub-computers.js';
 import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
 import {
   createHeartbeatTriageRoutes,
@@ -466,6 +467,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       app.route('/api/relay/unclaimed-chats', createUnclaimedChatsRoutes(deps.unclaimedChats));
     }
   }
+  // A hub's owner chatting with their linked computers; the `/api` 404 elsewhere.
+  app.route('/api/hub/computers', createHubComputerRoutes());
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }

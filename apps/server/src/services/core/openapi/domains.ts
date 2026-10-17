@@ -13,6 +13,7 @@ import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
+import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -29,4 +30,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerFileWriteOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
+  registerHubComputersOpenApi(registry);
 }
