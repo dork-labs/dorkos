@@ -3,19 +3,24 @@
  *
  * ## The path a wake takes
  *
- * 1. **Whether it may.** Every wake goes through the rooms' cascade guard
- *    (`rooms/cascade-guard.ts`), with the install's own room limits
- *    (`rooms.maxAgentDepth`, `rooms.maxTurnsPerAgentPerCascade`). A comment
- *    carries the cascade it belongs to: a person's comment starts a fresh one;
- *    an agent's comment written in a turn a comment woke continues that turn's
- *    cascade; an agent's comment with no such turn behind it is stamped
- *    already spent (`deriveCascade`), so it wakes nobody. There is no path
- *    from one agent's comment to another agent's turn that the guard does not
- *    see.
+ * 1. **Whether it may.** An agent's comment written outside a turn a comment
+ *    woke wakes nobody (`unprompted`). Every other wake goes through the
+ *    rooms' cascade guard (`rooms/cascade-guard.ts`), with the install's own
+ *    room limits (`rooms.maxAgentDepth`, `rooms.maxTurnsPerAgentPerCascade`).
+ *    A comment carries the cascade it belongs to: a person's comment starts a
+ *    fresh one, and an agent's comment written in a woken turn continues that
+ *    turn's. The repeat rule counts wakes, recorded here before each is sent
+ *    (`doc_comment_wakes`), so two comments arriving together are both
+ *    counted. Then the rooms' hourly turn budget (`RoomTurnBudget`) is charged,
+ *    under a window of the doc's own that counts in the install-wide total
+ *    (`rooms.maxAutomaticTurnsTotalPerHour`), so doc comments can never spend
+ *    more automatic turns than rooms could. There is no path from a comment to
+ *    an agent's turn that these do not see.
  * 2. **Where it lands.** The chat DorkOS keeps with that agent for doc
  *    comments (`doc_comment_agent_chats`), opened in the agent's home on the
  *    first mention. Delivered through `dispatchSessionMessage`, which queues
- *    behind a running turn.
+ *    behind a running turn, as an unattended turn: nobody watches that chat,
+ *    so an ask in it is refused rather than left waiting on a card.
  * 3. **The power it carries.** The owner's own comment carries none of its own
  *    (the chat's settings decide). Anybody else's is held to a ceiling: an
  *    agent's to the level its own turn ran at, anyone else's to the runtime's
@@ -29,10 +34,14 @@
  * @module services/docs/comments/comment-wake
  */
 import crypto from 'node:crypto';
+import { ulid } from 'ulidx';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import type { DocCommentUnreached } from '@dorkos/shared/doc-comments';
+import { ceilingCarriesOutsider } from '@dorkos/shared/permission-semantics';
 import { logError, logger } from '../../../lib/logger.js';
-import { evaluateCascade, type CascadeRefusalReason } from '../../rooms/cascade-guard.js';
+import { evaluateCascade } from '../../rooms/cascade-guard.js';
+import type { RoomTurnBudget } from '../../rooms/limits/turn-budget.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -86,8 +95,8 @@ export type WakeOutcome =
       authorId: string;
       name: string;
       woken: false;
-      /** Why: a reply limit, or the agent or the machine could not take it. */
-      reason: CascadeRefusalReason | 'unavailable';
+      /** Why. See {@link DocCommentUnreached}. */
+      reason: DocCommentUnreached['reason'];
     };
 
 /** One comment's wakes. */
@@ -98,6 +107,10 @@ export interface CommentWakeRequest {
   trust: CommentTrust;
   /** The chat the author wrote from, when an agent's tool wrote it. */
   authorSessionId?: string;
+  /** Whether an agent author wrote it in a turn a comment woke. Ignored for people. */
+  fromWokenTurn: boolean;
+  /** The doc's key: its own window in the hourly turn budget. */
+  docKey: string;
   /** Who to wake. */
   targets: readonly WakeTarget[];
   /** The message each target reads. */
@@ -107,9 +120,14 @@ export interface CommentWakeRequest {
 /** What the waker needs. Everything after `store` has a production default. */
 export interface CommentWakeDeps {
   /** Kept chats and per-author counts. */
-  store: Pick<DocCommentStore, 'keptChat' | 'keepChat' | 'commentsByAuthorInCascade'>;
+  store: Pick<
+    DocCommentStore,
+    'keptChat' | 'keepChat' | 'recordWake' | 'forgetWake' | 'wakesByAgentInCascade'
+  >;
   /** The limits, read per call. */
   limits: () => CommentWakeLimits;
+  /** The rooms' hourly turn budget, or null before rooms are wired (it then refuses). */
+  budget: () => Pick<RoomTurnBudget, 'tryReserve'> | null;
   /** The level a chat's latest turn ran at, or undefined when not known. */
   turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
   /** Mesh, when running. */
@@ -177,6 +195,15 @@ export class CommentWaker {
 
   private async wakeOne(request: CommentWakeRequest, target: WakeTarget): Promise<WakeOutcome> {
     const who = { authorId: target.authorId, name: target.name };
+    const refuse = (reason: DocCommentUnreached['reason']): WakeOutcome => ({
+      ...who,
+      woken: false,
+      reason,
+    });
+    if (request.trust === 'agent' && !request.fromWokenTurn) return refuse('unprompted');
+
+    // Everything from here to the dispatch is synchronous, so the count read
+    // and the wake recorded cannot interleave with another comment's.
     const limits = this.deps.limits();
     let depth = request.cascade.depth + 1;
     if (limits.enabled) {
@@ -185,22 +212,45 @@ export class CommentWaker {
         {
           root: request.cascade.root,
           depth: request.cascade.depth,
-          turnsByAuthor: this.deps.store.commentsByAuthorInCascade(request.cascade.root),
+          turnsByAuthor: this.deps.store.wakesByAgentInCascade(request.cascade.root),
         },
         limits
       );
-      if (!decision.allowed) return { ...who, woken: false, reason: decision.reason };
+      if (!decision.allowed) return refuse(decision.reason);
       depth = decision.depth;
     }
+    const budget = this.deps.budget();
+    if (!budget || !budget.tryReserve(`doc:${request.docKey}`).allowed) return refuse('budget');
+    const wakeId = ulid();
+    this.deps.store.recordWake({
+      id: wakeId,
+      cascadeRoot: request.cascade.root,
+      agentAuthorId: target.authorId,
+      createdAt: new Date(this.now()).toISOString(),
+    });
 
     const kept = this.deps.store.keptChat(target.agentId);
     const sessionId = kept ?? crypto.randomUUID();
     const messageId = crypto.randomUUID();
     const ceiling = this.ceilingFor(request);
     this.remember(this.pending, messageId, { root: request.cascade.root, depth });
+    const unsent = (reason: 'unavailable', err?: unknown): WakeOutcome => {
+      this.pending.delete(messageId);
+      this.deps.store.forgetWake(wakeId);
+      if (err !== undefined) {
+        logger.warn('[doc-comments] could not wake a mentioned agent', {
+          agentId: target.agentId,
+          ...logError(err),
+        });
+      }
+      return refuse(reason);
+    };
     try {
       const result = await this.dispatch({
-        origin: { kind: 'doc-comment' },
+        origin: {
+          kind: 'doc-comment',
+          externalAuthor: ceiling !== undefined && ceilingCarriesOutsider(ceiling),
+        },
         sessionId,
         messageId,
         request: { content: request.render(target), agentPath: target.agentPath },
@@ -208,25 +258,19 @@ export class CommentWaker {
           request.trust === 'owner' ? DOC_COMMENT_OWNER_CLIENT_ID : DOC_COMMENT_BOUNDED_CLIENT_ID,
         meshCore: this.deps.meshCore(),
         roomSessionPlace: this.deps.roomSessionPlace?.(),
+        // Nobody is watching this chat: an ask is refused rather than held on a card.
+        unattended: true,
         countsTowardLaunchCap: true,
         ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
       });
-      if (isSessionLaunchRefusal(result) || !result.accepted) {
-        this.pending.delete(messageId);
-        return { ...who, woken: false, reason: 'unavailable' };
-      }
+      if (isSessionLaunchRefusal(result) || !result.accepted) return unsent('unavailable');
       const chatId = result.canonicalId ?? sessionId;
       if (chatId !== kept) {
         this.deps.store.keepChat(target.agentId, chatId, new Date(this.now()).toISOString());
       }
       return { ...who, woken: true };
     } catch (err) {
-      this.pending.delete(messageId);
-      logger.warn('[doc-comments] could not wake a mentioned agent', {
-        agentId: target.agentId,
-        ...logError(err),
-      });
-      return { ...who, woken: false, reason: 'unavailable' };
+      return unsent('unavailable', err);
     }
   }
 

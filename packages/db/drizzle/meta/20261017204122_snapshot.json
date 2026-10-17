@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "57535f21-39eb-421d-b875-14eeccbe5497",
+  "id": "f344caf4-9f05-4abb-aa38-775d43da0d3d",
   "prevId": "93c4c62a-b07b-4ff0-a354-66acf5ba28ff",
   "tables": {
     "a2a_tasks": {
@@ -14097,6 +14097,52 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "doc_comment_wakes": {
+      "name": "doc_comment_wakes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cascade_root": {
+          "name": "cascade_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_author_id": {
+          "name": "agent_author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "doc_comment_wakes_cascade_idx": {
+          "name": "doc_comment_wakes_cascade_idx",
+          "columns": [
+            "cascade_root"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "doc_comments": {
       "name": "doc_comments",
       "columns": {
@@ -14135,6 +14181,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'[]'"
+        },
+        "trust": {
+          "name": "trust",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         },
         "cascade_root": {
           "name": "cascade_root",

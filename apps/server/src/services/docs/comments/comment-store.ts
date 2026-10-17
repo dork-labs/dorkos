@@ -1,6 +1,7 @@
 /**
  * What DorkOS remembers about comments on docs (DOR-2983): threads, their
- * comments, and the chat it keeps with each agent a comment mentions.
+ * comments, the wakes they sent, and the chat it keeps with each agent a
+ * comment mentions.
  *
  * Deliberately dumb. A thread's anchor is the editor's opaque JSON, stored and
  * handed back; nothing here reads inside it, decides who may write, or
@@ -17,11 +18,13 @@ import {
   docCommentAgentChats,
   docComments,
   docCommentThreads,
+  docCommentWakes,
   eq,
   inArray,
   type Db,
   type DocCommentRow,
   type DocCommentThreadRow,
+  type DocCommentWakeRow,
 } from '@dorkos/db';
 
 /** A thread as the store writes it. */
@@ -41,7 +44,7 @@ export interface StoredDocCommentThread {
   comments: DocCommentRow[];
 }
 
-/** Reads and writes `doc_comment_threads`, `doc_comments` and `doc_comment_agent_chats`. */
+/** Reads and writes the `doc_comment_*` tables and `doc_comments`. */
 export class DocCommentStore {
   /**
    * Build a store over the database.
@@ -206,11 +209,13 @@ export class DocCommentStore {
    *
    * @param docKey - The doc.
    * @param updates - Each thread and its new anchor (JSON).
+   * @param openedBy - When set, only threads this author opened move.
    * @returns How many threads took a new anchor.
    */
   updateAnchors(
     docKey: string,
-    updates: ReadonlyArray<{ id: string; anchorJson: string }>
+    updates: ReadonlyArray<{ id: string; anchorJson: string }>,
+    openedBy?: string
   ): number {
     if (updates.length === 0) return 0;
     return this.db.transaction((tx) => {
@@ -219,7 +224,13 @@ export class DocCommentStore {
         const result = tx
           .update(docCommentThreads)
           .set({ anchorJson })
-          .where(and(eq(docCommentThreads.id, id), eq(docCommentThreads.docKey, docKey)))
+          .where(
+            and(
+              eq(docCommentThreads.id, id),
+              eq(docCommentThreads.docKey, docKey),
+              ...(openedBy !== undefined ? [eq(docCommentThreads.createdByAuthorId, openedBy)] : [])
+            )
+          )
           .run();
         updated += result.changes;
       }
@@ -228,21 +239,36 @@ export class DocCommentStore {
   }
 
   /**
-   * How many comments each author wrote in one chain of automatic replies:
-   * the per-author count the cascade guard's repeat rule reads.
+   * Record that an agent is being woken in a chain, before the wake is sent.
    *
-   * Comments, not turns: a woken agent that writes two comments in one turn
-   * spends two. Stricter than the room count (which collapses one turn's
-   * entries), and a doc chain is short.
+   * @param wake - The wake: its id, the chain, the agent's author id, and when.
+   */
+  recordWake(wake: DocCommentWakeRow): void {
+    this.db.insert(docCommentWakes).values(wake).run();
+  }
+
+  /**
+   * Forget a wake that was never sent (the dispatch refused it).
+   *
+   * @param id - The wake's id.
+   */
+  forgetWake(id: string): void {
+    this.db.delete(docCommentWakes).where(eq(docCommentWakes.id, id)).run();
+  }
+
+  /**
+   * How many times each agent was woken in one chain of automatic replies:
+   * the per-agent count the cascade guard's repeat rule reads. One per wake
+   * sent, so two comments arriving together are both counted.
    *
    * @param cascadeRoot - The comment that began the chain.
    */
-  commentsByAuthorInCascade(cascadeRoot: string): Map<string, number> {
+  wakesByAgentInCascade(cascadeRoot: string): Map<string, number> {
     const rows = this.db
-      .select({ authorId: docComments.authorId, n: count() })
-      .from(docComments)
-      .where(eq(docComments.cascadeRoot, cascadeRoot))
-      .groupBy(docComments.authorId)
+      .select({ authorId: docCommentWakes.agentAuthorId, n: count() })
+      .from(docCommentWakes)
+      .where(eq(docCommentWakes.cascadeRoot, cascadeRoot))
+      .groupBy(docCommentWakes.agentAuthorId)
       .all();
     return new Map(rows.map((row) => [row.authorId, row.n]));
   }

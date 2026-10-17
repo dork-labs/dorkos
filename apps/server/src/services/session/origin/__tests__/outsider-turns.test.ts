@@ -16,6 +16,9 @@ describe('outsider turns', () => {
   it('reads a room turn by its author and the stranger origins as strangers', () => {
     expect(isOutsiderOrigin({ kind: 'room', externalAuthor: true })).toBe(true);
     expect(isOutsiderOrigin({ kind: 'room', externalAuthor: false })).toBe(false);
+    // A doc comment by anybody but the owner in person reads as a stranger's turn.
+    expect(isOutsiderOrigin({ kind: 'doc-comment', externalAuthor: true })).toBe(true);
+    expect(isOutsiderOrigin({ kind: 'doc-comment', externalAuthor: false })).toBe(false);
     expect(isOutsiderOrigin({ kind: 'relay-binding' })).toBe(true);
     expect(isOutsiderOrigin({ kind: 'outside-sender' })).toBe(true);
     expect(isOutsiderOrigin({ kind: 'connector-event' })).toBe(true);

@@ -12,13 +12,14 @@
  * Only the owner's own comments are instructions. Everybody else's words are
  * information:
  *
- * - `owner`: the person who owns this computer, by the same predicate the
- *   rooms use for "is the operator" (`isOwnerRecord`).
+ * - `owner`: the person who owns this computer (`isOwnerRecord`), and only
+ *   when the request cleared the person bars (`routes/doc-comment-caller.ts`).
  * - `agent`: one of this computer's agents. A teammate, but not the owner, so
  *   its words are framed as a colleague's information, and the turn it starts
  *   is held to the agent's own level.
  * - `outsider`: any other author, which includes a person this computer
- *   cannot vouch for. Its turn is held to the runtime's default.
+ *   cannot vouch for and the owner's author on a request that did not prove a
+ *   person. Its turn is held to the runtime's default.
  *
  * @module services/docs/comments/comment-directory
  */
@@ -94,9 +95,11 @@ export class CommentDirectory {
    * How much an author's words count for.
    *
    * @param author - The author.
+   * @param inPerson - Whether the request was the owner in person. The owner's
+   *   author without it is an outsider: resolving to the owner is not proof.
    */
-  trustOf(author: AuthorRecord): CommentTrust {
-    if (isOwnerRecord(author, this.deps.ownerUserId())) return 'owner';
+  trustOf(author: AuthorRecord, inPerson: boolean): CommentTrust {
+    if (isOwnerRecord(author, this.deps.ownerUserId())) return inPerson ? 'owner' : 'outsider';
     if (author.kind === 'agent' && this.agentOf(author) !== null) return 'agent';
     return 'outsider';
   }

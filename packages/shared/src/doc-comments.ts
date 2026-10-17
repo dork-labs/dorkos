@@ -18,6 +18,11 @@ export const DOC_COMMENT_BODY_MAX = 10_000;
 /** The largest stored anchor, as JSON. An editor anchor is a quote with 32 characters of context. */
 export const DOC_COMMENT_ANCHOR_MAX_BYTES = 8_192;
 
+/** How many UTF-8 bytes a value takes as JSON. */
+function jsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
 /** How many anchors one batch update may carry. */
 export const DOC_COMMENT_ANCHOR_BATCH_MAX = 500;
 
@@ -31,7 +36,7 @@ export const DOC_PATH_MAX = 1_024;
 export const DocCommentAnchorSchema = z
   .object({})
   .catchall(z.unknown())
-  .refine((anchor) => JSON.stringify(anchor).length <= DOC_COMMENT_ANCHOR_MAX_BYTES, {
+  .refine((anchor) => jsonBytes(anchor) <= DOC_COMMENT_ANCHOR_MAX_BYTES, {
     message: `An anchor must be under ${DOC_COMMENT_ANCHOR_MAX_BYTES} bytes.`,
   });
 
@@ -212,10 +217,13 @@ export const DocCommentUnreachedSchema = z.object({
   name: z.string(),
   /**
    * Why: `depth` (the chain of automatic replies reached its limit), `repeat`
-   * (this agent already answered as often as one chain allows), or
-   * `unavailable` (the agent or the computer could not take it just now).
+   * (this agent was already woken as often as one chain allows), `budget`
+   * (the hour's automatic turns are spent), `unprompted` (an agent wrote the
+   * comment outside a turn a comment woke, and only such a turn may wake
+   * another agent), or `unavailable` (the agent or the computer could not take
+   * it just now).
    */
-  reason: z.enum(['depth', 'repeat', 'unavailable']),
+  reason: z.enum(['depth', 'repeat', 'budget', 'unprompted', 'unavailable']),
 });
 
 /** A mentioned agent a comment did not wake. */

@@ -163,8 +163,14 @@ export type TurnOrigin =
    * a comment by anybody but the owner is then held to a ceiling at launch
    * (the comment's author's own level, or the runtime's default), so the
    * operator's stop is a ceiling's partner and never a grant on its own.
+   *
+   * `externalAuthor` says whether the comment's words are an outsider's (its
+   * ceiling carries the outsider mark): somebody other than the owner in
+   * person, or an agent whose own turn read an outsider's words. It decides
+   * nothing about power here; it is what makes the turn read as a stranger's
+   * (`outsider-turns.ts`).
    */
-  | { readonly kind: 'doc-comment' }
+  | { readonly kind: 'doc-comment'; readonly externalAuthor: boolean }
   /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.

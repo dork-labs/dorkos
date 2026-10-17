@@ -11,7 +11,7 @@
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import { resolveRoomLimits } from '../../rooms/limits/room-limits.js';
-import { getRoomAuthors } from '../../rooms/index.js';
+import { getRoomAuthors, tryGetRoomTurnBudget } from '../../rooms/index.js';
 import { readOwnerAccount } from '../../core/auth/index.js';
 import { configManager } from '../../core/config-manager.js';
 import { postLevelFor } from '../../core/turn-power/turn-levels.js';
@@ -73,6 +73,7 @@ export function wireDocComments(deps: {
   const waker = new CommentWaker({
     store,
     limits: liveLimits,
+    budget: tryGetRoomTurnBudget,
     turnLevelOf: (sessionId) => postLevelFor([sessionId]),
     meshCore: deps.meshCore,
     roomSessionPlace: deps.roomSessionPlace,

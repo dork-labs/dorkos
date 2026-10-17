@@ -30391,6 +30391,8 @@
                             "enum": [
                               "depth",
                               "repeat",
+                              "budget",
+                              "unprompted",
                               "unavailable"
                             ]
                           }
@@ -30734,6 +30736,8 @@
                             "enum": [
                               "depth",
                               "repeat",
+                              "budget",
+                              "unprompted",
                               "unavailable"
                             ]
                           }

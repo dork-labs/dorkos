@@ -72,7 +72,8 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A doc comment mentioned an agent (DOR-2983): the chat it opens starts at
   // the operator's stop, and a comment by anybody but the owner is held to a
   // ceiling at launch, so the turn runs at the stricter of the two.
-  [{ kind: 'doc-comment' }, 'configured-stop-on-insert'],
+  [{ kind: 'doc-comment', externalAuthor: false }, 'configured-stop-on-insert'],
+  [{ kind: 'doc-comment', externalAuthor: true }, 'configured-stop-on-insert'],
   // An extension started work in a brand-new chat in the person's project:
   // the new-session default a person's own chat gets, on the row it inserts.
   [{ kind: 'extension-start' }, 'configured-stop-on-insert'],

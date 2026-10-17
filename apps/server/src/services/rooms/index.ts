@@ -98,6 +98,12 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
+  /**
+   * The hourly automatic-turn budget every room turn is charged to. Handed back
+   * so doc comment wakes are charged to the same install-wide window
+   * ({@link setRoomTurnBudget}).
+   */
+  budget: RoomTurnBudget;
   /** The canvas service built and registered over this database. */
   canvas: CanvasService;
   /** Same physical document store used by canvas commands and lifecycle transactions. */
@@ -531,6 +537,11 @@ export function createRoomSubsystem(opts: {
   setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
+  // The budget reads its own spent hour back out of this database at
+  // construction, so the ceilings mean an hour of wall clock rather than an
+  // hour of uptime (DOR-1205).
+  const budget =
+    opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db });
   const service = new RoomService({
     store,
     ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
@@ -561,11 +572,7 @@ export function createRoomSubsystem(opts: {
     // repo machinery answers `null` forever, which puts every turn in the
     // agent's own directory exactly as before.
     worktrees: () => tryGetRoomWorktreeManager(),
-    // The budget reads its own spent hour back out of this database at
-    // construction, so the ceilings mean an hour of wall clock rather than an
-    // hour of uptime (DOR-1205).
-    budget:
-      opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db }),
+    budget,
     // The message index, behind its port. Composed here rather than imported by
     // the service so the rooms domain neither knows the index is FTS5 nor which
     // `sourceId` its own rows carry.
@@ -695,10 +702,27 @@ export function createRoomSubsystem(opts: {
     welcomeBack,
     canvas,
     canvasDocuments,
+    budget,
   };
 }
 
 let active: RoomService | null = null;
+let activeBudget: RoomTurnBudget | null = null;
+
+/**
+ * Register the hourly turn budget the room subsystem charges, so a doc
+ * comment's wakes are charged to the same install-wide window (DOR-2983).
+ *
+ * @param budget - The wired budget.
+ */
+export function setRoomTurnBudget(budget: RoomTurnBudget): void {
+  activeBudget = budget;
+}
+
+/** The hourly turn budget, or null before bootstrap registered it. */
+export function tryGetRoomTurnBudget(): RoomTurnBudget | null {
+  return activeBudget;
+}
 
 // **The turn boundary is the only seam a targeted canvas write can close on**
 // (spec `canvas-agent-seat` §9). A ONE-ON-ONE session has no turn id — that

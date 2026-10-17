@@ -51,6 +51,8 @@ export function createCommentHarness(
     agents?: HarnessAgent[];
     limits?: Partial<CommentWakeLimits>;
     levels?: Record<string, TurnPermissionLevel>;
+    /** How many automatic turns the hour has left; unlimited when omitted. */
+    turnsLeft?: number;
   } = {}
 ) {
   const db = createTestDb();
@@ -109,9 +111,21 @@ export function createCommentHarness(
     }
   );
   let lifecycle: ((event: DispatchLifecycleEvent) => void) | undefined;
+  // The rooms' hourly budget, as the waker sees it: what was charged, and to which window.
+  const reserved: string[] = [];
+  let turnsLeft = opts.turnsLeft ?? Number.POSITIVE_INFINITY;
+  const budget = {
+    tryReserve: (key: string) => {
+      if (turnsLeft <= 0) return { allowed: false, scope: 'global' as const, counted: false };
+      turnsLeft -= 1;
+      reserved.push(key);
+      return { allowed: true, counted: true };
+    },
+  };
   const waker = new CommentWaker({
     store,
     limits: () => limits,
+    budget: () => budget,
     turnLevelOf: (sessionId) => opts.levels?.[sessionId],
     meshCore: () => meshCore,
     dispatch,
@@ -130,6 +144,8 @@ export function createCommentHarness(
   });
 
   const owner = authors.localHuman();
+  /** The owner, writing in person through the app. */
+  const ownerInPerson = { author: owner, inPerson: true };
   const agentAuthor = (name: string) => {
     const agent = agents.find((candidate) => candidate.name === name)!;
     return authors.resolveAgent(agent.path, agent.name);
@@ -151,6 +167,8 @@ export function createCommentHarness(
     notified,
     limits,
     owner,
+    ownerInPerson,
+    reserved,
     agentAuthor,
     startTurn,
   };

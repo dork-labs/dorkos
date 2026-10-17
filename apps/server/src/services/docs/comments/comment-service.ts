@@ -49,6 +49,12 @@ export interface CommentWriter {
   author: AuthorRecord;
   /** The chat an agent's tool call came from, from the verified turn. */
   sessionId?: string;
+  /**
+   * Whether the request is the owner in person, by the person bars
+   * (`routes/doc-comment-caller.ts`). Only then do the owner's words count as
+   * a request; an owner author without it is written as an outsider.
+   */
+  inPerson?: boolean;
 }
 
 /** A mentioned agent that was not woken, and why. */
@@ -207,19 +213,24 @@ export class DocCommentService {
 
   /**
    * Save the anchors the editor moved. Ids that are not this doc's threads
-   * are skipped.
+   * are skipped, and so are threads the caller may not move: a person in the
+   * app moves any thread (their editor reports them), anybody else only the
+   * threads it opened.
    *
    * @param doc - The doc.
+   * @param writer - Who is saving them.
    * @param updates - Each thread and its fresh anchor.
    * @returns How many threads took a new anchor.
    */
   updateAnchors(
     doc: DocLocation,
+    writer: CommentWriter,
     updates: ReadonlyArray<{ id: string; anchor: DocCommentAnchor }>
   ): number {
     return this.deps.store.updateAnchors(
       doc.key,
-      updates.map(({ id, anchor }) => ({ id, anchorJson: JSON.stringify(anchor) }))
+      updates.map(({ id, anchor }) => ({ id, anchorJson: JSON.stringify(anchor) })),
+      writer.inPerson === true ? undefined : writer.author.id
     );
   }
 
@@ -287,6 +298,7 @@ export class DocCommentService {
       authorId: writer.author.id,
       body,
       mentionsJson: JSON.stringify(mentions),
+      trust: this.deps.directory.trustOf(writer.author, writer.inPerson === true),
       cascadeRoot: cascade.cascadeRoot,
       cascadeDepth: cascade.cascadeDepth,
       createdAt: at,
@@ -305,7 +317,7 @@ export class DocCommentService {
     let unreached: UnreachedMention[] = [];
     try {
       this.notifyOwner(doc, row, writer, mentions);
-      unreached = await this.wakeMentioned(doc, thread, row, writer, mentions);
+      unreached = await this.wakeMentioned(doc, stored, thread, row, writer, mentions);
     } catch (err) {
       logger.warn('[doc-comments] a comment was saved, but its follow-ups failed', {
         threadId: row.threadId,
@@ -337,6 +349,7 @@ export class DocCommentService {
 
   private async wakeMentioned(
     doc: DocLocation,
+    stored: StoredDocCommentThread,
     thread: DocCommentThread,
     row: DocCommentRow,
     writer: CommentWriter,
@@ -351,18 +364,25 @@ export class DocCommentService {
     }
     if (targets.length === 0) return [];
 
-    const trust = this.deps.directory.trustOf(writer.author);
-    const index = thread.comments.findIndex((comment) => comment.id === row.id);
-    const earlier: WakeComment[] = thread.comments.slice(0, Math.max(index, 0)).map((comment) => ({
-      authorName: comment.author.displayName,
-      authorTrust: trustOfView(comment.author),
-      body: comment.body,
-    }));
+    const trust = row.trust;
+    const index = stored.comments.findIndex((comment) => comment.id === row.id);
+    // Each earlier comment is labelled with the trust it was written with, so
+    // an owner author who was not in person reads as what they were.
+    const earlier: WakeComment[] = stored.comments
+      .slice(0, Math.max(index, 0))
+      .map((comment, i) => ({
+        authorName: thread.comments[i]?.author.displayName ?? 'Someone',
+        authorTrust: comment.trust,
+        body: comment.body,
+      }));
     const quote = typeof thread.anchor.quote === 'string' ? thread.anchor.quote : null;
     const outcomes = await this.deps.waker.wake({
       cascade: { root: row.cascadeRoot, depth: row.cascadeDepth },
       trust,
       ...(writer.sessionId ? { authorSessionId: writer.sessionId } : {}),
+      // An agent comment with no woken turn behind it is its own, spent cascade root.
+      fromWokenTurn: row.cascadeRoot !== row.id,
+      docKey: doc.key,
       targets,
       render: () =>
         renderCommentWake({
@@ -376,12 +396,6 @@ export class DocCommentService {
     });
     return outcomes.filter((outcome): outcome is UnreachedMention => !outcome.woken);
   }
-}
-
-/** How much an earlier comment's author counts for, from what a reader is shown. */
-function trustOfView(author: DocCommentAuthor): WakeComment['authorTrust'] {
-  if (author.isOwner) return 'owner';
-  return author.kind === 'agent' ? 'agent' : 'outsider';
 }
 
 /** A stored mention list; anything unreadable is no mentions. */

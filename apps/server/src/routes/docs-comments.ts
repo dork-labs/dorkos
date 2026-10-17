@@ -9,11 +9,18 @@
  * - `PATCH /threads/:threadId/comments/:commentId`: change your own comment.
  * - `PUT /anchors`: save the anchors the editor moved.
  *
- * Who is writing is the request's own caller (`resolveCaller`, the rooms'
- * rule), never a field in the body. A doc is `{ cwd, path }`, checked against
- * the same directory boundary as the files routes. A write answers with the
- * thread and with any mentioned agent that was not woken, so the app can say
- * so.
+ * Who is calling is the request's own caller (`docCommentWriterOf`: the
+ * rooms' `resolveCaller`, plus whether it is the owner in person), never a
+ * field in the body, and every route resolves it, reads included, so a revoked
+ * agent token is refused everywhere (DOR-1361). A doc is `{ cwd, path }`, a
+ * `.md` file checked against the same directory boundary as the files routes.
+ * A write answers with the thread and with any mentioned agent that was not
+ * woken, so the app can say so.
+ *
+ * `PUT /anchors` moves only what the caller may: a person in the app moves any
+ * thread on the doc (their open editor is what reports anchors), anybody else
+ * only the threads it opened. Without that, a program with no editor could
+ * detach other people's threads from their words.
  *
  * The whole group answers 404 while the `docs.enabled` experiment is off.
  *
@@ -47,7 +54,7 @@ import {
 } from '../services/docs/comments/index.js';
 import type { CommentWriteResult, CommentWriter } from '../services/docs/comments/index.js';
 import { RoomError } from '../services/rooms/index.js';
-import { resolveCaller } from './room-caller.js';
+import { docCommentWriterOf } from './doc-comment-caller.js';
 
 /** What the routes read, injectable for tests. */
 export interface DocCommentRouteDeps {
@@ -64,7 +71,7 @@ export interface DocCommentRouteDeps {
 const liveDeps: DocCommentRouteDeps = {
   enabled: docsEnabled,
   service: () => getDocComments()?.service ?? null,
-  writer: (c) => ({ author: resolveCaller(honoRequestFacts(c)) }),
+  writer: (c) => docCommentWriterOf(honoRequestFacts(c)),
   locate: resolveDocLocation,
 };
 
@@ -112,19 +119,17 @@ export function createDocCommentRoutes(deps: DocCommentRouteDeps = liveDeps): Ho
       service: DocCommentService;
       doc: DocLocation;
       input: z.infer<S>;
-      writer: () => CommentWriter;
+      writer: CommentWriter;
     }) => unknown
   ): Promise<Response> {
     const parsed = schema.safeParse(input);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     try {
+      // Resolved first, on every route: an unverifiable agent token is a 401
+      // before anything is read.
+      const writer = deps.writer(c);
       const doc = await deps.locate(parsed.data.cwd, parsed.data.path);
-      const result = await handle({
-        service: deps.service()!,
-        doc,
-        input: parsed.data,
-        writer: () => deps.writer(c),
-      });
+      const result = await handle({ service: deps.service()!, doc, input: parsed.data, writer });
       return c.json(result as object);
     } catch (err) {
       if (err instanceof BoundaryError) return c.json(errorBody(err.message, err.code), 403);
@@ -144,19 +149,29 @@ export function createDocCommentRoutes(deps: DocCommentRouteDeps = liveDeps): Ho
     run(c, DocRefSchema, readQuery(c), ({ service, doc }) => ({ threads: service.list(doc) }))
   );
 
-  router.get('/mentionable', (c) => c.json({ people: deps.service()!.mentionable() }));
+  router.get('/mentionable', (c) => {
+    try {
+      deps.writer(c);
+    } catch (err) {
+      if (err instanceof RoomError && err.code === 'AGENT_IDENTITY_UNVERIFIED') {
+        return c.json(errorBody(err.message, err.code), 401);
+      }
+      throw err;
+    }
+    return c.json({ people: deps.service()!.mentionable() });
+  });
 
   router.post('/threads', (c) =>
     run(c, CreateDocCommentThreadSchema, readJsonBody(c), async ({ service, doc, input, writer }) =>
       writeAnswer(
-        await service.createThread(doc, writer(), { anchor: input.anchor, body: input.body })
+        await service.createThread(doc, writer, { anchor: input.anchor, body: input.body })
       )
     )
   );
 
   router.post('/threads/:threadId/replies', (c) =>
     run(c, ReplyDocCommentSchema, readJsonBody(c), async ({ service, doc, input, writer }) =>
-      writeAnswer(await service.reply(doc, writer(), c.req.param('threadId'), input.body))
+      writeAnswer(await service.reply(doc, writer, c.req.param('threadId'), input.body))
     )
   );
 
@@ -166,7 +181,7 @@ export function createDocCommentRoutes(deps: DocCommentRouteDeps = liveDeps): Ho
       SetDocCommentThreadResolvedSchema,
       readJsonBody(c),
       ({ service, doc, input, writer }) => ({
-        thread: service.setResolved(doc, writer(), c.req.param('threadId'), input.resolved),
+        thread: service.setResolved(doc, writer, c.req.param('threadId'), input.resolved),
       })
     )
   );
@@ -175,7 +190,7 @@ export function createDocCommentRoutes(deps: DocCommentRouteDeps = liveDeps): Ho
     run(c, EditDocCommentSchema, readJsonBody(c), ({ service, doc, input, writer }) => ({
       thread: service.edit(
         doc,
-        writer(),
+        writer,
         c.req.param('threadId'),
         c.req.param('commentId'),
         input.body
@@ -184,8 +199,8 @@ export function createDocCommentRoutes(deps: DocCommentRouteDeps = liveDeps): Ho
   );
 
   router.put('/anchors', (c) =>
-    run(c, UpdateDocCommentAnchorsSchema, readJsonBody(c), ({ service, doc, input }) => ({
-      updated: service.updateAnchors(doc, input.updates),
+    run(c, UpdateDocCommentAnchorsSchema, readJsonBody(c), ({ service, doc, input, writer }) => ({
+      updated: service.updateAnchors(doc, writer, input.updates),
     }))
   );
 

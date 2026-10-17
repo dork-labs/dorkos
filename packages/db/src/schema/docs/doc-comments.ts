@@ -69,6 +69,12 @@ export const docComments = sqliteTable(
     body: text('body').notNull(),
     /** Author ids its `@handles` reached, resolved once at write time (JSON array). */
     mentionsJson: text('mentions_json').notNull().default('[]'),
+    /**
+     * How much its words counted for when it was written: `owner` only for the
+     * owner in person, `agent` for one of this computer's agents, `outsider`
+     * for anybody else. Kept so a later wake labels it as it was written.
+     */
+    trust: text('trust', { enum: ['owner', 'agent', 'outsider'] }).notNull(),
     /** The comment that began this chain of automatic replies. */
     cascadeRoot: text('cascade_root').notNull(),
     /** How many automatic replies deep this comment is. A person's comment is 0. */
@@ -86,6 +92,32 @@ export const docComments = sqliteTable(
 
 /** A row of {@link docComments}. */
 export type DocCommentRow = typeof docComments.$inferSelect;
+
+/**
+ * Every agent a doc comment woke, one row per wake sent (DOR-2983).
+ *
+ * The cascade guard's repeat rule counts these: how many times one agent has
+ * been woken in one chain. Written before the wake is dispatched, so two
+ * comments arriving together cannot both read a count of zero, and removed
+ * when the dispatch was refused, so a wake that never ran costs nothing.
+ */
+export const docCommentWakes = sqliteTable(
+  'doc_comment_wakes',
+  {
+    /** ULID. */
+    id: text('id').primaryKey(),
+    /** The comment that began the chain. */
+    cascadeRoot: text('cascade_root').notNull(),
+    /** The woken agent's author id. */
+    agentAuthorId: text('agent_author_id').notNull(),
+    /** When the wake was sent (ISO 8601). */
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('doc_comment_wakes_cascade_idx').on(table.cascadeRoot)]
+);
+
+/** A row of {@link docCommentWakes}. */
+export type DocCommentWakeRow = typeof docCommentWakes.$inferSelect;
 
 /**
  * The chat DorkOS keeps with each agent for doc comments that mention it.

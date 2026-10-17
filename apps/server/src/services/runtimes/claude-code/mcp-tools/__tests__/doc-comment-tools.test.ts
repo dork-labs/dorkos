@@ -105,8 +105,11 @@ describe('doc comment tools', () => {
       end: start + 6,
       body: '@quill have a look',
     });
+    // The calling chat was not woken by a comment, so the tool says that, not a limit.
     expect(data.notWoken).toEqual([
-      'quill was not woken: the chain of automatic replies reached its limit.',
+      expect.stringMatching(
+        /^quill was not woken: you wrote this outside a turn a doc comment woke/
+      ),
     ]);
   });
 

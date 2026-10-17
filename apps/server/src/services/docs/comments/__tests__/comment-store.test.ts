@@ -19,6 +19,7 @@ function comment(overrides: Partial<NewDocComment> = {}): NewDocComment {
     authorId: 'author-owner',
     body: 'Is this date right?',
     mentionsJson: '[]',
+    trust: 'owner',
     cascadeRoot: 'c1',
     cascadeDepth: 0,
     createdAt: AT,
@@ -114,16 +115,22 @@ describe('DocCommentStore', () => {
     expect(store.getComment('t2', 't1-c1')).toBeNull();
   });
 
-  it('counts comments by author in one chain', () => {
-    openThread('t1', 'doc-a', { cascadeRoot: 'root' });
-    store.insertComment(comment({ id: 'c2', authorId: 'agent-a', cascadeRoot: 'root' }));
-    store.insertComment(comment({ id: 'c3', authorId: 'agent-a', cascadeRoot: 'root' }));
-    store.insertComment(comment({ id: 'c4', authorId: 'agent-a', cascadeRoot: 'other' }));
+  it('counts wakes per agent in one chain, and forgets a wake never sent', () => {
+    const wake = (id: string, agent: string, root = 'root') =>
+      store.recordWake({ id, cascadeRoot: root, agentAuthorId: agent, createdAt: AT });
+    wake('w1', 'agent-a');
+    wake('w2', 'agent-a');
+    wake('w3', 'agent-b');
+    wake('w4', 'agent-a', 'other');
+    store.forgetWake('w3');
 
-    expect(Object.fromEntries(store.commentsByAuthorInCascade('root'))).toEqual({
-      'author-owner': 1,
-      'agent-a': 2,
-    });
+    expect(Object.fromEntries(store.wakesByAgentInCascade('root'))).toEqual({ 'agent-a': 2 });
+  });
+
+  it('moves only the threads an author opened when told to', () => {
+    openThread('t1', 'doc-a');
+    expect(store.updateAnchors('doc-a', [{ id: 't1', anchorJson: '{}' }], 'someone-else')).toBe(0);
+    expect(store.updateAnchors('doc-a', [{ id: 't1', anchorJson: '{}' }], 'author-owner')).toBe(1);
   });
 
   it('keeps one chat per agent, replacing it when it changes', () => {

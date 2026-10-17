@@ -18,7 +18,11 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { DOC_COMMENT_BODY_MAX, DOC_PATH_MAX } from '@dorkos/shared/doc-comments';
+import {
+  DOC_COMMENT_BODY_MAX,
+  DOC_PATH_MAX,
+  type DocCommentUnreached,
+} from '@dorkos/shared/doc-comments';
 import { BoundaryError } from '../../../../lib/boundary.js';
 import { DocPathError } from '../../../docs/doc-space.js';
 import { docsEnabled } from '../../../docs/docs-experiment.js';
@@ -46,11 +50,15 @@ export interface DocCommentToolCaller {
 }
 
 /** Why a reply limit or the machine kept a mention from waking an agent. */
-const UNREACHED_REASON = {
+const UNREACHED_REASON: Record<DocCommentUnreached['reason'], string> = {
   depth: 'the chain of automatic replies reached its limit',
-  repeat: 'it already answered as often as one chain allows',
+  repeat: 'it was already woken as often as one chain allows',
+  budget: 'this hour’s automatic turns are used up',
+  unprompted:
+    'you wrote this outside a turn a doc comment woke, and only such a turn can wake ' +
+    'another agent. Ask the person to mention it, or message it with chat_send',
   unavailable: 'it could not take a message just now',
-} as const;
+};
 
 /** The doc a tool call names. */
 const DocArgs = {
@@ -58,7 +66,7 @@ const DocArgs = {
     .string()
     .min(1)
     .max(DOC_PATH_MAX)
-    .describe('The markdown doc, relative to the folder (e.g. "notes/plan.md").'),
+    .describe('The markdown doc (.md), relative to the folder (e.g. "notes/plan.md").'),
   cwd: z
     .string()
     .optional()
@@ -168,7 +176,7 @@ export function getDocCommentTools(resolveCaller: () => DocCommentToolCaller | u
         '(character offsets, start inclusive, end exclusive). Ends inside markup snap to the ' +
         'text. A range that starts or ends inside an escape, an entity, a wrapped paragraph, ' +
         'code or frontmatter is refused: widen it to whole units. Mentioning an agent with ' +
-        '@handle wakes it within the reply limits.',
+        '@handle wakes it within the reply limits, but only from a turn a doc comment woke.',
       {
         ...DocArgs,
         start: z.number().int().min(0).describe('Where the range starts in the raw markdown.'),
@@ -190,7 +198,7 @@ export function getDocCommentTools(resolveCaller: () => DocCommentToolCaller | u
       'doc_comment_reply',
       'Reply in a comment thread on a markdown doc. This is how you answer a comment that ' +
         'mentioned you: what you write in your chat is not posted. Mentioning an agent with ' +
-        '@handle wakes it within the reply limits.',
+        '@handle wakes it within the reply limits, but only from a turn a doc comment woke.',
       { ...DocArgs, threadId: z.string().min(1).describe('The thread.'), body: Body },
       (args) =>
         runDocTool(resolveCaller, args, async ({ comments, doc, writer }) =>

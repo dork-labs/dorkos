@@ -18,6 +18,7 @@ import { RemoteRoomSubscriptionBridge } from '../../services/communities/remote/
 import {
   createRoomSubsystem,
   setRoomService,
+  setRoomTurnBudget,
   resolveOperatorAuthor,
   setWelcomeBackGreeter,
   setRoomInternals,
@@ -128,6 +129,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
     canvasDocuments,
+    budget: roomTurnBudget,
   } = createRoomSubsystem({
     db,
     runtimePrincipalCurrent: (proof) =>
@@ -158,6 +160,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     },
   });
   setRoomService(roomService);
+  // Doc comment wakes are charged to the same hourly window (DOR-2983).
+  setRoomTurnBudget(roomTurnBudget);
   if (!refs.remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(refs.remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(refs.remoteCommunityRuntime.projection);

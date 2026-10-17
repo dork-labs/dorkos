@@ -1,8 +1,8 @@
 /**
  * Whether the turn running in a chat was started by somebody from off this
  * machine: a bridged Telegram or Slack sender, an external room author, an
- * outside agent over A2A, or a connector event (PRINCIPLES §1: trust never
- * extends to strangers).
+ * outside agent over A2A, a connector event, or a doc comment by anybody but
+ * the owner in person (PRINCIPLES §1: trust never extends to strangers).
  *
  * The turn origin decides a session row's power once, at binding; it says
  * nothing about a later turn. So a capability handler that must behave
@@ -37,7 +37,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { primaryOf } from '../resolution/session-key-registry.js';
 import type { TurnOrigin } from './turn-origin.js';
 
-/** Origins whose every turn is a stranger's. A room turn depends on its author. */
+/**
+ * Origins whose every turn is a stranger's. A room turn and a doc comment's
+ * depend on who wrote the words that started them.
+ */
 const OUTSIDER_ORIGIN_KINDS: ReadonlySet<string> = new Set([
   'relay-binding',
   'outside-sender',
@@ -65,7 +68,7 @@ let launchOriginOf: ((sessionId: string) => string | null) | undefined;
  * @param origin - The turn's origin.
  */
 export function isOutsiderOrigin(origin: TurnOrigin): boolean {
-  if (origin.kind === 'room') return origin.externalAuthor;
+  if (origin.kind === 'room' || origin.kind === 'doc-comment') return origin.externalAuthor;
   return OUTSIDER_ORIGIN_KINDS.has(origin.kind);
 }
 

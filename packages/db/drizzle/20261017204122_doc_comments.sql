@@ -19,12 +19,21 @@ CREATE TABLE `doc_comment_threads` (
 );
 --> statement-breakpoint
 CREATE INDEX `doc_comment_threads_doc_idx` ON `doc_comment_threads` (`doc_key`);--> statement-breakpoint
+CREATE TABLE `doc_comment_wakes` (
+	`id` text PRIMARY KEY NOT NULL,
+	`cascade_root` text NOT NULL,
+	`agent_author_id` text NOT NULL,
+	`created_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `doc_comment_wakes_cascade_idx` ON `doc_comment_wakes` (`cascade_root`);--> statement-breakpoint
 CREATE TABLE `doc_comments` (
 	`id` text PRIMARY KEY NOT NULL,
 	`thread_id` text NOT NULL,
 	`author_id` text NOT NULL,
 	`body` text NOT NULL,
 	`mentions_json` text DEFAULT '[]' NOT NULL,
+	`trust` text NOT NULL,
 	`cascade_root` text NOT NULL,
 	`cascade_depth` integer DEFAULT 0 NOT NULL,
 	`created_at` text NOT NULL,

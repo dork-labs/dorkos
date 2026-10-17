@@ -13,6 +13,9 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { initBoundary } from '../../lib/boundary.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createDocCommentRoutes } from '../docs-comments.js';
+import { isOwnerInPerson } from '../doc-comment-caller.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import { RoomError } from '../../services/rooms/index.js';
 import { resolveDocLocation } from '../../services/docs/comments/index.js';
 import {
   ANCHOR,
@@ -38,7 +41,17 @@ function app() {
       routes: createDocCommentRoutes({
         enabled: () => enabled,
         service: () => h.service,
-        writer: () => ({ author: h.owner }),
+        // The real person bar over the real request; the author is the owner,
+        // as `resolveCaller` answers a login-off request with no agent header.
+        writer: (c) => {
+          if (c.req.header('x-dorkos-agent')) {
+            throw new RoomError(
+              'AGENT_IDENTITY_UNVERIFIED',
+              'That agent identity could not be verified.'
+            );
+          }
+          return { author: h.owner, inPerson: isOwnerInPerson(honoRequestFacts(c)) };
+        },
         locate: resolveDocLocation,
       }),
     })
@@ -78,6 +91,7 @@ describe('/api/documents/comments', () => {
     const doc = { cwd: space, path: './plan.md' };
     const created = await request(app())
       .post('/api/documents/comments/threads')
+      .set('X-Client-Id', 'tab-1')
       .send({ ...doc, anchor: ANCHOR, body: 'Ask @scout' })
       .expect(200);
     expect(created.body.unreached).toEqual([]);
@@ -114,6 +128,38 @@ describe('/api/documents/comments', () => {
       .expect(200);
     expect(listed.body.threads).toHaveLength(1);
     expect(listed.body.threads[0].anchor.start).toBe(1);
+  });
+
+  it('counts the owner’s words as a request only from the app, in person', async () => {
+    const body = { cwd: space, path: 'plan.md', anchor: ANCHOR, body: '@scout check this' };
+    await request(app())
+      .post('/api/documents/comments/threads')
+      .set('X-Client-Id', 'tab-1')
+      .send(body)
+      .expect(200);
+    expect(h.dispatched[0]!.permissionCeiling).toBeUndefined();
+
+    await request(app()).post('/api/documents/comments/threads').send(body).expect(200);
+    expect(h.dispatched[1]!.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('refuses an unverifiable agent token on every route, reads included', async () => {
+    const doc = { cwd: space, path: 'plan.md' };
+    const agent = { 'X-DorkOS-Agent': 'revoked' };
+    await request(app()).get('/api/documents/comments').set(agent).query(doc).expect(401);
+    await request(app()).get('/api/documents/comments/mentionable').set(agent).expect(401);
+    await request(app())
+      .put('/api/documents/comments/anchors')
+      .set(agent)
+      .send({ ...doc, updates: [] })
+      .expect(401);
+  });
+
+  it('refuses a doc that is not a markdown file', async () => {
+    await request(app())
+      .get('/api/documents/comments')
+      .query({ cwd: space, path: 'notes.txt' })
+      .expect(400);
   });
 
   it('lists who a comment can mention', async () => {

@@ -123,6 +123,7 @@ Connecting gives a client DorkOS's full external tool surface: 74 tools in total
 | Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                    |
 | Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`   |
 | Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`               |
+| Doc comments        | 4     | `doc_comment_list`, `doc_comment_create`, `doc_comment_reply`, `doc_comment_resolve`  |
 | Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`       |
 | Memory              | 2     | `memory_write`, `memory_read`                                                         |
 | Commitments         | 3     | `commitment_add`, `commitment_update`, `commitments_list`                             |
@@ -132,9 +133,9 @@ Connecting gives a client DorkOS's full external tool surface: 74 tools in total
 | Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                   |
 | Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link` |
 
-The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 33 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last eight rows (operator, memory, commitments, heartbeats, permissions, self-description, document events, marketplace: 33 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 41 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
-Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
+Being off the registry does not mean running unchecked. All 41 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 The tools agents use to message each other's chats (`chat_send`, `chat_read`, `chat_stop`) are not on this server. Each one acts as the chat that calls it, and a client connected from outside has no chat to act as.
 
@@ -143,7 +144,7 @@ Inside a DorkOS session, Claude Code is also told which tier a tool sits at and 
 <Callout type="info">
   The 10 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 55. On a **Trusted** install, `marketplace_install`, `marketplace_uninstall`, and
+  with the other 64. On a **Trusted** install, `marketplace_install`, `marketplace_uninstall`, and
   `marketplace_update` with `apply: true` run straight through from a source you have already
   configured, recorded rather than approved; on **Careful**, each returns a pending approval with a
   token instead, and a person decides it in the DorkOS UI before the client retries with the token.
