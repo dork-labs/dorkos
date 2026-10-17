@@ -103,7 +103,7 @@ describe('document event acceptance', () => {
     expect(() => f.ingest.accept({ ...input, payload: { changed: true } }, f.authority)).toThrow(
       'DOC_EVENT_ID_CONFLICT'
     );
-    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(2);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(3);
     expect(envelopeIdentity(input).bytes).toBe(Buffer.byteLength(JSON.stringify(input)));
   });
   it('checks current authority before duplicate lookup and duplicates before rate/backlog charges', () => {
@@ -127,7 +127,7 @@ describe('document event acceptance', () => {
         pendingEvents: 1,
       }).accept(event(), f.authority)
     ).toThrow('DOC_EVENT_BACKLOG_FULL');
-    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(2);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(3);
   });
   it('rolls sequence/event/batch back when delivery persistence fails', () => {
     const f = fixture();
@@ -156,7 +156,7 @@ describe('document event acceptance', () => {
     }
     expect(f.store.getEvent('doc-1', next.id)).toBeUndefined();
     expect(f.store.getEvent('doc-1', saved.id)!.envelopeBytes).toBe(0);
-    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(2);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(3);
   });
   it('applies precise byte caps once across routes and global documents', () => {
     const f = fixture();
@@ -343,7 +343,8 @@ describe('bounded retention and restart', () => {
     f.access.routes = [{ route, grantId: 'grant-1', grantRevision: 1 }];
     const protectedInput = event();
     f.ingest.accept(protectedInput, f.authority);
-    retainDocHistory(f.store, NOW, { documentBytes: 600 });
+    // The completed initial pending status also occupies retained history bytes.
+    retainDocHistory(f.store, NOW, { documentBytes: 1600 });
     expect(f.store.getEvent('doc-1', saved.id)!.payloadPrunedAt).toBe(NOW);
     expect(f.ingest.accept(saved, f.authority).receipt.status).toBe('duplicate');
     expect(f.store.getEvent('doc-1', protectedInput.id)!.payloadPrunedAt).toBeNull();
@@ -378,12 +379,12 @@ describe('bounded retention and restart', () => {
     expect(second.ingest.accept(input, second.authority).receipt.docSeq).toBe(1);
     expect(
       replayDocChannel(second.store, second.authority).events.map((frame) => frame.docSeq)
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3, 4]);
   });
 });
 
 describe('failure and floor boundaries', () => {
-  it('reports a discontinuity past newer pruned seq3 while preserving older uncertain seq2', () => {
+  it('reports a discontinuity past newer pruned seq4 while preserving older uncertain seq2', () => {
     const f = fixture();
     f.access.routes = [];
     f.ingest.accept(event(), f.authority);
@@ -405,12 +406,12 @@ describe('failure and floor boundaries', () => {
     retainDocHistory(f.store, '2026-11-02T12:00:00Z');
     const replay = replayDocChannel(f.store, f.authority, 1);
     expect(replay.resetRequired).toBe(true);
-    expect(replay.retentionFloor).toBe(4);
-    expect(replay.receiptRetentionFloor).toBe(4);
+    expect(replay.retentionFloor).toBe(5);
+    expect(replay.receiptRetentionFloor).toBe(5);
     expect(replay.receipts.map((receipt) => receipt.id)).toContain(uncertain.id);
     expect(replay.health.status).toBe('in_doubt');
     expect(f.store.getEvent('doc-1', uncertain.id)!.payloadPrunedAt).toBeNull();
-    expect(replayDocChannel(f.store, f.authority, 3).resetRequired).toBe(false);
+    expect(replayDocChannel(f.store, f.authority, 4).resetRequired).toBe(false);
     expect(replayDocChannel(f.store, f.authority, Number.MAX_SAFE_INTEGER).events).toEqual([]);
   });
   it('backfills zero-size foundation inputs before enforcing byte capacity', () => {
@@ -461,11 +462,14 @@ describe('failure and floor boundaries', () => {
         throw new Error('rollback');
       })
     ).toThrow('rollback');
-    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(2);
+    expect(f.store.getChannel('doc-1')!.nextDocSeq).toBe(3);
     f.store.transaction((tx) =>
       appendDocStatus(f.store, tx, 'doc-1', { id: first.id, status: 'pending' }, NOW)
     );
-    expect(replayDocChannel(f.store, f.authority).events[1]!.event.type).toBe('event.status');
+    expect(replayDocChannel(f.store, f.authority).events[2]).toMatchObject({
+      docSeq: 3,
+      event: { type: 'event.status', payload: { id: first.id, status: 'pending' } },
+    });
     expect(() =>
       new DocChannelIngest(f.store, () => new Date(NOW), { eventsPerMinute: 2 }).accept(
         event(),

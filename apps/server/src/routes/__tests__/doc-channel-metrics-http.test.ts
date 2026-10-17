@@ -451,7 +451,30 @@ describe('document metrics through the full app', () => {
     expect(duplicate.status).toBe(200);
     expect(first.body.receipt.docSeq).toBe(1);
     expect(duplicate.body.receipt.docSeq).toBe(1);
-    expect((await request(server).get(`${endpoint()}/channel`)).body.events).toHaveLength(1);
+    expect((await request(server).get(`${endpoint()}/channel`)).body.events).toEqual([
+      expect.objectContaining({
+        docSeq: 1,
+        event: expect.objectContaining({
+          id: input.id,
+          type: input.type,
+          direction: 'upstream',
+          payload: input.payload,
+        }),
+      }),
+      expect.objectContaining({
+        docSeq: 2,
+        event: expect.objectContaining({
+          type: 'event.status',
+          direction: 'system',
+          payload: {
+            eventId: input.id,
+            routeId: 'tasks',
+            status: 'pending',
+            batchId: first.body.deliveries[0].batchId,
+          },
+        }),
+      }),
+    ]);
     expect((await post({ ...input, payload: { different: true } })).status).toBe(409);
     expect(
       (

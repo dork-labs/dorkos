@@ -49,6 +49,7 @@ function warn(store: DocChannelStore, batchId: string, generation: string, docum
     return true;
   });
 }
+// Counts every status, including the original input's one initial pending frame.
 function warningCount(db: Db) {
   return db.$client
     .prepare("SELECT count(*) AS count FROM canvas_doc_events WHERE type='event.status'")
@@ -73,7 +74,7 @@ it('allows one warning across competing connections and a database restart', () 
     );
   });
   expect(warn(second, f.batchId, f.generation, f.documentId)).toBe(false);
-  expect(warningCount(secondDb).count).toBe(1);
+  expect(warningCount(secondDb).count).toBe(2);
   expect(second.getBatch(f.batchId)?.waitingWarningAt).toBe(NOW);
   f.db.$client.close();
   connections.delete(f.db);
@@ -83,7 +84,7 @@ it('allows one warning across competing connections and a database restart', () 
   connections.add(restartedDb);
   const restarted = new DocChannelStore(restartedDb);
   expect(warn(restarted, f.batchId, f.generation, f.documentId)).toBe(false);
-  expect(warningCount(restartedDb).count).toBe(1);
+  expect(warningCount(restartedDb).count).toBe(2);
 });
 
 it('rolls back the marker and sequence when the warning event insert fails', () => {
@@ -97,11 +98,11 @@ it('rolls back the marker and sequence when the warning event insert fails', () 
   );
   expect(f.store.getBatch(f.batchId)?.waitingWarningAt).toBeNull();
   expect(f.store.getChannel(f.documentId)?.nextDocSeq).toBe(before);
-  expect(warningCount(f.db).count).toBe(0);
+  expect(warningCount(f.db).count).toBe(1);
   f.db.$client.exec('DROP TRIGGER reject_warning');
   expect(warn(f.store, f.batchId, f.generation, f.documentId)).toBe(true);
   expect(warn(f.store, f.batchId, f.generation, f.documentId)).toBe(false);
-  expect(warningCount(f.db).count).toBe(1);
+  expect(warningCount(f.db).count).toBe(2);
 });
 
 it('refuses wrong or absent generations and every non-waiting lifecycle state', () => {
@@ -128,7 +129,7 @@ it('refuses wrong or absent generations and every non-waiting lifecycle state', 
     expect(warn(f.store, f.batchId, f.generation, f.documentId)).toBe(false);
     expect(f.store.getBatch(f.batchId)?.waitingWarningAt).toBeNull();
   }
-  expect(warningCount(f.db).count).toBe(0);
+  expect(warningCount(f.db).count).toBe(1);
 });
 
 it('preserves the physical marker across rekey and gives explicit replay a fresh marker', () => {
@@ -157,7 +158,7 @@ it('preserves the physical marker across rekey and gives explicit replay a fresh
     .where(eq(canvasDocBatches.batchId, replayId))
     .run();
   expect(warn(f.store, replayId, replay.generation, f.documentId)).toBe(true);
-  expect(warningCount(f.db).count).toBe(3); // Original warning, explicit replay status, new warning.
+  expect(warningCount(f.db).count).toBe(4); // Initial pending, original warning, explicit replay status, new warning.
 });
 
 it('upgrades populated accounting-era batches without changing their existing data', () => {

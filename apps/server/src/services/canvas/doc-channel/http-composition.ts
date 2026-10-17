@@ -17,7 +17,7 @@ import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
 import { resolveCaller } from '../../../routes/room-caller.js';
 import { getRequestAgentIdentity } from '../../../middleware/agent-identity.js';
 import { isContained } from '../../../lib/boundary.js';
-import { readOwnerAccount, type RequestUser } from '../../core/auth/index.js';
+import type { RequestUser } from '../../core/auth/index.js';
 import {
   TOKEN_ABSOLUTE_TTL_MS,
   TOKEN_IDLE_TTL_MS,
@@ -26,7 +26,6 @@ import type { ApprovalService } from '../../core/approvals/approval-service.js';
 import {
   createServerPrincipal,
   isServerPrincipal,
-  type ConnectorOwnerAuthority,
   type ServerPrincipalProof,
   type ServerPrincipalClaims,
 } from '../../connectors/principal/server-principal.js';
@@ -35,7 +34,6 @@ import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import type { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
-import { canvasSourcePath } from '../document-key.js';
 import { parseScope } from '../scopes.js';
 import { DocChannelDownstream } from './downstream/service.js';
 import { createDocDownstreamAuthority } from './downstream/authority.js';
@@ -45,6 +43,17 @@ import { DocChannelService } from './service.js';
 import { DocChannelGrants } from './grants.js';
 import { DocChannelIngest } from './ingest.js';
 import { DocRouteGrantError, type DocGrantAuthority } from './grant-policy.js';
+import {
+  docInstallationOwner,
+  sameDocOwnerAuthority,
+  readDocSourceDescriptor,
+} from './doc-source-policy.js';
+export {
+  docInstallationOwner,
+  sameDocOwnerAuthority,
+  readDocSourceDescriptor,
+} from './doc-source-policy.js';
+export type { DocSourceDescriptor, DocSourceDependencies } from './doc-source-policy.js';
 
 /** Use real server-owned instances; no independent physical document writer or transcript store. */
 export function createDocChannelHttpComposition(deps: {
@@ -62,24 +71,12 @@ export function createDocChannelHttpComposition(deps: {
   downstream: DocChannelDownstream;
   channels: DocChannelStore;
   authorization: DocChannelAuthorization;
+  grantAuthority: DocGrantAuthority;
 } {
   const channels = new DocChannelStore(deps.db);
   const tokens = new WeakMap<ServerPrincipalProof, string>();
-  const currentOwner = (): ConnectorOwnerAuthority => {
-    const owner = readOwnerAccount();
-    return owner
-      ? { kind: 'user', userId: owner.id }
-      : { kind: 'local_install', installationId: deps.installationId };
-  };
-  const sameOwnerAuthority = (recorded: unknown) => {
-    if (!recorded || typeof recorded !== 'object' || !('kind' in recorded)) return false;
-    const owner = currentOwner();
-    return owner.kind === 'user'
-      ? recorded.kind === 'user' && 'userId' in recorded && recorded.userId === owner.userId
-      : recorded.kind === 'local_install' &&
-          'installationId' in recorded &&
-          recorded.installationId === owner.installationId;
-  };
+  const currentOwner = () => docInstallationOwner(deps.installationId);
+  const sameOwnerAuthority = (recorded: unknown) => sameDocOwnerAuthority(recorded, currentOwner());
   const sameOwner = (claims: ServerPrincipalClaims) => sameOwnerAuthority(claims.owner);
   const principalCurrent = (proof: ServerPrincipalProof): boolean => {
     if (!isServerPrincipal(proof) || !sameOwner(proof.claims)) return false;
@@ -226,67 +223,15 @@ export function createDocChannelHttpComposition(deps: {
     };
   };
   const resolveSourceRoot = (documentId: string, tx?: DbTransaction): string | null => {
-    const identity = deps.documents.lookupIdentity(documentId);
-    if (!identity) throw new DocChannelNotFoundError();
-    const document = deps.documents.get(identity.scope, documentId);
-    if (!document) throw new DocChannelNotFoundError();
-    const source = canvasSourcePath(document.content);
-    if (!source) {
-      if (
-        'url' in document.content &&
-        typeof document.content.url === 'string' &&
-        document.content.url.startsWith('file:')
-      )
-        throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      return null;
-    }
-    const executor = tx ?? deps.db;
-    const parsed = parseScope(deps.documents.lifecycle.resolveScope(identity.scope));
-    let root = document.resolvedCwd;
-    if (parsed.kind === 'session') {
-      const session = executor
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, parsed.id))
-        .get();
-      if (!session?.agentPath) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      const current = fs.realpathSync(session.agentPath);
-      if (root && fs.realpathSync(root) !== current)
-        throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      root = current;
-    } else if (parsed.kind === 'room') {
-      if (!root) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      const canonical = fs.realpathSync(root);
-      if (document.treeKind === 'room-main' || document.treeKind === 'worktree') {
-        if (!deps.roomRepos.getRow(parsed.id))
-          throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-        const allowed = fs.realpathSync(
-          document.treeKind === 'room-main'
-            ? deps.roomRepos.repoPath(parsed.id)
-            : deps.roomRepos.worktreesPath(parsed.id)
-        );
-        if (!isContained(canonical, allowed))
-          throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      } else {
-        const author = executor
-          .select()
-          .from(authors)
-          .where(eq(authors.id, document.authorId))
-          .get();
-        const agent =
-          author?.kind === 'agent'
-            ? executor.select().from(agents).where(eq(agents.projectPath, author.naturalKey)).get()
-            : undefined;
-        if (!agent || agent.status !== 'active' || fs.realpathSync(agent.projectPath) !== canonical)
-          throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-      }
-      root = canonical;
-    }
-    if (!root) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-    const canonicalRoot = fs.realpathSync(root);
-    const file = fs.realpathSync(path.resolve(canonicalRoot, source));
+    const source = readDocSourceDescriptor(deps, documentId, tx);
+    if (!source.sourcePath) return null;
+    const canonicalRoot = fs.realpathSync(source.rootCandidate!);
+    if (source.matchRoot && fs.realpathSync(source.matchRoot) !== canonicalRoot)
+      throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
+    if (source.allowedRoot && !isContained(canonicalRoot, fs.realpathSync(source.allowedRoot)))
+      throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
+    const file = fs.realpathSync(path.resolve(canonicalRoot, source.sourcePath));
     if (!isContained(file, canonicalRoot)) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-    // Use the server-owned canonical app root: nested files cannot bypass ancestor manifest rules.
     return canonicalRoot;
   };
   const sourceRoot = (documentId: string, tx?: DbTransaction): string | null => {
@@ -298,51 +243,50 @@ export function createDocChannelHttpComposition(deps: {
       throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
     }
   };
+  const grantAuthority: DocGrantAuthority = {
+    resolveScope: (scope) => deps.documents.lifecycle.resolveScope(scope),
+    requireCurrent: (documentId, actor, write, tx) =>
+      authorization.requireCurrent(documentId, actor, write, tx),
+    resolveTarget,
+    sourceRoot,
+    originCurrent: (documentId, opener, tx) => {
+      const channel = channels.getChannel(documentId, tx);
+      const agent = (tx ?? deps.db).select().from(agents).where(eq(agents.id, opener)).get();
+      return channel?.openerAgentId === opener && agent?.status === 'active';
+    },
+    requireGrantedCurrent: (grant, tx) => {
+      // Persisted grant evidence is verified by DocChannelGrants. Recheck the owning physical scope here,
+      // without minting an operator principal or borrowing an expired opener-turn proof.
+      const origin = (grant.approvalEvidence as { binding?: { origin?: { owner?: unknown } } })
+        .binding?.origin;
+      if (!sameOwnerAuthority(origin?.owner)) throw new DocChannelNotFoundError();
+      const identity = deps.documents.lookupIdentity(grant.documentId);
+      const channel = channels.getChannel(grant.documentId, tx);
+      if (!identity || !channel || channel.closedAt !== null || grant.revokedAt)
+        throw new DocChannelNotFoundError();
+      deps.documents.lifecycle.assertReady(grant.documentId);
+      const scope = deps.documents.lifecycle.resolveScope(identity.scope);
+      if (
+        channel.scope !== scope ||
+        deps.documents.lifecycle.resolveScope(
+          String((grant.approvalEvidence as { binding?: { scope?: string } }).binding?.scope ?? '')
+        ) !== scope
+      )
+        throw new DocChannelNotFoundError();
+      const parsed = parseScope(scope);
+      if (parsed.kind === 'unknown') throw new DocChannelNotFoundError();
+      if (parsed.kind === 'room') {
+        const owner = membership(parsed.id, { kind: 'operator', owner: currentOwner() });
+        if (!owner || owner.archived) throw new DocChannelNotFoundError();
+      }
+      return { id: identity.id, scope };
+    },
+  };
   const grants = new DocChannelGrants({
     db: deps.db,
     store: channels,
     approvals: deps.approvals,
-    authority: {
-      resolveScope: (scope) => deps.documents.lifecycle.resolveScope(scope),
-      requireCurrent: (documentId, actor, write, tx) =>
-        authorization.requireCurrent(documentId, actor, write, tx),
-      resolveTarget,
-      sourceRoot,
-      originCurrent: (documentId, opener, tx) => {
-        const channel = channels.getChannel(documentId, tx);
-        const agent = (tx ?? deps.db).select().from(agents).where(eq(agents.id, opener)).get();
-        return channel?.openerAgentId === opener && agent?.status === 'active';
-      },
-      requireGrantedCurrent: (grant, tx) => {
-        // Persisted grant evidence is verified by DocChannelGrants. Recheck the owning physical scope here,
-        // without minting an operator principal or borrowing an expired opener-turn proof.
-        const origin = (grant.approvalEvidence as { binding?: { origin?: { owner?: unknown } } })
-          .binding?.origin;
-        if (!sameOwnerAuthority(origin?.owner)) throw new DocChannelNotFoundError();
-        const identity = deps.documents.lookupIdentity(grant.documentId);
-        const channel = channels.getChannel(grant.documentId, tx);
-        if (!identity || !channel || channel.closedAt !== null || grant.revokedAt)
-          throw new DocChannelNotFoundError();
-        deps.documents.lifecycle.assertReady(grant.documentId);
-        const scope = deps.documents.lifecycle.resolveScope(identity.scope);
-        if (
-          channel.scope !== scope ||
-          deps.documents.lifecycle.resolveScope(
-            String(
-              (grant.approvalEvidence as { binding?: { scope?: string } }).binding?.scope ?? ''
-            )
-          ) !== scope
-        )
-          throw new DocChannelNotFoundError();
-        const parsed = parseScope(scope);
-        if (parsed.kind === 'unknown') throw new DocChannelNotFoundError();
-        if (parsed.kind === 'room') {
-          const owner = membership(parsed.id, { kind: 'operator', owner: currentOwner() });
-          if (!owner || owner.archived) throw new DocChannelNotFoundError();
-        }
-        return { id: identity.id, scope };
-      },
-    },
+    authority: grantAuthority,
   });
   const downstream = new DocChannelDownstream(
     channels,
@@ -358,6 +302,7 @@ export function createDocChannelHttpComposition(deps: {
     downstream,
     channels,
     authorization,
+    grantAuthority,
     service: new DocChannelService(deps.documents, channels, authorization, {
       ingest: new DocChannelIngest(channels),
       grants,
