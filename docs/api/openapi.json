@@ -29751,7 +29751,7 @@
           "Docs"
         ],
         "summary": "List the docs in a space",
-        "description": "Every `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk stops at 2000 docs, 2000 folders or 8 levels deep, and then answers `truncated: true`. Part of the Docs experiment (`docs.enabled`).",
+        "description": "Every `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/resolve`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).",
         "parameters": [
           {
             "schema": {
@@ -29771,6 +29771,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "root": {
+                      "type": "string"
+                    },
                     "docs": {
                       "type": "array",
                       "items": {
@@ -29799,6 +29802,7 @@
                     }
                   },
                   "required": [
+                    "root",
                     "docs",
                     "truncated"
                   ]
@@ -29838,6 +29842,129 @@
           },
           "500": {
             "description": "The docs could not be listed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/resolve": {
+      "get": {
+        "tags": [
+          "Docs"
+        ],
+        "summary": "Find the doc a wiki-link target names",
+        "description": "Looks for one target through the whole space, with the same rules as the index, for a link the truncated index could not place. The walk stops at 50000 docs, 20000 folders, 32 levels deep or 4000 ms; `complete: false` then says a `null` doc may not be missing. `from` is the linking doc's path, so the nearest of several matches wins. Part of the Docs experiment (`docs.enabled`).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "cwd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "required": true,
+            "name": "target",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The doc, or null, and whether the whole space was looked through",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "doc": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "title",
+                        "slug"
+                      ]
+                    },
+                    "complete": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "doc",
+                    "complete"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`cwd` or `target` is missing, or `cwd` is not an existing folder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`cwd` is outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The `docs.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The docs could not be looked through",
             "content": {
               "application/json": {
                 "schema": {

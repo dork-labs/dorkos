@@ -4,9 +4,9 @@
  *
  * @module shared/transport-doc-links
  */
-import type { DocIndex } from './doc-links.js';
+import type { DocIndex, DocResolve } from './doc-links.js';
 
-/** Read the docs in one space. */
+/** Read the docs in one space, and find one beyond the index's limits. */
 export interface DocLinksTransport {
   /**
    * Every doc reached from a working directory: path, title and slug. Rejects
@@ -15,4 +15,13 @@ export interface DocLinksTransport {
    * @param cwd - The working directory the canvas reads files from.
    */
   getDocIndex(cwd: string): Promise<DocIndex>;
+  /**
+   * The doc one wiki-link target names, looked for through the whole space:
+   * for a link a truncated index could not place.
+   *
+   * @param cwd - The working directory the canvas reads files from.
+   * @param target - What the author typed before `#` and `|`.
+   * @param from - The linking doc's path in the space, or `null`.
+   */
+  resolveDocLink(cwd: string, target: string, from: string | null): Promise<DocResolve>;
 }

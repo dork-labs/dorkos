@@ -28,7 +28,8 @@ type SliceMethods =
   | 'cancelHeldConnectorAction'
   | 'getSignInLanding'
   | 'retrySignIn'
-  | 'getDocIndex';
+  | 'getDocIndex'
+  | 'resolveDocLink';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -59,6 +60,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
     getSignInLanding: vi.fn().mockRejectedValue(new Error('No such sign-in')),
     retrySignIn: vi.fn().mockResolvedValue({ kind: 'connected' }),
-    getDocIndex: vi.fn().mockResolvedValue({ docs: [], truncated: false }),
+    getDocIndex: vi.fn().mockResolvedValue({ root: '/', docs: [], truncated: false }),
+    resolveDocLink: vi.fn().mockResolvedValue({ doc: null, complete: true }),
   };
 }

@@ -59,6 +59,7 @@ describe('GET /api/documents/index', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
     await expect(res.json()).resolves.toEqual({
+      root: space,
       docs: [
         { path: 'README.md', title: 'Welcome', slug: 'readme' },
         { path: 'notes/plan.md', title: 'Launch plan', slug: 'plan' },
@@ -83,7 +84,7 @@ describe('GET /api/documents/index', () => {
 
   it('never reads the disk while Docs is off', async () => {
     const index = vi.fn();
-    const res = await getIndex(app({ enabled: () => false, index }), space);
+    const res = await getIndex(app({ enabled: () => false, index, resolve: vi.fn() }), space);
     expect(res.status).toBe(404);
     expect(index).not.toHaveBeenCalled();
   });
@@ -113,7 +114,7 @@ describe('GET /api/documents/index', () => {
 
   it('answers 500 in plain words when the listing fails', async () => {
     const index = vi.fn().mockRejectedValue(new Error('disk gone'));
-    const res = await getIndex(app({ enabled: () => true, index }), space);
+    const res = await getIndex(app({ enabled: () => true, index, resolve: vi.fn() }), space);
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({
       error: 'Couldn’t list the docs here.',
@@ -122,10 +123,47 @@ describe('GET /api/documents/index', () => {
   });
 
   it('gates only its own paths, so another /api/documents group still answers', async () => {
-    const shared = app({ enabled: () => false, index: vi.fn() });
+    const shared = app({ enabled: () => false, index: vi.fn(), resolve: vi.fn() });
     shared.get('/api/documents/other', (c) => c.text('other group'));
     const res = await shared.request('/api/documents/other');
     expect(res.status).toBe(200);
     await expect(res.text()).resolves.toBe('other group');
+  });
+});
+
+/** `GET /api/documents/resolve` for one target. */
+function getResolve(target: Hono<ApiEnv>, query: Record<string, string>): Promise<Response> {
+  return Promise.resolve(target.request(`/api/documents/resolve?${new URLSearchParams(query)}`));
+}
+
+describe('GET /api/documents/resolve', () => {
+  it('finds one target through the whole space, nearest first', async () => {
+    const res = await getResolve(app(), { cwd: space, target: 'launch plan', from: 'README.md' });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      doc: { path: 'notes/plan.md', title: 'Launch plan', slug: 'plan' },
+      complete: true,
+    });
+  });
+
+  it('answers a null doc, and whether the look was complete, for a missing target', async () => {
+    const res = await getResolve(app(), { cwd: space, target: 'Nowhere' });
+    await expect(res.json()).resolves.toEqual({ doc: null, complete: true });
+  });
+
+  it('answers the /api 404 while Docs is off, and reads nothing', async () => {
+    const resolve = vi.fn();
+    const res = await getResolve(app({ enabled: () => false, index: vi.fn(), resolve }), {
+      cwd: space,
+      target: 'plan',
+    });
+    expect(res.status).toBe(404);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('refuses a missing target, a bad space and a cwd outside the boundary', async () => {
+    expect((await getResolve(app(), { cwd: space })).status).toBe(400);
+    expect((await getResolve(app(), { cwd: 'space', target: 'plan' })).status).toBe(400);
+    expect((await getResolve(app(), { cwd: base, target: 'plan' })).status).toBe(403);
   });
 });
