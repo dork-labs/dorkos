@@ -38,6 +38,7 @@ import {
   type DialogSearch,
 } from '@/layers/shared/model';
 import { linkChipSlot, openTabAt } from '@/layers/features/app-tabs';
+import { LiveDocsGate } from '@/layers/features/canvas';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
@@ -261,7 +262,10 @@ function Root() {
                 {/* A markdown link to a chat, channel or DM draws as a chip
                     naming it, from the tabs' own identity (DOR-2824). */}
                 <LinkChipProvider slot={linkChipSlot}>
-                  <RouterProvider router={router} />
+                  {/* Canvas docs edited live while the Docs experiment is on (DOR-2984). */}
+                  <LiveDocsGate>
+                    <RouterProvider router={router} />
+                  </LiveDocsGate>
                 </LinkChipProvider>
               </CreditsOfferProvider>
             </AuthGuard>

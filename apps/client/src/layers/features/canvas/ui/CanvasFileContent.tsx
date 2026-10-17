@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore, useResolvedTheme, useTransport } from '@/layers/shared/model';
 import { fileContentQueryKey } from '../model/file-save/content-query';
 import { FileEditor } from './file-save/FileEditor';
 import { SessionFileEditor } from './file-save/SessionFileEditor';
+import { LiveDocSlot } from './LiveDocSlot';
 interface CanvasFileContentProps {
   /** File canvas content variant. */
   content: Extract<UiCanvasContent, { type: 'file' }>;
@@ -39,6 +40,7 @@ function loadErrorMessage(error: unknown): string {
  */
 export function CanvasFileContent({ content, documentId }: CanvasFileContentProps) {
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const cwd = useAppStore((s) => s.selectedCwd);
   const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
   const documentEditing = useAppStore(
@@ -94,17 +96,31 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
 
   const Editor = sessionId && !roomId ? SessionFileEditor : FileEditor;
   return (
-    <Editor
-      key={`${content.sourcePath}:${mountHash}`}
-      content={content}
-      documentId={documentId}
+    // While the Docs experiment is on, a markdown file is edited live instead
+    // (DOR-2984); this editor stays the fallback.
+    <LiveDocSlot
       cwd={cwd}
+      sourcePath={content.sourcePath}
+      editable={content.readOnly !== true}
       loaded={data.content}
-      theme={resolvedTheme}
-      isEditing={editing}
-      onEditingChange={handleEditingChange}
-      setDocumentEditing={setDocumentEditing}
-    />
+      onRestored={() =>
+        void queryClient.invalidateQueries({
+          queryKey: fileContentQueryKey(cwd, content.sourcePath),
+        })
+      }
+    >
+      <Editor
+        key={`${content.sourcePath}:${mountHash}`}
+        content={content}
+        documentId={documentId}
+        cwd={cwd}
+        loaded={data.content}
+        theme={resolvedTheme}
+        isEditing={editing}
+        onEditingChange={handleEditingChange}
+        setDocumentEditing={setDocumentEditing}
+      />
+    </LiveDocSlot>
   );
 }
 

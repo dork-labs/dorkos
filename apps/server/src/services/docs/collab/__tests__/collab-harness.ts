@@ -6,6 +6,7 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { afterAll } from 'vitest';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
@@ -63,6 +64,7 @@ export async function makeSpace(): Promise<TestSpace> {
 
 /** One shared data folder for the worker bundle, so it is built once per file. */
 const workerHome = realpathSync(mkdtempSync(path.join(tmpdir(), 'doc-collab-worker-')));
+afterAll(() => rmSync(workerHome, { recursive: true, force: true }));
 
 /** A worker client over the real, bundled worker. */
 export function makeWorker(): MarkdownWorkerClient {

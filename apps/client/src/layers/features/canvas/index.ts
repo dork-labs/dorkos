@@ -28,5 +28,6 @@ export {
 } from './model/use-devtools-bridge';
 
 export { CanvasWidgetContent } from './ui/CanvasWidgetContent';
+export { LiveDocsGate } from './ui/LiveDocsGate';
 
 export { useDocChannel } from './model/use-doc-channel';

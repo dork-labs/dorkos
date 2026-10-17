@@ -4,7 +4,7 @@
  * against the doc index (DOR-2982); the rules that match a typed target to a
  * doc live in `@dorkos/shared/doc-links`, shared with the server. Comment
  * threads, who can be mentioned in them, and every write a thread takes are
- * DOR-2983.
+ * DOR-2983. A doc's saved versions and their restore are DOR-2984.
  *
  * @module entities/doc
  */
@@ -21,3 +21,4 @@ export {
   useUpdateDocCommentAnchors,
   type CreateDocCommentThreadInput,
 } from './model/use-doc-comment-mutations';
+export { docVersionsKey, useDocVersions, useRestoreDocVersion } from './model/use-doc-versions';

@@ -11,6 +11,7 @@ import {
   useDocWikiLinks,
 } from '@/layers/features/docs';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
+import { LiveDocSlot } from './LiveDocSlot';
 
 // Lazy: the Blintz chunk (Milkdown + ProseMirror + CodeMirror + KaTeX) loads
 // only when a markdown canvas first renders, never for url/json canvases or the
@@ -239,7 +240,7 @@ export function CanvasMarkdownContent({
 
   const statusLabel = saveStatusLabel(fileSave.status);
 
-  return (
+  const body = (
     <div className="relative flex h-full flex-col">
       {/* Zero-height sticky row floats the controls top-right and keeps them
           pinned while the document scrolls. */}
@@ -314,5 +315,13 @@ export function CanvasMarkdownContent({
         </Suspense>
       </div>
     </div>
+  );
+
+  // While the Docs experiment is on, a file-backed doc is edited live instead
+  // (DOR-2984); this editor stays the fallback.
+  return (
+    <LiveDocSlot cwd={cwd} sourcePath={content.sourcePath} editable loaded={content.content}>
+      {body}
+    </LiveDocSlot>
   );
 }
