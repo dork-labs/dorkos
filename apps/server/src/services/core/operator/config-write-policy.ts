@@ -377,6 +377,10 @@ export const CONFIG_WRITE_POLICY = {
 
   'browser.enabled': 'operator-only',
   'computers.enabled': 'operator-only',
+  // Whether this computer may be reached from the web through its hub
+  // (DOR-2946). A "who can reach this computer" door, so a person opens it,
+  // never an agent.
+  'sessionRelay.enabled': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.
@@ -990,6 +994,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'mcp.enabled',
       'browser.enabled',
       'computers.enabled',
+      'sessionRelay.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'a2a.enabled',

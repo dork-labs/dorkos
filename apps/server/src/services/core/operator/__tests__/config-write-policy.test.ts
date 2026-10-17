@@ -229,6 +229,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'server.boundary',
       // Opens DorkOS to every device on the same network (DOR-2930).
       'server.lanAccess',
+      // Whether this computer may be reached from the web through its hub (DOR-2946).
+      'sessionRelay.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'telemetry.aiMetadata',

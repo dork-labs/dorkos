@@ -4,6 +4,7 @@ import { useCloudCredits } from '@/layers/shared/model';
 import { useSpacesEnabled } from '@/layers/entities/config';
 import { OfficialSpaceOfferCard } from '@/layers/entities/community';
 import { LinkedComputersSection } from '@/layers/features/linked-computers';
+import { WebAccessSection } from '@/layers/features/web-access';
 
 /**
  * Settings › DorkOS account — the hosted account's one home in the app
@@ -24,12 +25,14 @@ import { LinkedComputersSection } from '@/layers/features/linked-computers';
  * space, after joining, or after Not now.
  *
  * On a hub it also lists the owner's linked computers, above everything else;
- * anywhere else that section draws nothing.
+ * anywhere else that section draws nothing. On a computer with the Chat from
+ * the web experiment on, it shows that switch instead, in the same place.
  */
 export function DorkosAccountTab() {
   return (
     <div className="space-y-4">
       <LinkedComputersSection />
+      <WebAccessSection />
       <CloudLinkPanel signedOut={<SignedOutPage />}>
         <OfficialSpaceOfferCard />
         <CloudPlanPanel />

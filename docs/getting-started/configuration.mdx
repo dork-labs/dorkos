@@ -1366,3 +1366,18 @@ The choice applies to all users of this installation without sharing their profi
 Settings → Advanced → Experiments lists **Spaces**, off by default. While it is off, nothing about spaces shows in the app, and the app refuses requests that reach a space. Your space connections stay saved, so turning it back on finds them where you left them. Your own channels and #team are not spaces and work the same either way. Agents can read this setting but cannot change it.
 
 `spaces.official.url` names one official space by its link: the space's own `/c/...` link, or its short address. A link to a whole server does not count. That one space shows in the switcher and can be joined even while Spaces is off. Every other space stays hidden, and so do starting and hosting spaces. It is empty by default, which means there is no official space and nothing changes. The `DORKOS_OFFICIAL_SPACE_URL` environment variable overrides it. Agents can read this setting but cannot change it.
+
+### Chat from the web experiment
+
+<TypeTable
+  type={{
+    'sessionRelay.enabled': {
+      description:
+        'Chat with the agents on this computer from your own DorkOS in the cloud. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Chat from the web**, off by default. It is early: it needs your own DorkOS in the cloud, which is not available yet. While it is off, the **Chat from the web** section in Settings → DorkOS account is hidden, and this computer never connects to the cloud for it, even if you linked it before. Linking, pausing and unlinking happen only in the app on this computer, never from another device. Linking, resuming and allowing more ask for your password for this computer again. Agents can read this setting but cannot change it.

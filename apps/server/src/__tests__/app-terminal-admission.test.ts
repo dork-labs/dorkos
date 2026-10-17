@@ -301,7 +301,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/hub/computers');
     // 74 -> 75: a computer redeeming its owner's link code on a hub (DOR-2946).
     expect(mounts).toContain('/api/hub/link');
-    expect(mounts).toHaveLength(75);
+    // 75 -> 76: a computer's own switch for chatting from the web (DOR-2946).
+    expect(mounts).toContain('/api/session-relay');
+    expect(mounts).toHaveLength(76);
     const byHand = [
       '/',
       '/x/fixture',

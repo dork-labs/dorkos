@@ -148,12 +148,15 @@ function setup(options: Options = {}) {
   const hubKey = generateKeyPairSync('ed25519').privateKey;
   const computerKey: KeyObject = generateKeyPairSync('ed25519').privateKey;
   const pin: RelayPin = {
-    v: 1,
+    v: 2,
     computerId: 'computer-1',
     hubOrigin: ORIGIN,
     hubKey: pinnableKey(hubKey),
     relaySecret: randomBytes(32).toString('base64url'),
     pinnedAt: '2026-10-16T21:00:00.000Z',
+    computerName: 'Studio Mac',
+    level: 'chat',
+    paused: false,
   };
   const fake = fakeServer(options.features ?? SESSION_RELAY_FEATURES);
   const onOpen = vi.fn();

@@ -28796,6 +28796,955 @@
         }
       }
     },
+    "/api/session-relay/status": {
+      "get": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Where chatting from the web stands",
+        "description": "Whether this computer is linked to a hub, its level and pause, and whether the relay is connected now. Never the relay secret.",
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/link": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Link this computer to a hub",
+        "description": "Sends a signed link request to the hub the code names (https only, no redirects, 15 s), checks the hub's signed answer, and pins the hub's key. Needs an owner account and the owner's password. A code naming this computer or a private address is refused, and a computer linked to a DorkOS account accepts only a hub naming that account as its owner.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "linkCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "computerName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "linkCode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a link code, or it names a private address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No owner account, already linked, the hub said no, or a different DorkOS account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The hub could not be reached or verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Unlink this computer",
+        "description": "Forgets the hub and closes the live connection. Works with the network off.",
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/level": {
+      "patch": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Choose what the web may do here",
+        "description": "Chat or Full control. Raising to Full control needs the owner's password; lowering does not. Stored in the relay pin; every relayed turn is held to Chat today.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": [
+                      "chat",
+                      "full"
+                    ]
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "level"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This computer is not linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/pause": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Pause chatting from the web",
+        "description": "Keeps the link, closes the live connection, and stops every dial until resumed.",
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This computer is not linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/resume": {
+      "post": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Resume chatting from the web",
+        "description": "Lets the relay dial its hub again. Needs the owner's password.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Where the link stands now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at this computer using the app, or the owner's password was missing or wrong (`SESSION_RELAY_PASSWORD`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This computer is not linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [

@@ -71,12 +71,15 @@ function keys() {
 
 function pinFor(hubKey: KeyObject): RelayPin {
   return {
-    v: 1,
+    v: 2,
     computerId: 'computer-1',
     hubOrigin: ORIGIN,
     hubKey: pinnableKey(hubKey),
     relaySecret: randomBytes(32).toString('base64url'),
     pinnedAt: '2026-10-16T21:00:00.000Z',
+    computerName: 'Studio Mac',
+    level: 'chat',
+    paused: false,
   };
 }
 
@@ -409,6 +412,20 @@ describe('RelayDialer', () => {
     h.hubSends(channel, { type: 'viewers', count: 1 });
     expect(h.dialer.connected).toBe(false);
     expect(h.server.closeAll).toHaveBeenCalled();
+  });
+
+  it('serves no request once the pin is gone or paused, checked on every frame', () => {
+    const h = setup();
+    h.dialer.onViewerOpen(LATER);
+    const channel = h.hubAnswers()!;
+    h.removePin();
+    h.hubSends(channel, {
+      type: 'request',
+      id: 'r1',
+      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+    });
+    expect(h.handled).toEqual([]);
+    expect(h.dialer.connected).toBe(false);
   });
 
   it('answers failed, with no socket, when its own key cannot be read', () => {

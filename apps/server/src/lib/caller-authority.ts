@@ -307,3 +307,49 @@ export function isPersonAtTheApp(
   if (typeof clientId !== 'string' || clientId.length === 0) return false;
   return requireOperatorCookieUnderLogin(caller, 'this', isLoginEnabled) === undefined;
 }
+
+/**
+ * Why a caller may not use a switch reserved for the person at this computer:
+ * `not-at-this-computer` for a request from anywhere else, `not-a-person` for
+ * anything at this computer that is not the owner using the app.
+ */
+export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person';
+
+/**
+ * The strictest person bar: the owner, at this computer, using the app. For
+ * the switches that decide whether this computer can be reached from the web
+ * at all (the session relay's link, level and pause, DOR-2946), which nothing
+ * reached from the web may change, so the web can never raise its own reach.
+ *
+ * All of these must hold:
+ *
+ * - **At this computer** ({@link isAtThisComputer}): never the relay, Wi-Fi,
+ *   a tunnel, managed remote, a hub, a proxy or a page on another site.
+ * - **No agent identity and no approval token**, in every posture.
+ * - **A person's own credential, or none at all.** With a proved identity it
+ *   must be a browser session (never a per-user API key) of the install's
+ *   owner. With none, the gate must have been open (this computer does not ask
+ *   for a password) AND the request must carry no `Authorization` header: an
+ *   API key, an MCP token or a turn's bearer is a program, not the app, even
+ *   where the open gate never read it.
+ *
+ * The residual is DOR-505's: with the password off, a program on this machine
+ * that sends no agent header and no bearer reads as the app.
+ *
+ * @param facts - The request's facts.
+ * @returns `undefined` when the caller may act, otherwise why not.
+ */
+export function requirePersonAtThisComputer(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
+): PersonAtThisComputerRefusal | undefined {
+  if (!isAtThisComputer(facts)) return 'not-at-this-computer';
+  if (presentsAgentIdentity(facts)) return 'not-a-person';
+  if (facts.headers[APPROVAL_TOKEN_HEADER] !== undefined) return 'not-a-person';
+  if (facts.user) {
+    return facts.user.credential === 'cookie' && isInstallOwner(facts.user)
+      ? undefined
+      : 'not-a-person';
+  }
+  if (credentialGated(facts)) return 'not-a-person';
+  return facts.headers.authorization === undefined ? undefined : 'not-a-person';
+}
