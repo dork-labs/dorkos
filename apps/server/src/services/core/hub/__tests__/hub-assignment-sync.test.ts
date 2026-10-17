@@ -18,7 +18,6 @@ vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role
 
 const { createAuth, initAuth } = await import('../../auth/index.js');
 const { initConfigManager } = await import('../../config-manager.js');
-const { withRegistrationCaller } = await import('../../auth/registration-policy.js');
 const sync = await import('../hub-assignment-sync.js');
 const serving = await import('../hub-serving.js');
 const runner = await import('../hub-assignment-runner.js');
@@ -196,12 +195,11 @@ describe('a hub taking its assignment', () => {
   });
 
   it('refuses a hub that holds an account it never pinned', async () => {
-    const auth = createAuth(db, tmpDir);
-    await withRegistrationCaller('provisioning', () =>
-      auth.api.signUpEmail({
-        body: { email: 'someone@example.invalid', password: 'correct-horse-battery', name: 'X' },
-      })
-    );
+    // A hub has no passwords, so the stray account comes in the other way.
+    await runner.createHubOwner(createAuth(db, tmpDir), {
+      email: 'someone@example.invalid',
+      name: 'X',
+    });
     expect(await sync.syncHubAssignment(deps())).toEqual({ kind: 'refused' });
     expect(confirmed).toEqual([]);
   });

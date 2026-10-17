@@ -12,7 +12,8 @@
  */
 import { logger } from '../../../lib/logger.js';
 import { withRegistrationCaller } from '../auth/registration-policy.js';
-import { getAuth, hasAnyUser, type Auth } from '../auth/index.js';
+import { getAuth, hasAnyUser, readOwnerAccount, type Auth } from '../auth/index.js';
+import { HUB_SIGN_IN_PROVIDER_ID } from './hub-sign-in.js';
 import { createCloudV1ClientFor } from '../cloud/v1-client.js';
 import { env } from '../../../env.js';
 import { ensureHubSigningKey, loadHubSigningKey } from './hub-signing-key.js';
@@ -75,6 +76,30 @@ export async function createHubOwner(
 }
 
 /**
+ * Link the hub's owner account to the owner's DorkOS account id, under the
+ * hub's sign-in provider, so "Continue with DorkOS" finds the owner and never
+ * creates an account. Does nothing when the link is already there.
+ *
+ * @param auth - Better Auth.
+ * @param ownerAccountId - The owner's account id at the assignment's issuer.
+ */
+export async function linkHubOwner(auth: Auth, ownerAccountId: string): Promise<void> {
+  const context = await auth.$context;
+  const linked = await context.internalAdapter.findAccountByKey({
+    providerId: HUB_SIGN_IN_PROVIDER_ID,
+    accountId: ownerAccountId,
+  });
+  if (linked) return;
+  const owner = readOwnerAccount();
+  if (!owner) throw new Error('This hub has no owner account to link.');
+  await context.internalAdapter.createAccount({
+    userId: owner.id,
+    providerId: HUB_SIGN_IN_PROVIDER_ID,
+    accountId: ownerAccountId,
+  });
+}
+
+/**
  * The real dependencies: this hub's data directory and Better Auth, and Cloud
  * through this hub's own key (`DORKOS_HUB_INSTANCE_KEY`) unless `cloud`
  * replaces it. The key is the hub's alone: the hub is not linked to an account
@@ -98,6 +123,11 @@ export function liveHubDeps(
       await createHubOwner(auth, input);
     },
     signingPublicKey: (mayCreate) => ensureHubSigningKey(dorkHome, mayCreate),
+    linkOwner: async (ownerAccountId) => {
+      const auth = getAuth();
+      if (!auth) throw new Error('Sign-in is not ready yet.');
+      await linkHubOwner(auth, ownerAccountId);
+    },
     readPin: () => readHubOwnerPin(dorkHome),
     writePin: (pin) => writeHubOwnerPin(dorkHome, pin),
   };

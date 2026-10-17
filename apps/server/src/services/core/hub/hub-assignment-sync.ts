@@ -83,6 +83,11 @@ export interface HubAssignmentSyncDeps {
   ownerExists: () => boolean;
   /** Create the owner account. Runs only while none exists. */
   createOwner: (input: { email: string; name: string }) => Promise<void>;
+  /**
+   * Link the owner account to the owner's DorkOS account id, so their
+   * sign-in finds it (`hub-sign-in.ts`). Idempotent.
+   */
+  linkOwner: (ownerAccountId: string) => Promise<void>;
   /** The pinned owner, or `null` before the first assignment. */
   readPin: () => PinnedHubOwner | null;
   /** Persist the pinned owner. */
@@ -261,6 +266,7 @@ export async function syncHubAssignment(deps: HubAssignmentSyncDeps): Promise<Hu
   if (!deps.ownerExists()) {
     await deps.createOwner({ email: hubOwnerEmail(assignment), name: 'Owner' });
   }
+  await deps.linkOwner(assignment.ownerAccountId);
 
   // The front door may switch to the new proof and address the moment Cloud
   // records the confirmation, before its answer arrives here.
