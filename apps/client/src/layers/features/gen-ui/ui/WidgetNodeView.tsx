@@ -10,6 +10,8 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { WidgetNodeProvider, useWidgetNodePath } from '../model/widget-node-context';
+import { useWidgetState } from '../model/widget-state-context';
+import { resolveWidgetBindings } from '../lib/widget-bindings';
 import { WidgetFormProvider } from '../model/form-context';
 import {
   BadgeNode,
@@ -49,7 +51,29 @@ export function WidgetNodeView({ node, path = 'root' }: { node: WidgetNode; path
     </WidgetNodeProvider>
   );
 }
-function WidgetNodeContent({ node }: { node: WidgetNode }) {
+function WidgetNodeContent({ node: authoredNode }: { node: WidgetNode }) {
+  const snapshot = useWidgetState();
+  if (
+    snapshot === undefined &&
+    'bind' in authoredNode &&
+    authoredNode.bind !== undefined &&
+    Object.keys(authoredNode.bind).length > 0
+  ) {
+    return (
+      <p role="status" className="text-muted-foreground text-xs">
+        Waiting for document state.
+      </p>
+    );
+  }
+  const resolved = resolveWidgetBindings(authoredNode, snapshot?.state);
+  if (resolved.error !== undefined) {
+    return (
+      <p role="status" className="text-muted-foreground text-xs">
+        {resolved.error}
+      </p>
+    );
+  }
+  const node = resolved.node;
   switch (node.type) {
     case 'stack':
       return <StackNode node={node} />;

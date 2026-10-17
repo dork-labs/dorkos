@@ -45,7 +45,12 @@ async function fetchPreview(
   listenPort: number,
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {}
-): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+): Promise<{
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  rawHeaders: string[];
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -69,6 +74,7 @@ async function fetchPreview(
           resolve({
             status: res.statusCode ?? 0,
             headers: res.headers,
+            rawHeaders: res.rawHeaders,
             body: Buffer.concat(chunks).toString('utf8'),
           })
         );
@@ -121,6 +127,48 @@ beforeAll(async () => {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         // Comfortably past the 5 MB instrumentation cap.
         res.end(`<html><head></head><body>${'x'.repeat(6 * 1024 * 1024)}</body></html>`);
+        return;
+      }
+      if (url.startsWith('/csp-policies/')) {
+        const fixtures: Record<string, string | string[]> = {
+          'frame-first': ["frame-ancestors 'none'", "script-src 'none'"],
+          'frame-last': ["script-src 'none'", "frame-ancestors 'none'"],
+          'permissive-first': [
+            "script-src 'unsafe-inline'; frame-ancestors 'none'",
+            "script-src 'none'",
+          ],
+          'permissive-last': [
+            "script-src 'none'",
+            "script-src 'unsafe-inline'; frame-ancestors 'none'",
+          ],
+          'joined-frame-first': "frame-ancestors 'none', script-src 'none'",
+          'joined-frame-last': "script-src 'none', frame-ancestors 'none'",
+          'joined-permitted':
+            "script-src 'unsafe-inline', default-src 'self'; script-src 'unsafe-inline'",
+          'uncertain-comma': "frame-ancestors 'invalid, script-src 'none'",
+          'duplicates-permitted': [
+            "script-src 'unsafe-inline'; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'unsafe-inline'",
+          ],
+        };
+        const name = url.slice('/csp-policies/'.length);
+        res.setHeader('Content-Security-Policy', fixtures[name]);
+        res.setHeader('Content-Security-Policy-Report-Only', [
+          "frame-ancestors 'none'",
+          "script-src 'none'",
+        ]);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end('<html><head><title>dev</title></head><body>hi</body></html>');
+        return;
+      }
+      if (url.startsWith('/inline-permitted.html')) {
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy':
+            "default-src 'self'; script-src 'unsafe-inline'; frame-ancestors 'none'",
+          'Content-Security-Policy-Report-Only': "script-src 'none'; frame-ancestors 'none'",
+        });
+        res.end('<html><head><title>dev</title></head><body>hi</body></html>');
         return;
       }
       if (url.startsWith('/echo')) {
@@ -334,16 +382,78 @@ describe('PreviewListenerManager — proxying', () => {
   it('injects the DevTools shim into HTML and leaves everything else alone', async () => {
     const { listenPort, cookie } = await bootstrapped();
 
-    const html = await fetchPreview(listenPort, '/', { headers: { cookie } });
+    const html = await fetchPreview(listenPort, '/inline-permitted.html', { headers: { cookie } });
     const css = await fetchPreview(listenPort, '/app.css', { headers: { cookie } });
     const latin1 = await fetchPreview(listenPort, '/latin1.html', { headers: { cookie } });
 
     expect(html.body).toContain('__dorkosDevtools');
+    expect(html.body).toContain('dorkos-doc');
+    expect(html.headers['content-security-policy']).toBe(
+      "default-src 'self'; script-src 'unsafe-inline'"
+    );
+    expect(html.headers['content-security-policy-report-only']).toBe("script-src 'none'");
     expect(html.body.indexOf('<script>')).toBeLessThan(html.body.indexOf('<title>'));
     expect(css.body).toBe('body{color:red}');
     // A page that declares another charset relays untouched rather than being
     // mis-decoded into mojibake.
     expect(latin1.body).not.toContain('__dorkosDevtools');
+  });
+
+  it('preserves the original raw HTML under an enforcing policy that forbids inline SDKs', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    const html = await fetchPreview(listenPort, '/', { headers: { cookie } });
+    expect(html.body).toBe('<html><head><title>dev</title></head><body>hi</body></html>');
+    expect(html.headers['content-security-policy']).toBe("default-src 'self'");
+    expect(html.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(Number(html.headers['content-length'])).toBe(Buffer.byteLength(html.body));
+  });
+
+  it.each([
+    ['frame-first', "script-src 'none'"],
+    ['frame-last', "script-src 'none'"],
+    ['permissive-first', "script-src 'unsafe-inline', script-src 'none'"],
+    ['permissive-last', "script-src 'none', script-src 'unsafe-inline'"],
+    ['joined-frame-first', "script-src 'none'"],
+    ['joined-frame-last', "script-src 'none'"],
+    [
+      'joined-permitted',
+      "script-src 'unsafe-inline', default-src 'self'; script-src 'unsafe-inline'",
+    ],
+    ['uncertain-comma', "frame-ancestors 'invalid, script-src 'none'"],
+  ])('retains every nonframing restriction and original bytes for %s', async (name, expected) => {
+    const { listenPort, cookie } = await bootstrapped();
+    const response = await fetchPreview(listenPort, `/csp-policies/${name}`, {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toBe('<html><head><title>dev</title></head><body>hi</body></html>');
+    expect(response.body).not.toContain('dorkos-doc');
+    expect(response.body).not.toContain('__dorkosDevtools');
+    expect(response.headers['content-security-policy']).toBe(expected);
+    expect(response.headers['content-security-policy-report-only']).toBe("script-src 'none'");
+    expect(Number(response.headers['content-length'])).toBe(Buffer.byteLength(response.body));
+  });
+
+  it('instruments only when every distinct original enforcing policy permits inline', async () => {
+    const { listenPort, cookie } = await bootstrapped();
+    const response = await fetchPreview(listenPort, '/csp-policies/duplicates-permitted', {
+      headers: { cookie },
+    });
+    expect(response.body).toContain('dorkos-doc');
+    expect(response.body).toContain('__dorkosDevtools');
+    expect(response.headers['content-security-policy']).toBe(
+      "script-src 'unsafe-inline', default-src 'self'; script-src 'unsafe-inline'"
+    );
+    const fields: string[] = [];
+    for (let i = 0; i < response.rawHeaders.length; i += 2) {
+      if (response.rawHeaders[i].toLowerCase() === 'content-security-policy')
+        fields.push(response.rawHeaders[i + 1]);
+    }
+    expect(fields).toEqual([
+      "script-src 'unsafe-inline'",
+      "default-src 'self'; script-src 'unsafe-inline'",
+    ]);
+    expect(response.headers['content-security-policy-report-only']).toBe("script-src 'none'");
   });
 
   it('keeps a redirect to the dev server inside the preview origin', async () => {

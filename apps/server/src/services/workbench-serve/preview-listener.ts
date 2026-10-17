@@ -44,12 +44,13 @@ import type { Duplex } from 'node:stream';
 import type { AddressInfo } from 'node:net';
 import { WORKBENCH } from '../../config/constants.js';
 import { logger as defaultLogger } from '../../lib/logger.js';
-import { injectDevtoolsScript } from './devtools-inject.js';
+import { injectFrameScripts } from './frame-inject.js';
 import {
   filterInboundSetCookies,
   filterOutboundCookies,
   isUtf8OrUnspecified,
   readCookie,
+  readContentSecurityPolicyHeaders,
   STRIPPED_REQUEST_HEADERS,
   STRIPPED_RESPONSE_HEADERS,
   stripFrameAncestors,
@@ -533,13 +534,22 @@ export class PreviewListenerManager {
 
   /** Relay an upstream response, unframed and instrumented. */
   #relay(upstreamRes: http.IncomingMessage, res: http.ServerResponse, targetPort: number): void {
+    // Admission sees every original enforcing field before framing cleanup.
+    // A comma-list remains intact and is conservatively refused by the scanner.
+    const enforcingPolicies = readContentSecurityPolicyHeaders(
+      upstreamRes.rawHeaders,
+      'content-security-policy'
+    );
     const headers: http.OutgoingHttpHeaders = {};
     for (const [key, value] of Object.entries(upstreamRes.headers)) {
       const lower = key.toLowerCase();
       if (STRIPPED_RESPONSE_HEADERS.has(lower) || value === undefined) continue;
       if (lower === 'content-security-policy' || lower === 'content-security-policy-report-only') {
-        const sanitized = stripFrameAncestors(String(value));
-        if (sanitized) headers[key] = sanitized;
+        const originalFields = readContentSecurityPolicyHeaders(upstreamRes.rawHeaders, lower);
+        const sanitized = originalFields
+          .map(stripFrameAncestors)
+          .filter((policy): policy is string => policy !== null);
+        if (sanitized.length > 0) headers[key] = sanitized.length === 1 ? sanitized[0] : sanitized;
         continue;
       }
       if (lower === 'location') {
@@ -570,7 +580,7 @@ export class PreviewListenerManager {
       return;
     }
 
-    // Buffer the (small) HTML so the DevTools shim can be its first head child.
+    // Buffer bounded HTML for one policy-preserving Doc/DevTools insertion decision.
     // The charset is restated because the ~9 KB shim can push a page's own
     // `<meta charset>` past the browser's 1024-byte prescan window.
     //
@@ -603,11 +613,12 @@ export class PreviewListenerManager {
     });
     upstreamRes.on('end', () => {
       if (overflowed) return;
-      const injected = injectDevtoolsScript(Buffer.concat(chunks).toString('utf8'));
-      headers['content-type'] = 'text/html; charset=utf-8';
-      headers['content-length'] = Buffer.byteLength(injected);
+      const raw = Buffer.concat(chunks);
+      const decision = injectFrameScripts(raw, { contentType, enforcingPolicies });
+      if (decision.instrumented) headers['content-type'] = 'text/html; charset=utf-8';
+      headers['content-length'] = decision.bytes.length;
       res.writeHead(upstreamRes.statusCode ?? 502, headers);
-      res.end(injected);
+      res.end(decision.bytes);
     });
     upstreamRes.on('error', () => res.destroy());
   }

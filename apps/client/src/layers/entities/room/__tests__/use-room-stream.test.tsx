@@ -920,6 +920,56 @@ describe('useRoomStream', () => {
     expect(cursors(transport)).toEqual([4, 4]);
   });
 
+  it('drains throwing retirement subscribers, aborts the actual room stream and clears its stability timer', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    let signal!: AbortSignal;
+    let closed = false;
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    const cleared = vi.spyOn(globalThis, 'clearTimeout');
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, ownedSignal: AbortSignal) => {
+        signal = ownedSignal;
+        return (async function* (): AsyncIterable<RoomEvent> {
+          try {
+            for await (const event of staysOpen(ownedSignal)) yield event;
+          } finally {
+            closed = true;
+          }
+        })();
+      });
+    const sibling = vi.fn();
+    const stops = [
+      subscribeDocChannelNotifications(undefined, vi.fn(), transport, () => {
+        throw new Error('Retirement subscriber');
+      }),
+      subscribeDocChannelNotifications(undefined, vi.fn(), transport, sibling),
+    ];
+    const view = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
+      const index = timers.mock.calls.findIndex(
+        ([, delay]) => delay === SSE_RESILIENCE.STABILITY_WINDOW_MS
+      );
+      expect(index).toBeGreaterThanOrEqual(0);
+      const stable = timers.mock.results[index].value;
+      await act(async () => view.unmount());
+      expect(signal.aborted).toBe(true);
+      expect(closed).toBe(true);
+      expect(sibling).toHaveBeenCalledOnce();
+      expect(cleared).toHaveBeenCalledWith(stable);
+      expect(transport.subscribeRoom).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      stops.forEach((stop) => stop());
+      timers.mockRestore();
+      cleared.mockRestore();
+    }
+  });
+
   it('treats leaving the room as leaving, not as a drop worth retrying', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();

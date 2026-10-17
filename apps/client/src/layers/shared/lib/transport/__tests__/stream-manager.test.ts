@@ -1,3 +1,5 @@
+import { createMockTransport } from '@dorkos/test-utils';
+const transportOwner = createMockTransport();
 import { CanvasChannelNotificationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
 import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
@@ -56,6 +58,7 @@ function setup() {
     return conn;
   };
   const manager = new StreamManager({ createConnection });
+  manager.useHttpSource('/api', transportOwner);
   return { manager, connections };
 }
 
@@ -544,7 +547,7 @@ describe('StreamManager — HTTP source (baseUrl)', () => {
     // Real failure mode: a file:// renderer cannot resolve a relative /api —
     // the streams must use the same absolute origin as HttpTransport.
     const { manager, connections } = setup();
-    manager.useHttpSource('http://localhost:4242/api');
+    manager.useHttpSource('http://localhost:4242/api', transportOwner);
     manager.attachSession('sess-a', '/proj');
     manager.connectList();
     expect(connections[0]!.url).toBe(
@@ -559,7 +562,7 @@ describe('StreamManager — HTTP source (baseUrl)', () => {
     const { manager, connections } = setup();
     manager.attachSession('sess-a');
     manager.connectList();
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
     expect(connections[0]!.destroy).toHaveBeenCalled();
     expect(connections[1]!.destroy).toHaveBeenCalled();
     const urls = connections.slice(2).map((c) => c.url);
@@ -705,7 +708,7 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     manager.attachSession('sess-a');
     expect(handler).toHaveBeenCalledTimes(1);
 
-    manager.useHttpSource('http://localhost:4242/api');
+    manager.useHttpSource('http://localhost:4242/api', transportOwner);
 
     // The session stays attached, a fresh connection opened against the new
     // source, and no extra transition fired.
@@ -920,7 +923,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     manager.attachSession('A', '/pa'); // connections[0] active A
     manager.pinSession('B', '/pb'); // connections[1] pinned B
 
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
 
     // Both old connections torn down, both slots rebuilt against the new origin.
     expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
@@ -942,7 +945,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
     manager.attachSession('A'); // connections[0] shared active+pin
     manager.pinSession('A');
 
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
 
     expect(manager.getAttachedSessionId()).toBe('A');
     expect(manager.getPinnedSessionId()).toBe('A');
@@ -969,7 +972,7 @@ describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
 
     // Observable proof pinnedCwd carried the CONNECTION's truth (/proj), not
     // the caller's: a source rebuild re-opens the pinned slot from pinnedCwd.
-    manager.useHttpSource('http://localhost:9999/api');
+    manager.useHttpSource('http://localhost:9999/api', transportOwner);
     const rebuilt = connections.map((c) => c.url);
     expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fproj');
     expect(rebuilt.join(' ')).not.toContain('stale-metadata-cwd');
@@ -1015,6 +1018,71 @@ it('routes document frames separately from transcript taps without opening anoth
     expect(connections).toHaveLength(1);
   } finally {
     stop();
+    manager.detachSession();
+  }
+});
+
+it('changes owner even at the same URL and refuses the retired connection after callback reentry', () => {
+  const { manager, connections } = setup();
+  manager.attachSession('A');
+  const old = connections[0]!;
+  const first = vi.fn();
+  const later = vi.fn();
+  const replacement = createMockTransport();
+  const stops = [
+    subscribeDocChannelNotifications(
+      undefined,
+      () => {
+        first();
+        manager.useHttpSource('/api', replacement);
+      },
+      transportOwner
+    ),
+    subscribeDocChannelNotifications(undefined, later, transportOwner),
+  ];
+  try {
+    old.push('canvas_event', DOC_EVENT);
+    expect(first).toHaveBeenCalledOnce();
+    expect(later).not.toHaveBeenCalled();
+    expect(old.destroy).toHaveBeenCalledOnce();
+    expect(connections).toHaveLength(2);
+    old.push('canvas_event', DOC_EVENT);
+    expect(first).toHaveBeenCalledOnce();
+    const current = vi.fn();
+    const stop = subscribeDocChannelNotifications(undefined, current, replacement);
+    try {
+      connections[1]!.push('canvas_event', DOC_EVENT);
+      expect(current).toHaveBeenCalledOnce();
+    } finally {
+      stop();
+    }
+  } finally {
+    stops.forEach((stop) => stop());
+    manager.detachSession();
+  }
+});
+
+it('physically destroys a genuine session connection and drains retirement after a subscriber throws', () => {
+  const { manager, connections } = setup();
+  manager.attachSession('A');
+  const old = connections[0]!;
+  const sibling = vi.fn();
+  const events = vi.fn();
+  const stops = [
+    subscribeDocChannelNotifications(undefined, vi.fn(), transportOwner, () => {
+      throw new Error('Retirement subscriber');
+    }),
+    subscribeDocChannelNotifications(undefined, events, transportOwner, sibling),
+  ];
+  try {
+    manager.detachSession();
+    expect(sibling).toHaveBeenCalledOnce();
+    expect(old.destroy).toHaveBeenCalledOnce();
+    old.push('canvas_event', DOC_EVENT);
+    expect(events).not.toHaveBeenCalled();
+    expect(manager.getAttachedSessionId()).toBeNull();
+  } finally {
+    stops.forEach((stop) => stop());
     manager.detachSession();
   }
 });

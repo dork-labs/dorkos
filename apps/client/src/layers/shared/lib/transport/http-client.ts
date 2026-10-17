@@ -75,9 +75,16 @@ async function request(
       code?: string;
       status?: number;
       body?: unknown;
+      retryAfterMs?: number;
     };
     err.code = error.code;
     err.status = res.status;
+    // Capture the actual numeric Retry-After header; body/payload fields cannot supply it.
+    const retryAfter = res.headers.get('Retry-After');
+    if (res.status === 429 && retryAfter !== null && /^\d+(?:\.\d+)?$/.test(retryAfter.trim())) {
+      const milliseconds = Number(retryAfter) * 1000;
+      if (Number.isFinite(milliseconds)) err.retryAfterMs = milliseconds;
+    }
     // Some refusals carry data the caller must act on, not just describe: a
     // `CHAT_ALREADY_BOUND` 409 names the binding that already owns the chat,
     // which is the id the "move it instead?" dialog calls `moveBinding` with.

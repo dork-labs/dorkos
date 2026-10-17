@@ -724,3 +724,38 @@ describe('Tier-2 delight nodes', () => {
     });
   });
 });
+
+describe('catalog state bindings', () => {
+  it.each([
+    { type: 'text', text: 'Fallback', bind: { text: { path: '/message' } } },
+    { type: 'stat', label: 'Count', value: 0, bind: { value: { path: '/count' } } },
+    {
+      type: 'progress',
+      value: 0,
+      bind: { value: { path: '/percent' }, label: { path: '/label' } },
+    },
+    { type: 'table', columns: [], rows: [], bind: { rows: { path: '/rows' } } },
+    { type: 'chart', kind: 'bar', data: [], bind: { data: { path: '/points' } } },
+  ])('preserves the supported bind catalog: $type', (node) => {
+    expect(WidgetNodeSchema.parse(node)).toEqual(node);
+  });
+
+  it.each(['message', '$.message', '/bad~2escape', '/__proto__/x', '/constructor/x', '/prototype'])(
+    'rejects unsafe pointer %s',
+    (path) => {
+      expect(
+        WidgetNodeSchema.safeParse({ type: 'text', text: '', bind: { text: { path } } }).success
+      ).toBe(false);
+    }
+  );
+
+  it.each([
+    { type: 'text', text: '', bind: { action: { path: '/action' } } },
+    { type: 'chart', kind: 'bar', data: [], bind: { kind: { path: '/kind' } } },
+    { type: 'input', name: 'draft', bind: { value: { path: '/draft' } } },
+    { type: 'image', src: 'https://example.com/x', alt: '', bind: { src: { path: '/url' } } },
+    { type: 'text', text: '', bind: { text: { path: '/value', expression: 'run()' } } },
+  ])('rejects unsupported binding keys on $type', (node) => {
+    expect(WidgetNodeSchema.safeParse(node).success).toBe(false);
+  });
+});

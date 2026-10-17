@@ -260,9 +260,135 @@ describe('GET /api/workbench/serve — DevTools shim injection (DOR-213)', () =>
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.text).toMatch(/<head><script>/);
     expect(res.text).toContain('__dorkosDevtools');
+    expect(res.text).toContain('dorkos-doc');
     expect(res.text).toContain('<h1>hi</h1>');
     // Length must reflect the injected body, not the on-disk file size.
     expect(Number(res.headers['content-length'])).toBe(Buffer.byteLength(res.text));
+  });
+
+  // Real signed HTTP route, with raw chunks so invalid UTF8 cannot be hidden by decoding.
+  const rawSigned = (
+    name: string
+  ): Promise<{ status: number; headers: http.IncomingHttpHeaders; bytes: Buffer }> =>
+    new Promise((resolve, reject) => {
+      const address = testServer.address() as AddressInfo;
+      const req = http.get(
+        {
+          hostname: '127.0.0.1',
+          port: address.port,
+          path: `/api/workbench/serve/${validToken()}/${name}`,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('error', reject);
+          res.on('end', () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              headers: res.headers,
+              bytes: Buffer.concat(chunks),
+            })
+          );
+        }
+      );
+      req.on('error', reject);
+    });
+
+  it('serves invalid UTF8 HTML with its exact original bytes and safety headers', async () => {
+    const original = Buffer.concat([
+      Buffer.from('<html><head></head><body>'),
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('</body></html>'),
+    ]);
+    await fs.writeFile(path.join(root, 'invalid-encoding.html'), original);
+    const res = await rawSigned('invalid-encoding.html');
+    expect(res.status).toBe(200);
+    expect(res.bytes.equals(original)).toBe(true);
+    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['content-security-policy']).toContain('sandbox allow-scripts');
+    expect(Number(res.headers['content-length'])).toBe(original.length);
+  });
+
+  it.each(['early', 'late'] as const)(
+    'preserves signed HTML with an enforcing %s meta CSP instead of preceding or weakening it',
+    async (position) => {
+      const meta = '<meta http-equiv="content-security-policy" content="script-src \'none\'">';
+      const script = '<script>window.user = true;</script>';
+      const original = Buffer.from(
+        `<html><head>${position === 'early' ? meta + script : script + meta}</head><body>Original</body></html>`
+      );
+      const name = `meta-csp-${position}.html`;
+      await fs.writeFile(path.join(root, name), original);
+      const res = await rawSigned(name);
+      expect(res.status).toBe(200);
+      expect(res.bytes.equals(original)).toBe(true);
+      expect(res.bytes.toString()).not.toContain('dorkos-doc');
+      expect(res.bytes.toString()).not.toContain('__dorkosDevtools');
+      expect(res.headers['content-security-policy']).toContain(
+        'sandbox allow-scripts allow-forms allow-popups allow-modals; frame-ancestors'
+      );
+      expect(res.headers['referrer-policy']).toBe('no-referrer');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(Number(res.headers['content-length'])).toBe(original.length);
+    }
+  );
+
+  it('streams signed cap+1 HTML unchanged, with the actual original length and no SDK', async () => {
+    const start = '<html><head></head><body>';
+    const end = '</body></html>';
+    const original = Buffer.from(
+      start +
+        'x'.repeat(WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES + 1 - start.length - end.length) +
+        end
+    );
+    await fs.writeFile(path.join(root, 'over-cap.html'), original);
+    const res = await rawSigned('over-cap.html');
+    expect(res.status).toBe(200);
+    expect(res.bytes.equals(original)).toBe(true);
+    expect(res.bytes.toString()).not.toContain('dorkos-doc');
+    expect(res.bytes.toString()).not.toContain('__dorkosDevtools');
+    expect(Number(res.headers['content-length'])).toBe(original.length);
+    expect(res.headers['content-security-policy']).toContain('sandbox allow-scripts');
+  });
+
+  it('bounds a file that grows between stat and read, closes its handle and streams raw bytes without a stale length', async () => {
+    const name = 'growing.html';
+    const target = path.join(root, name);
+    const initial = Buffer.from('<html><head></head><body>Original</body></html>');
+    const growth = Buffer.alloc(WORKBENCH.PREVIEW_HTML_INJECT_MAX_BYTES + 1, 'x');
+    await fs.writeFile(target, initial);
+    const originalOpen = fs.open.bind(fs);
+    let grew = false;
+    let closeCalls = () => 0;
+    let restoreClose = () => {};
+    const opened = vi.spyOn(fs, 'open').mockImplementation(async (filename, flags, mode) => {
+      const handle = await originalOpen(filename, flags, mode);
+      if (filename === target && flags === 'r' && !grew) {
+        grew = true;
+        const close = vi.spyOn(handle, 'close');
+        closeCalls = () => close.mock.calls.length;
+        restoreClose = () => {
+          close.mockRestore();
+        };
+        await fs.appendFile(target, growth);
+      }
+      return handle;
+    });
+    try {
+      const res = await rawSigned(name);
+      expect(grew).toBe(true);
+      expect(closeCalls()).toBe(1);
+      expect(res.status).toBe(200);
+      expect(res.bytes.equals(Buffer.concat([initial, growth]))).toBe(true);
+      expect(res.headers['content-length']).toBeUndefined();
+      expect(res.bytes.toString()).not.toContain('dorkos-doc');
+      expect(res.bytes.toString()).not.toContain('__dorkosDevtools');
+    } finally {
+      opened.mockRestore();
+      restoreClose();
+    }
   });
 
   it('leaves a non-HTML asset byte-for-byte unchanged (no shim, no length change)', async () => {

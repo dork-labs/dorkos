@@ -289,25 +289,38 @@ import {
   CanvasChannelSnapshotFrameSchema,
 } from '@dorkos/shared/canvas-channel-schemas';
 
-/** OpenAPI cannot expand recursive JSON; runtime parsing retains its bounded strict schema. */
-const LocalDocEventFrameSchema = CanvasChannelFrameSchema.extend({
-  event: CanvasChannelEventSchema.extend({
-    payload: z
-      .unknown()
-      .describe(
-        'Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit.'
-      ),
-  }),
-});
-const LocalDocSnapshotFrameSchema = CanvasChannelSnapshotFrameSchema.extend({
-  snapshot: CanvasChannelSnapshotFrameSchema.shape.snapshot.extend({
-    state: z
-      .record(z.string(), z.unknown())
-      .describe(
-        'Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content.'
-      ),
-  }),
-});
+/**
+ * Documentation-only mirrors: OpenAPI cannot expand recursive JSON or express
+ * the own-property incarnation checks. Reuse every field schema without
+ * extending refined objects; production parsing retains the original guards.
+ */
+const LocalDocEventFrameSchema = z
+  .object({
+    ...CanvasChannelFrameSchema.shape,
+    event: CanvasChannelEventSchema.extend({
+      payload: z
+        .unknown()
+        .describe(
+          'Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit.'
+        ),
+    }),
+  })
+  .strict();
+const LocalDocSnapshotFrameSchema = z
+  .object({
+    ...CanvasChannelSnapshotFrameSchema.shape,
+    snapshot: z
+      .object({
+        ...CanvasChannelSnapshotFrameSchema.shape.snapshot.shape,
+        state: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content.'
+          ),
+      })
+      .strict(),
+  })
+  .strict();
 const LocalRoomEventSchema = z.union([
   ...RoomEventSchema.options.filter(
     (option) => !['canvas_event', 'canvas_channel_snapshot'].includes(option.shape.type.value)

@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import type { WidgetChannelPort } from '../model/widget-channel';
+import { WidgetStateProvider } from '../model/widget-state-context';
 import { WidgetActionProvider } from '../model/widget-context';
 import { useWidgetMotion, widgetEntrance } from '../lib/widget-motion';
 import { WidgetNodeView } from './WidgetNodeView';
@@ -47,15 +48,17 @@ export function WidgetRenderer({
       widgetTitle={document.title}
       isLatestMessage={isLatestMessage}
     >
-      <motion.section
-        aria-label={document.title ?? 'Widget'}
-        className="text-sm"
-        variants={motionOn ? widgetEntrance : undefined}
-        initial={motionOn ? 'hidden' : false}
-        animate={motionOn ? 'visible' : false}
-      >
-        <WidgetNodeView node={document.root} />
-      </motion.section>
+      <WidgetStateProvider value={channel?.snapshot}>
+        <motion.section
+          aria-label={document.title ?? 'Widget'}
+          className="text-sm"
+          variants={motionOn ? widgetEntrance : undefined}
+          initial={motionOn ? 'hidden' : false}
+          animate={motionOn ? 'visible' : false}
+        >
+          <WidgetNodeView node={document.root} />
+        </motion.section>
+      </WidgetStateProvider>
     </WidgetActionProvider>
   );
 }

@@ -1,8 +1,9 @@
+import { createMockTransport } from '@dorkos/test-utils';
+import { ownDocChannelConnection } from '../doc-channel-ownership';
+const producer = ownDocChannelConnection(createMockTransport(), new AbortController().signal);
+const publishDocChannelNotification = producer.publish;
 import { describe, expect, it, vi } from 'vitest';
-import {
-  publishDocChannelNotification,
-  subscribeDocChannelNotifications,
-} from '../doc-channel-notifications';
+import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
 import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 
 describe('document notification bus', () => {

@@ -90,25 +90,18 @@ describe('injectDevtoolsScript — first-head-child insertion', () => {
     expect(out).toMatch(/<head data-x="y"><script>/);
   });
 
-  it('injects a <head> after <html> when the document has no head', () => {
-    const out = injectDevtoolsScript('<html><body><h1>hi</h1></body></html>');
-    expect(out).toMatch(/<html><head><script>.*<\/script><\/head>/s);
-    expect(out).toContain('<h1>hi</h1>');
+  it.each([
+    '<html><body><h1>hi</h1></body></html>',
+    '<!doctype html>\n<body>hi</body>',
+    '<div>fragment</div>',
+  ])('leaves headless or fragment HTML unchanged: %s', (html) => {
+    expect(injectDevtoolsScript(html)).toBe(html);
   });
 
-  it('prepends after a leading doctype when there is no head or html tag', () => {
-    const out = injectDevtoolsScript('<!doctype html>\n<body>hi</body>');
-    // The doctype must stay first; the script comes right after it (never nested
-    // inside a second, wrapping doctype).
-    expect(out.startsWith('<!doctype html>')).toBe(true);
-    expect(out).toMatch(/<!doctype html>\s*<script>/s);
-    expect((out.match(/<!doctype/gi) ?? []).length).toBe(1);
-  });
-
-  it('prepends the script for a bare fragment (no doctype/head/html)', () => {
-    const out = injectDevtoolsScript('<div>fragment</div>');
-    expect(out.startsWith('<script>')).toBe(true);
-    expect(out).toContain('<div>fragment</div>');
+  it('delegates both SDKs and never bypasses an enforcing policy', () => {
+    const html = '<html><head></head><body></body></html>';
+    expect(injectDevtoolsScript(html)).toContain('dorkos-doc');
+    expect(injectDevtoolsScript(html, ["script-src 'none'"])).toBe(html);
   });
 });
 

@@ -95,8 +95,20 @@ export function WidgetChannelShowcase() {
       receiptRetentionFloor: 1,
       resetRequired: false,
     },
-    submit: (event) => transport.ingestCanvasEvent('fixture-tasks', event),
-    inspect: (id) => transport.getCanvasEventReceipt('fixture-tasks', id),
+    submit: (event, signal) =>
+      transport.ingestCanvasEvent(
+        'fixture-tasks',
+        event,
+        { expectedGeneration: '0'.repeat(64) },
+        signal
+      ),
+    inspect: (id, signal) =>
+      transport.getCanvasEventReceipt(
+        'fixture-tasks',
+        id,
+        { expectedGeneration: '0'.repeat(64) },
+        signal
+      ),
   };
   const settle = (status: 'handled' | 'failed' | 'in_doubt') => {
     for (const [id, receipt] of saved.current)

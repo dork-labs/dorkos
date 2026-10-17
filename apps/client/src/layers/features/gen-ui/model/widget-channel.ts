@@ -1,5 +1,5 @@
 /** Native widget event submissions over the host's common document channel. */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { WidgetAction } from '@dorkos/shared/ui-widget';
 import {
   PageEventSchema,
@@ -9,25 +9,25 @@ import {
   type CanvasChannelReplayResponse,
 } from '@dorkos/shared/canvas-channel-schemas';
 
-/** The canvas host supplies current server route summaries and its existing stream snapshot. */
+/** Genuine native ports close over an issued physical owner. Gallery ports remain local fixtures. */
 export interface WidgetChannelPort {
   documentId: string;
   enabled: boolean;
   destinationLabel: string;
-  /** Current approved event patterns, never inferred from the authored declaration. */
   approvedEventTypes: readonly string[];
+  submissionOwner?: object;
+  current?(purpose: 'read' | 'submit'): boolean;
   snapshot?: Pick<
     CanvasChannelReplayResponse,
     'state' | 'stateRev' | 'receipts' | 'retentionFloor' | 'receiptRetentionFloor' | 'resetRequired'
   >;
-  submit(event: PageEvent): Promise<CanvasChannelEventReceipt>;
-  inspect(eventId: string): Promise<CanvasChannelEventReceipt>;
+  submit(event: PageEvent, signal: AbortSignal): Promise<CanvasChannelEventReceipt>;
+  inspect(eventId: string, signal: AbortSignal): Promise<CanvasChannelEventReceipt>;
 }
-/** Match the server's approved patterns using the same bounded event semantics as routing. */
+/** Match the server-approved patterns for a native widget action. */
 export function isWidgetActionApproved(patterns: readonly string[]): boolean {
   return patterns.some((pattern) => matchesCanvasChannelEvent(pattern, 'widget.action'));
 }
-/** One click keeps its frozen envelope through every uncertain network retry. */
 export interface WidgetChannelSubmission {
   controlId: string;
   documentId: string;
@@ -38,81 +38,240 @@ export interface WidgetChannelSubmission {
   floor: number | null;
   message?: string;
 }
-/** Bound active submissions and retain only the most recent settled local display records. */
 const MAX_SUBMISSIONS = 100;
+/** Matches the previous HTTP helper deadline; Doc HTTP itself has no second clock. */
+const DOC_OPERATION_DEADLINE_MS = 30_000;
+function freezeEnvelope<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) freezeEnvelope(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+type Operation = {
+  token: object;
+  controller: AbortController;
+  active: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+};
+type OwnedRow = {
+  value: WidgetChannelSubmission;
+  owner?: object;
+  host: WidgetChannelPort;
+  bytes: string;
+  retired: boolean;
+  uncertain: boolean;
+  start?: object;
+  operation?: Operation;
+};
 
-/** Manage click identity independently of the legacy inline widget latch. */
+/** Preserve original action identity through owned submission, recovery and retirement. */
 export function useWidgetChannelActions(
   channel: WidgetChannelPort | undefined,
   widgetTitle?: string
 ) {
   const [submissions, setSubmissions] = useState<WidgetChannelSubmission[]>([]);
-  const current = useRef(submissions);
+  const rows = useRef(new Map<string, OwnedRow>());
   const port = useRef(channel);
-  useLayoutEffect(() => {
-    port.current = channel;
-  }, [channel]);
-  const commit = (rows: WidgetChannelSubmission[]) => {
-    current.current = rows;
-    setSubmissions(rows);
-  };
-  const update = (id: string, patch: Partial<WidgetChannelSubmission>) =>
-    commit(current.current.map((row) => (row.event.id === id ? { ...row, ...patch } : row)));
-  useEffect(() => {
-    let changed = false;
-    const rows = current.current.map((row) => {
-      if (row.phase === 'refused') return row;
-      const receipt = channel?.snapshot?.receipts.find((item) => item.receipt.id === row.event.id);
-      if (!receipt || receipt === row.receipt) return row;
-      changed = true;
-      return { ...row, phase: 'accepted' as const, receipt };
-    });
-    if (changed) {
-      current.current = rows;
-      setSubmissions(rows);
-    }
-  }, [channel?.snapshot?.receipts]);
-  const pending = (controlId: string) =>
-    current.current.some(
-      (row) =>
-        row.controlId === controlId &&
-        !port.current?.snapshot?.receipts.some((receipt) => receipt.receipt.id === row.event.id) &&
-        (row.phase === 'sending' || row.phase === 'retry' || row.phase === 'review')
+  const identity = useRef({ documentId: channel?.documentId, owner: channel?.submissionOwner });
+  const live = useRef(true);
+  const publication = useRef(0);
+  const publish = useCallback(() => {
+    const revision = ++publication.current;
+    const snapshot = [...rows.current.values()].map((row) => row.value);
+    setSubmissions((previous) => (publication.current === revision ? snapshot : previous));
+  }, []);
+  const retireOperation = useCallback((row: OwnedRow) => {
+    const old = row.operation;
+    row.operation = undefined;
+    if (!old) return;
+    old.active = false;
+    clearTimeout(old.timer);
+    old.controller.abort();
+  }, []);
+  const retire = useCallback(
+    (row: OwnedRow) => {
+      row.retired = true;
+      row.start = undefined;
+      ++publication.current;
+      retireOperation(row);
+    },
+    [retireOperation]
+  );
+  const present = useCallback(
+    (row: OwnedRow) => live.current && !row.retired && rows.current.get(row.value.event.id) === row,
+    []
+  );
+  const sameOwner = useCallback((row: OwnedRow) => {
+    const current = port.current;
+    return (
+      identity.current.documentId === row.value.documentId &&
+      identity.current.owner === row.owner &&
+      current?.documentId === row.value.documentId &&
+      current?.submissionOwner === row.owner
     );
-  const send = async (row: WidgetChannelSubmission, retry = false): Promise<void> => {
-    let host = port.current;
-    if (!host?.enabled || host.documentId !== row.documentId) {
-      update(row.event.id, {
-        phase: retry ? 'review' : 'refused',
+  }, []);
+  const qualify = useCallback(
+    (row: OwnedRow, purpose: 'read' | 'submit') => {
+      if (!present(row) || !sameOwner(row)) return false;
+      const held = port.current!;
+      const allowed = row.host.current ? row.host.current(purpose) : held.enabled;
+      return allowed && present(row) && sameOwner(row);
+    },
+    [present, sameOwner]
+  );
+  useLayoutEffect(() => {
+    const next = { documentId: channel?.documentId, owner: channel?.submissionOwner };
+    port.current = channel;
+    identity.current = next;
+    for (const row of rows.current.values()) if (!sameOwner(row)) retire(row);
+  }, [channel, channel?.documentId, channel?.submissionOwner, sameOwner, retire]);
+  useEffect(() => {
+    live.current = true;
+    const ownedRows = rows.current;
+    return () => {
+      live.current = false;
+      for (const row of ownedRows.values()) retire(row);
+    };
+  }, [retire]);
+  const change = useCallback(
+    (row: OwnedRow, patch: Partial<WidgetChannelSubmission>) => {
+      row.value = { ...row.value, ...patch };
+      publish();
+    },
+    [publish]
+  );
+  useEffect(() => {
+    for (const row of rows.current.values()) {
+      if (!present(row) || !sameOwner(row) || row.value.phase === 'refused') continue;
+      const start = row.start;
+      const operation = row.operation;
+      if (!qualify(row, 'read') || row.start !== start || row.operation !== operation) continue;
+      const saved = channel?.snapshot?.receipts.find(
+        (item) => item.receipt.id === row.value.event.id
+      );
+      // Snapshot access and ownership checks are observable ports; reentry may replace this attempt.
+      if (!qualify(row, 'read') || row.start !== start || row.operation !== operation) continue;
+      if (saved && saved !== row.value.receipt) {
+        // Commit the durable result before abort listeners can start another attempt.
+        row.start = undefined;
+        row.value = { ...row.value, phase: 'accepted', receipt: saved };
+        retireOperation(row);
+        publish();
+      }
+    }
+  }, [
+    channel?.snapshot?.receipts,
+    channel?.submissionOwner,
+    present,
+    sameOwner,
+    qualify,
+    retireOperation,
+    publish,
+  ]);
+  const pending = (controlId: string) =>
+    [...rows.current.values()].some(
+      (row) =>
+        row.value.controlId === controlId &&
+        !row.retired &&
+        ['sending', 'retry', 'review'].includes(row.value.phase)
+    );
+  const send = async (row: OwnedRow, retry = false): Promise<void> => {
+    if (!present(row) || !sameOwner(row)) return;
+    const start = Object.freeze({});
+    row.start = start;
+    ++publication.current;
+    // Clear old admission BEFORE abort; a nested start owns a different sentinel.
+    retireOperation(row);
+    const starting = () =>
+      present(row) && sameOwner(row) && row.start === start && row.operation === undefined;
+    if (!starting()) return;
+    const allowed = qualify(row, retry ? 'read' : 'submit');
+    if (!starting()) return;
+    if (!allowed) {
+      change(row, {
+        phase: retry ? 'retry' : 'refused',
         message: retry
-          ? 'Save not confirmed. Document actions are unavailable; review this action before trying again.'
-          : 'Document actions are not available.',
+          ? 'Save not confirmed. Review the document before trying again.'
+          : 'Document actions are unavailable. Review this action before trying again.',
       });
       return;
     }
-    update(row.event.id, { phase: 'sending', message: undefined });
+    const controller = new AbortController();
+    if (!starting()) {
+      controller.abort();
+      return;
+    }
+    const operation: Operation = { token: Object.freeze({}), controller, active: true };
+    row.operation = operation;
+    row.start = undefined;
+    const current = () =>
+      present(row) &&
+      sameOwner(row) &&
+      row.operation === operation &&
+      operation.active &&
+      !controller.signal.aborted;
+    const admitted = (purpose: 'read' | 'submit') => {
+      if (!current()) return false;
+      const allowedNow = qualify(row, purpose);
+      return allowedNow && current();
+    };
+    operation.timer = setTimeout(() => {
+      if (!current()) return;
+      operation.active = false;
+      row.operation = undefined;
+      row.uncertain = true;
+      change(row, {
+        phase: 'retry',
+        message: 'Save not confirmed. Check your network and try again.',
+      });
+      controller.abort();
+    }, DOC_OPERATION_DEADLINE_MS);
+    if (!current()) {
+      clearTimeout(operation.timer);
+      controller.abort();
+      return;
+    }
+    change(row, { phase: 'sending', message: undefined });
     try {
       if (retry) {
         try {
-          const receipt = await host.inspect(row.event.id);
-          update(row.event.id, { phase: 'accepted', receipt });
-          return;
-        } catch (error) {
-          if ((error as { status?: number }).status !== 404) throw error;
-          host = port.current;
-          if (!host?.enabled || host.documentId !== row.documentId) {
-            update(row.event.id, {
-              phase: 'review',
-              message: 'The document changed. Review this action before trying again.',
-            });
+          if (!admitted('read')) {
+            if (current())
+              change(row, {
+                phase: 'retry',
+                message: 'Save not confirmed. Review the document before trying again.',
+              });
             return;
           }
-          if (
-            row.floor === null ||
-            host.snapshot === undefined ||
-            host.snapshot.receiptRetentionFloor > row.floor
-          ) {
-            update(row.event.id, {
+          const receipt = await row.host.inspect(row.value.event.id, controller.signal);
+          if (!admitted('read')) {
+            if (current())
+              change(row, {
+                phase: 'retry',
+                message: 'Save not confirmed. Review the document before trying again.',
+              });
+            return;
+          }
+          change(row, { phase: 'accepted', receipt });
+          return;
+        } catch (error) {
+          if (!current()) return;
+          const status = (error as { status?: number }).status;
+          if (!current()) return;
+          if (status !== 404) throw error;
+          if (!admitted('read')) {
+            if (current())
+              change(row, {
+                phase: 'retry',
+                message: 'Save not confirmed. Review the document before trying again.',
+              });
+            return;
+          }
+          const floor = port.current?.snapshot?.receiptRetentionFloor;
+          if (!current()) return;
+          if (row.value.floor === null || floor === undefined || floor > row.value.floor) {
+            change(row, {
               phase: 'review',
               message: 'The saved history changed. Review this action before trying again.',
             });
@@ -120,27 +279,45 @@ export function useWidgetChannelActions(
           }
         }
       }
-      host = port.current;
-      if (
-        !host?.enabled ||
-        host.documentId !== row.documentId ||
-        (row.normalized && !isWidgetActionApproved(host.approvedEventTypes))
-      ) {
-        update(row.event.id, {
+      if (!admitted('submit')) {
+        if (current())
+          change(row, {
+            phase: 'review',
+            message: 'Document approval changed. Review this action before trying again.',
+          });
+        return;
+      }
+      const patterns = [...(port.current?.approvedEventTypes ?? [])];
+      const approved = !row.value.normalized || isWidgetActionApproved(patterns);
+      const event = row.value.event;
+      if (!current()) return;
+      if (!approved) {
+        change(row, {
           phase: 'review',
           message: 'Document approval changed. Review this action before trying again.',
         });
         return;
       }
-      const receipt = await host.submit(row.event);
-      update(row.event.id, { phase: 'accepted', receipt });
+      if (!admitted('submit')) return;
+      row.uncertain = true;
+      const receipt = await row.host.submit(event, controller.signal);
+      if (!admitted('read')) {
+        if (current())
+          change(row, {
+            phase: 'retry',
+            message: 'Save not confirmed. Review the document before trying again.',
+          });
+        return;
+      }
+      change(row, { phase: 'accepted', receipt });
     } catch (error) {
+      if (!current()) return;
       const status = (error as { status?: number }).status;
-      // A retry begins with an uncertain original POST. Neither a refused
-      // receipt lookup nor a refused resend proves that original POST failed.
+      if (!current()) return;
       const refusal = status !== undefined && [400, 401, 403, 404, 409, 413, 422].includes(status);
       const terminal = !retry && refusal;
-      update(row.event.id, {
+      row.uncertain = retry || !terminal;
+      change(row, {
         phase: terminal ? 'refused' : refusal ? 'review' : 'retry',
         message: terminal
           ? 'This action could not be saved. Review the document before trying again.'
@@ -148,40 +325,59 @@ export function useWidgetChannelActions(
             ? 'Save not confirmed. Review this action before trying again.'
             : 'Save not confirmed. Check your network and try again.',
       });
+    } finally {
+      if (row.operation === operation) {
+        row.operation = undefined;
+        operation.active = false;
+        clearTimeout(operation.timer);
+        controller.abort();
+      }
     }
   };
   const dispatch = async (action: WidgetAction, controlId: string) => {
     const host = port.current;
     if (!host?.enabled || pending(controlId)) return;
-    const normalization = action.kind === 'agent';
-    if (normalization && !isWidgetActionApproved(host.approvedEventTypes)) return;
-    if (action.kind !== 'emit' && !normalization) return;
-    const metadata = {
-      documentId: host.documentId,
-      nodeId: controlId,
-      ...(widgetTitle ? { title: widgetTitle } : {}),
-    };
+    const normalized = action.kind === 'agent';
+    if (normalized && !isWidgetActionApproved(host.approvedEventTypes)) return;
+    if (action.kind !== 'emit' && !normalized) return;
     const event = PageEventSchema.parse({
       v: 1,
       id: crypto.randomUUID(),
-      type: normalization ? 'widget.action' : action.type,
-      payload: normalization
-        ? { actionId: action.id, payload: action.payload ?? {}, widget: metadata }
-        : { ...(action.payload ?? {}), widget: metadata },
-      ...(!normalization && action.coalesceKey ? { coalesceKey: action.coalesceKey } : {}),
+      type: normalized ? 'widget.action' : action.type,
+      payload: normalized
+        ? {
+            actionId: action.id,
+            payload: action.payload ?? {},
+            widget: {
+              documentId: host.documentId,
+              nodeId: controlId,
+              ...(widgetTitle ? { title: widgetTitle } : {}),
+            },
+          }
+        : {
+            ...(action.payload ?? {}),
+            widget: {
+              documentId: host.documentId,
+              nodeId: controlId,
+              ...(widgetTitle ? { title: widgetTitle } : {}),
+            },
+          },
+      ...(!normalized && action.coalesceKey ? { coalesceKey: action.coalesceKey } : {}),
     });
-    const rows = current.current.map((row) => ({
-      ...row,
-      receipt:
-        host.snapshot?.receipts.find((receipt) => receipt.receipt.id === row.event.id) ??
-        row.receipt,
-    }));
-    if (rows.length >= MAX_SUBMISSIONS) {
-      const settled = rows.findIndex(
+    const bytes = JSON.stringify(event);
+    const captured = {
+      ...host,
+      submit: host.submit.bind(host),
+      inspect: host.inspect.bind(host),
+      ...(host.current ? { current: host.current.bind(host) } : {}),
+    };
+    if (!live.current || port.current !== host || pending(controlId)) return;
+    if (rows.current.size >= MAX_SUBMISSIONS) {
+      const settled = [...rows.current.values()].find(
         (row) =>
-          row.phase === 'refused' ||
-          (row.phase === 'accepted' &&
-            row.receipt?.deliveries.every((delivery) =>
+          row.value.phase === 'refused' ||
+          (row.value.phase === 'accepted' &&
+            row.value.receipt?.deliveries.every((delivery) =>
               [
                 'handled',
                 'rejected',
@@ -194,38 +390,39 @@ export function useWidgetChannelActions(
               ].includes(delivery.status)
             ))
       );
-      if (settled < 0)
-        throw new Error('Too many actions are waiting. Try again after they finish.');
-      rows.splice(settled, 1);
+      if (!settled) throw new Error('Too many actions are waiting. Try again after they finish.');
+      rows.current.delete(settled.value.event.id);
+      retire(settled);
+      if (!live.current || port.current !== host || pending(controlId)) return;
     }
-    const row: WidgetChannelSubmission = {
-      controlId,
-      documentId: host.documentId,
-      normalized: normalization,
-      event,
-      phase: 'sending',
-      floor: host.snapshot?.receiptRetentionFloor ?? null,
+    const row: OwnedRow = {
+      host: captured,
+      owner: host.submissionOwner,
+      bytes,
+      retired: false,
+      uncertain: false,
+      value: {
+        controlId,
+        documentId: host.documentId,
+        normalized,
+        event: freezeEnvelope(JSON.parse(bytes) as PageEvent),
+        phase: 'sending',
+        floor: host.snapshot?.receiptRetentionFloor ?? null,
+      },
     };
-    commit([...rows, row]);
+    rows.current.set(event.id, row);
+    publish();
     await send(row);
   };
-  const records = submissions.map((row) => {
-    const receipt = channel?.snapshot?.receipts.find(
-      (receipt) => receipt.receipt.id === row.event.id
-    );
-    return {
-      ...row,
-      ...(receipt && row.phase !== 'refused' ? { phase: 'accepted' as const } : {}),
-      receipt: receipt ?? row.receipt,
-    };
-  });
   return {
     dispatch,
     pending,
-    records,
+    records: submissions,
     retry: (id: string) => {
-      const row = current.current.find((row) => row.event.id === id);
-      return row && row.phase === 'retry' ? send(row, true) : Promise.resolve();
+      const row = rows.current.get(id);
+      return row && row.uncertain && (row.value.phase === 'retry' || row.value.phase === 'sending')
+        ? send(row, true)
+        : Promise.resolve();
     },
   };
 }

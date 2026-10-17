@@ -17,7 +17,6 @@ export {
   type StreamManagerListeners,
 } from './stream-manager';
 
-export {
-  subscribeDocChannelNotifications,
-  publishDocChannelNotification,
-} from './doc-channel-notifications';
+export { subscribeDocChannelNotifications } from './doc-channel-notifications';
+
+export { openOwnedRoomDocStream } from './doc-channel-ownership';

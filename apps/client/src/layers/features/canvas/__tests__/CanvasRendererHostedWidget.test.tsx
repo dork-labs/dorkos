@@ -8,7 +8,12 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { CanvasChannelReplayResponse, PageEvent } from '@dorkos/shared/canvas-channel-schemas';
 import type { WidgetChannelPort } from '@/layers/features/gen-ui';
 import { TransportProvider } from '@/layers/shared/model';
-import { publishDocChannelNotification } from '@/layers/shared/lib/transport';
+import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
+import type { Transport } from '@dorkos/shared/transport';
+let testOwner: Transport;
+function publishDocChannelNotification(value: unknown) {
+  return ownDocChannelConnection(testOwner, new AbortController().signal).publish(value);
+}
 import { CanvasRenderer } from '../ui/CanvasRenderer';
 
 // Only widget dispatch is under test; unrelated viewer dependencies never mount.
@@ -41,6 +46,13 @@ const content: Extract<UiCanvasContent, { type: 'widget' }> = {
   },
 };
 const response = (): CanvasChannelReplayResponse => ({
+  incarnation: {
+    v: 1,
+    documentId: 'doc-1',
+    physicalOpenedAt: '2026-10-01T00:00:00.000Z',
+    channelCreatedAt: '2026-10-01T00:00:00.000Z',
+    generation: 'a'.repeat(64),
+  },
   events: [],
   receipts: [],
   state: {},
@@ -69,6 +81,13 @@ describe('production hosted canvas widget', () => {
     'keeps loading and refused routes on the channel, then accepts %s while preserving draft/focus',
     async (pattern) => {
       const transport = createMockTransport();
+      testOwner = transport;
+      let submittedSignalWasLive = false;
+      const originalIngest = vi.mocked(transport.ingestCanvasEvent).getMockImplementation()!;
+      vi.mocked(transport.ingestCanvasEvent).mockImplementation((...args) => {
+        submittedSignalWasLive = !args[3].aborted;
+        return originalIngest(...args);
+      });
       let resolve!: (value: CanvasChannelReplayResponse) => void;
       vi.mocked(transport.getCanvasChannel).mockReturnValue(
         new Promise((value) => {
@@ -116,7 +135,10 @@ describe('production hosted canvas widget', () => {
       expect(vi.mocked(transport.ingestCanvasEvent).mock.calls[0]).toMatchObject([
         'doc-1',
         { type: 'widget.action', payload: { actionId: 'save' } },
+        { expectedGeneration: response().incarnation!.generation },
+        expect.any(AbortSignal),
       ]);
+      expect(submittedSignalWasLive).toBe(true);
       expect(transport.sendUiAction).not.toHaveBeenCalled();
       const input = screen.getByRole('textbox', { name: 'Title' });
       await user.click(input);
@@ -169,4 +191,134 @@ describe('production hosted canvas widget', () => {
     expect(transport.ingestCanvasEvent).not.toHaveBeenCalled();
     expect(transport.sendUiAction).not.toHaveBeenCalled();
   });
+});
+
+it('recovers a lost native response through same-birth canonical rekey and preserves the draft', async () => {
+  const transport = createMockTransport();
+  testOwner = transport;
+  vi.mocked(transport.getCanvasChannel).mockResolvedValue(response());
+  vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('Lost accepted response'));
+  render(
+    <TransportProvider transport={transport}>
+      <CanvasRenderer documentId="doc-1" content={content} onContentChange={vi.fn()} />
+    </TransportProvider>
+  );
+  const user = userEvent.setup();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  );
+  const input = screen.getByRole('textbox', { name: 'Title' });
+  await user.type(input, 'original draft');
+  await user.click(screen.getByRole('button', { name: 'Save' }));
+  const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0];
+  const saved = {
+    receipt: { id: original[1].id, status: 'recorded' as const, docSeq: 1 },
+    deliveries: [],
+  };
+  vi.mocked(transport.getCanvasEventReceipt).mockResolvedValueOnce(saved);
+  const { events: _events, ...snapshot } = response();
+  await act(async () => {
+    publishDocChannelNotification({
+      type: 'canvas_channel_snapshot',
+      documentId: 'doc-1',
+      scope: 'session:first',
+      snapshot,
+    });
+  });
+  await act(async () => {
+    publishDocChannelNotification({
+      type: 'canvas_channel_snapshot',
+      documentId: 'doc-1',
+      scope: 'session:renewed',
+      snapshot,
+    });
+  });
+  await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalledTimes(2));
+  await user.click(screen.getByTestId('widget-action-retry'));
+  expect(transport.getCanvasEventReceipt).toHaveBeenCalledTimes(1);
+  expect(transport.getCanvasEventReceipt).toHaveBeenCalledWith(
+    'doc-1',
+    original[1].id,
+    original[2],
+    expect.any(AbortSignal)
+  );
+  expect(vi.mocked(transport.getCanvasEventReceipt).mock.calls[0][3]).not.toBe(original[3]);
+  expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('textbox', { name: 'Title' })).toBe(input);
+  expect(input).toHaveValue('original draft');
+});
+
+it('keeps an uncertain hosted action and draft through an owned birthless replay, then inspects once after same-birth repair', async () => {
+  const transport = createMockTransport();
+  testOwner = transport;
+  vi.mocked(transport.getCanvasChannel).mockResolvedValue(response());
+  vi.mocked(transport.ingestCanvasEvent).mockRejectedValueOnce(new Error('Lost accepted response'));
+  render(
+    <TransportProvider transport={transport}>
+      <CanvasRenderer documentId="doc-1" content={content} onContentChange={vi.fn()} />
+    </TransportProvider>
+  );
+  const user = userEvent.setup();
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+  );
+  const input = screen.getByRole('textbox', { name: 'Title' });
+  await user.type(input, 'original uncertain draft');
+  await user.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('widget-action-status')).toHaveTextContent('Save not confirmed')
+  );
+  const original = vi.mocked(transport.ingestCanvasEvent).mock.calls[0];
+  const saved = {
+    receipt: { id: original[1].id, status: 'recorded' as const, docSeq: 1 },
+    deliveries: [],
+  };
+  const legacy = {
+    ...response(),
+    highWatermark: 1,
+    stateRev: 1,
+    state: { unqualified: true },
+    receipts: [saved],
+  };
+  delete legacy.incarnation;
+  vi.mocked(transport.getCanvasChannel).mockResolvedValueOnce(legacy);
+  await act(async () => ownDocChannelConnection(transport, new AbortController().signal).retire());
+  await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.getByTestId('widget-action-status')).toHaveAttribute(
+    'data-event-id',
+    original[1].id
+  );
+  expect(screen.getByTestId('widget-action-status')).toHaveTextContent('Save not confirmed');
+  await user.click(screen.getByTestId('widget-action-retry'));
+  expect(transport.getCanvasEventReceipt).not.toHaveBeenCalled();
+  expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+  expect(transport.sendUiAction).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Title' })).toBe(input);
+  expect(input).toHaveValue('original uncertain draft');
+  vi.mocked(transport.getCanvasChannel).mockResolvedValueOnce(response());
+  vi.mocked(transport.getCanvasEventReceipt).mockResolvedValueOnce(saved);
+  await act(async () => ownDocChannelConnection(transport, new AbortController().signal).retire());
+  await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalledTimes(3));
+  await act(async () => {});
+  await user.click(screen.getByTestId('widget-action-retry'));
+  await waitFor(() =>
+    expect(screen.getByTestId('widget-action-status')).toHaveTextContent('Saved to the document.')
+  );
+  expect(transport.getCanvasEventReceipt).toHaveBeenCalledTimes(1);
+  expect(transport.getCanvasEventReceipt).toHaveBeenCalledWith(
+    'doc-1',
+    original[1].id,
+    original[2],
+    expect.any(AbortSignal)
+  );
+  expect(vi.mocked(transport.getCanvasEventReceipt).mock.calls[0][3]).not.toBe(original[3]);
+  expect(transport.ingestCanvasEvent).toHaveBeenCalledTimes(1);
+  expect(input).toHaveValue('original uncertain draft');
 });

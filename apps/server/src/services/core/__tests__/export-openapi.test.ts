@@ -23,6 +23,12 @@ describe('export-openapi', () => {
     expect(stream).toContain('receiptRetentionFloor');
     expect(stream).toContain('approvedEventTypes');
     expect(stream).toContain('Finite plain JSON');
+    for (const path of ['/api/rooms/{id}/events', '/api/sessions/{id}/events']) {
+      const response = JSON.stringify(spec.paths?.[path]?.get?.responses);
+      for (const field of ['incarnation', 'physicalOpenedAt', 'channelCreatedAt', 'generation']) {
+        expect(response).toContain(field);
+      }
+    }
   });
 
   it('includes required endpoint groups', () => {
