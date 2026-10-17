@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# vc: the visual companion in one command. See vc.cjs for usage.
+exec node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/vc.cjs" "$@"

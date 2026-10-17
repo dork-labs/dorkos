@@ -4,316 +4,226 @@ description: Browser-based visual companion for showing mockups, diagrams, compa
 license: Complete terms in LICENSE.txt
 ---
 
-# Visual Companion
+# Visual companion
 
-Browser-based visual companion for rendering mockups, diagrams, and interactive options. The server watches a directory for HTML files and serves the newest one to the browser. You write HTML content, the user sees it in their browser and can click to select options.
+A small local server that shows HTML screens in the DorkOS frame (DorkOS
+tokens, both themes, history, pin notes) on the DorkOS canvas. You write a
+screen; it appears; what the person does there comes back to you.
 
-## When to Use
+**Use it when the answer is visual**: layouts, mockups, motion, side-by-side
+directions, diagrams. **Stay in chat when the answer is words**: scope,
+trade-offs, concepts. For a quick pick between a few labelled choices, a
+dorkos-ui widget in chat is lighter (its buttons give you a turn directly). Use
+the companion when the choice needs to be seen.
 
-Decide per-question, not per-session. The test: **would the user understand this better by seeing it than reading it?**
+All commands below are `scripts/vc` in this skill. Each prints one JSON object.
 
-**Use the browser** when the content itself is visual:
+## The loop
 
-- **UI mockups** -- wireframes, layouts, navigation structures, component designs
-- **Architecture diagrams** -- system components, data flow, relationship maps
-- **Side-by-side visual comparisons** -- comparing two layouts, two color schemes, two design directions
-- **Design polish** -- when the question is about look and feel, spacing, visual hierarchy
-- **Spatial relationships** -- state machines, flowcharts, entity relationships rendered as diagrams
-
-**Use the terminal** when the content is text or tabular:
-
-- **Requirements and scope questions** -- "what does X mean?", "which features are in scope?"
-- **Conceptual A/B/C choices** -- picking between approaches described in words
-- **Tradeoff lists** -- pros/cons, comparison tables
-- **Technical decisions** -- API design, data modeling, architectural approach selection
-- **Clarifying questions** -- anything where the answer is words, not a visual preference
-
-A question _about_ a UI topic is not automatically a visual question. "What kind of wizard do you want?" is conceptual -- use the terminal. "Which of these wizard layouts feels right?" is visual -- use the browser.
-
-## How It Works
-
-The server watches a directory for HTML files and serves the newest one to the browser. You write HTML content to `screen_dir`, the user sees it in their browser and can click to select options. Selections are recorded to `state_dir/events` as JSONL that you read on your next turn.
-
-**Content fragments vs full documents:** If your HTML file starts with `<!DOCTYPE` or `<html`, the server serves it as-is (injecting the helper script). Otherwise, the server automatically wraps your content in the frame template -- adding the header, CSS theme, selection indicator, and all interactive infrastructure. **Write content fragments by default.** Only write full documents when you need complete control over the page.
-
-## Starting a Session
-
-```bash
-# Start server with persistence (content saved to project)
-scripts/start-server.sh --project-dir /path/to/project
-
-# Returns JSON:
-# {"type":"server-started","port":52341,"url":"http://localhost:52341",
-#  "screen_dir":"/path/to/project/.dork/visual-companion/12345-1706000000/content",
-#  "state_dir":"/path/to/project/.dork/visual-companion/12345-1706000000/state"}
-```
-
-Save `screen_dir` and `state_dir` from the response. Tell the user to open the URL.
-
-**Finding connection info:** The server writes its startup JSON to `$STATE_DIR/server-info`. If you launched the server in the background and did not capture stdout, read that file to get the URL and port. When using `--project-dir`, check `<project>/.dork/visual-companion/` for the session directory.
-
-**Note:** Pass the project root as `--project-dir` so content persists in `.dork/visual-companion/` and survives server restarts. Without it, files go to `/tmp` and get cleaned up. Remind the user to add `.dork/` to `.gitignore` if it is not already there.
-
-### Launching (all platforms)
-
-The server must outlive the Bash tool call that starts it. Use `--foreground` combined with `run_in_background: true` on the Bash tool so the process persists across conversation turns.
-
-```bash
-# CORRECT — server survives across turns
-scripts/start-server.sh --project-dir /path/to/project --foreground
-# Set run_in_background: true on the Bash tool call
-```
-
-Then on the next turn, find the newest session directory and read `$STATE_DIR/server-info` to get the URL and port:
-
-```bash
-# Find newest session
-ls <project>/.dork/visual-companion/ | sort -t'-' -k2 -n | tail -1
-# Read connection info
-cat <project>/.dork/visual-companion/<session>/state/server-info
-```
-
-**Why not the default background mode?** The default mode (`start-server.sh` without `--foreground`) backgrounds the server as a child of the Bash process. When the Bash tool call completes, the parent shell exits and the server self-terminates with `"reason":"owner process exited"`. This happens on all platforms — macOS, Linux, and Windows.
-
-If the URL is unreachable from your browser (common in remote/containerized setups), bind a non-loopback host:
-
-```bash
-scripts/start-server.sh \
-  --project-dir /path/to/project \
-  --host 0.0.0.0 \
-  --url-host localhost
-```
-
-Use `--url-host` to control what hostname is printed in the returned URL JSON.
-
-## The Content Loop
-
-1. **Check server is alive**, then **write HTML** to a new file in `screen_dir`:
-   - Before each write, check that `$STATE_DIR/server-info` exists. If it does not (or `$STATE_DIR/server-stopped` exists), the server has shut down -- restart it with `start-server.sh` before continuing. The server auto-exits after 30 minutes of inactivity.
-   - Use semantic filenames: `platform.html`, `visual-style.html`, `layout.html`
-   - **Never reuse filenames** -- each screen gets a fresh file
-   - Use the Write tool -- **never use cat/heredoc** (dumps noise into terminal)
-   - Server automatically serves the newest file
-
-2. **Tell user what to expect and end your turn:**
-   - Remind them of the URL (every step, not just first)
-   - Give a brief text summary of what is on screen (e.g., "Showing 3 layout options for the homepage")
-   - Ask them to respond in the terminal: "Take a look and let me know what you think. Click to select an option if you'd like."
-
-3. **On your next turn** -- after the user responds in the terminal:
-   - Read `$STATE_DIR/events` if it exists -- this contains the user's browser interactions (clicks, selections) as JSONL
-   - Merge with the user's terminal text to get the full picture
-   - The terminal message is the primary feedback; `state_dir/events` provides structured interaction data
-
-4. **Iterate or advance** -- if feedback changes the current screen, write a new file (e.g., `layout-v2.html`). Only move to the next question when the current step is validated.
-
-5. **Unload when returning to terminal** -- when the next step does not need the browser (e.g., a clarifying question, a tradeoff discussion), push a waiting screen to clear stale content:
-
-   ```html
-   <!-- filename: waiting.html (or waiting-2.html, etc.) -->
-   <div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-     <p class="subtitle">Continuing in terminal...</p>
-   </div>
+1. **Show a screen.** Write a fragment to a temp file, then:
+   ```bash
+   scripts/vc show /tmp/layout.html            # add --wake to let a Send reach you
    ```
+   This starts the server if needed (on the port this session had last, else a free one;
+   it never touches another process), writes the screen, and returns `url`, `screen`,
+   `screen_url` and `shots` (light and dark PNGs you can Read to check your
+   own work). Run it from your project root, or pass `--project-dir`.
+2. **Open it on the canvas.** The first time, or whenever the canvas lost it:
+   `control_ui` → `browser_navigate` with `url`. Never ask the person to open a
+   URL. In a room, pass `target: { roomId }` so it lands on the room's canvas.
+   Once it's open, later screens arrive by themselves (WebSocket, falling back
+   to polling through the preview proxy). There's no need to navigate again.
+3. **Say one line in chat** about what's on screen and what you want from it.
+4. **Read what happened.** Feedback arrives in chat. Structured detail is in
+   `scripts/vc events` (only what's new since your last read).
+5. **Iterate** with a new screen (`layout-v2.html`). Names are never reused; `vc
+show` adds `-2`, `-3` if needed. When the conversation moves on, show a
+   short "Back in chat" screen so a settled choice doesn't linger.
 
-   This prevents the user from staring at a resolved choice while the conversation has moved on. When the next visual question comes up, push a new content file as usual.
+**Check it's alive on every turn** before relying on it: `scripts/vc status`
+(`running: false` → the next `vc show` restarts it with the same screens,
+history and port; re-open the canvas if a screen doesn't appear). It stops
+itself after 4 hours idle (`vc start --idle 30m` to change; polls from an open
+tab don't count).
 
-6. Repeat until done.
+## Waking you (Send)
 
-## CSS Classes Available
+By default, clicks are only recorded. To be woken, show the screen with
+`--wake` (or `<meta name="vc-wake" content="on">`). It then gets a Send bar
+("Send to <your agent's name>", from `.dork/agent.json` or `--label`). **Send** (or ⌘↵), or a **submitted pin note**, wakes the
+chat that ran `vc show` with a `<ui_action>` turn carrying the screen's full
+selection and every pin on it. Exploration (toggling options, sliders, theme,
+history) never wakes anyone.
 
-The frame template provides these CSS classes for content fragments. No `<html>`, CSS, or `<script>` tags needed -- the server provides all of that.
+- While you're mid-turn, DorkOS answers 409 and the companion retries until
+  you're free (up to 30 minutes; at most 20 wakes an hour).
+- **Where a Send goes.** Each screen remembers the chat that showed it
+  (`$DORKOS_SESSION_ID`, else `$CLAUDE_CODE_SESSION_ID`). A Send on that
+  screen wakes that chat, even if other chats have shown screens on the same
+  server since. So show a screen from the chat that should hear back. In
+  practice: the chat talking to the person shows it. A spin-off showing work for
+  review should pass `--session <the main chat's id>` so the answer reaches the
+  chat the person is in, not the builder.
+- Override the target with `--session <id>`. `vc route off` silences waking;
+  `vc route on --via message` queues as a chat message instead; `vc route
+status` shows recent deliveries.
+- **Login.** The server wakes you by calling DorkOS's local API with no
+  credential, which only works while DorkOS login is off (the default on this
+  computer). With login on, DorkOS refuses it (`vc route on` says so, and
+  `vc route status` logs it). Nothing is lost: every click and Send is still in
+  `scripts/vc events`, so read it each turn.
+- How this works, and the cleaner DorkOS-native path still to come:
+  `references/wake-path.md`.
 
-### Options (A/B/C choices)
+## Theme
+
+Screens follow the app's theme, not the OS. In order: `?theme=` on the URL
+(the in-page toggle writes it), then `<meta name="vc-theme" content="dark">`
+on the screen, then the session default (`vc theme dark`, or `vc show --theme
+dark`). Default is light. `get_ui_state` doesn't report the app theme yet, so
+set it when you know it.
+
+## Writing screens
+
+Write **fragments** (no `<html>`); the frame adds tokens, chrome and scripts. A
+full document (`<!doctype` / `<html>`) is served as-is, plus the chrome.
+
+Meta tags, anywhere in the fragment (or the `vc show` flag):
+
+| Meta                   | Flag        | Does                                                                                        |
+| ---------------------- | ----------- | ------------------------------------------------------------------------------------------- |
+| `vc-title`             | `--title`   | Name in the bar and in wake payloads (default: first h2)                                    |
+| `vc-theme` light\|dark |             | Theme for this screen                                                                       |
+| `vc-css` app           | `--app-css` | Load the real DorkOS CSS: `bg-card`, `shadow-elevated`, `text-muted-foreground`, `text-sm`… |
+| `vc-wake` on           | `--wake`    | Send bar; Send and pin notes wake you                                                       |
+
+Colours are the app's tokens as HSL channels: `hsl(var(--muted-foreground))`,
+`hsl(var(--brand))`, `var(--elevation-soft)`. Frame helpers: `var(--vc-raised)`
+(card surface, correct in both themes), `var(--vc-tint)`, `var(--vc-page)`. Use
+real content; scale fidelity to the question; 2–4 options per screen.
+
+### Classes
+
+- `h2` title, `.subtitle`, `.section`, `.label` (small caps)
+- **Choices**: `.options` > `.option[data-choice]` with `.letter` + `.content`
+  (`h3`, `p`), or `.cards` > `.card[data-choice]` with `.card-image` + `.card-body`.
+  Add `onclick="toggleSelect(this)"`; `data-multiselect` on the container for
+  several. Keyboard and screen-reader support is added for you.
+- `.mockup` > `.mockup-header` + `.mockup-body`; `.split` (two columns);
+  `.pros-cons` > `.pros`/`.cons`; wireframe bits `.placeholder`, `.mock-nav`,
+  `.mock-sidebar`, `.mock-content`, `.mock-button`, `.mock-input`.
+
+### Design components
 
 ```html
-<div class="options">
-  <div class="option" data-choice="a" onclick="toggleSelect(this)">
-    <div class="letter">A</div>
-    <div class="content">
-      <h3>Title</h3>
-      <p>Description</p>
-    </div>
-  </div>
+<!-- Before / after: drag slider (keyboard: arrows, Home/End) + side-by-side toggle -->
+<div
+  class="vc-compare"
+  data-title="Session row"
+  data-before="Today"
+  data-after="Proposed"
+  data-mode="slider"
+>
+  <div class="vc-before">…or <img /></div>
+  <div class="vc-after">…</div>
 </div>
+
+<!-- Both themes: the same fragment rendered light and dark (data-stack for vertical) -->
+<div class="vc-themes">…any fragment…</div>
+
+<!-- Phone frame 390×844; scales to fit; data-theme="dark", data-status-bar="false", data-scale="0.75" -->
+<div class="vc-phones">
+  <div class="vc-phone" data-label="Today · 390 × 844">…</div>
+</div>
+
+<!-- Motion playground: spring or duration/easing, live element + curve, copyable values -->
+<div
+  class="vc-motion"
+  data-type="spring"
+  data-stiffness="400"
+  data-damping="30"
+  data-mass="1"
+  data-duration="200"
+  data-ease="ease-out"
+  data-property="x|scale|opacity"
+></div>
 ```
 
-**Multi-select:** Add `data-multiselect` to the container to let users select multiple options. Each click toggles the item. The indicator bar shows the count.
+The motion playground reports settle time, overshoot (as % and px) and damping
+ratio, and copies Motion (`transition={{ type: "spring", … }}`) or CSS
+(`linear()` for springs). A copy is recorded as a `motion` event.
 
-```html
-<div class="options" data-multiselect>
-  <!-- same option markup -- users can select/deselect multiple -->
-</div>
-```
+## The frame
 
-### Cards (visual designs)
+A floating bar (top right) that shows only when the pointer nears it or it
+takes focus:
 
-```html
-<div class="cards">
-  <div class="card" data-choice="design1" onclick="toggleSelect(this)">
-    <div class="card-image"><!-- mockup content --></div>
-    <div class="card-body">
-      <h3>Name</h3>
-      <p>Description</p>
-    </div>
-  </div>
-</div>
-```
+- **‹ title n/N ›** is the history of every screen in the session (⌘← ⌘→).
+  Viewing an older screen holds it there; a new screen shows a "New screen" chip.
+- **Pin** (C): click anywhere to drop a numbered note. It's recorded with x/y,
+  selector and text, survives reloads, and can be removed. Esc finishes.
+- **Reduced motion** (M) forces `prefers-reduced-motion` on and off for the
+  page. Media rules and `matchMedia` both follow it.
+- **Theme** (T). The dot shows the connection: green live, amber polling, red offline.
 
-### Mockup container
+## Events
 
-```html
-<div class="mockup">
-  <div class="mockup-header">Preview: Dashboard Layout</div>
-  <div class="mockup-body"><!-- your mockup HTML --></div>
-</div>
-```
-
-### Split view (side-by-side)
-
-```html
-<div class="split">
-  <div class="mockup"><!-- left --></div>
-  <div class="mockup"><!-- right --></div>
-</div>
-```
-
-### Pros/Cons
-
-```html
-<div class="pros-cons">
-  <div class="pros">
-    <h4>Pros</h4>
-    <ul>
-      <li>Benefit</li>
-    </ul>
-  </div>
-  <div class="cons">
-    <h4>Cons</h4>
-    <ul>
-      <li>Drawback</li>
-    </ul>
-  </div>
-</div>
-```
-
-### Mock elements (wireframe building blocks)
-
-```html
-<div class="mock-nav">Logo | Home | About | Contact</div>
-<div style="display: flex;">
-  <div class="mock-sidebar">Navigation</div>
-  <div class="mock-content">Main content area</div>
-</div>
-<button class="mock-button">Action Button</button>
-<input class="mock-input" placeholder="Input field" />
-<div class="placeholder">Placeholder area</div>
-```
-
-### Typography and sections
-
-- `h2` -- page title
-- `h3` -- section heading
-- `.subtitle` -- secondary text below title
-- `.section` -- content block with bottom margin
-- `.label` -- small uppercase label text
-
-## Browser Events Format (JSONL)
-
-When the user clicks options in the browser, their interactions are recorded to `$STATE_DIR/events` as one JSON object per line. The file is cleared automatically when you push a new screen.
+`scripts/vc events` prints new events as JSONL (`--all` for everything,
+`--peek` to leave the cursor). Every event has `type`, `screen`, `theme` and `timestamp`.
 
 ```jsonl
-{"type":"click","choice":"a","text":"Option A - Simple Layout","timestamp":1706000101}
-{"type":"click","choice":"c","text":"Option C - Complex Grid","timestamp":1706000108}
-{"type":"click","choice":"b","text":"Option B - Hybrid","timestamp":1706000115}
+{"type":"click","choice":"b","label":"B · Busy","text":"B Busy More.","screen":"layout"}
+{"type":"pin","n":1,"note":"Make this calmer","x":412,"y":233,"selector":"div.option:nth-of-type(1) > div.content > h3","rel":{"x":0.2,"y":0.5},"target":"Quiet"}
+{"type":"send","selection":[{"choice":"b","label":"B · Busy"}],"pins":1}
+{"type":"motion","action":"copy","format":"motion","values":{"type":"spring","stiffness":400,"damping":30,"settleMs":356,"overshoot":0.027}}
 ```
 
-The full event stream shows the user's exploration path -- they may click multiple options before settling. The last `choice` event is typically the final selection, but the pattern of clicks can reveal hesitation or preferences worth asking about.
+Clicks show the path to a choice; the last one, or the Send, is the answer.
+From a page script: `vc.send({type, …})`, `vc.choice(value)`, `vc.theme()`,
+`vc.reducedMotion()`, `vc.pin()`, `vc.go(name)`.
 
-If `$STATE_DIR/events` does not exist, the user did not interact with the browser -- use only their terminal text.
+## Screenshots
 
-## Design Tips
+Every new or edited screen is shot headless in light and dark into
+`<session>/shots/<name>.{light,dark}.png`, full page and without chrome.
+`vc show` waits for them (about 1.5s) and returns the paths. `--no-wait` skips the wait.
+This needs playwright-core and a Chromium. playwright-core comes from
+`VC_PLAYWRIGHT`, then the DorkOS repo's install. The browser is `VC_CHROME`,
+then the one Playwright installed, then a system Chrome. If none is found,
+`vc show` returns `shots_error` saying what to set; the screen still shows.
 
-- **Scale fidelity to the question** -- wireframes for layout, polish for polish questions
-- **Explain the question on each page** -- "Which layout feels more professional?" not just "Pick one"
-- **Iterate before advancing** -- if feedback changes current screen, write a new version
-- **2-4 options max** per screen
-- **Use real content when it matters** -- for a photography portfolio, use actual images (Unsplash). Placeholder content obscures design issues.
-- **Keep mockups simple** -- focus on layout and structure, not pixel-perfect design
+## Decisions
 
-## File Naming
+When a screen settles a design question, record it where the project keeps
+decisions (in this repo: an ADR, or a note in the spec's folder): context,
+options, the call and why. Link the screen and its shots, e.g.
+`.dork/visual-companion/<session>/content/<screen>.html`. Skip it for quick
+one-off questions.
 
-- Use semantic names: `platform.html`, `visual-style.html`, `layout.html`
-- Never reuse filenames -- each screen must be a new file
-- For iterations: append version suffix like `layout-v2.html`, `layout-v3.html`
-- Server serves newest file by modification time
+## Setup and options
 
-## Capturing Design Decisions for Specs
+Nothing to set up inside this repo. The first `vc show` builds
+`scripts/assets/tokens.css` (the frame's colours) from the repo, and a screen
+that asks for `--app-css` builds `app.css` too. Both are generated and
+gitignored; `scripts/vc build` rebuilds them after the app's styles change.
 
-When using the visual companion alongside a feature spec (`specs/<slug>/`), capture the design work so implementing agents can consume it without reading raw HTML mockups.
+| Setting                        | Default                                   | Use it to                                       |
+| ------------------------------ | ----------------------------------------- | ----------------------------------------------- |
+| `--port N`, `VC_PORT`          | the session's last port, else a free one  | pin a port (walks up if it's taken)             |
+| `--dorkos P`, `VC_DORKOS_REPO` | the git checkout this skill lives in      | build assets when the skill is copied elsewhere |
+| `VC_CHROME`                    | Playwright's Chromium, then system Chrome | pick the browser for screenshots                |
+| `VC_PLAYWRIGHT`                | the repo's playwright-core                | point at another playwright-core                |
+| `--idle 30m`                   | 4h                                        | stop sooner when nobody's looking               |
 
-### During the session
-
-- Name screens to match the design question (e.g., `agent-channels-tab.html`, `settings-layout.html`)
-- After each round of feedback, note the user's selections and verbal reasoning
-
-### At session end
-
-Write a `04-design-decisions.md` file into the spec directory that captures:
-
-1. **Each design question explored** — what was asked, which screen file showed it
-2. **Options presented** — brief description of each option (A, B, C)
-3. **What was chosen and why** — the user's selection plus their reasoning
-4. **Final design direction** — prose descriptions of the agreed-upon designs, detailed enough that an implementing agent can build from them without seeing the mockups
-
-Example structure:
-
-```markdown
-# Design Decisions
-
-Visual companion session: `.dork/visual-companion/<session-id>/`
-
-## 1. [Design Question]
-
-**Screen:** `<filename>.html`
-**Options:** A) ... B) ... C) ...
-**Chosen:** B — [reasoning from user]
-
-## 2. [Next Design Question]
-
-...
-
-## Final Design Summary
-
-[Prose description of the complete agreed design, suitable for implementation]
-```
-
-### Spec frontmatter
-
-Add the session reference to the spec's ideation or specification frontmatter:
-
-```yaml
-design-session: .dork/visual-companion/<session-id>
-```
-
-This lets implementing agents find the raw HTML mockups if they need visual reference.
-
-### When to skip
-
-If the visual companion was used for a quick one-off question (not part of a spec), skip the design decisions file. This process only applies when the session is part of a spec workflow.
-
-## Shutting Down
-
-```bash
-scripts/stop-server.sh $SESSION_DIR
-```
-
-If the session used `--project-dir`, content files persist in `.dork/visual-companion/` for later reference. Only `/tmp` sessions get deleted on stop.
+`BRAINSTORM_PORT` still works as `VC_PORT`, for v1 callers.
 
 ## Reference
 
-- Frame template (CSS reference): `scripts/frame-template.html`
-- Helper script (client-side): `scripts/helper.js`
-- Server implementation: `scripts/server.cjs`
-- Start script: `scripts/start-server.sh`
-- Stop script: `scripts/stop-server.sh`
+- `scripts/vc` (`vc.cjs`): the CLI (show, start, status, stop, events, route, theme)
+- `scripts/server.cjs`: zero-dependency server; `GET vc/state`, `vc/health`, `vc/pins`; `POST vc/event`
+- `scripts/frame-template.html`, `frame.css`, `boot.js`, `helper.js`: the frame
+- `scripts/shoot.cjs`: screenshots; `scripts/locate.cjs` finds the repo, playwright-core and Chromium
+- `scripts/build-assets.mjs` (`vc build`): builds `scripts/assets/tokens.css` and `app.css` from the DorkOS repo
+- `tests/run.sh`: 35 headless checks (playwright-core + Chromium, about 90s)
+- `examples/components.html`: every component on one screen
+- `scripts/start-server.sh`, `stop-server.sh`: the v1 entry points, still working
