@@ -151,6 +151,38 @@ describe('DocCollabProvider', () => {
     expect(provider.getSnapshot().lostEdits).toBe(0);
   });
 
+  it('keeps an edit that only deletes unsaved until a save that includes the deletion', async () => {
+    const server = new FakeDocServer('Delete me.');
+    const { provider } = connect(server);
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+    const before = server.snapshotNow();
+    provider.ydoc.getXmlFragment('prosemirror').delete(0, 1);
+    expect(provider.getSnapshot().ownEditsUnsaved).toBe(true);
+    // A save of the file as it was before the deletion arrived.
+    server.saveWith(before, 'h-old');
+    expect(provider.getSnapshot().ownEditsUnsaved).toBe(true);
+    server.save('h-new');
+    expect(provider.getSnapshot()).toMatchObject({ ownEditsUnsaved: false, savedHash: 'h-new' });
+  });
+
+  it('reconnects when the first sync never comes after the hello', async () => {
+    const server = new FakeDocServer('x');
+    const transport = server.transport();
+    const provider = new DocCollabProvider({
+      transport,
+      doc,
+      baseDelayMs: 10,
+      maxDelayMs: 10,
+      firstSyncTimeoutMs: 60,
+    });
+    providers.push(provider);
+    // The server says hello but never answers the sync request.
+    server.muted = true;
+    await vi.waitFor(() => expect(transport.connectDocCollab.mock.calls.length).toBeGreaterThan(1));
+    server.muted = false;
+    await vi.waitFor(() => expect(provider.getSnapshot().status).toBe('live'));
+  });
+
   it('gives a large first sync all the time it needs once the server said hello', async () => {
     const server = new FakeDocServer('A large doc.');
     server.syncDelayMs = 200;

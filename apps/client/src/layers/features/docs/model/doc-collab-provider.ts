@@ -99,6 +99,12 @@ export interface DocCollabProviderOptions {
   connectTimeoutMs?: number;
   /** Silence after which a live connection counts as dead. Default 2.5 heartbeats. */
   silenceTimeoutMs?: number;
+  /**
+   * How long the first sync may take after the hello. Generous (default
+   * 2 minutes): a large doc over a slow link is not cut off, but a server
+   * that said hello and then went quiet does not leave the editor loading forever.
+   */
+  firstSyncTimeoutMs?: number;
 }
 
 /** See the module doc. */
@@ -128,6 +134,7 @@ export class DocCollabProvider {
   #retry: ReturnType<typeof setTimeout> | null = null;
   #connectTimer: ReturnType<typeof setTimeout> | null = null;
   #watchdog: ReturnType<typeof setInterval> | null = null;
+  #syncTimer: ReturnType<typeof setTimeout> | null = null;
   #lastFrameAt = 0;
   /** A fresh copy was adopted and not fetched yet: the next close reconnects at once. */
   #fetchFresh = false;
@@ -146,6 +153,7 @@ export class DocCollabProvider {
       attemptsBeforeUnavailable: 3,
       connectTimeoutMs: 10_000,
       silenceTimeoutMs: Math.round(DOC_COLLAB_HEARTBEAT_MS * 2.5),
+      firstSyncTimeoutMs: 120_000,
       ...options,
     };
     this.#bind();
@@ -278,6 +286,8 @@ export class DocCollabProvider {
       if (encoding.length(encoder) > 1) this.#connection?.send(encoding.toUint8Array(encoder));
       if (kind === syncProtocol.messageYjsSyncStep2) {
         this.#failures = 0;
+        if (this.#syncTimer) clearTimeout(this.#syncTimer);
+        this.#syncTimer = null;
         this.#startWatchdog();
         this.#set({ status: 'live', synced: true, everLive: true });
       }
@@ -289,7 +299,7 @@ export class DocCollabProvider {
   #note(note: DocCollabNote): void {
     if (note.type === 'heartbeat') return;
     if (note.type === 'saved') {
-      this.#saved(note.hash, note.stateVector);
+      this.#saved(note.hash, note.snapshot);
       return;
     }
     if (note.type === 'hello') {
@@ -303,6 +313,9 @@ export class DocCollabProvider {
       this.#confirmed = true;
       if (this.#connectTimer) clearTimeout(this.#connectTimer);
       this.#connectTimer = null;
+      this.#syncTimer = setTimeout(() => {
+        if (this.#connection) this.#drop();
+      }, this.#options.firstSyncTimeoutMs);
       // Now ask for what the server has, and say who is here.
       this.#sendSyncStep1();
       this.#sendAwareness([this.ydoc.clientID]);
@@ -311,17 +324,20 @@ export class DocCollabProvider {
     for (const listener of this.#noteListeners) listener(note);
   }
 
-  /** The file holds the doc as of `stateVector`: are this editor's own edits all in it? */
-  #saved(hash: string, stateVector: string): void {
-    let saved: Map<number, number>;
-    try {
-      saved = Y.decodeStateVector(fromBase64(stateVector));
-    } catch {
-      return;
-    }
-    const own = Y.decodeStateVector(Y.encodeStateVector(this.ydoc)).get(this.ydoc.clientID) ?? 0;
-    const allSaved = (saved.get(this.ydoc.clientID) ?? 0) >= own;
-    this.#set({ savedHash: hash, ...(allSaved ? { ownEditsUnsaved: false } : {}) });
+  /**
+   * The file holds the doc as of `snapshot`: is everything this editor holds
+   * in it, deletions included? Only then are its own edits saved.
+   */
+  #saved(hash: string, snapshot: string): void {
+    const covers = (() => {
+      try {
+        const saved = Y.decodeSnapshot(fromBase64(snapshot));
+        return Y.snapshotContainsUpdate(saved, Y.encodeStateAsUpdate(this.ydoc));
+      } catch {
+        return false;
+      }
+    })();
+    this.#set({ savedHash: hash, ...(covers ? { ownEditsUnsaved: false } : {}) });
   }
 
   #replaceDoc(generation: string): void {
@@ -412,6 +428,8 @@ export class DocCollabProvider {
     if (this.#retry) clearTimeout(this.#retry);
     if (this.#connectTimer) clearTimeout(this.#connectTimer);
     if (this.#watchdog) clearInterval(this.#watchdog);
+    if (this.#syncTimer) clearTimeout(this.#syncTimer);
+    this.#syncTimer = null;
     this.#retry = null;
     this.#connectTimer = null;
     this.#watchdog = null;

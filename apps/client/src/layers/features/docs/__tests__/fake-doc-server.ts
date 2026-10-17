@@ -78,10 +78,19 @@ export class FakeDocServer {
     }
   }
 
+  /** The doc as it is now, as an encoded Yjs snapshot (base64), to save with later. */
+  snapshotNow(): string {
+    return btoa(String.fromCharCode(...Y.encodeSnapshot(Y.snapshot(this.doc))));
+  }
+
   /** Save: tell every editor the file now holds the doc as it is. */
   save(hash = 'saved-hash'): void {
-    const stateVector = btoa(String.fromCharCode(...Y.encodeStateVector(this.doc)));
-    this.note({ type: 'saved', hash, stateVector });
+    this.saveWith(this.snapshotNow(), hash);
+  }
+
+  /** Tell every editor the file holds the doc as of `snapshot` (maybe an older one). */
+  saveWith(snapshot: string, hash = 'saved-hash'): void {
+    this.note({ type: 'saved', hash, snapshot });
   }
 
   /** Say something to every editor. */
