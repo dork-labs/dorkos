@@ -87,7 +87,8 @@ export async function refuseClosedDirectMessage(
     // member-kind: agent-owner
     `SELECT (a.accepts_dms AND a.active AND owner.active) AS open FROM agents a
      JOIN members owner ON owner.community_id=a.community_id AND owner.id=a.owner_member_id
-     WHERE a.id=$1 AND a.community_id=$2`,
+     WHERE a.id=$1 AND a.community_id=$2
+     FOR SHARE OF a`,
     [channel.dm_agent_id, channel.community_id]
   );
   if (open.rows[0]?.open !== true)
