@@ -5,7 +5,7 @@ import {
   docSlug,
   relativeDocHref,
   type DocIndexEntry,
-} from '../doc-links';
+} from '../doc-links.js';
 
 /** An index entry, slug worked out the way the server works it out. */
 function doc(path: string, title?: string): DocIndexEntry {
