@@ -187,6 +187,17 @@
   --color-msg-command-fg: hsl(var(--msg-command-fg));
   --color-msg-compaction-fg: hsl(var(--msg-compaction-fg));
   --color-msg-timestamp: var(--msg-timestamp-color);
+  /* Tailwind's own shadow scale, routed through the theme-aware elevation
+     scale so `shadow-sm/md/lg/xl` lift in dark mode too. Tailwind inlines its
+     default shadow values at build time, so a `.dark` override of --shadow-*
+     can never reach them; pointing the theme at a runtime var is the only
+     route. xs and 2xs stay Tailwind's (inputs and buttons, where a highlight
+     would read as raised rather than recessed), and 2xl stays for the image
+     lightbox, which tints its own shadow. */
+  --shadow-sm: var(--elevation-soft);
+  --shadow-md: var(--elevation-elevated);
+  --shadow-lg: var(--elevation-floating);
+  --shadow-xl: var(--elevation-modal);
   --shadow-msg-tool: var(--msg-tool-shadow);
   --shadow-msg-tool-hover: var(--msg-tool-shadow-hover);
   --radius-msg: var(--msg-radius);
@@ -561,11 +572,37 @@
 
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.3);
 
-  /* Elevation scale: stronger alpha so shadows read on the near-black surfaces. */
-  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
-  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
-  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
-  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+  /* Elevation scale, dark: height is light, not shadow.
+
+     A black shadow cannot darken a near-black page (the background is 4%), so
+     on its own it draws nothing; that is why the old 0.5-alpha scale was
+     invisible. Dark surfaces show height the way a lit object does, with three
+     layers, topmost first:
+
+     1. a top-edge highlight, light catching the upper lip (inset, 1px)
+     2. a surface lift, a faint white wash that makes higher surfaces lighter
+        (inset, painted over the background and under the content, so it
+        follows the radius and needs no extra token per surface)
+     3. the black drop, kept, because it still reads wherever the surface sits
+        over something lighter: the sidebar, a muted panel, an image
+
+     Each step up raises all three. `soft` lifts no surface, because cards at
+     rest sit flush with the page; `card-interactive` stepping to `elevated`
+     on hover is what lightens them, which doubles as the hover cue. Every step keeps the same four layers in
+     the same order (soft's lift is transparent) so a hover transition
+     interpolates instead of jumping. */
+  --elevation-soft:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.04), inset 0 0 0 100vmax rgb(255 255 255 / 0),
+    0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --elevation-elevated:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.06), inset 0 0 0 100vmax rgb(255 255 255 / 0.025),
+    0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  --elevation-floating:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.08), inset 0 0 0 100vmax rgb(255 255 255 / 0.04),
+    0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.6);
+  --elevation-modal:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.1), inset 0 0 0 100vmax rgb(255 255 255 / 0.05),
+    0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.7);
 
   /* Nebula radar: gradient edge fades to the panel background */
   --nebula-edge: #1a1a1a;
