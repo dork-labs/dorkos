@@ -49,10 +49,10 @@ tab don't count).
 ## Waking you (Send)
 
 By default, clicks are only recorded. To be woken, show the screen with
-`--wake` (or `<meta name="vc-wake" content="on">`). It then gets a Send bar
-("Send to <your agent's name>", from `.dork/agent.json` or `--label`). **Send** (or ⌘↵), or a **submitted pin note**, wakes the
+`--wake` (or `<meta name="vc-wake" content="on">`). It then gets a reply dock
+("Send to @<your agent's name>", from `.dork/agent.json` or `--label`). **Send** (or ⌘↵), or a **submitted pin note**, wakes the
 chat that ran `vc show` with a `<ui_action>` turn carrying the screen's full
-selection and every pin on it. Exploration (toggling options, sliders, theme,
+selection, any written reply (as `message`), and every pin on it. Exploration (toggling options, sliders, theme,
 history) never wakes anyone.
 
 - While you're mid-turn, DorkOS answers 409 and the companion retries until
@@ -95,7 +95,7 @@ Meta tags, anywhere in the fragment (or the `vc show` flag):
 | `vc-title`             | `--title`   | Name in the bar and in wake payloads (default: first h2)                                    |
 | `vc-theme` light\|dark |             | Theme for this screen                                                                       |
 | `vc-css` app           | `--app-css` | Load the real DorkOS CSS: `bg-card`, `shadow-elevated`, `text-muted-foreground`, `text-sm`… |
-| `vc-wake` on           | `--wake`    | Send bar; Send and pin notes wake you                                                       |
+| `vc-wake` on           | `--wake`    | Reply dock; Send and pin notes wake you                                                     |
 
 Colours are the app's tokens as HSL channels: `hsl(var(--muted-foreground))`,
 `hsl(var(--brand))`, `var(--elevation-soft)`. Frame helpers: `var(--vc-raised)`
@@ -109,6 +109,12 @@ real content; scale fidelity to the question; 2–4 options per screen.
   (`h3`, `p`), or `.cards` > `.card[data-choice]` with `.card-image` + `.card-body`.
   Add `onclick="toggleSelect(this)"`; `data-multiselect` on the container for
   several. Keyboard and screen-reader support is added for you.
+- **Choices look like choices.** The frame gives every `.option`/`.card[data-choice]`
+  a radio (a check box in `data-multiselect` groups) and the group a "Choose one"
+  (or "Choose any") label, in full documents too. Opt out per screen with
+  `<meta name="vc-choices" content="plain">`, or per group with `data-vc-plain`.
+- **Picks persist.** Each pick saves the screen's selection (a `select` event),
+  so leaving a screen and coming back restores it.
 - `.mockup` > `.mockup-header` + `.mockup-body`; `.split` (two columns);
   `.pros-cons` > `.pros`/`.cons`; wireframe bits `.placeholder`, `.mock-nav`,
   `.mock-sidebar`, `.mock-content`, `.mock-button`, `.mock-input`.
@@ -155,16 +161,34 @@ ratio, and copies Motion (`transition={{ type: "spring", … }}`) or CSS
 
 ## The frame
 
-A floating bar (top right) that shows only when the pointer nears it or it
-takes focus:
+A floating bar (top right), always visible as a small handle ("3 / 15 ⋯"). It
+expands to the full controls on hover, on focus, or when the pointer nears the
+top, and stays open from one screen to the next:
 
 - **‹ title n/N ›** is the history of every screen in the session (⌘← ⌘→).
   Viewing an older screen holds it there; a new screen shows a "New screen" chip.
+- **All screens** (G, the list button, or the count) opens a jump list: every
+  screen with a thumbnail, its position and a Sent mark. Arrow keys and Enter;
+  Esc closes it. Past 8 screens it filters as you type.
 - **Pin** (C): click anywhere to drop a numbered note. It's recorded with x/y,
   selector and text, survives reloads, and can be removed. Esc finishes.
 - **Reduced motion** (M) forces `prefers-reduced-motion` on and off for the
   page. Media rules and `matchMedia` both follow it.
 - **Theme** (T). The dot shows the connection: green live, amber polling, red offline.
+
+On a wake screen, a **reply dock** sits at the bottom:
+
+- A status line, a reply box and Send. Send stays off until there's a pick or
+  some text. A written reply can go on its own or with a pick (Enter sends,
+  Shift+Enter is a new line; the draft survives a reload). Pins stay for notes
+  about one spot.
+- Under each choice group, "None of these, I'll write my own" clears the pick
+  and puts the cursor in the reply box.
+- **Sent screens say so.** After a Send the dock reads "Sent to @<agent> at
+  2:14 PM · what was picked · "the reply"", and the sent option is tagged
+  "Sent". Changing the pick or typing turns the button into "Send update".
+- **Send moves on** to the next later screen that hasn't been sent; on the last
+  one it says so. So show a set of questions in order.
 
 ## Events
 
@@ -174,11 +198,12 @@ takes focus:
 ```jsonl
 {"type":"click","choice":"b","label":"B · Busy","text":"B Busy More.","screen":"layout"}
 {"type":"pin","n":1,"note":"Make this calmer","x":412,"y":233,"selector":"div.option:nth-of-type(1) > div.content > h3","rel":{"x":0.2,"y":0.5},"target":"Quiet"}
-{"type":"send","selection":[{"choice":"b","label":"B · Busy"}],"pins":1}
+{"type":"select","choices":["b"]}
+{"type":"send","selection":[{"choice":"b","label":"B · Busy"}],"pins":1,"message":"Smaller title"}
 {"type":"motion","action":"copy","format":"motion","values":{"type":"spring","stiffness":400,"damping":30,"settleMs":356,"overshoot":0.027}}
 ```
 
-Clicks show the path to a choice; the last one, or the Send, is the answer.
+Clicks show the path to a choice, and `select` holds the screen's current picks; the last one, or the Send, is the answer.
 From a page script: `vc.send({type, …})`, `vc.choice(value)`, `vc.theme()`,
 `vc.reducedMotion()`, `vc.pin()`, `vc.go(name)`.
 
@@ -220,10 +245,10 @@ gitignored; `scripts/vc build` rebuilds them after the app's styles change.
 ## Reference
 
 - `scripts/vc` (`vc.cjs`): the CLI (show, start, status, stop, events, route, theme)
-- `scripts/server.cjs`: zero-dependency server; `GET vc/state`, `vc/health`, `vc/pins`; `POST vc/event`
+- `scripts/server.cjs`: zero-dependency server; `GET vc/state`, `vc/health`, `vc/pins`, `vc/shot/<file>`; `POST vc/event`
 - `scripts/frame-template.html`, `frame.css`, `boot.js`, `helper.js`: the frame
 - `scripts/shoot.cjs`: screenshots; `scripts/locate.cjs` finds the repo, playwright-core and Chromium
 - `scripts/build-assets.mjs` (`vc build`): builds `scripts/assets/tokens.css` and `app.css` from the DorkOS repo
-- `tests/run.sh`: 35 headless checks (playwright-core + Chromium, about 90s)
+- `tests/run.sh`: 42 headless checks (playwright-core + Chromium, about 90s)
 - `examples/components.html`: every component on one screen
 - `scripts/start-server.sh`, `stop-server.sh`: the v1 entry points, still working
