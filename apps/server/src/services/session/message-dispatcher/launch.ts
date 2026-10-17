@@ -188,7 +188,7 @@ export function launchDispatchInner(
           outcome: turnOutcome,
           ...(reason !== undefined ? { reason } : {}),
         });
-        turn.onSettled?.(turnOutcome);
+        turn.onSettled?.(turnOutcome, reason);
       },
     });
   } catch (err) {

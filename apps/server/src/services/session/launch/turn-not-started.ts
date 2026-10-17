@@ -65,7 +65,7 @@ export function notStartedReason(event: StreamEvent): TurnRefusal | undefined {
 }
 
 /** How a turn settles: its outcome and, for a refused turn, why. */
-export type SettledAs = ['ok' | 'failed'] | ['failed', TurnRefusal];
+export type SettledAs = [outcome: 'ok' | 'failed', refusal?: TurnRefusal];
 
 /** A turn's stream, watched for a refusal; see {@link watchNotStarted}. */
 export interface WatchedTurn {
