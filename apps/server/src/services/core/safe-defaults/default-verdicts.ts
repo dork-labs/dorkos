@@ -345,6 +345,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'computers.enabled': false,
   // Chatting from the web stays off until a person opts in (DOR-2946).
   'sessionRelay.enabled': false,
+  // Docs stay off until a person tries them (DOR-2993).
+  'docs.enabled': false,
   // Spaces stay hidden until a person opts in (DOR-2740).
   'spaces.enabled': false,
   // No official space until a release or a person names one (spec
