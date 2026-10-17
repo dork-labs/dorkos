@@ -98,6 +98,8 @@ mockups/running-figure-v3.html
 # static rule here would not swallow authored .claude/commands/<ns>/ dirs.)
 .dork/plugins/
 .agents/skills/*__*
+# The visual companion's generated CSS (scripts/vc build); built on first use.
+.agents/skills/visual-companion/scripts/assets/
 .claude/skills/*__*
 .claude/settings.local.json
 .codex/hooks.json
