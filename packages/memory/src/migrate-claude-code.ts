@@ -52,6 +52,13 @@ export interface MigrationInput {
    * tidied away.
    */
   force?: boolean;
+  /**
+   * Named accounts to read anyway. By default only `.claude` and the numbered
+   * `.claude2`, `.claude3` … are read; a NAMED account folder (`.claude-work`,
+   * `.claude-ab1`) is usually a separate identity kept apart on purpose, such
+   * as a work account, so its notes stay where they are unless named here.
+   */
+  includeAccounts?: readonly string[];
 }
 
 /** What happens to one source file. */
@@ -103,8 +110,9 @@ export interface UnmatchedFolder {
    * - `'two-agents'`: more than one does, so it is not guessed.
    * - `'agent-folder-missing'`: the agent is registered but its folder is gone.
    * - `'already-moved'`: an earlier run left its marker; pass `force` to read it again.
+   * - `'named-account'`: a named account, left out unless `includeAccounts` names it.
    */
-  reason: 'no-agent' | 'two-agents' | 'agent-folder-missing' | 'already-moved';
+  reason: 'no-agent' | 'two-agents' | 'agent-folder-missing' | 'already-moved' | 'named-account';
 }
 
 /** The whole plan: what a dry run reports and a real run carries out. */
@@ -159,6 +167,7 @@ export async function planClaudeMemoryMigration(input: MigrationInput): Promise<
 
   for (const accountDir of [...input.accountDirs].sort()) {
     const account = path.basename(accountDir).replace(/^\./, '');
+    const named = !/^claude\d*$/.test(account) && !input.includeAccounts?.includes(account);
     const projects = path.join(accountDir, 'projects');
     for (const slug of (await listOrEmpty(projects)).sort()) {
       const folder = path.join(projects, slug, 'memory');
@@ -170,6 +179,10 @@ export async function planClaudeMemoryMigration(input: MigrationInput): Promise<
       const agent = bySlug.get(slug);
       if (!agent) {
         leave('no-agent');
+        continue;
+      }
+      if (named) {
+        leave('named-account');
         continue;
       }
       if (agent === 'two-agents') {
@@ -337,6 +350,8 @@ const UNMATCHED_WHY: Record<UnmatchedFolder['reason'], string> = {
   'two-agents': 'two agents have the same folder, so it is not guessed',
   'agent-folder-missing': "the agent's own folder is gone",
   'already-moved': 'already copied by an earlier run',
+  'named-account':
+    'a named account (often a work account), left alone; pass --include-account to copy it',
 };
 
 /**

@@ -8,7 +8,10 @@
  * `--dork-home` is required rather than resolved, because the server's own
  * default outside production is a scratch folder, and this must read the real
  * agent registry. `--report <file>` writes the report there as well as
- * printing it. Originals are never changed or deleted; see
+ * printing it. Only `~/.claude` and the numbered `~/.claudeN` accounts are
+ * read; a named one (`~/.claude-ab1`) is left alone unless
+ * `--include-account claude-ab1` names it. `--force` re-reads folders an
+ * earlier run already moved. Originals are never changed or deleted; see
  * `@dorkos/memory`'s `migrate-claude-code.ts` for every rule.
  *
  * @module server/scripts/migrate-claude-memory
@@ -50,6 +53,8 @@ async function main(): Promise<void> {
       'dork-home': { type: 'string' },
       apply: { type: 'boolean', default: false },
       report: { type: 'string' },
+      force: { type: 'boolean', default: false },
+      'include-account': { type: 'string', multiple: true },
     },
   });
   const dorkHome = values['dork-home'];
@@ -67,6 +72,8 @@ async function main(): Promise<void> {
     agents: readAgents(dorkHome),
     slugOf: projectSlug,
     date: new Date().toISOString().slice(0, 10),
+    force: values.force,
+    includeAccounts: values['include-account'] ?? [],
   });
   const results = values.apply ? await applyClaudeMemoryMigration(plan) : undefined;
   const report = renderMigrationReport(plan, results);

@@ -154,6 +154,28 @@ describe('applyClaudeMemoryMigration', () => {
     expect(targets.map((n) => n.target)).toEqual(['x'.repeat(80), `${'x'.repeat(71)}--claude3`]);
   });
 
+  it('leaves a named account alone unless it is included by name', async () => {
+    const { input, root, agentPath } = await arrange();
+    const work = path.join(root, '.claude-work', 'projects', slugOf(agentPath), 'memory');
+    await mkdir(work, { recursive: true });
+    await writeFile(path.join(work, 'client.md'), 'work notes\n');
+    const accounts = [...input.accountDirs, path.join(root, '.claude-work')];
+    const plan = await planClaudeMemoryMigration({ ...input, accountDirs: accounts });
+    expect(plan.unmatched).toContainEqual({
+      account: 'claude-work',
+      folder: work,
+      files: 1,
+      reason: 'named-account',
+    });
+    expect(plan.agents[0]!.notes.some((n) => n.account === 'claude-work')).toBe(false);
+    const included = await planClaudeMemoryMigration({
+      ...input,
+      accountDirs: accounts,
+      includeAccounts: ['claude-work'],
+    });
+    expect(included.agents[0]!.notes.some((n) => n.target === 'client')).toBe(true);
+  });
+
   it('reports two agents with one folder instead of guessing', async () => {
     const { input, agentPath } = await arrange();
     const plan = await planClaudeMemoryMigration({
