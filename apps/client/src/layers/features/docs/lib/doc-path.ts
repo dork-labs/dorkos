@@ -5,21 +5,24 @@
  */
 
 /**
- * A canvas file's path relative to its working directory, forward slashes,
- * or `null` when it is not inside it. The canvas usually holds the relative
- * path already; an agent may have opened a file by its absolute path.
+ * A canvas file's path relative to a space folder, forward slashes, Unicode
+ * NFC, or `null` when it is not inside it. The canvas usually holds the
+ * relative path already; an agent may have opened a file by its absolute
+ * path, which may name the folder through a symlink (macOS `/tmp` is
+ * `/private/tmp`), so callers try the working directory and the server's
+ * resolved root both.
  *
- * @param cwd - The working directory the file was opened from.
+ * @param root - The space folder: the working directory, or its resolved form.
  * @param sourcePath - The canvas document's `sourcePath`.
  */
-export function docPathInSpace(cwd: string, sourcePath: string): string | null {
-  const slashed = sourcePath.replaceAll('\\', '/');
+export function docPathInSpace(root: string, sourcePath: string): string | null {
+  const slashed = sourcePath.normalize('NFC').replaceAll('\\', '/');
   const isAbsolute = slashed.startsWith('/') || /^[A-Za-z]:\//.test(slashed);
   let relative = slashed;
   if (isAbsolute) {
-    const root = cwd.replaceAll('\\', '/').replace(/\/+$/, '');
-    if (!slashed.startsWith(`${root}/`)) return null;
-    relative = slashed.slice(root.length + 1);
+    const folder = root.normalize('NFC').replaceAll('\\', '/').replace(/\/+$/, '');
+    if (!slashed.startsWith(`${folder}/`)) return null;
+    relative = slashed.slice(folder.length + 1);
   }
   const parts: string[] = [];
   for (const part of relative.split('/')) {

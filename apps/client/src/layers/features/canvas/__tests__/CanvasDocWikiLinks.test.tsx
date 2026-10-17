@@ -62,6 +62,7 @@ function renderWith(ui: React.ReactElement, docsOn: boolean) {
     ],
   };
   getDocIndex = vi.fn<Transport['getDocIndex']>().mockResolvedValue({
+    root: CWD,
     docs: [
       { path: 'README.md', title: 'Welcome', slug: 'readme' },
       { path: 'notes/plan.md', title: 'Plan', slug: 'plan' },

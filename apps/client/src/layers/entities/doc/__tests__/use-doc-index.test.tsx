@@ -10,7 +10,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { useDocIndex, useInvalidateDocIndex } from '../index';
 
-const INDEX = { docs: [{ path: 'a.md', title: 'A', slug: 'a' }], truncated: false };
+const INDEX = { root: '/repo', docs: [{ path: 'a.md', title: 'A', slug: 'a' }], truncated: false };
 
 function setup() {
   const getDocIndex = vi.fn().mockResolvedValue(INDEX);

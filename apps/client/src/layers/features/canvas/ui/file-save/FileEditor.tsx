@@ -101,6 +101,7 @@ export function FileEditor({
   const wikiLinks = useDocWikiLinks({
     cwd,
     sourcePath: markdown ? content.sourcePath : null,
+    content: draft,
     saved: fileSave.status === 'saved',
   });
   const editorActive = useRef(false);

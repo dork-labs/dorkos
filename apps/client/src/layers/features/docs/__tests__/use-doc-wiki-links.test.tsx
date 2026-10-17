@@ -32,6 +32,7 @@ import { useDocWikiLinks, type UseDocWikiLinksInput } from '../index';
 const CWD = '/repo';
 
 const INDEX: DocIndex = {
+  root: '/private/repo',
   docs: [
     { path: 'README.md', title: 'Welcome', slug: 'readme' },
     { path: 'notes/plan.md', title: 'Launch plan', slug: 'plan' },
@@ -57,11 +58,19 @@ function link(target: string, heading: string | null = null): WikiLink {
 let queryClient: QueryClient;
 let transport: Transport;
 let getDocIndex: Mock<Transport['getDocIndex']>;
+let resolveDocLink: Mock<Transport['resolveDocLink']>;
 
-function setup(options: { on?: boolean } = {}) {
+function setup(options: { on?: boolean; index?: DocIndex } = {}) {
   const config = configWith(options.on ?? true);
-  getDocIndex = vi.fn<Transport['getDocIndex']>().mockResolvedValue(INDEX);
-  transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue(config), getDocIndex });
+  getDocIndex = vi.fn<Transport['getDocIndex']>().mockResolvedValue(options.index ?? INDEX);
+  resolveDocLink = vi
+    .fn<Transport['resolveDocLink']>()
+    .mockResolvedValue({ doc: null, complete: true });
+  transport = createMockTransport({
+    getConfig: vi.fn().mockResolvedValue(config),
+    getDocIndex,
+    resolveDocLink,
+  });
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(configKeys.current(), config);
 }
@@ -105,7 +114,6 @@ describe('useDocWikiLinks', () => {
       { cwd: CWD, sourcePath: undefined },
       { cwd: CWD, sourcePath: null },
       { cwd: null, sourcePath: 'notes/plan.md' },
-      { cwd: CWD, sourcePath: '/elsewhere/plan.md' },
     ]) {
       const { result, unmount } = renderLinks(input);
       await act(async () => {});
@@ -128,7 +136,10 @@ describe('useDocWikiLinks', () => {
       href: 'Meeting%20Notes.md#next-steps',
       title: 'Meeting notes',
     });
-    expect(resolve!(link('', 'Goals'))).toEqual({ exists: true, href: '#goals' });
+    expect(resolve!(link('', 'Goals'))).toEqual({
+      exists: false,
+      title: 'Links within this doc don’t open.',
+    });
     expect(resolve!(link('No such doc'))).toEqual({ exists: false });
     expect(getDocIndex).toHaveBeenCalledWith(CWD);
   });
@@ -136,6 +147,21 @@ describe('useDocWikiLinks', () => {
   it('reads an absolute sourcePath inside the space as its relative path', async () => {
     const { result } = await ready({ cwd: CWD, sourcePath: '/repo/notes/plan.md' });
     expect(result.current!.resolve!(link('Welcome'))).toMatchObject({ href: '../README.md' });
+  });
+
+  it('places a path that names the space through its resolved root, in either normal form', async () => {
+    const { result } = await ready({
+      cwd: CWD,
+      sourcePath: '/private/repo/notes/Cafe\u0301.md',
+    });
+    expect(result.current!.resolve!(link('Welcome'))).toMatchObject({ href: '../README.md' });
+  });
+
+  it('gives nothing to a file outside both the working directory and the root', async () => {
+    const { result } = renderLinks({ cwd: CWD, sourcePath: '/elsewhere/plan.md' });
+    await waitFor(() => expect(getDocIndex).toHaveBeenCalled());
+    await act(async () => {});
+    expect(result.current).toBeUndefined();
   });
 
   it('suggests the space’s docs for the [[ menu, never the open doc', async () => {
@@ -166,6 +192,7 @@ describe('useDocWikiLinks', () => {
     expect(before!(link('Brand new'))).toEqual({ exists: false });
 
     getDocIndex.mockResolvedValue({
+      root: INDEX.root,
       docs: [...INDEX.docs, { path: 'notes/new.md', title: 'Brand new', slug: 'new' }],
       truncated: false,
     });
@@ -177,14 +204,28 @@ describe('useDocWikiLinks', () => {
     });
   });
 
-  it('reads the index again each time a save lands', async () => {
-    const { rerender } = await ready();
+  it('reads the index again after a save only when the saved title differs', async () => {
+    const at = (content: string, saved: boolean) => ({
+      cwd: CWD,
+      sourcePath: 'notes/plan.md',
+      content,
+      saved,
+    });
+    const { rerender } = await ready(at('# Launch plan\n', false));
+    rerender(at('# Launch plan\n\nMore words.\n', true));
+    await act(async () => {});
     expect(getDocIndex).toHaveBeenCalledTimes(1);
-    rerender({ cwd: CWD, sourcePath: 'notes/plan.md', saved: true });
+
+    rerender(at('# Launch plan v2\n', false));
+    rerender(at('# Launch plan v2\n', true));
     await waitFor(() => expect(getDocIndex).toHaveBeenCalledTimes(2));
-    rerender({ cwd: CWD, sourcePath: 'notes/plan.md', saved: false });
-    rerender({ cwd: CWD, sourcePath: 'notes/plan.md', saved: true });
-    await waitFor(() => expect(getDocIndex).toHaveBeenCalledTimes(3));
+  });
+
+  it('reads the index again after the first save of a doc it does not list', async () => {
+    const input = { cwd: CWD, sourcePath: 'notes/fresh.md', content: '# Fresh\n' };
+    const { rerender } = await ready({ ...input, saved: false });
+    rerender({ ...input, saved: true });
+    await waitFor(() => expect(getDocIndex).toHaveBeenCalledTimes(2));
   });
 
   it('opens a linked doc through open_file, as the file tree does', async () => {
@@ -202,6 +243,60 @@ describe('useDocWikiLinks', () => {
     result.current!.onOpen!(link('  Someday  '), { exists: false });
     expect(toastInfo).toHaveBeenCalledWith('No doc called “Someday” here yet.');
     result.current!.onOpen!(link('', 'Goals'), undefined);
+    expect(toastInfo).toHaveBeenCalledWith('Links within this doc don’t open.');
     expect(executeUiCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe('useDocWikiLinks over a truncated index', () => {
+  const truncated: DocIndex = { ...INDEX, truncated: true };
+  const far = { path: 'deep/far.md', title: 'Far away', slug: 'far' };
+
+  it('looks a miss up through the whole space instead of calling it missing', async () => {
+    setup({ index: truncated });
+    resolveDocLink.mockResolvedValue({ doc: far, complete: true });
+    const { result } = await ready();
+    await expect(result.current!.resolve!(link('Far away', 'Why'))).resolves.toEqual({
+      exists: true,
+      href: '../deep/far.md#why',
+      title: 'Far away',
+    });
+    expect(resolveDocLink).toHaveBeenCalledWith(CWD, 'Far away', 'notes/plan.md');
+    // A listed doc never needs the look-up.
+    expect(result.current!.resolve!(link('Welcome'))).toMatchObject({ exists: true });
+    expect(resolveDocLink).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls a link missing only when the whole space was looked through', async () => {
+    setup({ index: truncated });
+    const { result } = await ready();
+    await expect(result.current!.resolve!(link('Nowhere'))).resolves.toEqual({ exists: false });
+
+    resolveDocLink.mockResolvedValue({ doc: null, complete: false });
+    await expect(result.current!.resolve!(link('Elsewhere'))).resolves.toEqual({
+      exists: true,
+      title: 'This folder is too big to check this link.',
+    });
+    resolveDocLink.mockRejectedValue(new Error('offline'));
+    await expect(result.current!.resolve!(link('Offline'))).resolves.toEqual({
+      exists: true,
+      title: 'Couldn’t check this link.',
+    });
+  });
+
+  it('opens a doc found by the look-up, asking once for resolve and open together', async () => {
+    setup({ index: truncated });
+    resolveDocLink.mockResolvedValue({ doc: far, complete: true });
+    const { result } = await ready();
+    await result.current!.resolve!(link('Far away'));
+    result.current!.onOpen!(link('far away'), undefined);
+    await waitFor(() =>
+      expect(executeUiCommand).toHaveBeenCalledWith(
+        expect.anything(),
+        { action: 'open_file', sourcePath: 'deep/far.md' },
+        'user'
+      )
+    );
+    expect(resolveDocLink).toHaveBeenCalledTimes(1);
   });
 });

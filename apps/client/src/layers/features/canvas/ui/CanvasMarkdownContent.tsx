@@ -89,6 +89,7 @@ export function CanvasMarkdownContent({
   const wikiLinks = useDocWikiLinks({
     cwd,
     sourcePath: fileBacked ? content.sourcePath : null,
+    content: draft,
     saved: fileSave.status === 'saved',
   });
 
