@@ -110,6 +110,10 @@ const STATE_MARK = 'a state mark, not a focus ring: keyboard focus draws its own
 
 /** Files still allowed an at-rest part-strength ring, with how many and why. */
 const ALLOWED: Record<string, { count: number; reason: string }> = {
+  'layers/features/app-tabs/ui/AppTabItem.tsx': {
+    count: 1,
+    reason: `${STATE_MARK}: the active tab's edge under Increase contrast`,
+  },
   'layers/features/ask/ui/AskCard.tsx': {
     count: 1,
     reason: `${STATE_MARK}: the question being answered now`,

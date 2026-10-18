@@ -85,9 +85,11 @@ export function AppTabItemView({
             // The tab on screen gets more room, so its name is the one cut last.
             pinned ? 'px-2' : isActive ? 'max-w-72 pl-2' : 'max-w-52 pl-2',
             !pinned && (showClose ? 'pr-7' : 'pr-2'),
+            // A tinted surface, not an accent bar: orange already means status.
+            // `bg-background` read darker than the strip in dark mode.
             isActive
-              ? 'bg-background text-foreground shadow-soft'
-              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+              ? 'bg-secondary text-foreground contrast-more:ring-foreground/40 contrast-more:ring-1'
+              : 'text-muted-foreground/80 hover:bg-secondary/50 hover:text-foreground contrast-more:text-muted-foreground'
           )}
         >
           <TabIdentityIcon icon={identity.icon} />
