@@ -31,7 +31,9 @@ import { RemoteEdgeProofSchema } from './remote.js';
  * nothing else that grants anything:
  *
  * - `DORKOS_SERVER_ROLE=agent-computer`;
- * - its own instance API key;
+ * - its own instance API key, as `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` (sixteen
+ *   characters or more), which the server reads once at boot and then drops
+ *   from its environment, as a hub does with its own;
  * - `DORKOS_CLOUD_API_URL`, an https origin with no path.
  *
  * Its volume is owned by root. It exits cleanly (status zero) within five
@@ -302,7 +304,8 @@ export type CloudComputer = z.infer<typeof CloudComputerSchema>;
  * Who may call each computer route: the person, or the account's own hub (its
  * instance key). Never an agent computer's key, and never a person's own
  * computer's key: making or starting a computer spends money. Any other caller
- * is `not_found`. Deleting is the person's alone.
+ * is `not_found`. Deleting is the person's alone, and handing over a link code
+ * (`link-code`) is the hub's alone.
  */
 export const CloudComputerListResponseSchema = z
   .object({
@@ -441,6 +444,15 @@ export type CloudComputerDeletedResponse = z.infer<typeof CloudComputerDeletedRe
 
 /** How long an agent computer's link code works, at most, after its hub mints it. */
 export const AGENT_COMPUTER_LINK_CODE_TTL_SECONDS = 600 as const;
+
+/**
+ * How far the service lets a link code's `expiresAt` run past
+ * {@link AGENT_COMPUTER_LINK_CODE_TTL_SECONDS} from when the service received
+ * it, for a hub whose clock runs a little ahead. The service sees when it
+ * received the code, never when the hub minted it, so it refuses only an
+ * `expiresAt` later than receipt plus both. A hub mints at the TTL, never more.
+ */
+export const AGENT_COMPUTER_LINK_CODE_CLOCK_SKEW_SECONDS = 60 as const;
 
 /**
  * A one-time code an agent computer links to its hub with.

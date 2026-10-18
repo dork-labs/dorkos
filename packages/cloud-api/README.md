@@ -394,7 +394,8 @@ call.
 ### How an agent computer boots, and where it may reach
 
 The service starts an agent computer with `DORKOS_SERVER_ROLE=agent-computer`, its own instance
-API key, and `DORKOS_CLOUD_API_URL` (an https origin with no path). Its volume is owned by root. It
+API key as `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` (16 characters or more, read once at boot and then
+dropped from the environment), and `DORKOS_CLOUD_API_URL` (an https origin with no path). Its volume is owned by root. It
 exits with status 0 within 5 seconds of SIGINT. Its image is public and signed.
 
 It may reach the public internet, its own hub through the hub's front door, and the model gateway.
@@ -408,11 +409,13 @@ a cloud metadata address, any private address range, or anything on the service 
   with: 16 characters of uppercase Crockford base32, 80 bits. The hub hands it over with
   `POST v1Path.computerLinkCode(computerId)` (`{ code, expiresAt }`, answered 204). The hub's own
   key only; a computer that is not the account's is `not_found`.
-- **Single use, ten minutes at most, one computer.** `expiresAt` is at most
-  `AGENT_COMPUTER_LINK_CODE_TTL_SECONDS` after minting; the service refuses a later one with
-  `malformed_request` (the schema has no clock, so it does not check). The code is bound to that
-  `computerId`, and the hub checks both when it is redeemed. One live code per computer: a new one
-  replaces the old.
+- **Single use, ten minutes at most, one computer.** The hub mints with `expiresAt` exactly
+  `AGENT_COMPUTER_LINK_CODE_TTL_SECONDS` out. The service refuses one later than its own receipt plus
+  that and `AGENT_COMPUTER_LINK_CODE_CLOCK_SKEW_SECONDS`, with `malformed_request` (the schema has no
+  clock, so it does not check). The hub binds each code to that `computerId` in its own records and
+  checks both when the code is redeemed; it keeps these codes apart from the ones its owner mints for
+  their own computers, and keeps them across the hub sleeping. One live code per computer: a new one
+  replaces the old. (The hub's side of this lands with the linking step.)
 - **Handed out once.** `GET /v1/agent-computers/self/assignment` (that computer's own key; anyone
   else gets `not_found`) reads `{ computerId, hubOrigin, ownerAccountId, issuer, linkCode,
 pollAfterSeconds }`. The service deletes the code once the computer has read it and never logs

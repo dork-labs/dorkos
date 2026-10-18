@@ -168,6 +168,18 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
+  it('journals agent_computer_assignment_changed and acknowledges it as a signal only', async () => {
+    const changed: LeasedCommand = {
+      kind: 'agent_computer_assignment_changed',
+      id: 'cmd_agent_computer',
+      leaseToken: 'lt_ac',
+    };
+    expect(await w.dispatcher.dispatch(changed, w.link)).toBe('ignored');
+    // The row the migration's verb check must accept.
+    expect(w.journal.read([changed.id])[0]).toMatchObject({ outcome: 'ignored' });
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
   it('records failed and still acknowledges when the effect throws', async () => {
     w.tunnel.startManaged.mockRejectedValueOnce(new Error('boom'));
     expect(await w.dispatcher.dispatch(open, w.link)).toBe('failed');

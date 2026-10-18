@@ -256,6 +256,16 @@ describe('linking an agent computer to its hub', () => {
       })
       .map(({ path: at }) => at);
     expect(marked).toEqual(['AgentComputerAssignmentSchema.linkCode.code']);
+    const handedOver = walk(
+      AgentComputerLinkCodeRequestSchema,
+      'AgentComputerLinkCodeRequestSchema'
+    )
+      .filter(({ node }) => {
+        const meta = z.globalRegistry.get(node) as Record<string, unknown> | undefined;
+        return meta?.[ONE_TIME_CREDENTIAL_META] === true;
+      })
+      .map(({ path: at }) => at);
+    expect(handedOver).toEqual(['AgentComputerLinkCodeRequestSchema.code']);
   });
 });
 
