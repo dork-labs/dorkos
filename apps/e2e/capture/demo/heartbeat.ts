@@ -19,7 +19,8 @@ import { API_URL, FLEET_ROOT } from '../config.js';
  *
  * So the run is: quiet, a promise due (raised to the owner), quiet, another
  * promise due (worked on, nothing raised), quiet. The beats are seconds apart,
- * not half an hour, because they run back to back.
+ * not half an hour, because they run back to back. Forge's own timer keeps
+ * running afterwards, so a demo left up adds a real quiet beat now and then.
  *
  * @module capture/demo/heartbeat
  */
@@ -42,9 +43,12 @@ Keep an eye on what I promised and the schedules I run.
 `;
 
 /** The promises the agent records, in order. The scenario reads its words to pick an ending. */
+// Due tomorrow, inside the gatherer's 24-hour window: a promise that passes its
+// due time while the demo is up counts as new again (due becomes overdue), and
+// Forge's own timer would then beat on it with no scenario to end the turn.
 const PROMISES: readonly { what: string; dueInHours: number }[] = [
-  { what: 'Send the beta invite email to the waitlist', dueInHours: 2 },
-  { what: "Post this week's changelog", dueInHours: 5 },
+  { what: 'Send the beta invite email to the waitlist', dueInHours: 20 },
+  { what: "Post this week's changelog", dueInHours: 22 },
 ];
 
 /** The scenario every beat turn runs while this seed is beating. */
@@ -55,6 +59,7 @@ const DEFAULT_SCENARIO = 'simple-text';
 
 /** One beat as the Heartbeat page reads it. */
 interface BeatRow {
+  endedAt: string | null;
   outcome: string;
   summary: string | null;
   raises?: number;
@@ -92,13 +97,22 @@ async function beats(id: string): Promise<BeatRow[]> {
   return status.lastBeats ?? [];
 }
 
-/** One beat, now, failing loudly when the runner recorded none. */
+/**
+ * One beat, now, failing loudly when the runner recorded none. Waits for the
+ * newest beat to end as well: when Forge's own timer fires in the middle of the
+ * seed, the runner answers this wake at once and owes the agent a beat after
+ * the one running, so the route returns before anything has finished.
+ */
 async function beat(id: string): Promise<void> {
   const before = (await beats(id)).length;
   await post('/api/test/heartbeat/beat', { agentId: id });
-  if ((await beats(id)).length <= before) {
-    throw new Error(`the beat runner recorded no beat for ${HEARTBEAT_AGENT}`);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const rows = await beats(id);
+    if (rows.length > before && rows[0]?.endedAt) return;
+    await new Promise((r) => setTimeout(r, 300));
   }
+  throw new Error(`the beat runner recorded no finished beat for ${HEARTBEAT_AGENT}`);
 }
 
 /** Record a promise as the agent, through its own identity. */

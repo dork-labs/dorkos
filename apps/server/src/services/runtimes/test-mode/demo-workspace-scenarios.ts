@@ -170,16 +170,16 @@ const demoMiniApp: ScenarioFn = async function* () {
 function beatEnding(found: string): EndBeatInput {
   if (found.includes('changelog')) {
     return {
-      summary: "Drafted this week's changelog from 6 merged pull requests. Ready to post at 5 PM.",
+      summary: "Drafted this week's changelog from 6 merged pull requests. Ready to post tomorrow.",
     };
   }
   return {
-    summary: 'The beta invite is due today. Asked whether to send it.',
+    summary: 'The beta invite is due tomorrow. Asked whether to send it.',
     raises: [
       {
         rung: 'dm',
         text:
-          'The beta invite email to the 40 people on the waitlist is due today. The draft ' +
+          'The beta invite email to the 40 people on the waitlist is due tomorrow. The draft ' +
           'is ready. Should I send it?',
       },
     ],
