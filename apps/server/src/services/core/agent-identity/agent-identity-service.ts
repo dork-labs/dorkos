@@ -118,6 +118,19 @@ export interface AgentIdentity {
    * anything.
    */
   inactive?: 'revoked' | 'expired';
+  /**
+   * Set only when the call came from an agent computer over the tool bridge
+   * (`core/tool-bridge/`), never from a token: the hub runs the call as this
+   * agent, and the permission gate asks before every destructive action it
+   * makes, whatever its areas say (`resolveCallPermission`).
+   */
+  via?: 'agent-computer';
+  /**
+   * Set only by the tool bridge, from the hub's own record of the turn: the
+   * turn read words DorkOS cannot vouch for. The gate treats the call as a
+   * stranger's turn, and no session record can lift it.
+   */
+  outsiderCapped?: true;
 }
 
 /** What {@link AgentIdentityService.mint} needs to describe a new identity. */

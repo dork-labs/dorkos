@@ -592,6 +592,15 @@ type ApprovalRow = typeof approvals.$inferSelect;
  * asks, because the tool's tier is its author's to change and a standing yes
  * keyed by its id would outlive the version it was given for.
  *
+ * **Known gap: a destructive card raised from an agent computer** (the tool
+ * bridge, `AgentIdentity.via === 'agent-computer'`) still offers "Always
+ * allow", and answering it does write an action-level Allowed. That setting
+ * cannot make the next bridged call skip the card: `resolveCallPermission`
+ * turns every bridged destructive Allowed back into Ask. The row does not
+ * record that the call was bridged, so hiding the button here would need a
+ * new column; until then the button saves a setting the bridge never honours
+ * for destructive calls (it still applies to the same agent's own `/mcp`).
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {

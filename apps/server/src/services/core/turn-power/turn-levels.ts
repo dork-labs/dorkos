@@ -119,11 +119,28 @@ export function postLevelFor(
   return (levels as TurnPermissionLevel[]).reduce(stricterLevel);
 }
 
+/** The calling agent, as {@link outsiderBoundOf} reads it. */
+export interface OutsiderCaller {
+  /** The agent's home, from its verified identity. */
+  readonly agentPath?: string;
+  /**
+   * Set by the tool bridge from the hub's own record of the turn
+   * (`AgentIdentity.outsiderCapped`): the turn read an outsider's words, and
+   * no session record can say otherwise.
+   */
+  readonly outsiderCapped?: boolean;
+}
+
 /**
  * The bound work a caller starts must carry because the caller's turn read an
  * outsider's words, or `undefined` when it did not (spec
- * `trusted-by-default-flip` §4.7). Read by `memory_write`, which stamps the
- * note, and `session_start`, which sends it as the new session's ceiling.
+ * `trusted-by-default-flip` §4.7). The one rule for every reader: the
+ * permission gate, `memory_write`, which stamps the note, `session_start`,
+ * which sends it as the new session's ceiling, and the destructive hold window.
+ *
+ * A caller the tool bridge marked capped is bound whatever its session's
+ * record says: the session's own level, marked, or the runtime default when
+ * there is none.
  *
  * The caller's session answers when this process recorded a turn on it: its
  * own level, which bounds no tighter than the turn already ran. A caller with
@@ -132,13 +149,17 @@ export function postLevelFor(
  * default, the bound a stranger's own message carries.
  *
  * @param sessionId - The calling session, when the surface verified one.
- * @param agentPath - The calling agent's home, from its verified identity.
+ * @param caller - The calling agent: its home and, from the bridge, its cap.
  */
 export function outsiderBoundOf(
   sessionId: string | null | undefined,
-  agentPath: string | undefined
+  caller: OutsiderCaller | undefined
 ): TurnPermissionBound | undefined {
+  const agentPath = caller?.agentPath;
   const level = sessionId ? turnLevels.get(sessionId) : undefined;
+  if (caller?.outsiderCapped === true) {
+    return level !== undefined ? { ...level, outsider: true } : 'runtime-default';
+  }
   if (level !== undefined) return level.outsider ? level : undefined;
   return agentPath !== undefined && agentIsReadingOutsider(agentPath)
     ? 'runtime-default'

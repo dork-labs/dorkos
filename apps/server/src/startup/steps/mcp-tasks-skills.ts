@@ -25,7 +25,7 @@ import {
 import { homeOf, resolveAgentHome } from '../../services/core/agent-identity/index.js';
 import { createDorkOsToolServer } from '../../services/runtimes/claude-code/mcp-tools/index.js';
 import { configManager } from '../../services/core/config-manager.js';
-import type { McpServerFactory } from '../../routes/mcp.js';
+import { mcpCallerIdentity, type McpServerFactory } from '../../routes/mcp.js';
 import { resolveToolVisibilityFor } from '../../services/runtimes/shared/permission-tool-filter.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { HonoApiDeps } from '../../http/hono-api.js';
@@ -314,7 +314,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       refs.mcpToolDeps,
       refs.marketplaceMcpDeps,
       refs.capabilityRegistry,
-      caller.identity,
+      mcpCallerIdentity(caller),
       caller.userId,
       caller.agentIdentityPresented,
       visibility.hiddenToolNames

@@ -59,7 +59,11 @@ import {
   getAgentIdentityService,
   type AgentIdentity,
 } from '../../core/agent-identity/agent-identity-service.js';
-import { lastTurnLevelOf, outsiderBoundOf } from '../../core/turn-power/turn-levels.js';
+import {
+  lastTurnLevelOf,
+  outsiderBoundOf,
+  type OutsiderCaller,
+} from '../../core/turn-power/turn-levels.js';
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { DestructiveHoldService, HoldRequester } from './destructive-hold.js';
@@ -75,8 +79,22 @@ export interface HoldEligibilitySources {
   describeAgent: (agentPath: string) => Promise<AgentIdentity | undefined>;
   /** The level a chat's latest turn ran at, or `undefined` when unknown. */
   turnLevel: (sessionId: string) => TurnPermissionLevel | undefined;
-  /** Whether a stranger started this chat's turn or the turn read a stranger's words. */
-  strangerTurn: (sessionId: string, agentPath: string) => boolean;
+  /**
+   * Whether a stranger started this chat's turn or the turn read a stranger's
+   * words, by the one rule (`outsiderBoundOf`), the bridge's cap included.
+   */
+  strangerTurn: (sessionId: string, caller: OutsiderCaller) => boolean;
+}
+
+/**
+ * Whether a chat's turn is a stranger's: a stranger started it, or it read a
+ * stranger's words, by the one rule ({@link outsiderBoundOf}).
+ *
+ * @param sessionId - The chat.
+ * @param caller - The calling agent, with the bridge's cap when it has one.
+ */
+export function strangerTurnOf(sessionId: string, caller: OutsiderCaller): boolean {
+  return turnStartedByOutsider(sessionId) || outsiderBoundOf(sessionId, caller) !== undefined;
 }
 
 /** The live server's answers. */
@@ -84,8 +102,7 @@ const LIVE_SOURCES: HoldEligibilitySources = {
   trusted: () => trustPosture(permissionGateSources().readConfig().preset) === 'trusted',
   describeAgent: async (agentPath) => getAgentIdentityService()?.describeAgent(agentPath),
   turnLevel: lastTurnLevelOf,
-  strangerTurn: (sessionId, agentPath) =>
-    turnStartedByOutsider(sessionId) || outsiderBoundOf(sessionId, agentPath) !== undefined,
+  strangerTurn: strangerTurnOf,
 };
 
 /** Whether a level never asks and read no stranger's words. */
@@ -128,7 +145,13 @@ export async function holdRequesterFor(
   const sessionIds = [...new Set([canonicalSessionId, context.sessionId])].filter(
     (id): id is string => typeof id === 'string' && id !== ''
   );
-  if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) return undefined;
+  // The cap rides the surface's identity, never the store's: a fresh read
+  // must not drop it.
+  const caller = {
+    agentPath,
+    ...(context.identity?.outsiderCapped ? { outsiderCapped: true } : {}),
+  };
+  if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, caller))) return undefined;
   // The stricter of the levels known under either id; none known keeps the card.
   const levels = sessionIds
     .map((sessionId) => sources.turnLevel(sessionId))

@@ -267,3 +267,28 @@ export function factsRateLimit(
     };
   };
 }
+
+/**
+ * A limiter for calls that arrive with no HTTP request to key on: a tool call
+ * an agent computer sends its hub over its sealed relay connection
+ * (`services/core/tool-bridge/`). `rateLimitKey` reads a request's peer, and
+ * such a call has none, so its bucket is the id the server itself proved for
+ * it: the computer's id from its signed connection, or the hub's own session
+ * id for the turn. Never an id a caller wrote; the bridge checks both against
+ * its own records before it counts anything else.
+ *
+ * Lives here, beside `createRateLimiter`, because this module is the one place
+ * allowed to count under a key it was handed
+ * (`middleware/__tests__/rate-limit-key-coverage.test.ts`).
+ *
+ * @param policy - The window, the limit and the bucket bound.
+ * @returns The limiter, keyed by a server-proven id.
+ */
+export function createProvenIdRateLimiter(policy: RateLimitPolicy): {
+  readonly policy: RateLimitPolicy;
+  /** Count one call under a server-proven id, or refuse it once the window is full. */
+  hit(provenId: string, now?: number): RateLimitDecision;
+} {
+  const limiter = createRateLimiter(policy);
+  return { policy, hit: (provenId, now) => limiter.hit(`proven:${provenId}`, now) };
+}

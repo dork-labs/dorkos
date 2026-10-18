@@ -62,6 +62,25 @@ export interface McpCaller {
   agentIdentityPresented?: boolean;
   /** The signed-in person behind the call, when login is on and one was verified. */
   userId?: string;
+  /**
+   * Set only by the tool bridge (`services/core/tool-bridge/`), never from a
+   * request: the call came from an agent computer, so it is never a person's.
+   * {@link mcpCallerIdentity} carries it onto the identity, where every gate
+   * reads it. The `/mcp` route never sets it.
+   */
+  callerKind?: 'agent-computer';
+}
+
+/**
+ * The identity a per-request server acts as: the caller's agent, marked when
+ * the call came over the tool bridge. Every factory builds its server with
+ * this, so the mark cannot be dropped on the way to the gate.
+ *
+ * @param caller - Who made the call.
+ */
+export function mcpCallerIdentity(caller: McpCaller): AgentIdentity | undefined {
+  if (!caller.identity) return undefined;
+  return caller.callerKind ? { ...caller.identity, via: caller.callerKind } : caller.identity;
 }
 
 /** Builds a fresh MCP server per request, specialized to whoever is calling. */

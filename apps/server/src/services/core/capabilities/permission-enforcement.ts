@@ -307,7 +307,9 @@ export async function resolveCallPermission(request: {
   const { action, identity } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn = outsiderBoundOf(request.sessionId, identity?.agentPath) !== undefined;
+  // A bridged call carries its turn's cap on the identity itself, so no
+  // session record saying otherwise can lift it (`outsiderBoundOf`).
+  const strangerTurn = outsiderBoundOf(request.sessionId, identity) !== undefined;
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
@@ -379,7 +381,17 @@ export async function resolveCallPermission(request: {
       ...(identity?.inactive ? { inactive: true } : {}),
     })
   );
-  return reached.reduce(stricter, own!);
+  const resolved = reached.reduce(stricter, own!);
+  // An agent computer's call never skips the card on a destructive action:
+  // nobody on that computer can be asked, so the hub's person is, every time.
+  // So an "Always allow" answered on such a card cannot make the next bridged
+  // call skip it either (see `isAlwaysOffered`, which still offers it).
+  if (identity?.via === 'agent-computer' && action.tier === 'destructive') {
+    return resolved.state === 'allowed'
+      ? { ...resolved, state: 'ask', destructiveAsk: true }
+      : resolved;
+  }
+  return resolved;
 }
 
 /**
