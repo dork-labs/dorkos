@@ -64,6 +64,7 @@ import {
   computerConnection,
   hubComputerWaker,
   hubViewers,
+  describeUserAgent,
   mintBrowserDeviceId,
   readLinkedComputers,
   type HubComputerConnection,
@@ -216,23 +217,37 @@ export function createHubComputerRoutes(
         403
       );
     }
-    // A browser without its device cookie gets one with this answer. The
-    // stream route writes its own head, so it is handed the same value.
+    // A browser without its device cookie gets one with this answer, and this
+    // very request already names it: a client that never keeps cookies (curl
+    // with a stolen sign-in) is a new device every time, so the computer's
+    // new-device notice still fires, under its hourly cap. The stream route
+    // writes its own head, so it is handed the same cookie.
     if (!deviceOf(c)) {
-      const cookie = browserDeviceSetCookie(mintBrowserDeviceId(), deps.secureCookies === true);
+      const id = mintBrowserDeviceId();
+      const cookie = browserDeviceSetCookie(id, deps.secureCookies === true);
       c.header('Set-Cookie', cookie, { append: true });
       mintedCookies.set(c.env.incoming, cookie);
+      mintedDevices.set(c.env.incoming, {
+        id,
+        label: describeUserAgent(c.req.header('user-agent')),
+      });
     }
     await next();
   });
 
   /** The device cookie minted for a request, by its Node request, for the stream's own head. */
   const mintedCookies = new WeakMap<object, string>();
+  /** The device minted for a request that came without its cookie, by its Node request. */
+  const mintedDevices = new WeakMap<object, RelayDevice>();
 
-  /** The browser that asked, from its device cookie, or `undefined` before it has one. */
+  /** The browser that asked: from its device cookie, or the one just minted for it. */
   function deviceOf(c: Context<ApiEnv>): RelayDevice | undefined {
     const headers = { cookie: c.req.header('cookie'), userAgent: c.req.header('user-agent') };
-    return browserDevice(headers, deps.secureCookies === true) ?? undefined;
+    return (
+      browserDevice(headers, deps.secureCookies === true) ??
+      mintedDevices.get(c.env.incoming) ??
+      undefined
+    );
   }
 
   /** The computer's live connection, or the answer to give instead. */

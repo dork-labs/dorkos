@@ -163,6 +163,9 @@ async function until(check: () => boolean): Promise<void> {
   await vi.waitFor(() => expect(check()).toBe(true), { timeout: 2_000, interval: 5 });
 }
 
+/** Every relayed request names a browser: its cookie's, or one minted for it. */
+const A_NEW_DEVICE = { id: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/), label: 'A web browser' };
+
 describe('who is answered', () => {
   it('answers the /api 404 on a person`s own computer', async () => {
     deps.isHub.mockReturnValue(false);
@@ -304,7 +307,7 @@ describe('requests', () => {
     expect(res.status).toBe(200);
     expect(fake.computer.request).toHaveBeenCalledWith(
       { op: 'chats.list', agentId: AGENT },
-      undefined
+      A_NEW_DEVICE
     );
   });
 
@@ -327,7 +330,7 @@ describe('requests', () => {
         content: 'secret plans',
         newChat: { agentId: AGENT },
       },
-      undefined
+      A_NEW_DEVICE
     );
     expect(audit.record).toHaveBeenCalledTimes(1);
     const entry = audit.record.mock.calls[0]![0];
@@ -369,7 +372,7 @@ describe('requests', () => {
         op: 'session.interrupt',
         sessionId: SESSION,
       },
-      undefined
+      A_NEW_DEVICE
     );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'hub.relay.session.interrupt', outcome: 'ok' })
@@ -391,7 +394,7 @@ describe('requests', () => {
         sessionId: SESSION,
         answer: { kind: 'answer', toolCallId: 'tool_1', answers: { '0': 'yes' } },
       },
-      undefined
+      A_NEW_DEVICE
     );
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'hub.relay.interaction.answer', outcome: 'refused' })
@@ -416,14 +419,32 @@ describe('which browser asked', () => {
     '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   const SESSION_TOKEN = 'session-token-that-must-never-cross';
 
-  it('gives a browser without one its own device cookie, and names no device yet', async () => {
-    const res = await request(server).get(`${BASE}/agents/${AGENT}/chats`);
+  it('gives a browser without one its own device cookie, and names that device at once', async () => {
+    const res = await request(server)
+      .get(`${BASE}/agents/${AGENT}/chats`)
+      .set('User-Agent', IPHONE_SAFARI);
     expect(res.status).toBe(200);
     const cookie = String(res.headers['set-cookie']);
     expect(cookie).toMatch(
       /^dorkos-device=[A-Za-z0-9_-]{22}; Path=\/; Max-Age=\d+; HttpOnly; SameSite=Lax/
     );
-    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), undefined);
+    const minted = /^dorkos-device=([A-Za-z0-9_-]{22});/.exec(cookie)![1];
+    // The first request already names the new browser, so the computer's
+    // new-device notice cannot be skipped by never keeping the cookie.
+    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), {
+      id: minted,
+      label: 'Safari on iPhone',
+    });
+  });
+
+  it('names a new device on every request from a client that never keeps the cookie', async () => {
+    await request(server).get(`${BASE}/agents/${AGENT}/chats`);
+    await request(server).get(`${BASE}/agents/${AGENT}/chats`);
+    const devices = fake.computer.request.mock.calls.map(
+      (call) => (call as unknown[])[1] as { id: string }
+    );
+    expect(devices).toHaveLength(2);
+    expect(devices[0]!.id).not.toBe(devices[1]!.id);
   });
 
   it('names the browser from its cookie and User-Agent, never with the sign-in token', async () => {
@@ -455,15 +476,22 @@ describe('which browser asked', () => {
     await until(() => sse.headers() !== undefined);
     const cookie = String(sse.headers()?.['set-cookie']);
     expect(cookie).toMatch(/^dorkos-device=[A-Za-z0-9_-]{22}; Path=\/;/);
-    expect(fake.streams[0]!.device).toBeUndefined();
+    const minted = /^dorkos-device=([A-Za-z0-9_-]{22});/.exec(cookie)![1];
+    expect(fake.streams[0]!.device).toEqual({ id: minted, label: 'A web browser' });
     sse.destroy();
   });
 
-  it('names no device from a cookie this hub could not have set', async () => {
-    await request(server)
+  it('treats a cookie this hub could not have set as no cookie: a fresh device', async () => {
+    const res = await request(server)
       .get(`${BASE}/agents/${AGENT}/chats`)
       .set('Cookie', 'dorkos-device=../../etc');
-    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), undefined);
+    const minted = /^dorkos-device=([A-Za-z0-9_-]{22});/.exec(
+      String(res.headers['set-cookie'])
+    )![1];
+    expect(fake.computer.request).toHaveBeenCalledWith(expect.anything(), {
+      id: minted,
+      label: 'A web browser',
+    });
   });
 });
 
