@@ -127,7 +127,10 @@ export async function walkImports(entry: string | { contents: string }): Promise
         if (args.path.startsWith('node:') || BUILTINS.has(args.path)) return { external: true };
         const parts = args.path.split('/');
         const name = args.path.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
-        const importer = relative(REPO_ROOT, args.importer) || '<source>';
+        // Source text walked as a file has a placeholder for a path, such as `<stdin>`.
+        const importer = args.importer.startsWith('<')
+          ? args.importer
+          : relative(REPO_ROOT, args.importer);
         if (!specifiers.has(args.path)) specifiers.set(args.path, importer);
         if (!packages.has(name)) packages.set(name, importer);
         const workspace = known.get(name);
