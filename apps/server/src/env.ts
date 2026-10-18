@@ -256,12 +256,9 @@ export const serverEnvSchema = z.object({
   // and removed from `process.env` once read (below the schema), so no child
   // process (a terminal, an agent, an MCP server) inherits it.
   DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
-  // An agent computer's own DorkOS Cloud instance key (DOR-2940), set by Cloud
-  // when it boots the computer. Required on an agent computer and read only
-  // there, by the assignment runner
-  // (`services/core/agent-computer/assignment-runner.ts`). Kept, removed from
-  // `process.env` and never written down exactly as the hub's key is.
-  DORKOS_AGENT_COMPUTER_INSTANCE_KEY: z.string().min(16).optional(),
+  // An agent computer's own instance key is not read here: it comes from a
+  // file, never the environment, through
+  // `services/core/agent-computer/instance-key.ts`, its one reader (DOR-2940).
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -451,17 +448,9 @@ export const serverEnvSchema = z.object({
  * find it.
  */
 const HUB_KEY_SLOT = Symbol.for('dorkos.env.hubInstanceKey');
-/** The same, for an agent computer's own instance key. */
-const AGENT_COMPUTER_KEY_SLOT = Symbol.for('dorkos.env.agentComputerInstanceKey');
-const keptKeys = globalThis as typeof globalThis & {
-  [HUB_KEY_SLOT]?: string;
-  [AGENT_COMPUTER_KEY_SLOT]?: string;
-};
+const keptKeys = globalThis as typeof globalThis & { [HUB_KEY_SLOT]?: string };
 if (process.env.DORKOS_HUB_INSTANCE_KEY) {
   keptKeys[HUB_KEY_SLOT] = process.env.DORKOS_HUB_INSTANCE_KEY;
-}
-if (process.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY) {
-  keptKeys[AGENT_COMPUTER_KEY_SLOT] = process.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY;
 }
 
 /** The only address an agent computer listens on (DOR-2940). */
@@ -481,17 +470,6 @@ const result = serverEnvSchema
         message: 'must be set when DORKOS_SERVER_ROLE is hub',
       });
     }
-    // An agent computer learns which hub it works for only through its own key.
-    if (
-      parsed.DORKOS_SERVER_ROLE === 'agent-computer' &&
-      !parsed.DORKOS_AGENT_COMPUTER_INSTANCE_KEY
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['DORKOS_AGENT_COMPUTER_INSTANCE_KEY'],
-        message: 'must be set when DORKOS_SERVER_ROLE is agent-computer',
-      });
-    }
     if (parsed.DORKOS_SERVER_ROLE !== 'computer' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
       ctx.addIssue({
         code: 'custom',
@@ -509,11 +487,7 @@ const result = serverEnvSchema
       ? { ...parsed, DORKOS_HOST: AGENT_COMPUTER_HOST }
       : parsed
   )
-  .safeParse({
-    ...process.env,
-    DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT],
-    DORKOS_AGENT_COMPUTER_INSTANCE_KEY: keptKeys[AGENT_COMPUTER_KEY_SLOT],
-  });
+  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
@@ -524,9 +498,8 @@ if (!result.success) {
 
 export const env = result.data;
 
-// Read once, above; nothing a child process inherits may carry either key.
+// Read once, above; nothing a child process inherits may carry it.
 delete process.env.DORKOS_HUB_INSTANCE_KEY;
-delete process.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY;
 export type ServerEnv = typeof env;
 
 /**

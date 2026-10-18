@@ -12,11 +12,10 @@
  * code's ten-minute life while it matters (see below), so a code is read and
  * redeemed well before it expires.
  *
- * - **The key.** Cloud boots the computer with its own instance key in
- *   `DORKOS_AGENT_COMPUTER_INSTANCE_KEY`, which `env.ts` reads once and
- *   removes from `process.env` before anything else starts, so no agent,
- *   terminal or MCP server this computer runs inherits it. It is presented to
- *   Cloud by this runner alone.
+ * - **The key.** The computer's own instance key comes from a file, never the
+ *   environment, read and checked once at boot by `./instance-key.ts`, its
+ *   one reader; this runner takes it from there
+ *   (`agentComputerInstanceKey`) and presents it only to Cloud.
  * - **The beat.** Cloud's `pollAfterSeconds`, held at least
  *   {@link AGENT_COMPUTER_MIN_POLL_MS} so a bad value cannot spin it. While
  *   not linked it is at most {@link AGENT_COMPUTER_UNLINKED_MAX_POLL_MS}, so a
@@ -43,7 +42,6 @@ import { V1_ROUTES, type RemoteCommandOutcome } from '@dork-labs/cloud-api';
 import type { RelayComputerFrame, RelayError, RelayWebFrame } from '@dorkos/shared/session-relay';
 import { SESSION_RELAY_MAX_FRAME_LENGTH } from '@dorkos/shared/session-relay';
 import { z } from 'zod';
-import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { createCloudV1ClientFor } from '../cloud/v1-client.js';
@@ -60,6 +58,7 @@ import {
   SessionRelayRequestServer,
 } from '../session-relay/relay-request-server.js';
 import { sessionRelayWiring } from '../session-relay/index.js';
+import { agentComputerInstanceKey } from './instance-key.js';
 import {
   AgentComputerAssignmentSync,
   type AgentComputerSyncDeps,
@@ -272,13 +271,10 @@ export function liveAgentComputerSyncDeps(instanceKey: string): AgentComputerSyn
  */
 export function startAgentComputerLink(deps?: AgentComputerSyncDeps): void {
   if (runner) return;
-  const resolved =
-    deps ??
-    (env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY
-      ? liveAgentComputerSyncDeps(env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY)
-      : null);
+  const key = deps ? null : agentComputerInstanceKey();
+  const resolved = deps ?? (key ? liveAgentComputerSyncDeps(key) : null);
   if (!resolved) {
-    // `env.ts` refuses to boot an agent computer without its key; this is a backstop.
+    // `instance-key.ts` refuses to boot an agent computer without its key; a backstop.
     logger.error('[AgentComputer] No instance key; this computer cannot find its hub');
     return;
   }

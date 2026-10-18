@@ -68,8 +68,6 @@ const UNDOCUMENTED_ON_PURPOSE: Record<string, string> = {
     'set only by DorkOS Cloud when it starts a hub (DOR-2934); a person running DorkOS on their own computer never sets it',
   DORKOS_HUB_INSTANCE_KEY:
     'a hub`s DorkOS Cloud key, set only by Cloud when it starts a hub (DOR-2935); a person running DorkOS never sets it',
-  DORKOS_AGENT_COMPUTER_INSTANCE_KEY:
-    'an agent computer`s own DorkOS Cloud key, set only by Cloud when it starts the computer (DOR-2940); a person running DorkOS never sets it',
 };
 
 /**
