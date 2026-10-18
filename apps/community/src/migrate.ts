@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
 
@@ -100,8 +101,19 @@ async function readCompatibilityFloor(client: PoolClient): Promise<number | null
   return row.rows[0]?.min_migration ?? null;
 }
 
-/** Apply versioned community SQL migrations in a single database transaction. */
-export async function migrate(databaseUrl: string): Promise<void> {
+/** The folder the SQL files are read from: `migrations/` beside `src/` and `dist-server/`. */
+export const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url));
+
+/**
+ * Apply versioned community SQL migrations in a single database transaction.
+ *
+ * @param databaseUrl - The Postgres database to migrate.
+ * @param migrationsDir - The folder holding the SQL files; {@link MIGRATIONS_DIR} by default.
+ */
+export async function migrate(
+  databaseUrl: string,
+  { migrationsDir = MIGRATIONS_DIR }: { migrationsDir?: string } = {}
+): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   try {
@@ -119,10 +131,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
     assertNoMigrationGap(applied);
     for (const [version, filename] of COMMUNITY_MIGRATIONS) {
       if (applied.has(version)) continue;
-      const sql = await readFile(
-        fileURLToPath(new URL(`../migrations/${filename}`, import.meta.url)),
-        'utf8'
-      );
+      const sql = await readFile(join(migrationsDir, filename), 'utf8');
       await client.query(sql);
       await client.query('INSERT INTO community_migrations(version) VALUES ($1)', [version]);
     }

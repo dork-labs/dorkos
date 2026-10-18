@@ -132,12 +132,14 @@ describe('shutdownServices leaves no warm claude-code subprocess behind', () => 
     const polite = registry.acquire('polite', {
       maxWarmSessions: 12,
       warmIdleMs: 5 * 60 * 1000,
+      slotWaitMs: 0,
       launch: launchRealChild(POLITE_CHILD),
       drainGraceMs: 2_000,
     });
     const wedged = registry.acquire('wedged', {
       maxWarmSessions: 12,
       warmIdleMs: 5 * 60 * 1000,
+      slotWaitMs: 0,
       launch: launchRealChild(WEDGED_CHILD),
       drainGraceMs: 200,
     });
@@ -161,6 +163,7 @@ describe('shutdownServices leaves no warm claude-code subprocess behind', () => 
     const pump = registry.acquire('s1', {
       maxWarmSessions: 12,
       warmIdleMs: 5 * 60 * 1000,
+      slotWaitMs: 0,
       launch: launchRealChild(POLITE_CHILD),
       drainGraceMs: 2_000,
     });

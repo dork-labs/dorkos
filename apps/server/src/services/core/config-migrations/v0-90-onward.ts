@@ -639,6 +639,28 @@ export function seedLanAccess(store: {
 }
 
 /**
+ * Seed `runtimes.claudeCode.maxWarmProcesses` as `null` (sized to the machine)
+ * where the stored `runtimes.claudeCode` section lacks it (DOR-3012).
+ *
+ * A nested leaf inside a section every config that ran a Claude Code chat
+ * already carries, and conf's pre-migration merge is shallow, so this body is
+ * the only thing that writes it to disk. Absence is tested with `in`, so a
+ * number a person chose is never rewritten, and running it twice changes
+ * nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedMaxWarmProcesses(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const claudeCode = store.get('runtimes.claudeCode');
+  if (claudeCode === null || typeof claudeCode !== 'object' || Array.isArray(claudeCode)) return;
+  if ('maxWarmProcesses' in claudeCode) return;
+  store.set('runtimes.claudeCode', { ...claudeCode, maxWarmProcesses: null });
+}
+
+/**
  * Raise the engaged window from the old shipped defaults to the new ones
  * (DOR-2823): 10 minutes to 60, and 5 messages to 15.
  *

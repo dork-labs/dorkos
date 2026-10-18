@@ -69,7 +69,9 @@ for path in \
   .github/workflows/operating-skills-version-check.yml \
   .github/workflows/test.yml \
   .github/workflows/credential-free-build.yml \
-  .github/dependabot.yml; do
+  .github/dependabot.yml \
+  .github/workflows/publish-community.yml \
+  ci/space-server.env; do
   expect true "in scope: $path" "$path"
 done
 

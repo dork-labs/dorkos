@@ -236,6 +236,7 @@ describe('UserConfigSchema', () => {
           defaultEffort: null,
           defaultTrustStop: null,
           persistentSession: true,
+          maxWarmProcesses: null,
         },
         opencode: {
           enabled: true,
@@ -656,6 +657,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           defaultEffort: null,
           defaultTrustStop: null,
           persistentSession: true,
+          maxWarmProcesses: null,
         },
         opencode: {
           enabled: true,
@@ -1118,6 +1120,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultEffort: null,
         defaultTrustStop: null,
         persistentSession: true,
+        maxWarmProcesses: null,
       },
       opencode: {
         enabled: true,
@@ -1159,6 +1162,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultEffort: null,
         defaultTrustStop: null,
         persistentSession: true,
+        maxWarmProcesses: null,
       },
       opencode: {
         enabled: true,
@@ -1357,6 +1361,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: true,
+      maxWarmProcesses: null,
     });
   });
 
@@ -1378,6 +1383,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: true,
+      maxWarmProcesses: null,
     });
   });
 
@@ -1408,6 +1414,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: true,
+      maxWarmProcesses: null,
     });
   });
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env tsx
-import { createHash } from 'node:crypto';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { createCommunityReleaseManifest } from '../packages/shared/src/community-release-manifest.js';
+import { communityMigrationCompatibilityId } from './lib/community-migration-id.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -31,16 +30,8 @@ for (const name of [
   if (!values[name]) throw new Error(`Missing --${name}`);
 }
 
-const migrationHash = createHash('sha256');
-for (const filename of (await readdir(values.migrations!))
-  .filter((entry) => entry.endsWith('.sql'))
-  .sort()) {
-  migrationHash.update(filename);
-  migrationHash.update('\0');
-  migrationHash.update(await readFile(join(values.migrations!, filename)));
-  migrationHash.update('\0');
-}
-const migrationCompatibilityId = `sha256:${migrationHash.digest('hex')}`;
+// The id the CLI also bakes into the launcher; one function computes both.
+const migrationCompatibilityId = communityMigrationCompatibilityId(values.migrations!);
 
 const index = JSON.parse(await readFile(values.index!, 'utf8')) as {
   manifests?: Array<{

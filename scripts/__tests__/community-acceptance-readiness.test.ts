@@ -17,9 +17,14 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readSpaceServer } from '../lib/space-server.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const SOURCE_RUNNER = join(REPO_ROOT, 'apps/community/acceptance/run.sh');
+/** Where the space server lives (ci/space-server.env, DOR-3007). */
+const { spaceDir } = readSpaceServer(REPO_ROOT);
+const SOURCE_RUNNER = join(REPO_ROOT, spaceDir, 'acceptance/run.sh');
+/** The runner finds the repository root, and the space server's folder, by this file. */
+const SOURCE_SPACE_ENV = join(REPO_ROOT, 'ci/space-server.env');
 /**
  * The runner sweeps Docker objects left by killed predecessors before it creates
  * anything, so the fixture repo needs the real sweep script too. Omitting it
@@ -48,6 +53,8 @@ local state="${state}" destination
 fixture_docker_log "$*"
 case "$1" in
   pull) return 0 ;;
+  # Only the build-path case reaches this: every other case passes --image.
+  build) return 0 ;;
   # The sweep runs first and must find nothing here: a fresh fixture repo has no
   # leftovers, so every listing is empty and nothing is removed. Answering it for
   # real (rather than letting \`docker info\` fail) keeps this suite honest about
@@ -117,11 +124,26 @@ sleep() { return 0; }
   return { bin, bashEnv };
 }
 
-function fixtureRunner(dir: string): string {
-  const runner = join(dir, 'apps/community/acceptance/run.sh');
+/**
+ * A fixture repository holding the runner, the sweep and `ci/space-server.env`.
+ *
+ * @param folder - Where the space server lives in it; the runner sits in its
+ *   `acceptance/` folder and the env file names it. Defaults to this repo's.
+ */
+function fixtureRunner(dir: string, folder: string = spaceDir): string {
+  const runner = join(dir, folder, 'acceptance/run.sh');
   mkdirSync(dirname(runner), { recursive: true });
   copyFileSync(SOURCE_RUNNER, runner);
   chmodSync(runner, 0o755);
+
+  const spaceEnv = join(dir, 'ci/space-server.env');
+  mkdirSync(dirname(spaceEnv), { recursive: true });
+  if (folder === spaceDir) copyFileSync(SOURCE_SPACE_ENV, spaceEnv);
+  else
+    writeFileSync(
+      spaceEnv,
+      `SPACE_DIR=${folder}\nSPACE_SRC_DIR=${folder}\nSPACE_WEB_DIR=${folder}/web\n`
+    );
 
   const sweep = join(dir, 'scripts/sweep-ephemeral-docker.sh');
   mkdirSync(dirname(sweep), { recursive: true });
@@ -130,11 +152,15 @@ function fixtureRunner(dir: string): string {
   return runner;
 }
 
-function runFixture(readiness: Readiness): { code: number; calls: string } {
+function runFixture(
+  readiness: Readiness,
+  { folder = spaceDir, build = false }: { folder?: string; build?: boolean } = {}
+): { code: number; calls: string } {
   const dir = mkdtempSync(join(tmpdir(), 'community-pg-readiness-'));
   const { bin, bashEnv } = fakeDocker(dir, readiness);
+  const args = build ? [] : ['--image', 'fixture-community-image'];
   try {
-    const result = spawnSync('bash', [fixtureRunner(dir), '--image', 'fixture-community-image'], {
+    const result = spawnSync('bash', [fixtureRunner(dir, folder), ...args], {
       cwd: dir,
       encoding: 'utf8',
       env: {
@@ -178,5 +204,19 @@ describe('packaged Community PostgreSQL readiness', () => {
     expect(result.calls).toContain('tcp-not-ready');
     expect(result.calls).not.toContain('app-create');
     expect(result.calls).not.toContain('app-create-before-tcp');
+  });
+
+  // DOR-3007: the runner finds the repository by ci/space-server.env, not by a fixed
+  // depth, and builds the image for the folder that file names, so the space
+  // server's move deeper into apps/server changes the file and not the runner.
+  it('builds the image for the folder ci/space-server.env names, at any depth', () => {
+    const folder = 'apps/server/src/services/spaces';
+    const result = runFixture('eventual-tcp', { folder, build: true });
+
+    expect(result.code, result.calls).toBe(0);
+    expect(result.calls).toContain(
+      `build -f ${folder}/acceptance/Dockerfile --build-arg SPACE_DIR=${folder} -t dorkos-community-acceptance:local .`
+    );
+    expect(result.calls).toContain('app-create');
   });
 });

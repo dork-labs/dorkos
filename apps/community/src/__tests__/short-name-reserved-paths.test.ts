@@ -50,6 +50,7 @@ describe('reserved short names', () => {
       ...topLevelPaths(appSource),
       ...registrars.flatMap((path) => topLevelPaths(source(path))),
       ...topLevelPaths(source('../main.ts')),
+      ...topLevelPaths(source('../startup/space-server.ts')),
       ...topLevelPaths(source('../pages/register.ts')),
       ...topLevelPaths(source('../browser/BrowserRoot.tsx')),
       OWNER_CLAIM_PATH.slice(1),

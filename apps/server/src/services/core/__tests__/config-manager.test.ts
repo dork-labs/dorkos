@@ -124,6 +124,7 @@ const RUNTIMES_DEFAULTS = {
     // `full-power-defaults`, D1); the `0.59.0` backfill that seeded it OFF is
     // unchanged and still pinned below.
     persistentSession: true,
+    maxWarmProcesses: null,
   },
   opencode: {
     enabled: true,
@@ -3323,6 +3324,7 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
         defaultEffort: null,
         defaultTrustStop: null,
         persistentSession: true,
+        maxWarmProcesses: null,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -4426,7 +4428,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(57);
+    expect(Object.keys(bodies)).toHaveLength(58);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

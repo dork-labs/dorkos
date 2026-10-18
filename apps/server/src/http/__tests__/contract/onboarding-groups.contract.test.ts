@@ -32,6 +32,7 @@ import {
   contractSuite,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 
 /** A host name the server is told it answers to, which is not this computer. */
@@ -527,6 +528,7 @@ describe('contract: first-run setup with login on', () => {
   });
 
   it('refuses the owner’s cookie at another name, but only for the pick', async () => {
+    const cookie = await signInAt(server!.baseUrl, REMOTE_HOST, OWNER);
     await check(server, {
       method: 'POST',
       path: '/api/onboarding/first-run',

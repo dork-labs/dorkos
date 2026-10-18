@@ -28,6 +28,7 @@ import {
   RelayComputerFrameSchema,
   RelayHelloFrameSchema,
   RelaySealedFrameSchema,
+  SESSION_RELAY_DEVICE_FEATURE,
   SESSION_RELAY_MAX_INFLIGHT_REQUESTS,
   SESSION_RELAY_MAX_OPEN_STREAMS,
   SESSION_RELAY_VERSIONS,
@@ -36,6 +37,7 @@ import {
   missingRelayFeature,
   parseRelayResult,
   type RelayComputerFrame,
+  type RelayDevice,
   type RelayError,
   type RelayRequest,
   type RelayResultBody,
@@ -229,15 +231,19 @@ export class HubComputerConnection {
    * answer. Never rejects: every failure is a `{ ok: false, error }`.
    *
    * @param request - The request; opening a stream goes through {@link openStream}.
+   * @param device - The browser that asked; sent only to a computer that reads it.
    */
-  request<R extends RelayCallRequest>(request: R): Promise<RelayCallResult<R['op']>> {
+  request<R extends RelayCallRequest>(
+    request: R,
+    device?: RelayDevice
+  ): Promise<RelayCallResult<R['op']>> {
     const refused = this.refusal(
       request,
       this.requests.size >= SESSION_RELAY_MAX_INFLIGHT_REQUESTS
     );
     if (refused) return Promise.resolve({ ok: false, error: refused });
     const id = this.mintId('r');
-    if (!this.sendInner({ type: 'request', id, request })) {
+    if (!this.sendInner(this.requestFrame(id, request, device))) {
       return Promise.resolve({ ok: false, error: RELAY_REQUEST_TOO_LARGE });
     }
     return new Promise((resolve) => {
@@ -263,13 +269,15 @@ export class HubComputerConnection {
    * @param resume - The whole id of the last frame the viewer saw, if any.
    * @param onFrame - Each frame, in order.
    * @param onEnd - The stream ended; `error` says why when it was refused.
+   * @param device - The browser that asked; sent only to a computer that reads it.
    * @returns Close the stream from this side.
    */
   openStream(
     sessionId: string,
     resume: string | undefined,
     onFrame: (frame: RelayStreamFrame) => void,
-    onEnd: (error?: RelayError) => void
+    onEnd: (error?: RelayError) => void,
+    device?: RelayDevice
   ): () => void {
     const streamId = this.mintId('s');
     const request: RelayRequest = {
@@ -281,7 +289,7 @@ export class HubComputerConnection {
     const requestId = this.mintId('r');
     const refused =
       this.refusal(request, this.streams.size >= SESSION_RELAY_MAX_OPEN_STREAMS) ??
-      (this.sendInner({ type: 'request', id: requestId, request })
+      (this.sendInner(this.requestFrame(requestId, request, device))
         ? null
         : RELAY_REQUEST_TOO_LARGE);
     if (refused) {
@@ -335,6 +343,17 @@ export class HubComputerConnection {
       };
     }
     return atCap ? RELAY_HUB_BUSY : null;
+  }
+
+  /**
+   * A request frame, naming the browser only to a computer that advertised
+   * `request.device`: every frame is strict, so an older computer would refuse
+   * the field rather than ignore it.
+   */
+  private requestFrame(id: string, request: RelayRequest, device?: RelayDevice): RelayWebFrame {
+    return device && this.advertised.includes(SESSION_RELAY_DEVICE_FEATURE)
+      ? { type: 'request', id, request, device }
+      : { type: 'request', id, request };
   }
 
   private mintId(prefix: string): string {

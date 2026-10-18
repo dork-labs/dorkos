@@ -326,10 +326,9 @@ export async function awaitLate(
   try {
     return await late;
   } catch (err) {
-    logger.warn('[rooms] a late welcome-back offer never landed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { text: null, unanswered: 'failed' };
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.warn('[rooms] a late welcome-back offer never landed', { error: detail });
+    return { text: null, unanswered: 'failed', failure: { detail } };
   }
 }
 

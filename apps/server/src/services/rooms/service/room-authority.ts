@@ -49,6 +49,7 @@
  */
 import type { AuthorKind, Room } from '@dorkos/shared/room-schemas';
 import type { AuthorRecord } from '../author-registry.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomCore } from './room-core.js';
 
@@ -322,6 +323,20 @@ export class RoomAuthority {
     if (this.isOwnerRecord(caller)) return;
     if (caller.kind === 'agent') return;
     throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
+   * Refuse adding a person other than the owner to a room on a hub (spec A6,
+   * `PRIVATE_SPACE`). A hub's one space is private: the owner and the owner's
+   * agents. A person a chat bridge brought in stays in that bridged chat: the
+   * external join, and adding them back to it, are left open by the callers.
+   *
+   * @param candidate - Who would join.
+   */
+  requirePrivateSpaceMember(candidate: Pick<AuthorRecord, 'id' | 'kind'>): void {
+    if (currentServerRole() !== 'hub' || candidate.kind !== 'human') return;
+    if (this.isOwnerAuthor(candidate.id)) return;
+    throw new RoomError('PRIVATE_SPACE', 'Only the owner and their agents can be in rooms here');
   }
 
   /**
