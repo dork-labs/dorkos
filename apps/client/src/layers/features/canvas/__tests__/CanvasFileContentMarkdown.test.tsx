@@ -33,6 +33,8 @@ const readFileContent = vi.fn();
 
 const DOC_ID = 'doc-md';
 
+// Wiki links belong to the Docs feature and are tested there (`features/docs`).
+vi.mock('@/layers/features/docs', () => ({ useDocWikiLinks: () => undefined }));
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;

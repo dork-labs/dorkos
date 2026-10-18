@@ -16,6 +16,7 @@ import { chatMarkdownLink } from '@dorkos/shared/session-link';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+import { yourMessagesTo, type YourMessage } from './chat-queue-standing.js';
 
 /** The default number of messages a read returns. */
 export const CHAT_READ_DEFAULT_LAST = 10;
@@ -89,6 +90,12 @@ export interface ChatReadResult {
   more: boolean;
   /** Where to continue a read the size budget cut. */
   cursor?: string;
+  /**
+   * The caller's own newest messages to this chat and where each stands, so a
+   * sender can tell waiting from delivered from lost (DOR-2994). Absent when it
+   * sent none.
+   */
+  yourMessages?: YourMessage[];
 }
 
 /** What `chat_read` needs. */
@@ -227,8 +234,10 @@ export async function readChat(
     agent: described.agent,
     state: chatStateOf(deps.status(input.chat)),
   };
+  const sent = yourMessagesTo(deps.store, caller.sessionId, input.chat);
+  const yours = sent.length > 0 ? { yourMessages: sent } : {};
   const include = input.include ?? 'text';
-  if (include === 'status') return { chat, messages: [], more: false };
+  if (include === 'status') return { chat, messages: [], more: false, ...yours };
 
   const history = await deps.history(input.chat);
   const cursorAt = input.cursor !== undefined ? parseReadCursor(input.cursor) : null;
@@ -323,5 +332,5 @@ export async function readChat(
   if (moveCursor && lastWholeId !== undefined) {
     deps.store.setReadCursor(caller.sessionId, input.chat, lastWholeId);
   }
-  return { chat, messages, more, ...(cursor ? { cursor } : {}) };
+  return { chat, messages, more, ...(cursor ? { cursor } : {}), ...yours };
 }

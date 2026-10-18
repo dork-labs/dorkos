@@ -196,6 +196,31 @@ export class ChatMessageStore {
   }
 
   /**
+   * The newest messages and first messages one chat sent another, oldest
+   * first, at most `limit` of them: what `chat_read` reports back to a sender.
+   *
+   * @param fromSessionId - The chat that sent them.
+   * @param toSessionId - The chat they went to.
+   * @param limit - How many, newest first, before the order is turned back.
+   */
+  latestSentTo(fromSessionId: string, toSessionId: string, limit: number): ChatMessageRow[] {
+    return this.db
+      .select()
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.fromSessionId, fromSessionId),
+          eq(chatMessages.toSessionId, toSessionId),
+          inArray(chatMessages.kind, ['message', 'start'])
+        )
+      )
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit)
+      .all()
+      .reverse();
+  }
+
+  /**
    * The stops other chats made on this chat: the "Stopped by" lines it shows.
    *
    * @param toSessionId - The stopped chat.
@@ -225,7 +250,9 @@ export class ChatMessageStore {
           eq(chatMessages.fromSessionId, fromSessionId),
           eq(chatMessages.toSessionId, toSessionId),
           inArray(chatMessages.kind, ['message', 'start']),
-          inArray(chatMessages.status, ['queued', 'working', 'delivered', 'steered'])
+          // Not `queued`: a message still waiting has not been read, so nothing
+          // sent meanwhile can be its answer (DOR-2994).
+          inArray(chatMessages.status, ['working', 'delivered', 'steered'])
         )
       )
       .orderBy(desc(chatMessages.createdAt))

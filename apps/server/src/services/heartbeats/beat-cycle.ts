@@ -326,9 +326,10 @@ export async function runTurn(
     kind: ctx.kind,
   });
   track.chatSessionId = chat.sessionId;
-  let settle: (outcome: 'ok' | 'failed') => void = () => undefined;
-  const settled = new Promise<'ok' | 'failed'>((resolve) => {
-    settle = resolve;
+  type Settled = [outcome: 'ok' | 'failed', refusal?: string];
+  let settle: (...result: Settled) => void = () => undefined;
+  const settled = new Promise<Settled>((resolve) => {
+    settle = (...result) => resolve(result);
   });
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
@@ -336,7 +337,7 @@ export async function runTurn(
     agentPath: agent.projectPath,
     runtime: agent.runtime,
     content,
-    onSettled: (outcome) => settle(outcome),
+    onSettled: (outcome, refusal) => settle(outcome, refusal),
   });
   if (launched.status !== 'started') return refused(deps, ctx, track, launched);
   const sessionId = launched.sessionId;
@@ -348,13 +349,17 @@ export async function runTurn(
         () => false
       )
     : Promise.resolve(true);
-  const outcome = await settled;
+  const [outcome, refusal] = await settled;
   const turn = settleBeatTurn(chat.sessionId);
   track.settled = true;
   if (!(await renamed)) {
     // A runtime whose transcript exists only once the turn wrote it.
     void deps.launcher.rename(agent, sessionId, chat.title).catch(() => undefined);
   }
+  // Refused before the agent saw the beat (DOR-2994): it could not start,
+  // which is not the agent failing.
+  if (refusal !== undefined)
+    return refused(deps, ctx, track, { status: 'refused', message: refusal });
   return afterTurn(deps, ctx, sessionId, outcome, turn);
 }
 

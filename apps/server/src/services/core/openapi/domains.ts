@@ -17,6 +17,7 @@ import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.
 import { registerHubLinkOpenApi } from '../hub-relay/hub-link-openapi.js';
 import { registerSessionRelayOpenApi } from '../session-relay/session-relay-openapi.js';
 import { registerDirectChatOpenApi } from '../../rooms/direct-chat/direct-chat-openapi.js';
+import { registerDocLinksOpenApi } from '../../docs/links/doc-links-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -37,4 +38,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerHubLinkOpenApi(registry);
   registerSessionRelayOpenApi(registry);
   registerDirectChatOpenApi(registry);
+  registerDocLinksOpenApi(registry);
 }

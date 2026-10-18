@@ -57,6 +57,7 @@ export {
 } from './server-config/use-feature-enabled';
 export {
   SPACES_EXPERIMENT,
+  DOCS_EXPERIMENT,
   isExperimentEnabled,
   readExperimentEnabled,
   officialSpaceLink,

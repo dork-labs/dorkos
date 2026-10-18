@@ -46,3 +46,11 @@
   font-weight: 500;
   color: hsl(var(--muted-foreground));
 }
+
+/* Links use the app's link ink, not Blintz's primary (which also colours list
+   markers and focus rings). A missing wiki link keeps Blintz's muted dash. */
+.dorkos-markdown .milkdown .ProseMirror a,
+.dorkos-markdown .milkdown .blintz-wiki-link:not([data-state='missing']) {
+  color: hsl(var(--brand-text));
+  text-decoration-color: hsl(var(--brand-text) / 0.45);
+}

@@ -385,6 +385,14 @@
       "types": "./src/session-relay.ts",
       "default": "./dist/session-relay.js"
     },
+    "./doc-links": {
+      "types": "./src/doc-links.ts",
+      "default": "./dist/doc-links.js"
+    },
+    "./transport-doc-links": {
+      "types": "./src/transport-doc-links.ts",
+      "default": "./dist/transport-doc-links.js"
+    },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
