@@ -48,6 +48,8 @@
 #   packages/shared/src/…communit…       the contracts both halves speak
 #                                        (community-adapter, community schemas),
 #                                        same case rule
+#   packages/shared/src/space-page/      what the space page and the space
+#                                        server share (server-merge step 7)
 #   packages/db/src/schema/communities/  the local mirror tables
 #                                        (community-mirrors.ts backs the
 #                                        proof's offline step)
@@ -126,6 +128,7 @@ SCOPE_PATTERNS=(
   '^ci/space-server\.env$'
   "^apps/(client|server)/src/.*${communit}"
   "^packages/shared/src/.*${communit}"
+  '^packages/shared/src/space-page/'
   '^packages/db/src/schema/communities/'
   '^packages/cloud-api/'
   '^packages/connector-providers/'
