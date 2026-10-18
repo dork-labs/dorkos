@@ -1,0 +1,8 @@
+{
+  "computerId": "cmp_0001",
+  "hubOrigin": "https://hub-0001.example.invalid",
+  "ownerAccountId": "acct_0001",
+  "issuer": "https://accounts.example.invalid",
+  "linkCode": { "code": "7K3M9QXR2B4TVW8H", "expiresAt": "2026-11-03T12:10:00Z" },
+  "pollAfterSeconds": 60
+}
