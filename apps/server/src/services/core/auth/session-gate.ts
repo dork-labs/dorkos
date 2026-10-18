@@ -23,6 +23,9 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **On an agent computer, none of these.** Its gate decides every path,
+ *   not only `/api` and `/mcp`, and admits only the liveness probe and an
+ *   agent's own credential (`services/core/agent-computer/agent-gate.ts`).
  * - **`/api/hub/link`, on a hub only, and only that exact path** — a computer
  *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
  *   step B3). The computer never signs in to the hub; the code is its
@@ -44,6 +47,7 @@ import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
+import { admitsOnAgentComputer } from '../agent-computer/agent-gate.js';
 import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
@@ -294,6 +298,14 @@ export async function decideSessionGate(
   // case rule is one router change away from letting an uppercased prefix slip
   // past `isSessionGatedPath` to a gated route.
   const lowered = path.toLowerCase();
+
+  // A sealed agent computer gates every path and admits no person: before the
+  // exemptions below, which exist so a person can load the app and sign in.
+  if (access === 'agent') {
+    return (await admitsOnAgentComputer(lowered, request.headers))
+      ? { allowed: true }
+      : { allowed: false };
+  }
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are

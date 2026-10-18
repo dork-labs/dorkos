@@ -81,6 +81,8 @@ export interface McpAuthRequest {
  *   - **Asked for a key** (another device always; this computer when it asks
  *     for a password; a hub): 401 on both surfaces — no tokenless path, the local token is
  *     never consulted (per-user keys / env key are the only credentials).
+ *   - **On an agent computer, from this machine:** 401 on both surfaces. The
+ *     local token (acceptor 4) still works there, but nothing is tokenless.
  *   - **At this computer, `'mcp'`:** the capability carve-out on the parsed JSON-RPC
  *     body — discovery/handshake methods and read-only `tools/call`s
  *     ({@link READ_ONLY_MCP_TOOL_NAMES}) pass tokenless; everything else
@@ -112,7 +114,10 @@ export async function decideMcpAuth(
   // token and the tokenless read-only paths; every other caller needs a key.
   const access = gateAccessFor(request);
   if (access === 'refused') return { allowed: false, body: unauthorizedBody(surface, false) };
-  const asksForKey = access !== 'open';
+  // On a sealed agent computer (DOR-2940) an agent from this machine presents
+  // the local token like a person's own computer, but nothing is tokenless.
+  const sealed = access === 'agent';
+  const asksForKey = access !== 'open' && !sealed;
 
   // 1. Static env override — exact match, highest priority, un-revocable.
   if (envKey && token && constantTimeEquals(token, envKey)) return { allowed: true };
@@ -158,8 +163,8 @@ export async function decideMcpAuth(
   // ── No acceptor matched ──────────────────────────────────────────────────
   const refused = { allowed: false, body: unauthorizedBody(surface, !asksForKey) } as const;
 
-  // Asked for a key: no tokenless path on either surface.
-  if (asksForKey) return refused;
+  // Asked for a key, or sealed: no tokenless path on either surface.
+  if (asksForKey || sealed) return refused;
 
   // At this computer, A2A: card discovery (GET) is open; execution (POST) is gated.
   if (surface === 'a2a') return request.method === 'GET' ? { allowed: true } : refused;

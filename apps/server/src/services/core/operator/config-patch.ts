@@ -22,6 +22,8 @@ import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { browserSettingRefusal } from '../config/browser-setting.js';
 import { hubSettingRefusal } from '../config/hub-settings.js';
+import { AGENT_COMPUTER_SETTINGS_REFUSAL } from '../agent-computer/sealed.js';
+import { isAgentComputer } from '../server-role/role-checks.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
 import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
@@ -441,6 +443,9 @@ export type ConfigPatchResult =
  * @returns `{ ok: true, config, warnings }` on success, else `{ ok: false, error, details? }`.
  */
 export function applyConfigPatch(patch: unknown): ConfigPatchResult {
+  // An agent computer's settings come from its hub (DOR-2940): `PATCH
+  // /api/config` and the `config_patch` tool both land here, and both refuse.
+  if (isAgentComputer()) return { ok: false, error: AGENT_COMPUTER_SETTINGS_REFUSAL };
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'Request body must be a JSON object' };
   }
