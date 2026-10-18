@@ -63,9 +63,10 @@ import {
 import { communityDigest, makeScene, requestErasure, type Scene } from './member-erasure-scenes.js';
 import { EXPORT_SETTINGS, drainExports, openArchive } from './export-test-helpers.js';
 import { runNextExport } from '../exports/worker.js';
+import { SPACE_ROOT } from './space-paths.js';
 
 const DAY = 24 * 60 * 60_000;
-const EVIDENCE_ROOT = fileURLToPath(new URL('../../.test-evidence/', import.meta.url));
+const EVIDENCE_ROOT = fileURLToPath(new URL('.test-evidence/', SPACE_ROOT));
 const evidenceDirectory = join(EVIDENCE_ROOT, randomUUID());
 let h: TenancyHarness;
 let bare: TenancyHarness;

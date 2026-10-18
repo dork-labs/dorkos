@@ -5,8 +5,8 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import { tmpdir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseMail } from './mail/config.js';
+import { WEB_DIR } from './startup/space-root.js';
 import { checkS3Endpoint, directoriesOverlap } from './storage/config-checks.js';
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 import { minimumAgeSetting } from './sign-up/minimum-age.js';
@@ -147,8 +147,8 @@ function parseOidc(value: {
   };
 }
 
-/** The directory the server serves its web app from (`main.ts`), from `src/` or `dist-server/`. */
-const SERVED_WEB_APP_DIRECTORY = fileURLToPath(new URL('../dist/', import.meta.url));
+/** The directory the server serves its web app from (`main.ts`). */
+const SERVED_WEB_APP_DIRECTORY = WEB_DIR;
 
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),

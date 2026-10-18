@@ -7,12 +7,13 @@
  * erased and imported agents, agent and person messages in a thread, mentions of both, a file by
  * an agent, a report, a removed and a taken-down message. Then it runs the real migration.
  */
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { afterAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { COMMUNITY_MIGRATIONS, assertCompatibilityFloor, migrate } from '../migrate.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -37,9 +38,7 @@ async function databaseBefore(
   );
   for (const [version, file] of COMMUNITY_MIGRATIONS) {
     if (version >= MIGRATION[0]) break;
-    await db.query(
-      await readFile(fileURLToPath(new URL(`../../migrations/${file}`, import.meta.url)), 'utf8')
-    );
+    await db.query(await readFile(join(MIGRATIONS_DIR, file), 'utf8'));
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
   }
   return {

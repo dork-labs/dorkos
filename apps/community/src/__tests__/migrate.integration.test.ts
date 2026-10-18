@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Client, Pool } from 'pg';
 import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
@@ -11,6 +10,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { FileSystemBlobStore } from '../storage/index.js';
 import { hashSecret } from '../security.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -51,12 +51,7 @@ async function applyVersionFourSchema(db: Pool): Promise<void> {
     [3, '0003_files.sql'],
     [4, '0004_cleanup_backoff.sql'],
   ] as const) {
-    await db.query(
-      await readFile(
-        fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-        'utf8'
-      )
-    );
+    await db.query(await readFile(join(MIGRATIONS_DIR, filename), 'utf8'));
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
   }
 }
@@ -121,10 +116,7 @@ it('upgrades a populated foundation database without changing human authors', as
   await admin.query(`CREATE DATABASE ${upgradeName}`);
   const db = new Pool({ connectionString: upgradeUrl.toString() });
   try {
-    const foundation = await readFile(
-      fileURLToPath(new URL('../../migrations/0001_foundation.sql', import.meta.url)),
-      'utf8'
-    );
+    const foundation = await readFile(join(MIGRATIONS_DIR, '0001_foundation.sql'), 'utf8');
     await db.query(foundation);
     await db.query(
       'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
@@ -262,12 +254,7 @@ it('backfills legacy suspended communities before adding administration constrai
       [8, '0008_tenant_contract.sql'],
       [9, '0009_backout_fence.sql'],
     ] as const) {
-      await db.query(
-        await readFile(
-          fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-          'utf8'
-        )
-      );
+      await db.query(await readFile(join(MIGRATIONS_DIR, filename), 'utf8'));
       await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
     }
     const community = (
@@ -1049,12 +1036,7 @@ it('keeps version-eleven host audit rows, receipts, and revoked claims valid, an
       [10, '0010_administration.sql'],
       [11, '0011_membership_protocol.sql'],
     ] as const) {
-      await db.query(
-        await readFile(
-          fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-          'utf8'
-        )
-      );
+      await db.query(await readFile(join(MIGRATIONS_DIR, filename), 'utf8'));
       await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
     }
     await db.query(
@@ -1190,12 +1172,7 @@ async function applyBefore(db: Pool, stop: string): Promise<void> {
   );
   for (const [version, filename] of COMMUNITY_MIGRATIONS) {
     if (filename === stop) break;
-    await db.query(
-      await readFile(
-        fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-        'utf8'
-      )
-    );
+    await db.query(await readFile(join(MIGRATIONS_DIR, filename), 'utf8'));
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
   }
 }

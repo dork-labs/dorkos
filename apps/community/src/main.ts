@@ -1,8 +1,7 @@
-import { fileURLToPath } from 'node:url';
 import { parseConfig } from './config.js';
 import { PAID_DECISIONS_ARMED } from './decisions/settings.js';
-import { MIGRATIONS_DIR } from './migrate.js';
 import { createSignalHandler } from './shutdown.js';
+import { MIGRATIONS_DIR, WEB_DIR } from './startup/space-root.js';
 import { LiveUpdatesUnavailableError, createSpaceServer } from './startup/space-server.js';
 
 // The image's entry. Everything the server runs is built by `createSpaceServer`; this file only
@@ -12,7 +11,7 @@ const space = createSpaceServer({
   config: parseConfig(process.env),
   env: process.env,
   migrationsDir: MIGRATIONS_DIR,
-  webDir: fileURLToPath(new URL('../dist/', import.meta.url)),
+  webDir: WEB_DIR,
   paidDecisionsArmed: PAID_DECISIONS_ARMED,
 });
 try {

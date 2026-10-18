@@ -37,10 +37,11 @@ import {
 import { body } from './member-erasure-fixture.js';
 import { communityDigest, makeScene, requestErasure, type Scene } from './member-erasure-scenes.js';
 import { drainExports, openArchive } from './export-test-helpers.js';
+import { SPACE_ROOT } from './space-paths.js';
 
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
-const EVIDENCE_ROOT = fileURLToPath(new URL('../../.test-evidence/', import.meta.url));
+const EVIDENCE_ROOT = fileURLToPath(new URL('.test-evidence/', SPACE_ROOT));
 const evidenceDirectory = join(EVIDENCE_ROOT, randomUUID());
 let h: TenancyHarness;
 let bare: TenancyHarness;

@@ -9,9 +9,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { isAbsolute, join, relative } from 'node:path';
 import { build, type Plugin } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { REPO_ROOT as SPACE_PATHS_REPO_ROOT, SPACE_SRC } from '../space-paths.js';
 
 /** The repository root. */
-export const REPO_ROOT = new URL('../../../../../', import.meta.url).pathname;
+export const REPO_ROOT = fileURLToPath(SPACE_PATHS_REPO_ROOT);
 
 /**
  * What the space image must never import, with why. An import matches when it names one of these
@@ -34,7 +36,8 @@ export const FORBIDDEN_IN_SPACE_IMAGE: Readonly<Record<string, string>> = {
  * forbidden package unseen.
  */
 export const DYNAMIC_LOADS_ALLOWED: Readonly<Record<string, string>> = {
-  'apps/community/src/takedown/evidence/record.ts': "the space package's own package.json",
+  [relative(REPO_ROOT, fileURLToPath(new URL('takedown/evidence/record.ts', SPACE_SRC)))]:
+    "the space package's own package.json",
 };
 
 const forbids = (specifier: string, name: string) => `/${specifier}/`.includes(`/${name}/`);

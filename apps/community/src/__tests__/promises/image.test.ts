@@ -20,9 +20,11 @@ import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../../config.js';
 import { decisionSettings } from '../../decisions/settings.js';
 import { CENSUS_ENV } from './route-census.js';
+import { relative } from 'node:path';
+import { SPACE_ROOT, SPACE_SRC } from '../space-paths.js';
 
-const APP = new URL('../../../', import.meta.url);
-const SRC = new URL('src/', APP);
+const APP = SPACE_ROOT;
+const SRC = SPACE_SRC;
 const BASELINE = new URL('./image.baseline.json', import.meta.url);
 const UPDATE = process.env.UPDATE_PROMISES === '1';
 
@@ -261,7 +263,10 @@ describe('the image', () => {
     // Purpose: fails if the build stops compiling src/ into dist-server/, or the image stops
     // copying in the server, the page `main.ts` serves (../dist) or the migrations
     // `migrate.ts` runs (../migrations).
-    expect(buildMapping().compilerOptions).toMatchObject({ rootDir: 'src', outDir: 'dist-server' });
+    expect(buildMapping().compilerOptions).toMatchObject({
+      rootDir: relative(fileURLToPath(APP), fileURLToPath(SRC)).replace(/\/$/u, ''),
+      outDir: 'dist-server',
+    });
     expect(actual.copied).toEqual(baseline.copied);
     expect(actual.copied).toEqual(
       expect.arrayContaining([
