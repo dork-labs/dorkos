@@ -84,6 +84,12 @@ import type { GatedAction } from './capabilities/tier-enforcement.js';
  */
 const ALWAYS_ON = 'always on';
 
+/**
+ * The `areaNote` of the two shared-folder tools: they read only the folder a space's owner
+ * shared with teammates, and only in a teammate's turn, so no permission area governs them.
+ */
+const TEAMMATE_SHARED_FOLDER = "only a teammate's turn, only the folder the space shares";
+
 /** One tool's tier declaration. */
 export interface McpToolTier {
   /**
@@ -174,6 +180,19 @@ export const MCP_TOOL_TIERS = {
     area: null,
     areaNote: ALWAYS_ON,
     title: "Read an agent's setup file",
+  },
+  // ── A space's shared folder (DOR-2956), read only in a teammate's turn ──
+  shared_files_list: {
+    tier: 'observe',
+    area: null,
+    areaNote: TEAMMATE_SHARED_FOLDER,
+    title: "List the space's shared folder",
+  },
+  shared_files_search: {
+    tier: 'observe',
+    area: null,
+    areaNote: TEAMMATE_SHARED_FOLDER,
+    title: "Search the space's shared folder",
   },
 
   // ── Accounts ────────────────────────────────────────────────────────────

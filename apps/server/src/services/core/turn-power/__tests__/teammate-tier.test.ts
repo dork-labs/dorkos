@@ -2,16 +2,20 @@
  * The teammate fence's decisions (DOR-2955): a teammate's turn reaches the room it answers, with
  * no files, and nothing else.
  */
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DORKOS_AGENT_TOOLS } from '../../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { IN_SESSION_TOOL_PREFIX } from '../../../runtimes/claude-code/mcp-tools/tool-exposure.js';
 import {
   TEAMMATE_DORKOS_TOOLS,
+  teammateTierDecision,
   TEAMMATE_TIER_DENIAL,
   teammateTierRefusal,
 } from '../teammate-tier.js';
 
-const FENCE = { roomId: 'room-answered' };
+const FENCE = { roomId: 'room-answered', sharedFolder: null };
 
 const dorkos = (name: string, input: Record<string, unknown> = {}) =>
   teammateTierRefusal(FENCE, { source: 'dorkos', name, input });
@@ -23,7 +27,11 @@ describe('the teammate fence', () => {
     const cardFree = [...DORKOS_AGENT_TOOLS].map((name) =>
       name.slice(IN_SESSION_TOOL_PREFIX.length)
     );
-    expect(Object.keys(TEAMMATE_DORKOS_TOOLS).sort()).toEqual(cardFree.sort());
+    // The shared-folder tools are the one exception: the tier allows them itself (DOR-2956).
+    const decided = Object.entries(TEAMMATE_DORKOS_TOOLS)
+      .filter(([, rule]) => rule.kind !== 'shared-folder')
+      .map(([name]) => name);
+    expect(decided.sort()).toEqual(cardFree.sort());
   });
 
   it.each(['post_to_room', 'react_to_room_entry', 'read_room_history', 'search_room_history'])(
@@ -123,5 +131,62 @@ describe('the teammate fence', () => {
         input: { roomId: 'room-answered' },
       })
     ).toBe(TEAMMATE_TIER_DENIAL);
+  });
+});
+
+describe('the shared folder (DOR-2956)', () => {
+  it('allows a Read of a shared file by its resolved path, and refuses every other', async () => {
+    const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tier-read-')));
+    try {
+      const shared = path.join(base, 'acme');
+      await mkdir(shared);
+      await writeFile(path.join(shared, 'plan.md'), 'plan');
+      await writeFile(path.join(base, 'secret.md'), 'secret');
+      const scope = { roomId: 'room-answered', sharedFolder: shared };
+      const read = (file: string) =>
+        teammateTierDecision(scope, {
+          source: 'built-in',
+          name: 'Read',
+          input: { file_path: file },
+        });
+      expect(await read(`${shared}/../acme/plan.md`)).toEqual({
+        allowRead: { filePath: path.join(shared, 'plan.md') },
+      });
+      expect(await read(path.join(base, 'secret.md'))).toHaveProperty('refuse');
+      expect(
+        await teammateTierDecision(
+          { roomId: 'room-answered', sharedFolder: null },
+          { source: 'built-in', name: 'Read', input: { file_path: path.join(shared, 'plan.md') } }
+        )
+      ).toHaveProperty('refuse');
+      // Glob, Grep and LS stay refused even with a shared folder.
+      for (const name of ['Glob', 'Grep', 'LS']) {
+        expect(
+          await teammateTierDecision(scope, { source: 'built-in', name, input: { path: shared } })
+        ).toHaveProperty('refuse');
+      }
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it('lets the shared-folder tools run only when the space shares a folder', () => {
+    const call = (name: string) => ({ source: 'dorkos' as const, name, input: {} });
+    for (const name of ['shared_files_list', 'shared_files_search']) {
+      expect(teammateTierRefusal({ roomId: 'r', sharedFolder: '/x' }, call(name))).toBeNull();
+      expect(teammateTierRefusal({ roomId: 'r', sharedFolder: null }, call(name))).toBe(
+        TEAMMATE_TIER_DENIAL
+      );
+    }
+  });
+
+  it('allows the shared-folder tools past the runtime’s gate itself, with a folder only', async () => {
+    const call = { source: 'dorkos' as const, name: 'shared_files_search', input: {} };
+    expect(await teammateTierDecision({ roomId: 'r', sharedFolder: '/x' }, call)).toEqual({
+      allow: true,
+    });
+    expect(await teammateTierDecision({ roomId: 'r', sharedFolder: null }, call)).toHaveProperty(
+      'refuse'
+    );
   });
 });

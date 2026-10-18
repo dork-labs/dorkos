@@ -5,7 +5,7 @@
  *
  * @vitest-environment node
  */
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +16,7 @@ import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../connect
 import {
   TEAMMATE_SPEND_FILE,
   TEAMMATE_TURN_ESTIMATE_USD,
+  SharedFolderRefusedError,
   TeammateSpend,
 } from '../wake/teammate-spend.js';
 import { RemoteWakePolicy } from '../wake/wake-policy.js';
@@ -94,6 +95,7 @@ describe('the monthly limit', () => {
       spentUsd: 150,
       approximate: false,
       month: '2026-10',
+      sharedFolder: null,
     });
     expect(reached).not.toHaveBeenCalled();
   });
@@ -249,6 +251,41 @@ describe('telling the owner (review S4)', () => {
     await counter.record(REF, OWNER, 0.1);
     await counter.record(REF, OWNER, 0.1);
     expect(reached).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the shared folder (DOR-2956)', () => {
+  it('is none by default, kept by its realpath, remembered, and cleared', async () => {
+    const counter = spend();
+    expect(counter.sharedFolder(REF, OWNER)).toBeNull();
+    const folder = join(directory, 'acme');
+    await mkdir(folder);
+    await counter.setSharedFolder(REF, OWNER, `${folder}/./`);
+    const real = await realpath(folder);
+    expect(counter.sharedFolder(REF, OWNER)).toBe(real);
+    expect(spend().sharedFolder(REF, OWNER)).toBe(real);
+    expect((await counter.summary(REF, OWNER)).sharedFolder).toBe(real);
+    await counter.setSharedFolder(REF, OWNER, null);
+    expect(counter.sharedFolder(REF, OWNER)).toBeNull();
+  });
+
+  it('refuses what is not a folder, the whole disk, and another owner', async () => {
+    const counter = spend();
+    await writeFile(join(directory, 'file.txt'), 'x');
+    for (const bad of [
+      'relative/path',
+      join(directory, 'missing'),
+      join(directory, 'file.txt'),
+      '/',
+    ]) {
+      await expect(counter.setSharedFolder(REF, OWNER, bad)).rejects.toBeInstanceOf(
+        SharedFolderRefusedError
+      );
+    }
+    await expect(counter.setSharedFolder(REF, 'someone-else', directory)).rejects.toBeInstanceOf(
+      RemoteConnectionNotFoundError
+    );
+    expect(counter.sharedFolder(REF, OWNER)).toBeNull();
   });
 });
 

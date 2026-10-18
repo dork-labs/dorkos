@@ -597,6 +597,7 @@
     "PUT /api/communities/:ref/me/display-name",
     "PUT /api/communities/:ref/rooms/:roomId/read-cursor",
     "PUT /api/community-connections/:ref/answer-in",
+    "PUT /api/community-connections/:ref/teammate-shared-folder",
     "PUT /api/community-connections/:ref/teammate-spend",
     "PUT /api/community-connections/:ref/wake-agents-from",
     "PUT /api/community-connections/navigation/destination",

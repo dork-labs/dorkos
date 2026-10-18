@@ -96,7 +96,12 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
-import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
+import {
+  contextShownTo,
+  teammateTurnContext,
+} from '../../../core/turn-power/teammate-turn-context.js';
+import { sharedFolderOf } from '../../../core/turn-power/shared-folder.js';
+import { teammateTurnFolder } from '../../../core/turn-power/teammate-turn-folder.js';
 import { enrichContent } from '../enrich-content.js';
 
 /**
@@ -302,7 +307,12 @@ export async function resolveLaunch(args: {
   // existed. Only the `<agent_memory>` block is out of the digest; nothing else
   // moved, and a caller append that changed used to relaunch and still does.
   const callerAppend =
-    [teammate ? TEAMMATE_TURN_CONTEXT : '', messageOpts?.systemPromptAppend ?? '']
+    [
+      messageOpts?.roomTurn?.teammate
+        ? teammateTurnContext(sharedFolderOf(messageOpts.roomTurn.roomId))
+        : '',
+      messageOpts?.systemPromptAppend ?? '',
+    ]
       .filter(Boolean)
       .join('\n\n') || undefined;
   const systemPromptAppend = callerAppend
@@ -325,7 +335,11 @@ export async function resolveLaunch(args: {
   } else {
     // Context blocks defused always, the words when somebody other than the
     // person here wrote them (DOR-2955, `enrich-content.ts`).
-    enrichedContent = enrichContent(content, messageOpts?.additionalContext, untrustedText);
+    enrichedContent = enrichContent(
+      content,
+      contextShownTo(messageOpts?.additionalContext, teammate),
+      untrustedText
+    );
   }
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
@@ -402,7 +416,9 @@ export async function resolveLaunch(args: {
   // pay for with credits.
   const claudeCredentialEnv = onCredits ? {} : await resolveClaudeCredentialEnv();
   const sdkOptions: Options = {
-    cwd: effectiveCwd,
+    // A teammate's turn stands in an empty folder of its own (DOR-2956), so Claude Code's own
+    // environment note names no folder of the owner's; who it runs as still keys on the home.
+    cwd: teammate ? teammateTurnFolder(turnAgentPath) : effectiveCwd,
     includePartialMessages: true,
     promptSuggestions: true,
     agentProgressSummaries: true,

@@ -16,6 +16,7 @@ import {
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
+import { getSharedFilesTools } from './shared-files-tools.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
@@ -267,6 +268,9 @@ export function handRegisteredInSessionToolSet(
     // The same provenance the task tools read: present in a session, so a
     // Trusted install approves an extension our agent creates (ADR 261006-225605).
     ...getExtensionTools(deps, resolveTaskProvenance),
+    // The space's shared folder, listed only for a process launched for a teammate's turn, which
+    // never serves the owner's (the teammate block is in the relaunch digest) (DOR-2956).
+    ...(session?.teammateTier ? getSharedFilesTools(session) : []),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

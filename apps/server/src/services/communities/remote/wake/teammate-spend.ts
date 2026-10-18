@@ -26,7 +26,7 @@
  * @module services/communities/remote/wake/teammate-spend
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync, renameSync } from 'node:fs';
+import { readFileSync, realpathSync, renameSync, statSync } from 'node:fs';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
@@ -63,6 +63,8 @@ type Month = z.infer<typeof MonthSchema>;
 const FileSchema = z.object({
   limits: z.record(z.string(), z.number().min(TEAMMATE_SPEND_LIMIT_MIN_USD)),
   months: z.record(z.string(), MonthSchema),
+  /** Each connection's shared folder (DOR-2956), absent in a file from before it. */
+  sharedFolders: z.record(z.string(), z.string().min(1)).optional(),
 });
 type SpendFile = z.infer<typeof FileSchema>;
 
@@ -101,7 +103,23 @@ function key(ref: CommunityRef, ownerKey: string): string {
   return `${ownerKey}\0${ref}`;
 }
 
-/** Each connection's monthly teammate limit and spending, persisted and read in memory. */
+/** A shared folder the owner named that cannot be shared, with the reason in their words. */
+export class SharedFolderRefusedError extends Error {
+  /**
+   * Name the refusal.
+   *
+   * @param message - Why, said plainly.
+   */
+  constructor(message: string) {
+    super(message);
+    this.name = 'SharedFolderRefusedError';
+  }
+}
+
+/**
+ * Each connection's monthly teammate limit and spending, and the folder it shares with teammates'
+ * turns, persisted and read in memory.
+ */
 export class TeammateSpend {
   private readonly directory: string;
   private readonly file: string;
@@ -134,6 +152,7 @@ export class TeammateSpend {
         for (const change of removed) {
           delete data.limits[key(change.ref, change.ownerKey)];
           delete data.months[key(change.ref, change.ownerKey)];
+          delete data.sharedFolders?.[key(change.ref, change.ownerKey)];
         }
         return true;
       }).catch((error: unknown) => {
@@ -181,7 +200,54 @@ export class TeammateSpend {
       spentUsd: Math.round(spent.usd * 100) / 100,
       approximate: spent.estimated > 0,
       month: monthOf(this.now()),
+      sharedFolder: data.sharedFolders?.[key(ref, ownerKey)] ?? null,
     };
+  }
+
+  /**
+   * The folder this space shares with teammates' turns, or `null` for none (DOR-2956). Read from
+   * memory, so a teammate turn's tools can ask it on every call.
+   *
+   * @param ref - The connection.
+   * @param ownerKey - The connection's local owner.
+   */
+  sharedFolder(ref: CommunityRef, ownerKey: string): string | null {
+    return this.data.sharedFolders?.[key(ref, ownerKey)] ?? null;
+  }
+
+  /**
+   * Share a folder with teammates' turns in this space, or stop sharing (DOR-2956). Owner-only by
+   * construction, like the limit. The folder must exist and be a folder; it is kept by its
+   * realpath, and the computer's root is never shared.
+   *
+   * @param ref - The connection.
+   * @param ownerKey - The connection's local owner.
+   * @param folder - An absolute path, or `null` to share nothing.
+   * @throws {SharedFolderRefusedError} For a path that is not an existing folder, or the root.
+   */
+  async setSharedFolder(ref: CommunityRef, ownerKey: string, folder: string | null): Promise<void> {
+    await this.connections.get(ref, ownerKey);
+    let real: string | null = null;
+    if (folder !== null) {
+      if (!path.isAbsolute(folder))
+        throw new SharedFolderRefusedError('Use the folder’s full path.');
+      try {
+        real = realpathSync(folder);
+      } catch {
+        throw new SharedFolderRefusedError('That folder doesn’t exist.');
+      }
+      if (!statSync(real).isDirectory())
+        throw new SharedFolderRefusedError('That’s a file, not a folder.');
+      if (path.dirname(real) === real)
+        throw new SharedFolderRefusedError('Choose a folder, not the whole disk.');
+    }
+    await this.exclusive(async (data) => {
+      const folders = { ...(data.sharedFolders ?? {}) };
+      if (real === null) delete folders[key(ref, ownerKey)];
+      else folders[key(ref, ownerKey)] = real;
+      data.sharedFolders = folders;
+      return true;
+    });
   }
 
   /**

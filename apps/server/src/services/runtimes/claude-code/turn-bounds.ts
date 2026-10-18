@@ -6,6 +6,7 @@
  */
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from './agent-types.js';
+import { sharedFolderOf } from '../../core/turn-power/shared-folder.js';
 
 /**
  * Assign this turn's bounds onto the session, clearing any the previous turn left.
@@ -35,10 +36,14 @@ export function assignTurnBounds(
   } else {
     delete session.turnPermissionCeiling;
   }
-  // And the room a teammate's turn is fenced to (DOR-2955). Cleared the same
-  // way, so the owner's next turn in this conversation reaches what it did.
+  // And the room a teammate's turn is fenced to (DOR-2955), with the one folder
+  // its space shares, read now so a change applies from the next turn (DOR-2956).
+  // Cleared the same way, so the owner's next turn reaches what it did.
   if (opts?.roomTurn?.teammate === true) {
-    session.teammateTier = { roomId: opts.roomTurn.roomId };
+    session.teammateTier = {
+      roomId: opts.roomTurn.roomId,
+      sharedFolder: sharedFolderOf(opts.roomTurn.roomId),
+    };
   } else {
     delete session.teammateTier;
   }

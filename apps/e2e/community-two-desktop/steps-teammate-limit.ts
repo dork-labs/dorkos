@@ -54,7 +54,7 @@ export async function teammateLimitStep(w: World, needs: TeammateLimitStepNeeds)
         (r) =>
           r.request().method() === 'PUT' && new URL(r.url()).pathname.endsWith('/teammate-spend')
       );
-      await teammates.getByRole('button', { name: 'Save', exact: true }).click();
+      await teammates.getByRole('button', { name: 'Save limit', exact: true }).click();
       assert.equal((await saved).status(), 200, 'B sets the monthly limit');
       await expect(
         teammates.getByText(/^Limit \$0\.10 a month · \$\d+\.\d\d spent this month, approximate$/)

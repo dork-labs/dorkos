@@ -23,15 +23,17 @@
  * permission rules, so a rule the owner once saved ("Always allow" on a tool) does not carry a
  * teammate past it either (`runtimes/claude-code/teammate-tier-hook.ts`).
  *
- * ## No files, at any path
+ * ## Files: the space's shared folder, and nothing else
  *
- * Claude Code reads without asking inside the agent's folder AND inside every extra directory a
+ * Claude Code reads without asking inside its working folder AND inside every extra directory a
  * person's settings grant, which on a real machine can be another private repository or the
- * whole transcript store. A name-only allowance for `Read` therefore let a teammate read
- * whatever those grants covered. So until the tier brings scoped reads (C7: "the shared project
- * and public notes only"), a teammate's turn reads no files at all, and it may not attach
- * one to a post either: the agent's own folder can hold `.env` files, keys, its memory file and
- * MCP tokens.
+ * whole transcript store. A name-only allowance for `Read` would let a teammate read whatever
+ * those cover. So a teammate's turn runs from an empty folder of its own with no grants, and
+ * `Read` is allowed for one file at a time, decided on its realpath against the one folder the
+ * space's owner shared (`shared-folder.ts`), and handed the resolved path. No shared folder, no
+ * reads. Listing and searching go through two DorkOS tools that check every result the same way;
+ * the runtime's own `Glob`, `Grep` and `LS` stay refused, since they would walk wherever a link
+ * leads. A post may not carry a file: an attachment is a file read under another name.
  *
  * ## Extended row by row, never replaced
  *
@@ -44,10 +46,14 @@
  * @module services/core/turn-power/teammate-tier
  */
 
-/** The room a teammate's turn answers, and so the only room its DorkOS tools may reach. */
+import { sharedFileVerdict } from './shared-folder.js';
+
+/** The room a teammate's turn answers, and the one folder it may read. */
 export interface TeammateTierScope {
   /** The local room id the turn answers in (`MessageOpts.roomTurn.roomId`). */
   roomId: string;
+  /** The space's shared folder, or `null` when its owner shared none. */
+  sharedFolder: string | null;
 }
 
 /**
@@ -55,10 +61,13 @@ export interface TeammateTierScope {
  *
  * - `this-room`: run, when its `roomId` argument is the room the turn answers and it carries
  *   none of the `without` arguments, and then only as the rest of the gate decides;
+ * - `shared-folder`: run, when the space shares a folder; the tool itself checks each file;
  * - `refuse`: never, with the reason kept for the reviewer reading this table.
  */
 export type TeammateToolRule =
-  { kind: 'this-room'; without?: readonly string[] } | { kind: 'refuse'; why: string };
+  | { kind: 'this-room'; without?: readonly string[] }
+  | { kind: 'shared-folder' }
+  | { kind: 'refuse'; why: string };
 
 const THIS_ROOM: TeammateToolRule = { kind: 'this-room' };
 const refuse = (why: string): TeammateToolRule => ({ kind: 'refuse', why });
@@ -72,6 +81,9 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   // The room it answers: replying and reading are the whole point of being asked.
   // A post may carry no file: an attachment is a file read under another name.
   post_to_room: { kind: 'this-room', without: ['attachments'] },
+  // The space's shared folder: listed and searched on the server, each file checked there.
+  shared_files_list: { kind: 'shared-folder' },
+  shared_files_search: { kind: 'shared-folder' },
   react_to_room_entry: THIS_ROOM,
   read_room_history: THIS_ROOM,
   search_room_history: THIS_ROOM,
@@ -114,9 +126,9 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
 };
 
 /**
- * The runtime's own tools a teammate turn may use: a to-do list that stays in the turn. No file
- * reads at any path (see "No files, at any path" above; C7 brings scoped ones), no shell, no
- * writes, no web (a fetch can carry what was read to anywhere).
+ * The runtime's own tools a teammate turn may use: a to-do list that stays in the turn. `Read` is
+ * decided per file ({@link teammateTierDecision}). No shell, no writes, no `Glob`/`Grep`/`LS`, no
+ * web (a fetch can carry what was read to anywhere).
  */
 export const TEAMMATE_BUILT_IN_TOOLS: ReadonlySet<string> = new Set(['TodoWrite']);
 
@@ -133,7 +145,7 @@ export interface TeammateTierCall {
 /** The reason the model is handed when the tier refuses a call. */
 export const TEAMMATE_TIER_DENIAL =
   'Refused: a teammate in a shared space started this turn, so it can only read and post in ' +
-  'this room, with no files. Tell them what you could not do.';
+  'this room, and read the shared folder if the space has one. Tell them what you could not do.';
 
 /**
  * Whether a teammate turn may make this call: `null` to let the rest of the gate decide, or the
@@ -154,6 +166,7 @@ export function teammateTierRefusal(
   const rule = Object.hasOwn(TEAMMATE_DORKOS_TOOLS, call.name)
     ? TEAMMATE_DORKOS_TOOLS[call.name]!
     : undefined;
+  if (rule?.kind === 'shared-folder') return scope.sharedFolder ? null : TEAMMATE_TIER_DENIAL;
   if (rule?.kind !== 'this-room' || call.input.roomId !== scope.roomId) return TEAMMATE_TIER_DENIAL;
   const carries = (rule.without ?? []).some((arg) => present(call.input[arg]));
   return carries ? TEAMMATE_TIER_DENIAL : null;
@@ -163,4 +176,37 @@ export function teammateTierRefusal(
 function present(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   return !Array.isArray(value) || value.length > 0;
+}
+
+/**
+ * What the tier decides about one call: refuse it, let the gate decide, allow a read of one shared
+ * file by its resolved path, or allow a shared-folder tool (which checks each file itself).
+ */
+export type TeammateTierDecision =
+  { refuse: string } | { allowRead: { filePath: string } } | { allow: true } | null;
+
+/**
+ * The whole decision for a teammate turn's call, the built-in `Read` included: a file inside the
+ * shared folder is allowed, by its resolved path, past the runtime's own read rules (which would
+ * otherwise ask, and a teammate's turn has nobody to ask); any other file is refused.
+ *
+ * @param scope - The room the turn answers and the folder it may read.
+ * @param call - The tool, where it comes from, and its arguments.
+ */
+export async function teammateTierDecision(
+  scope: TeammateTierScope,
+  call: TeammateTierCall
+): Promise<TeammateTierDecision> {
+  if (call.source === 'built-in' && call.name === 'Read') {
+    const verdict = await sharedFileVerdict(scope.sharedFolder, call.input.file_path);
+    return verdict.ok
+      ? { allowRead: { filePath: verdict.realPath } }
+      : { refuse: `${TEAMMATE_TIER_DENIAL} (${verdict.reason})` };
+  }
+  const refusal = teammateTierRefusal(scope, call);
+  if (refusal !== null) return { refuse: refusal };
+  // Allowed here rather than by the runtime's card-free list: they answer only in a teammate's
+  // turn, which has nobody to ask, so the runtime's gate would only refuse them.
+  const rule = call.source === 'dorkos' ? TEAMMATE_DORKOS_TOOLS[call.name] : undefined;
+  return rule?.kind === 'shared-folder' ? { allow: true } : null;
 }

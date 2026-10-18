@@ -26,6 +26,8 @@
  * @module services/runtimes/shared/agent-context
  */
 import os from 'node:os';
+import path from 'node:path';
+import { lstat, readFile } from 'node:fs/promises';
 import { readHomeManifest, type AgentHome } from '../../core/agent-identity/index.js';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
@@ -482,6 +484,29 @@ function buildTeammateEnvBlock(): string {
   return `<env>\nPlatform: ${os.platform()}\n</env>`;
 }
 
+/** The most of an agent's public notes a teammate's turn is shown, in characters. */
+export const PUBLIC_NOTES_MAX_CHARS = 4000;
+
+/**
+ * The `<public_notes>` block of a teammate's turn (DOR-2956): what the owner wrote in the agent's
+ * `.dork/PUBLIC.md` for anyone in a shared space, cut to {@link PUBLIC_NOTES_MAX_CHARS}. Only a
+ * plain file counts: a link could point at anything on the computer. The owner's own notes
+ * (MEMORY.md) are never in a teammate's turn.
+ *
+ * @param home - The agent's home.
+ */
+async function buildPublicNotesBlock(home: AgentHome): Promise<string> {
+  const file = path.join(home, '.dork', 'PUBLIC.md');
+  const info = await lstat(file).catch(() => null);
+  if (!info?.isFile()) return '';
+  const text = (await readFile(file, 'utf8')).trim();
+  if (!text) return '';
+  const shown =
+    text.length > PUBLIC_NOTES_MAX_CHARS ? `${text.slice(0, PUBLIC_NOTES_MAX_CHARS)}…` : text;
+  // The notes are the owner's words, but a teammate's turn treats them as text, not as orders.
+  return `<public_notes>\n${shown.replace(/<\/?public_notes>/gi, '')}\n</public_notes>`;
+}
+
 /**
  * Build the `<agent_browser>` notice: said only when the agent has an enabled
  * signed-in browser (spec `agent-browser-sessions`) whose saved session signs
@@ -698,10 +723,11 @@ export async function buildAgentContextAppend(
   cwd: string,
   options: AgentContextOptions = {}
 ): Promise<AgentContextAppend> {
-  const [agent, profile, envBlock] = await Promise.all([
+  const [agent, profile, envBlock, publicNotes] = await Promise.all([
     home ? settle(buildAgentBlock(home, options), EMPTY_APPEND) : EMPTY_APPEND,
     options.teammate ? '' : settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
     options.teammate ? buildTeammateEnvBlock() : settle(buildEnvBlock(cwd), ''),
+    options.teammate && home ? settle(buildPublicNotesBlock(home), '') : '',
   ]);
 
   // A session with no agent (no home, no manifest, or a failed read) still gets
@@ -711,8 +737,8 @@ export async function buildAgentContextAppend(
   // Assembled twice from the same parts — see `buildAgentBlock` for why the
   // memory segment is left OUT of `stable` rather than cut out of `text`.
   const append = {
-    text: [agent.text, rules, profile, envBlock].filter(Boolean).join('\n\n'),
-    stable: [agent.stable, rules, profile, envBlock].filter(Boolean).join('\n\n'),
+    text: [agent.text, rules, profile, envBlock, publicNotes].filter(Boolean).join('\n\n'),
+    stable: [agent.stable, rules, profile, envBlock, publicNotes].filter(Boolean).join('\n\n'),
     memory: agent.memory,
   };
 

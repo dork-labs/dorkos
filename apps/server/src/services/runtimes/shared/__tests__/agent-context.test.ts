@@ -9,6 +9,7 @@ import {
   _buildAgentBlock as buildAgentBlock,
   _buildUserProfileBlock as buildUserProfileBlock,
   buildAgentContextAppend,
+  PUBLIC_NOTES_MAX_CHARS,
 } from '../agent-context.js';
 
 // Mock the shared modules
@@ -520,6 +521,48 @@ describe('a teammate’s turn (DOR-2956)', () => {
       expect(half).not.toContain(cwd);
       expect(half).not.toContain('Hostname:');
       expect(half).toContain(`<env>\nPlatform: ${process.platform}\n</env>`);
+    }
+  });
+
+  it('shows the agent’s public notes, capped, and only to a teammate’s turn', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'public-notes-'));
+    try {
+      fs.mkdirSync(path.join(home, '.dork'));
+      fs.writeFileSync(path.join(home, '.dork', 'PUBLIC.md'), 'Ask me about the launch plan.');
+      fs.writeFileSync(path.join(home, '.dork', 'MEMORY.md'), 'private owner note');
+      const teammate = await buildAgentContextAppend(testHome(home), home, {
+        memory: false,
+        teammate: true,
+      });
+      expect(teammate.text).toContain(
+        '<public_notes>\nAsk me about the launch plan.\n</public_notes>'
+      );
+      expect(teammate.text).not.toContain('private owner note');
+      const owner = await buildAgentContextAppend(testHome(home), home);
+      expect(owner.text).not.toContain('<public_notes>');
+      fs.writeFileSync(
+        path.join(home, '.dork', 'PUBLIC.md'),
+        'x'.repeat(PUBLIC_NOTES_MAX_CHARS + 50)
+      );
+      const long = await buildAgentContextAppend(testHome(home), home, { teammate: true });
+      expect(long.text).toContain(`${'x'.repeat(PUBLIC_NOTES_MAX_CHARS)}…`);
+      expect(long.text).not.toContain('x'.repeat(PUBLIC_NOTES_MAX_CHARS + 1));
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('shows no public notes through a link, which could point at any file', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'public-notes-link-'));
+    try {
+      fs.mkdirSync(path.join(home, '.dork'));
+      fs.writeFileSync(path.join(home, 'secret.txt'), 'owner secret');
+      fs.symlinkSync(path.join(home, 'secret.txt'), path.join(home, '.dork', 'PUBLIC.md'));
+      const teammate = await buildAgentContextAppend(testHome(home), home, { teammate: true });
+      expect(teammate.text).not.toContain('owner secret');
+      expect(teammate.text).not.toContain('<public_notes>');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 

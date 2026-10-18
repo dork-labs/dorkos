@@ -7,6 +7,7 @@
  * real model would have stopped sending. Each case here pins one such setting
  * against the reason it exists.
  */
+import { setSharedFolderResolver } from '../../../../core/turn-power/shared-folder.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -159,7 +160,7 @@ describe('the launch options every Claude Code turn is given', () => {
     const signal = { signal: new AbortController().signal };
 
     expect(await hook(call, 'tool-1', signal)).toEqual({});
-    session.teammateTier = { roomId: 'room-answered' };
+    session.teammateTier = { roomId: 'room-answered', sharedFolder: null };
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
     });
@@ -254,6 +255,53 @@ describe('the launch options every Claude Code turn is given', () => {
       text: '<env>mock</env>',
       stable: '<env>mock</env>',
     });
+  });
+
+  it('stands a teammate’s turn in an empty folder of its own, with no git status (DOR-2956)', async () => {
+    // Red when: a teammate's turn stands at the agent's folder (Claude Code would name it in its
+    // own environment note), is shown the folder's git status, or is not told what it may read.
+    setSharedFolderResolver((roomId) => (roomId === 'room-a' ? '/shared/acme' : null));
+    try {
+      const context = [
+        {
+          kind: 'git_status' as const,
+          scope: 'per-turn' as const,
+          data: { isRepo: true, branch: 'owner-secret-branch', clean: true },
+        },
+      ];
+      const resolve = (roomTurn: NonNullable<MessageOpts['roomTurn']>) =>
+        resolveLaunch({
+          sessionId: 's1',
+          content: 'hello',
+          session: makeSession(),
+          opts: makeOpts(),
+          messageOpts: { roomTurn, additionalContext: context } as MessageOpts,
+          effectiveCwd: '/mock/project',
+        });
+      const teammate = await resolve({
+        roomId: 'room-a',
+        authorId: 'ana',
+        turnId: 't1',
+        teammate: true,
+      });
+      const owner = await resolve({ roomId: 'room-a', authorId: 'ana', turnId: 't2' });
+
+      expect(teammate.sdkOptions.cwd).toContain(path.join('dorkos-teammate-turns', ''));
+      expect(teammate.sdkOptions.cwd).not.toContain('/mock/project');
+      expect(owner.sdkOptions.cwd).toBe('/mock/project');
+      expect(teammate.enrichedContent).not.toContain('<git_status>');
+      expect(owner.enrichedContent).toContain('<git_status>');
+      const append = (teammate.sdkOptions.systemPrompt as { append: string }).append;
+      expect(append).toContain("the space's shared folder, /shared/acme");
+      expect(
+        compareLaunchFingerprints(
+          captureLaunchFingerprint(owner.launch),
+          captureLaunchFingerprint(teammate.launch)
+        ).action
+      ).toBe('relaunch');
+    } finally {
+      setSharedFolderResolver(() => null);
+    }
   });
 
   // DOR-2955, review B1/B2: Claude Code reads `@path` and runs a leading `/name`

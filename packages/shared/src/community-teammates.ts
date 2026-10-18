@@ -60,6 +60,16 @@ export const CommunityTeammateSpendSchema = z.strictObject({
    * when the space no longer lets them add one.
    */
   hasAgentsHere: z.boolean(),
+  /**
+   * The folder this space shares with teammates' turns, or `null` for none (DOR-2956). The only
+   * files such a turn may read.
+   */
+  sharedFolder: z.string().nullable(),
+});
+
+/** `PUT /api/community-connections/:ref/teammate-shared-folder`: share a folder, or none. */
+export const CommunityTeammateSharedFolderRequestSchema = z.strictObject({
+  sharedFolder: z.string().trim().min(1).max(4096).nullable(),
 });
 /** One space's teammate spending this month. */
 export type CommunityTeammateSpend = z.infer<typeof CommunityTeammateSpendSchema>;
@@ -79,5 +89,10 @@ export interface CommunityTeammatesTransport {
   setCommunityTeammateSpendLimit(
     ref: string,
     monthlyLimitUsd: number | null
+  ): Promise<CommunityTeammateSpend>;
+  /** Share a folder with teammates' turns, or none; resolves with the settings as they stand. */
+  setCommunityTeammateSharedFolder(
+    ref: string,
+    sharedFolder: string | null
   ): Promise<CommunityTeammateSpend>;
 }

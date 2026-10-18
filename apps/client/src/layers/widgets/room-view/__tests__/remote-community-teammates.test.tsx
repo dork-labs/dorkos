@@ -20,6 +20,7 @@ function mount(
     spentUsd: number;
     approximate: boolean;
     hasAgentsHere: boolean;
+    sharedFolder: string | null;
   }> = {},
   canEnroll = true
 ) {
@@ -30,6 +31,7 @@ function mount(
     approximate: false,
     month: '2026-10',
     hasAgentsHere: false,
+    sharedFolder: null,
     ...spend,
   });
   render(
@@ -85,7 +87,7 @@ describe('the Teammates block', () => {
     const transport = mount();
     const field = await screen.findByLabelText('Monthly limit for teammates');
     fireEvent.change(field, { target: { value: '25' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save limit' }));
     await waitFor(() =>
       expect(transport.setCommunityTeammateSpendLimit).toHaveBeenCalledWith('a', 25)
     );
@@ -97,9 +99,9 @@ describe('the Teammates block', () => {
     // Review B1: a tenth of a cent rounds to nothing, so it is refused here as on the server.
     fireEvent.change(field, { target: { value: '0.004' } });
     expect(screen.getByText('Enter at least $0.01, or leave it empty.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save limit' })).toBeDisabled();
     fireEvent.change(field, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save limit' }));
     await waitFor(() =>
       expect(transport.setCommunityTeammateSpendLimit).toHaveBeenCalledWith('a', null)
     );
@@ -114,5 +116,27 @@ describe('the Teammates block', () => {
     await waitFor(() =>
       expect(transport.setCommunityWakeAgentsFrom).toHaveBeenCalledWith('a', 'me')
     );
+  });
+
+  it('says no folder is shared by default, and saves one (DOR-2956)', async () => {
+    const transport = mount();
+    expect(await screen.findByText('Teammates’ turns read no files.')).toBeInTheDocument();
+    const field = screen.getByLabelText('Shared folder');
+    fireEvent.change(field, { target: { value: '/Users/ada/code/acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save folder' }));
+    await waitFor(() =>
+      expect(transport.setCommunityTeammateSharedFolder).toHaveBeenCalledWith(
+        'a',
+        '/Users/ada/code/acme'
+      )
+    );
+  });
+
+  it('shows the folder shared, and what is never read there', async () => {
+    mount({ sharedFolder: '/Users/ada/code/acme' });
+    expect(await screen.findByLabelText('Shared folder')).toHaveValue('/Users/ada/code/acme');
+    expect(
+      screen.getByText('Teammates’ turns can read files here, never .env files, .git or .dork.')
+    ).toBeInTheDocument();
   });
 });

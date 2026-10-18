@@ -94,6 +94,14 @@ export function createCommunityMethods(baseUrl: string): CommunityConnectionTran
         })
       );
     },
+    async setCommunityTeammateSharedFolder(ref, sharedFolder) {
+      return CommunityTeammateSpendSchema.parse(
+        await fetchJSON(baseUrl, `${path(ref)}/teammate-shared-folder`, {
+          method: 'PUT',
+          body: JSON.stringify({ sharedFolder }),
+        })
+      );
+    },
     async getCommunityNavigation() {
       return CommunityNavigationStateSchema.parse(
         await fetchJSON(baseUrl, '/community-connections/navigation')

@@ -1,4 +1,5 @@
 import type { TranscriptReader } from '../sessions/transcript-reader.js';
+import type { TeammateTierScope } from '../../../core/turn-power/teammate-tier.js';
 import type { TaskStore } from '../../../tasks/task-store.js';
 import type { TaskRegistrar } from '../../../tasks/task-registrar.js';
 import type { RelayCore } from '@dorkos/relay';
@@ -69,6 +70,11 @@ export interface McpToolSession {
   turnPermissionCeiling?: TurnPermissionCeiling;
   /** The ceiling background work from an earlier ceilinged turn still runs under. */
   backgroundPermissionCeiling?: TurnPermissionCeiling;
+  /**
+   * The teammate tier of the turn in flight (`AgentSession`'s field of the same name): the room
+   * it answers and the space's shared folder. Read at call time by the shared-folder tools.
+   */
+  teammateTier?: TeammateTierScope;
 }
 
 /**

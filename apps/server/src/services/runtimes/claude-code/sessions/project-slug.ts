@@ -38,6 +38,7 @@
  *
  * @module services/runtimes/claude-code/sessions/project-slug
  */
+import { teammateTurnFolderPath } from '../../../core/turn-power/teammate-turn-folder.js';
 import { realpathSync } from 'fs';
 import path from 'path';
 
@@ -176,4 +177,15 @@ export function subtreeSlugScope(cwd: string): (slugDirName: string) => boolean 
   if (replaced.length > PROJECT_SLUG_MAX_LENGTH) return () => true;
   const nested = `${replaced}-`;
   return (slugDirName) => slugDirName === replaced || slugDirName.startsWith(nested);
+}
+
+/**
+ * Every project folder a session standing in `vaultRoot` may be filed under, in the order to look:
+ * its own, then the empty folder a teammate's turn of that agent stands in, where a conversation
+ * that BEGAN with a teammate's turn is filed (DOR-2956, `teammate-turn-folder.ts`).
+ *
+ * @param vaultRoot - The folder the session stands in.
+ */
+export function transcriptSlugsOf(vaultRoot: string): string[] {
+  return [projectSlug(vaultRoot), projectSlug(teammateTurnFolderPath(vaultRoot))];
 }

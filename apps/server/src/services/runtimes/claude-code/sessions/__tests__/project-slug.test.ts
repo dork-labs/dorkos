@@ -166,3 +166,17 @@ describe('subtreeSlugScope', () => {
     expect(wide('-something-else-entirely')).toBe(true);
   });
 });
+
+describe('transcriptSlugsOf (DOR-2956)', () => {
+  it('looks in the home’s own folder first, then where its teammate turns stand', async () => {
+    const { transcriptSlugsOf, projectSlug } = await import('../project-slug.js');
+    const { teammateTurnFolderPath } =
+      await import('../../../../core/turn-power/teammate-turn-folder.js');
+    expect(transcriptSlugsOf('/Users/ada/agents/ana')).toEqual([
+      projectSlug('/Users/ada/agents/ana'),
+      projectSlug(teammateTurnFolderPath('/Users/ada/agents/ana')),
+    ]);
+    // Neither folder of the teammate's names the home.
+    expect(teammateTurnFolderPath('/Users/ada/agents/ana')).not.toContain('ana');
+  });
+});

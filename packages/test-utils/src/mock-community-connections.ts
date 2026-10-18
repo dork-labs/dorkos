@@ -23,6 +23,7 @@ export function communityConnectionTransportMocks(): CommunityConnectionTranspor
       approximate: false,
       month: '2026-10',
       hasAgentsHere: false,
+      sharedFolder: null,
     }),
     setCommunityTeammateSpendLimit: vi.fn(async (_ref: string, monthlyLimitUsd: number | null) => ({
       monthlyLimitUsd,
@@ -30,6 +31,15 @@ export function communityConnectionTransportMocks(): CommunityConnectionTranspor
       approximate: false,
       month: '2026-10',
       hasAgentsHere: false,
+      sharedFolder: null,
+    })),
+    setCommunityTeammateSharedFolder: vi.fn(async (_ref: string, sharedFolder: string | null) => ({
+      monthlyLimitUsd: null,
+      spentUsd: 0,
+      approximate: false,
+      month: '2026-10',
+      hasAgentsHere: false,
+      sharedFolder,
     })),
     startCommunityConnection: vi.fn(),
     getCommunityConnection: vi.fn(),

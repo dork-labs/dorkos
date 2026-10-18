@@ -66,6 +66,24 @@ export class SessionRootIndex {
   }
 
   /**
+   * {@link forTranscript} for the first of several project folders that holds the session, with
+   * the folder it was found in.
+   *
+   * @param slugs - The project folders to look in, in order.
+   * @param sessionId - The session.
+   */
+  async forTranscriptIn(
+    slugs: readonly string[],
+    sessionId: string
+  ): Promise<{ root: string; slug: string } | undefined> {
+    for (const slug of slugs) {
+      const root = await this.forTranscript(slug, sessionId);
+      if (root !== undefined) return { root, slug };
+    }
+    return undefined;
+  }
+
+  /**
    * The account holding this session's transcript.
    *
    * @param slug - Project slug of the session's working directory.

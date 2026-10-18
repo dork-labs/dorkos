@@ -4,6 +4,8 @@
  *
  * - `GET /api/community-connections/:ref/teammate-spend`
  * - `PUT /api/community-connections/:ref/teammate-spend {monthlyLimitUsd}` (`null` clears it)
+ * - `PUT /api/community-connections/:ref/teammate-shared-folder {sharedFolder}` (`null` shares
+ *   nothing): the one folder teammates' turns may read (DOR-2956)
  *
  * Owner-only, like every route on this router: `resolveCommunityOwner` refuses an agent's
  * identity, a remote caller and anyone but this install's owner, and no DorkOS tool or config key
@@ -14,17 +16,21 @@
 import type { Context, Hono } from 'hono';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
+  CommunityTeammateSharedFolderRequestSchema,
   CommunityTeammateSpendLimitRequestSchema,
   CommunityTeammateSpendSchema,
 } from '@dorkos/shared/community-teammates';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
-import type { TeammateSpend } from '../services/communities/remote/wake/teammate-spend.js';
+import {
+  SharedFolderRefusedError,
+  type TeammateSpend,
+} from '../services/communities/remote/wake/teammate-spend.js';
 import { getRemoteCommunityEnrollmentStore } from '../services/communities/remote/state.js';
 
 /** What the routes need of the spending counter. */
-export type TeammateSpendPolicy = Pick<TeammateSpend, 'summary' | 'setLimit'>;
+export type TeammateSpendPolicy = Pick<TeammateSpend, 'summary' | 'setLimit' | 'setSharedFolder'>;
 
 /** Whether the owner has an agent enrolled in a space, from this install's own records. */
 export type HasAgentsHere = (ref: CommunityRef, owner: string) => boolean;
@@ -80,6 +86,21 @@ export function addTeammateSpendRoutes(
       await spend().setLimit(ref.data, owner, body.data.monthlyLimitUsd);
       return c.json(await read(ref.data, owner));
     } catch (error) {
+      return failure(c, error);
+    }
+  });
+  router.put('/:ref/teammate-shared-folder', async (c) => {
+    const owner = resolveCommunityOwner(c);
+    if (typeof owner !== 'string') return owner;
+    const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
+    if (!ref.success) return notFound(c);
+    const body = CommunityTeammateSharedFolderRequestSchema.safeParse(readJsonBody(c));
+    if (!body.success) return c.json({ error: 'Enter a folder’s full path, or none.' }, 400);
+    try {
+      await spend().setSharedFolder(ref.data, owner, body.data.sharedFolder);
+      return c.json(await read(ref.data, owner));
+    } catch (error) {
+      if (error instanceof SharedFolderRefusedError) return c.json({ error: error.message }, 400);
       return failure(c, error);
     }
   });

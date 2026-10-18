@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { roundToCents, TEAMMATE_SPEND_LIMIT_MIN_USD } from '@dorkos/shared/community-teammates';
 import { useCommunityTeammates, useUpdateCommunityTeammates } from '@/layers/entities/community';
+import { SharedFolderField } from './SharedFolderField';
 import {
   Button,
   Input,
@@ -18,8 +19,9 @@ function dollars(usd: number): string {
 }
 
 /**
- * The owner's say over teammates in a space (DOR-2956): who may wake their agents here, and the
- * monthly limit on what teammates' turns may cost. "No limit" is the default, said plainly.
+ * The owner's say over teammates in a space (DOR-2956): who may wake their agents here, the
+ * monthly limit on what teammates' turns may cost ("No limit" by default, said plainly), and the
+ * one folder those turns may read (none by default).
  *
  * Shown while the owner may add agents here, or has one here already, even when the space no
  * longer lets them add another.
@@ -103,6 +105,7 @@ export function RemoteCommunityTeammates({
               <Button
                 type="submit"
                 size="sm"
+                aria-label="Save limit"
                 disabled={!online || !valid || !changed || update.isPending}
               >
                 Save
@@ -123,6 +126,7 @@ export function RemoteCommunityTeammates({
               </p>
             )}
           </form>
+          <SharedFolderField community={community} online={online} saved={spend.sharedFolder} />
           {update.isError && (
             <p role="alert" className="text-destructive text-sm">
               Couldn’t save. Try again.

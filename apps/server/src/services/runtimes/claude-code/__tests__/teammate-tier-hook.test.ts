@@ -2,6 +2,9 @@
  * The teammate fence in Claude Code (DOR-2955): the per-turn field a teammate's turn sets, and the
  * `PreToolUse` hook that refuses what that turn may not use, before any allow rule is read.
  */
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { TEAMMATE_TIER_DENIAL } from '../../../core/turn-power/teammate-tier.js';
@@ -53,12 +56,15 @@ describe('assignTurnBounds', () => {
       unattended: true,
       roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
     });
-    expect(session.teammateTier).toEqual({ roomId: 'room-a' });
+    expect(session.teammateTier).toEqual({ roomId: 'room-a', sharedFolder: null });
     expect(session.unattendedTurn).toBe(true);
   });
 
   it('clears the fence on the next turn that is not a teammate’s', () => {
-    const session: Bounds = { teammateTier: { roomId: 'room-a' }, unattendedTurn: true };
+    const session: Bounds = {
+      teammateTier: { roomId: 'room-a', sharedFolder: null },
+      unattendedTurn: true,
+    };
     assignTurnBounds(session, { roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' } });
     expect(session.teammateTier).toBeUndefined();
     expect(session.unattendedTurn).toBe(false);
@@ -73,7 +79,7 @@ describe('the teammate fence hook', () => {
   });
 
   it('refuses another room, and lets the answered room through', async () => {
-    const session: Bounds = { teammateTier: { roomId: 'room-a' } };
+    const session: Bounds = { teammateTier: { roomId: 'room-a', sharedFolder: null } };
     expect(
       await decide(session, call('mcp__dorkos__read_room_history', { roomId: 'room-owner' }))
     ).toEqual(DENY);
@@ -83,16 +89,22 @@ describe('the teammate fence hook', () => {
   });
 
   it('refuses the cross-room reads and the shell outright', async () => {
-    const session: Bounds = { teammateTier: { roomId: 'room-a' } };
+    const session: Bounds = { teammateTier: { roomId: 'room-a', sharedFolder: null } };
     for (const tool of ['mcp__dorkos__search_member_rooms', 'mcp__dorkos__chat_read', 'Bash']) {
       expect(await decide(session, call(tool, { roomId: 'room-a' }))).toEqual(DENY);
     }
-    expect(await decide(session, call('Read', { file_path: 'notes.md' }))).toEqual(DENY);
+    const read = (await decide(session, call('Read', { file_path: '/anywhere/notes.md' }))) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+    expect(read.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(read.hookSpecificOutput.permissionDecisionReason).toContain(
+      'this space shares no folder'
+    );
     expect(await decide(session, call('TodoWrite', { todos: [] }))).toEqual({});
   });
 
   it('treats a configured server calling itself dorkos as another server, and refuses it', async () => {
-    const session: Bounds = { teammateTier: { roomId: 'room-a' } };
+    const session: Bounds = { teammateTier: { roomId: 'room-a', sharedFolder: null } };
     expect(
       await decide(
         session,
@@ -104,9 +116,32 @@ describe('the teammate fence hook', () => {
   it('reads the fence when the call is made, not when the hook was built', async () => {
     const session: Bounds = {};
     const hook = createTeammateTierHook(session);
-    session.teammateTier = { roomId: 'room-a' };
+    session.teammateTier = { roomId: 'room-a', sharedFolder: null };
     expect(await hook(call('Bash'), 'tool-1', signal)).toEqual(DENY);
     delete session.teammateTier;
     expect(await hook(call('Bash'), 'tool-1', signal)).toEqual({});
+  });
+
+  it('allows a Read of a shared file past the runtime’s own rules, by its resolved path', async () => {
+    const base = await realpath(await mkdtemp(path.join(tmpdir(), 'hook-read-')));
+    try {
+      await mkdir(path.join(base, 'acme'));
+      await writeFile(path.join(base, 'acme', 'plan.md'), 'plan');
+      const session: Bounds = {
+        teammateTier: { roomId: 'room-a', sharedFolder: path.join(base, 'acme') },
+      };
+      expect(
+        await decide(session, call('Read', { file_path: `${base}/acme/./plan.md`, limit: 10 }))
+      ).toEqual({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: 'A file in the space’s shared folder.',
+          updatedInput: { file_path: path.join(base, 'acme', 'plan.md'), limit: 10 },
+        },
+      });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });

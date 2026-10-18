@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -1307,6 +1307,33 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
       expect((await request(spendServer).get(path).set(header[0], header[1])).status).toBe(403);
     }
     expect((await spend.summary(spendRef, 'author-a')).monthlyLimitUsd).toBe(5);
+  });
+
+  it('shares a folder for the owner only, and refuses one that is not a folder (DOR-2956)', async () => {
+    const folderPath = `/api/community-connections/${spendRef}/teammate-shared-folder`;
+    const shared = await request(spendServer)
+      .put(folderPath)
+      .set('x-test-author', 'author-a')
+      .send({ sharedFolder: spendDirectory });
+    expect(shared.status).toBe(200);
+    expect(shared.body.sharedFolder).toBe(await realpath(spendDirectory));
+    const missing = await request(spendServer)
+      .put(folderPath)
+      .set('x-test-author', 'author-a')
+      .send({ sharedFolder: join(spendDirectory, 'nope') });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error).toBe('That folder doesn’t exist.');
+    for (const header of [
+      ['x-dorkos-agent', 'agent-token'],
+      ['x-test-author', 'author-b'],
+    ] as const) {
+      const refused = await request(spendServer)
+        .put(folderPath)
+        .set(header[0], header[1])
+        .send({ sharedFolder: '/' });
+      expect(refused.status).toBe(403);
+    }
+    expect(spend.sharedFolder(spendRef, 'author-a')).toBe(await realpath(spendDirectory));
   });
 
   it('refuses a limit that is not dollars above zero, and a connection that is not there', async () => {

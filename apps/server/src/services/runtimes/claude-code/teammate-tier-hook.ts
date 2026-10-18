@@ -16,7 +16,10 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import { logRefusal } from '../../observability/refusals.js';
-import { teammateTierRefusal, type TeammateTierCall } from '../../core/turn-power/teammate-tier.js';
+import {
+  teammateTierDecision,
+  type TeammateTierCall,
+} from '../../core/turn-power/teammate-tier.js';
 import type { AgentSession } from './agent-types.js';
 import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from './mcp-tools/tool-exposure.js';
 
@@ -40,7 +43,8 @@ function sourceOf(
 
 /**
  * The hook. Answers nothing (the call goes on to the ordinary gate) unless the running turn is a
- * teammate's and the tier refuses the call.
+ * teammate's: then it refuses what the tier refuses, and allows a `Read` of a shared file by its
+ * resolved path, past Claude Code's own read rules, which would otherwise ask nobody.
  *
  * @param session - The session whose running turn may be held to the tier.
  */
@@ -53,11 +57,33 @@ export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    const refusal = teammateTierRefusal(scope, {
+    const decision = await teammateTierDecision(scope, {
       ...sourceOf(hookInput.tool_name, hookInput.mcp_server),
       input,
     });
-    if (refusal === null) return {};
+    if (decision === null) return {};
+    if ('allow' in decision) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: 'The space’s shared folder.',
+        },
+      };
+    }
+    if ('allowRead' in decision) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: 'A file in the space’s shared folder.',
+          // The resolved path, not the one the turn named: a link swapped in after the check
+          // reads nothing new.
+          updatedInput: { ...input, file_path: decision.allowRead.filePath },
+        },
+      };
+    }
+    const refusal = decision.refuse;
     // Shown: the model is handed the reason and the transcript records the
     // refused call. Ids only, never what the teammate wrote.
     logRefusal('[claude-code] a teammate’s turn was refused a tool', {

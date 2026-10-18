@@ -18,7 +18,7 @@ import {
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
-import { projectSlug, subtreeSlugScope } from './project-slug.js';
+import { projectSlug, subtreeSlugScope, transcriptSlugsOf } from './project-slug.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
 import {
@@ -205,9 +205,10 @@ export class TranscriptReader {
     vaultRoot: string,
     sessionId: string
   ): Promise<{ filePath: string; root: string } | null> {
-    const slug = this.getProjectSlug(vaultRoot);
-    const root = await this.rootIndex.forTranscript(slug, sessionId);
-    if (root === undefined) return null;
+    // The home's slug, then where a conversation a teammate's turn began is filed (DOR-2956).
+    const found = await this.rootIndex.forTranscriptIn(transcriptSlugsOf(vaultRoot), sessionId);
+    if (found === undefined) return null;
+    const { root, slug } = found;
     return { root, filePath: path.join(root, 'projects', slug, `${sessionId}.jsonl`) };
   }
 

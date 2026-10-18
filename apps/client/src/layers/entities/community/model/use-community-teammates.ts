@@ -42,8 +42,8 @@ export function useCommunityTeammates(ref: string, enabled = true) {
 }
 
 /**
- * Change who may wake the owner's agents in this space, or its monthly limit, then read both
- * again.
+ * Change who may wake the owner's agents in this space, its monthly limit, or the folder it
+ * shares with teammates' turns, then read them all again.
  *
  * @param ref - The space's connection ref.
  */
@@ -53,10 +53,15 @@ export function useUpdateCommunityTeammates(ref: string) {
   const authority = useConfirmedCommunityAuthority(true);
   return useMutation({
     mutationFn: async (
-      change: { wakeAgentsFrom: 'me' | 'members' } | { monthlyLimitUsd: number | null }
+      change:
+        | { wakeAgentsFrom: 'me' | 'members' }
+        | { monthlyLimitUsd: number | null }
+        | { sharedFolder: string | null }
     ) => {
       if ('wakeAgentsFrom' in change)
         await transport.setCommunityWakeAgentsFrom(ref, change.wakeAgentsFrom);
+      else if ('sharedFolder' in change)
+        await transport.setCommunityTeammateSharedFolder(ref, change.sharedFolder);
       else await transport.setCommunityTeammateSpendLimit(ref, change.monthlyLimitUsd);
     },
     onSettled: async () => {

@@ -189,6 +189,8 @@ interface ProbeTool {
 function inSessionTools(identity?: AgentIdentity): Map<string, ProbeTool> {
   const tools = handRegisteredInSessionTools(createDeps(), {
     ...(identity ? { resolveContext: async () => ({ identity }) } : {}),
+    // As a teammate's turn, so the two shared-folder tools only it lists are gated here too.
+    session: { eventQueue: [], teammateTier: { roomId: 'room', sharedFolder: null } },
   }) as unknown as {
     name: string;
     inputSchema: Record<string, unknown>;
@@ -354,9 +356,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // `spin-off-chats` §7): the six relay send, inbox and endpoint tools
       // retire from both servers. The chat tools replacing them are
       // capabilities, so they move none of these hand-registered counts.
-      expect(registeredByServer['in-session']).toHaveLength(39);
+      // 39 -> 41 in-session for the two shared-folder tools a teammate's turn lists
+      // (DOR-2956), counted from a teammate's session; the external count does not move.
+      expect(registeredByServer['in-session']).toHaveLength(41);
       expect(registeredByServer.external).toHaveLength(37);
-      expect(declaredNames).toHaveLength(39);
+      expect(declaredNames).toHaveLength(41);
     });
 
     it('names exactly two tools destructive', () => {
