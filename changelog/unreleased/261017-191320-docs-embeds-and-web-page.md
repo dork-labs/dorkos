@@ -11,6 +11,8 @@ covers:
   - 'fix(client): draw a bar chart in one colour, with one optional highlighted bar (DOR-2981)'
   - 'fix(client): quieter widget tables, and list dividers that line up with the text (DOR-2981)'
   - 'fix(docs): show why an embed did not draw only to people who can edit the doc (DOR-2981)'
+  - 'refactor(shared): move the widget vocabulary coercion out of ui-widget.ts (DOR-2981)'
+  - 'chore(changelog): fold the seeded refactor fragment into the Docs embeds fragment (DOR-2981)'
 ---
 
 ### Added
