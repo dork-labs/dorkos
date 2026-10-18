@@ -218,7 +218,17 @@ async function redeemForAgentComputer(
   }
   const answer = signedAnswer(deps, signer, request, origin, codeHash);
   if (!answer) return c.json(NOT_READY, 503);
-  const outcome = await deps.redeemAgentComputer(request, cloudComputerId);
+  let outcome: AgentComputerRedeemOutcome;
+  try {
+    outcome = await deps.redeemAgentComputer(request, cloudComputerId);
+  } catch (error) {
+    // Never a bare 500: the book or the store failed under it.
+    logger.warn('[HubRelay] An agent computer`s redeem could not be decided', {
+      error: (error as Error).name,
+    });
+    auditLink(undefined, request, 'failed', 'redeem_failed');
+    return c.json(NOT_READY, 503);
+  }
   switch (outcome.kind) {
     case 'linked':
       auditLink(undefined, request, 'ok');

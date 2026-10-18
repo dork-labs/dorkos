@@ -227,7 +227,18 @@ async function unlinkForSecondRedeem(
   deps: AgentComputerLinkDeps,
   reason: SecondRedeemReason
 ): Promise<Decided> {
-  const unlinked = await deps.unlink(request.computerId);
+  // The event is recorded whether or not the unlink worked: a failed unlink
+  // is the one that most needs a person's eyes.
+  let unlinked: boolean | 'failed';
+  try {
+    unlinked = await deps.unlink(request.computerId);
+  } catch (error) {
+    unlinked = 'failed';
+    logger.error('[HubRelay] An agent computer could not be unlinked after a second redeem', {
+      computerId: request.computerId,
+      error: (error as Error).name,
+    });
+  }
   logger.warn('[HubRelay] An agent computer`s link code was redeemed twice; it was unlinked', {
     computerId: request.computerId,
     reason,
@@ -236,8 +247,8 @@ async function unlinkForSecondRedeem(
   recordAudit({
     action: 'hub.relay.agent-computer.second-redeem',
     operation: 'remove',
-    outcome: 'refused',
-    error: reason,
+    outcome: unlinked === 'failed' ? 'failed' : 'refused',
+    error: unlinked === 'failed' ? `${reason}:unlink_failed` : reason,
     target: { type: 'computer', id: request.computerId, name: request.computerName },
     summary: 'A cloud computer was unlinked for safety: its link code was used twice',
     source: { surface: 'relay' },

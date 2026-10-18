@@ -16,9 +16,8 @@
  * is kept in memory until this process writes the file or its modification
  * time or size changes, so a dial does not re-read it. A file that does not
  * parse reads as no computers, so a damaged file refuses every dial rather
- * than admitting one, and no write replaces it
- * ({@link LinkedComputersUnreadableError}): a store over a damaged file would
- * otherwise drop every other link.
+ * than admitting one. The next write moves it aside (`computers.json.bad-*`)
+ * and starts a fresh list, so linking recovers; it never writes over it.
  *
  * @module services/core/hub-relay/computer-store
  */
@@ -31,6 +30,7 @@ import { RelayPinnedHubKeySchema } from '@dorkos/shared/session-relay';
 import { agentComputerRelayId, cloudComputerIdOf } from '@dorkos/shared/session-relay-link';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
+import { recordAudit } from '../../audit/audit-trail.js';
 
 const FOLDER = 'hub-relay';
 const FILE = 'computers.json';
@@ -223,25 +223,54 @@ function readStore(dorkHome: string): ReadResult {
 }
 
 /**
- * Thrown by a write when the file is there but does not parse. Nothing is
- * written: overwriting it would replace every link it holds with the one being
- * stored. The file is left as it is for someone to look at.
+ * Thrown by a write when the file does not parse and could not be moved
+ * aside. Nothing is written: overwriting it would replace every link it holds
+ * with the one being stored.
  */
 export class LinkedComputersUnreadableError extends Error {
   constructor() {
-    super('The linked computers file could not be read, so nothing was written');
+    super('The linked computers file could not be read or moved aside, so nothing was written');
     this.name = 'LinkedComputersUnreadableError';
   }
 }
 
-/** The list a write starts from; refuses when the file does not parse. */
+/**
+ * The list a write starts from. A file that does not parse is moved aside to
+ * `computers.json.bad-<epoch ms>` (owner-only), with a warning and an audit
+ * row, and the write starts a fresh list, so linking recovers rather than
+ * being refused for good. Its links are lost (each computer links again),
+ * but the file is kept for someone to look at. Throws
+ * {@link LinkedComputersUnreadableError} when it cannot be moved.
+ */
 function readForWrite(dorkHome: string): LinkedComputer[] {
   const read = readStore(dorkHome);
-  if (!read.ok) {
-    logger.error('[HubRelay] The linked computers file does not parse; it was left untouched');
+  if (read.ok) return [...read.computers];
+  const file = filePath(dorkHome);
+  const aside = `${file}.bad-${Date.now()}`;
+  try {
+    fs.renameSync(file, aside);
+    fs.chmodSync(aside, FILE_MODE);
+  } catch (error) {
+    logger.error('[HubRelay] The linked computers file does not parse and could not be moved', {
+      error: (error as Error).name,
+    });
     throw new LinkedComputersUnreadableError();
+  } finally {
+    cache.delete(dorkHome);
   }
-  return [...read.computers];
+  logger.warn('[HubRelay] The linked computers file did not parse; moved aside, starting fresh', {
+    movedTo: path.basename(aside),
+  });
+  recordAudit({
+    action: 'hub.relay.computers.quarantined',
+    operation: 'modify',
+    outcome: 'failed',
+    error: 'unreadable',
+    target: { type: 'file', id: path.basename(aside) },
+    summary: 'The linked computers list could not be read; it was set aside and started fresh',
+    source: { surface: 'relay' },
+  });
+  return [];
 }
 
 /** Read and check the file; anything wrong reads as no computers, and not ok. */

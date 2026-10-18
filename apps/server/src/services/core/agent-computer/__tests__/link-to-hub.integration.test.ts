@@ -389,6 +389,46 @@ describe('the hub refuses an agent computer`s redeem', () => {
     );
   });
 
+  it('still records a second redeem, and still refuses it, when the unlink fails', async () => {
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    expect((await post(redeemBody(cloud.peekCode()!.code))).status).toBe(200);
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    hubDeps.unlink = async () => {
+      throw new Error('disk full');
+    };
+    const res = await post(redeemBody(cloud.peekCode()!.code));
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('LINK_RESET');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'hub.relay.agent-computer.second-redeem',
+        outcome: 'failed',
+        error: 'already_linked_other_key:unlink_failed',
+      })
+    );
+  });
+
+  it('answers a fixed refusal, never a bare 500, when the redeem cannot be decided', async () => {
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    hubDeps.readLinked = () => {
+      throw new Error('disk gone');
+    };
+    const res = await post(redeemBody(cloud.peekCode()!.code));
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('HUB_NOT_READY');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failed', error: 'redeem_failed' })
+    );
+  });
+
+  it('links with the right code after a hundred wrong ones for that computer', async () => {
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    const code = cloud.peekCode()!.code;
+    for (let i = 0; i < 100; i++) await post(redeemBody('0000000000000000'));
+    expect((await post(redeemBody('1111111111111111'))).status).toBe(429);
+    expect((await post(redeemBody(code))).status).toBe(200);
+  });
+
   it('but answers a retry by the key that spent the code (a lost answer)', async () => {
     await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
     const code = cloud.peekCode()!.code;

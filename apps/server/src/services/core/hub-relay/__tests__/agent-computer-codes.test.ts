@@ -134,14 +134,24 @@ describe('on disk', () => {
 });
 
 describe('failures', () => {
-  it('refuses a computer`s claims past too many wrong codes for it, until it is minted again', async () => {
+  it('slows wrong codes past the limit, but the right code still links', async () => {
     const { code } = await book.mint('cmp_1');
     for (let i = 0; i < AGENT_COMPUTER_LINK_MAX_FAILURES; i++) {
-      await claimOn(book, 'cmp_1', '0000000000000000', KEY_A);
+      expect(await claimOn(book, 'cmp_1', '0000000000000000', KEY_B)).toEqual({ kind: 'invalid' });
     }
-    expect(await claimOn(book, 'cmp_1', code, KEY_A)).toEqual({ kind: 'throttled' });
-    const next = await book.mint('cmp_1');
-    expect(await claimOn(book, 'cmp_1', next.code, KEY_A)).toEqual({ kind: 'fresh' });
+    expect(await claimOn(book, 'cmp_1', '1111111111111111', KEY_B)).toEqual({
+      kind: 'throttled',
+    });
+    expect(await claimOn(book, 'cmp_1', code, KEY_A)).toEqual({ kind: 'fresh' });
+  });
+
+  it('clears a computer`s count when it is minted a new code', async () => {
+    await book.mint('cmp_1');
+    for (let i = 0; i < AGENT_COMPUTER_LINK_MAX_FAILURES; i++) {
+      await claimOn(book, 'cmp_1', '0000000000000000', KEY_B);
+    }
+    await book.mint('cmp_1');
+    expect(await claimOn(book, 'cmp_1', '0000000000000000', KEY_B)).toEqual({ kind: 'invalid' });
   });
 
   it('never lets junk for ids with no code lock out a real computer', async () => {

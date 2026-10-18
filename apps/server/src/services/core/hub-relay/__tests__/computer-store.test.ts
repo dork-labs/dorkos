@@ -18,6 +18,8 @@ vi.mock('node:crypto', async (importOriginal) => {
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+const audit = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: audit.record }));
 
 import { logger } from '../../../../lib/logger.js';
 import {
@@ -299,18 +301,44 @@ describe('format 2: agent computers (DOR-2940)', () => {
     expect(stored).toHaveLength(2);
   });
 
-  it('never overwrites a file that does not parse: the store and the unlink refuse', async () => {
+  it('moves a file that does not parse aside, owner-only, and links again from a fresh list', async () => {
     fs.mkdirSync(path.dirname(file()), { recursive: true });
     fs.writeFileSync(file(), '[{"v": 9}]');
-    await expect(
-      linkComputer(
-        { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
-        home
-      )
-    ).rejects.toBeInstanceOf(LinkedComputersUnreadableError);
-    await expect(unlinkComputer('mac-2', home)).rejects.toBeInstanceOf(
-      LinkedComputersUnreadableError
+    expect(readLinkedComputers(home)).toEqual([]);
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
     );
+    expect(readLinkedComputers(home).map((c) => c.computerId)).toEqual(['mac-2']);
+    const aside = fs
+      .readdirSync(path.dirname(file()))
+      .filter((name) => name.startsWith('computers.json.bad-'));
+    expect(aside).toHaveLength(1);
+    const kept = path.join(path.dirname(file()), aside[0]!);
+    expect(fs.readFileSync(kept, 'utf8')).toBe('[{"v": 9}]');
+    expect(fs.statSync(kept).mode & 0o777).toBe(0o600);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('moved aside'),
+      expect.objectContaining({ movedTo: aside[0] })
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'hub.relay.computers.quarantined', outcome: 'failed' })
+    );
+  });
+
+  it('refuses to write, rather than overwrite, a bad file it cannot move', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '[{"v": 9}]');
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    });
+    try {
+      await expect(unlinkComputer('mac-2', home)).rejects.toBeInstanceOf(
+        LinkedComputersUnreadableError
+      );
+    } finally {
+      rename.mockRestore();
+    }
     expect(fs.readFileSync(file(), 'utf8')).toBe('[{"v": 9}]');
   });
 

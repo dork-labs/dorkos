@@ -21,12 +21,10 @@
  *   {@link AgentComputerCodeBook.claim}.
  * - **Slowed on failures, as a backstop, per computer**: past
  *   {@link AGENT_COMPUTER_LINK_MAX_FAILURES} wrong codes for one computer in
- *   the window, that computer's claims are refused until it passes or the hub
- *   mints it a new code. Only a computer that has a code counts failures, so
+ *   the window, further wrong codes for it answer "too many tries" until it
+ *   passes or the hub mints it a new code. The right code is checked first
+ *   and always links, so wrong codes can never hold up the real computer. Only a computer that has a code counts failures, so
  *   codes sent for ids that do not exist cost nothing and lock nobody out.
- *   Someone who knows a real computer's id can still hold it up for a window
- *   by sending it wrong codes; guessing a code is not feasible, and the next
- *   mint clears it.
  *
  * A file that does not parse reads as no codes, so a damaged book refuses
  * every redeem rather than admitting one; the hub mints again.
@@ -164,9 +162,8 @@ export class AgentComputerCodeBook {
    * as minting a new code, goes after `claim` returns.
    *
    * Throttling and the failure count, checked and changed under the same
-   * lock: only a wrong code for a computer that has a code counts, and it
-   * counts against that computer alone, so codes sent for computers that do
-   * not exist can never hold up one that does.
+   * lock, after the code: only a wrong code for a computer that has a code
+   * counts, against that computer alone, and the right code is never slowed.
    *
    * @param computerId - The cloud computer id the redeem names.
    * @param input - The code as the request carried it.
@@ -183,21 +180,20 @@ export class AgentComputerCodeBook {
       const now = this.now();
       const entry = entries.find((e) => e.computerId === computerId);
       if (!entry) return { next: null, after: () => act({ kind: 'invalid' }) };
-      const recent = (this.failures.get(computerId) ?? []).filter(
-        (at) => now - at < AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS
-      );
-      if (recent.length >= AGENT_COMPUTER_LINK_MAX_FAILURES) {
-        this.failures.set(computerId, recent);
-        return { next: null, after: () => act({ kind: 'throttled' }) };
-      }
       const code = normalizeRelayLinkCode(input);
       const offered = Buffer.from(relayLinkCodeHash(code ?? ''), 'base64url');
       const stored = Buffer.from(entry.codeHash, 'base64url');
       const matches =
         code !== null && stored.length === offered.length && timingSafeEqual(stored, offered);
       if (!matches) {
-        this.failures.set(computerId, [...recent, now]);
-        return { next: null, after: () => act({ kind: 'invalid' }) };
+        // Only wrong codes count, and only they are slowed: the right code
+        // links however many wrong ones came before it.
+        const recent = (this.failures.get(computerId) ?? []).filter(
+          (at) => now - at < AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS
+        );
+        const throttled = recent.length >= AGENT_COMPUTER_LINK_MAX_FAILURES;
+        this.failures.set(computerId, throttled ? recent : [...recent, now]);
+        return { next: null, after: () => act({ kind: throttled ? 'throttled' : 'invalid' }) };
       }
       if (entry.spentBy !== null) {
         const byKey = entry.spentBy;
