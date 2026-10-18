@@ -203,6 +203,17 @@ The five promises are requirements the build must keep. The design for each foll
 - **One standing Direct chat per agent.** Talk on the agent opens it, its DM row opens it, and `relay_notify_user` pings land there with an unread dot on the agent's row and in Today. It's created on first need and never auto-archived. Work chats stay separate rows under the agent; a ping about one links to it rather than posting inside it. Not "newest chat": the landing spot would wander.
 - **Migration:** existing person + one agent `kind: 'dm'` rooms (made by `notify-dm.ts` and the Direct messages list) become the start of that agent's Direct chat, history unanimated with original timestamps, and the room row goes away.
 
+**Built ahead of step 4 (DOR-2997).** Until step 4 makes every 1:1 a `chat` conversation, the Direct chat is built from what exists, and nothing is copied or deleted:
+
+- **The room stays as the log underneath.** The operator-plus-one-agent `dm` room (found or made by its exact member set, `dm_member_key`) keeps every entry. `relay_notify_user` still posts there, so `read_room_history` and `post_to_room` keep working for agents, and search, the audit trail and read cursors keep keying on it.
+- **The Direct chat is the agent's seat session in that room** (`room_sessions`), minted on first need. It opens in the 1:1 view. Room turns already in it read as the person's message and the agent's work (DOR-2113 stamps).
+- **Entries that never opened a turn** (pings, and posts the agent made into this DM from its other chats) are drawn in the stream at their real time, unanimated, as ordinary messages from their author: a ping is the agent talking to the person, so it gets the avatar, name and body of any reply. (Showing a link to a work chat as a chip under it is still to come.) Only entries in this DM room appear; the agent's posts in other rooms never do. Opening the chat scrolls to the first unread ping under the "New messages" divider. The person's 1:1 messages go to the session, not the room.
+- **The agent's next turn there gets the notes it hasn't seen**, fenced, so a reply to a ping has its context.
+- **Every door redirects.** The agent's row, Open chat, Today's DM item, the `dm.received` notification, search hits and any old `/channels?id=` link for such a room open the Direct chat, replacing the URL so Back does not bounce. Opening it marks the room read.
+- **A room that gains a member is a room from then on.** The next ping finds no two-member DM and makes a fresh one, and so a fresh Direct chat.
+- **Only the owner has Direct chats.** Anyone else's click on an agent still opens that agent's latest chat with them.
+- **The fold is forward-only and idempotent by construction:** no rows move, so there is nothing to undo and nothing to repeat.
+
 ### 8.2 R2. Every reply links to its turn: "Show work"
 
 - **Affordance:** on hover or focus of any agent entry, the entry's action row gains **Show work**. It's also in the entry's context menu. Like all chrome, it's hidden at rest.
