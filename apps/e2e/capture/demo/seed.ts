@@ -9,6 +9,7 @@ import {
   MINI_APP_MANIFEST,
   MINI_APP_SOURCE,
   PHONE_APPROVAL,
+  SOCIAL_CHAT,
   SOCIAL_POST_IDS,
   SOCIAL_QUEUE_ID,
   TEAM_REPORTS,
@@ -38,6 +39,8 @@ export interface DemoSeeds {
   readonly miniAppSessionId: string;
   /** The agent whose Heartbeat page holds the seeded beats. */
   readonly heartbeatAgentId: string;
+  /** The chat the Social queue tab sits beside, when that flow was seeded. */
+  readonly socialChatSessionId: string | null;
 }
 
 /** POST JSON and return the parsed body, throwing on a non-2xx response. */
@@ -89,13 +92,13 @@ function parsePost(raw: string): { header: Map<string, string>; text: string } {
 
 /**
  * One published post, copied as a fresh `queued` post `daysAhead` days from
- * today. Its text and time of day are kept; what it said about being posted
+ * today, at {@link POST_TIME}. Its text is kept; what it said about being posted
  * (its link, when, its notes and discussion thread) is dropped.
  */
 function requeue(raw: string, daysAhead: number): { day: string; id: string; file: string } {
   const { header, text } = parsePost(raw);
   const oldId = header.get('id') ?? '';
-  const time = (header.get('scheduledFor') ?? '').slice(11, 19) || '09:30:00';
+  const time = POST_TIME;
   // Calendar days, not 24-hour steps: a 23- or 25-hour day at a clock change
   // must not land "tomorrow" on today.
   const [y, m, d] = centralDay(new Date()).split('-').map(Number);
@@ -122,7 +125,10 @@ function requeue(raw: string, daysAhead: number): { day: string; id: string; fil
 }
 
 /** Which day, counted from tomorrow, each post in {@link SOCIAL_POST_IDS} goes on. */
-const DAYS_AHEAD = [1, 1, 2, 3];
+const DAYS_AHEAD = [1, 2, 3];
+
+/** When each re-queued post goes out, Central time: the same morning slot every day. */
+const POST_TIME = '09:30:00';
 
 /**
  * Lay the social-queue extension and its queue into the demo home, BEFORE
@@ -337,5 +343,15 @@ export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
   const miniAppSessionId = await startSession(MINI_APP.agent, MINI_APP.scenario, MINI_APP.prompt);
   await buildMiniApp();
   const heartbeatAgentId = await seedHeartbeat();
-  return { socialQueue, teamRoomId: roomId, approvalSessionId, miniAppSessionId, heartbeatAgentId };
+  const socialChatSessionId = socialQueue
+    ? await startSession(SOCIAL_CHAT.agent, SOCIAL_CHAT.scenario, SOCIAL_CHAT.prompt)
+    : null;
+  return {
+    socialQueue,
+    teamRoomId: roomId,
+    approvalSessionId,
+    miniAppSessionId,
+    heartbeatAgentId,
+    socialChatSessionId,
+  };
 }

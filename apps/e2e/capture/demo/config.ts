@@ -34,6 +34,27 @@ export const DEMO_MARKETING_ROOT = path.join(CAPTURE_HOME, 'marketing');
 export const SOCIAL_QUEUE_ID = 'social-queue';
 
 /**
+ * The id of the extension's right-panel tab: `<extension id>:<component id>`
+ * (`extension-api-factory.ts`), from its `registerComponent('right-panel', 'queue', …)`.
+ */
+export const SOCIAL_QUEUE_PANEL_TAB = `${SOCIAL_QUEUE_ID}:queue`;
+
+/**
+ * Where the app keeps the right panel's open state and active tab
+ * (`apps/client/src/layers/shared/lib/constants.ts`). No URL opens an
+ * extension's tab, so a browser that should land with the Social queue open
+ * sets this before the app loads (see the README's demo section).
+ */
+export const RIGHT_PANEL_STATE_KEY = 'dorkos-right-panel-state';
+
+/** The chat the Social queue tab is filmed beside (the server's `demo-social-chat`). */
+export const SOCIAL_CHAT = {
+  agent: 'scout',
+  scenario: 'demo-social-chat',
+  prompt: "What's going out on X this week?",
+} as const;
+
+/**
  * The private `dorkos-marketing` checkout the social-queue extension comes
  * from. `DEMO_MARKETING_REPO` wins; otherwise the folder beside the MAIN
  * checkout, found through git's common dir so it also resolves from a
@@ -56,13 +77,14 @@ export function marketingRepoPath(): string {
 
 /**
  * Posts @dork_os already published, by their id in the marketing queue. The
- * demo copies each one into its own queue as `queued`, re-dated from tomorrow
- * onward so the page reads as upcoming work on whatever day it is recorded.
- * Their words are not changed.
+ * demo copies each one into its own queue as `queued`, one a day at 09:30 from
+ * the day after the demo starts, so the page reads as upcoming work on
+ * whatever day it is recorded. Their words are not changed. Chosen by the
+ * marketing claim gate: on-screen copy carries no version numbers, prices or
+ * dated stats, which go stale on camera. The same rule holds for every seed.
  */
 export const SOCIAL_POST_IDS: readonly string[] = [
-  '2026-10-14-release-0-110',
-  '2026-10-14-x-api-costs',
+  '2026-10-15-marketing-lessons',
   '2026-10-16-hn-timing',
   '2026-10-13-first-100-users',
 ];
@@ -80,26 +102,26 @@ export const TEAM_REPORTS: readonly TeamReport[] = [
   {
     agent: 'scout',
     text:
-      'Morning report. I checked 312 packages for security notices overnight. ' +
-      'Two needed an update, and both fixes are open for review. Nothing else needs you.',
+      'Morning report. I checked every package for security notices overnight. Two needed ' +
+      'an update, and both fixes are open for review. Nothing else needs you.',
   },
   {
     agent: 'sentinel',
     text:
-      'Morning report. All 14 endpoints answered every hourly check. ' +
-      'Checkout is the slowest at 420 ms, down from 610 ms last week.',
+      'Morning report. Every endpoint answered its hourly check overnight. Checkout is ' +
+      'faster than it was, and nothing needs you.',
   },
   {
     agent: 'forge',
     text:
-      'Morning report. Last night’s release build passed in 7 minutes. ' +
-      'The 0.121 desktop download is ready in preview.',
+      'Morning report. Last night’s release build passed, and the new desktop download is ' +
+      'ready in preview.',
   },
   {
     agent: 'lens',
     text:
-      'Morning report. I reviewed 6 pull requests: 5 are ready to merge. ' +
-      'One changes the signup form, so I left it for you to look at.',
+      'Morning report. I reviewed the open pull requests, and most are ready to merge. One ' +
+      'changes the signup form, so I left it for you to look at.',
   },
 ];
 
@@ -107,7 +129,7 @@ export const TEAM_REPORTS: readonly TeamReport[] = [
 export const PHONE_APPROVAL = {
   agent: 'forge',
   scenario: 'demo-phone-approval',
-  prompt: 'Publish the 0.121 release notes',
+  prompt: "Publish this week's release notes",
 } as const;
 
 /**

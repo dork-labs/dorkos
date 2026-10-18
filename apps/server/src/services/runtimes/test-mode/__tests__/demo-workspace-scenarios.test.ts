@@ -75,7 +75,7 @@ describe('demo-phone-approval', () => {
   it('waits for the answer, then publishes when allowed', async () => {
     scenarioStore.setForSession(SESSION, 'demo-phone-approval');
     const runtime = new TestModeRuntime();
-    const { projector, accepted } = startTurn(runtime, 'Publish the 0.121 release notes');
+    const { projector, accepted } = startTurn(runtime, "Publish this week's release notes");
     expect((await accepted).accepted).toBe(true);
 
     await waitForApproval(projector);
@@ -84,13 +84,13 @@ describe('demo-phone-approval', () => {
 
     expect(runtime.approveTool(SESSION, 'demo-phone-approval-1', true)).toBe(true);
     await waitForIdle(projector);
-    expect(streamedText(projector)).toContain('The 0.121 release notes are live.');
+    expect(streamedText(projector)).toContain("This week's release notes are live.");
   }, 15_000);
 
   it('says it will not publish when denied', async () => {
     scenarioStore.setForSession(SESSION, 'demo-phone-approval');
     const runtime = new TestModeRuntime();
-    const { projector, accepted } = startTurn(runtime, 'Publish the 0.121 release notes');
+    const { projector, accepted } = startTurn(runtime, "Publish this week's release notes");
     expect((await accepted).accepted).toBe(true);
 
     await waitForApproval(projector);
@@ -110,5 +110,20 @@ describe('demo-mini-app', () => {
 
     await waitForIdle(projector);
     expect(streamedText(projector)).toContain('waiting for you under **Needs you**');
+  }, 15_000);
+});
+
+describe('demo-social-chat', () => {
+  it('points at the Social queue tab, with no date, version or price', async () => {
+    scenarioStore.setForSession(SESSION, 'demo-social-chat');
+    const runtime = new TestModeRuntime();
+    const { projector, accepted } = startTurn(runtime, "What's going out on X this week?");
+    expect((await accepted).accepted).toBe(true);
+
+    await waitForIdle(projector);
+    const text = streamedText(projector);
+    expect(text).toContain('**Social queue** tab beside this chat');
+    // The marketing claim gate: nothing on screen that goes stale on camera.
+    expect(text).not.toMatch(/\d+\.\d+\.\d+|\$\d|\b20\d\d\b/);
   }, 15_000);
 });

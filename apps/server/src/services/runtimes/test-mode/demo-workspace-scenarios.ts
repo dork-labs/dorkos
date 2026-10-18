@@ -15,6 +15,8 @@
  *   DorkOS to look again (`buildMiniApp` in `apps/e2e/capture/demo/seed.ts`), and DorkOS holds
  *   the new copy for a person's yes. Keep the id below and the seeder's id the
  *   same, or the chat names a mini app that is not there.
+ * - **`demo-social-chat`** is the chat the Social queue side-panel tab sits
+ *   beside: the agent says what is queued and points at the tab.
  * - **`demo-heartbeat`** is an agent's side of a heartbeat beat that has work:
  *   the beat itself (its timer wake, its check, its record, a raise's delivery)
  *   is DorkOS's real beat runner, and this turn ends it through the real
@@ -96,13 +98,13 @@ const demoPhoneApproval: ScenarioFn = async function* (_content, ctx) {
     data: {
       toolCallId,
       toolName: 'Bash',
-      input: '{"command":"pnpm site:publish release-notes/0.121.md"}',
+      input: '{"command":"pnpm site:publish release-notes/latest.md"}',
       startedAt: Date.now(),
       timeoutMs: APPROVAL_TIMEOUT_MS,
       hasSuggestions: true,
       alwaysAllowScope: 'session',
       title: 'Approve command?',
-      displayName: 'Publish the 0.121 release notes',
+      displayName: "Publish this week's release notes",
       description: 'Puts the release notes on the website.',
     },
   } as StreamEvent;
@@ -119,7 +121,7 @@ const demoPhoneApproval: ScenarioFn = async function* (_content, ctx) {
       type: 'tool_call_end',
       data: { toolCallId, toolName: 'Bash', status: 'complete', result: 'Published 1 page.' },
     } as StreamEvent;
-    yield* streamText('Done. The 0.121 release notes are live.');
+    yield* streamText("Done. This week's release notes are live.");
   } else {
     yield {
       type: 'tool_call_end',
@@ -170,7 +172,8 @@ const demoMiniApp: ScenarioFn = async function* () {
 function beatEnding(found: string): EndBeatInput {
   if (found.includes('changelog')) {
     return {
-      summary: "Drafted this week's changelog from 6 merged pull requests. Ready to post tomorrow.",
+      summary:
+        "Drafted this week's changelog from the merged pull requests. Ready to post tomorrow.",
     };
   }
   return {
@@ -179,7 +182,7 @@ function beatEnding(found: string): EndBeatInput {
       {
         rung: 'dm',
         text:
-          'The beta invite email to the 40 people on the waitlist is due tomorrow. The draft ' +
+          'The beta invite email to everyone on the waitlist is due tomorrow. The draft ' +
           'is ready. Should I send it?',
       },
     ],
@@ -204,9 +207,25 @@ const demoHeartbeat: ScenarioFn = async function* (content, ctx, opts) {
   yield done();
 };
 
+/**
+ * The chat the Social queue side-panel tab is filmed beside: a person asks
+ * what is going out, and the agent points at the tab. The posts it describes
+ * are the ones the demo seeder queues (one a day, 9:30, from tomorrow).
+ */
+const demoSocialChat: ScenarioFn = async function* () {
+  yield sessionStatus();
+  yield* streamText(
+    'Three posts are queued for @dork_os, one each morning at 9:30 starting tomorrow. ' +
+      "They're in the **Social queue** tab beside this chat. Edit or kill one there, or pause " +
+      'all posting.'
+  );
+  yield done();
+};
+
 /** The demo workspace's turns, keyed by the names `POST /api/test/scenario` accepts. */
 export const DEMO_WORKSPACE_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-phone-approval': demoPhoneApproval,
   'demo-mini-app': demoMiniApp,
   'demo-heartbeat': demoHeartbeat,
+  'demo-social-chat': demoSocialChat,
 };
