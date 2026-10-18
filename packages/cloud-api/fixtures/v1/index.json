@@ -147,6 +147,13 @@
     "directory/settings.json": "DirectorySettingsSchema",
     "directory/removed.json": "DirectoryRemovedResponseSchema",
     "hubs/computer-deleted.json": "CloudComputerDeletedResponseSchema",
-    "remote/command-hub-assignment-changed.json": "RemoteCommandSchema"
+    "remote/command-hub-assignment-changed.json": "RemoteCommandSchema",
+    "hubs/computer-start-request.json": "CloudComputerStartRequestSchema",
+    "hubs/computer-link-code-request.json": "AgentComputerLinkCodeRequestSchema",
+    "hubs/agent-computer-assignment.json": "AgentComputerAssignmentSchema",
+    "hubs/agent-computer-assignment-linked.json": "AgentComputerAssignmentSchema",
+    "hubs/agent-computer-activity-request.json": "AgentComputerActivityRequestSchema",
+    "hubs/next-wake-request.json": "HubNextWakeRequestSchema",
+    "remote/command-agent-computer-assignment-changed.json": "RemoteCommandSchema"
   }
 }

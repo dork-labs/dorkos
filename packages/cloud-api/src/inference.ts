@@ -6,13 +6,28 @@ import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
  * `POST /v1/inference/tokens` — mint a short-lived inference token.
  *
  * The caller is taken from the bearer credential; `seatRef` and `agentRef` only
- * narrow it.
+ * narrow it. Two kinds of caller may mint: an instance linked to an account
+ * (a person's computer or a hub), and a cloud agent computer, with its own
+ * instance key.
+ *
+ * On an agent computer the same rules hold as anywhere else, and these:
+ *
+ * - Tokens stay short-lived, and the limits on them apply per computer and
+ *   per account at once.
+ * - What a computer spends is billed to the account that owns it, and the
+ *   preview gate applies to it exactly as it does today.
+ * - `agentRef`, when present, is the agent's id on the hub the computer works
+ *   for: the agent lives on the hub, and the computer only runs it. It is the
+ *   computer's own claim, used for attribution and billing only, never for
+ *   authorization.
  */
 export const InferenceTokenRequestSchema = z
   .object({
     instanceId: IdSchema,
     seatRef: IdSchema.optional(),
-    agentRef: IdSchema.optional(),
+    agentRef: IdSchema.optional().describe(
+      'The agent the token is for. On a cloud agent computer, the agent`s id on its hub. The computer`s own claim: attribution and billing only, never authorization.'
+    ),
   })
   .describe('Mint a short-lived inference token for one instance.');
 

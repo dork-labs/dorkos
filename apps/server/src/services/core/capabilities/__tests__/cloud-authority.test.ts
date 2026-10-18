@@ -73,13 +73,14 @@ describe('mintCloudAuthority', () => {
     }
   });
 
-  it('covers exactly the published kinds minus the four that carry no authority', () => {
+  it('covers exactly the published kinds minus the five that carry no authority', () => {
     // A kind Cloud adds later turns this red, so carrying authority is a
     // decision somebody makes here rather than a default.
     const published = RemoteCommandSchema.options.map((option) => option.shape.kind.value).sort();
     expect(published).toEqual(
       [
         ...CLOUD_AUTHORITY_VERBS,
+        'agent_computer_assignment_changed',
         'hub_assignment_changed',
         'inbox_pending',
         'keepalive',

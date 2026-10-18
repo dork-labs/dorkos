@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { HttpsUrlSchema, IdSchema, TimestampSchema, tolerantEnum } from './primitives.js';
+import {
+  HttpsUrlSchema,
+  IdSchema,
+  ONE_TIME_CREDENTIAL_META,
+  TimestampSchema,
+  tolerantEnum,
+} from './primitives.js';
 import { RemoteEdgeProofSchema } from './remote.js';
 
 /**
@@ -20,6 +26,35 @@ import { RemoteEdgeProofSchema } from './remote.js';
  *
  * "Hub" is a word for this wire and for code. Nothing a person reads says it:
  * the app says "Private" or "space".
+ *
+ * **How an agent computer boots.** The service starts it with three values and
+ * nothing else that grants anything:
+ *
+ * - `DORKOS_SERVER_ROLE=agent-computer`;
+ * - its own instance API key, as `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` (sixteen
+ *   characters or more), which the server reads once at boot and then drops
+ *   from its environment, as a hub does with its own;
+ * - `DORKOS_CLOUD_API_URL`, an https origin with no path.
+ *
+ * Its volume is owned by root. It exits cleanly (status zero) within five
+ * seconds of SIGINT, so a stop never has to be forced. Its image is public and signed, so
+ * anybody can check what runs their agents.
+ *
+ * **Where an agent computer may reach.** The public internet, its own hub
+ * through the hub's front door (never directly), and the model gateway. Never
+ * the hosting supplier's private network (other machines, even the same
+ * account's), a cloud metadata address, any private address range, or
+ * anything on this service except the public `/v1` API. A computer reaches its
+ * hub the way a person's Mac does, so it holds nothing a Mac does not. The
+ * service's network policy enforces this, outside the computer; the
+ * computer's own settings are not relied on.
+ *
+ * **How an agent computer links to its hub.** The hub mints a one-time link
+ * code and hands it to the service (`POST /v1/computers/{computerId}/link-code`).
+ * The computer reads it once in its assignment
+ * (`GET /v1/agent-computers/self/assignment`) and redeems it at its hub, which
+ * pins the public half of the computer's own signing key, as it does for a
+ * Mac. The service only carries the code; it never vouches for a key.
  */
 
 /**
@@ -271,7 +306,8 @@ export type CloudComputer = z.infer<typeof CloudComputerSchema>;
  * Who may call each computer route: the person, or the account's own hub (its
  * instance key). Never an agent computer's key, and never a person's own
  * computer's key: making or starting a computer spends money. Any other caller
- * is `not_found`. Deleting is the person's alone.
+ * is `not_found`. Deleting is the person's alone, and handing over a link code
+ * (`link-code`) is the hub's alone.
  */
 export const CloudComputerListResponseSchema = z
   .object({
@@ -332,6 +368,40 @@ export const CloudComputerTransitionResponseSchema = z
 export type CloudComputerTransitionResponse = z.infer<typeof CloudComputerTransitionResponseSchema>;
 
 /**
+ * Why a hub starts a computer, for metering only.
+ *
+ * `turn` (an agent has work to do), `viewer` (somebody opened one of its
+ * chats), `beat` (a scheduled beat is due). Tolerant on the wire, so a reason
+ * added later reads as `unrecognised` rather than refusing the start.
+ */
+export const CloudComputerStartReasonSchema = z
+  .enum(['turn', 'viewer', 'beat'])
+  .describe('Why a hub starts a computer: a turn, a viewer, or a beat. For metering only.');
+
+/** Why a hub starts a computer. */
+export type CloudComputerStartReason = z.infer<typeof CloudComputerStartReasonSchema>;
+
+/**
+ * The optional body of `POST /v1/computers/{computerId}/start`.
+ *
+ * The body is optional, and so is `reason`: a start with no body, as every
+ * caller before this field sent, starts the computer the same way. The reason
+ * is recorded for metering and changes nothing about the start.
+ */
+export const CloudComputerStartRequestSchema = z
+  .object({
+    reason: tolerantEnum(CloudComputerStartReasonSchema)
+      .optional()
+      .describe(
+        'Why the computer is started, for metering. A reason this release does not know reads as unrecognised. Absent says nothing.'
+      ),
+  })
+  .describe('Start a cloud agent computer, optionally saying why. The body may be left out.');
+
+/** The optional body of a start. */
+export type CloudComputerStartRequest = z.infer<typeof CloudComputerStartRequestSchema>;
+
+/**
  * `POST /v1/instances/{instanceId}/viewer-open` — ask one of the caller's own
  * computers to dial its hub, because somebody opened one of its chats.
  *
@@ -373,3 +443,214 @@ export const CloudComputerDeletedResponseSchema = z
 
 /** When a computer was deleted. */
 export type CloudComputerDeletedResponse = z.infer<typeof CloudComputerDeletedResponseSchema>;
+
+/** How long an agent computer's link code works, at most, after its hub mints it. */
+export const AGENT_COMPUTER_LINK_CODE_TTL_SECONDS = 600 as const;
+
+/**
+ * How far the service lets a link code's `expiresAt` run past
+ * {@link AGENT_COMPUTER_LINK_CODE_TTL_SECONDS} from when the service received
+ * it, for a hub whose clock runs a little ahead. The service sees when it
+ * received the code, never when the hub minted it, so it refuses only an
+ * `expiresAt` later than receipt plus both. A hub mints at the TTL, never more.
+ */
+export const AGENT_COMPUTER_LINK_CODE_CLOCK_SKEW_SECONDS = 60 as const;
+
+/**
+ * A one-time code an agent computer links to its hub with.
+ *
+ * The hub mints it, in the same format as the code a person's own computer
+ * links with: sixteen characters of uppercase Crockford base-32 (the digits and
+ * the capital letters, without `I`, `L`, `O` or `U`), eighty bits. This wire
+ * carries it canonical, with no spaces, dashes or host.
+ *
+ * - **Single use**, and it works for at most
+ *   {@link AGENT_COMPUTER_LINK_CODE_TTL_SECONDS} after the hub minted it. An
+ *   `expiresAt` further out than that is refused with `malformed_request` by
+ *   the service. The schema does not check it, because a schema has no clock:
+ *   a check against "now" would make the same payload pass or fail depending
+ *   on when it was parsed.
+ * - **Bound to one computer.** The hub mints it for one `computerId` and, when
+ *   it is redeemed, checks both the code and that the computer redeeming it is
+ *   that one.
+ * - **One live code per computer.** Handing the service a new one replaces the
+ *   old one.
+ * - **Handed out once.** The service deletes it as soon as the computer has
+ *   read it, and never logs it.
+ */
+export const AgentComputerLinkCodeSchema = z
+  .object({
+    code: z
+      .string()
+      .regex(
+        /^[0-9A-HJKMNP-TV-Z]{16}$/,
+        'must be 16 characters of uppercase Crockford base32, with no spaces or dashes'
+      )
+      .meta({
+        description:
+          'The code itself: 16 characters of uppercase Crockford base32, 80 bits. Single use. Never log it or return it to a browser.',
+        [ONE_TIME_CREDENTIAL_META]: true,
+      }),
+    expiresAt: TimestampSchema.describe(
+      'When the code stops working: at most ten minutes after the hub minted it.'
+    ),
+  })
+  .describe(
+    'A one-time code an agent computer links to its hub with. Single use, ten minutes at most, bound to one computer.'
+  );
+
+/** A one-time code an agent computer links to its hub with. */
+export type AgentComputerLinkCode = z.infer<typeof AgentComputerLinkCodeSchema>;
+
+/**
+ * `POST /v1/computers/{computerId}/link-code` — the hub hands the service the
+ * link code it minted for one of its account's agent computers. Answered `204`
+ * with no body.
+ *
+ * The account's hub (its instance key) only. The service also checks that the
+ * computer belongs to the hub's account; a computer that is not the account's
+ * is `not_found`, so the answer never says whether it exists. A new code
+ * replaces the computer's old one, and the computer reads it at its next
+ * assignment read (`agent_computer_assignment_changed` asks it to read now).
+ */
+export const AgentComputerLinkCodeRequestSchema = AgentComputerLinkCodeSchema.describe(
+  'The link code a hub minted for an agent computer on its account. Hub instance key only; answered 204.'
+);
+
+/** The link code a hub hands the service for one computer. */
+export type AgentComputerLinkCodeRequest = z.infer<typeof AgentComputerLinkCodeRequestSchema>;
+
+/**
+ * `GET /v1/agent-computers/self/assignment` — which hub this agent computer
+ * works for, and the code it links with. That computer's own instance key
+ * only; any other caller is `not_found`.
+ *
+ * - `hubOrigin` is where the computer reaches its hub, through the hub's front
+ *   door. It may change; the hub's key, pinned when the computer linked, does
+ *   not.
+ * - `ownerAccountId` and `issuer` name the person the hub belongs to, the same
+ *   way `HubAssignmentSchema` does. They never change for a computer. A read
+ *   naming a different owner or issuer is a fault: the computer refuses it and
+ *   stops working.
+ * - `linkCode` is the one-time code to redeem at the hub, or null when there is
+ *   none waiting. The service hands each code out once, then deletes it, so a
+ *   later read is null.
+ *
+ * **The service never vouches for the computer's key.** The computer makes its
+ * own signing key pair and sends the public half when it redeems the code; the
+ * hub pins it then, as it does for a Mac. So a code that was already used is
+ * worthless to anybody who reads it later.
+ *
+ * **An accepted risk.** The service holds the live code until the computer
+ * reads it, so someone inside the service could redeem it first, with a key
+ * of their own. That is accepted: the service already runs this computer. The
+ * hub treats a second redeem for a computer that is already linked as a
+ * security event: it unlinks the computer, tells the person, and mints a new
+ * code.
+ *
+ * The computer reads again when an `agent_computer_assignment_changed` command
+ * arrives, and otherwise every `pollAfterSeconds`.
+ */
+export const AgentComputerAssignmentSchema = z
+  .object({
+    computerId: IdSchema.describe('This computer, as the hub and `GET /v1/computers` name it.'),
+    hubOrigin: HttpsOriginSchema.describe(
+      'Where this computer reaches its hub: an https origin with no path, through the hub`s front door.'
+    ),
+    ownerAccountId: IdSchema.describe(
+      'The account id, at `issuer`, of the person the hub belongs to. Never an email, and never changes.'
+    ),
+    issuer: HttpsUrlSchema.describe('The issuer `ownerAccountId` belongs to, compared exactly.'),
+    linkCode: AgentComputerLinkCodeSchema.nullable().describe(
+      'The one-time code to redeem at the hub, or null when none is waiting. Handed out once.'
+    ),
+    pollAfterSeconds: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'How long to wait before reading again when no command arrives. Absent leaves the wait to the computer.'
+      ),
+  })
+  .describe(
+    'Which hub an agent computer works for, and the code it links with. That computer`s instance key only; never cached by a proxy.'
+  );
+
+/** Which hub an agent computer works for, and the code it links with. */
+export type AgentComputerAssignment = z.infer<typeof AgentComputerAssignmentSchema>;
+
+/** How long an agent computer's `busy: true` holds without being sent again. */
+export const AGENT_COMPUTER_BUSY_TTL_SECONDS = 600 as const;
+
+/**
+ * The longest an agent computer runs without a break, however often it says
+ * it is busy: six hours. Past it the service stops the computer and tells the
+ * owner, whatever `busy` says.
+ */
+export const AGENT_COMPUTER_BUSY_MAX_SECONDS = 21600 as const;
+
+/**
+ * `PUT /v1/agent-computers/self/activity` — whether this agent computer is in
+ * the middle of work. That computer's own instance key only; answered `204`
+ * with no body.
+ *
+ * - **Busy expires.** `busy: true` holds for
+ *   {@link AGENT_COMPUTER_BUSY_TTL_SECONDS} unless it is sent again, so a turn
+ *   that crashed cannot keep a computer running forever. A computer that is
+ *   still working sends it again before then.
+ * - **A hard cap still applies.** After {@link AGENT_COMPUTER_BUSY_MAX_SECONDS}
+ *   of running without a break the service stops the computer and tells the
+ *   owner, whatever `busy` says.
+ * - **Idle stop.** The service stops a computer for being idle only once its
+ *   idle window has passed with `busy` false or expired.
+ */
+export const AgentComputerActivityRequestSchema = z
+  .object({
+    busy: z
+      .boolean()
+      .describe(
+        'True while the computer is in the middle of work. Holds for ten minutes unless sent again.'
+      ),
+  })
+  .describe(
+    'Whether an agent computer is in the middle of work. That computer`s instance key only; answered 204.'
+  );
+
+/** Whether an agent computer is in the middle of work. */
+export type AgentComputerActivityRequest = z.infer<typeof AgentComputerActivityRequestSchema>;
+
+/** The shortest gap the service leaves between two wakes it makes for one hub. */
+export const HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS = 300 as const;
+
+/** How far ahead, at most, a hub's next wake may be. One further out is ignored. */
+export const HUB_NEXT_WAKE_MAX_AHEAD_DAYS = 31 as const;
+
+/**
+ * `PUT /v1/hubs/self/next-wake` — when the hub next has a schedule due, so a
+ * hub that is asleep is woken for it. The hub's own instance key only;
+ * answered `204` with no body.
+ *
+ * - The service wakes the hub at `at`, and at most once every
+ *   {@link HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS}, however often it is asked. A
+ *   hub that wakes sends its next time again before it sleeps.
+ * - `at: null` means nothing is due: the service keeps no wake for the hub.
+ * - An `at` more than {@link HUB_NEXT_WAKE_MAX_AHEAD_DAYS} days ahead is
+ *   **ignored**, not refused: the service keeps no wake for it, as for `null`.
+ *   It is ignored because a schema has no clock to refuse it with, and because
+ *   a hub whose next schedule really is that far out has done nothing wrong; it
+ *   sends the time again the next time it is awake. An `at` in the past wakes
+ *   the hub as soon as the interval allows.
+ */
+export const HubNextWakeRequestSchema = z
+  .object({
+    at: TimestampSchema.nullable().describe(
+      'When the hub next has a schedule due, or null when nothing is. More than 31 days ahead is ignored.'
+    ),
+  })
+  .describe(
+    'When a hub next needs waking for a due schedule. Hub instance key only; answered 204.'
+  );
+
+/** When a hub next needs waking. */
+export type HubNextWakeRequest = z.infer<typeof HubNextWakeRequestSchema>;

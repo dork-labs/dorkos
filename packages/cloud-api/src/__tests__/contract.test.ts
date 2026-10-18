@@ -258,6 +258,7 @@ describe('the surface', () => {
       '/v1/communities',
       '/v1/hubs/',
       '/v1/computers',
+      '/v1/agent-computers/',
       '/v1/directory',
     ]) {
       expect(

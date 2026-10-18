@@ -195,6 +195,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   HubAssignmentStateSchema: 'whether a hub belongs to a person yet; names no allowance',
   CloudComputerStateSchema: 'where an agent computer is in its life, not what anybody bought',
   CloudComputerStopReasonSchema: 'why an agent computer is stopped, in terms the app can show',
+  CloudComputerStartReasonSchema: 'what woke a computer (a turn, a viewer, a beat), for metering',
   DirectoryInstanceRoleSchema: 'which of three program roles an instance plays; a structural fact',
   DirectoryAvailabilitySchema: 'whether something reported recently, derived from a timestamp',
   DirectoryReachLevelSchema: 'how far a person let the web reach a computer, set at that computer',
