@@ -50,14 +50,15 @@ tab don't count).
 
 By default, clicks are only recorded. To be woken, show the screen with
 `--wake` (or `<meta name="vc-wake" content="on">`). It then gets a reply dock
-("Send to @<your agent's name>", from `.dork/agent.json` or `--label`). **Send** (or ⌘↵), or a **submitted pin note**, wakes the
+("Send to @<your agent's name>", from `.dork/agent.json` or `--label`). **Send** (or ⌘↵), or a **submitted request pin**, wakes the
 chat that ran `vc show` with a `<ui_action>` turn carrying the screen's full
-selection, any written reply (as `message`), and every pin on it. Exploration (toggling options, sliders, theme,
+selection, any written reply (as `message`), and every open request pinned on it. Exploration (toggling options, sliders, theme,
 history) never wakes anyone.
 
-A long reply arrives whole. Only when a `<ui_action>` would pass DorkOS's 8 KB payload cap are older pins
-dropped and then the reply shortened, and that screen says `message_truncated: true`. The full text is
-always in `events_file`.
+A long reply arrives whole. Only when a `<ui_action>` would pass DorkOS's 8 KB payload cap
+is anything trimmed: first pin details you can read back with `vc review list` (state,
+source, selector), then older pins, then the reply. A shortened reply says
+`message_truncated: true`, and `message_full_at` points at the whole text in `events_file`.
 
 - While you're mid-turn, DorkOS answers 409 and the companion retries until
   you're free (up to 30 minutes; at most 20 wakes an hour).
@@ -174,8 +175,11 @@ top, and stays open from one screen to the next:
 - **All screens** (G, the list button, or the count) opens a jump list: every
   screen with a thumbnail, its position and a Sent mark. Arrow keys and Enter;
   Esc closes it. Past 8 screens it filters as you type.
-- **Pin** (C): click anywhere to drop a numbered note. It's recorded with x/y,
-  selector and text, survives reloads, and can be removed. Esc finishes.
+- **Pin** (C): point at anything (↑/↓ widen or narrow the pick) and click to drop
+  a numbered note. Pins are the review layer, the same one prototypes get (see
+  "Reviewing designs"). Each note records the element, its exact source line, the
+  page state, an intent, and whether it's for you or just a note. Notes survive
+  reloads and can be removed. Esc steps back.
 - **Reduced motion** (M) forces `prefers-reduced-motion` on and off for the
   page. Media rules and `matchMedia` both follow it.
 - **Theme** (T). The dot shows the connection: green live, amber polling, red offline.
@@ -201,7 +205,8 @@ On a wake screen, a **reply dock** sits at the bottom:
 
 ```jsonl
 {"type":"click","choice":"b","label":"B · Busy","text":"B Busy More.","screen":"layout"}
-{"type":"pin","n":1,"note":"Make this calmer","x":412,"y":233,"selector":"div.option:nth-of-type(1) > div.content > h3","rel":{"x":0.2,"y":0.5},"target":"Quiet"}
+{"type":"pin","n":1,"note":"Make this calmer","kind":"request","intent":"refine","selector":"div[data-choice=\"a\"] > div.content > h3","source":{"markup":"content/layout.html:3","exact":true},"ref":"div[data-choice=\"a\"] > div.content > h3 · heading “Quiet” · content/layout.html:3","x":412,"y":233,"rel":{"x":0.2,"y":0.5}}
+{"type":"pin-resolve","n":1,"status":"resolved","reply":"Dropped the weight to 500","by":"agent"}
 {"type":"select","choices":["b"]}
 {"type":"send","selection":[{"choice":"b","label":"B · Busy"}],"pins":1,"message":"Smaller title"}
 {"type":"motion","action":"copy","format":"motion","values":{"type":"spring","stiffness":400,"damping":30,"settleMs":356,"overshoot":0.027}}
@@ -210,6 +215,109 @@ On a wake screen, a **reply dock** sits at the bottom:
 Clicks show the path to a choice, and `select` holds the screen's current picks; the last one, or the Send, is the answer.
 From a page script: `vc.send({type, …})`, `vc.choice(value)`, `vc.theme()`,
 `vc.reducedMotion()`, `vc.pin()`, `vc.go(name)`.
+
+## Reviewing designs
+
+The pins on a screen are one **review layer** (`scripts/review.js`). The same
+script rides on full prototypes, so feedback works the same way everywhere:
+fragments here, and prototypes on any port.
+
+**What a note tells you.** Each note carries:
+
+- the element: selector, role and name, size, and the spot clicked
+- `source`: exact `file:line` from `data-src` stamps (`exact: true`), else a grep guess
+- `state`: what the page was showing (the director's values), so you can put it back
+- `intent`: fix / refine / explore
+- `kind`: `request` (for you), or `note` (the person's own; never sent, never wakes you)
+- `ref`: one line to quote, with the JSON beside it
+- `crop`: a PNG of the element, replayed in its state at Send (`shots/notes/<screen>-<n>.png`)
+
+**Answer every note.** People see your answer on the pin:
+
+```bash
+scripts/vc review list                     # open requests (--all for everything, --screen S)
+scripts/vc review resolve 2 "Dropped the kbd until hover"   # a check and your line on the page
+scripts/vc review dismiss settings#3 "Kept it: the test showed it reads faster"
+scripts/vc review crop 2                   # retake a crop
+```
+
+Use `<screen>#<n>` when the same number exists on two screens.
+
+**Reviewing a full prototype.**
+
+```bash
+scripts/vc review open http://localhost:<port>/<path>/index.html --name settings --title "Settings" --wake
+```
+
+This prints a `url` (with `?review=&vc=&vt=`). Open it on the canvas. A prototype built
+with the director kit loads the review layer by itself. For any other page, add one
+line: `<script src="<vc>/vc/review.js"></script>`. A same-origin host page can also
+inject it. Either way, load the layer from the companion server (`<vc>/vc/review.js`),
+never from a local copy or symlink, so moving folders can't break it.
+Send posts the notes and wakes you once. Its crops land first.
+
+**The link is the key.** `vt` is a random token minted for that review. The page
+runs on another origin, so the companion takes its notes and Sends only with that
+token; any other local page that posts gets a 403 and wakes nobody. Running
+`vc review open` again mints a new token, so share the newest link.
+
+**Where sent notes are (the Send lifecycle).** Every note in a reviewed prototype always
+says where it is: ready → sending → queued (you're mid-turn) → with you → you're on it →
+still open (your turn ended without closing it) → done or dismissed; or not sent (with why,
+and Try again). While your chat waits on the person (DorkOS lifecycle `blocked`), the page
+says you need them, with Open chat. Send only ever carries notes that haven't gone, so it can't repeat, and
+pinning stays safe while you work. The companion writes `delivery` events (queued,
+delivering, delivered, failed, unrouted) and replays queued Sends after a restart. One caught
+mid-request (`delivering`) is never replayed: it may have landed, so the page says it's not
+sure it was sent and offers Try again. `GET vc/review-status`
+adds your chat's DorkOS `status.lifecycle` (`idle`, `streaming`, `blocked`, `error` or
+`interrupted`). A Send DorkOS already took is never sent again. So **answer every note**
+with `vc review resolve|dismiss`: a note you act on but never close shows as "still open"
+to the person.
+
+**Serve prototypes no-store** (`Cache-Control: no-store`, never `python3 -m http.server`),
+so a reload always shows the latest build. A host page that injects the layer should
+put the director state back after it reloads (`director.go(state)`), and never reload
+while a note is open.
+
+**Never share a review link you haven't seen working.** `vc review open` checks the
+page and returns `pins: false` plus a `warning` when the page doesn't load the layer.
+Act on it. Before you tell the person "pin anything", check in a headless browser that
+the page has a `<review-layer>` host (the Review pill) and no page errors. A link with
+no pill sends them looking for a button that isn't there.
+
+**Building prototypes: the director kit** (`scripts/director.js`). A prototype
+declares its knobs, and the kit draws the bar:
+
+- **scenarios** (where you are): scale, and the named data states `Director.DATA`
+  (empty / one / many / error / offline)
+- **lenses** (how it looks): theme, reduced motion, sound. A pin stays put across them.
+- **states** (a menu of one-off places) and **play** (steps)
+
+The kit keeps non-default values in the URL and exposes
+`window.director = { state(), go(state), knobs, … }`. Start from
+`examples/prototype/`. `node scripts/build-proto.cjs <dir>` inlines `src/` and the
+kit into one `index.html`, with every tag stamped `data-src="src/<file>:<line>"`.
+React prototypes use `scripts/babel-plugin-data-src.cjs` in dev.
+
+Stamps are for review only. The server stamps fragments in memory as it serves
+them, so `content/` stays as written. A built `index.html` is a generated file
+(gitignored for the example here). Never wire the plugin or `stamp-src.cjs` into
+an app's production build.
+
+**How to act on notes.**
+
+- **Trust the code over the screenshot.** Change only what the notes point at, and
+  leave everything else exactly as it is.
+- **Tweaks before turns.** If a note asks for a value (a size, a colour, a delay),
+  expose it as a knob the person can move. Don't spend a round trip guessing it.
+- **Show variants as `1a`, `1b`, `1c`**, each on a different axis (for example
+  density, hierarchy, motion), not three shades of one idea. Notes can then name them.
+
+**Transport** is one seam in `review.js` (`transport`). Today Send goes to this
+server, which wakes you. When DorkOS's Doc Channel (`window.dorkos.channel`) is
+ready, the layer emits `review.send` there instead. Keep page code off the
+transport, so a host can swap it without touching the page.
 
 ## Screenshots
 
@@ -248,8 +356,14 @@ gitignored; `scripts/vc build` rebuilds them after the app's styles change.
 
 ## Reference
 
-- `scripts/vc` (`vc.cjs`): the CLI (show, start, status, stop, events, route, theme)
-- `scripts/server.cjs`: zero-dependency server; `GET vc/state`, `vc/health`, `vc/pins`, `vc/shot/<file>`; `POST vc/event`
+- `scripts/vc` (`vc.cjs`): the CLI (show, start, status, stop, build, events, route, theme, review)
+- `scripts/server.cjs`: zero-dependency server; `GET vc/state`, `vc/health`, `vc/pins`, `vc/review`, `vc/review-status`, `vc/review.js`, `vc/director.js`, `vc/shot/<file>`; `POST vc/event` (another localhost origin needs the review's token)
+- `scripts/review.js`: the review layer (pins, notes, Send), for fragments and prototypes
+- `scripts/review-store.cjs`: notes and answers read back from events
+- `scripts/director.js`: the director kit; `scripts/build-proto.cjs`: inline + stamp a template prototype
+- `scripts/stamp-src.cjs`, `scripts/babel-plugin-data-src.cjs`: `data-src` stamps
+- `scripts/crop.cjs`: note crops, replayed in state
+- `examples/prototype/`: a starter prototype on the kit
 - `scripts/frame-template.html`, `frame.css`, `boot.js`, `helper.js`: the frame
 - `scripts/shoot.cjs`: screenshots; `scripts/locate.cjs` finds the repo, playwright-core and Chromium
 - `scripts/build-assets.mjs` (`vc build`): builds `scripts/assets/tokens.css` and `app.css` from the DorkOS repo
