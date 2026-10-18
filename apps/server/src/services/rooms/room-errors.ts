@@ -86,6 +86,12 @@ export type RoomErrorCode =
    * "you may not rename this one" is more useful than pretending it is gone.
    */
   | 'SYSTEM_ROOM'
+  /**
+   * A hub's space is private (spec A6): just its owner and the owner's agents.
+   * A person from a chat bridge stays in their own bridged chat and may not be
+   * added to any other room there.
+   */
+  | 'PRIVATE_SPACE'
   | 'OPERATOR_ONLY'
   /**
    * A membership change would have left two or more agents in a room the owner

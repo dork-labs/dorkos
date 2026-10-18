@@ -1,7 +1,8 @@
 import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
+import { ChevronDown, HardDrive, Lock, UsersRound } from 'lucide-react';
+import { useIsHub } from '@/layers/entities/config';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   COMMUNITY_HOST_ADMIN_PATH,
@@ -183,8 +184,12 @@ export function CommunityContextSwitcher({
   const guarded = useGuardedMenuNodes([...menu.identityNodes, ...menu.nodes]);
   const identityNodes = guarded.nodes.slice(0, menu.identityNodes.length);
   const actionNodes = guarded.nodes.slice(menu.identityNodes.length);
-  const installationLabel = menu.teamName;
-  const installationLabelPending = menu.nameUnknown;
+  // On a hub, this DorkOS is the person's private space (spec A6): nobody else
+  // can be in it, so it says so instead of naming a machine.
+  const isHub = useIsHub();
+  const installationLabel = isHub ? 'Private' : menu.teamName;
+  const installationLabelPending = !isHub && menu.nameUnknown;
+  const InstallationIcon = isHub ? Lock : HardDrive;
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
   const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Space');
@@ -281,7 +286,7 @@ export function CommunityContextSwitcher({
           >
             {compact ? (
               selectedRef === undefined ? (
-                <HardDrive className="size-4 shrink-0" aria-hidden />
+                <InstallationIcon className="size-4 shrink-0" aria-hidden />
               ) : (
                 <UsersRound className="size-4 shrink-0" aria-hidden />
               )
@@ -346,12 +351,19 @@ export function CommunityContextSwitcher({
             >
               <ResponsiveDropdownMenuRadioItem
                 value="installation"
-                icon={HardDrive}
+                icon={InstallationIcon}
                 disabled={pendingRef !== null}
                 itemRef={selectedRef === undefined ? selectedItem : undefined}
                 className={pendingRef !== null ? 'opacity-50' : undefined}
               >
-                <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {installationLabel}
+                  {isHub && (
+                    <span className="text-muted-foreground block truncate text-xs">
+                      Just you and your agents
+                    </span>
+                  )}
+                </span>
               </ResponsiveDropdownMenuRadioItem>
               {visibleDestinations.map((connection) => {
                 const descriptor = navigationDescriptor(connection);

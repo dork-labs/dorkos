@@ -13,6 +13,7 @@
  */
 import type { CommunityAdapter } from '@dorkos/shared/community-adapter';
 import { logger } from '../../../lib/logger.js';
+import { currentServerRole } from '../../../lib/server-role.js';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
 import { resolveOperatorAuthor } from '../../rooms/operator-author.js';
 import type { RoomService } from '../../rooms/room-service.js';
@@ -28,6 +29,12 @@ import { LocalCommunityAdapter } from './local-community-adapter.js';
  * are sitting at.
  */
 export const LOCAL_COMMUNITY_LABEL = 'This machine';
+
+/**
+ * The label on a hub, a person's own DorkOS in the cloud (spec A6): there it is
+ * nobody's machine, and the one space it has is theirs alone.
+ */
+export const HUB_LOCAL_COMMUNITY_LABEL = 'Private';
 
 /**
  * Resolve who the local community is connected as: the person who owns this
@@ -85,7 +92,10 @@ export async function registerLocalCommunity(deps: {
   });
   // Registration first, and it is what the guarantee is about: after this line
   // `LOCAL_COMMUNITY` is present whatever connecting turns out to do.
-  registry.register(adapter, LOCAL_COMMUNITY_LABEL);
+  registry.register(
+    adapter,
+    currentServerRole() === 'hub' ? HUB_LOCAL_COMMUNITY_LABEL : LOCAL_COMMUNITY_LABEL
+  );
   try {
     const connection = await registry.connect(adapter.community);
     if (connection.status !== 'connected') {

@@ -638,6 +638,28 @@ describe('SidebarHeaderBlock', () => {
     ]);
   });
 
+  it('names a hub’s own space Private, for just you and your agents (A6)', async () => {
+    mockConfig = { ...mockConfig, serverRole: 'hub' } as typeof mockConfig;
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    renderBlock();
+    await configAnswered();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const [own] = await screen.findAllByRole('menuitemradio');
+    expect(own!.textContent).toContain('Private');
+    expect(own!.textContent).toContain('Just you and your agents');
+    expect(own!.textContent).not.toContain('team');
+  });
+
   it('reauthorizes the remembered destination before committing a Community route', async () => {
     mockConnections = [
       {
