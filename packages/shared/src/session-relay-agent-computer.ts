@@ -16,10 +16,14 @@
  * `error`, like the chat operations:
  *
  * - `agents.sync` pushes one agent's read-only identity copy (its manifest,
- *   identity files such as `SOUL.md` and its package list), or removes it;
+ *   the identity files named in {@link AGENT_COMPUTER_IDENTITY_FILES} and
+ *   nothing else, and its package list), or removes it;
  * - `turn.start` starts a turn for an agent and names it. The hub decides the
- *   turn's origin and tier from its own records; the computer runs what it is
- *   told.
+ *   turn's origin, tier, permission mode and outsider cap from its own
+ *   records; the computer runs what it is told. **The computer enforces the
+ *   permission mode and the outsider cap on its own local tools** (the shell,
+ *   files), which never reach the hub's gate; the hub enforces the same record
+ *   on every DorkOS tool the turn calls (part 5 builds the computer's side).
  *
  * The computer advertises these two in `hello`, from
  * {@link AGENT_COMPUTER_RELAY_FEATURES}; the hub sends one only when
@@ -80,6 +84,8 @@
  * @module shared/session-relay-agent-computer
  */
 import { z } from 'zod';
+import { CONVENTION_FILES } from './convention-files.js';
+import { PermissionModeSchema } from './schemas.js';
 import {
   JsonObjectSchema,
   JsonValueSchema,
@@ -106,8 +112,26 @@ import {
 /** Most serialized UTF-8 bytes of an agent's manifest in `agents.sync`. */
 export const AGENT_COMPUTER_MAX_MANIFEST_BYTES = 64 * 1024;
 
-/** Most identity files one `agents.sync` carries. */
-export const AGENT_COMPUTER_MAX_IDENTITY_FILES = 8;
+/**
+ * The only files `agents.sync` may carry: an agent's identity files, by exact
+ * name, from `CONVENTION_FILES` (the agent's soul, its limits, its memory and
+ * its heartbeat checklist). Nothing else in an agent's folder ever travels: no
+ * `.env`, no keys, no connector tokens, no relay pin, no `agent.json` (which
+ * rides as `manifest`), and no workspace file, which lives on the computer
+ * already. The hub reads only these names from the agent's folder.
+ */
+export const AGENT_COMPUTER_IDENTITY_FILES = [
+  CONVENTION_FILES.soul,
+  CONVENTION_FILES.nope,
+  CONVENTION_FILES.memory,
+  CONVENTION_FILES.heartbeat,
+] as const;
+
+/** One identity file name. See {@link AGENT_COMPUTER_IDENTITY_FILES}. */
+export type AgentComputerIdentityFile = (typeof AGENT_COMPUTER_IDENTITY_FILES)[number];
+
+/** Most identity files one `agents.sync` carries: each allowed name once. */
+export const AGENT_COMPUTER_MAX_IDENTITY_FILES = AGENT_COMPUTER_IDENTITY_FILES.length;
 
 /** Most UTF-8 bytes of one identity file's text, as serialized. Larger is refused, never cut. */
 export const AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES = 64 * 1024;
@@ -173,11 +197,8 @@ const ToolNameSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9][\w.-]*$/);
 
-/** One identity file, such as `SOUL.md` or `NOPE.md`: a bare Markdown file name, no folder. */
-const IdentityFileNameSchema = z
-  .string()
-  .max(68)
-  .regex(/^[A-Za-z0-9][\w-]{0,63}\.md$/);
+/** One identity file: exactly one of {@link AGENT_COMPUTER_IDENTITY_FILES}, case and all. */
+const IdentityFileNameSchema = z.enum(AGENT_COMPUTER_IDENTITY_FILES);
 
 /** An installed package, as the marketplace names and versions it. */
 const PackageRefSchema = z.strictObject({
@@ -234,12 +255,9 @@ const AgentsSyncPutSchema = z
       .max(AGENT_COMPUTER_MAX_IDENTITY_FILES),
     packages: z.array(PackageRefSchema).max(AGENT_COMPUTER_MAX_PACKAGES),
   })
-  // Case-insensitively, so `SOUL.md` and `soul.md` cannot both land on a
-  // computer whose file system folds case.
-  .refine(
-    (sync) => new Set(sync.files.map((file) => file.name.toLowerCase())).size === sync.files.length,
-    { message: 'Each identity file is named once' }
-  )
+  .refine((sync) => new Set(sync.files.map((file) => file.name)).size === sync.files.length, {
+    message: 'Each identity file is named once',
+  })
   .refine(fitsOneFrame, { message: TOO_LARGE });
 
 /** Remove one agent's identity copy from the computer. */
@@ -270,6 +288,18 @@ const TurnStartRequestSchema = z
     /** The room, task or beat the turn came from, by the hub's own id. */
     originRef: RelayRequestIdSchema.optional(),
     tier: AgentComputerTurnTierSchema,
+    /**
+     * The permission mode the turn runs at, as the hub decided it. The
+     * computer holds its own local tools (the shell, files) to it: the hub
+     * gates only the DorkOS tools it runs itself.
+     */
+    permissionMode: PermissionModeSchema,
+    /**
+     * Whether the turn read words DorkOS cannot vouch for (a stranger's
+     * message, or a turn that read one), so it runs capped. The computer holds
+     * its local tools to the cap as the hub holds its own tools.
+     */
+    outsiderCapped: z.boolean(),
   })
   .refine((turn) => turn.origin === 'chat' || turn.originRef !== undefined, {
     message: 'A room, task or beat turn names where it came from',

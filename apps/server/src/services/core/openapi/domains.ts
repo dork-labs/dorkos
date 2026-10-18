@@ -15,6 +15,7 @@ import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
 import { registerHubLinkOpenApi } from '../hub-relay/hub-link-openapi.js';
+import { registerAgentGrantsOpenApi } from '../tool-bridge/agent-grants-openapi.js';
 import { registerSessionRelayOpenApi } from '../session-relay/session-relay-openapi.js';
 import { registerDirectChatOpenApi } from '../../rooms/direct-chat/direct-chat-openapi.js';
 import { registerDocLinksOpenApi } from '../../docs/links/doc-links-openapi.js';
@@ -36,6 +37,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerLocalBrowserOpenApi(registry);
   registerHubComputersOpenApi(registry);
   registerHubLinkOpenApi(registry);
+  registerAgentGrantsOpenApi(registry);
   registerSessionRelayOpenApi(registry);
   registerDirectChatOpenApi(registry);
   registerDocLinksOpenApi(registry);

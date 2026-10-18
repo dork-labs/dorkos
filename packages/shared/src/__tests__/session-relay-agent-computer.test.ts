@@ -12,6 +12,7 @@ import {
   encodeRelayFrame,
 } from '../session-relay.js';
 import {
+  AGENT_COMPUTER_IDENTITY_FILES,
   AGENT_COMPUTER_MAX_BODY_BYTES,
   AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES,
   AGENT_COMPUTER_MAX_JSON_DEPTH,
@@ -67,6 +68,8 @@ const TURN = {
   origin: 'beat',
   originRef: 'beat:01KJXYKJYW',
   tier: 'owner',
+  permissionMode: 'default',
+  outsiderCapped: false,
 } as const;
 
 /** One valid hub-to-computer request of every kind. */
@@ -100,13 +103,52 @@ describe('agents.sync', () => {
     }
   });
 
-  it.each([['../SOUL.md'], ['agents/SOUL.md'], ['SOUL.txt'], ['.env.md'], ['SOUL.md\u0000'], ['']])(
-    'refuses an identity file named %j',
-    (name) => {
+  it('carries exactly the identity files, by name', () => {
+    expect([...AGENT_COMPUTER_IDENTITY_FILES]).toEqual([
+      'SOUL.md',
+      'NOPE.md',
+      'MEMORY.md',
+      'HEARTBEAT.md',
+    ]);
+    expect(AGENT_COMPUTER_MAX_IDENTITY_FILES).toBe(AGENT_COMPUTER_IDENTITY_FILES.length);
+    for (const name of AGENT_COMPUTER_IDENTITY_FILES) {
       const request = { ...SYNC, files: [{ name, text: 'x' }] };
-      expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
+      expect(AgentComputerRequestSchema.safeParse(request).success, name).toBe(true);
     }
-  );
+  });
+
+  it.each([
+    // Secrets an agent's folder can hold.
+    ['.env'],
+    ['.env.md'],
+    ['secrets.json'],
+    ['id_ed25519'],
+    ['id_ed25519.pub'],
+    ['pin.json'],
+    ['computer-key.pem'],
+    ['credentials.json'],
+    ['tokens.json'],
+    ['mcp-tokens.json'],
+    ['oauth-tokens.json'],
+    ['agent.json'],
+    // Markdown that is not an identity file, and identity names bent out of shape.
+    ['README.md'],
+    ['AGENTS.md'],
+    ['CLAUDE.md'],
+    ['notes.md'],
+    ['soul.md'],
+    ['SOUL.MD'],
+    ['../SOUL.md'],
+    ['.dork/SOUL.md'],
+    ['agents/SOUL.md'],
+    ['memory/today.md'],
+    ['SOUL.txt'],
+    ['SOUL.md\u0000'],
+    [''],
+  ])('refuses a file named %j', (name) => {
+    const request = { ...SYNC, files: [{ name, text: 'x' }] };
+    expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
+  });
 
   it('counts an identity file in bytes, escapes included, not in characters', () => {
     // A third of the cap in characters, three bytes each in UTF-8.
@@ -121,17 +163,6 @@ describe('agents.sync', () => {
       AgentComputerRequestSchema.safeParse({ ...SYNC, files: [{ name: 'SOUL.md', text: escaped }] })
         .success
     ).toBe(false);
-  });
-
-  it('refuses one file named twice, whatever its case', () => {
-    const request = {
-      ...SYNC,
-      files: [
-        { name: 'SOUL.md', text: 'a' },
-        { name: 'soul.md', text: 'b' },
-      ],
-    };
-    expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
   });
 
   it('refuses one file named twice', () => {
@@ -153,10 +184,7 @@ describe('agents.sync', () => {
     expect(AgentComputerRequestSchema.safeParse(longFile).success).toBe(false);
     const manyFiles = {
       ...SYNC,
-      files: Array.from({ length: AGENT_COMPUTER_MAX_IDENTITY_FILES + 1 }, (_, i) => ({
-        name: `F${i}.md`,
-        text: 'x',
-      })),
+      files: [...AGENT_COMPUTER_IDENTITY_FILES, 'SOUL.md'].map((name) => ({ name, text: 'x' })),
     };
     expect(AgentComputerRequestSchema.safeParse(manyFiles).success).toBe(false);
     const bigManifest = { ...SYNC, manifest: jsonOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES) };
@@ -206,6 +234,14 @@ describe('turn.start', () => {
     expect(AgentComputerRequestSchema.safeParse({ ...bare, origin: 'chat' }).success).toBe(true);
   });
 
+  it('carries the permission mode and the outsider cap the hub decided', () => {
+    const capped = { ...TURN, permissionMode: 'plan', outsiderCapped: true };
+    expect(AgentComputerRequestSchema.parse(capped)).toMatchObject({
+      permissionMode: 'plan',
+      outsiderCapped: true,
+    });
+  });
+
   it.each(['room', 'task', 'beat'])(
     'refuses a %s turn that does not say where it came from',
     (origin) => {
@@ -223,7 +259,10 @@ describe('turn.start', () => {
     ['sessionId', '../x'],
     ['agentId', AGENT.toLowerCase()],
     ['originRef', 'room/../../etc'],
-    ['permissionMode', 'bypassPermissions'],
+    ['permissionMode', 'yolo'],
+    ['permissionMode', undefined],
+    ['outsiderCapped', undefined],
+    ['outsiderCapped', 'false'],
   ])('refuses a turn whose %s is %j', (field, value) => {
     expect(AgentComputerRequestSchema.safeParse({ ...TURN, [field]: value }).success).toBe(false);
   });
@@ -464,8 +503,8 @@ describe('the largest legal frame of each kind still seals', () => {
       op: 'agents.sync',
       agentId: AGENT,
       manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
-      files: Array.from({ length: AGENT_COMPUTER_MAX_IDENTITY_FILES }, (_, i) => ({
-        name: `${'F'.repeat(60)}${i}.md`,
+      files: AGENT_COMPUTER_IDENTITY_FILES.map((name) => ({
+        name,
         text: cjkOfBytes(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES),
       })),
       packages: Array.from({ length: AGENT_COMPUTER_MAX_PACKAGES }, (_, i) => ({

@@ -42,7 +42,7 @@ import type { ServerRole } from './server-role.js';
 import { isLoopbackHost, isLoopbackHostHeader, isLoopbackPeer } from './trusted-origins.js';
 
 /** Who a request is from, as far as trust goes. */
-export type RequestKind = 'this-computer' | 'other-device' | 'relayed' | 'hub';
+export type RequestKind = 'this-computer' | 'other-device' | 'relayed' | 'hub' | 'agent-computer';
 
 /**
  * The way a request came in, for binding a session to the route that made it

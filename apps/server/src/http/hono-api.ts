@@ -75,6 +75,7 @@ import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import { createHubComputerRoutes } from '../routes/hub-computers.js';
+import { createHubAgentGrantRoutes } from '../routes/hub-agent-grants.js';
 import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
 import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
 import {
@@ -482,6 +483,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/computers', createHubComputerRoutes());
   // A computer redeeming its owner's link code; the `/api` 404 elsewhere.
   app.route('/api/hub/link', createHubLinkRoutes());
+  // The owner's grants to agents on agent computers; the `/api` 404 elsewhere.
+  app.route('/api/hub/agent-grants', createHubAgentGrantRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
