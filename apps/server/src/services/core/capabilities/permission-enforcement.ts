@@ -280,6 +280,14 @@ function stricter(a: ResolvedPermission, b: ResolvedPermission): ResolvedPermiss
 }
 
 /**
+ * Edits every later turn of the agent reads (who it is in `SOUL.md`, what its beat does in
+ * `HEARTBEAT.md`, its persona and settings), so in a marked turn they are held for a person
+ * (DOR-3036): a stranger's or a teammate's words must not rewrite who the agent is for everyone
+ * after. A card, every time, whatever the preset.
+ */
+const HELD_IN_A_MARKED_TURN: ReadonlySet<string> = new Set(['operator.update_agent']);
+
+/**
  * Resolve the permission for one call, reading the config and the calling
  * agent's manifest fresh.
  *
@@ -367,7 +375,8 @@ export async function resolveCallPermission(request: {
       ...((index === 0 &&
         (action.describeApprovalChange ||
           isAlwaysAskingExtensionTool(action) ||
-          action.alwaysAsksForInput?.(request.input) === true)) ||
+          action.alwaysAsksForInput?.(request.input) === true ||
+          (strangerTurn && HELD_IN_A_MARKED_TURN.has(action.id)))) ||
       index > 0
         ? { alwaysAsks: true }
         : {}),

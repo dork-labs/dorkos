@@ -5433,6 +5433,33 @@ export const TaskRunTriggerSchema = z
 
 export type TaskRunTrigger = z.infer<typeof TaskRunTriggerSchema>;
 
+/**
+ * The turn marks a schedule was created or last edited under (DOR-3036, `specs/turn-marks`), as
+ * its approval card shows them: words from outside the owner's circle, and each teammate in a
+ * shared space whose message started the chain, with the names DorkOS knew when it was written.
+ */
+export const ScheduleOriginMarksSchema = z
+  .object({
+    /** The turn read words DorkOS can't vouch for: a stranger's message, or another agent's that carried one. */
+    outsider: z.literal(true).optional(),
+    /** Each teammate whose message started the chain, and the space room they wrote in. */
+    teammate: z
+      .array(
+        z.object({
+          roomId: z.string(),
+          authorId: z.string(),
+          /** The teammate's name when the mark was written, or null when it was unknown. */
+          name: z.string().nullable().default(null),
+          /** The room's title when the mark was written, or null when it was unknown. */
+          room: z.string().nullable().default(null),
+        })
+      )
+      .optional(),
+  })
+  .openapi('ScheduleOriginMarks');
+
+export type ScheduleOriginMarks = z.infer<typeof ScheduleOriginMarksSchema>;
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5616,6 +5643,12 @@ export const TaskSchema = z
      * such. `null` on every schedule a person or an agent explained themselves.
      */
     reasonSource: z.enum(['dorkos']).nullable().default(null),
+    /**
+     * The turn marks the schedule was created or last edited under, or null for an unmarked
+     * turn or a person's own schedule (DOR-3036). A marked schedule waits for a person, whatever
+     * the trust preset; approving it clears this.
+     */
+    originMarks: ScheduleOriginMarksSchema.nullable().optional(),
     nextRun: z.string().nullable().optional(),
     /**
      * When the schedule last started a run (ISO 8601), or null when it never

@@ -7,9 +7,10 @@
  * A mark is a flat field on `TurnPermissionLevel`, so it travels wherever a level or a ceiling
  * already does: a room post keeps its author's level, a chat message stores its sender's, a
  * spin-off starts under its starter's bound, and `stricterLevel` keeps every mark of the two
- * levels it merges. {@link TurnMarks} is exactly those fields. Today there is one kind,
- * `outsider`: the turn read words from outside the owner's circle (spec `trusted-by-default-flip`
- * §4.7). The teammate and tool-read kinds join it here, as more fields of the same set.
+ * levels it merges. {@link TurnMarks} is exactly those fields: `outsider`, the turn read words from
+ * outside the owner's circle (spec `trusted-by-default-flip` §4.7), and `teammate`, the teammates
+ * in shared spaces whose words started the chain (`teammate-mark.ts`). Tool-read joins them later,
+ * as one more field of the same set with its own entry in the rules below.
  *
  * Marks only add up: no reader here ever takes one away, and only a person clears the durable
  * copies (a parked schedule, a held edit).
@@ -26,29 +27,38 @@
  * ## The seam
  *
  * {@link applyTurnMarks} wraps the level record (`recordTurnLevels` returns the two together), so
- * every runtime the registry wraps applies marks after the level is recorded. Its one effect
- * today: a turn carrying a mark is counted against its agent while it runs, so a caller that
- * cannot name its session (Codex and OpenCode over the external `/mcp` server) is still read as
- * marked (`live-outsider-turns.ts`). A runtime that reaches a turn without it is a gap the seam
- * census refuses (`runtime-seam/__tests__/turn-marks-seam.census.test.ts`).
+ * every runtime the registry wraps applies marks after the level is recorded, to a turn and to a
+ * command intent alike. A turn carrying a mark is counted against its agent while it runs, so a
+ * caller that cannot name its session (Codex and OpenCode over the external `/mcp` server) is
+ * still read as marked (`live-outsider-turns.ts`), and a teammate-marked turn is refused or held
+ * to the teammate tier before the runtime sees it (`teammate-mark.ts`). A runtime that reaches a
+ * turn without the seam is a gap the census refuses (`turn-marks-seam.census.test.ts`).
  *
  * @module services/core/turn-power/turn-marks
  */
 import type {
   AgentRuntime,
   MessageOpts,
+  TeammateOrigin,
+  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import {
+  isNoLooserThan,
+  mergeTeammateOrigins,
+  READ_ONLY_LEVEL,
+} from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
-import { countWhileRunning } from './live-outsider-turns.js';
+import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
+import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
 
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
   'outsider',
+  'teammate',
 ] as const satisfies readonly (keyof TurnPermissionLevel)[];
 
 /** One kind of mark. */
@@ -60,21 +70,60 @@ export type TurnMarks = Pick<TurnPermissionLevel, TurnMarkKind>;
 /** No marks at all. */
 export const NO_MARKS: TurnMarks = Object.freeze({});
 
+/** How many turns' places are remembered, oldest dropped first (as `turn-levels.ts`). */
+const PLACE_MEMORY = 10_000;
+
 /**
  * What words from a source DorkOS cannot vouch for carry: the outsider mark. Unknown counts as
  * marked (a stranger, a sender with no kept level, an empty ceiling that vouches for no one).
  */
 const UNKNOWN_SOURCE: TurnMarks = Object.freeze({ outsider: true });
 
-/** The set holding every kind `has` answers yes for, or {@link NO_MARKS}. */
-function marksWhere(has: (kind: TurnMarkKind) => boolean): TurnMarks {
-  const kinds = TURN_MARK_KINDS.filter(has);
-  if (kinds.length === 0) return NO_MARKS;
-  return Object.fromEntries(kinds.map((kind) => [kind, true])) as TurnMarks;
+/** How each kind combines and compares: the outsider mark is a flag, a teammate mark a list. */
+interface KindRules<K extends TurnMarkKind> {
+  /** Both values together. */
+  merge(a: TurnMarks[K], b: TurnMarks[K]): TurnMarks[K];
+  /** Whether `outer` already holds everything `inner` does. */
+  covers(outer: TurnMarks[K], inner: TurnMarks[K]): boolean;
 }
 
-/** How many turns' places are remembered, oldest dropped first (as `turn-levels.ts`). */
-const PLACE_MEMORY = 10_000;
+const sameOrigin = (a: TeammateOrigin, b: TeammateOrigin) =>
+  a.roomId === b.roomId && a.authorId === b.authorId;
+
+/** One entry per kind, so a kind added to {@link TURN_MARK_KINDS} cannot go without rules. */
+const RULES: { [K in TurnMarkKind]: KindRules<K> } = {
+  outsider: {
+    merge: (a, b) => (a === true || b === true ? true : undefined),
+    covers: (outer, inner) => inner !== true || outer === true,
+  },
+  teammate: {
+    merge: (a, b) => mergeTeammateOrigins(a, b),
+    covers: (outer, inner) =>
+      inner === undefined ||
+      (outer !== undefined && inner.every((origin) => outer.some((o) => sameOrigin(o, origin)))),
+  },
+};
+
+/** The kinds present in a set or a level: a flag set, or a list (even empty). */
+function presentKinds(marks: TurnMarks): TurnMarkKind[] {
+  return TURN_MARK_KINDS.filter((kind) => marks[kind] !== undefined);
+}
+
+/** The marks among these fields, or {@link NO_MARKS} when there are none. */
+function marksFrom(fields: TurnMarks): TurnMarks {
+  const kinds = presentKinds(fields);
+  if (kinds.length === 0) return NO_MARKS;
+  return Object.fromEntries(kinds.map((kind) => [kind, fields[kind]])) as TurnMarks;
+}
+
+/**
+ * The teammate origins a set carries, or none.
+ *
+ * @param marks - The set.
+ */
+export function teammateOrigins(marks: TurnMarks): readonly TeammateOrigin[] {
+  return marks.teammate ?? [];
+}
 
 /**
  * The marks a level carries, or none for an unknown level. Unknown is read by each caller, since
@@ -84,7 +133,7 @@ const PLACE_MEMORY = 10_000;
  * @param level - A recorded level, or `undefined`.
  */
 export function marksOfLevel(level: TurnPermissionLevel | undefined): TurnMarks {
-  return marksWhere((kind) => level?.[kind] === true);
+  return level === undefined ? NO_MARKS : marksFrom(level);
 }
 
 /**
@@ -126,7 +175,13 @@ export function marksForTurn(opts: MessageOpts | undefined): TurnMarks {
  * @param b - The other.
  */
 export function mergeMarks(a: TurnMarks, b: TurnMarks): TurnMarks {
-  return marksWhere((kind) => a[kind] === true || b[kind] === true);
+  const merged: Record<string, unknown> = {};
+  for (const kind of TURN_MARK_KINDS) {
+    const rules = RULES[kind] as KindRules<TurnMarkKind>;
+    const value = rules.merge(a[kind], b[kind]);
+    if (value !== undefined) merged[kind] = value;
+  }
+  return marksFrom(merged as TurnMarks);
 }
 
 /**
@@ -135,7 +190,7 @@ export function mergeMarks(a: TurnMarks, b: TurnMarks): TurnMarks {
  * @param marks - The set.
  */
 export function hasMarks(marks: TurnMarks): boolean {
-  return TURN_MARK_KINDS.some((kind) => marks[kind] === true);
+  return presentKinds(marks).length > 0;
 }
 
 /**
@@ -146,7 +201,9 @@ export function hasMarks(marks: TurnMarks): boolean {
  * @param sender - The marks of the turn whose words would join it.
  */
 export function carriesAllMarks(receiver: TurnMarks, sender: TurnMarks): boolean {
-  return TURN_MARK_KINDS.every((kind) => sender[kind] !== true || receiver[kind] === true);
+  return TURN_MARK_KINDS.every((kind) =>
+    (RULES[kind] as KindRules<TurnMarkKind>).covers(receiver[kind], sender[kind])
+  );
 }
 
 /**
@@ -175,9 +232,61 @@ export function mayJoinRunningTurn(
  * @param marks - The marks it carries.
  */
 export function withMarks(level: TurnPermissionLevel, marks: TurnMarks): TurnPermissionLevel {
-  const adds = TURN_MARK_KINDS.filter((kind) => marks[kind] === true && level[kind] !== true);
-  if (adds.length === 0) return level;
-  return { ...level, ...Object.fromEntries(adds.map((kind) => [kind, true])) };
+  const own = marksOfLevel(level);
+  if (carriesAllMarks(own, marks)) return level;
+  return { ...level, ...mergeMarks(own, marks) };
+}
+
+/**
+ * The marks the agent at this home has running: every mark any of its marked turns carries right
+ * now, or a turn no agent could be found for does. Read for a caller that cannot name its session.
+ *
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function agentMarksRunning(agentPath: string): TurnMarks {
+  return runningMarksOf(agentPath).reduce(mergeMarks, NO_MARKS);
+}
+
+/**
+ * A ceiling that carries these marks to a turn that reads words written under them (a beat that
+ * reads a promise made in a marked turn): the runtime default for the outsider mark, and a
+ * read-only level holding every teammate origin. `undefined` for no marks.
+ *
+ * @param marks - The marks the words were written under.
+ */
+export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undefined {
+  if (!hasMarks(marks)) return undefined;
+  const bounds: TurnPermissionBound[] = ['runtime-default'];
+  if (marks.teammate !== undefined) bounds.push({ ...READ_ONLY_LEVEL, teammate: marks.teammate });
+  return bounds.length === 1 ? bounds[0]! : bounds;
+}
+
+/**
+ * The marks stored as JSON on a row (a commitment, say), or none when absent or unreadable. Only
+ * the shape of each kind is kept; anything else in the stored value is dropped.
+ *
+ * @param stored - The stored JSON, or null.
+ */
+export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
+  if (!stored) return NO_MARKS;
+  try {
+    const value = JSON.parse(stored) as { outsider?: unknown; teammate?: unknown };
+    const teammate = Array.isArray(value.teammate)
+      ? value.teammate
+          .filter(
+            (o): o is TeammateOrigin =>
+              typeof o?.roomId === 'string' && typeof o?.authorId === 'string'
+          )
+          .map((o) => ({ roomId: o.roomId, authorId: o.authorId }))
+      : undefined;
+    return marksFrom({
+      ...(value.outsider === true ? { outsider: true } : {}),
+      ...(teammate !== undefined ? { teammate } : {}),
+    });
+  } catch {
+    // Unreadable is not unmarked: a row whose marks cannot be read carries the outsider mark.
+    return UNKNOWN_SOURCE;
+  }
 }
 
 /**
@@ -189,6 +298,19 @@ export function withMarks(level: TurnPermissionLevel, marks: TurnMarks): TurnPer
  */
 export function startedByOutsider(sessionId: string): boolean {
   return turnStartedByOutsider(sessionId);
+}
+
+/** A turn start: `sendMessage`'s and `executeCommandIntent`'s shape, with the middle argument. */
+type AnyTurnStart = (
+  sessionId: string,
+  input: unknown,
+  opts?: MessageOpts
+) => AsyncGenerator<StreamEvent>;
+
+/** A turn that refuses before anything runs, failing the stream its caller reads. */
+async function* refused(reason: string): AsyncGenerator<StreamEvent> {
+  yield* [];
+  throw new Error(reason);
 }
 
 /** Where a turn stands and whom it is for, so its agent can be found while it runs. */
@@ -221,24 +343,42 @@ export function applyTurnMarks(
   // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
   // through the runtime that sent the turn.
   const places = new Map<string, { cwd?: string; forAgent?: string }>();
+
+  /** Start one turn with its marks applied: refused, rewritten for a teammate, and counted. */
+  function markedTurn(
+    target: AgentRuntime,
+    sessionId: string,
+    opts: MessageOpts | undefined,
+    start: (opts: MessageOpts | undefined) => AsyncGenerator<StreamEvent>
+  ): AsyncGenerator<StreamEvent> {
+    const marks = marksForTurn(opts);
+    if (!hasMarks(marks)) return start(opts);
+    let sent = opts;
+    if (marks.teammate !== undefined) {
+      const refusal = teammateTurnRefusal(target.type, marks.teammate);
+      if (refusal !== null) return refused(refusal);
+      sent = teammateTurnOpts(opts);
+    }
+    // A caller that cannot name this session can still name its agent.
+    const place = placeOf(target, sessionId, sent);
+    places.delete(sessionId);
+    places.set(sessionId, place);
+    if (places.size > PLACE_MEMORY) places.delete(places.keys().next().value!);
+    return countWhileRunning(place, marks, start(sent));
+  }
+
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
-        return (
-          sessionId: string,
-          content: string,
-          opts?: MessageOpts
-        ): AsyncGenerator<StreamEvent> => {
-          const events = target.sendMessage(sessionId, content, opts);
-          const marks = marksForTurn(opts);
-          if (!hasMarks(marks)) return events;
-          // A caller that cannot name this session can still name its agent.
-          const place = placeOf(target, sessionId, opts);
-          places.delete(sessionId);
-          places.set(sessionId, place);
-          if (places.size > PLACE_MEMORY) places.delete(places.keys().next().value!);
-          return countWhileRunning(place, marks, events);
-        };
+      // A command intent (a compaction, say) is a turn like any other: it carries the marks it
+      // was sent with. A steer or stage (`deliverIntoTurn`) joins a turn already running, which
+      // cannot gain marks; its one marked sender, another chat, is held by `mayJoinRunningTurn`.
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (target[prop] as AnyTurnStart).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) =>
+          markedTurn(target, sessionId, opts, (sent) => start(sessionId, input, sent));
       }
       if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
         const subscribe = target.onRuntimeTurn.bind(target);

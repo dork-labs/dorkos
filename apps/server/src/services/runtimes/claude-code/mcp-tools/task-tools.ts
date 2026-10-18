@@ -74,6 +74,8 @@ import {
   scheduleRunFolder,
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { hasMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -292,6 +294,8 @@ export function createCreateScheduleHandler(
         trusted: false,
         // Only the in-session server knows its caller is one of our agents.
         callerIsOurAgent: resolveProvenance !== undefined,
+        // The marks of the turn making the call, from its own record (DOR-3036).
+        originMarks: marksOf(provenance.sessionId, provenance.agentPath),
         proposal: {
           sessionId: provenance.sessionId ?? null,
           agentPath: provenance.agentPath ?? null,
@@ -586,7 +590,7 @@ export function createUpdateScheduleHandler(
     // One of our agents on a Trusted install keeps an approved schedule live
     // through its own edit, except on a schedule made from a file (ADR
     // 261006-225605); only the in-session server knows the caller is ours.
-    const settled = deps.taskStore!.approvals.settleApprovedWorkChange(
+    let settled = deps.taskStore!.approvals.settleApprovedWorkChange(
       updated.id,
       { ...taskWorkOf(existing), status: existing.status },
       {
@@ -594,6 +598,13 @@ export function createUpdateScheduleHandler(
         armsAgentWork: agentSchedulesArmWithoutAsking(resolveProvenance !== undefined),
       }
     );
+    // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
+    // for its card (DOR-3036).
+    const caller = resolveProvenance?.() ?? {};
+    const marks = marksOf(caller.sessionId, caller.agentPath);
+    if (hasMarks(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
+      if (existing.status !== 'pending_approval') settled = 'parked';
+    }
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do

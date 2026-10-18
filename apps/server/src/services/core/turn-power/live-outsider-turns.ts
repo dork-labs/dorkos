@@ -1,7 +1,7 @@
 /**
- * Which agents have a turn running right now that carries a turn mark, per
- * kind (DOR-3036, `turn-marks.ts`); today the one kind is the outsider mark,
- * a turn that read an outsider's words (spec `trusted-by-default-flip` §4.7).
+ * Which agents have a turn running right now that carries a turn mark, and
+ * which marks (DOR-3036, `turn-marks.ts`): a turn that read an outsider's words
+ * (spec `trusted-by-default-flip` §4.7), or one a teammate's words started.
  *
  * ## Why a second record beside the per-session one
  *
@@ -14,10 +14,9 @@
  * - A session the runtime renamed outside the paths that carry its level
  *   across, so the id a tool call names finds no record.
  *
- * Both still know WHICH AGENT is calling. So this keeps, per agent home, how
- * many of its turns that read an outsider's words are running, and a caller
- * that cannot be placed in a session is read as reading one whenever its agent
- * is. That can mark a note one of the agent's other turns would not have, never
+ * Both still know WHICH AGENT is calling. So this keeps, per agent home, the
+ * marks of each of its marked turns running now, and a caller that cannot be
+ * placed in a session carries every mark its agent's running turns do. That can mark a note one of the agent's other turns would not have, never
  * the other way round.
  *
  * ## Fails toward marking
@@ -37,8 +36,8 @@ import type { TurnMarks } from './turn-marks.js';
 /** The key a turn whose agent could not be resolved is counted under. */
 const UNPLACED = '';
 
-/** Mark kind → agent home (or {@link UNPLACED}) → how many turns carrying it are running. */
-const running = new Map<string, Map<string, number>>();
+/** Agent home (or {@link UNPLACED}) → the marks of each of its marked turns running now. */
+const running = new Map<string, Set<{ readonly marks: TurnMarks }>>();
 
 /** The home a folder belongs to, or `undefined` when none can be resolved. */
 function homeKey(dir: string | undefined, forAgent?: string): string | undefined {
@@ -49,24 +48,8 @@ function homeKey(dir: string | undefined, forAgent?: string): string | undefined
   }
 }
 
-function adjust(kind: string, key: string, by: 1 | -1): void {
-  const counts = running.get(kind) ?? new Map<string, number>();
-  const next = (counts.get(key) ?? 0) + by;
-  if (next > 0) counts.set(key, next);
-  else counts.delete(key);
-  if (counts.size > 0) running.set(kind, counts);
-  else running.delete(kind);
-}
-
-/** The kinds a set carries: every field set to `true`, so a new kind needs no change here. */
-function kindsOf(marks: TurnMarks): string[] {
-  return Object.entries(marks)
-    .filter(([, value]) => value === true)
-    .map(([kind]) => kind);
-}
-
 /**
- * Count a marked turn against its agent, under each kind it carries, for as
+ * Count a marked turn against its agent, with the marks it carries, for as
  * long as its stream runs. Synchronous: the count starts when the stream is
  * first read and ends when it finishes, fails or is closed.
  *
@@ -81,30 +64,30 @@ export function countWhileRunning(
   events: AsyncIterable<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const key = homeKey(place.cwd, place.forAgent) ?? UNPLACED;
-  const kinds = kindsOf(marks);
   return (async function* counted() {
-    for (const kind of kinds) adjust(kind, key, 1);
+    // One token per turn, so two turns with the same marks are two entries.
+    const token = { marks };
+    const turns = running.get(key) ?? new Set();
+    turns.add(token);
+    running.set(key, turns);
     try {
       yield* events;
     } finally {
-      for (const kind of kinds) adjust(kind, key, -1);
+      turns.delete(token);
+      if (turns.size === 0 && running.get(key) === turns) running.delete(key);
     }
   })();
 }
 
 /**
- * The marks the agent at this home has running: each kind one of its turns
- * carries right now, or a turn no agent could be found for does.
+ * The marks of every marked turn the agent at this home has running, and of
+ * every one no agent could be found for. `turn-marks.ts` merges them.
  *
  * @param agentPath - The calling agent's home, from its verified identity.
  */
-export function agentMarksRunning(agentPath: string): TurnMarks {
+export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
   const key = homeKey(agentPath) ?? path.resolve(agentPath);
-  const marks: Record<string, true> = {};
-  for (const [kind, counts] of running) {
-    if ((counts.get(UNPLACED) ?? 0) > 0 || (counts.get(key) ?? 0) > 0) marks[kind] = true;
-  }
-  return marks as TurnMarks;
+  return [...(running.get(UNPLACED) ?? []), ...(running.get(key) ?? [])].map((t) => t.marks);
 }
 
 /**

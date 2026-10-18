@@ -37,8 +37,8 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { agentMarksRunning } from './live-outsider-turns.js';
 import {
+  agentMarksRunning,
   applyTurnMarks,
   hasMarks,
   marksForTurn,
@@ -283,10 +283,21 @@ function recordLevels(
 ): AgentRuntime {
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
+      // A command intent is a turn too (`CommandIntentOpts` extends `MessageOpts`), recorded alike.
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
         return (
           sessionId: string,
-          content: string,
+          content: unknown,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> => {
           let stored: string | null | undefined;
@@ -306,7 +317,7 @@ function recordLevels(
           while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
           }
-          return target.sendMessage(sessionId, content, opts);
+          return start(sessionId, content, opts);
         };
       }
       const value = Reflect.get(target, prop, target);

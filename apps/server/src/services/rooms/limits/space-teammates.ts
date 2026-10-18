@@ -22,6 +22,7 @@
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
+import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
 
 /** The platform every space mirror's authors are stored under (`entry-import.ts`). */
 const SPACE_PLATFORM = 'community';
@@ -73,7 +74,8 @@ export function isTeammateEntry(
 
 /**
  * The `teammate` spread a `RoomTurnRequest` takes: present when ANY message the turn answers is a
- * teammate's, because one turn answers them all at one level.
+ * teammate's, because one turn answers them all at one level, or carries a teammate's mark on from
+ * an earlier hop (DOR-3036): another agent's post written in a turn a teammate's words reached.
  *
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
@@ -84,7 +86,10 @@ export function teammateOf(
   entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
   inSpaceRoom = false
 ): { teammate?: true } {
-  return entries.some((entry) => isTeammateEntry(authors, entry, inSpaceRoom))
+  return entries.some(
+    (entry) =>
+      isTeammateEntry(authors, entry, inSpaceRoom) || entryLevelOf(entry.id)?.teammate !== undefined
+  )
     ? { teammate: true }
     : {};
 }

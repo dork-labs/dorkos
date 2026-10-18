@@ -75,7 +75,7 @@ import {
 } from '../../services/session/index.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
-import { runsTeammateTurns } from '../../services/rooms/limits/teammate-turn.js';
+import { runsTeammateTurns } from '../../services/core/turn-power/teammate-mark.js';
 import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
 import { agentRuntimeTypeFrom } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import {
@@ -87,6 +87,7 @@ import { registerLocalCommunity } from '../../services/communities/index.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
+import { setOriginLabeler } from '../../services/tasks/approvals/marked-schedules.js';
 
 /** What {@link wireRooms} reads from the startup steps before it. */
 export interface WireRoomsInput {
@@ -160,6 +161,11 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     },
   });
   setRoomService(roomService);
+  // A parked schedule's card names the teammate and the space room a mark came from (DOR-3036).
+  setOriginLabeler((origin) => ({
+    name: roomAuthors.getById(origin.authorId)?.displayName ?? null,
+    room: roomStore.getRoom(origin.roomId)?.title ?? null,
+  }));
   if (!refs.remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(refs.remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(refs.remoteCommunityRuntime.projection);

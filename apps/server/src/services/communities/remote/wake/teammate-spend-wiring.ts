@@ -6,6 +6,7 @@
  * @module services/communities/remote/wake/teammate-spend-wiring
  */
 import { setTeammateTurnCostSink } from '../../../core/turn-power/teammate-turn-cost.js';
+import { setTeammateSpaceGate } from '../../../core/turn-power/teammate-mark.js';
 import { notify } from '../../../notifications/notification-service.js';
 import { logger } from '../../../../lib/logger.js';
 import type { RemoteMirrorStore } from '../mirror-store.js';
@@ -37,6 +38,14 @@ export function wireTeammateSpend(mirrors: Pick<RemoteMirrorStore, 'connectionOf
         });
       });
     },
+  });
+  // A turn carrying a teammate's mark, however many hops on, does not start once a space in its
+  // chain is at its limit (DOR-3036). A room that mirrors no space limits nothing.
+  setTeammateSpaceGate((roomId) => {
+    const connection = mirrors.connectionOf(roomId);
+    return (
+      !connection || getTeammateSpend().allows(connection.communityRef, connection.ownerAuthorId)
+    );
   });
   setTeammateTurnCostSink(({ roomId, costUsd }) => {
     const connection = mirrors.connectionOf(roomId);

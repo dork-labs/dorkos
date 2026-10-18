@@ -25,7 +25,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { RuntimeRegistry } from '../../runtime-registry.js';
-import { agentMarksRunning, resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
+import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
+import { agentMarksRunning } from '../../turn-power/turn-marks.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   clearTestHomes,

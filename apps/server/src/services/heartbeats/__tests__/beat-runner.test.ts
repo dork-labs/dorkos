@@ -49,6 +49,7 @@ let runtime: FakeAgentRuntime;
 let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start'>;
 let launches: string[];
 let launchRuntimes: string[];
+let launchCeilings: unknown[];
 let accepted: Array<{ raises: number }>;
 let failingRaises: number;
 let failingErrors: Array<string | undefined>;
@@ -77,6 +78,7 @@ function launcher(): BeatTurnLauncher {
     async launch(request) {
       launches.push(request.content);
       launchRuntimes.push(request.runtime);
+      launchCeilings.push(request.permissionCeiling);
       currentSession = request.sessionId;
       const status = launchResults.shift() ?? 'started';
       if (status === 'cap-full') return { status: 'cap-full' };
@@ -204,6 +206,7 @@ beforeEach(() => {
   launchResults = [];
   launches = [];
   launchRuntimes = [];
+  launchCeilings = [];
   accepted = [];
   failingRaises = 0;
   failingErrors = [];
@@ -230,6 +233,32 @@ afterEach(() => {
 async function settle(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
+
+// DOR-3036: the beat reads the agent's open promises, so one made in a marked turn marks the beat.
+describe('a beat that reads a promise made in a marked turn', () => {
+  it('carries the promise’s marks as its ceiling, and an unmarked agent’s beat carries none', async () => {
+    changes = [LOCAL_MESSAGE];
+    const marks = { outsider: true as const, teammate: [{ roomId: 'space', authorId: 'priya' }] };
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const marked = runner({ commitments: { list: () => [], openMarks: () => marks } });
+    const done = marked.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([
+      ['runtime-default', { asks: 'always', reach: 'read', teammate: marks.teammate }],
+    ]);
+  });
+
+  it('runs without a ceiling when no open promise is marked', async () => {
+    changes = [LOCAL_MESSAGE];
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const plain = runner({ commitments: { list: () => [], openMarks: () => ({}) } });
+    const done = plain.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([undefined]);
+  });
+});
 
 describe('a quiet beat', () => {
   it('runs no model and writes one record row', async () => {

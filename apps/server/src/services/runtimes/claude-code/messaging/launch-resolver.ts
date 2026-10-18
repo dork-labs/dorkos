@@ -241,7 +241,8 @@ export async function resolveLaunch(args: {
   // Never for words somebody other than the person here wrote (DOR-2955): a
   // stranger's `/name` would run that command, with the shell its definition
   // allows, before any tool gate sees it. Their text goes out defused below.
-  const teammate = messageOpts?.roomTurn?.teammate === true;
+  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
+  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
   const untrustedText = teammate || messageOpts?.roomTurn?.untrustedText === true;
   const commandName = untrustedText ? null : detectSlashCommandName(content);
   let isCommandDispatch = false;

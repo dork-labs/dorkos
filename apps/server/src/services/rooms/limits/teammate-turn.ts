@@ -17,7 +17,7 @@
  *   owner's other rooms, chats or files and post them back.
  * - **None of the owner's notes.** Its prompt leaves the agent's memory out
  *   (`core/turn-power/teammate-turn-context.ts`).
- * - **Only on a runtime that honours all three** ({@link TEAMMATE_TURN_RUNTIMES}). Elsewhere the
+ * - **Only on a runtime that honours all three** (`TEAMMATE_TURN_RUNTIMES`). Elsewhere the
  *   post stays history and starts no turn.
  *
  * The owner's own posts in the space are not teammate turns and keep today's behaviour.
@@ -29,23 +29,7 @@
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import { outsiderInViewOf } from './turn-ceiling.js';
-
-/**
- * The runtimes a teammate turn may run on: those that honour all three bounds above, per turn.
- * Codex and OpenCode take the ceiling but not per-turn `unattended`, so a teammate's turn there
- * could still raise a card; their teammate posts stay history until they do (DOR-2978).
- * `test-mode` runs no tools at all, and exists only in test builds.
- */
-export const TEAMMATE_TURN_RUNTIMES: ReadonlySet<string> = new Set(['claude-code', 'test-mode']);
-
-/**
- * Whether a teammate turn may run on this runtime at all ({@link TEAMMATE_TURN_RUNTIMES}).
- *
- * @param runtimeType - The runtime the turn would run on.
- */
-export function runsTeammateTurns(runtimeType: string): boolean {
-  return TEAMMATE_TURN_RUNTIMES.has(runtimeType);
-}
+import { runsTeammateTurns, teammateRuntimeRefusal } from '../../core/turn-power/teammate-mark.js';
 
 /**
  * Refuse a teammate turn on a runtime that cannot hold it to every bound. The stream bridge
@@ -61,7 +45,7 @@ export function refuseTeammateTurnOn(
   runtimeType: string
 ): void {
   if (request.teammate && !runsTeammateTurns(runtimeType)) {
-    throw new Error(`A teammate's message cannot start a turn on ${runtimeType} yet`);
+    throw new Error(teammateRuntimeRefusal(runtimeType));
   }
 }
 

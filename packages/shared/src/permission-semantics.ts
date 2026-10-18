@@ -39,6 +39,7 @@ import type {
   PermissionModeDescriptor,
   PermissionReach,
   PermissionStop,
+  TeammateOrigin,
   TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
@@ -536,15 +537,39 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
  * bounds the other it is returned as is; when neither does (one asks less, the
  * other reaches further — Codex's read-only default against Claude's Default),
  * the two are combined: the more frequent asking and the shorter reach, and
- * Auto only when both are Auto. Either level's outsider mark is kept: the
- * stricter of two turns' levels is one that read whatever either read.
+ * Auto only when both are Auto. Either level's marks are kept (the outsider
+ * mark, and every teammate origin): the stricter of two turns' levels is one
+ * that read whatever either read.
  *
  * @param a - One level.
  * @param b - The other.
  */
 export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
   const level = stricterPower(a, b);
-  return (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true } : level;
+  const marked: TurnPermissionLevel =
+    (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true } : level;
+  const teammate = mergeTeammateOrigins(a.teammate, b.teammate);
+  return teammate === undefined || teammate === marked.teammate ? marked : { ...marked, teammate };
+}
+
+/**
+ * Every teammate origin either list holds, once each; `undefined` when neither
+ * is marked. Returns `a` itself when `b` adds nothing, so an unchanged level
+ * stays the same object.
+ *
+ * @param a - One level's origins.
+ * @param b - The other's.
+ */
+export function mergeTeammateOrigins(
+  a: readonly TeammateOrigin[] | undefined,
+  b: readonly TeammateOrigin[] | undefined
+): readonly TeammateOrigin[] | undefined {
+  if (b === undefined) return a;
+  if (a === undefined) return b;
+  const key = (origin: TeammateOrigin) => `${origin.roomId}\u0000${origin.authorId}`;
+  const seen = new Set(a.map(key));
+  const added = b.filter((origin) => !seen.has(key(origin)));
+  return added.length === 0 ? a : [...a, ...added];
 }
 
 /**

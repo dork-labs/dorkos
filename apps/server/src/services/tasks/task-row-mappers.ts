@@ -16,6 +16,7 @@ import {
   parseFollowedAgentChanges,
   type IncomingTaskContent,
 } from './schedule-permission-clamp.js';
+import { parseOriginMarks } from './approvals/marked-schedules.js';
 
 /** The parts of the approved work, in the order the card lists them. */
 const WORK_FIELDS = [
@@ -133,6 +134,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     proposedByName: null,
     origin: row.origin ?? null,
     reasonSource: row.reasonSource ?? null,
+    originMarks: parseOriginMarks(row.originMarks),
     nextRun: null,
     nextRuns: [],
   } as Task;

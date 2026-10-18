@@ -63,7 +63,7 @@ export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier
     logRefusal('[claude-code] a teammate’s turn was refused a tool', {
       reason: 'teammate_fence',
       visibility: 'shown',
-      roomId: scope.roomId,
+      roomId: scope.roomId ?? undefined,
       detail: { toolName: hookInput.tool_name },
     });
     return {

@@ -1003,6 +1003,40 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     await userEvent.click(await findSlot('schedule-approve-elevated'));
   }
 
+  // DOR-3036: a schedule an agent wrote in a marked turn waits for a person, says why, and is
+  // approved at the level it asked for or not at all.
+  it('names each mark a schedule was written under, and offers no raise beside it', async () => {
+    const getConfig = configAtStop('autonomy');
+    renderCard(
+      proposal({
+        originMarks: {
+          outsider: true,
+          teammate: [{ roomId: 'r1', authorId: 'a1', name: 'Priya', room: '#launch' }],
+        },
+      }),
+      { getConfig }
+    );
+
+    const marks = await findSlot('schedule-origin-marks');
+    expect(marks).toHaveTextContent('Written after reading words DorkOS can’t vouch for.');
+    expect(marks).toHaveTextContent('Started by Priya in #launch, a shared space.');
+    await vi.waitFor(() => expect(getConfig).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(elevated()).toBeNull();
+    expect(slot('schedule-approve')).not.toBeNull();
+  });
+
+  it('says a teammate started it even when DorkOS did not know their name', async () => {
+    renderCard(
+      proposal({
+        originMarks: { teammate: [{ roomId: 'r1', authorId: 'a1', name: null, room: null }] },
+      })
+    );
+    expect(await findSlot('schedule-origin-marks')).toHaveTextContent(
+      'Started by a teammate in a shared space.'
+    );
+  });
+
   it('offers the raise, named by the stop, when the operator sits above the clamp', async () => {
     renderCard(proposal(), { getConfig: configAtStop('autonomy') });
 

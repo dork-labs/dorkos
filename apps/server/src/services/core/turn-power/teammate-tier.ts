@@ -46,8 +46,12 @@
 
 /** The room a teammate's turn answers, and so the only room its DorkOS tools may reach. */
 export interface TeammateTierScope {
-  /** The local room id the turn answers in (`MessageOpts.roomTurn.roomId`). */
-  roomId: string;
+  /**
+   * The local room id the turn answers in (`MessageOpts.roomTurn.roomId`), or `null` for a
+   * teammate-marked turn that answers no room (a chat one hop on, DOR-3036): it reaches no room,
+   * and replies only in its own chat.
+   */
+  roomId: string | null;
 }
 
 /**
