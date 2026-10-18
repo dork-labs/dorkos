@@ -9,7 +9,7 @@
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { createRateLimiter, type RateLimiter } from '../../../http/rate-limiter.js';
+import { createProvenIdRateLimiter } from '../../../http/rate-limiter.js';
 import { countWhileRunning } from '../turn-power/live-outsider-turns.js';
 import {
   getAgentIdentityService,
@@ -27,17 +27,21 @@ export const BRIDGE_CALLS_PER_COMPUTER_PER_MINUTE = 600;
 /** Most `tools.call` one turn sends in any minute. */
 export const BRIDGE_CALLS_PER_TURN_PER_MINUTE = 120;
 
+/** One sliding window, keyed by a server-proven id. */
+type ProvenIdRateLimiter = ReturnType<typeof createProvenIdRateLimiter>;
+
 /** The two sliding windows a bridged call is counted in. */
 export interface BridgedToolRateLimits {
   /** Keyed by the proven computer id. */
-  readonly perComputer: RateLimiter;
+  readonly perComputer: ProvenIdRateLimiter;
   /** Keyed by the hub's session id for the turn. */
-  readonly perTurn: RateLimiter;
+  readonly perTurn: ProvenIdRateLimiter;
 }
 
 /**
  * Fresh limits, each its own set of buckets: the server's one sliding-window
- * limiter (`http/rate-limiter.ts`).
+ * limiter, keyed by the ids the bridge proved (`createProvenIdRateLimiter` in
+ * `http/rate-limiter.ts`), since a bridged call has no request to key on.
  *
  * @param policy - Override the per-minute limits, for tests.
  */
@@ -46,12 +50,12 @@ export function createBridgedToolRateLimits(
 ): BridgedToolRateLimits {
   const windowMs = policy.windowMs ?? MINUTE_MS;
   return {
-    perComputer: createRateLimiter({
+    perComputer: createProvenIdRateLimiter({
       windowMs,
       limit: policy.perComputer ?? BRIDGE_CALLS_PER_COMPUTER_PER_MINUTE,
       maxKeys: 1_000,
     }),
-    perTurn: createRateLimiter({
+    perTurn: createProvenIdRateLimiter({
       windowMs,
       limit: policy.perTurn ?? BRIDGE_CALLS_PER_TURN_PER_MINUTE,
       maxKeys: 10_000,
