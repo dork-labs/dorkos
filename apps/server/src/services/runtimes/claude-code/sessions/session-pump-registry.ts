@@ -165,8 +165,12 @@ export class SessionPumpRegistry {
   private slotChanges = 0;
   /** Sessions whose launch is waiting for a slot, in the order they arrived. */
   private readonly slotQueue: string[] = [];
-  /** Reaped processes still closing; they count against the ceiling until gone. */
-  private draining = 0;
+  /**
+   * Reaps whose process is still closing. Each counts against the ceiling until
+   * it has gone, and shutdown waits for them, because none of them is in
+   * {@link entries} any more.
+   */
+  private readonly closing = new Set<Promise<boolean>>();
   /** Sessions whose wait a Stop has ended, read once by the waiting launch. */
   private readonly stoppedWaits = new Set<string>();
 
@@ -245,7 +249,7 @@ export class SessionPumpRegistry {
   liveCount(): number {
     // A reaped process left `entries` the moment it was reaped, but it is still
     // closing; it counts until it has gone, so the ceiling holds exactly.
-    let live = this.draining;
+    let live = this.closing.size;
     for (const entry of this.entries.values()) if (entry.pump.holdsProcess) live += 1;
     return live;
   }
@@ -289,15 +293,17 @@ export class SessionPumpRegistry {
   private async whileDraining(entry: PumpEntry, reaping: Promise<boolean>): Promise<boolean> {
     // The pump's synchronous part has run: a reap that is going ahead has
     // already moved it to REAPED, and one that declined has not.
-    const draining = entry.pump.state === 'reaped';
-    if (draining) this.draining += 1;
+    if (entry.pump.state !== 'reaped') return reaping;
+    this.closing.add(reaping);
+    // The drop above may have taken the last entry; shutdown still has to wait
+    // for this close, so the registry stays where shutdown looks.
+    liveRegistries.add(this);
     try {
       return await reaping;
     } finally {
-      if (draining) {
-        this.draining -= 1;
-        this.wakeSlotWaiters();
-      }
+      this.closing.delete(reaping);
+      if (this.entries.size === 0 && this.closing.size === 0) liveRegistries.delete(this);
+      this.wakeSlotWaiters();
     }
   }
 
@@ -334,9 +340,12 @@ export class SessionPumpRegistry {
     // timer with it; and a pump torn down while its entry was still here would
     // report the state change into an entry about to be discarded anyway.
     for (const entry of entries) this.drop(entry.pump.sessionId);
-    const results = await Promise.allSettled(
-      entries.map((entry) => entry.pump.teardown('shutdown'))
-    );
+    // A reaped process still closing left `entries` already; its own drain
+    // closes it, so shutdown waits for that rather than leaving it behind.
+    const results = await Promise.allSettled([
+      ...entries.map((entry) => entry.pump.teardown('shutdown')),
+      ...this.closing,
+    ]);
     for (const result of results) {
       if (result.status === 'rejected') {
         logger.warn('[SessionPumpRegistry] a pump failed to tear down', {
@@ -363,7 +372,7 @@ export class SessionPumpRegistry {
     // Releases the reservation too, so a launch that died between claiming a
     // slot and reaching WARMING cannot shrink the ceiling for good.
     this.slots.forget(sessionId);
-    if (this.entries.size === 0) liveRegistries.delete(this);
+    if (this.entries.size === 0 && this.closing.size === 0) liveRegistries.delete(this);
     this.wakeSlotWaiters();
   }
 
@@ -564,11 +573,16 @@ export class SessionPumpRegistry {
         const myTurn = this.slotQueue.length === 0 || this.slotQueue[0] === sessionId;
         if (myTurn) {
           if (grant()) return;
-          const reclaimed = await this.reclaimWarmSlot(sessionId);
-          if (grant()) return;
-          // A reclaim that freed a slot somebody else took is a reason to look
-          // again at once, not to sleep.
-          if (reclaimed) continue;
+          // A process still closing frees its slot in seconds, and its close
+          // wakes this wait. Reclaiming meanwhile would take a second chat's
+          // warm process for one launch.
+          if (this.closing.size === 0) {
+            const reclaimed = await this.reclaimWarmSlot(sessionId);
+            if (grant()) return;
+            // A reclaim that freed a slot somebody else took is a reason to
+            // look again at once, not to sleep.
+            if (reclaimed) continue;
+          }
         } else {
           assertStillWanted();
         }

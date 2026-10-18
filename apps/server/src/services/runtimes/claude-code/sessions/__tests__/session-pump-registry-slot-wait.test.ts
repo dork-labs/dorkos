@@ -283,4 +283,41 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
     expect(pump.state).toBe('running');
     expect(received.join(' ')).toContain('the turn');
   });
+
+  // Purpose: a process that is closing frees its slot in seconds. A launch
+  // waiting meanwhile must wait for it, not reclaim another chat's warm process.
+  it('waits for a closing process rather than reclaiming a second one', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const opts = launchOpts({ maxWarmSessions: 3 });
+    const busy = registry.acquire('busy', opts);
+    await busy.warm();
+    await busy.dispatch([{ content: 'a', messageId: 'msg-busy' }]);
+    await registry.acquire('closing', launchOpts({ maxWarmSessions: 3, drainGraceMs: 40 })).warm();
+    await registry.acquire('spare', opts).warm();
+
+    const reaping = registry.reap('closing');
+    expect(registry.liveCount()).toBe(3);
+    const next = registry.acquire('next', opts);
+    await next.dispatch([{ content: 'n', messageId: 'msg-next' }]);
+    await reaping;
+
+    expect(registry.warmth('spare')).toBe('warm');
+    expect(registry.warmth('next')).toBe('running');
+    expect(registry.liveCount()).toBe(3);
+  });
+
+  // Purpose: shutdown still reaches a process that is closing, though it is no
+  // longer in the registry's entries.
+  it('waits for a closing process at shutdown', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const pump = registry.acquire('s1', launchOpts({ drainGraceMs: 30 }));
+    await pump.warm();
+    let closed = false;
+    const reaping = registry.reap('s1').then(() => (closed = true));
+    expect(registry.size).toBe(0);
+
+    await shutdownSessionPumps();
+    expect(closed).toBe(true);
+    await reaping;
+  });
 });

@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(server): a full agent limit waits for a free slot instead of failing the turn (DOR-3012)'
+  - 'fix(server): address review of the warm-slot wait (DOR-3012)'
+  - 'fix(server): a waiting launch lets a closing process finish, and shutdown waits for it (DOR-3012)'
 ---
 
 ### Fixed
