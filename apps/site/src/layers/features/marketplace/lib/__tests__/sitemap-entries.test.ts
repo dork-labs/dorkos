@@ -45,6 +45,20 @@ describe('marketplaceSitemapEntries', () => {
     expect(categoryUrls(entries)).toEqual(['security']);
   });
 
+  // An empty sidecar list is a definite answer, not a missing one, so it does
+  // not fall back to the singular category (same as the category page).
+  it('does not fall back to the singular category when categories[] is empty', () => {
+    const entries = marketplaceSitemapEntries(BASE, [
+      entry('cleared', { categories: [], category: 'security' }),
+    ]);
+    expect(categoryUrls(entries)).toEqual([]);
+  });
+
+  // An empty registry lists no category pages at all.
+  it('lists no categories when the registry has no packages', () => {
+    expect(categoryUrls(marketplaceSitemapEntries(BASE, []))).toEqual([]);
+  });
+
   // A category slug outside the closed vocabulary never becomes a URL.
   it('ignores categories outside the controlled vocabulary', () => {
     const entries = marketplaceSitemapEntries(BASE, [
