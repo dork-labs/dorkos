@@ -27,17 +27,29 @@
  *    nothing here, and neither does a person's cookie or key, which cannot
  *    exist (registration is closed for every caller).
  *
- * An admitted request may still be refused by its route: a write the hub owns
- * answers `403` ({@link agentComputerRouteRefusal}), and an action only the
- * hub may take, or one nobody here could approve, is refused at the
- * capability gates (`./hub-owned.ts`).
+ * An admitted request may still be refused: **every write is refused unless
+ * `./agent-writes.ts` lists it** ({@link agentComputerRouteRefusal}, a `403`),
+ * and an action only the hub may take, or one nobody here could approve, is
+ * refused at the capability gates (`./hub-owned.ts`).
+ *
+ * **Two ways of reading a path, each in the direction that refuses.** The
+ * gate is handed the path the router matches (`c.req.path`: dot segments
+ * resolved, percent escapes decoded as Hono decodes them). What is refused
+ * (the account routes and the streams) is matched loosely: percent escapes
+ * decoded again (`%2F` included), lowercased, repeated slashes collapsed and
+ * trailing dots dropped, so `/API/Cloud`, `/api/%63loud`, `//api/cloud`,
+ * `/api/cloud%2Fx` and `/api/cloud./x` are refused too. What is let through
+ * (the probe, `/mcp` and A2A, and the writes an agent may make) is matched
+ * exactly, case and all, so no other spelling of a path is let through as
+ * the route it resembles.
  *
  * **Until the hub owns authority over an agent computer (part 6 of the design
  * note), any process on the computer is trusted at agent level.** Every
  * process there runs as the same user, so any of them can read the local MCP
  * token or an agent's identity token, and the gate cannot tell them apart.
- * What keeps the computer sealed today is what no agent may do (the tables in
- * `./hub-owned.ts`), not who is asking.
+ * What keeps the computer sealed today is what no agent may do (the writes
+ * `./agent-writes.ts` leaves out and the actions `./hub-owned.ts` refuses),
+ * not who is asking.
  *
  * @module services/core/agent-computer/agent-gate
  */
@@ -47,7 +59,7 @@ import {
   getAgentIdentityService,
   type AgentIdentity,
 } from '../agent-identity/agent-identity-service.js';
-import { agentComputerRouteRefusal, type HubOwnedRouteRefusal } from './hub-owned.js';
+import { agentComputerRouteRefusal, type AgentComputerWriteRefusal } from './agent-writes.js';
 
 /** The header an agent presents its identity token in (`middleware/agent-identity.ts`). */
 const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
@@ -78,41 +90,56 @@ export type AgentComputerGateDecision =
   /** Let it through, with the agent that proved itself when one did. */
   | { allowed: true; agentIdentity?: AgentIdentity }
   /** Refuse: `refusal` is the `403` body, or absent for the plain `401`. */
-  | { allowed: false; refusal?: HubOwnedRouteRefusal };
+  | { allowed: false; refusal?: AgentComputerWriteRefusal };
 
-/** Collapse repeated slashes, the way the router reads a path. */
-function collapse(path: string): string {
-  return path.replace(/\/{2,}/g, '/');
+/**
+ * A path read loosely, for the checks that refuse: every percent escape
+ * decoded (an encoded slash read as a slash), lowercased, repeated slashes
+ * collapsed and a segment's trailing dots dropped.
+ */
+function loosely(path: string): string {
+  return path
+    .replace(/(?:%[0-9a-f]{2})+/gi, (escapes) => {
+      try {
+        return decodeURIComponent(escapes);
+      } catch {
+        return escapes;
+      }
+    })
+    .toLowerCase()
+    .replace(/\/{2,}/g, '/')
+    .replace(/\.+(?=\/|$)/g, '');
 }
 
 /**
- * Whether a lowercased path is one an agent computer refuses to every caller.
+ * Whether a path is one an agent computer refuses to every caller: the
+ * account routes and the app's event streams, in any spelling.
  *
- * @param path - The lowercased request path, without its query.
+ * @param path - The request path, without its query.
  */
 export function isAgentComputerSealedPath(path: string): boolean {
-  const collapsed = collapse(path);
+  const loose = loosely(path);
   return (
-    SEALED_PREFIXES.some((prefix) => collapsed === prefix || collapsed.startsWith(`${prefix}/`)) ||
-    isAgentComputerStreamPath(collapsed)
+    SEALED_PREFIXES.some((prefix) => loose === prefix || loose.startsWith(`${prefix}/`)) ||
+    isAgentComputerStreamPath(loose)
   );
 }
 
 /**
- * Whether a lowercased path is one of the app's event streams.
+ * Whether a path is one of the app's event streams, in any spelling.
  *
- * @param path - The lowercased request path, without its query.
+ * @param path - The request path, without its query.
  */
 export function isAgentComputerStreamPath(path: string): boolean {
-  const collapsed = collapse(path);
-  return STREAM_PATHS.some((pattern) => pattern.test(collapsed));
+  const loose = loosely(path);
+  return STREAM_PATHS.some((pattern) => pattern.test(loose));
 }
 
 /**
- * Whether a lowercased path is the liveness probe, the one path an agent
+ * Whether a path is exactly the liveness probe, the one path an agent
  * computer answers without a credential.
  *
- * @param path - The lowercased request path, without its query.
+ * @param path - The request path, without its query.
  */
 export function isAgentComputerOpenPath(path: string): boolean {
   return path === '/api/health' || path === '/api/health/';
@@ -144,7 +171,8 @@ export async function liveAgentIdentity(
  * the rule.
  *
  * @param method - The request method.
- * @param path - The lowercased request path, without its query.
+ * @param path - The path the router matches (`c.req.path`), as it arrived:
+ *   not lowercased and without its query.
  * @param headers - The request headers.
  */
 export async function decideAgentComputerGate(
@@ -152,12 +180,11 @@ export async function decideAgentComputerGate(
   path: string,
   headers: IncomingHttpHeaders
 ): Promise<AgentComputerGateDecision> {
-  const collapsed = collapse(path);
-  if (isAgentComputerOpenPath(collapsed)) return { allowed: true };
-  if (isAgentComputerSealedPath(collapsed)) return { allowed: false };
-  if (OWN_AUTHORIZER_PATHS.some((pattern) => pattern.test(collapsed))) return { allowed: true };
+  if (isAgentComputerOpenPath(path)) return { allowed: true };
+  if (isAgentComputerSealedPath(path)) return { allowed: false };
+  if (OWN_AUTHORIZER_PATHS.some((pattern) => pattern.test(path))) return { allowed: true };
   const agentIdentity = await liveAgentIdentity(headers);
   if (!agentIdentity) return { allowed: false };
-  const refusal = agentComputerRouteRefusal(method, collapsed);
+  const refusal = agentComputerRouteRefusal(method, path);
   return refusal ? { allowed: false, refusal } : { allowed: true, agentIdentity };
 }

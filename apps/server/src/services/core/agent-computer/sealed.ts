@@ -6,10 +6,10 @@
  * holds no account secrets and no person changes it: its DorkOS account link,
  * its runtime sign-ins and its settings will come from the hub it belongs to,
  * never from a request to it. Its gate refuses the account routes outright
- * (`./agent-gate.ts`) and every route that writes settings
- * (`HUB_OWNED_ROUTES` in `./hub-owned.ts`). The one settings write path
- * behind both `PATCH /api/config` and the `config_patch` tool,
- * `applyConfigPatch`, refuses again with
+ * (`./agent-gate.ts`) and every write it does not list as an agent's
+ * (`./agent-writes.ts`), every route that writes settings among them. The
+ * one settings write path behind both `PATCH /api/config` and the
+ * `config_patch` tool, `applyConfigPatch`, refuses again with
  * {@link AGENT_COMPUTER_SETTINGS_REFUSAL}, so a caller the gate never sees (an
  * in-process one) is refused too. The background work a person's computer
  * runs on its own clock (scheduled tasks, heartbeats) asks

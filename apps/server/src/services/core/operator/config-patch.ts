@@ -445,7 +445,7 @@ export type ConfigPatchResult =
 export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   // An agent computer's settings come from its hub (DOR-2940): `PATCH
   // /api/config` and the `config_patch` tool both land here and refuse. Every
-  // other settings route is refused at its gate (`agent-computer/hub-owned.ts`).
+  // other settings route is a write its gate refuses (`agent-computer/agent-writes.ts`).
   if (isAgentComputer()) return { ok: false, error: AGENT_COMPUTER_SETTINGS_REFUSAL };
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'Request body must be a JSON object' };

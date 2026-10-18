@@ -50,7 +50,7 @@ import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
 import { decideAgentComputerGate } from '../agent-computer/agent-gate.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
-import type { HubOwnedRouteRefusal } from '../agent-computer/hub-owned.js';
+import type { AgentComputerWriteRefusal } from '../agent-computer/agent-writes.js';
 import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
@@ -273,9 +273,9 @@ export type SessionGateDecision =
   | { allowed: true; user?: RequestUser; agentIdentity?: AgentIdentity }
   /**
    * Answer `401` with {@link authRequiredBody}, or `403` with `refusal` when an
-   * agent computer refuses a write its hub owns.
+   * agent computer refuses a write it does not allow an agent.
    */
-  | { allowed: false; refusal?: HubOwnedRouteRefusal };
+  | { allowed: false; refusal?: AgentComputerWriteRefusal };
 
 /**
  * Decide whether a request may pass the session gate, and who it is.
@@ -310,7 +310,9 @@ export async function decideSessionGate(
 
   // A sealed agent computer gates every path and admits no person: before the
   // exemptions below, which exist so a person can load the app and sign in.
-  if (access === 'agent') return decideAgentComputerGate(method, lowered, request.headers);
+  // It is handed the path as the router matches it, not `lowered`: it reads
+  // what it refuses loosely and what it lets through exactly, case and all.
+  if (access === 'agent') return decideAgentComputerGate(method, path, request.headers);
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are

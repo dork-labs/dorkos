@@ -14,20 +14,14 @@
  *   Every `destructive` action is refused there too: it waits for a person's
  *   approval, and nobody on an agent computer can give one, so it answers at
  *   once instead of hanging.
- * - {@link HUB_OWNED_ROUTES}: path prefixes whose writes (`POST`, `PUT`,
- *   `PATCH`, `DELETE`) the session gate refuses with a `403`
- *   ({@link agentComputerRouteRefusal}), each listed with the reason it is
- *   there. Reads stay open to agents. This also covers every route that writes
- *   settings (`configManager.set`): `/api/config`, the runtime, tunnel,
- *   remote-access, Wi-Fi, heartbeat-triage, shapes, harness, profile and
- *   onboarding routes are all listed below. Settings writers no route reaches
- *   (boot-time seeding, the cloud link, which its routes cannot reach here)
- *   are not.
+ * - The writes an agent may make over HTTP are the other way round: every
+ *   write is refused unless `./agent-writes.ts` lists it, so a route added
+ *   later is the hub's until someone decides otherwise. That covers every
+ *   route that writes settings, connections, schedules and sign-ins.
  *
- * Not covered, on purpose: destructive HTTP routes that never pass through
- * the registry (deleting a room or a session) stay agent work; and the event
- * streams are refused by a list of their paths in the agent gate, so a new
- * stream is open to agents (reads only) until it is added there.
+ * The event streams are refused by a list of their paths in the agent gate
+ * (`./agent-gate.ts`); they are reads, so a new stream is open to agents
+ * until it is added there.
  *
  * Left alone on purpose: the terminal (its socket is authorized by an id a
  * gated route mints, and an agent already has a shell here) and A2A (its own
@@ -39,7 +33,7 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { TierDeniedPayload } from '../capabilities/tier-enforcement.js';
 import { isAgentComputer } from '../server-role/role-checks.js';
 
-/** The refusal code a hub-owned route answers with. */
+/** The refusal code of every write or action an agent computer refuses. */
 export const HUB_OWNED_CODE = 'AGENT_COMPUTER_HUB_OWNED';
 
 /**
@@ -85,87 +79,9 @@ export const HUB_OWNED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ['binding_delete', 'connections'],
 ]);
 
-/** One hub-owned route prefix: its writes are refused, minus any exception. */
-export interface HubOwnedRoute {
-  /** The path prefix, lowercased, matched on a segment boundary. */
-  readonly prefix: string;
-  /** What the hub owns there, for the refusal. */
-  readonly what: string;
-  /** Writes under the prefix that stay open to agents, as path patterns. */
-  readonly except?: readonly RegExp[];
-}
-
-/** Route prefixes whose writes only the hub may make on an agent computer. */
-export const HUB_OWNED_ROUTES: readonly HubOwnedRoute[] = [
-  { prefix: '/api/admin', what: 'setup' },
-  {
-    prefix: '/api/agents',
-    what: 'agents',
-    // Reading an agent by path, pausing or resuming one (anyone may stop any
-    // agent) and an agent's own commitments stay open.
-    except: [
-      /^\/api\/agents\/resolve\/?$/,
-      /^\/api\/agents\/[^/]+\/(pause|resume|commitments)\/?$/,
-    ],
-  },
-  {
-    prefix: '/api/mesh',
-    what: 'agents',
-    except: [/^\/api\/mesh\/discover\/?$/, /^\/api\/mesh\/agents\/[^/]+\/heartbeat\/?$/],
-  },
-  { prefix: '/api/tasks', what: 'schedules' },
-  { prefix: '/api/extensions', what: 'extensions' },
-  { prefix: '/api/marketplace', what: 'packages' },
-  { prefix: '/api/permissions', what: 'permissions' },
-  { prefix: '/api/harness', what: 'packages' },
-  { prefix: '/api/config', what: 'settings' },
-  { prefix: '/api/runtimes', what: 'sign-ins' },
-  { prefix: '/api/tunnel', what: 'remote access' },
-  { prefix: '/api/remote-access', what: 'remote access' },
-  { prefix: '/api/lan-access', what: 'remote access' },
-  { prefix: '/api/session-relay', what: 'remote access' },
-  { prefix: '/api/heartbeats', what: 'settings' },
-  { prefix: '/api/shapes', what: 'settings' },
-  { prefix: '/api/profile', what: 'settings' },
-  { prefix: '/api/onboarding', what: 'settings' },
-  { prefix: '/api/push', what: 'settings' },
-];
-
-/** The methods that write. */
-const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
-/** The sentence every hub-owned refusal carries. */
+/** The sentence a refused hub-owned action carries. */
 function hubOwnedMessage(what: string): string {
   return `This is an agent computer. Only its hub changes its ${what}.`;
-}
-
-/** The `403` body of a refused hub-owned route. */
-export interface HubOwnedRouteRefusal {
-  /** One plain sentence. */
-  readonly error: string;
-  /** Always {@link HUB_OWNED_CODE}. */
-  readonly code: typeof HUB_OWNED_CODE;
-}
-
-/**
- * The refusal for a request to a hub-owned route on an agent computer, or
- * `null` when it may go on (another role, a read, or an exception).
- *
- * @param method - The request method.
- * @param path - The lowercased request path, without its query.
- */
-export function agentComputerRouteRefusal(
-  method: string,
-  path: string
-): HubOwnedRouteRefusal | null {
-  if (!isAgentComputer() || !WRITES.has(method.toUpperCase())) return null;
-  const collapsed = path.replace(/\/{2,}/g, '/');
-  const owned = HUB_OWNED_ROUTES.find(
-    (route) =>
-      (collapsed === route.prefix || collapsed.startsWith(`${route.prefix}/`)) &&
-      !route.except?.some((pattern) => pattern.test(collapsed))
-  );
-  return owned ? { error: hubOwnedMessage(owned.what), code: HUB_OWNED_CODE } : null;
 }
 
 /** The facts about an action {@link agentComputerActionRefusal} reads. */

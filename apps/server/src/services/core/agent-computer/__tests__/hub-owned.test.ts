@@ -17,12 +17,7 @@ vi.mock('../../../../lib/logger.js', () => ({
   logError: (err: unknown) => ({ err }),
 }));
 
-const {
-  HUB_OWNED_ACTIONS,
-  HUB_OWNED_ROUTES,
-  agentComputerActionRefusal,
-  agentComputerRouteRefusal,
-} = await import('../hub-owned.js');
+const { HUB_OWNED_ACTIONS, agentComputerActionRefusal } = await import('../hub-owned.js');
 const { MCP_TOOL_TIERS, gatedActionForMcpTool } = await import('../../mcp-tool-tiers.js');
 const { composeCapabilityRegistryForDocs } =
   await import('../../self-description/dorkos-registry.js');
@@ -91,65 +86,6 @@ describe('the hub-owned table', () => {
     expect(
       agentComputerActionRefusal({ id: 'tasks_delete', title: 'Delete', tier: 'destructive' })
     ).toMatchObject({ status: 'denied', approvable: false });
-  });
-});
-
-describe('the hub-owned routes', () => {
-  const REFUSED: [string, string][] = [
-    ['POST', '/api/admin/reset'],
-    ['POST', '/api/admin/reset/prepare'],
-    ['POST', '/api/agents'],
-    ['POST', '/api/agents/create'],
-    ['PATCH', '/api/agents/current'],
-    ['PATCH', '/api/agents/a1/permissions'],
-    ['POST', '/api/mesh/agents'],
-    ['DELETE', '/api/mesh/agents/a1'],
-    ['POST', '/api/mesh/deny'],
-    ['POST', '/api/tasks'],
-    ['POST', '/api/tasks/t1/trigger'],
-    ['POST', '/api/extensions/e1/approve'],
-    ['POST', '/api/extensions/reload'],
-    ['POST', '/api/marketplace/packages/p/install'],
-    ['POST', '/api/marketplace/packages/p/update'],
-    ['POST', '/api/marketplace/packages/p/uninstall'],
-    ['PUT', '/api/permissions/preset'],
-    ['PATCH', '/api/permissions/defaults'],
-    ['PATCH', '/api/config'],
-    ['PUT', '/api/config/agents/defaultagent'],
-    ['POST', '/api/runtimes/claude-code/accounts/found/dismiss'],
-    ['POST', '/api/tunnel/start'],
-    ['POST', '/api/remote-access/mode'],
-    ['POST', '/api/lan-access'],
-    ['PUT', '/api/heartbeats/triage-credits'],
-    ['POST', '/api/shapes/s/apply'],
-    ['POST', '/api/harness/adopt'],
-    ['PATCH', '/api/profile'],
-  ];
-
-  it.each(REFUSED)('refuses %s %s', (method, path) => {
-    expect(agentComputerRouteRefusal(method, path)?.code).toBe('AGENT_COMPUTER_HUB_OWNED');
-  });
-
-  it('leaves reads and an agent`s own work open', () => {
-    for (const [method, path] of [
-      ['GET', '/api/config'],
-      ['GET', '/api/tasks'],
-      ['POST', '/api/agents/a1/pause'],
-      ['POST', '/api/agents/a1/commitments'],
-      ['POST', '/api/agents/resolve'],
-      ['POST', '/api/mesh/agents/a1/heartbeat'],
-      ['POST', '/api/sessions/s1/messages'],
-      ['POST', '/api/rooms/r1/messages'],
-    ]) {
-      expect(agentComputerRouteRefusal(method!, path!), `${method} ${path}`).toBeNull();
-    }
-  });
-
-  it('refuses nothing on a person`s own computer', () => {
-    role.value = 'computer';
-    for (const route of HUB_OWNED_ROUTES) {
-      expect(agentComputerRouteRefusal('POST', route.prefix)).toBeNull();
-    }
   });
 });
 

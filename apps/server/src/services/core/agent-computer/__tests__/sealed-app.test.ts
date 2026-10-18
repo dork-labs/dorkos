@@ -1,8 +1,9 @@
 /**
  * The whole Hono app on an agent computer (DOR-2940), routed through the front
  * door as the running server routes it: nobody can sign up or sign in, a write
- * the hub owns answers `403` even to an agent, the app's streams refuse, and
- * the local MCP token opens nothing under `/api`.
+ * it does not list answers `403` even to an agent, in any spelling of its
+ * path, the app's streams refuse, and the local MCP token opens nothing under
+ * `/api`.
  *
  * Better Auth is a fixture that counts the requests it is handed, and the same
  * app built for a person's own computer is asked too, so a sign-in that never
@@ -77,7 +78,7 @@ describe('signing up or in on an agent computer', () => {
         password: 'pw-pw-pw-pw',
       });
       expect(state.authDispatch).not.toHaveBeenCalled();
-      expect([401, 404]).toContain(res.status);
+      expect([401, 403, 404]).toContain(res.status);
       expect(res.body.answeredBy).toBeUndefined();
     }
   );
@@ -117,6 +118,60 @@ describe('the API on an agent computer', () => {
       .set({ ...LOOPBACK, Authorization: 'Bearer local-token' });
     expect(res.status).toBe(401);
   });
+
+  it('refuses a write it does not list, the connections among them', async () => {
+    boot('agent-computer');
+    for (const path of ['/api/relay/adapters', '/api/connectors/connections', '/api/workspaces']) {
+      const res = await request(target.server).post(path).set(AS_AGENT).send({});
+      expect(res.status, path).toBe(403);
+      expect(res.body.code, path).toBe('AGENT_COMPUTER_HUB_OWNED');
+    }
+  });
+
+  // Each spelling arrives as a real request, so the URL parser and the
+  // router's own decoding run first: every one is the account routes or a
+  // stream, refused before any handler.
+  it.each([
+    '/api/%63loud/status',
+    '/API/Cloud/status',
+    '/api/cloud./status',
+    '//api/cloud/status',
+    '/api/cloud%2Fstatus',
+    '/api/x/../cloud/status',
+    '/api/%2e%2e/api/cloud/status',
+    '/api/%65vents',
+  ])('refuses %s, reading or writing', async (path) => {
+    boot('agent-computer');
+    const read = await request(target.server).get(path).set(AS_AGENT);
+    expect(read.status, `GET ${path}`).toBe(401);
+    const write = await request(target.server).post(path).set(AS_AGENT).send({});
+    expect(write.status, `POST ${path}`).toBe(401);
+  });
+
+  it.each([
+    '/API/config/agents/defaultAgent',
+    '/api/%63onfig/agents/defaultAgent',
+    '/api/config./agents/defaultAgent',
+    '//api/config/agents/defaultAgent',
+    '/api/config%2Fagents/defaultAgent',
+    '/api/x/../config/agents/defaultAgent',
+  ])('never writes through %s', async (path) => {
+    boot('agent-computer');
+    const res = await request(target.server).put(path).set(AS_AGENT).send({ value: 'x' });
+    expect(res.status, path).toBe(403);
+    expect(res.body.code, path).toBe('AGENT_COMPUTER_HUB_OWNED');
+  });
+
+  // Two of those spellings reach the real settings route on a person's own
+  // computer, so the refusal above is the gate's, not a 404 by accident.
+  it.each(['/api/%63onfig/agents/defaultAgent', '/api/x/../config/agents/defaultAgent'])(
+    'routes %s to the settings write on a person`s own computer',
+    async (path) => {
+      boot('computer');
+      const res = await request(target.server).put(path).set(LOOPBACK).send({ value: 'x' });
+      expect(res.status, path).toBe(200);
+    }
+  );
 
   it('answers the liveness probe with nothing', async () => {
     boot('agent-computer');

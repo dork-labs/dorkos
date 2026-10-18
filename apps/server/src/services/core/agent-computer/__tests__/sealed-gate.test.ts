@@ -147,13 +147,23 @@ describe('the session gate on an agent computer', () => {
 
   it('admits a live agent identity to /api, never a revoked or unknown one', async () => {
     const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
-    expect(await decideSessionGate('POST', '/api/sessions', asAgent)).toEqual({
-      allowed: true,
-      agentIdentity: { agentPath: '/agents/a', displayName: 'A' },
-    });
+    for (const [method, path] of [
+      ['GET', '/api/sessions'],
+      ['POST', '/api/sessions/s1/messages'],
+    ] as const) {
+      expect(await decideSessionGate(method, path, asAgent), path).toEqual({
+        allowed: true,
+        agentIdentity: { agentPath: '/agents/a', displayName: 'A' },
+      });
+    }
     for (const token of ['agent-revoked', 'agent-unknown']) {
       const caller = local({ 'x-dorkos-agent': token });
-      expect((await decideSessionGate('POST', '/api/sessions', caller)).allowed, token).toBe(false);
+      for (const [method, path] of [
+        ['GET', '/api/sessions'],
+        ['POST', '/api/sessions/s1/messages'],
+      ] as const) {
+        expect((await decideSessionGate(method, path, caller)).allowed, token).toBe(false);
+      }
     }
   });
 
@@ -189,6 +199,29 @@ describe('the session gate on an agent computer', () => {
     expect((await decideSessionGate('GET', '/api/config', asAgent)).allowed).toBe(true);
   });
 
+  it('refuses every write it does not list, the hub`s and a person`s alike', async () => {
+    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+    for (const [method, path] of [
+      ['POST', '/api/relay/adapters'],
+      ['POST', '/api/connectors/connections'],
+      ['POST', '/api/community-connections'],
+      ['POST', '/api/hub/link'],
+      ['POST', '/api/desktop/sign-in'],
+      ['POST', '/api/discovery/scan'],
+      ['POST', '/api/directory'],
+      ['POST', '/api/communities/c1/dms'],
+      ['POST', '/api/workspaces'],
+      ['POST', '/api/local-browser/open'],
+      ['POST', '/api/templates'],
+      ['POST', '/api/sessions/s1/approve'],
+    ] as const) {
+      expect(await decideSessionGate(method, path, asAgent), path).toMatchObject({
+        allowed: false,
+        refusal: { code: 'AGENT_COMPUTER_HUB_OWNED' },
+      });
+    }
+  });
+
   // The liveness probe stays exempt from the network, as on every server, and
   // A2A answers from its own authorizer (below).
   it('refuses the API and /mcp from the network', async () => {
@@ -196,6 +229,60 @@ describe('the session gate on an agent computer', () => {
     for (const path of ['/mcp', '/api/sessions']) {
       expect((await decideSessionGate('POST', path, remote)).allowed, path).toBe(false);
     }
+  });
+});
+
+describe('odd spellings of a path on an agent computer', () => {
+  const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+
+  // The gate is handed the path the router matches; each of these is refused
+  // whatever the method, so no spelling of the account routes or a stream
+  // reaches its handler.
+  it.each([
+    '/api/%63loud/status',
+    '/API/Cloud/status',
+    '/api/Cloud',
+    '/api/cloud./status',
+    '/api/cloud.',
+    '//api/cloud',
+    '//api//cloud//unlink',
+    '/api/cloud%2Fstatus',
+    '/api/cloud%2fstatus',
+    '/api%2Fcloud',
+    '/API/Events',
+    '/api/events/',
+    '/api/events.',
+    '/api/sessions/s1//events',
+    '/api/sessions/s1%2Fevents',
+  ])('refuses %s, reading or writing', async (path) => {
+    for (const method of ['GET', 'POST', 'DELETE']) {
+      expect((await decideSessionGate(method, path, asAgent)).allowed, method).toBe(false);
+    }
+  });
+
+  // An open write is matched exactly; any other spelling of it is refused,
+  // and so is every spelling of a refused one.
+  it.each([
+    ['PUT', '/API/config/agents/defaultAgent'],
+    ['PUT', '/api/%63onfig/agents/defaultAgent'],
+    ['PUT', '/api/config./agents/defaultAgent'],
+    ['PUT', '//api/config/agents/defaultAgent'],
+    ['PUT', '/api/config%2Fagents/defaultAgent'],
+    ['POST', '/api/relay//adapters'],
+    ['POST', '/API/sessions/s1/messages'],
+    ['POST', '/api/Sessions/s1/messages'],
+    ['POST', '/api/sessions//s1/messages'],
+    ['POST', '//api/sessions/s1/messages'],
+    ['POST', '/api/sessions/s1/messages/'],
+    ['POST', '/api/sessions/s1%2Fmessages'],
+    ['POST', '/api/sessions/s1/%6Dessages'],
+    ['POST', '/api/files/'],
+    ['POST', '/MCP'],
+  ])('refuses %s %s with the one code', async (method, path) => {
+    expect(await decideSessionGate(method, path, asAgent)).toMatchObject({
+      allowed: false,
+      refusal: { code: 'AGENT_COMPUTER_HUB_OWNED' },
+    });
   });
 });
 
