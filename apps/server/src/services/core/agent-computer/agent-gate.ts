@@ -6,33 +6,48 @@
  * it `agent-computer` (`lib/request-classifier.ts`), and the gate policy turns
  * that into `agent` access for one from this machine and `refused` for
  * anything else (`services/core/auth/gate-policy.ts`). This module decides the
- * `agent` case, for every path the server answers, not only `/api` and `/mcp`:
+ * `agent` case, for every path the server answers, not only `/api` and `/mcp`.
+ * One rule, first match wins:
  *
- * - **The liveness probe** (`/api/health`) passes with nothing, so whatever
- *   started the machine can tell it is up. Never `/api/health/deep`.
- * - **The DorkOS account routes** (`/api/cloud/*`) are refused whatever the
- *   request carries. An agent computer is never linked to an account from
- *   here and holds none to report; its access will come from its hub.
- * - **An agent's own credential** passes: the instance's local MCP token as
- *   `Authorization: Bearer`, or an `X-DorkOS-Agent` identity token that
- *   resolves to an agent still acting as itself (not revoked or expired).
- * - **Everything else is refused**, a person's cookie and API key included.
- *   None can exist here (registration is closed for every caller), and the
- *   gate does not look for one.
+ * 1. **The liveness probe** (`/api/health`) passes with nothing, so whatever
+ *    started the machine can tell it is up. Never `/api/health/deep`.
+ * 2. **The DorkOS account routes** (`/api/cloud/*`) and **the app's event
+ *    streams** ({@link isAgentComputerStreamPath}) are refused whatever the
+ *    request carries. The account belongs to the hub, and the streams feed a
+ *    window nobody opens here; their WebSocket upgrades refuse the same way
+ *    (`streams/stream-upgrade-auth.ts`).
+ * 3. **`/mcp` and A2A** (`/a2a`, its agent cards) pass to their own
+ *    authorizer, `middleware/mcp-auth.ts`, which runs on every one of those
+ *    routes and alone decides them: the local MCP token, `MCP_API_KEY` and the
+ *    legacy config key, exactly as it accepts them, and nothing tokenless. The
+ *    gate does not check a credential there, so the two can never disagree.
+ * 4. **Everything else**, all of `/api` included, needs a live agent
+ *    identity: an `X-DorkOS-Agent` token that resolves to an agent still
+ *    acting as itself (not revoked or expired). The local MCP token admits
+ *    nothing here, and neither does a person's cookie or key, which cannot
+ *    exist (registration is closed for every caller).
  *
- * Admitting a request here only lets it reach its route. Settings writes and
- * the sign-in routes of runtimes and MCP servers refuse on an agent computer
- * on their own (`./sealed.ts`, and `isAtThisComputer`, which is never true
- * there), and `/mcp` still asks its own authorizer, which accepts only the
- * local token here.
+ * An admitted request may still be refused by its route: a write the hub owns
+ * answers `403` ({@link agentComputerRouteRefusal}), and an action only the
+ * hub may take, or one nobody here could approve, is refused at the
+ * capability gates (`./hub-owned.ts`).
+ *
+ * **Until the hub owns authority over an agent computer (part 6 of the design
+ * note), any process on the computer is trusted at agent level.** Every
+ * process there runs as the same user, so any of them can read the local MCP
+ * token or an agent's identity token, and the gate cannot tell them apart.
+ * What keeps the computer sealed today is what no agent may do (the tables in
+ * `./hub-owned.ts`), not who is asking.
  *
  * @module services/core/agent-computer/agent-gate
  */
-import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { logger } from '../../../lib/logger.js';
-import { getAgentIdentityService } from '../agent-identity/agent-identity-service.js';
-import { getMcpLocalToken } from '../auth/mcp-local-token.js';
+import {
+  getAgentIdentityService,
+  type AgentIdentity,
+} from '../agent-identity/agent-identity-service.js';
+import { agentComputerRouteRefusal, type HubOwnedRouteRefusal } from './hub-owned.js';
 
 /** The header an agent presents its identity token in (`middleware/agent-identity.ts`). */
 const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
@@ -40,17 +55,57 @@ const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
 /** Path prefixes an agent computer refuses to every caller. */
 const SEALED_PREFIXES = ['/api/cloud'] as const;
 
+/** The app's event streams, which an agent computer never serves. */
+const STREAM_PATHS: readonly RegExp[] = [
+  /^\/api\/events\/?$/,
+  /^\/api\/sessions\/[^/]+\/events\/?$/,
+  /^\/api\/rooms\/[^/]+\/events\/?$/,
+  /^\/api\/communities\/[^/]+\/rooms\/[^/]+\/events\/?$/,
+  /^\/api\/relay\/stream\/?$/,
+  /^\/api\/extensions\/events\/?$/,
+  /^\/api\/tunnel\/stream\/?$/,
+];
+
+/** Paths whose own authorizer (`middleware/mcp-auth.ts`) decides them. */
+const OWN_AUTHORIZER_PATHS: readonly RegExp[] = [
+  /^\/mcp\/?$/,
+  /^\/a2a(\/.*)?$/,
+  /^\/\.well-known\/agent(-card)?\.json$/,
+];
+
+/** What the gate of an agent computer decided about one request. */
+export type AgentComputerGateDecision =
+  /** Let it through, with the agent that proved itself when one did. */
+  | { allowed: true; agentIdentity?: AgentIdentity }
+  /** Refuse: `refusal` is the `403` body, or absent for the plain `401`. */
+  | { allowed: false; refusal?: HubOwnedRouteRefusal };
+
+/** Collapse repeated slashes, the way the router reads a path. */
+function collapse(path: string): string {
+  return path.replace(/\/{2,}/g, '/');
+}
+
 /**
- * Whether a lowercased path is one an agent computer refuses to every caller,
- * an agent's own credential included.
+ * Whether a lowercased path is one an agent computer refuses to every caller.
  *
  * @param path - The lowercased request path, without its query.
  */
 export function isAgentComputerSealedPath(path: string): boolean {
-  const collapsed = path.replace(/\/{2,}/g, '/');
-  return SEALED_PREFIXES.some(
-    (prefix) => collapsed === prefix || collapsed.startsWith(`${prefix}/`)
+  const collapsed = collapse(path);
+  return (
+    SEALED_PREFIXES.some((prefix) => collapsed === prefix || collapsed.startsWith(`${prefix}/`)) ||
+    isAgentComputerStreamPath(collapsed)
   );
+}
+
+/**
+ * Whether a lowercased path is one of the app's event streams.
+ *
+ * @param path - The lowercased request path, without its query.
+ */
+export function isAgentComputerStreamPath(path: string): boolean {
+  const collapsed = collapse(path);
+  return STREAM_PATHS.some((pattern) => pattern.test(collapsed));
 }
 
 /**
@@ -64,49 +119,45 @@ export function isAgentComputerOpenPath(path: string): boolean {
 }
 
 /**
- * Whether a request carries an agent's own credential: the local MCP token, or
- * an identity token that resolves to an active agent. Never throws.
+ * The live agent an `X-DorkOS-Agent` header names, or `undefined` when it
+ * names none, or one that is revoked or expired. Never throws.
  *
  * @param headers - The request headers.
  */
-export async function presentsAgentCredential(headers: IncomingHttpHeaders): Promise<boolean> {
-  if (bearerIsLocalToken(headers.authorization)) return true;
+export async function liveAgentIdentity(
+  headers: IncomingHttpHeaders
+): Promise<AgentIdentity | undefined> {
   const header = headers[AGENT_IDENTITY_HEADER];
   const token = (Array.isArray(header) ? header[0] : header)?.trim();
-  if (!token) return false;
+  if (!token) return undefined;
   try {
     const identity = await getAgentIdentityService()?.resolve(token);
-    return identity !== undefined && identity.inactive === undefined;
+    return identity && identity.inactive === undefined ? identity : undefined;
   } catch (err) {
     logger.debug('[agent-computer] Agent token resolution failed', { err: String(err) });
-    return false;
+    return undefined;
   }
 }
 
 /**
- * Whether a request may pass the gate of an agent computer. See the module
- * doc for the rules.
+ * Decide one request at the gate of an agent computer. See the module doc for
+ * the rule.
  *
+ * @param method - The request method.
  * @param path - The lowercased request path, without its query.
  * @param headers - The request headers.
  */
-export async function admitsOnAgentComputer(
+export async function decideAgentComputerGate(
+  method: string,
   path: string,
   headers: IncomingHttpHeaders
-): Promise<boolean> {
-  if (isAgentComputerOpenPath(path)) return true;
-  if (isAgentComputerSealedPath(path)) return false;
-  return presentsAgentCredential(headers);
-}
-
-/** Whether an `Authorization: Bearer` value is this instance's local MCP token. */
-function bearerIsLocalToken(authorization: string | undefined): boolean {
-  if (!authorization) return false;
-  const [scheme, token] = authorization.split(' ');
-  if (scheme !== 'Bearer' || !token) return false;
-  const local = getMcpLocalToken();
-  if (!local) return false;
-  const a = Buffer.from(token);
-  const b = Buffer.from(local);
-  return a.length === b.length && timingSafeEqual(a, b);
+): Promise<AgentComputerGateDecision> {
+  const collapsed = collapse(path);
+  if (isAgentComputerOpenPath(collapsed)) return { allowed: true };
+  if (isAgentComputerSealedPath(collapsed)) return { allowed: false };
+  if (OWN_AUTHORIZER_PATHS.some((pattern) => pattern.test(collapsed))) return { allowed: true };
+  const agentIdentity = await liveAgentIdentity(headers);
+  if (!agentIdentity) return { allowed: false };
+  const refusal = agentComputerRouteRefusal(method, collapsed);
+  return refusal ? { allowed: false, refusal } : { allowed: true, agentIdentity };
 }

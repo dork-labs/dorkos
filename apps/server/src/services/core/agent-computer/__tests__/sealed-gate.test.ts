@@ -130,36 +130,72 @@ describe('the session gate on an agent computer', () => {
     expect((await decideSessionGate('GET', '/api/health/deep', LOCAL)).allowed).toBe(false);
   });
 
-  it('refuses a person`s sign-in, the app and every route without an agent credential', async () => {
-    for (const path of ['/api/auth/sign-in/email', '/api/sessions', '/', '/a2a', '/mcp']) {
+  it('refuses a person`s sign-in, the app and every route without an agent identity', async () => {
+    for (const path of ['/api/auth/sign-in/email', '/api/sessions', '/', '/x/ext']) {
       expect((await decideSessionGate('POST', path, LOCAL)).allowed, path).toBe(false);
     }
     role.value = 'computer';
     expect((await decideSessionGate('POST', '/api/sessions', LOCAL)).allowed).toBe(true);
   });
 
-  it('admits the local MCP token and a live agent identity, never a revoked one', async () => {
+  it('never lets the local MCP token into /api', async () => {
     const withToken = local({ authorization: 'Bearer local-token' });
-    expect((await decideSessionGate('POST', '/mcp', withToken)).allowed).toBe(true);
-    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
-    expect((await decideSessionGate('POST', '/api/sessions', asAgent)).allowed).toBe(true);
-    const revoked = local({ 'x-dorkos-agent': 'agent-revoked' });
-    expect((await decideSessionGate('POST', '/api/sessions', revoked)).allowed).toBe(false);
-    const wrongToken = local({ authorization: 'Bearer not-the-token' });
-    expect((await decideSessionGate('POST', '/mcp', wrongToken)).allowed).toBe(false);
-  });
-
-  it('refuses the DorkOS account routes even to an agent credential', async () => {
-    const withToken = local({ authorization: 'Bearer local-token' });
-    for (const path of ['/api/cloud/status', '/api/cloud/link/start', '/API/Cloud//unlink']) {
-      expect((await decideSessionGate('POST', path, withToken)).allowed, path).toBe(false);
+    for (const path of ['/api/sessions', '/api/config', '/api/agents']) {
+      expect((await decideSessionGate('GET', path, withToken)).allowed, path).toBe(false);
     }
-    expect((await decideSessionGate('GET', '/api/cloudy', withToken)).allowed).toBe(true);
   });
 
-  it('refuses an agent credential from the network', async () => {
-    const remote = { ...local({ authorization: 'Bearer local-token' }), peerAddress: '10.0.0.4' };
-    expect((await decideSessionGate('POST', '/mcp', remote)).allowed).toBe(false);
+  it('admits a live agent identity to /api, never a revoked or unknown one', async () => {
+    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+    expect(await decideSessionGate('POST', '/api/sessions', asAgent)).toEqual({
+      allowed: true,
+      agentIdentity: { agentPath: '/agents/a', displayName: 'A' },
+    });
+    for (const token of ['agent-revoked', 'agent-unknown']) {
+      const caller = local({ 'x-dorkos-agent': token });
+      expect((await decideSessionGate('POST', '/api/sessions', caller)).allowed, token).toBe(false);
+    }
+  });
+
+  it('hands /mcp and A2A to their own authorizer, whatever they carry', async () => {
+    for (const path of ['/mcp', '/a2a', '/a2a/agents/x', '/.well-known/agent-card.json']) {
+      expect((await decideSessionGate('POST', path, LOCAL)).allowed, path).toBe(true);
+    }
+  });
+
+  it('refuses the DorkOS account routes and the app`s streams, even to an agent', async () => {
+    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+    const paths = [
+      '/api/cloud/status',
+      '/API/Cloud//unlink',
+      '/api/events',
+      '/api/sessions/s1/events',
+      '/api/rooms/r1/events',
+    ];
+    for (const path of paths) {
+      expect((await decideSessionGate('GET', path, asAgent)).allowed, path).toBe(false);
+    }
+    expect((await decideSessionGate('GET', '/api/cloudy', asAgent)).allowed).toBe(true);
+    expect((await decideSessionGate('GET', '/api/sessions/s1', asAgent)).allowed).toBe(true);
+  });
+
+  it('answers a write the hub owns with a 403 refusal, even to an agent', async () => {
+    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+    const decision = await decideSessionGate('PUT', '/api/config/agents/defaultAgent', asAgent);
+    expect(decision).toMatchObject({
+      allowed: false,
+      refusal: { code: 'AGENT_COMPUTER_HUB_OWNED' },
+    });
+    expect((await decideSessionGate('GET', '/api/config', asAgent)).allowed).toBe(true);
+  });
+
+  // The liveness probe stays exempt from the network, as on every server, and
+  // A2A answers from its own authorizer (below).
+  it('refuses the API and /mcp from the network', async () => {
+    const remote = { ...local({ 'x-dorkos-agent': 'agent-live' }), peerAddress: '10.0.0.4' };
+    for (const path of ['/mcp', '/api/sessions']) {
+      expect((await decideSessionGate('POST', path, remote)).allowed, path).toBe(false);
+    }
   });
 });
 
@@ -171,6 +207,13 @@ describe('/mcp on an agent computer', () => {
     expect((await decideMcpAuth('mcp', tokenless)).allowed).toBe(false);
     role.value = 'computer';
     expect((await decideMcpAuth('mcp', tokenless)).allowed).toBe(true);
+  });
+
+  it('refuses A2A from the network, even with the local token', async () => {
+    const remote = { ...local({ authorization: 'Bearer local-token' }), peerAddress: '10.0.0.4' };
+    expect(
+      (await decideMcpAuth('a2a', { method: 'GET', body: undefined, ...remote })).allowed
+    ).toBe(false);
   });
 
   it('accepts the local MCP token from this machine', async () => {
