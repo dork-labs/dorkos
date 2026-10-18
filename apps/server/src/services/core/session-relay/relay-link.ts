@@ -40,6 +40,7 @@ import {
   RelayLinkComputerIdSchema,
   RelayLinkComputerNameSchema,
   RelayLinkResponseSchema,
+  cloudComputerIdOf,
   parseRelayLinkCode,
   type RelayLinkResponse,
   type SessionRelayLinkRefusal,
@@ -239,66 +240,68 @@ function refusalFor(status: number): SessionRelayLinkRefusal {
   return 'hub-refused';
 }
 
+/** What {@link redeemAtHub} sends. */
+export interface RedeemAtHubInput {
+  /** The hub's bare https origin. */
+  origin: string;
+  /** The canonical code. */
+  code: string;
+  /** This computer's relay id. */
+  computerId: string;
+  /** The name to link with. */
+  computerName: string;
+}
+
+/** What redeeming a code at a hub came to: its checked answer, or why not. */
+export type RedeemAtHubResult =
+  | { ok: true; answer: RelayLinkResponse; relaySecret: string }
+  | { ok: false; reason: SessionRelayLinkRefusal };
+
 /**
- * Link this computer to the hub a link code names, and pin it. The caller
- * has already checked the person at this computer; this checks the hub.
- * Never throws.
+ * Redeem a link code at a hub, steps 1 and 3 to 5 of the module doc: refuse a
+ * hub that is not on the internet, mint the relay secret, send the request
+ * signed with this computer's own key (made on first use), and check the
+ * hub's answer is signed by the key it hands over, over exactly this request.
+ * Writes nothing but the computer key; the caller checks the owner and pins.
+ * Shared by a person's computer ({@link linkToHub}) and a cloud agent
+ * computer (`services/core/agent-computer/assignment-sync.ts`). Never throws.
  *
- * @param input - The pasted code and the name to link with.
+ * @param input - Where to send it, the code, and who this computer is.
  * @param deps - Seams for tests; the live ones by default.
  */
-export async function linkToHub(
-  input: { linkCode: string; computerName: string },
-  deps: LinkToHubDeps = {}
-): Promise<LinkToHubResult> {
+export async function redeemAtHub(
+  input: RedeemAtHubInput,
+  deps: Pick<LinkToHubDeps, 'dorkHome' | 'fetch' | 'timeoutMs' | 'lookup'> = {}
+): Promise<RedeemAtHubResult> {
   const dorkHome = deps.dorkHome ?? resolveDorkHome();
-  const parsed = parseRelayLinkCode(input.linkCode);
-  // `parseRelayLinkCode` only builds https origins; checked again here because
-  // the relay secret's hash and this computer's key go nowhere else.
-  if (!parsed || new URL(parsed.origin).protocol !== 'https:') return refused('bad-code');
-  if (!RelayLinkComputerNameSchema.safeParse(input.computerName).success) {
-    return refused('bad-code');
-  }
-  if (readRelayPin(dorkHome)) return refused('already-linked');
+  // Only https origins: the relay secret's hash and this computer's key go
+  // nowhere else.
+  if (new URL(input.origin).protocol !== 'https:') return refused('bad-code');
   // Checked again by the resolver the fetch uses a moment later; a name that
   // changes its answer in between (DNS rebinding) is not covered here.
-  const reach = await checkPublicHost(parsed.origin, deps.lookup ?? lookupAll);
+  const reach = await checkPublicHost(input.origin, deps.lookup ?? lookupAll);
   if (reach !== 'ok') return refused(reach);
-
-  const identity = await (deps.cloudIdentity ?? liveCloudIdentity)();
-  let computerId: string;
-  if (identity.linked) {
-    // A linked computer is known to the relay's wake by its instance id, and
-    // must be able to tell its own account from another's.
-    if (!identity.instanceId || !identity.accountKey) return refused('account-unreadable');
-    if (!RelayLinkComputerIdSchema.safeParse(identity.instanceId).success) {
-      return refused('account-unreadable');
-    }
-    computerId = identity.instanceId;
-  } else {
-    computerId = localComputerId(dorkHome);
-  }
 
   const relaySecret = randomBytes(32).toString('base64url');
   const request = signRelayLinkRequest(
     {
       v: 1,
-      code: parsed.code,
-      computerId,
+      code: input.code,
+      computerId: input.computerId,
       secretHash: relaySecretHash(relaySecret),
       computerName: input.computerName,
     },
-    parsed.origin,
+    input.origin,
     computerSigningKey(dorkHome)
   );
 
   let response: Response;
   try {
-    response = await (deps.fetch ?? fetch)(`${parsed.origin}${RELAY_LINK_PATH}`, {
+    response = await (deps.fetch ?? fetch)(`${input.origin}${RELAY_LINK_PATH}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(request),
-      // Never follow a redirect: the request is for the origin in the code.
+      // Never follow a redirect: the request is for this origin alone.
       redirect: 'manual',
       signal: AbortSignal.timeout(deps.timeoutMs ?? RELAY_LINK_TIMEOUT_MS),
     });
@@ -323,10 +326,57 @@ export async function linkToHub(
   } catch {
     return refused('hub-unreachable');
   }
-  if (!verifyRelayLinkResponse(answer, request, parsed.origin)) {
+  if (!verifyRelayLinkResponse(answer, request, input.origin)) {
     logger.warn('[SessionRelay] The hub’s link answer was not signed by its key; nothing pinned');
     return refused('signature-failed');
   }
+  return { ok: true, answer, relaySecret };
+}
+
+/**
+ * Link this computer to the hub a link code names, and pin it. The caller
+ * has already checked the person at this computer; this checks the hub.
+ * Never throws.
+ *
+ * @param input - The pasted code and the name to link with.
+ * @param deps - Seams for tests; the live ones by default.
+ */
+export async function linkToHub(
+  input: { linkCode: string; computerName: string },
+  deps: LinkToHubDeps = {}
+): Promise<LinkToHubResult> {
+  const dorkHome = deps.dorkHome ?? resolveDorkHome();
+  const parsed = parseRelayLinkCode(input.linkCode);
+  // `parseRelayLinkCode` only builds https origins; checked again here because
+  // the relay secret's hash and this computer's key go nowhere else.
+  if (!parsed || new URL(parsed.origin).protocol !== 'https:') return refused('bad-code');
+  if (!RelayLinkComputerNameSchema.safeParse(input.computerName).success) {
+    return refused('bad-code');
+  }
+  if (readRelayPin(dorkHome)) return refused('already-linked');
+
+  const identity = await (deps.cloudIdentity ?? liveCloudIdentity)();
+  let computerId: string;
+  if (identity.linked) {
+    // A linked computer is known to the relay's wake by its instance id, and
+    // must be able to tell its own account from another's.
+    if (!identity.instanceId || !identity.accountKey) return refused('account-unreadable');
+    if (!RelayLinkComputerIdSchema.safeParse(identity.instanceId).success) {
+      return refused('account-unreadable');
+    }
+    // The agent computers' id space: a person's computer never links in it.
+    if (cloudComputerIdOf(identity.instanceId) !== null) return refused('account-unreadable');
+    computerId = identity.instanceId;
+  } else {
+    computerId = localComputerId(dorkHome);
+  }
+
+  const redeemed = await redeemAtHub(
+    { origin: parsed.origin, code: parsed.code, computerId, computerName: input.computerName },
+    { ...deps, dorkHome }
+  );
+  if (!redeemed.ok) return redeemed;
+  const { answer, relaySecret } = redeemed;
   if (identity.linked && !accountMatches(identity, answer)) {
     logger.warn('[SessionRelay] The hub names a different DorkOS account; nothing pinned');
     return refused('different-account');
@@ -354,6 +404,6 @@ export async function linkToHub(
   return { ok: true, pin };
 }
 
-function refused(reason: SessionRelayLinkRefusal): LinkToHubResult {
+function refused(reason: SessionRelayLinkRefusal): { ok: false; reason: SessionRelayLinkRefusal } {
   return { ok: false, reason };
 }

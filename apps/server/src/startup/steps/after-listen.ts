@@ -60,6 +60,7 @@ import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-r
 import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
 import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
 import { hubRelayWake } from '../../services/core/hub/hub-relay-wake.js';
+import { startAgentComputerLink } from '../../services/core/agent-computer/assignment-runner.js';
 
 /** What {@link startAfterListen} reads from the startup steps before it. */
 export interface StartAfterListenInput {
@@ -260,8 +261,11 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // A sealed agent computer (DOR-2940) stops here: no tunnel, no DorkOS
   // account link and no credits, since its accounts will come from its hub.
   // Retained document work still runs: it is this machine's own agents' work.
+  // It finds its hub through its own key, links with the code the hub minted
+  // for it, and dials the hub it pinned.
   if (isAgentComputer()) {
     docDeliveryRunner.start();
+    startAgentComputerLink();
     return;
   }
 

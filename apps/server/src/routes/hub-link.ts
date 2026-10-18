@@ -30,15 +30,29 @@
  * owner's account when the hub is assigned to one, signed with the hub key
  * over the request it answers.
  *
+ * **A cloud agent computer redeems here too** (DOR-2940), with a code the hub
+ * minted for it and handed to Cloud rather than one the owner copied. It names
+ * itself by its relay id, its cloud computer id behind the reserved `ac:`
+ * prefix, so the request is the same signed shape and nothing new crosses the
+ * wire. That id sends the redeem to the agent computers' own code book
+ * (`services/core/hub-relay/agent-computer-link.ts`), which checks the code
+ * is bound to that computer. Its signature is checked before the code, so a
+ * bad one spends nothing, and a second redeem of one computer is a security
+ * event: the computer is unlinked, a new code is minted, and the redeem is
+ * refused (409).
+ *
  * @module routes/hub-link
  */
 import bodyParser from 'body-parser';
 import { Hono, type Context } from 'hono';
 import {
+  AGENT_COMPUTER_RELAY_ID_PREFIX,
   RELAY_LINK_MAX_BODY_BYTES,
   RELAY_LINK_PATH,
   RelayLinkRequestSchema,
+  cloudComputerIdOf,
   normalizeRelayLinkCode,
+  type RelayLinkRequest,
   type RelayLinkResponse,
 } from '@dorkos/shared/session-relay-link';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
@@ -55,7 +69,10 @@ import {
   hubLinkCodes,
   hubLinkSigner,
   linkComputer,
+  liveAgentComputerLink,
   liveServingOrigin,
+  redeemAgentComputerCode,
+  type AgentComputerRedeemOutcome,
   type HubLinkSigner,
   type LinkCodeRedemption,
   type LinkComputerInput,
@@ -80,6 +97,11 @@ export interface HubLinkRouteDeps {
   consume: (code: string) => LinkCodeRedemption;
   /** Store the computer. */
   link: (input: LinkComputerInput) => Promise<unknown>;
+  /** Decide a verified redeem by a cloud agent computer, spending its code. */
+  redeemAgentComputer: (
+    request: RelayLinkRequest,
+    cloudComputerId: string
+  ) => Promise<AgentComputerRedeemOutcome>;
 }
 
 const liveDeps: HubLinkRouteDeps = {
@@ -94,6 +116,8 @@ const liveDeps: HubLinkRouteDeps = {
   },
   consume: (code) => hubLinkCodes.consume(code),
   link: (input) => linkComputer(input),
+  redeemAgentComputer: (request, cloudComputerId) =>
+    redeemAgentComputerCode(request, cloudComputerId, liveAgentComputerLink()),
 };
 
 /** The one answer for a wrong, expired or used code and a bad signature. */
@@ -144,6 +168,79 @@ function auditLink(
   });
 }
 
+/** The answer to a request, signed with the hub's key, or `null` when it cannot sign. */
+function signedAnswer(
+  deps: HubLinkRouteDeps,
+  signer: HubLinkSigner,
+  request: RelayLinkRequest,
+  origin: string,
+  codeHash: string
+): RelayLinkResponse | null {
+  const owner = deps.owner();
+  const answer: Omit<RelayLinkResponse, 'signature'> = {
+    v: 1,
+    hubKey: signer.publicKey,
+    ...(owner ?? {}),
+  };
+  try {
+    const bytes = signer.sign(relayLinkAnswerBytes(request, origin, codeHash, answer));
+    return { ...answer, signature: Buffer.from(bytes).toString('base64url') };
+  } catch (error) {
+    logger.warn('[HubRelay] The hub could not sign a link answer', {
+      error: (error as Error).name,
+    });
+    return null;
+  }
+}
+
+const NOT_READY = errorBody("This hub can't link computers yet.", 'HUB_NOT_READY');
+
+/**
+ * Answer a cloud agent computer's redeem: signature first (nothing spent on a
+ * bad one), the answer signed before anything is stored, then the code.
+ */
+async function redeemForAgentComputer(
+  c: Context<ApiEnv>,
+  deps: HubLinkRouteDeps,
+  request: RelayLinkRequest,
+  origin: string,
+  signer: HubLinkSigner
+) {
+  const cloudComputerId = cloudComputerIdOf(request.computerId);
+  if (cloudComputerId === null) {
+    return c.json(errorBody('That request is not valid.', 'INVALID'), 400);
+  }
+  const code = normalizeRelayLinkCode(request.code);
+  const codeHash = relayLinkCodeHash(code ?? '');
+  if (code === null || !verifyRelayLinkRequest(request, origin, codeHash)) {
+    logger.warn('[HubRelay] Refused an agent computer link request with a bad signature');
+    return c.json(REFUSED, 401);
+  }
+  const answer = signedAnswer(deps, signer, request, origin, codeHash);
+  if (!answer) return c.json(NOT_READY, 503);
+  const outcome = await deps.redeemAgentComputer(request, cloudComputerId);
+  switch (outcome.kind) {
+    case 'linked':
+      auditLink(undefined, request, 'ok');
+      c.header('Cache-Control', 'no-store');
+      return c.json(answer satisfies RelayLinkResponse);
+    case 'throttled':
+      return c.json(errorBody('Too many tries. Wait a few minutes.', 'TOO_MANY_ATTEMPTS'), 429);
+    case 'invalid':
+      logger.warn('[HubRelay] Refused an agent computer link request with a wrong or used code');
+      return c.json(REFUSED, 401);
+    case 'reset':
+      auditLink(undefined, request, 'refused', 'second_redeem');
+      return c.json(
+        errorBody('That code was used twice. A new one is on its way.', 'LINK_RESET'),
+        409
+      );
+    case 'limit':
+      auditLink(undefined, request, 'refused', 'store_refused');
+      return c.json(errorBody("This hub can't link another computer.", 'LINK_LIMIT'), 409);
+  }
+}
+
 /**
  * The `/api/hub/link` route.
  *
@@ -165,8 +262,9 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
     // Before the code: a link that cannot be answered must not spend one.
     const origin = deps.servingOrigin();
     const signer = origin ? deps.signer() : null;
-    if (!origin || !signer) {
-      return c.json(errorBody("This hub can't link computers yet.", 'HUB_NOT_READY'), 503);
+    if (!origin || !signer) return c.json(NOT_READY, 503);
+    if (request.computerId.startsWith(AGENT_COMPUTER_RELAY_ID_PREFIX)) {
+      return redeemForAgentComputer(c, deps, request, origin, signer);
     }
     const code = normalizeRelayLinkCode(request.code);
     const redeemed = deps.consume(request.code);
@@ -182,25 +280,12 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
       auditLink(redeemed.mintedBy, request, 'refused', 'bad_signature');
       return c.json(REFUSED, 401);
     }
-    const owner = deps.owner();
-    const answer: Omit<RelayLinkResponse, 'signature'> = {
-      v: 1,
-      hubKey: signer.publicKey,
-      ...(owner ?? {}),
-    };
     // Signed before the computer is stored, so a hub that stopped serving in
     // between stores nothing it cannot vouch for.
-    let signature: string;
-    try {
-      signature = Buffer.from(
-        signer.sign(relayLinkAnswerBytes(request, origin, codeHash, answer))
-      ).toString('base64url');
-    } catch (error) {
-      logger.warn('[HubRelay] The hub could not sign a link answer', {
-        error: (error as Error).name,
-      });
+    const answer = signedAnswer(deps, signer, request, origin, codeHash);
+    if (!answer) {
       auditLink(redeemed.mintedBy, request, 'failed', 'hub_cannot_sign');
-      return c.json(errorBody("This hub can't link computers yet.", 'HUB_NOT_READY'), 503);
+      return c.json(NOT_READY, 503);
     }
     try {
       await deps.link({
@@ -224,7 +309,7 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
     }
     auditLink(redeemed.mintedBy, request, 'ok');
     c.header('Cache-Control', 'no-store');
-    return c.json({ ...answer, signature } satisfies RelayLinkResponse);
+    return c.json(answer satisfies RelayLinkResponse);
   });
 
   return router;

@@ -42,6 +42,7 @@ import {
   closeAllComputerConnections,
   hubRelayComputerRoute,
 } from './services/core/hub-relay/index.js';
+import { stopAgentComputerLink } from './services/core/agent-computer/assignment-runner.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { shutdownUsageReporter } from './services/core/usage-reporter.js';
 import { flushServerError, captureServerError } from './services/core/error-reporter.js';
@@ -439,8 +440,10 @@ async function shutdownServices() {
   getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   refs.terminalManager?.destroyAll();
-  // A hub's linked computers redial on their next viewer.
+  // A hub's linked computers redial on their next viewer; an agent computer
+  // stops reading its assignment and closes its relay.
   closeAllComputerConnections();
+  stopAgentComputerLink();
   // Give back every port an open dev-server preview is holding.
   await previewListeners.close();
   // Cancel any pending managed-MCP OAuth token refresh timers.

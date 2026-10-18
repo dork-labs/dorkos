@@ -212,6 +212,25 @@ describe('linkToHub', () => {
     expect(hub.calls).not.toHaveBeenCalled();
   });
 
+  it('never links a person`s computer under an agent computer`s id (DOR-2940)', async () => {
+    const hub = fakeHub();
+    const result = await link(
+      { linkCode: LINK_CODE, computerName: NAME },
+      {
+        dorkHome: home,
+        fetch: hub.fetch,
+        cloudIdentity: async () => ({
+          linked: true,
+          instanceId: 'ac:cmp_1',
+          accountKey: 'acct_owner',
+          issuer: null,
+        }),
+      }
+    );
+    expect(result).toEqual({ ok: false, reason: 'account-unreadable' });
+    expect(hub.calls).not.toHaveBeenCalled();
+  });
+
   it('refuses an answer not signed by the key the hub hands over', async () => {
     const hub = fakeHub({ signWith: generateKeyPairSync('ed25519').privateKey });
     const result = await link(

@@ -180,6 +180,28 @@ describe('every command', () => {
     expect(w.tunnel.startManaged).not.toHaveBeenCalled();
   });
 
+  it('asks an agent computer to read its assignment now, and acks its answer (DOR-2940)', async () => {
+    const agentComputerAssignmentChanged = vi.fn().mockReturnValue('applied');
+    const dispatcher = new CommandDispatcher({
+      journal: w.journal,
+      tunnelManager: w.tunnel,
+      remoteCredentials: w.credentials,
+      readRemoteState,
+      updateRemoteState,
+      onSettled: () => undefined,
+      agentComputerAssignmentChanged,
+    });
+    const changed: LeasedCommand = {
+      kind: 'agent_computer_assignment_changed',
+      id: 'cmd_agent_computer_2',
+      leaseToken: 'lt_ac2',
+    };
+    expect(await dispatcher.dispatch(changed, w.link)).toBe('applied');
+    expect(agentComputerAssignmentChanged).toHaveBeenCalledTimes(1);
+    expect(w.journal.read([changed.id])[0]).toMatchObject({ outcome: 'applied' });
+    expect(w.tunnel.startManaged).not.toHaveBeenCalled();
+  });
+
   it('records failed and still acknowledges when the effect throws', async () => {
     w.tunnel.startManaged.mockRejectedValueOnce(new Error('boom'));
     expect(await w.dispatcher.dispatch(open, w.link)).toBe('failed');

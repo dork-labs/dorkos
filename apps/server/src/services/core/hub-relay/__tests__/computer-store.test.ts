@@ -237,3 +237,103 @@ describe('the linked computer store', () => {
     expect(findComputerBySecret(s, home)).toBeNull();
   });
 });
+
+describe('format 2: agent computers (DOR-2940)', () => {
+  it('reads a format-1 record as a person`s computer, and writes format 2 next time', async () => {
+    const v1 = {
+      v: 1,
+      computerId: 'mac-1',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      computerName: 'Studio Mac',
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), JSON.stringify([v1]));
+    expect(readLinkedComputers(home)).toEqual([{ ...v1, v: 2, role: 'computer' }]);
+
+    // Any write moves the whole file to format 2, keeping the old record.
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
+    );
+    const stored = JSON.parse(fs.readFileSync(file(), 'utf8')) as Array<Record<string, unknown>>;
+    expect(stored.map((r) => [r.v, r.role, r.computerId])).toEqual([
+      [2, 'computer', 'mac-1'],
+      [2, 'computer', 'mac-2'],
+    ]);
+  });
+
+  it('keeps a format-1 record that happens to use the reserved id space', () => {
+    const v1 = {
+      v: 1,
+      computerId: 'ac:legacy',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), JSON.stringify([v1]));
+    expect(readLinkedComputers(home)).toHaveLength(1);
+  });
+
+  it('stores an agent computer with its cloud id and role', async () => {
+    const record = await linkComputer(
+      {
+        role: 'agent-computer',
+        cloudComputerId: 'cmp_1',
+        computerId: 'ac:cmp_1',
+        secretHash: relaySecretHash(secret()),
+        computerKey: key(),
+        computerName: 'Cloud computer',
+      },
+      home
+    );
+    expect(record).toMatchObject({ v: 2, role: 'agent-computer', cloudComputerId: 'cmp_1' });
+    expect(readLinkedComputers(home)).toEqual([record]);
+  });
+
+  it('refuses an agent computer whose relay id is not its cloud id', async () => {
+    await expect(
+      linkComputer(
+        {
+          role: 'agent-computer',
+          cloudComputerId: 'cmp_1',
+          computerId: 'ac:cmp_2',
+          secretHash: relaySecretHash(secret()),
+          computerKey: key(),
+        },
+        home
+      )
+    ).rejects.toThrow();
+    expect(readLinkedComputers(home)).toEqual([]);
+  });
+
+  it('refuses a person`s computer in the agent computers` id space', async () => {
+    await expect(
+      linkComputer(
+        { computerId: 'ac:cmp_1', secretHash: relaySecretHash(secret()), computerKey: key() },
+        home
+      )
+    ).rejects.toThrow();
+  });
+
+  it('reads a file whose agent computer record is inconsistent as no computers', () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(
+      file(),
+      JSON.stringify([
+        {
+          v: 2,
+          role: 'agent-computer',
+          cloudComputerId: 'cmp_1',
+          computerId: 'ac:cmp_other',
+          secretHash: relaySecretHash(secret()),
+          computerKey: key(),
+          linkedAt: '2026-10-01T00:00:00.000Z',
+        },
+      ])
+    );
+    expect(readLinkedComputers(home)).toEqual([]);
+  });
+});

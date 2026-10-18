@@ -77,7 +77,9 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
       'Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the ' +
       "credential. The request is signed with the computer's own key; the answer carries the " +
       "hub's key and is signed with it. A wrong, expired or used code and a bad signature get " +
-      'the same 401.',
+      'the same 401. A cloud agent computer redeems here too, under its relay id (`ac:` and ' +
+      'its cloud computer id), with a code the hub minted for that computer alone; a second ' +
+      'redeem for one computer unlinks it, mints a new code, and is refused with 409.',
     request: {
       body: { content: { 'application/json': { schema: RelayLinkRequestSchema } } },
     },
@@ -89,7 +91,8 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
       404: json(ErrorSchema, 'Not a hub'),
       409: json(
         ErrorSchema,
-        'That computer id is already linked under another key, or the hub cannot link another'
+        "That computer id is already linked under another key, an agent computer's code was " +
+          'redeemed twice (`LINK_RESET`), or the hub cannot link another'
       ),
       413: json(ErrorSchema, 'The body is over 4 KB'),
       429: json(ErrorSchema, 'Too many wrong codes lately, from anywhere'),

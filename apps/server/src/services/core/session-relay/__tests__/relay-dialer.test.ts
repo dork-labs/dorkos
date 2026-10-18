@@ -193,6 +193,15 @@ describe('RelayDialer', () => {
     expect(sockets[0]!.headers).toEqual({ Authorization: `Bearer ${pin!.relaySecret}` });
   });
 
+  it('dials now with no command, under the same checks, as an agent computer does (DOR-2940)', () => {
+    expect(setup({ pin: null }).dialer.dialNow()).toBe('ignored');
+    expect(setup({ owner: false }).dialer.dialNow()).toBe('refused:no-owner');
+    const { dialer, sockets } = setup();
+    expect(dialer.dialNow()).toBe('applied');
+    expect(dialer.dialNow()).toBe('applied');
+    expect(sockets).toHaveLength(1);
+  });
+
   it('advertises only the features the protocol knows', () => {
     const { dialer, sockets } = setup();
     dialer.onViewerOpen(LATER);

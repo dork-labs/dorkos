@@ -96,7 +96,8 @@ const links = {
   record: (computerId: string) =>
     computerId === COMPUTER
       ? {
-          v: 1 as const,
+          v: 2 as const,
+          role: 'computer' as const,
           computerId,
           secretHash: 'h'.repeat(43),
           computerKey: 'k'.repeat(43),

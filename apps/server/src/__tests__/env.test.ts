@@ -180,8 +180,65 @@ describe('serverEnv', () => {
     expect(second.env.DORKOS_HUB_INSTANCE_KEY).toBe('hub-key-from-the-environment');
   });
 
+  /** Forget an agent computer key an earlier test left in the process-wide slot. */
+  const clearAgentComputerKeySlot = () => {
+    delete (globalThis as Record<symbol, unknown>)[
+      Symbol.for('dorkos.env.agentComputerInstanceKey')
+    ];
+  };
+
+  it('refuses to boot an agent computer without its instance key (DOR-2940)', async () => {
+    clearAgentComputerKeySlot();
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', undefined as unknown as string);
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    await import('../env.js');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy.mock.calls.flat().join(' ')).toContain('DORKOS_AGENT_COMPUTER_INSTANCE_KEY');
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('refuses an agent computer key shorter than sixteen characters', async () => {
+    clearAgentComputerKeySlot();
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', 'too-short');
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    await import('../env.js');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+    clearAgentComputerKeySlot();
+  });
+
+  it('reads an agent computer`s instance key once, and keeps it from every child process', async () => {
+    clearAgentComputerKeySlot();
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', 'agent-computer-key-from-cloud');
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    const { env } = await import('../env.js');
+    expect(env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY).toBe('agent-computer-key-from-cloud');
+    expect(process.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY).toBeUndefined();
+    vi.resetModules();
+    const second = await import('../env.js');
+    expect(second.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY).toBe('agent-computer-key-from-cloud');
+  });
+
+  it('drops an agent computer key from the environment on any role', async () => {
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', 'agent-computer-key-from-cloud');
+    await import('../env.js');
+    expect(process.env.DORKOS_AGENT_COMPUTER_INSTANCE_KEY).toBeUndefined();
+    clearAgentComputerKeySlot();
+  });
+
   it('listens on loopback on an agent computer, whatever DORKOS_HOST says (DOR-2940)', async () => {
     vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', 'agent-computer-key-from-cloud');
     vi.stubEnv('DORKOS_HOST', '0.0.0.0');
     vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
     const { env } = await import('../env.js');
@@ -199,6 +256,7 @@ describe('serverEnv', () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_AGENT_COMPUTER_INSTANCE_KEY', 'agent-computer-key-from-cloud');
     vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', 'true');
     await import('../env.js');
     expect(exitSpy).toHaveBeenCalledWith(1);

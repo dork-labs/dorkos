@@ -25,6 +25,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { RelayPinnedHubKeySchema } from '@dorkos/shared/session-relay';
+import { agentComputerRelayId, cloudComputerIdOf } from '@dorkos/shared/session-relay-link';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -42,16 +43,17 @@ const Base64url32Schema = z
   .length(43)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-/** One linked computer, as stored. */
-export const LinkedComputerSchema = z.strictObject({
-  /** The record's own format, so a later release can read an older one. */
-  v: z.literal(1),
+/** A relay computer id: the same rule as a relay pin's. */
+const ComputerIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[\w.:-]+$/);
+
+/** What every linked computer's record carries, whatever kind it is. */
+const commonFields = {
   /** The computer's id, as its `hello` names it. */
-  computerId: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[\w.:-]+$/),
+  computerId: ComputerIdSchema,
   /** SHA-256 of the computer's relay secret, base64url. Never the secret. */
   secretHash: Base64url32Schema,
   /** The computer's Ed25519 public key, raw 32 bytes base64url (`pinnableKey`). */
@@ -63,18 +65,83 @@ export const LinkedComputerSchema = z.strictObject({
   computerName: z.string().min(1).max(64).optional(),
   /** When it was linked (ISO 8601). */
   linkedAt: z.string().datetime(),
-});
+};
+
+/**
+ * A record in its first format, before agent computers (v1). Every one was a
+ * person's own computer; it reads as a v2 `computer` record and is written
+ * back as v2 the next time the file changes.
+ */
+const LinkedComputerV1Schema = z.strictObject({ v: z.literal(1), ...commonFields });
+
+/**
+ * One linked computer, as stored (format 2, DOR-2940): a person's own
+ * computer, linked with a code its owner copied, or a cloud agent computer,
+ * linked with a code the hub minted for it and handed to Cloud.
+ *
+ * An agent computer's relay id is always its `cloudComputerId` behind the
+ * reserved prefix (`agentComputerRelayId`), and a person's computer never
+ * takes an id in that space, so the id alone says which kind a dial is.
+ */
+export const LinkedComputerSchema = z
+  .discriminatedUnion('role', [
+    z.strictObject({
+      /** The record's own format, so a later release can read an older one. */
+      v: z.literal(2),
+      /** A person's own computer. */
+      role: z.literal('computer'),
+      ...commonFields,
+    }),
+    z.strictObject({
+      v: z.literal(2),
+      /** A cloud agent computer this hub runs agents on. */
+      role: z.literal('agent-computer'),
+      /** The computer's id at DorkOS Cloud (`CloudComputerSchema.id`). */
+      cloudComputerId: z.string().min(1).max(61),
+      ...commonFields,
+    }),
+  ])
+  .superRefine((record, ctx) => {
+    const expected =
+      record.role === 'agent-computer' ? agentComputerRelayId(record.cloudComputerId) : null;
+    if (record.role === 'agent-computer' && record.computerId !== expected) {
+      ctx.addIssue({ code: 'custom', path: ['computerId'], message: 'not this computer`s id' });
+    }
+    if (record.role === 'computer' && cloudComputerIdOf(record.computerId) !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['computerId'],
+        message: 'reserved for agent computers',
+      });
+    }
+  });
 
 /** See {@link LinkedComputerSchema}. */
 export type LinkedComputer = z.infer<typeof LinkedComputerSchema>;
 
-const FileSchema = z.array(LinkedComputerSchema).max(HUB_RELAY_MAX_COMPUTERS);
+/** The format-2 record a format-1 one reads as. */
+function fromV1(record: z.infer<typeof LinkedComputerV1Schema>): LinkedComputer {
+  return { ...record, v: 2, role: 'computer' };
+}
 
-/** What the linking flow hands {@link linkComputer}. */
+/**
+ * One record as the file may hold it: format 2, or format 1 read as format 2.
+ * A v1 record is never checked against the reserved agent-computer id space,
+ * since it was written before the space was reserved.
+ */
+const StoredComputerSchema = z.union([
+  LinkedComputerSchema,
+  LinkedComputerV1Schema.transform(fromV1),
+]);
+
+const FileSchema = z.array(StoredComputerSchema).max(HUB_RELAY_MAX_COMPUTERS);
+
+/** What the linking flow hands {@link linkComputer}: a person's computer or an agent computer. */
 export type LinkComputerInput = Pick<
   LinkedComputer,
   'computerId' | 'secretHash' | 'computerKey' | 'computerName'
->;
+> &
+  ({ role?: 'computer' } | { role: 'agent-computer'; cloudComputerId: string });
 
 function filePath(dorkHome: string): string {
   return path.join(dorkHome, FOLDER, FILE);
@@ -200,8 +267,9 @@ export async function storeLinkedComputer(
   dorkHome: string = resolveDorkHome()
 ): Promise<{ record: LinkedComputer; replaced: boolean }> {
   const record = LinkedComputerSchema.parse({
-    v: 1,
+    v: 2,
     ...input,
+    role: input.role ?? 'computer',
     linkedAt: new Date().toISOString(),
   });
   return withFileLock(filePath(dorkHome), async (write) => {

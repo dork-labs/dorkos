@@ -151,14 +151,23 @@ export class RelayDialer {
    * @param expiresAt - The command's `expiresAt`; past it, the command is ignored.
    */
   onViewerOpen(expiresAt: string): RemoteCommandOutcome {
-    const now = this.now();
     // Fails closed: an expiry that does not parse is treated as passed.
-    if (!(Date.parse(expiresAt) > now)) return 'ignored';
+    if (!(Date.parse(expiresAt) > this.now())) return 'ignored';
+    return this.dialNow();
+  }
+
+  /**
+   * Dial the pinned hub now unless already connected or dialing: what a
+   * `viewer_open` does once its expiry is checked, and what a cloud agent
+   * computer does at boot and after it links (DOR-2940). Every other check
+   * {@link onViewerOpen} makes is made here. Never throws.
+   */
+  dialNow(): RemoteCommandOutcome {
     const pin = this.deps.readPin();
     if (!pin) return 'ignored';
     if (!this.deps.ownerExists()) return 'refused:no-owner';
     if (this.current.state !== 'idle') return 'applied';
-    if (now < this.redialAfter) return 'ignored';
+    if (this.now() < this.redialAfter) return 'ignored';
     try {
       // Read before dialing, so a key that cannot be read is a failed command
       // rather than a throw inside a socket listener.

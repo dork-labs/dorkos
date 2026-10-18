@@ -79,6 +79,7 @@ const deps = {
   owner: vi.fn(() => ({ ownerAccountId: 'acct_owner', issuer: 'https://id.dorkos.ai' })),
   consume: (code: string) => codes.consume(code),
   link: vi.fn(async (_input: LinkComputerInput): Promise<unknown> => ({})),
+  redeemAgentComputer: vi.fn(async () => ({ kind: 'invalid' as const })),
 } satisfies HubLinkRouteDeps;
 
 const server = listeningServer(
@@ -322,6 +323,17 @@ describe('refusals', () => {
       deps.link.mockImplementation(async () => ({}));
       fs.rmSync(storeHome, { recursive: true, force: true });
     }
+  });
+
+  it('never links a person`s computer under the agent computers` ids, whatever code it carries', async () => {
+    const code = codes.mint().code;
+    const res = await post(linkRequest(code, { computerId: 'ac:cmp_1' }));
+    // The id sends it to the agent computers' own book, where an owner's code is unknown.
+    expect(res.status).toBe(401);
+    expect(deps.redeemAgentComputer).toHaveBeenCalledTimes(1);
+    expect(deps.link).not.toHaveBeenCalled();
+    // The owner's code is still unspent.
+    expect((await post(linkRequest(code))).status).toBe(200);
   });
 
   it('answers the /api 404 on a person`s own computer', async () => {
