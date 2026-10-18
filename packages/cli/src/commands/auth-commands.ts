@@ -297,9 +297,9 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     `Signed out everywhere (${signedOut} ${signedOut === 1 ? 'sign-in' : 'sign-ins'} ended). ` +
       'Sign in again with the new password.'
   );
+  io.log('A running DorkOS closes their open chat streams and terminals within a minute.');
   io.log('What this cannot cut off yet:');
   io.log('  - a window already open may keep working for up to 5 minutes;');
-  io.log('  - live chat streams and terminals stay open until they reconnect;');
   io.log('  - API keys keep working. Revoke them in Settings > Login & security.');
   return 0;
 }

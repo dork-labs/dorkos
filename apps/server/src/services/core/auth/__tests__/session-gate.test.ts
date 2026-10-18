@@ -11,6 +11,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, session, type Db } from '@dorkos/db';
 import { getAuth, initAuth, verifyRequestAuth } from '../index.js';
+import { endRestartWindowForTests } from '../sessions/live-connections.js';
 import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
@@ -78,6 +79,8 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
   let apiKeyId: string;
 
   beforeAll(async () => {
+    // These tests are about the cookie cache, which a just-started server skips.
+    endRestartWindowForTests();
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-gate-'));
     initConfigManager(tmpDir);
     db = createDb(path.join(tmpDir, 'gate-test.db'));

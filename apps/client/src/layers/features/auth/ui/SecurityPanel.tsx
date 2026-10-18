@@ -16,6 +16,7 @@ import { useConfig, useIsHub, useUpdateConfig } from '@/layers/entities/config';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { OwnerSignInScreen } from './OwnerSignInScreen';
 import { ApiKeysSection } from './ApiKeysSection';
+import { SignedInDevicesSection } from './SignedInDevicesSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
 
 /** Which step turning login on needs: create the owner, or sign in as the one that exists. */
@@ -118,6 +119,17 @@ export function SecurityPanel() {
           )}
         </FieldCardContent>
       </FieldCard>
+
+      {/* Where the account is signed in (DOR-2969). Shown once there is an
+          account to be signed in to: the person at this computer sees its
+          other devices even while this computer asks for no password. */}
+      {(currentUser || ownerEmail) && (
+        <FieldCard>
+          <FieldCardContent>
+            <SignedInDevicesSection />
+          </FieldCardContent>
+        </FieldCard>
+      )}
 
       {/* Keys outlive the login flag, so this card must too (DOR-1885). Turning
           "Ask for a password on this computer too" off deletes no key, ends no session and stops nothing

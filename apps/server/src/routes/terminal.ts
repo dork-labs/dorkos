@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
+import { registerWithSignIn } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
@@ -31,7 +32,11 @@ export function createTerminalRoutes(manager: TerminalManager): Hono<ApiEnv> {
       return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
     }
     try {
-      const id = await manager.create(parsed.data);
+      // The socket attaches by this id alone, so ending the sign-in that made
+      // the terminal must end it (DOR-2969); a terminal torn down first says so.
+      let unregister = (): void => {};
+      const id = await manager.create(parsed.data, { onDestroyed: () => unregister() });
+      unregister = registerWithSignIn(c, () => manager.destroy(id), 'terminal');
       return c.json({ id }, 201);
     } catch (err) {
       if (err instanceof BoundaryError) {

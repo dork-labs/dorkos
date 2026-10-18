@@ -40,6 +40,8 @@ The email is a **local identifier only**: it is never verified and no email is e
 
 Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. Sign out anytime from **Settings → Login & security**.
 
+**Settings → Login & security → Signed-in devices** lists every browser and device your account is signed in on, how each one connects, and when it was last used. Signing one out ends everything it had open, its chat streams and terminals included. You can sign this device out from anywhere, but other devices only from the computer DorkOS runs on.
+
 Turning **Ask for a password on this computer too** back off doesn't delete the owner account, it just stops asking for it: the account and any API keys stay put, and this computer opens DorkOS without a password again. Other devices still sign in as the owner.
 
 </Step>
@@ -186,7 +188,7 @@ There is no "forgot password" email: the local edition sends no email, and a lap
 dorkos auth reset-password
 ```
 
-A reset signs you out on every browser and device, because a reset usually means the old password got out. Three things it can't cut off yet: a window already open can keep working for up to 5 minutes, live chat streams and terminals stay open until they reconnect, and API keys keep working until you revoke them in **Settings → Login & security**. Leave off `--password` so the new one doesn't land in your shell history.
+A reset signs you out on every browser and device, because a reset usually means the old password got out. If DorkOS is running, it closes their open chat streams and terminals within a minute. Two things it can't cut off yet: a window already open can keep working for up to 5 minutes, and API keys keep working until you revoke them in **Settings → Login & security**. Leave off `--password` so the new one doesn't land in your shell history.
 
 You can also create the owner and turn on the setting entirely from the CLI (useful before you ever open the UI, or when preparing a server to expose):
 

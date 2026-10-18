@@ -3,8 +3,8 @@
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
- * succeeds, sign-in landing pages, where no landing is held, and a space's
- * docs, where there are none. Heartbeats and a hub's computers come from their
+ * succeeds, sign-in landing pages, where no landing is held, a space's
+ * docs, where there are none, and signed-in devices, where there are none. Heartbeats and a hub's computers come from their
  * own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -29,7 +29,10 @@ type SliceMethods =
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getDocIndex'
-  | 'resolveDocLink';
+  | 'resolveDocLink'
+  | 'listSignedInDevices'
+  | 'signOutDevice'
+  | 'signOutEverywhereElse';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -45,6 +48,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     ...createMockHubTransport(),
     ...createMockSessionRelayTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    // Nobody is signed in anywhere, and every sign-out succeeds.
+    listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
+    signOutDevice: vi.fn().mockResolvedValue(undefined),
+    signOutEverywhereElse: vi.fn().mockResolvedValue({ signedOut: 0 }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),

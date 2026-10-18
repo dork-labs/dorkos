@@ -51,6 +51,8 @@ import {
 import { setRemoteCommunityDb } from '../../services/communities/remote/state.js';
 import { exposeDesktopSignInMint } from '../../services/core/auth/desktop-sign-in.js';
 import { readGatePosture } from '../../services/core/auth/gate-policy.js';
+import { startLiveConnectionSweep } from '../../services/core/auth/sessions/live-connections.js';
+import { liveSessionIds } from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
@@ -207,7 +209,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // dorkHome is threaded through so the session-signing secret resolves from
   // (and, on first boot, persists into) a 0600 file there — a fresh install
   // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
-  initAuth(db, dorkHome);
+  const auth = initAuth(db, dorkHome);
+  // A sign-in ended outside this process (`dorkos auth reset-password` writes
+  // the database directly) still closes what it had open, within a sweep.
+  startLiveConnectionSweep((ids) => liveSessionIds(auth, ids));
   // The desktop window signs in by itself (F3): its shell mints a code here
   // over the process channel (`services/core/auth/desktop-sign-in.ts`).
   exposeDesktopSignInMint({

@@ -67,6 +67,7 @@ import { currentServerRole } from '../../../lib/server-role.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 import { refuseWithoutSetupCode } from './setup-code-gate.js';
 import { stampSessionRoute } from './sessions/session-route.js';
+import { endSession } from './sessions/live-connections.js';
 import { discardSetupCode } from './setup-code.js';
 
 /**
@@ -336,7 +337,13 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
           before: async (data) => ({ data: stampSessionRoute(data) }),
           after: async (created) => recordSignedIn(created),
         },
-        delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
+        delete: {
+          after: async (deleted, ctx) => {
+            // Signing out ends what that sign-in had open (DOR-2969).
+            endSession(deleted.id);
+            recordSessionEnded(deleted, ctx?.path);
+          },
+        },
       },
     },
     // Failed sign-ins and API keys created or revoked, in the audit log.

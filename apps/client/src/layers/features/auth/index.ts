@@ -14,6 +14,7 @@ export { OwnerSetupScreen } from './ui/OwnerSetupScreen';
 export { OwnerSetupHost } from './ui/OwnerSetupHost';
 export { SecurityPanel } from './ui/SecurityPanel';
 export { ApiKeysSection } from './ui/ApiKeysSection';
+export { SignedInDevicesSection } from './ui/SignedInDevicesSection';
 
 // ── Model: auth client seam ──────────────────────────────────────────────────
 export { AuthClientProvider, useAuthClient } from './model/auth-client-context';
@@ -41,4 +42,9 @@ export {
   type AuthActionResult,
 } from './model/use-auth-session';
 export { useApiKeys, useCreateApiKey, useRevokeApiKey, apiKeysKey } from './model/use-api-keys';
+export {
+  useSignedInDevices,
+  signedInDevicesKey,
+  type SignedInDevices,
+} from './model/use-signed-in-devices';
 export { useAuthRequired, useOwnerSetupRequest, useSignInWith } from './model/use-auth-signal';
