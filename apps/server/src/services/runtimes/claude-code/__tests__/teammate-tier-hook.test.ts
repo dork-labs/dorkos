@@ -5,7 +5,8 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { askCallHash, setAskOwnerPort } from '../../../core/turn-power/ask-owner.js';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { TEAMMATE_TIER_DENIAL } from '../../../core/turn-power/teammate-tier.js';
 import type { AgentSession } from '../agent-types.js';
@@ -56,8 +57,45 @@ describe('assignTurnBounds', () => {
       unattended: true,
       roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
     });
-    expect(session.teammateTier).toEqual({ roomId: 'room-a', sharedFolder: null });
+    expect(session.teammateTier).toEqual({ roomId: 'room-a', sharedFolder: null, authorId: 'ana' });
     expect(session.unattendedTurn).toBe(true);
+  });
+
+  it('carries who asked and the one allowed call, for this send only (DOR-2956)', () => {
+    const session: Bounds = {};
+    const pass = { approvalId: 'appr-1', tool: 'Bash', inputHash: 'h' };
+    const asker = { memberId: 'member-bo', displayName: 'Bo' };
+    const opts = {
+      unattended: true,
+      roomTurn: {
+        roomId: 'room-a',
+        authorId: 'ana',
+        turnId: 't1',
+        teammate: true as const,
+        teammateAsker: asker,
+        teammatePass: pass,
+      },
+    };
+    assignTurnBounds(session, opts);
+    expect(session.teammateTier).toMatchObject({ asker, pass });
+    // A copy: spending it on the session never changes the options it came from.
+    delete session.teammateTier!.pass;
+    expect(opts.roomTurn.teammatePass).toEqual(pass);
+    assignTurnBounds(session, { roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' } });
+    expect(session.teammateTier).toBeUndefined();
+  });
+
+  it('gives an owner’s turn no pass, whatever its options carry', () => {
+    const session: Bounds = {};
+    assignTurnBounds(session, {
+      roomTurn: {
+        roomId: 'room-a',
+        authorId: 'ana',
+        turnId: 't1',
+        teammatePass: { approvalId: 'appr-1', tool: 'Bash', inputHash: 'h' },
+      },
+    });
+    expect(session.teammateTier).toBeUndefined();
   });
 
   it('clears the fence on the next turn that is not a teammate’s', () => {
@@ -143,5 +181,29 @@ describe('the teammate fence hook', () => {
     } finally {
       await rm(base, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the one call the owner allowed (DOR-2956)', () => {
+  afterEach(() => setAskOwnerPort(undefined));
+
+  it('allows exactly that call, once, with the approved input, and then refuses it', async () => {
+    setAskOwnerPort({ request: vi.fn(), spend: vi.fn().mockReturnValueOnce(true) });
+    const input = { command: 'git log -1' };
+    const session: Bounds = {
+      teammateTier: {
+        roomId: 'room-a',
+        sharedFolder: null,
+        authorId: 'ana',
+        asker: { memberId: 'member-bo', displayName: 'Bo' },
+        pass: { approvalId: 'appr-1', tool: 'Bash', inputHash: askCallHash('Bash', input) },
+      },
+    };
+    const first = (await decide(session, call('Bash', { ...input, description: 'x' }))) as {
+      hookSpecificOutput: { permissionDecision: string; updatedInput: unknown };
+    };
+    expect(first.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(first.hookSpecificOutput.updatedInput).toEqual(input);
+    expect(await decide(session, call('Bash', input))).toEqual(DENY);
   });
 });

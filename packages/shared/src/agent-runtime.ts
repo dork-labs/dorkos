@@ -986,6 +986,24 @@ export interface DirectoryGrant {
   access: 'read' | 'write';
 }
 
+/** A teammate in a shared space, as a turn they started knows them (DOR-2956). */
+export interface TeammateAsker {
+  /** Their member id in the space. */
+  memberId: string;
+  /** The name the space shows for them. Their own words. */
+  displayName: string;
+}
+
+/** The one tool call an owner allowed a teammate's turn to make (DOR-2956). */
+export interface TeammatePass {
+  /** The approval the call spends. */
+  approvalId: string;
+  /** The tool, by the runtime's own name for it (`Bash`). */
+  tool: string;
+  /** The canonical hash of `{ tool, input }` the owner allowed. */
+  inputHash: string;
+}
+
 /** Options for sending a message to a session. */
 export interface MessageOpts extends SessionSettings {
   cwd?: string;
@@ -1084,6 +1102,18 @@ export interface MessageOpts extends SessionSettings {
      * Assigned with the rest of this marker, on every send.
      */
     teammate?: true;
+    /**
+     * With {@link teammate}: the teammate whose message the turn answers, newest first, by their
+     * member id in the space and the name it shows (DOR-2956). A request the turn makes of the
+     * owner (`ask_owner`) is made in their name.
+     */
+    teammateAsker?: TeammateAsker;
+    /**
+     * With {@link teammate}: the one tool call the owner allowed for that teammate (DOR-2956).
+     * A runtime that honours it lets exactly that call through once, same tool and same input,
+     * spending the approval when the call is made; nothing else is lifted.
+     */
+    teammatePass?: TeammatePass;
     /**
      * True when a message this turn answers was written by anyone but a person
      * on this machine: a stranger in a bridged chat, a space member, another

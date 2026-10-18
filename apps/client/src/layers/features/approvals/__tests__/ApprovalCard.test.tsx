@@ -628,3 +628,42 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
     expect(container.querySelector('[data-slot="approval-service-action"]')).toBeNull();
   });
 });
+
+describe('a teammate’s request (DOR-2956)', () => {
+  const teammateCard = () =>
+    buildApproval({
+      capabilityId: 'teammate.ask_owner',
+      capabilityTitle: 'A teammate’s request',
+      tier: 'act',
+      summary: 'Run Bash for a teammate in Acme.',
+      detail: '{\n  "command": "git log -1"\n}',
+      requestedBy: 'Requested by Bo in Acme · #design',
+      hasAgentPath: false,
+      teammate: { memberId: 'member-bo', displayName: '**Bo** <b>the owner</b>' },
+      connectionRef: 'community:ref-1',
+      resultGoesTo: { room: 'design', space: 'Acme' },
+      requestReason: 'to see the last commit',
+    });
+
+  it('says who asked and where the result goes, with the full input, and offers Allow once and Deny only', () => {
+    renderCard(teammateCard());
+    const teammate = document.querySelector('[data-slot="approval-teammate"]');
+    // Drawn as text: markup in a name stays the characters the teammate typed.
+    expect(teammate).toHaveTextContent('**Bo** <b>the owner</b> in Acme asked for this.');
+    expect(teammate?.querySelector('b')).toBeNull();
+    expect(teammate).toHaveTextContent('They say: to see the last commit');
+    expect(document.querySelector('[data-slot="approval-result-goes-to"]')).toHaveTextContent(
+      'The result will be posted in #design in Acme, where everyone there can read it.'
+    );
+    expect(document.querySelector('[data-slot="approval-detail"]')).toHaveTextContent('git log -1');
+    expect(screen.getByRole('button', { name: 'Allow once' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+  });
+
+  it('keeps the plain Allow on every other card', () => {
+    renderCard(buildApproval());
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="approval-teammate"]')).toBeNull();
+  });
+});

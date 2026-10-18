@@ -71,6 +71,17 @@ export function createTeammateTierHook(session: Pick<AgentSession, 'teammateTier
         },
       };
     }
+    if ('allowPass' in decision) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: 'The one call the owner allowed a teammate.',
+          // The canonical input the approval was spent on, so what runs is what was approved.
+          updatedInput: decision.allowPass.input,
+        },
+      };
+    }
     if ('allowRead' in decision) {
       return {
         hookSpecificOutput: {

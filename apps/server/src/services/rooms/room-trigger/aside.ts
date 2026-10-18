@@ -18,6 +18,22 @@ import { isLiveAuthor } from '../handles/author-handles.js';
 import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
+import type { TeammateAsker, TeammatePass } from '@dorkos/shared/agent-runtime';
+
+/**
+ * A teammate's one allowed call, run as an aside (DOR-2956): the turn is a teammate's, held to
+ * every bound one is, and carries the pass that lets that one call through.
+ */
+export interface AsideTeammatePass {
+  /** The teammate the request was made for. */
+  asker: TeammateAsker;
+  /** The call the owner allowed. */
+  pass: TeammatePass;
+}
+
+/** How an aside request ended before its turn: it ran, the agent was busy, or it could not run. */
+export type AsideOutcome = 'ran' | 'busy' | 'skipped';
 
 /**
  * The body of {@link RoomTriggerDispatcher.askAside}, which documents it.
@@ -31,19 +47,20 @@ export async function askAside(
     entry: RoomEntry;
     authorId: string;
     prompt: string;
+    teammate?: AsideTeammatePass;
   }
-): Promise<void> {
+): Promise<AsideOutcome> {
   const { room, entry, authorId } = input;
   const record = self.deps.authors.getMany([authorId]).get(authorId);
   // Only an agent takes a turn, and only a live one: a directory that no
   // longer holds this agent has nothing to offer and no session to offer it
   // on (ADR 260801-003051).
-  if (!record || record.kind !== 'agent') return;
-  if (!isLiveAuthor(record, self.deps.agents)) return;
+  if (!record || record.kind !== 'agent') return 'skipped';
+  if (!isLiveAuthor(record, self.deps.agents)) return 'skipped';
   // It posted its status line a moment ago, so this is all but guaranteed —
   // and it costs one indexed read to not spend a model turn on the case where
   // it left the room in between.
-  if (!self.deps.store.getMember(room.id, authorId)) return;
+  if (!self.deps.store.getMember(room.id, authorId)) return 'skipped';
   const agentPath = record.naturalKey;
 
   const busyWith = self.busyWith(room.id, authorId, agentPath);
@@ -55,7 +72,7 @@ export async function askAside(
       // `agentPath`, and a filesystem path does not belong in a log context.
       busyWith: busyWith.where,
     });
-    return;
+    return 'busy';
   }
   // Charged through the same seam `claimCollected` uses, which is what keeps
   // an offer from being the one path that spends without counting: with every
@@ -67,7 +84,7 @@ export async function askAside(
       roomId: room.id,
       authorId,
     });
-    return;
+    return 'skipped';
   }
   // **The re-arm, exactly as `claimCollected` does it, and it is not optional
   // here.** Spending again means the hourly window moved, so the next
@@ -95,7 +112,7 @@ export async function askAside(
       authorId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return;
+    return 'skipped';
   }
 
   const dispatchId = newDispatchId();
@@ -125,7 +142,7 @@ export async function askAside(
     // for up to one throttle window.
     activityPublishedAt: 0,
   });
-  return runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
+  await runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
     self.runAsideInDispatch({
       room,
       entry,
@@ -135,8 +152,10 @@ export async function askAside(
       key,
       dispatchId,
       prompt: input.prompt,
+      ...(input.teammate ? { teammate: input.teammate } : {}),
     })
   );
+  return 'ran';
 }
 
 /** The body of {@link RoomTriggerDispatcher.askAside}, already inside its scope. */
@@ -151,6 +170,7 @@ export async function runAsideInDispatch(
     key: string;
     dispatchId: string;
     prompt: string;
+    teammate?: AsideTeammatePass;
   }
 ): Promise<void> {
   const { room, entry, authorId, key } = input;
@@ -208,9 +228,18 @@ export async function runAsideInDispatch(
       ...roomLaunchStepFor(self.deps, room.id, authorId, input.agentPath, place),
       sessionId: input.sessionId,
       entry,
-      // Never external: `entry` here is the greeter's own status post, written
-      // by this machine, and nobody off it can ask for an aside turn.
-      externalAuthor: false,
+      // Never external for a welcome-back offer: `entry` is the greeter's own status post,
+      // written by this machine. A teammate's allowed call is the teammate's turn (DOR-2956):
+      // external, read-only, nobody to ask, fenced to this room, with the one pass.
+      ...(input.teammate
+        ? {
+            externalAuthor: true,
+            permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] as const,
+            teammate: true as const,
+            teammateAsker: input.teammate.asker,
+            teammatePass: input.teammate.pass,
+          }
+        : { externalAuthor: false }),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,

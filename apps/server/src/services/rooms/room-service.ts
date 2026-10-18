@@ -21,6 +21,7 @@
  *
  * @module server/services/rooms/room-service
  */
+import type { AsideOutcome, AsideTeammatePass } from './room-trigger/aside.js';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -249,7 +250,8 @@ export class RoomService {
     authorId: string;
     aboutEntryId: string;
     prompt: string;
-  }): Promise<void> {
+    teammate?: AsideTeammatePass;
+  }): Promise<AsideOutcome> {
     return this.parts.turnControl.askAside(input);
   }
   /** Open a channel or a DM. See {@link RoomLifecycle.createRoom}. */

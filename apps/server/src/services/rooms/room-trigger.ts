@@ -910,13 +910,15 @@ export class RoomTriggerDispatcher {
    *   posted. It frames the turn's context and names the working indicator.
    * @param input.authorId - The agent being asked.
    * @param input.prompt - The question, as the model will see it.
+   * @param input.teammate - For a teammate's allowed call (DOR-2956): who asked and the pass.
    */
   askAside(input: {
     room: Room;
     entry: RoomEntry;
     authorId: string;
     prompt: string;
-  }): Promise<void> {
+    teammate?: aside.AsideTeammatePass;
+  }): Promise<aside.AsideOutcome> {
     return aside.askAside(this, input);
   }
 
@@ -929,6 +931,7 @@ export class RoomTriggerDispatcher {
     key: string;
     dispatchId: string;
     prompt: string;
+    teammate?: aside.AsideTeammatePass;
   }): Promise<void> {
     return aside.runAsideInDispatch(this, input);
   }

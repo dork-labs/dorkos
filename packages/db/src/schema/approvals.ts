@@ -253,6 +253,32 @@ export const approvals = sqliteTable(
      * releases it if it gives up without a decision.
      */
     notifiedAt: text('notified_at'),
+
+    /**
+     * The space member who asked, when a teammate's turn asked the owner for one tool call
+     * (DOR-2956, capability `teammate.ask_owner`). Null on every other approval. With
+     * `connectionRef` it keys the per-teammate limits: three requests an hour, one waiting per
+     * tool, and a day after a Deny for the same tool.
+     */
+    teammateMemberId: text('teammate_member_id'),
+
+    /** The space connection the teammate asked through (its `communityRef`), or null. */
+    connectionRef: text('connection_ref'),
+
+    /**
+     * Where the result of a teammate's request will be posted, as JSON `{ room, space }`: the
+     * room's title in the space and the space's name. Shown on the card, because whatever the
+     * call returns is read by everyone in that room. Null on every other approval.
+     */
+    resultGoesTo: text('result_goes_to'),
+
+    /**
+     * The rest of a teammate's request, as JSON, never sent to any surface: the teammate's
+     * display name, the local room and agent the answer runs as, the message the request was
+     * about, and the exact tool call (`{ tool, input }`) the one-call pass is spent on. Null on
+     * every other approval. Deleted with the row by the retention sweep a day after it expires.
+     */
+    teammateRequest: text('teammate_request'),
   },
   (table) => [
     index('idx_approvals_state').on(table.state),
@@ -261,6 +287,12 @@ export const approvals = sqliteTable(
     index('idx_approvals_blocked_requester').on(
       table.requestedByPath,
       table.blockedRequest,
+      table.createdAt
+    ),
+    // The per-teammate limits on "ask the owner" (DOR-2956).
+    index('idx_approvals_teammate_asker').on(
+      table.connectionRef,
+      table.teammateMemberId,
       table.createdAt
     ),
     index('approvals_connector_agent_connection_idx').on(

@@ -21,7 +21,7 @@
  * @module server/services/rooms/limits/space-teammates
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
+import { authorOrigin, externalAuthorParts, type AuthorRegistry } from '../author-registry.js';
 
 /** The platform every space mirror's authors are stored under (`entry-import.ts`). */
 const SPACE_PLATFORM = 'community';
@@ -87,4 +87,29 @@ export function teammateOf(
   return entries.some((entry) => isTeammateEntry(authors, entry, inSpaceRoom))
     ? { teammate: true }
     : {};
+}
+
+/**
+ * The `teammateAsker` spread a `RoomTurnRequest` takes (DOR-2956): the author of the NEWEST
+ * teammate message the turn answers, by member id in the space and the name it shows. A request
+ * the turn makes of the owner is made in that person's name. Absent when no message is a
+ * teammate's, or the newest one's author has no space member id on record.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers, oldest first.
+ * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
+ */
+export function teammateAskerOf(
+  authors: AuthorRegistry,
+  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  inSpaceRoom = false
+): { teammateAsker?: { memberId: string; displayName: string } } {
+  const newest = [...entries]
+    .reverse()
+    .find((entry) => isTeammateEntry(authors, entry, inSpaceRoom));
+  if (!newest) return {};
+  const record = authors.getMany([newest.authorId]).get(newest.authorId);
+  if (!record || authorOrigin(record.naturalKey) === 'local') return {};
+  const memberId = externalAuthorParts(record.naturalKey).platformUserId;
+  return memberId ? { teammateAsker: { memberId, displayName: record.displayName } } : {};
 }

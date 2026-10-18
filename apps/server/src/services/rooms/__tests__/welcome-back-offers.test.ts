@@ -668,7 +668,7 @@ describe('asking one agent aside', () => {
         aboutEntryId: entry.id,
         prompt: 'do you have a next step?',
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toBe('ran');
 
     expect(
       service.listEntries(room.id, human, { limit: 200 }).map((line) => line.body.text)
@@ -772,7 +772,7 @@ describe('asking one agent aside', () => {
 
     land();
 
-    await expect(asking).resolves.toBeUndefined();
+    await expect(asking).resolves.toBe('ran');
     // The claim is still held while the post lands, which is what makes a late
     // offer a turn's writing rather than something beside one.
     expect(
@@ -806,7 +806,7 @@ describe('asking one agent aside', () => {
     await settleUntil(() => runner.turns.length === 1, 'the turn to reach the runner');
     land({ text: null, waitedMs: 45 * 60_000 });
 
-    await expect(asking).resolves.toBeUndefined();
+    await expect(asking).resolves.toBe('ran');
     expect(service.listEntries(room.id, human, { limit: 200 })).toHaveLength(before);
     expect(service.listActiveClaims()).toEqual([]);
   });

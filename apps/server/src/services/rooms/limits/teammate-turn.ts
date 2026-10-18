@@ -100,7 +100,8 @@ function turnDirectoriesOf(
 }
 
 /**
- * The marks a room turn's `roomTurn` carries about who it answers: whether it is shown an
+ * The marks a room turn's `roomTurn` carries about who it answers (and, for a teammate's turn,
+ * who asked and the one call the owner allowed): whether it is shown an
  * outsider's words (`outsiderInViewOf`); whether a teammate started it, which fences its DorkOS
  * tools to `roomTurn.roomId`; and whether any message it answers was written by anyone but a
  * person on this machine, which keeps the runtime from running those words as a command or
@@ -113,11 +114,21 @@ function turnDirectoriesOf(
  * @param request - The turn about to start.
  */
 export function roomTurnMarksOf(
-  request: Pick<RoomTurnRequest, 'roomContext' | 'teammate' | 'permissionCeiling'>
-): Pick<NonNullable<MessageOpts['roomTurn']>, 'outsiderInView' | 'teammate' | 'untrustedText'> {
+  request: Pick<
+    RoomTurnRequest,
+    'roomContext' | 'teammate' | 'permissionCeiling' | 'teammateAsker' | 'teammatePass'
+  >
+): Pick<
+  NonNullable<MessageOpts['roomTurn']>,
+  'outsiderInView' | 'teammate' | 'untrustedText' | 'teammateAsker' | 'teammatePass'
+> {
   return {
     ...outsiderInViewOf(request.roomContext),
     ...(request.teammate ? { teammate: true as const } : {}),
+    // Who asked and the one allowed call ride only on a teammate's turn (DOR-2956): an owner's
+    // turn never carries a pass, whatever a caller put on the request.
+    ...(request.teammate && request.teammateAsker ? { teammateAsker: request.teammateAsker } : {}),
+    ...(request.teammate && request.teammatePass ? { teammatePass: request.teammatePass } : {}),
     ...(request.permissionCeiling !== undefined || request.teammate
       ? { untrustedText: true as const }
       : {}),

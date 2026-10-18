@@ -64,7 +64,7 @@
     "apps/server/src/services/connectors/resources/authentication-flow-service.ts": 807,
     "apps/server/src/services/connectors/resources/managed-authority-sync-service.ts": 1874,
     "apps/server/src/services/connectors/resources/operator-query-service.ts": 1169,
-    "apps/server/src/services/core/approvals/approval-service.ts": 759,
+    "apps/server/src/services/core/approvals/approval-service.ts": 656,
     "apps/server/src/services/core/auth/cloud-link-client.ts": 827,
     "apps/server/src/services/core/auth/cloud-link.ts": 908,
     "apps/server/src/services/core/capabilities/tier-enforcement.ts": 512,

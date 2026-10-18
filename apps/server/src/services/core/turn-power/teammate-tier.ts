@@ -47,6 +47,7 @@
  */
 
 import { sharedFileVerdict } from './shared-folder.js';
+import { askCallHash, canonicalAskCall, spendTeammatePass } from './ask-owner.js';
 
 /** The room a teammate's turn answers, and the one folder it may read. */
 export interface TeammateTierScope {
@@ -54,6 +55,15 @@ export interface TeammateTierScope {
   roomId: string;
   /** The space's shared folder, or `null` when its owner shared none. */
   sharedFolder: string | null;
+  /** The agent, by its author id in that room. Absent on a scope built before C7's pass. */
+  authorId?: string;
+  /** The teammate whose message the turn answers, newest first, when it is known. */
+  asker?: { memberId: string; displayName: string };
+  /**
+   * The one call the owner allowed this turn to make (`ask-owner.ts`), until it is made. Taken
+   * off the scope the moment it is spent, so a second call finds nothing to spend.
+   */
+  pass?: { approvalId: string; tool: string; inputHash: string };
 }
 
 /**
@@ -62,11 +72,13 @@ export interface TeammateTierScope {
  * - `this-room`: run, when its `roomId` argument is the room the turn answers and it carries
  *   none of the `without` arguments, and then only as the rest of the gate decides;
  * - `shared-folder`: run, when the space shares a folder; the tool itself checks each file;
+ * - `teammate-only`: run; a tool that exists only for a teammate's turn and checks its own limits;
  * - `refuse`: never, with the reason kept for the reviewer reading this table.
  */
 export type TeammateToolRule =
   | { kind: 'this-room'; without?: readonly string[] }
   | { kind: 'shared-folder' }
+  | { kind: 'teammate-only' }
   | { kind: 'refuse'; why: string };
 
 const THIS_ROOM: TeammateToolRule = { kind: 'this-room' };
@@ -104,8 +116,10 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   chat_send: refuse('starts or steers work in another chat'),
   chat_read: refuse('reads another chat'),
   chat_stop: refuse('stops work in another chat'),
-  // Reaching the owner is what "ask the owner" (C7) will do, with a card that says who asked.
-  request_permission: refuse('asks the owner to unblock something; C7 adds a card for this'),
+  // Reaching the owner: one exact call, on a card that says which teammate asked and where the
+  // result goes (C7, `ask-owner.ts`). Never the agent's own ask, which could be "always".
+  ask_owner: { kind: 'teammate-only' },
+  request_permission: refuse('asks in the agent’s own name; a teammate asks with ask_owner'),
   relay_notify_user: refuse('sends the owner a note outside the app'),
   relay_list_endpoints: refuse('lists the owner’s connected chats'),
   // The owner's agents and this machine.
@@ -167,6 +181,7 @@ export function teammateTierRefusal(
     ? TEAMMATE_DORKOS_TOOLS[call.name]!
     : undefined;
   if (rule?.kind === 'shared-folder') return scope.sharedFolder ? null : TEAMMATE_TIER_DENIAL;
+  if (rule?.kind === 'teammate-only') return null;
   if (rule?.kind !== 'this-room' || call.input.roomId !== scope.roomId) return TEAMMATE_TIER_DENIAL;
   const carries = (rule.without ?? []).some((arg) => present(call.input[arg]));
   return carries ? TEAMMATE_TIER_DENIAL : null;
@@ -183,7 +198,11 @@ function present(value: unknown): boolean {
  * file by its resolved path, or allow a shared-folder tool (which checks each file itself).
  */
 export type TeammateTierDecision =
-  { refuse: string } | { allowRead: { filePath: string } } | { allow: true } | null;
+  | { refuse: string }
+  | { allowRead: { filePath: string } }
+  | { allow: true }
+  | { allowPass: { input: Record<string, unknown> } }
+  | null;
 
 /**
  * The whole decision for a teammate turn's call, the built-in `Read` included: a file inside the
@@ -197,6 +216,8 @@ export async function teammateTierDecision(
   scope: TeammateTierScope,
   call: TeammateTierCall
 ): Promise<TeammateTierDecision> {
+  const passed = spendPass(scope, call);
+  if (passed) return passed;
   if (call.source === 'built-in' && call.name === 'Read') {
     const verdict = await sharedFileVerdict(scope.sharedFolder, call.input.file_path);
     return verdict.ok
@@ -208,5 +229,40 @@ export async function teammateTierDecision(
   // Allowed here rather than by the runtime's card-free list: they answer only in a teammate's
   // turn, which has nobody to ask, so the runtime's gate would only refuse them.
   const rule = call.source === 'dorkos' ? TEAMMATE_DORKOS_TOOLS[call.name] : undefined;
-  return rule?.kind === 'shared-folder' ? { allow: true } : null;
+  return rule?.kind === 'shared-folder' || rule?.kind === 'teammate-only' ? { allow: true } : null;
+}
+
+/**
+ * The one call the owner allowed, let through once: the runtime's own tool the pass names, with
+ * the input whose canonical hash the owner approved. Spent before it runs, so the approval is
+ * gone whether or not the call succeeds; the pass leaves the scope with it. Any other call, or
+ * this one again, goes on to the tier as usual and is refused there.
+ *
+ * @param scope - The turn's scope, holding the pass until it is spent.
+ * @param call - The call being made.
+ */
+function spendPass(
+  scope: TeammateTierScope,
+  call: TeammateTierCall
+): { allowPass: { input: Record<string, unknown> } } | { refuse: string } | null {
+  const pass = scope.pass;
+  if (!pass || call.source !== 'built-in' || call.name !== pass.tool) return null;
+  let inputHash: string;
+  try {
+    inputHash = askCallHash(call.name, call.input);
+  } catch {
+    return null;
+  }
+  if (inputHash !== pass.inputHash) return null;
+  // Off the scope first: whatever the store answers, this pass is never offered twice.
+  delete scope.pass;
+  const spent = spendTeammatePass({
+    approvalId: pass.approvalId,
+    inputHash,
+    roomId: scope.roomId,
+    authorId: scope.authorId ?? '',
+    memberId: scope.asker?.memberId,
+  });
+  if (!spent) return { refuse: `${TEAMMATE_TIER_DENIAL} (the owner’s approval is spent or gone)` };
+  return { allowPass: { input: canonicalAskCall(call.name, call.input).input } };
 }

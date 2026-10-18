@@ -340,6 +340,19 @@ export const PendingApprovalSchema = z
      * a tool whose extension has since stopped.
      */
     source: z.object({ kind: z.literal('extension'), id: z.string(), name: z.string() }).optional(),
+    /**
+     * Set when a teammate in a shared space asked for this through the agent's turn there
+     * (DOR-2956, `teammate.ask_owner`): who asked, by their member id and the name the space
+     * shows. Their own words, so a surface draws them as text, never as markup.
+     */
+    teammate: z.object({ memberId: z.string(), displayName: z.string().max(80) }).optional(),
+    /** With `teammate`: the space connection they asked through. */
+    connectionRef: z.string().optional(),
+    /**
+     * With `teammate`: where the result will be posted, a room in a space, where everyone in
+     * that room can read it.
+     */
+    resultGoesTo: z.object({ room: z.string().max(120), space: z.string().max(120) }).optional(),
     /** When the request was made. ISO 8601 UTC. */
     requestedAt: z.string(),
     /** When the request stops being honored. ISO 8601 UTC. */

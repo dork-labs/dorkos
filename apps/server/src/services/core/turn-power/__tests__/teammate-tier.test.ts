@@ -27,9 +27,10 @@ describe('the teammate fence', () => {
     const cardFree = [...DORKOS_AGENT_TOOLS].map((name) =>
       name.slice(IN_SESSION_TOOL_PREFIX.length)
     );
-    // The shared-folder tools are the one exception: the tier allows them itself (DOR-2956).
+    // The shared-folder tools and ask_owner are the exceptions: the tier allows them itself, and
+    // only a teammate's turn lists them (DOR-2956).
     const decided = Object.entries(TEAMMATE_DORKOS_TOOLS)
-      .filter(([, rule]) => rule.kind !== 'shared-folder')
+      .filter(([, rule]) => rule.kind !== 'shared-folder' && rule.kind !== 'teammate-only')
       .map(([name]) => name);
     expect(decided.sort()).toEqual(cardFree.sort());
   });

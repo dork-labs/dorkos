@@ -681,7 +681,11 @@ export function createRoomSubsystem(opts: {
     // `welcomeBack.offersEnabled` says it may. It goes through the room's own
     // turn machinery, so the session binding, both busy ceilings and the
     // automatic-turn budget bind an offer exactly as they bind a reply.
-    offers: { ask: (input) => service.askAside(input) },
+    offers: {
+      ask: async (input) => {
+        await service.askAside(input);
+      },
+    },
     lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
   });
   return {

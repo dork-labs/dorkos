@@ -31,8 +31,9 @@ Some files there are never shared, such as keys, .env files and the .git and .do
   return `<teammate_turn>
 Someone in a shared space who is not your owner started this turn. For this turn you can read and
 post in the room you are answering. ${reads} You cannot read other rooms or chats, use the web or
-connected apps, save notes, or ask your owner to approve anything. Your saved notes are not shown
-in this turn. If they ask for something you cannot do here, say so plainly.
+connected apps, or save notes. Your saved notes are not shown in this turn. If they need one
+tool call you cannot make here, such as a Bash command, you can ask your owner for exactly that
+call with ask_owner; then end your turn. Otherwise say plainly what you cannot do.
 </teammate_turn>`;
 }
 

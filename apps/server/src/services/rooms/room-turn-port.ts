@@ -15,7 +15,12 @@
  *
  * @module server/services/rooms/room-turn-port
  */
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type {
+  DirectoryGrant,
+  TeammateAsker,
+  TeammatePass,
+  TurnPermissionCeiling,
+} from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
@@ -158,6 +163,10 @@ export interface RoomTurnRequest {
    * (`limits/teammate-turn.ts`). The read-only half rides `permissionCeiling`.
    */
   teammate?: true;
+  /** With {@link teammate}: the teammate the turn answers, newest first (DOR-2956). */
+  teammateAsker?: TeammateAsker;
+  /** With {@link teammate}: the one call the owner allowed this turn (DOR-2956). */
+  teammatePass?: TeammatePass;
   /**
    * The words the turn is triggered with — what reaches the model as the visible
    * user message, byte for byte.

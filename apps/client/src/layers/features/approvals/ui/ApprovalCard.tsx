@@ -17,6 +17,7 @@ import {
 import { ApprovalServiceAction } from './ApprovalServiceAction';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
+import { TeammateRequest } from './TeammateRequest';
 
 const staggerItem = {
   initial: { opacity: 0, y: 8 },
@@ -293,6 +294,14 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               )}
             </p>
           )}
+          {/* A teammate's request (DOR-2956): who asked and who will read the result. */}
+          {approval.teammate && approval.resultGoesTo && (
+            <TeammateRequest
+              teammate={approval.teammate}
+              resultGoesTo={approval.resultGoesTo}
+              {...(approval.requestReason ? { reason: approval.requestReason } : {})}
+            />
+          )}
           {approval.subject && <ApprovalSubject subject={approval.subject} />}
           {approval.serviceAction && (
             <ApprovalServiceAction
@@ -398,7 +407,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     )
                   }
                 >
-                  Allow
+                  {approval.teammate ? 'Allow once' : 'Allow'}
                 </Button>
                 {approval.alwaysOffered && (
                   <Button

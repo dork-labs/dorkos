@@ -17,6 +17,7 @@ import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
 import { getSharedFilesTools } from './shared-files-tools.js';
+import { getAskOwnerTools } from './ask-owner-tool.js';
 import { getAccountTools } from './account-tools.js';
 import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
@@ -271,6 +272,8 @@ export function handRegisteredInSessionToolSet(
     // The space's shared folder, listed only for a process launched for a teammate's turn, which
     // never serves the owner's (the teammate block is in the relaunch digest) (DOR-2956).
     ...(session?.teammateTier ? getSharedFilesTools(session) : []),
+    // And the one way such a turn reaches the owner: a card for one exact call (DOR-2956).
+    ...(session?.teammateTier ? getAskOwnerTools(session) : []),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

@@ -16,6 +16,7 @@
  *
  * @module server/services/rooms/manage/room-turn-control
  */
+import type { AsideOutcome, AsideTeammatePass } from '../room-trigger/aside.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { ActiveClaimView, HeldView } from '../room-claims.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -275,25 +276,28 @@ export class RoomTurnControl {
    * @param input.authorId - The agent being asked.
    * @param input.aboutEntryId - The status line it just posted.
    * @param input.prompt - The question, as the model will see it.
+   * @param input.teammate - A teammate's allowed call (DOR-2956): the turn runs as theirs.
    */
   async askAside(input: {
     roomId: string;
     authorId: string;
     aboutEntryId: string;
     prompt: string;
-  }): Promise<void> {
+    teammate?: AsideTeammatePass;
+  }): Promise<AsideOutcome> {
     const room = this.store.getRoom(input.roomId);
     // An archived room takes no new posts, so an offer for it could never be
     // written down — spending a turn to find that out would be the speculative
     // cost this whole feature is gated on avoiding.
-    if (room === null || room.archived) return;
+    if (room === null || room.archived) return 'skipped';
     const entry = this.store.getEntryById(input.roomId, input.aboutEntryId);
-    if (entry === null) return;
+    if (entry === null) return 'skipped';
     return this.triggers.askAside({
       room,
       entry,
       authorId: input.authorId,
       prompt: input.prompt,
+      ...(input.teammate ? { teammate: input.teammate } : {}),
     });
   }
 }

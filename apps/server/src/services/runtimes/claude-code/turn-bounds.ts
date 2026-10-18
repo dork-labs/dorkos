@@ -43,6 +43,11 @@ export function assignTurnBounds(
     session.teammateTier = {
       roomId: opts.roomTurn.roomId,
       sharedFolder: sharedFolderOf(opts.roomTurn.roomId),
+      authorId: opts.roomTurn.authorId,
+      // Who asked, for `ask_owner`, and the one call the owner allowed, for this send only
+      // (DOR-2956): copied, so spending it here never touches the caller's options.
+      ...(opts.roomTurn.teammateAsker ? { asker: { ...opts.roomTurn.teammateAsker } } : {}),
+      ...(opts.roomTurn.teammatePass ? { pass: { ...opts.roomTurn.teammatePass } } : {}),
     };
   } else {
     delete session.teammateTier;

@@ -5,7 +5,13 @@
  */
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { describe, expect, it } from 'vitest';
-import { isTeammateEntry, teammateOf, vouchOwnerSpaceEntry } from '../limits/space-teammates.js';
+import {
+  isTeammateEntry,
+  teammateAskerOf,
+  teammateOf,
+  vouchOwnerSpaceEntry,
+} from '../limits/space-teammates.js';
+import { roomTurnMarksOf } from '../limits/teammate-turn.js';
 import { ceilingForEntries } from '../limits/turn-ceiling.js';
 import { agentLookupFor, createRoomHarness } from './room-test-harness.js';
 
@@ -95,5 +101,43 @@ describe('a teammate’s ceiling', () => {
     expect(ceilingForEntries(registry, [{ id: 'tg-2', authorId: telegram }])).toEqual({
       permissionCeiling: 'runtime-default',
     });
+  });
+});
+
+describe('who asked (DOR-2956)', () => {
+  it('is the newest teammate message’s author, by member id and name', () => {
+    const { registry, human, member } = authors();
+    const cy = registry.resolveExternal({
+      platformType: 'community',
+      instanceId: 'remote_team_space',
+      platformUserId: 'remote-cy',
+      displayName: 'Cy',
+    }).id;
+    expect(
+      teammateAskerOf(registry, [
+        { id: 'space-a1', authorId: member },
+        { id: 'space-a2', authorId: cy },
+        { id: 'local-a3', authorId: human },
+      ])
+    ).toEqual({ teammateAsker: { memberId: 'remote-cy', displayName: 'Cy' } });
+  });
+
+  it('is nobody when no message is a teammate’s', () => {
+    const { registry, human } = authors();
+    expect(teammateAskerOf(registry, [{ id: 'local-a4', authorId: human }])).toEqual({});
+  });
+
+  it('rides, with the pass, only on a teammate’s turn', () => {
+    const pass = { approvalId: 'appr-1', tool: 'Bash', inputHash: 'h' };
+    const asker = { memberId: 'remote-bo', displayName: 'Bo' };
+    const roomContext = { pending: [] } as unknown as Parameters<
+      typeof roomTurnMarksOf
+    >[0]['roomContext'];
+    expect(
+      roomTurnMarksOf({ roomContext, teammate: true, teammateAsker: asker, teammatePass: pass })
+    ).toMatchObject({ teammate: true, teammateAsker: asker, teammatePass: pass });
+    const owner = roomTurnMarksOf({ roomContext, teammateAsker: asker, teammatePass: pass });
+    expect(owner).not.toHaveProperty('teammatePass');
+    expect(owner).not.toHaveProperty('teammateAsker');
   });
 });

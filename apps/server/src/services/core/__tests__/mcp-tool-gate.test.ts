@@ -189,7 +189,7 @@ interface ProbeTool {
 function inSessionTools(identity?: AgentIdentity): Map<string, ProbeTool> {
   const tools = handRegisteredInSessionTools(createDeps(), {
     ...(identity ? { resolveContext: async () => ({ identity }) } : {}),
-    // As a teammate's turn, so the two shared-folder tools only it lists are gated here too.
+    // As a teammate's turn, so the tools only it lists (shared folder, ask_owner) are gated too.
     session: { eventQueue: [], teammateTier: { roomId: 'room', sharedFolder: null } },
   }) as unknown as {
     name: string;
@@ -358,9 +358,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // capabilities, so they move none of these hand-registered counts.
       // 39 -> 41 in-session for the two shared-folder tools a teammate's turn lists
       // (DOR-2956), counted from a teammate's session; the external count does not move.
-      expect(registeredByServer['in-session']).toHaveLength(41);
+      // 41 -> 42 in-session for `ask_owner` (DOR-2956), listed only in a teammate's session and
+      // never on the external server, so 37 stays 37.
+      expect(registeredByServer['in-session']).toHaveLength(42);
       expect(registeredByServer.external).toHaveLength(37);
-      expect(declaredNames).toHaveLength(41);
+      expect(declaredNames).toHaveLength(42);
     });
 
     it('names exactly two tools destructive', () => {

@@ -6,6 +6,8 @@
  *
  * @module startup/steps/connector-events-approvals
  */
+import { wireAskOwner } from '../../services/communities/remote/wake/ask-owner-wiring.js';
+import { getRemoteConnectionStore } from '../../services/communities/remote/state.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorEventInboxStore } from '../../services/connectors/event-inbox-store.js';
 import { ConnectorEventSettingsService } from '../../services/connectors/events/settings-service.js';
@@ -240,6 +242,25 @@ export async function wireConnectorEventsAndApprovals(
   // nothing but hand off, because `eventFanOut` runs listeners synchronously on
   // the broadcast write path (spec `approval-verdict-delivery`).
   startApprovalVerdictDelivery(approvalService);
+  // A teammate's request of the owner (DOR-2956): its card, the one-call pass, and the room post
+  // or fresh turn each answer brings. Only where spaces run; elsewhere nothing can ask.
+  const remoteMirrors = refs.remoteCommunityRuntime?.mirrors;
+  if (remoteMirrors) {
+    wireAskOwner({
+      db,
+      approvals: approvalService,
+      rooms: roomService,
+      roomFacts: {
+        title: (roomId) => roomStore.getRoom(roomId)?.title ?? null,
+        newestEntryId: (roomId) => {
+          const seq = roomStore.maxSeq(roomId);
+          return seq > 0 ? (roomService.entriesAfter(roomId, seq - 1)[0]?.id ?? null) : null;
+        },
+      },
+      connectionOf: (roomId) => remoteMirrors.connectionOf(roomId),
+      spaceLabel: async (ref, owner) => (await getRemoteConnectionStore().get(ref, owner)).label,
+    });
+  }
   // Hand back the delivery claims that only a hold in a DEAD process could still
   // hold. A hold lives in process memory and holds a turn open, so none survives
   // a restart — and without this sweep, a restart while somebody was deciding

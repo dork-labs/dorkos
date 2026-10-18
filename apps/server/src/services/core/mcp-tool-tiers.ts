@@ -194,6 +194,13 @@ export const MCP_TOOL_TIERS = {
     areaNote: TEAMMATE_SHARED_FOLDER,
     title: "Search the space's shared folder",
   },
+  // Changes nothing itself: it raises a card, and the owner's answer is the decision (DOR-2956).
+  ask_owner: {
+    tier: 'observe',
+    area: null,
+    areaNote: "only a teammate's turn; the owner answers a card for one call",
+    title: 'Ask the owner for one call',
+  },
 
   // ── Accounts ────────────────────────────────────────────────────────────
   accounts_usage: {

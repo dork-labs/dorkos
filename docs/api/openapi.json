@@ -4350,6 +4350,42 @@
               "name"
             ]
           },
+          "teammate": {
+            "type": "object",
+            "properties": {
+              "memberId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string",
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "memberId",
+              "displayName"
+            ]
+          },
+          "connectionRef": {
+            "type": "string"
+          },
+          "resultGoesTo": {
+            "type": "object",
+            "properties": {
+              "room": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "space": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "room",
+              "space"
+            ]
+          },
           "requestedAt": {
             "type": "string"
           },
