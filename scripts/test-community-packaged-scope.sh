@@ -21,12 +21,18 @@
 #   SCOPE=/path/to/other.sh bash scripts/test-community-packaged-scope.sh
 #
 # SCOPE exists so a neutered implementation can be run against the same fixtures
-# to show what it stops catching.
+# to show what it stops catching. A copy outside this repository cannot find
+# ci/space-server.env beside it, so give it SPACE_SERVER_ENV=<repo>/ci/space-server.env.
 
 set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 scope=${SCOPE:-$repo_root/scripts/community-packaged-scope.sh}
+
+# The space server's folders, from the same file the scope script reads, so the
+# fixtures below follow it when the folder moves (DOR-3007).
+# shellcheck source=../ci/space-server.env
+source "$repo_root/ci/space-server.env"
 
 pass=0
 fail=0
@@ -47,12 +53,14 @@ expect() {
 
 # --- every entry reaches the proof ------------------------------------------
 for path in \
-  apps/community/acceptance/driver.spec.ts \
-  apps/community/acceptance/run.sh \
-  apps/community/acceptance/Dockerfile \
-  apps/community/src/browser/components/JoinPage.tsx \
-  apps/community/migrations/0007_membership.sql \
-  apps/community/package.json \
+  "$SPACE_DIR"/acceptance/driver.spec.ts \
+  "$SPACE_DIR"/acceptance/run.sh \
+  "$SPACE_DIR"/acceptance/Dockerfile \
+  "$SPACE_DIR"/src/browser/components/JoinPage.tsx \
+  "$SPACE_DIR"/migrations/0007_membership.sql \
+  "$SPACE_DIR"/package.json \
+  "$SPACE_SRC_DIR/app.ts" \
+  "$SPACE_WEB_DIR/components/Channel.tsx" \
   apps/client/src/layers/entities/community/model/use-communities.ts \
   apps/client/src/layers/features/community-connections/ui/CommunityConnectionCard.tsx \
   apps/client/src/app/__tests__/community-route-memory.test.ts \
@@ -62,7 +70,7 @@ for path in \
   apps/server/src/services/core/COMMUNITY_NOTES.ts \
   packages/shared/src/CommunitySchemas.ts \
   packages/db/src/schema/communities/community-mirrors.ts \
-  'apps/community/src/browser/naïve-välkommen.tsx' \
+  "$SPACE_DIR/src/browser/naïve-välkommen.tsx" \
   apps/server/src/services/communities/remote/remote-community-adapter.ts \
   apps/server/src/routes/communities.ts \
   packages/shared/src/community-adapter.ts \
@@ -99,7 +107,7 @@ for path in \
   docs/guides/community.mdx \
   specs/community-server/02-specification.md \
   changelog/unreleased/260923-000000-community.md \
-  apps/communityx/src/index.ts \
+  "${SPACE_DIR}x/src/index.ts" \
   apps/e2e/tests/community.spec.ts \
   research/apps/server/src/communities-notes.md \
   package.json \
@@ -115,17 +123,102 @@ done
 # --- whole diffs --------------------------------------------------------------
 expect false 'an empty diff reaches nothing' ''
 expect false 'several unrelated files' apps/client/src/a.ts apps/site/src/b.tsx docs/c.mdx
-expect true 'one relevant file among unrelated ones' apps/client/src/a.ts apps/community/src/x.ts docs/c.mdx
+expect true 'one relevant file among unrelated ones' apps/client/src/a.ts "$SPACE_DIR/src/x.ts" docs/c.mdx
 
 # A large diff whose only match is LAST: the shape a pipe into `grep -m 1` under
 # `pipefail` scores as "no match" once the writer takes SIGPIPE.
 big=()
 for i in $(seq 1 20000); do big+=("apps/client/src/generated/file-$i.ts"); done
-expect true 'a 20k-line diff whose one match is last' "${big[@]}" apps/community/acceptance/run.mjs
+expect true 'a 20k-line diff whose one match is last' "${big[@]}" "$SPACE_DIR/acceptance/run.mjs"
 expect false 'a 20k-line diff with no match' "${big[@]}"
 
+# --- where the space server lives (DOR-3007) ----------------------------------
+# The folders come from ci/space-server.env. The file itself is in scope: moving
+# the folder changes what the proof covers.
+expect true 'in scope: ci/space-server.env' ci/space-server.env
+for path in ci/space-server.envx ci/space-server.env.orig ci/gates.yaml; do
+  expect false "out of scope: $path" "$path"
+done
+
+# The layout after the program merge (specs/server-merge step 7): the space
+# server inside apps/server, its web pages inside apps/client. Its own folders
+# reach the proof; the rest of apps/server and apps/client must not, or every
+# pull request would pay for it.
+fixture_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir"' EXIT
+future_env=$fixture_dir/future.env
+cat >"$future_env" <<'ENV'
+# the layout after the move
+SPACE_DIR=apps/server/src/services/spaces
+SPACE_SRC_DIR=apps/server/src/services/spaces
+SPACE_WEB_DIR=apps/client/src/layers/features/spaces
+ENV
+
+# expect_future <want> <label> <paths...>: as expect, scored under the future layout.
+expect_future() {
+  local want=$1 label=$2
+  shift 2
+  local got
+  got=$(printf '%s\n' "$@" | SPACE_SERVER_ENV=$future_env bash "$scope" 2>/dev/null)
+  if [ "$got" = "$want" ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL: after the move: $label: expected '$want', got '$got' for: $*" >&2
+  fi
+}
+
+for path in \
+  apps/server/src/services/spaces/app.ts \
+  apps/server/src/services/spaces/acceptance/driver.spec.ts \
+  apps/server/src/services/spaces/migrations/0007_membership.sql \
+  apps/client/src/layers/features/spaces/ui/JoinPage.tsx \
+  apps/server/src/services/communities/remote/remote-community-adapter.ts \
+  packages/shared/src/community-adapter.ts \
+  ci/space-server.env; do
+  expect_future true "in scope: $path" "$path"
+done
+for path in \
+  apps/server/src/services/relay/relay-service.ts \
+  apps/server/src/index.ts \
+  apps/server/package.json \
+  apps/server/src/services/spacesx/app.ts \
+  apps/server/src/services/space/app.ts \
+  apps/client/src/layers/features/chat/ui/ChatPanel.tsx \
+  apps/client/src/layers/features/spaces-other/ui/X.tsx \
+  apps/community/src/app.ts; do
+  expect_future false "out of scope: $path" "$path"
+done
+expect_future false 'a server-only pull request' \
+  apps/server/src/services/relay/relay-service.ts apps/server/src/routes/sessions.ts apps/server/package.json
+
+# A dot in a folder name matches only a dot.
+dotted_env=$fixture_dir/dotted.env
+printf '%s\n' SPACE_DIR=apps/space.server SPACE_SRC_DIR=apps/space.server/src SPACE_WEB_DIR=apps/space.server/web >"$dotted_env"
+got=$(printf '%s\n' apps/spaceXserver/src/a.ts | SPACE_SERVER_ENV=$dotted_env bash "$scope" 2>/dev/null)
+if [ "$got" = false ]; then pass=$((pass + 1)); else
+  fail=$((fail + 1))
+  echo "FAIL: a dot in a folder name matched any character: got '$got'" >&2
+fi
+
+# No file, or a folder left empty: no verdict and a non-zero exit, which the
+# job's step turns into running the proof. Never a `false`.
+empty_env=$fixture_dir/empty.env
+printf '%s\n' SPACE_DIR=apps/community SPACE_SRC_DIR= SPACE_WEB_DIR=apps/community/src/browser >"$empty_env"
+for env_file in "$fixture_dir/missing.env" "$empty_env"; do
+  if out=$(printf '%s\n' docs/a.mdx | SPACE_SERVER_ENV=$env_file bash "$scope" 2>/dev/null); then
+    fail=$((fail + 1))
+    echo "FAIL: $env_file gave a verdict ('$out') instead of failing" >&2
+  elif [ -n "$out" ]; then
+    fail=$((fail + 1))
+    echo "FAIL: $env_file printed '$out' before failing" >&2
+  else
+    pass=$((pass + 1))
+  fi
+done
+
 # --- the caller's side: a real pipeline under pipefail ------------------------
-if out=$(set -o pipefail; printf '%s\n' "${big[@]:0:10000}" apps/community/src/a.ts "${big[@]:10000}" | bash "$scope" 2>/dev/null) && [ "$out" = true ]; then
+if out=$(set -o pipefail; printf '%s\n' "${big[@]:0:10000}" "$SPACE_DIR/src/a.ts" "${big[@]:10000}" | bash "$scope" 2>/dev/null) && [ "$out" = true ]; then
   pass=$((pass + 1))
 else
   fail=$((fail + 1))

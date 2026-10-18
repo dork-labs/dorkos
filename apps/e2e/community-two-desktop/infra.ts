@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { readSpaceServer } from '../../../scripts/lib/space-server.mjs';
 import { REPO_ROOT } from './config.js';
 
 /**
@@ -216,11 +217,13 @@ export class Infrastructure {
     const storage = path.join(this.runRoot, 'private', `blobs-${name}`);
     mkdirSync(storage, { recursive: true, mode: 0o700 });
     const logFd = openSync(path.join(this.runRoot, 'private', `community-${name}.log`), 'a', 0o600);
-    const entry = path.join(REPO_ROOT, 'apps/community/dist-server/main.js');
+    // Where the space server lives comes from ci/space-server.env (DOR-3007).
+    const spaceDir = path.join(REPO_ROOT, readSpaceServer(REPO_ROOT).spaceDir);
+    const entry = path.join(spaceDir, 'dist-server/main.js');
     if (!existsSync(entry))
       throw new Error(`Community server is not built: ${entry} (run with --build)`);
     const child = spawn(process.execPath, [entry], {
-      cwd: path.join(REPO_ROOT, 'apps/community'),
+      cwd: spaceDir,
       stdio: ['ignore', logFd, logFd],
       env: {
         PATH: process.env.PATH,

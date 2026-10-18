@@ -147,6 +147,14 @@ name: scripts-test
 ### decides whether the drift check runs; it stays because pruning the list is
 ### the regression every entry above was added to stop.
 ###
+### ci/space-server.env and publish-community.yml are in the list because the
+### suites under scripts/__tests__/ that pin the space server's folder read
+### them (DOR-3007): space-server.test.ts holds the file's three readings
+### together, and community-release-workflow.test.ts asserts the publish
+### workflow reads the folder from that file instead of naming it. The program
+### merge moves the folder by editing the file alone, so that one-file PR has
+### to run the suites that read it.
+###
 ### THE FILTER ABOVE IS NO LONGER A `paths:` FILTER. `fixtures` is a REQUIRED
 ### check (ci/required-checks.json, ledger 260923-094812-required-openapi-and-
 ### scripts-fixtures): the docs-coverage-map drift it catches reached main
