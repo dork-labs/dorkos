@@ -345,7 +345,14 @@ export const PendingApprovalSchema = z
      * (DOR-2956, `teammate.ask_owner`): who asked, by their member id and the name the space
      * shows. Their own words, so a surface draws them as text, never as markup.
      */
-    teammate: z.object({ memberId: z.string(), displayName: z.string().max(80) }).optional(),
+    teammate: z
+      .object({
+        memberId: z.string(),
+        displayName: z.string().max(80),
+        /** The runtime tool they asked for (`Bash`), so the card can say what it can reach. */
+        tool: z.string().max(64).optional(),
+      })
+      .optional(),
     /** With `teammate`: the space connection they asked through. */
     connectionRef: z.string().optional(),
     /**

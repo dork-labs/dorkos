@@ -273,7 +273,8 @@ export function handRegisteredInSessionToolSet(
     // never serves the owner's (the teammate block is in the relaunch digest) (DOR-2956).
     ...(session?.teammateTier ? getSharedFilesTools(session) : []),
     // And the one way such a turn reaches the owner: a card for one exact call (DOR-2956).
-    ...(session?.teammateTier ? getAskOwnerTools(session) : []),
+    // Not in a turn started to make an allowed call, which asks for nothing more.
+    ...(session?.teammateTier && !session.teammateTier.passTurn ? getAskOwnerTools(session) : []),
   ];
 
   // Exposure is applied AFTER the gate, never before: the gate rebuilds each

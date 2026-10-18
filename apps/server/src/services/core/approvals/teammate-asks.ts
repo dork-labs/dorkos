@@ -22,6 +22,7 @@
  * @module services/core/approvals/teammate-asks
  */
 import { and, eq, gte, isNull, approvals, type Db } from '@dorkos/db';
+import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
 
 /** The capability id every teammate request is recorded under. Not on any tool surface. */
 export const TEAMMATE_ASK_CAPABILITY = 'teammate.ask_owner';
@@ -87,8 +88,9 @@ export type TeammateAskLimit =
 
 /**
  * Make outsider text safe to store and show as one line: control characters and line breaks
- * become spaces, runs of spaces collapse, and it is capped. A name cannot draw a second line on
- * the card, or pass for the card's own words.
+ * become spaces, invisible and direction-changing characters become visible markers, runs of
+ * spaces collapse, and it is capped. A name cannot draw a second line on the card, read in
+ * another direction, or pass for the card's own words.
  *
  * @param text - A teammate's name or reason, as they wrote it.
  * @param max - The longest it may be.
@@ -96,7 +98,11 @@ export type TeammateAskLimit =
 export function oneLine(text: string, max: number): string {
   // eslint-disable-next-line no-control-regex -- control characters are exactly what goes
   const flat = text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu, ' ');
-  const squeezed = flat.replace(/\s+/gu, ' ').trim();
+  // Invisible and direction-changing characters are shown as markers, never kept: a name with
+  // a right-to-left override would otherwise read backwards on the card. Any other format
+  // character the marker list misses is dropped.
+  const shown = revealHiddenCharacters(flat).replace(/\p{Cf}/gu, '');
+  const squeezed = shown.replace(/\s+/gu, ' ').trim();
   return squeezed.length <= max ? squeezed : `${squeezed.slice(0, max - 1).trimEnd()}…`;
 }
 
@@ -161,17 +167,18 @@ function parsed<T>(json: string | null): T | undefined {
  * @param row - The stored approval.
  */
 export function teammateCardFields(row: TeammateRow): {
-  teammate?: { memberId: string; displayName: string };
+  teammate?: { memberId: string; displayName: string; tool?: string };
   connectionRef?: string;
   resultGoesTo?: { room: string; space: string };
 } {
-  const request = parsed<{ displayName?: string }>(row.teammateRequest);
+  const request = parsed<{ displayName?: string; call?: { tool?: string } }>(row.teammateRequest);
   const goesTo = parsed<{ room?: string; space?: string }>(row.resultGoesTo);
   if (!row.teammateMemberId || !row.connectionRef || !request || !goesTo) return {};
   return {
     teammate: {
       memberId: row.teammateMemberId,
       displayName: oneLine(request.displayName ?? '', DISPLAY_NAME_MAX) || 'A teammate',
+      ...(request.call?.tool ? { tool: request.call.tool } : {}),
     },
     connectionRef: row.connectionRef,
     resultGoesTo: { room: goesTo.room ?? '', space: goesTo.space ?? '' },

@@ -93,6 +93,7 @@ import {
   toPendingApproval,
   type ApprovalRow,
 } from './approval-row.js';
+import { toDecisionOutcome } from './approval-decision-outcome.js';
 import { teammateColumns, type TeammateAsk } from './teammate-asks.js';
 export { isAlwaysOffered } from './approval-row.js';
 
@@ -439,26 +440,6 @@ export interface AwaitDecisionOptions {
 }
 
 /**
- * Translate a broadcast {@link ApprovalOutcome} into the caller-facing hold
- * outcome. `consumed` — the token was spent elsewhere while the hold waited —
- * degrades to `expired`: there is nothing left for the caller to resume on, so it
- * falls back to the poll payload exactly as a real expiry would.
- */
-function toDecisionOutcome(outcome: ApprovalOutcome | undefined): ApprovalDecisionOutcome {
-  switch (outcome) {
-    case 'granted':
-      return 'granted';
-    case 'denied':
-      return 'denied';
-    case 'expired':
-    case 'consumed':
-      return 'expired';
-    default:
-      return 'timeout';
-  }
-}
-
-/**
  * What the grant route needs to answer one approval: the action, the agent that
  * asked, and what the gate recorded about it. Never includes token material.
  */
@@ -726,20 +707,29 @@ export class ApprovalService {
   }
 
   /**
-   * Hand a fresh token for one approval, by its id, rotating the old one out: the teammate
-   * one-call pass (DOR-2956) keeps no token anywhere, and takes one only at the moment its call
-   * is made, to spend through {@link consume} at once. Unspent rows only; whether the row may be
-   * spent is still {@link consume}'s answer, binding and expiry included.
+   * Hand a fresh token for one GRANTED, unspent approval of one capability, by its id, rotating
+   * the old one out: the teammate one-call pass (DOR-2956) keeps no token anywhere, and takes one
+   * only at the moment its call is made, to spend through {@link consume} at once. A pending or
+   * denied row, a spent one, or one of another capability gets nothing; expiry and the binding
+   * are still {@link consume}'s answer.
    *
    * @param approvalId - The approval to reissue.
-   * @returns The new token, or `undefined` when the row is gone or already spent.
+   * @param capabilityId - The capability it must be an approval of.
+   * @returns The new token, or `undefined` when there is no such granted, unspent row.
    */
-  reissueById(approvalId: string): string | undefined {
+  reissueGranted(approvalId: string, capabilityId: string): string | undefined {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
     const result = this.db
       .update(approvals)
       .set({ tokenHash: hashToken(token) })
-      .where(and(eq(approvals.id, approvalId), isNull(approvals.consumedAt)))
+      .where(
+        and(
+          eq(approvals.id, approvalId),
+          eq(approvals.capabilityId, capabilityId),
+          eq(approvals.state, 'granted'),
+          isNull(approvals.consumedAt)
+        )
+      )
       .run();
     return result.changes === 1 ? token : undefined;
   }

@@ -54,8 +54,20 @@ const LABEL_FIELDS: Readonly<Record<string, readonly string[]>> = {
   Bash: ['description'],
 };
 
-/** The zero-width space `prompt-defuse.ts` puts before every `@` in words that reach a model. */
+/**
+ * The zero-width space `prompt-defuse.ts` puts before every `@` in words that reach a model. It
+ * is the one invisible character taken OUT of a call rather than refused: a model that copies
+ * an argument from defused words hands it back, and what is shown and run is then the plain
+ * text. Every other invisible character is refused ({@link hiddenCharacterRefusal}).
+ */
 const ZERO_WIDTH_SPACE = /\u200B/gu;
+
+/**
+ * Format characters (Unicode `Cf`): zero-width joiners and marks, the bidi embeddings, overrides
+ * and isolates, the word joiner, the byte-order mark. Each can make a command read differently
+ * from how it runs, so a call carrying one is never put to the owner.
+ */
+const FORMAT_CHARACTER = /\p{Cf}/u;
 
 /**
  * One call as it is compared: zero-width spaces taken out of every string (a defused prompt can
@@ -94,6 +106,30 @@ function stripZeroWidth(value: unknown): unknown {
  */
 export function askCallHash(tool: string, input: Record<string, unknown>): string {
   return hashApprovalInput(canonicalAskCall(tool, input));
+}
+
+/**
+ * Why a call cannot be shown to the owner exactly, or `null` when it can: any key or string in
+ * its canonical input that holds an invisible or direction-changing character.
+ *
+ * @param tool - The runtime's tool name.
+ * @param input - The call's input.
+ */
+export function hiddenCharacterRefusal(
+  tool: string,
+  input: Record<string, unknown>
+): string | null {
+  const hidden = (value: unknown): boolean => {
+    if (typeof value === 'string') return FORMAT_CHARACTER.test(value);
+    if (Array.isArray(value)) return value.some(hidden);
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value).some(([key, inner]) => hidden(key) || hidden(inner));
+    }
+    return false;
+  };
+  return hidden(canonicalAskCall(tool, input).input)
+    ? 'That input has hidden or direction-changing characters, so the owner couldn’t see exactly what would run. Ask again without them.'
+    : null;
 }
 
 /**
@@ -180,7 +216,8 @@ export async function askOwner(
   scope: AskOwnerScope,
   request: AskOwnerRequest
 ): Promise<AskOwnerResult> {
-  const refused = askableRefusal(request.tool);
+  const refused =
+    askableRefusal(request.tool) ?? hiddenCharacterRefusal(request.tool, request.input);
   if (refused) return { ok: false, message: refused };
   if (!port) return { ok: false, message: 'Asking the owner isn’t available on this computer.' };
   return port.request(scope, request);

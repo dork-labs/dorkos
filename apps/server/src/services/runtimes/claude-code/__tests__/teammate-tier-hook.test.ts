@@ -77,7 +77,7 @@ describe('assignTurnBounds', () => {
       },
     };
     assignTurnBounds(session, opts);
-    expect(session.teammateTier).toMatchObject({ asker, pass });
+    expect(session.teammateTier).toMatchObject({ asker, pass, passTurn: true });
     // A copy: spending it on the session never changes the options it came from.
     delete session.teammateTier!.pass;
     expect(opts.roomTurn.teammatePass).toEqual(pass);

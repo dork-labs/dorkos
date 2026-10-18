@@ -118,4 +118,13 @@ describe('the one-call pass', () => {
       )
     ).toEqual({ allow: true });
   });
+
+  it('refuses ask_owner for the whole of a pass turn', async () => {
+    expect(
+      await teammateTierDecision(
+        { roomId: 'room-a', sharedFolder: null, passTurn: true },
+        { source: 'dorkos', name: 'ask_owner', input: {} }
+      )
+    ).toMatchObject({ refuse: expect.any(String) });
+  });
 });

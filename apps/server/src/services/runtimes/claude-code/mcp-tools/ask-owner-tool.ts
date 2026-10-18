@@ -39,7 +39,9 @@ export function getAskOwnerTools(
       },
       async ({ tool: name, input, why }) => {
         const tier = session?.teammateTier;
-        if (!tier?.authorId || !tier.asker) return jsonContent(NOT_A_TEAMMATE_TURN, true);
+        if (!tier?.authorId || !tier.asker || tier.passTurn) {
+          return jsonContent(NOT_A_TEAMMATE_TURN, true);
+        }
         const result = await askOwner(
           {
             roomId: tier.roomId,

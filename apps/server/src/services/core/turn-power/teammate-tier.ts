@@ -64,6 +64,11 @@ export interface TeammateTierScope {
    * off the scope the moment it is spent, so a second call finds nothing to spend.
    */
   pass?: { approvalId: string; tool: string; inputHash: string };
+  /**
+   * Set for the whole of a turn that was started to make an allowed call, spent or not: such a
+   * turn makes that call and reports it, and asks the owner for nothing more.
+   */
+  passTurn?: true;
 }
 
 /**
@@ -181,7 +186,7 @@ export function teammateTierRefusal(
     ? TEAMMATE_DORKOS_TOOLS[call.name]!
     : undefined;
   if (rule?.kind === 'shared-folder') return scope.sharedFolder ? null : TEAMMATE_TIER_DENIAL;
-  if (rule?.kind === 'teammate-only') return null;
+  if (rule?.kind === 'teammate-only') return scope.passTurn ? TEAMMATE_TIER_DENIAL : null;
   if (rule?.kind !== 'this-room' || call.input.roomId !== scope.roomId) return TEAMMATE_TIER_DENIAL;
   const carries = (rule.without ?? []).some((arg) => present(call.input[arg]));
   return carries ? TEAMMATE_TIER_DENIAL : null;

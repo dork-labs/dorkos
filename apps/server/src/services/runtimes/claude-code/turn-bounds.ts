@@ -47,7 +47,9 @@ export function assignTurnBounds(
       // Who asked, for `ask_owner`, and the one call the owner allowed, for this send only
       // (DOR-2956): copied, so spending it here never touches the caller's options.
       ...(opts.roomTurn.teammateAsker ? { asker: { ...opts.roomTurn.teammateAsker } } : {}),
-      ...(opts.roomTurn.teammatePass ? { pass: { ...opts.roomTurn.teammatePass } } : {}),
+      ...(opts.roomTurn.teammatePass
+        ? { pass: { ...opts.roomTurn.teammatePass }, passTurn: true as const }
+        : {}),
     };
   } else {
     delete session.teammateTier;

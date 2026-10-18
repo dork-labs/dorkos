@@ -5,6 +5,7 @@ import {
   askOwner,
   askableRefusal,
   canonicalAskCall,
+  hiddenCharacterRefusal,
   setAskOwnerPort,
 } from '../ask-owner.js';
 
@@ -59,5 +60,24 @@ describe('ask the owner', () => {
       askCallHash('Bash', { command: 'ls ' })
     );
     expect(askCallHash('Bash', { command: 'ls' })).not.toBe(askCallHash('Read', { command: 'ls' }));
+  });
+
+  it.each([
+    ['a right-to-left override', { command: 'ls \u202E' }],
+    ['an isolate', { command: 'ls \u2066x\u2069' }],
+    ['a zero-width joiner', { command: 'r\u200Dm' }],
+    ['a byte-order mark', { command: '\uFEFFls' }],
+    ['a word joiner in a key', { ['comm\u2060and']: 'ls' }],
+    ['one nested in a list', { args: ['ok', 'x\u200E'] }],
+  ])('refuses an input with %s, before the port', async (_, input) => {
+    const request = vi.fn();
+    setAskOwnerPort({ request, spend: () => false });
+    expect(hiddenCharacterRefusal('Bash', input)).toMatch(/hidden or direction-changing/);
+    expect((await askOwner(SCOPE, { tool: 'Bash', input, why: 'w' })).ok).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('takes out the zero-width space defusing adds, and refuses nothing for it', () => {
+    expect(hiddenCharacterRefusal('Bash', { command: 'echo \u200B@x' })).toBeNull();
   });
 });

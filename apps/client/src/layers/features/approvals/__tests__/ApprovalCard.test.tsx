@@ -639,7 +639,7 @@ describe('a teammate’s request (DOR-2956)', () => {
       detail: '{\n  "command": "git log -1"\n}',
       requestedBy: 'Requested by Bo in Acme · #design',
       hasAgentPath: false,
-      teammate: { memberId: 'member-bo', displayName: '**Bo** <b>the owner</b>' },
+      teammate: { memberId: 'member-bo', displayName: '**Bo** <b>the owner</b>', tool: 'Bash' },
       connectionRef: 'community:ref-1',
       resultGoesTo: { room: 'design', space: 'Acme' },
       requestReason: 'to see the last commit',
@@ -659,6 +659,17 @@ describe('a teammate’s request (DOR-2956)', () => {
     expect(screen.getByRole('button', { name: 'Allow once' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+  });
+
+  it('says a shell runs as the owner, and a read does not', () => {
+    renderCard(teammateCard());
+    expect(document.querySelector('[data-slot="approval-runs-as-you"]')).toHaveTextContent(
+      'Runs as you, with full access to this computer.'
+    );
+    cleanup();
+    const read = teammateCard();
+    renderCard({ ...read, teammate: { ...read.teammate!, tool: 'Read' } });
+    expect(document.querySelector('[data-slot="approval-runs-as-you"]')).toBeNull();
   });
 
   it('keeps the plain Allow on every other card', () => {
