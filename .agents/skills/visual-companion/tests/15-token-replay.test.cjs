@@ -10,7 +10,17 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const { project, vc, port, browser, events, waitFor, stopAll, listen } = require('./lib.cjs');
+const {
+  SKILL,
+  project,
+  vc,
+  port,
+  browser,
+  events,
+  waitFor,
+  stopAll,
+  listen,
+} = require('./lib.cjs');
 
 const dirs = [];
 const servers = [];
@@ -236,4 +246,26 @@ test('a Send that never landed is replayed once after a restart', async () => {
   vc(dir, ['start', '--port', String(port())], { env });
   await new Promise((r) => setTimeout(r, 4000));
   assert.equal(fake.accepted.length, 1, 'replayed exactly once');
+});
+
+test('a crop only loads an http(s) page on this computer', () => {
+  // A note's page comes from a posted pin, so it must never point the headless
+  // browser at a file or another machine.
+  const { isLocalPage } = require(path.join(SKILL, 'scripts', 'crop.cjs'));
+  for (const ok of [
+    'http://localhost:5173/',
+    'http://127.0.0.1:8080/x?state=a',
+    'https://[::1]:3000/',
+  ])
+    assert.equal(isLocalPage(ok), true, ok);
+  for (const no of [
+    'file:///etc/hosts',
+    'http://10.0.0.1/',
+    'http://example.com/',
+    'http://localhost.example.com/',
+    'javascript:alert(1)',
+    'not a url',
+    undefined,
+  ])
+    assert.equal(isLocalPage(no), false, String(no));
 });

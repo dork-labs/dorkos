@@ -13,6 +13,20 @@ const { findPlaywright, findChrome, PLAYWRIGHT_HELP, CHROME_HELP } = require('./
 
 const PAD = 24;
 
+// A note's page comes from a posted pin, so a crop only ever loads an http(s)
+// page on this computer: never file://, and never another machine.
+function isLocalPage(u) {
+  try {
+    const url = new URL(u);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // The frame the note was made in. Its URL may carry the director's values in the
 // query (?state=detail) that the fresh frame doesn't have yet, so match on the
 // address without query or hash last; director.go() puts the state back after.
@@ -32,6 +46,11 @@ async function cropOne(browser, job) {
   const started = Date.now();
   const status = job.out.replace(/\.png$/, '.json');
   fs.mkdirSync(path.dirname(job.out), { recursive: true });
+  if (!isLocalPage(job.url)) {
+    const res = { ok: false, error: 'refused: crops only load local http(s) pages', ms: 0 };
+    fs.writeFileSync(status, JSON.stringify(res) + '\n');
+    return res;
+  }
   const vp =
     job.viewport && job.viewport.w
       ? { width: job.viewport.w, height: job.viewport.h }
@@ -119,4 +138,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { crop };
+module.exports = { crop, isLocalPage };

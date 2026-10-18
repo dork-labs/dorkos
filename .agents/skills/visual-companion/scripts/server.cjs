@@ -150,6 +150,7 @@ const helperScript = read(path.join(__dirname, 'helper.js'));
 const REVIEW_JS = path.join(__dirname, 'review.js');
 const DIRECTOR_JS = path.join(__dirname, 'director.js');
 const store = require('./review-store.cjs');
+const { isLocalPage } = require('./crop.cjs');
 // Exact source for fragments: every tag gets data-src="content/<screen>.html:line".
 let stampHtml = null;
 try {
@@ -881,7 +882,7 @@ function cropNotes(screen) {
       viewport: p.viewport,
       out: store.cropPath(SHOTS_DIR, screen, p.n),
     }))
-    .filter((j) => j.url);
+    .filter((j) => j.url && isLocalPage(j.url));
   if (!jobs.length) return;
   const file = path.join(STATE_DIR, '.crop-' + store.slug(screen) + '.json');
   fs.writeFileSync(file, JSON.stringify(jobs));
