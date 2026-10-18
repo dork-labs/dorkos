@@ -54,6 +54,8 @@ import type { WireConnectorEventsAndApprovalsResult } from './connector-events-a
 import type { WireConnectorServicesResult } from './connector-services.js';
 import type { ServerRefs } from '../server-refs.js';
 import { currentServerRole } from '../../lib/server-role.js';
+import { isAgentComputer } from '../../services/core/server-role/role-checks.js';
+import { runsSchedules } from '../../services/core/agent-computer/sealed.js';
 import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
 import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
 import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
@@ -135,8 +137,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
       };
     });
 
-  // Start Tasks scheduler after server is listening
-  if (refs.schedulerService) {
+  // Start Tasks scheduler after server is listening; never on an agent
+  // computer, which works only when its hub sends it something (DOR-2940).
+  if (refs.schedulerService && runsSchedules()) {
     await refs.schedulerService.start();
     logger.info('[Tasks] Scheduler started');
   }
@@ -253,6 +256,14 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   };
   void recoverManagedUsageMirrors();
   refs.managedUsageMirrorRecoveryInterval = scheduleJittered(recoverManagedUsageMirrors, 60_000);
+
+  // A sealed agent computer (DOR-2940) stops here: no tunnel, no DorkOS
+  // account link and no credits, since its accounts will come from its hub.
+  // Retained document work still runs: it is this machine's own agents' work.
+  if (isAgentComputer()) {
+    docDeliveryRunner.start();
+    return;
+  }
 
   // Start the person's own tunnel if this process or the saved config says so,
   // behind the exposure guard — unless a saved DorkOS remote access choice

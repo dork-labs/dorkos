@@ -42,7 +42,7 @@ import type { ServerRole } from './server-role.js';
 import { isLoopbackHost, isLoopbackHostHeader, isLoopbackPeer } from './trusted-origins.js';
 
 /** Who a request is from, as far as trust goes. */
-export type RequestKind = 'this-computer' | 'other-device' | 'relayed' | 'hub';
+export type RequestKind = 'this-computer' | 'other-device' | 'relayed' | 'hub' | 'agent-computer';
 
 /**
  * The way a request came in, for binding a session to the route that made it
@@ -70,7 +70,15 @@ export type RequestClass =
   | { kind: 'this-computer'; route: 'local' }
   | { kind: 'other-device'; route: RequestRoute; reason: OtherDeviceReason }
   | { kind: 'relayed'; route: 'relay' }
-  | { kind: 'hub'; route: 'hub' };
+  | { kind: 'hub'; route: 'hub' }
+  /**
+   * Any request to a sealed agent computer (DOR-2940), which serves no person:
+   * `local` when it passes every rule a request from this machine passes (so
+   * it can only be a process here, such as an agent's tools), `network` for
+   * anything else. Never `this-computer`, which means a person at the machine
+   * and unlocks what is reserved for one.
+   */
+  | { kind: 'agent-computer'; route: 'local' | 'network' };
 
 /** The facts the classifier reads. */
 export type ClassifierFacts = Pick<RequestFacts, 'peerAddress' | 'headers' | 'ingress'>;
@@ -91,7 +99,8 @@ export const FORWARDING_HEADERS = [
 /**
  * Classify one request.
  *
- * Rules, first match wins: a hub; the relay; a marked listener; a forwarding
+ * Rules, first match wins: a hub; an agent computer (`local` only for what
+ * would otherwise be this computer); the relay; a marked listener; a forwarding
  * header (present at all, even empty); a non-loopback peer; a non-loopback
  * `Host`; a non-loopback `Origin`, or with no `Origin` a non-loopback `Referer`.
  * What is left is this computer.
@@ -102,6 +111,10 @@ export const FORWARDING_HEADERS = [
  */
 export function classifyRequest(facts: ClassifierFacts, role: ServerRole): RequestClass {
   if (role === 'hub') return { kind: 'hub', route: 'hub' };
+  if (role === 'agent-computer') {
+    const local = facts.ingress === 'direct' && otherDeviceReason(facts) === null;
+    return { kind: 'agent-computer', route: local ? 'local' : 'network' };
+  }
   if (facts.ingress === 'relay') return { kind: 'relayed', route: 'relay' };
   if (facts.ingress !== 'direct') {
     return { kind: 'other-device', route: facts.ingress, reason: 'ingress' };

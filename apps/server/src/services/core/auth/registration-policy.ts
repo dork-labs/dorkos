@@ -16,8 +16,10 @@
  *   provisioning (A2, DOR-2934): only code running inside
  *   `withRegistrationCaller('provisioning', …)` may create it, and every
  *   sign-up request is refused.
- * - **`closed`**: an account exists, or the caller is the session relay, which
- *   is never a person.
+ * - **`closed`**: an account exists, the caller is the session relay, which
+ *   is never a person, or this server is an agent computer, which serves no
+ *   person at all (DOR-2940), so nobody may create an account there by any
+ *   route, this process's own code included.
  *
  * ## Getting the request to the hook
  *
@@ -60,7 +62,8 @@ export interface RegistrationFacts {
 /**
  * The registration mode for one sign-up attempt.
  *
- * Rules, first match wins: an existing account makes it `closed`; a hub is
+ * Rules, first match wins: an agent computer is `closed` for every caller; an
+ * existing account makes it `closed`; a hub is
  * `provisioned`; provisioning anywhere but a hub is `closed`; this computer (or
  * other code in this process) is `local-open`; the relay, or a hub-kind request
  * on a computer, is `closed`; any other device is `setup-code`.
@@ -68,6 +71,7 @@ export interface RegistrationFacts {
  * @param facts - The caller, whether an account exists, and the server role.
  */
 export function decideRegistration(facts: RegistrationFacts): RegistrationMode {
+  if (facts.role === 'agent-computer') return 'closed';
   if (facts.hasUsers) return 'closed';
   if (facts.role === 'hub') return 'provisioned';
   const { caller } = facts;
