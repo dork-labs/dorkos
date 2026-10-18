@@ -147,7 +147,7 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
  * @param context - The invocation: its verified session and identity.
  */
 function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
-  return outsiderBoundOf(context.sessionId, context.identity?.agentPath) !== undefined;
+  return outsiderBoundOf(context.sessionId, context.identity) !== undefined;
 }
 
 /**

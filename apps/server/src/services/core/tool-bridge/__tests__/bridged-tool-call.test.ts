@@ -282,6 +282,21 @@ describe('setup tools', () => {
     expect(calls).toEqual([]);
   });
 
+  it.each([
+    ['an empty list', () => []],
+    ['a list without DorkBot', () => ['01KJXYKJYW4N8QGQ5W4GB6YM9Z']],
+  ])(
+    'are refused to DorkBot when the hub`s list of who is on its computer is %s',
+    async (_label, on) => {
+      granted = true;
+      deps.agentsOn = on;
+      expect(
+        await call({ agentId: DORKBOT, sessionId: DORKBOT_SESSION, tool: 'marketplace_install' })
+      ).toEqual({ ok: false, code: 'setup_refused', message: DORKBOT_NEEDS_OWN_COMPUTER });
+      expect(calls).toEqual([]);
+    }
+  );
+
   it('run for DorkBot with the grant, and a destructive one still goes to the gate unapproved', async () => {
     granted = true;
     place[SCOUT] = 'cc-2';

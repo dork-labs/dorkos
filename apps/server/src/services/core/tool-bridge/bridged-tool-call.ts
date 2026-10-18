@@ -149,7 +149,10 @@ export interface BridgedToolRunner {
 export interface BridgedToolDeps {
   /** The computer an agent works on, or `null` when it works on none. */
   agentWorksOn(agentId: string): string | null;
-  /** Every agent that works on a computer, by id. */
+  /**
+   * Every agent that works on a computer, by id, from the hub's own records.
+   * DorkBot is alone on its computer only when this is exactly DorkBot.
+   */
   agentsOn(computerId: string): readonly string[];
   /**
    * The hub's record of the turn a session runs, or `null` when the hub has
@@ -239,7 +242,11 @@ async function admit(
     ...(agent.inactive ? { inactive: agent.inactive } : {}),
     ...(turn.outsiderCapped ? { outsiderCapped: true as const } : {}),
   };
-  const alone = deps.agentsOn(origin.computerId).every((id) => id === origin.agentId);
+  // Alone means the hub's list for this computer is exactly this agent: an
+  // empty list, or one that leaves the agent out, is the hub not knowing, and
+  // not knowing is never alone.
+  const onComputer = deps.agentsOn(origin.computerId);
+  const alone = onComputer.length > 0 && onComputer.every((id) => id === origin.agentId);
   return {
     agent,
     turn,

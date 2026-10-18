@@ -39,7 +39,14 @@ export function registerSessionTools(
   identity?: AgentIdentity
 ): void {
   // An inactive identity names who tried, never who may act.
-  const caller = identity && !identity.inactive ? { agentPath: identity.agentPath } : undefined;
+  // The bridge's cap rides along, so the started chat's first turn is bound.
+  const caller =
+    identity && !identity.inactive
+      ? {
+          agentPath: identity.agentPath,
+          ...(identity.outsiderCapped ? { outsiderCapped: true } : {}),
+        }
+      : undefined;
   registerFromDefinitions(
     registrar,
     getSessionTools(deps, () => caller),

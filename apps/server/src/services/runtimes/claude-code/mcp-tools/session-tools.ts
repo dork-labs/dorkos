@@ -139,6 +139,8 @@ export type SessionStartCallerResolver = () =>
       permissionMode?: string;
       runtime?: string;
       neverAsks?: boolean;
+      /** Set by the tool bridge: the calling turn read an outsider's words. */
+      outsiderCapped?: boolean;
     }
   | undefined;
 
@@ -271,6 +273,8 @@ function findAccount(runtime: string, id: string): RuntimeAccount | null {
 interface CallerAgent {
   agentPath: string;
   label: string;
+  /** The bridge's cap on the calling turn, when it has one. */
+  outsiderCapped?: boolean;
 }
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
@@ -292,6 +296,7 @@ function callerOf(
   return {
     agentPath,
     label: agent.displayName ?? agent.name,
+    ...(resolved.outsiderCapped ? { outsiderCapped: true } : {}),
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -310,7 +315,7 @@ function callerOf(
  * @param caller - Who is starting it: the calling chat, or only the agent.
  */
 function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
-  const bound = outsiderBoundOf(caller.chat?.sessionId, caller.agentPath);
+  const bound = outsiderBoundOf(caller.chat?.sessionId, caller);
   return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 
