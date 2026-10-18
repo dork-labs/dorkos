@@ -1,9 +1,9 @@
 /**
  * Contract for the page routes (specs/server-merge step 1, DOR-2875): every path that opens the
  * space's web page, its built assets, and a short web address's one spelling. Links in mail, in
- * the DorkOS app and in people's bookmarks lead to these. The server is composed as `main.ts`
- * composes it and served over real HTTP; no page reads the database, so this runs in the unit
- * suite. A deliberate change updates this file in the same PR and says so in the PR description.
+ * the DorkOS app and in people's bookmarks lead to these. The server is composed as
+ * `createSpaceServer` composes it and served over real HTTP; no page reads the database, so this
+ * runs in the unit suite. A deliberate change updates this file in the same PR and says so in the PR description.
  */
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

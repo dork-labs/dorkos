@@ -4,8 +4,8 @@
  *
  * **Never in the post's way.** The post route knows nothing of this module. The worker reads
  * messages only after they committed, on its own timer, through its own small connection pool
- * (`main.ts`), in short transactions that take no lock a post waits on. A check that hangs, fails
- * or runs out of budget changes nothing about any message.
+ * (`startup/space-server.ts`), in short transactions that take no lock a post waits on. A check
+ * that hangs, fails or runs out of budget changes nothing about any message.
  *
  * **Watch-only.** For each new message: the built-in rules (rung 0) first; when they do not flag
  * it, each armed decision model (rung 1) side by side on the same message. Every rung writes one

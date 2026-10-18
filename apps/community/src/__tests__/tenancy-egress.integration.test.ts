@@ -428,7 +428,7 @@ it('runs install, chat, files, local pairing, agents, export, a second community
   expect(responseCookies(signIn)).toContain('session_token');
   expect(TENANCY_PASSWORD).not.toBe('recovered-password-123');
 
-  // Every background job main.ts schedules, once each.
+  // Every background job createSpaceServer schedules, once each.
   await sweepExpiredAttachments(h.pool, h.blobStore);
   await sweepExpiredExports(h.pool, h.blobStore);
   await sweepExpiredAdmissions(h.pool);
