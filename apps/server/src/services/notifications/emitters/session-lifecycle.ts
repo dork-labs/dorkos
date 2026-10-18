@@ -37,7 +37,7 @@
 import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
 import { isBeatTurn } from '../../heartbeats/beat-turns.js';
 import { wakeAgent } from '../../heartbeats/event-wakes.js';
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { startedByOutsider } from '../../core/turn-power/turn-marks.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
@@ -325,7 +325,7 @@ export function watchSessionLifecycle(): () => void {
       // per chat (spec `heartbeats` §3.3).
       const failedAgentId = resolveAgentIdForPath(cwd);
       // A stranger's failed turn is not the agent's to chase (§3.3).
-      if (failedAgentId && !turnStartedByOutsider(sessionId)) {
+      if (failedAgentId && !startedByOutsider(sessionId)) {
         wakeAgent(failedAgentId, { type: 'turn-failed', eventId: sessionId, source: sessionId });
       }
       // A new episode begins, and this is the only place its identity is

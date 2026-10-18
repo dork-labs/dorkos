@@ -9,6 +9,7 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
+import { marksOfLevel } from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
 import { isTeammateEntry } from './space-teammates.js';
 
@@ -124,7 +125,7 @@ export function outsiderInViewOf(
   const outsider = shown.some((entry) => {
     if (entry.authorOrigin === 'external') return true;
     if (entry.authorIsPerson || entry.kind !== 'post') return false;
-    return entryLevelOf(entry.id)?.outsider === true;
+    return marksOfLevel(entryLevelOf(entry.id)).outsider === true;
   });
   return outsider ? { outsiderInView: true } : {};
 }

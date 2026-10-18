@@ -37,11 +37,18 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { turnAgentOf } from '../agent-identity/agent-home.js';
-import { agentIsReadingOutsider, countWhileRunning } from './live-outsider-turns.js';
+import { agentMarksRunning } from './live-outsider-turns.js';
+import {
+  applyTurnMarks,
+  hasMarks,
+  marksForTurn,
+  marksOfLevel,
+  NO_MARKS,
+  withMarks,
+  type TurnMarks,
+} from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import {
-  ceilingCarriesOutsider,
   levelOfMode,
   READ_ONLY_LEVEL,
   resolveCeilingLevel,
@@ -58,8 +65,6 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
-/** Where each marked turn stood, so a turn its agent starts later is counted against the same agent. */
-const outsiderPlaces = new Map<string, { cwd?: string; forAgent?: string }>();
 /** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
 const turnSerials = new Map<string, number>();
 let nextTurnSerial = 0;
@@ -120,16 +125,51 @@ export function postLevelFor(
 }
 
 /**
- * The bound work a caller starts must carry because the caller's turn read an
- * outsider's words, or `undefined` when it did not (spec
- * `trusted-by-default-flip` §4.7). Read by `memory_write`, which stamps the
- * note, and `session_start`, which sends it as the new session's ceiling.
+ * The marks the caller's turn carries (DOR-3036, `turn-marks.ts`): what every
+ * enforcement point reads, never the model. Read by `memory_write`, which
+ * stamps the note, the permission gate and the destructive hold.
  *
- * The caller's session answers when this process recorded a turn on it: its
- * own level, which bounds no tighter than the turn already ran. A caller with
- * no session, or one with no record, is read through its agent: while any of
- * that agent's turns that read an outsider's words is running, the runtime
- * default, the bound a stranger's own message carries.
+ * The caller's session answers when this process recorded a turn on it. A
+ * caller with no session, or one with no record, is read through its agent:
+ * the marks of any of that agent's marked turns running right now.
+ *
+ * @param sessionId - The calling session, when the surface verified one.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function marksOf(
+  sessionId: string | null | undefined,
+  agentPath: string | undefined
+): TurnMarks {
+  const level = sessionId ? turnLevels.get(sessionId) : undefined;
+  if (level !== undefined) return marksOfLevel(level);
+  return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+}
+
+/**
+ * The bound work a caller starts must carry because the caller's turn is
+ * marked, or `undefined` when it is not. Read by `session_start`, which sends
+ * it as the new session's ceiling, so the new chat carries the marks on.
+ *
+ * Its own level when this process recorded the caller's turn, which bounds no
+ * tighter than the turn already ran; otherwise, while one of its agent's
+ * marked turns runs, the runtime default, the bound a stranger's own message
+ * carries.
+ *
+ * @param sessionId - The calling session, when the surface verified one.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function markedBoundOf(
+  sessionId: string | null | undefined,
+  agentPath: string | undefined
+): TurnPermissionBound | undefined {
+  if (!hasMarks(marksOf(sessionId, agentPath))) return undefined;
+  return (sessionId ? turnLevels.get(sessionId) : undefined) ?? 'runtime-default';
+}
+
+/**
+ * {@link markedBoundOf} for the outsider mark alone: the bound when the
+ * caller's turn read an outsider's words (spec `trusted-by-default-flip`
+ * §4.7), or `undefined`.
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -138,10 +178,8 @@ export function outsiderBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
 ): TurnPermissionBound | undefined {
-  const level = sessionId ? turnLevels.get(sessionId) : undefined;
-  if (level !== undefined) return level.outsider ? level : undefined;
-  return agentPath !== undefined && agentIsReadingOutsider(agentPath)
-    ? 'runtime-default'
+  return marksOf(sessionId, agentPath).outsider === true
+    ? markedBoundOf(sessionId, agentPath)
     : undefined;
 }
 
@@ -193,11 +231,7 @@ function levelForTurn(
   stored: string | null | undefined,
   opts: MessageOpts | undefined
 ): TurnPermissionLevel {
-  const level = powerForTurn(runtime, stored, opts);
-  const outsider =
-    opts?.roomTurn?.outsiderInView === true ||
-    (opts?.permissionCeiling !== undefined && ceilingCarriesOutsider(opts.permissionCeiling));
-  return outsider && !level.outsider ? { ...level, outsider: true } : level;
+  return withMarks(powerForTurn(runtime, stored, opts), marksForTurn(opts));
 }
 
 /**
@@ -232,17 +266,6 @@ function powerForTurn(
     : base;
 }
 
-/** Where a turn stands and whom it is for, for {@link countWhileRunning}. */
-function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | undefined) {
-  let cwd = opts?.cwd ?? opts?.roomTurn?.cwd;
-  try {
-    cwd ??= runtime.getSessionCwd?.(sessionId);
-  } catch {
-    // An unknown folder is counted under no agent, which marks more, not less.
-  }
-  return { cwd, forAgent: turnAgentOf(opts) };
-}
-
 /**
  * Wrap a runtime so every turn sent through it records the level it runs at.
  * Applied once, at the registry's registration seam, which every turn passes
@@ -250,15 +273,28 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
  *
  * Synchronous on purpose, like the other decorators at that seam: it records
  * at the call and hands back the runtime's own generator untouched, so it adds
- * no step between a dispatch and the turn it starts. The one exception is a
- * turn that read an outsider's words, whose stream is counted against its
- * agent while it runs ({@link countWhileRunning}); that adds no step either.
+ * no step between a dispatch and the turn it starts.
+ *
+ * Returned wrapped in {@link applyTurnMarks} (DOR-3036), so the marks each turn
+ * carries take effect after its level is recorded, on every runtime this
+ * record is on: the two cannot be applied in the wrong order or one without
+ * the other.
  *
  * @param runtime - The runtime to wrap.
  * @param storedModeOf - Reads a session's stored permission mode; a failure
  *   reads as none.
  */
 export function recordTurnLevels(
+  runtime: AgentRuntime,
+  storedModeOf: (sessionId: string) => string | null | undefined
+): AgentRuntime {
+  return applyTurnMarks(recordLevels(runtime, storedModeOf), (sessionId) =>
+    marksOfLevel(turnLevels.get(sessionId))
+  );
+}
+
+/** The level record alone, which {@link recordTurnLevels} wraps in the marks. */
+function recordLevels(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
@@ -276,8 +312,7 @@ export function recordTurnLevels(
           } catch {
             stored = undefined;
           }
-          const level = levelForTurn(target, stored, opts);
-          remember(turnLevels, sessionId, level);
+          remember(turnLevels, sessionId, levelForTurn(target, stored, opts));
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;
@@ -288,37 +323,8 @@ export function recordTurnLevels(
           while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
           }
-          const events = target.sendMessage(sessionId, content, opts);
-          if (!level.outsider) return events;
-          // A caller that cannot name this session can still name its agent.
-          const place = placeOf(target, sessionId, opts);
-          outsiderPlaces.delete(sessionId);
-          outsiderPlaces.set(sessionId, place);
-          if (outsiderPlaces.size > TURN_LEVEL_MEMORY) {
-            outsiderPlaces.delete(outsiderPlaces.keys().next().value!);
-          }
-          return countWhileRunning(place, events);
+          return target.sendMessage(sessionId, content, opts);
         };
-      }
-      if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
-        // A turn the agent starts on its own (a Codex wake after background
-        // work) runs under the session's latest dispatched turn, so it is
-        // counted while it runs when that turn read an outsider's words: a
-        // caller with no session (Codex over the external server) is read
-        // through it.
-        const subscribe = target.onRuntimeTurn.bind(target);
-        return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
-          subscribe((sessionId, events) =>
-            listener(
-              sessionId,
-              turnLevels.get(sessionId)?.outsider
-                ? countWhileRunning(
-                    outsiderPlaces.get(sessionId) ?? placeOf(target, sessionId, undefined),
-                    events
-                  )
-                : events
-            )
-          );
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;

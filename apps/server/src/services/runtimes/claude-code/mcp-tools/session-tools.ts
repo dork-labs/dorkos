@@ -69,7 +69,7 @@ import {
   sessionRunsOnCredits,
 } from '../../../core/cloud/credits-model-gate.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
-import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
+import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { nameStartedChat, startedChatTitle } from '../../../session/launch/started-chat-title.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -310,7 +310,7 @@ function callerOf(
  * @param caller - Who is starting it: the calling chat, or only the agent.
  */
 function outsiderStartCeiling(caller: CallerAgent & { chat: CallingChat | null }) {
-  const bound = outsiderBoundOf(caller.chat?.sessionId, caller.agentPath);
+  const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
   return bound !== undefined ? { permissionCeiling: bound } : {};
 }
 

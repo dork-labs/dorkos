@@ -18,9 +18,12 @@ import { keepAwakeService } from '../keep-awake/keep-awake-service.js';
 /**
  * Wrap one runtime in every registration-seam decorator, innermost first:
  *
- * 1. **The turn-level record** reads nothing the others add and must see every
- *    send, so a turn another agent's post starts can be held to the level its
- *    author's turn ran at (spec `trusted-by-default-flip` §4).
+ * 1. **The turn-level record and the turn marks** read nothing the others add
+ *    and must see every send, so a turn another agent's post starts can be
+ *    held to the level its author's turn ran at (spec `trusted-by-default-flip`
+ *    §4), and the marks a turn carries take effect after its level is recorded
+ *    (`recordTurnLevels` returns the record wrapped in `applyTurnMarks`,
+ *    DOR-3036; `turn-marks-seam.census.test.ts` proves every runtime has it).
  * 2. **The teammate meter** reads what each turn a teammate started cost, for
  *    that space's monthly limit (DOR-2956). It passes every other turn through
  *    untouched, and sees a teammate's turn whether or not tracing is on.
