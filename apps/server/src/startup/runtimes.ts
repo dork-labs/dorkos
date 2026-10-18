@@ -38,6 +38,7 @@ import {
   setSessionAttachmentStore,
 } from '../services/session/attachments/index.js';
 import { currentServerRole } from '../lib/server-role.js';
+import { loadAgentComputerInstanceKey } from '../services/core/agent-computer/instance-key.js';
 
 /** What registering the runtimes needs from the startup that came before it. */
 export interface RuntimeStartupDeps {
@@ -293,7 +294,9 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
  * both sign in with a person's own account, and an agent computer holds none.
  * OpenCode always runs on DorkOS credits there, minted with the computer's own
  * key (`services/core/agent-computer/models.ts`), through the credits relay
- * started here ({@link startAgentComputerRelay}). Without the relay the
+ * started here ({@link startAgentComputerRelay}). Its instance key is read and
+ * checked first (`loadAgentComputerInstanceKey`): a missing or unsafe key
+ * fails the boot. Without the relay the
  * computer could do no work at all, so a relay that will not start fails the
  * boot, and the server exits non-zero for Cloud to restart it. No relay
  * adapter is handed a runtime, so no chat app connection starts.
@@ -304,6 +307,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
 async function registerAgentComputerRuntimes(
   deps: RuntimeStartupDeps
 ): Promise<RegisteredRuntimes> {
+  loadAgentComputerInstanceKey();
   const sessionAttachmentStore = new LocalSessionAttachmentStore(deps.dorkHome);
   setSessionAttachmentStore(sessionAttachmentStore);
   const creditsRelay = await startAgentComputerRelay();

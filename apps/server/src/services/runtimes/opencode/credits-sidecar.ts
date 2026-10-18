@@ -56,7 +56,10 @@
 import type { InferenceModel } from '@dork-labs/cloud-api';
 import { CreditsUnavailableError, isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
-import { AGENT_COMPUTER_INSTANCE_KEY_NAME } from '../../core/agent-computer/instance-key.js';
+import {
+  AGENT_COMPUTER_INSTANCE_KEY_FILE_NAME,
+  AGENT_COMPUTER_INSTANCE_KEY_NAME,
+} from '../../core/agent-computer/instance-key.js';
 import { isAgentComputer } from '../../core/server-role/role-checks.js';
 
 /** The provider id the credits provider is registered under. */
@@ -91,9 +94,11 @@ const PERSON_PROVIDER_NAMES = new Set([
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
   'OPENAI_BASE_URL',
-  // Never in the environment by the time a sidecar boots (it is moved out at
-  // load), and never handed on even if it were: it mints this computer's tokens.
+  // An agent computer's key and where it lives. Never in the environment by
+  // the time a sidecar boots (both leave it at load, and the key alone refuses
+  // the boot), and never handed on even if they were.
   AGENT_COMPUTER_INSTANCE_KEY_NAME,
+  AGENT_COMPUTER_INSTANCE_KEY_FILE_NAME,
 ]);
 
 /**

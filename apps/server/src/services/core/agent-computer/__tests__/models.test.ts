@@ -284,6 +284,7 @@ describe('OpenCode on an agent computer', () => {
       OPENROUTER_API_KEY: 'o',
       OPENAI_API_KEY: 'p',
       DORKOS_AGENT_COMPUTER_INSTANCE_KEY: COMPUTER_KEY,
+      DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE: '/run/secrets/instance-key',
       DORKOS_CREDITS_TOKEN_ABC: 't',
     });
     expect(env).toEqual({ PATH: '/usr/bin' });

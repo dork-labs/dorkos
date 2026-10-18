@@ -42,6 +42,13 @@ const relay = vi.hoisted(() => ({ value: { issue: () => ({ baseUrl: '', key: '' 
 vi.mock('../../services/core/cloud/credits-relay.js', () => ({
   startCreditsRelay: vi.fn(async () => relay.value),
 }));
+const keyLoader = vi.hoisted(() => ({ fail: false }));
+vi.mock('../../services/core/agent-computer/instance-key.js', () => ({
+  loadAgentComputerInstanceKey: () => {
+    if (keyLoader.fail)
+      throw new Error('The instance key file must be owned by the user this server runs as.');
+  },
+}));
 vi.mock('../computers.js', () => ({ registerComputerRuntime: vi.fn(async () => undefined) }));
 vi.mock('../../services/session/attachments/index.js', () => ({
   LocalSessionAttachmentStore: class {},
@@ -106,6 +113,16 @@ describe('registering runtimes on an agent computer', () => {
     expect(openCodeServerManager.usePlanners).toHaveBeenCalledWith(
       expect.objectContaining({ relay: relay.value })
     );
+  });
+
+  it('fails the boot before anything registers when the instance key is unsafe', async () => {
+    keyLoader.fail = true;
+    try {
+      await expect(registerRuntimes(DEPS)).rejects.toThrow(/owned by the user/);
+      expect(registered.types).toEqual([]);
+    } finally {
+      keyLoader.fail = false;
+    }
   });
 
   it('registers Claude Code and Codex on a person`s own computer', async () => {
