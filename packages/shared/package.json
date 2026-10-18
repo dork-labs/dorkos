@@ -572,6 +572,10 @@
     "./file-save/recovery": {
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
+    },
+    "./space-page": {
+      "types": "./src/space-page/index.ts",
+      "default": "./dist/space-page/index.js"
     }
   },
   "scripts": {

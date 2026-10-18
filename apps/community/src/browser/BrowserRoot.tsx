@@ -11,7 +11,7 @@ import { OwnerReplacementClaim } from './owner-replacement/OwnerReplacementClaim
 import { KEEP_OWNERSHIP_PATH, OWNER_REPLACEMENT_CLAIM_PATH } from './owner-replacement/links.js';
 import { ShortNameRoute } from './components/ShortNameRoute.js';
 import { COMMUNITY_PATH_SHORT_NAMES } from '@dorkos/shared/community-admin-wire';
-import { parseShortNamePath } from '../short-names/path.js';
+import { parseShortNamePath } from '@dorkos/shared/space-page';
 import { SignInLinkedNotice } from './sign-up/SignInLinkedNotice.js';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { ResetPassword } from './email-links/ResetPassword.js';

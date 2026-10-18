@@ -75,6 +75,7 @@ for path in \
   apps/server/src/routes/communities.ts \
   packages/shared/src/community-adapter.ts \
   packages/shared/src/community-schemas.ts \
+  packages/shared/src/space-page/index.ts \
   packages/cloud-api/src/index.ts \
   packages/connector-providers/src/connector-schemas.ts \
   packages/connector-providers/package.json \
@@ -116,6 +117,7 @@ for path in \
   packages/shared/package.json \
   packages/connector-providersx/package.json \
   packages/shared/src/handle.ts \
+  packages/shared/src/space-pagex/index.ts \
   packages/shared/src/room-schemas.ts \
   packages/db/src/schema/rooms.ts \
   packages/db/drizzle/0042_communities.sql \

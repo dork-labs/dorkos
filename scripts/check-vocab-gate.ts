@@ -230,7 +230,13 @@ export interface Violation {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Workspaces that render product copy a DorkOS user reads. */
-const PRODUCT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
+const PRODUCT_SCAN_ROOTS = [
+  'apps/client/src',
+  'apps/site/src',
+  'apps/server/src',
+  // Copy the space's web page and the space server share (server-merge step 7).
+  'packages/shared/src/space-page',
+];
 
 /**
  * Add the space server's source to the scan roots unless a root already holds it.
