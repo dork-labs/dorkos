@@ -80,6 +80,7 @@ export {
 } from './agent-computer-codes.js';
 export {
   mintAgentComputerLinkCode,
+  mintLinkCodeIfUnlinked,
   redeemAgentComputerCode,
   type AgentComputerLinkDeps,
   type AgentComputerRedeemOutcome,

@@ -19,9 +19,14 @@
  *   spent by. A second redeem of it is how the hub notices someone else
  *   redeemed first (the contract's accepted risk): see
  *   {@link AgentComputerCodeBook.claim}.
- * - **Slowed on failures, as a backstop**, like the owner's codes: past
- *   {@link AGENT_COMPUTER_LINK_MAX_FAILURES} wrong codes in the window, every
- *   claim is refused until it passes, and minting clears the count.
+ * - **Slowed on failures, as a backstop, per computer**: past
+ *   {@link AGENT_COMPUTER_LINK_MAX_FAILURES} wrong codes for one computer in
+ *   the window, that computer's claims are refused until it passes or the hub
+ *   mints it a new code. Only a computer that has a code counts failures, so
+ *   codes sent for ids that do not exist cost nothing and lock nobody out.
+ *   Someone who knows a real computer's id can still hold it up for a window
+ *   by sending it wrong codes; guessing a code is not feasible, and the next
+ *   mint clears it.
  *
  * A file that does not parse reads as no codes, so a damaged book refuses
  * every redeem rather than admitting one; the hub mints again.
@@ -52,7 +57,7 @@ const FOLDER_MODE = 0o700;
 /** How long an agent computer's code works after the hub mints it. */
 export const AGENT_COMPUTER_LINK_CODE_TTL_MS = AGENT_COMPUTER_LINK_CODE_TTL_SECONDS * 1000;
 
-/** Wrong codes allowed in one {@link AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS}, from anywhere. */
+/** Wrong codes allowed for one computer in one {@link AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS}. */
 export const AGENT_COMPUTER_LINK_MAX_FAILURES = 100;
 
 /** The window wrong codes are counted over. */
@@ -101,12 +106,13 @@ export type AgentComputerCodeClaim =
   | { kind: 'spent'; byKey: string }
   /** Wrong, expired, or not this computer's: one answer for all three. */
   | { kind: 'invalid' }
-  /** Too many wrong codes lately, from anywhere. */
+  /** Too many wrong codes for this computer lately. */
   | { kind: 'throttled' };
 
 /** One hub's agent computer link codes, kept on disk. */
 export class AgentComputerCodeBook {
-  private failures: number[] = [];
+  /** Wrong codes lately, per computer that has a code: when each came in. */
+  private failures = new Map<string, number[]>();
 
   /**
    * Hold the book's location and clock.
@@ -121,7 +127,7 @@ export class AgentComputerCodeBook {
 
   /**
    * Mint a code for one computer, replacing any code it had (live or spent),
-   * and clear the failure count.
+   * and clear that computer's failure count.
    *
    * @param computerId - The cloud computer id the code is bound to.
    */
@@ -131,50 +137,88 @@ export class AgentComputerCodeBook {
       code += RELAY_LINK_CODE_ALPHABET[randomInt(RELAY_LINK_CODE_ALPHABET.length)];
     }
     const expiresAt = this.now() + AGENT_COMPUTER_LINK_CODE_TTL_MS;
-    await this.update((entries) => [
-      ...entries.filter((entry) => entry.computerId !== computerId),
-      { computerId, codeHash: relayLinkCodeHash(code), expiresAt, spentBy: null },
-    ]);
-    this.failures = [];
+    await this.locked((entries) => {
+      this.failures.delete(computerId);
+      return {
+        next: [
+          ...entries.filter((entry) => entry.computerId !== computerId),
+          { computerId, codeHash: relayLinkCodeHash(code), expiresAt, spentBy: null },
+        ],
+        result: undefined,
+      };
+    });
     return { code, expiresAt };
   }
 
   /**
-   * Claim a code for one computer, by the key the redeem was signed with. A
-   * live code is spent by that key; a code already spent answers who spent
-   * it, so the caller can tell a retry by the same computer from a second
-   * redeem by another. Compares hashes in constant time.
+   * Claim a code for one computer, by the key the redeem was signed with, and
+   * act on the claim while still holding the book's lock. A live code is
+   * spent by that key; a code already spent answers who spent it, so the
+   * caller can tell a retry by the same computer from a second redeem by
+   * another. Compares hashes in constant time.
+   *
+   * `act` runs inside the lock, so two redeems of one code are decided one
+   * after the other, each seeing what the other stored: a second redeem can
+   * never unlink the computer while the first is still linking it. `act` must
+   * not touch this book (it would wait on its own lock); work that does, such
+   * as minting a new code, goes after `claim` returns.
+   *
+   * Throttling and the failure count, checked and changed under the same
+   * lock: only a wrong code for a computer that has a code counts, and it
+   * counts against that computer alone, so codes sent for computers that do
+   * not exist can never hold up one that does.
    *
    * @param computerId - The cloud computer id the redeem names.
    * @param input - The code as the request carried it.
    * @param computerKey - The key the redeem was signed with.
+   * @param act - What to do with the claim, inside the lock.
    */
-  async claim(
+  async claim<R>(
     computerId: string,
     input: string,
-    computerKey: string
-  ): Promise<AgentComputerCodeClaim> {
-    const now = this.now();
-    this.failures = this.failures.filter((at) => now - at < AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS);
-    if (this.failures.length >= AGENT_COMPUTER_LINK_MAX_FAILURES) return { kind: 'throttled' };
-    const code = normalizeRelayLinkCode(input);
-    const offered = Buffer.from(relayLinkCodeHash(code ?? ''), 'base64url');
-    let claim = { kind: 'invalid' } as AgentComputerCodeClaim;
-    await this.update((entries) =>
-      entries.map((entry) => {
-        if (entry.computerId !== computerId || code === null) return entry;
-        const stored = Buffer.from(entry.codeHash, 'base64url');
-        if (stored.length !== offered.length || !timingSafeEqual(stored, offered)) return entry;
-        if (entry.spentBy !== null) {
-          claim = { kind: 'spent', byKey: entry.spentBy };
-          return entry;
-        }
-        claim = { kind: 'fresh' };
-        return { ...entry, spentBy: computerKey };
-      })
-    );
-    if (claim.kind === 'invalid') this.failures.push(now);
-    return claim;
+    computerKey: string,
+    act: (claim: AgentComputerCodeClaim) => Promise<R>
+  ): Promise<R> {
+    return this.lockedAsync(async (entries) => {
+      const now = this.now();
+      const entry = entries.find((e) => e.computerId === computerId);
+      if (!entry) return { next: null, after: () => act({ kind: 'invalid' }) };
+      const recent = (this.failures.get(computerId) ?? []).filter(
+        (at) => now - at < AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS
+      );
+      if (recent.length >= AGENT_COMPUTER_LINK_MAX_FAILURES) {
+        this.failures.set(computerId, recent);
+        return { next: null, after: () => act({ kind: 'throttled' }) };
+      }
+      const code = normalizeRelayLinkCode(input);
+      const offered = Buffer.from(relayLinkCodeHash(code ?? ''), 'base64url');
+      const stored = Buffer.from(entry.codeHash, 'base64url');
+      const matches =
+        code !== null && stored.length === offered.length && timingSafeEqual(stored, offered);
+      if (!matches) {
+        this.failures.set(computerId, [...recent, now]);
+        return { next: null, after: () => act({ kind: 'invalid' }) };
+      }
+      if (entry.spentBy !== null) {
+        const byKey = entry.spentBy;
+        return { next: null, after: () => act({ kind: 'spent', byKey }) };
+      }
+      // Spent on disk before anything acts on it.
+      const next = entries.map((e) => (e === entry ? { ...e, spentBy: computerKey } : e));
+      return { next, after: () => act({ kind: 'fresh' }) };
+    });
+  }
+
+  /**
+   * Whether a computer has a code that is live and not yet spent.
+   *
+   * @param computerId - The cloud computer id.
+   */
+  async hasLiveCode(computerId: string): Promise<boolean> {
+    return this.locked((entries) => ({
+      next: null,
+      result: entries.some((e) => e.computerId === computerId && e.spentBy === null),
+    }));
   }
 
   /**
@@ -183,21 +227,46 @@ export class AgentComputerCodeBook {
    * @param computerId - The cloud computer id.
    */
   async forget(computerId: string): Promise<void> {
-    await this.update((entries) => entries.filter((entry) => entry.computerId !== computerId));
+    await this.locked((entries) => ({
+      next: entries.filter((entry) => entry.computerId !== computerId),
+      result: undefined,
+    }));
   }
 
-  /** Read, change and write the book under its lock, dropping expired codes. */
-  private async update(change: (entries: Entry[]) => Entry[]): Promise<void> {
+  /** {@link lockedAsync} for a change that decides at once. */
+  private locked<R>(change: (entries: Entry[]) => { next: Entry[] | null; result: R }) {
+    return this.lockedAsync(async (entries) => {
+      const { next, result } = change(entries);
+      return { next, after: async () => result };
+    });
+  }
+
+  /**
+   * Read the book under its lock, dropping expired codes, and write it back
+   * only when `change` returns a new list (or an expired code was dropped).
+   * `after` runs after the write, still in the lock. (Not `then`: an object
+   * with a `then` is a thenable, and awaiting it would never settle.)
+   */
+  private async lockedAsync<R>(
+    change: (entries: Entry[]) => Promise<{ next: Entry[] | null; after: () => Promise<R> }>
+  ): Promise<R> {
     const dorkHome = this.dorkHome();
     const file = path.join(dorkHome, FOLDER, FILE);
-    await withFileLock(file, async (write) => {
+    return withFileLock(file, async (write) => {
       const now = this.now();
-      const live = readEntries(file).filter((entry) => entry.expiresAt > now);
-      const next = change(live).slice(-MAX_ENTRIES);
-      const dir = path.join(dorkHome, FOLDER);
-      fs.mkdirSync(dir, { recursive: true, mode: FOLDER_MODE });
-      fs.chmodSync(dir, FOLDER_MODE);
-      await write(JSON.stringify({ v: 1, codes: next }), { mode: FILE_MODE });
+      const stored = readEntries(file);
+      const live = stored.filter((entry) => entry.expiresAt > now);
+      const { next, after } = await change(live);
+      const toWrite = next ?? (live.length !== stored.length ? live : null);
+      if (toWrite !== null) {
+        const dir = path.join(dorkHome, FOLDER);
+        fs.mkdirSync(dir, { recursive: true, mode: FOLDER_MODE });
+        fs.chmodSync(dir, FOLDER_MODE);
+        await write(JSON.stringify({ v: 1, codes: toWrite.slice(-MAX_ENTRIES) }), {
+          mode: FILE_MODE,
+        });
+      }
+      return after();
     });
   }
 }

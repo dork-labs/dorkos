@@ -46,6 +46,7 @@ import {
   forgetLinkedComputer,
   linkComputer,
   mintAgentComputerLinkCode,
+  mintLinkCodeIfUnlinked,
   readLinkedComputers,
   redeemAgentComputerCode,
   relaySecretHash,
@@ -381,6 +382,57 @@ describe('the hub refuses an agent computer`s redeem', () => {
     const ownerBook = new LinkCodeBook();
     const { code } = ownerBook.mint();
     expect((await post(redeemBody(code))).status).toBe(401);
+  });
+});
+
+describe('two redeems of one code at once', () => {
+  it('never leave the first linked: the second is decided after the first has stored', async () => {
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    const code = cloud.peekCode()!.code;
+    // A slow store, so an undecided second redeem would unlink before the first links.
+    const link = hubDeps.link;
+    hubDeps.link = async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return link(input);
+    };
+    const sign = (key = generateKeyPairSync('ed25519').privateKey) =>
+      signRelayLinkRequest(
+        {
+          v: 1,
+          code,
+          computerId: RELAY_ID,
+          secretHash: 'h'.repeat(43),
+          computerName: 'Cloud computer',
+        },
+        HUB_ORIGIN,
+        key
+      );
+    const statuses = (
+      await Promise.all([
+        request(server).post('/api/hub/link').send(sign()),
+        request(server).post('/api/hub/link').send(sign()),
+      ])
+    )
+      .map((res) => res.status)
+      .sort();
+    expect(statuses).toEqual([200, 409]);
+    expect(readLinkedComputers(hubHome)).toEqual([]);
+    expect(cloud.handed).toBe(2);
+  });
+});
+
+describe('minting again for a computer that lost its link', () => {
+  it('mints only for a computer that is not linked and has no live code', async () => {
+    expect(await mintLinkCodeIfUnlinked(CLOUD_ID, hubDeps)).toBe(true);
+    expect(await mintLinkCodeIfUnlinked(CLOUD_ID, hubDeps)).toBe(false);
+    expect(cloud.handed).toBe(1);
+    const { sync } = computer();
+    expect(await sync.sync()).toMatchObject({ kind: 'linked' });
+    expect(await mintLinkCodeIfUnlinked(CLOUD_ID, hubDeps)).toBe(false);
+    // Unlinked with its code spent: a new one.
+    await forgetLinkedComputer(RELAY_ID, hubHome);
+    expect(await mintLinkCodeIfUnlinked(CLOUD_ID, hubDeps)).toBe(true);
+    expect(cloud.handed).toBe(2);
   });
 });
 

@@ -56,7 +56,7 @@ export const AGENT_COMPUTER_CODE_HANDOFF_TIMEOUT_MS = 10_000;
 /** What minting and redeeming read and call, injectable for tests. */
 export interface AgentComputerLinkDeps {
   /** The code book. */
-  codes: Pick<AgentComputerCodeBook, 'mint' | 'claim'>;
+  codes: Pick<AgentComputerCodeBook, 'mint' | 'claim' | 'hasLiveCode'>;
   /** Hand a code to Cloud for one computer (`POST /v1/computers/{id}/link-code`). */
   handToCloud: (cloudComputerId: string, body: AgentComputerLinkCodeRequest) => Promise<void>;
   /** Every computer this hub serves. */
@@ -108,6 +108,10 @@ export function liveAgentComputerLinkDeps(
  * Cloud, which gives it to the computer once, in its assignment. A new code
  * replaces the computer's old one, here and at Cloud.
  *
+ * Minting when the hub makes or starts a computer is part 5's job (the
+ * forwarding runtime, DOR-2940): today the only callers are the second-redeem
+ * rule here and {@link mintLinkCodeIfUnlinked}.
+ *
  * @param cloudComputerId - The computer's id at Cloud.
  * @param deps - The book and the Cloud handoff; the live hub's by default.
  * @returns When the code stops working (epoch ms).
@@ -147,9 +151,19 @@ export type AgentComputerRedeemOutcome =
   /** The hub serves as many computers as it can. */
   | { kind: 'limit' };
 
+/** What deciding a redeem came to inside the book's lock, before any new code is minted. */
+type Decided = AgentComputerRedeemOutcome | { kind: 'second-redeem'; reason: SecondRedeemReason };
+
+type SecondRedeemReason = 'code_redeemed_twice' | 'already_linked_other_key';
+
 /**
  * Decide a redeem the route has already checked the signature of. Spends the
  * code; see the module doc for the second-redeem rule.
+ *
+ * The decision and the store it leads to happen inside the code book's lock
+ * (`AgentComputerCodeBook.claim`), so a second redeem racing the first is
+ * decided after the first has stored its link, and unlinks it. Minting the
+ * replacement code takes the book's lock again, so it waits until after.
  *
  * @param request - The verified link request.
  * @param cloudComputerId - The cloud id its relay id names.
@@ -160,44 +174,59 @@ export async function redeemAgentComputerCode(
   cloudComputerId: string,
   deps: AgentComputerLinkDeps
 ): Promise<AgentComputerRedeemOutcome> {
-  const claim = await deps.codes.claim(cloudComputerId, request.code, request.computerKey);
-  if (claim.kind === 'invalid' || claim.kind === 'throttled') return claim;
-  const existing = deps.readLinked().find((c) => c.computerId === request.computerId);
-  if (claim.kind === 'spent') {
-    if (claim.byKey !== request.computerKey) {
-      return secondRedeem(request, cloudComputerId, deps, 'code_redeemed_twice');
+  const decided = await deps.codes.claim<Decided>(
+    cloudComputerId,
+    request.code,
+    request.computerKey,
+    async (claim) => {
+      if (claim.kind === 'invalid' || claim.kind === 'throttled') return claim;
+      const existing = deps.readLinked().find((c) => c.computerId === request.computerId);
+      if (claim.kind === 'spent') {
+        if (claim.byKey !== request.computerKey) {
+          return unlinkForSecondRedeem(request, deps, 'code_redeemed_twice');
+        }
+        // A retry by the computer that spent it: only valid while it is linked.
+        if (!existing || existing.computerKey !== request.computerKey) return { kind: 'invalid' };
+      }
+      try {
+        await deps.link({
+          role: 'agent-computer',
+          cloudComputerId,
+          computerId: request.computerId,
+          secretHash: request.secretHash,
+          computerKey: request.computerKey,
+          computerName: request.computerName,
+        });
+      } catch (error) {
+        if (error instanceof LinkedComputerKeyMismatchError) {
+          return unlinkForSecondRedeem(request, deps, 'already_linked_other_key');
+        }
+        logger.warn('[HubRelay] An agent computer could not be linked', {
+          error: (error as Error).name,
+        });
+        return { kind: 'limit' };
+      }
+      return { kind: 'linked' };
     }
-    // A retry by the computer that spent it: only valid while it is linked.
-    if (!existing || existing.computerKey !== request.computerKey) return { kind: 'invalid' };
-  }
+  );
+  if (decided.kind !== 'second-redeem') return decided;
   try {
-    await deps.link({
-      role: 'agent-computer',
-      cloudComputerId,
-      computerId: request.computerId,
-      secretHash: request.secretHash,
-      computerKey: request.computerKey,
-      computerName: request.computerName,
-    });
+    await mintAgentComputerLinkCode(cloudComputerId, deps);
   } catch (error) {
-    if (error instanceof LinkedComputerKeyMismatchError) {
-      return secondRedeem(request, cloudComputerId, deps, 'already_linked_other_key');
-    }
-    logger.warn('[HubRelay] An agent computer could not be linked', {
+    // The computer stays unlinked; `mintLinkCodeIfUnlinked` links it later.
+    logger.warn('[HubRelay] A new link code for an agent computer could not reach Cloud', {
       error: (error as Error).name,
     });
-    return { kind: 'limit' };
   }
-  return { kind: 'linked' };
+  return { kind: 'reset' };
 }
 
-/** Unlink, record, warn and mint again: see the module doc. */
-async function secondRedeem(
+/** Unlink, record and warn: see the module doc. The new code is minted by the caller. */
+async function unlinkForSecondRedeem(
   request: RelayLinkRequest,
-  cloudComputerId: string,
   deps: AgentComputerLinkDeps,
-  reason: 'code_redeemed_twice' | 'already_linked_other_key'
-): Promise<AgentComputerRedeemOutcome> {
+  reason: SecondRedeemReason
+): Promise<Decided> {
   const unlinked = await deps.unlink(request.computerId);
   logger.warn('[HubRelay] An agent computer`s link code was redeemed twice; it was unlinked', {
     computerId: request.computerId,
@@ -213,13 +242,31 @@ async function secondRedeem(
     summary: 'A cloud computer was unlinked for safety: its link code was used twice',
     source: { surface: 'relay' },
   });
-  try {
-    await mintAgentComputerLinkCode(cloudComputerId, deps);
-  } catch (error) {
-    // The computer stays unlinked; the next mint (when the hub starts it) links it.
-    logger.warn('[HubRelay] A new link code for an agent computer could not reach Cloud', {
-      error: (error as Error).name,
-    });
-  }
-  return { kind: 'reset' };
+  return { kind: 'second-redeem', reason };
+}
+
+/**
+ * Mint and hand over a code for an agent computer that is not linked and has
+ * no live code waiting, so a computer that lost its link (a lost answer
+ * after its code expired, a second redeem whose new code never reached Cloud)
+ * can link again. Does nothing for a computer that is linked or has a code.
+ *
+ * Nothing on the hub calls this yet: the hub does not know its computers
+ * until the forwarding runtime and `worksOn` arrive (DOR-2940 part 5), which
+ * call it when the hub makes or starts a computer, and before each start.
+ *
+ * @param cloudComputerId - The computer's id at Cloud.
+ * @param deps - See {@link AgentComputerLinkDeps}.
+ * @returns Whether a code was minted.
+ */
+export async function mintLinkCodeIfUnlinked(
+  cloudComputerId: string,
+  deps: Pick<AgentComputerLinkDeps, 'codes' | 'handToCloud' | 'readLinked'>
+): Promise<boolean> {
+  const relayId = agentComputerRelayId(cloudComputerId);
+  if (relayId === null) throw new Error('That cloud computer id cannot be linked over the relay.');
+  if (deps.readLinked().some((c) => c.computerId === relayId)) return false;
+  if (await deps.codes.hasLiveCode(cloudComputerId)) return false;
+  await mintAgentComputerLinkCode(cloudComputerId, deps);
+  return true;
 }
