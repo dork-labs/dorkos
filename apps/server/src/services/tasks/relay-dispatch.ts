@@ -48,8 +48,6 @@ export interface RelayDispatchDeps {
    * dispatch at all (DOR-3033). Thirty seconds by default; tests shorten it.
    */
   noReceiverRetryMs?: number;
-  /** Whether the scheduler is shutting down, so a pending retry stands down. */
-  isStopping?: () => boolean;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -281,12 +279,11 @@ export async function dispatchRunViaRelay(
       await new Promise((resolve) => {
         setTimeout(resolve, deps.noReceiverRetryMs ?? NO_RECEIVER_RETRY_MS).unref?.();
       });
-      // The wait is long enough for the world to move: a shutdown leaves the row
-      // for crash recovery, and a Stop or any other ending stands the retry down.
-      if (deps.isStopping?.()) {
-        deps.runs.release(run.id);
-        return;
-      }
+      // The wait is long enough for the world to move. A shutdown forgets every
+      // relay run's slot (`forgetRelayRuns`) and leaves the row for crash
+      // recovery; a Stop or any other ending makes the row terminal. Either
+      // stands the retry down.
+      if (!deps.runs.heldRunIds().has(run.id)) return;
       const after = deps.store.getRun(run.id);
       if (!after || isTerminalRunStatus(after.status)) {
         deps.runs.release(run.id);
