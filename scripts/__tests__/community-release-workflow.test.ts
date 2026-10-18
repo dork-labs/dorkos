@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+import { readSpaceServer } from '../lib/space-server.mjs';
 
 const root = join(import.meta.dirname, '../..');
 const workflow = readFileSync(join(root, '.github/workflows/publish-community.yml'), 'utf8');
-const dockerfile = readFileSync(join(root, 'apps/community/Dockerfile'), 'utf8');
-const dockerignore = readFileSync(join(root, 'apps/community/Dockerfile.dockerignore'), 'utf8');
+/** Where the space server lives (ci/space-server.env, DOR-3007). */
+const { spaceDir } = readSpaceServer(root);
+const dockerfile = readFileSync(join(root, spaceDir, 'Dockerfile'), 'utf8');
+const dockerignore = readFileSync(join(root, spaceDir, 'Dockerfile.dockerignore'), 'utf8');
 const generator = readFileSync(
   join(root, 'scripts/generate-community-release-manifest.ts'),
   'utf8'
@@ -139,6 +142,25 @@ exit 2
     expect(readFileSync(calls, 'utf8')).toMatch(
       /attestation verify .*community-release-v1\.json --bundle .*\.sigstore\.json --repo dork-labs\/dorkos --signer-workflow dork-labs\/dorkos\/\.github\/workflows\/publish-community\.yml --source-ref refs\/tags\/v1/
     );
+  });
+
+  // DOR-3007: the space server's folder is read from ci/space-server.env, so moving it
+  // changes that file and not this workflow.
+  it('reads where the space server lives instead of naming its folder', () => {
+    const steps = workflow.slice(workflow.indexOf('    steps:\n'));
+    const read = steps.indexOf('- name: Read where the space server lives');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(steps.indexOf('- name: Build and push Community image'));
+    expect(steps).toContain(
+      `run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env\n`
+    );
+    expect(workflow).toContain('file: ./${{ env.SPACE_DIR }}/Dockerfile');
+    expect(workflow).toContain('--migrations "$SPACE_DIR/migrations"');
+    const code = workflow
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    expect(code).not.toContain('apps/community');
   });
 
   it('keeps the runtime non-root and the Docker build context allow-listed', () => {
