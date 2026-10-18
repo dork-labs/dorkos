@@ -15,6 +15,7 @@ const generator = readFileSync(
   join(root, 'scripts/generate-community-release-manifest.ts'),
   'utf8'
 );
+const migrationId = readFileSync(join(root, 'scripts/lib/community-migration-id.mjs'), 'utf8');
 const publisher = join(root, 'scripts/publish-community-release-assets.sh');
 
 describe('Community release workflow', () => {
@@ -171,9 +172,11 @@ exit 2
   });
 
   it('derives migration metadata from the tagged corpus instead of a frozen migration name', () => {
-    expect(generator).toContain(".filter((entry) => entry.endsWith('.sql'))");
-    expect(generator).toContain('.sort()');
-    expect(generator).toContain("migrationHash.update('\\0')");
+    // The hash itself lives in one function the CLI calls too; the space server's census pins it.
+    expect(generator).toContain('communityMigrationCompatibilityId(values.migrations!)');
+    expect(migrationId).toContain(".filter((entry) => entry.endsWith('.sql'))");
+    expect(migrationId).toContain('.sort()');
+    expect(migrationId).toContain("hash.update('\\0')");
     expect(generator).toContain('migrationCompatibilityId,');
     expect(generator).not.toMatch(/through-\d+/);
     expect(workflow).toContain('MINIMUM_FLYCTL_VERSION: 0.4.104');
