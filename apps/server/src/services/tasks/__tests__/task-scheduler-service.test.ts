@@ -2213,6 +2213,80 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** Run one scheduled dispatch of a fresh task through the relay path. */
+    async function dispatchOnce(
+      name: string,
+      extra: Partial<CreateTaskStoreInput> = {}
+    ): Promise<ReturnType<TaskStore['getRun']>> {
+      const task = store.createTask(taskInput({ name, prompt: 'p', cron: '0 * * * *', ...extra }));
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      await service.stop();
+      return store.getRun(run.id);
+    }
+
+    // DOR-3033: "never started" is only true when nothing answered. A run the
+    // adapter turned away says why.
+    it('says every slot was busy when the adapter had no room', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, code: 'at_capacity', error: 'Adapter at capacity' },
+      });
+      const run = await dispatchOnce('Busy Slots');
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(run?.status).toBe('failed');
+      expect(run?.error).toBe('Every agent slot stayed busy, so this run didn’t start.');
+    });
+
+    it('names the hourly turn limit when the bus refused the run for it', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        rejected: [{ endpointHash: 'h', reason: 'turn_ceiling' }],
+      });
+      const run = await dispatchOnce('Turn Ceiling');
+      expect(run?.error).toBe(
+        'The hourly limit on agent turns was reached, so this run didn’t start.'
+      );
+    });
+
+    // DOR-3033: a run whose delivery found nobody tries once more, and a
+    // receiver that came back in the meantime runs it.
+    it('tries once more when nothing answered, and runs when something does', async () => {
+      mockRelay.publish
+        .mockResolvedValueOnce({ messageId: 'm1', deliveredTo: 0 })
+        .mockResolvedValueOnce({ messageId: 'm2', deliveredTo: 1 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const pending = dispatchOnce('Retry Works');
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      const run = await pending;
+      vi.useRealTimers();
+      // Two dispatches; the cancel the test's own `stop()` sends is not one.
+      const dispatches = mockRelay.publish.mock.calls.filter(
+        (call) => (call[1] as { type?: string }).type === 'task_dispatch'
+      );
+      expect(dispatches).toHaveLength(2);
+      expect(run?.status).toBe('running');
+    });
+
+    // DOR-3033: a run stopped at its deadline says how long it had.
+    it('carries the task’s time limit for the receiver to name', async () => {
+      await dispatchOnce('Time Limit', { maxRuntime: 30 * 60_000 });
+      const payload = mockRelay.publish.mock.calls[0]![1] as { timeLimit?: string };
+      expect(payload.timeLimit).toBe('30m');
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
@@ -2231,10 +2305,24 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      // Nothing answering gets one retry 30 s later before the run is called
+      // failed (DOR-3033); the fake clock walks that wait.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const dispatching = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      let settled = false;
+      void dispatching.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      await dispatching;
+      vi.useRealTimers();
       const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
+      expect(mockRelay.publish).toHaveBeenCalledTimes(2);
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
       expect(updatedRun?.error).toBe(

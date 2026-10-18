@@ -20,7 +20,7 @@
  */
 import type { ReceiptObservation } from './lib/receipt-observation.js';
 import { isDetachedAgentSubject } from './lib/detached-agent-subject.js';
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { isTaskDispatchSubject, type RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { SqliteIndex } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
@@ -133,12 +133,42 @@ export interface AdapterDeliveryDeps {
 }
 
 /**
+ * How long an awaited delivery may take before it is called failed.
+ *
+ * Two minutes for everything but a task dispatch. A scheduled run's turn runs
+ * INSIDE its delivery (in-process), so racing it against two minutes failed
+ * every run longer than that as "never started" while the run went on and did
+ * its work (DOR-3033: 20 of them in one week, each at :02 after a :00 fire). A
+ * task dispatch is awaited until its own deadline — the envelope TTL the
+ * scheduler sets from the task's time limit, which the receiver enforces — and
+ * a grace past it for the run to write how it ended.
+ *
+ * @param subject - The subject being delivered
+ * @param envelope - Its envelope, whose budget TTL is the run's deadline
+ * @param now - The clock
+ */
+export function deliveryTimeoutMs(
+  subject: string,
+  envelope: RelayEnvelope,
+  now: number = Date.now()
+): number {
+  if (!isTaskDispatchSubject(subject)) return AdapterDelivery.TIMEOUT_MS;
+  const untilDeadline = envelope.budget.ttl - now;
+  return Math.max(AdapterDelivery.TIMEOUT_MS, untilDeadline + AdapterDelivery.TASK_SETTLE_GRACE_MS);
+}
+
+/**
  * Delivers messages to matching adapters with timeout protection
  * and SQLite audit-trail indexing.
  */
 export class AdapterDelivery {
   /** Adapter delivery timeout in milliseconds (non-agent subjects only). */
   static readonly TIMEOUT_MS = 120_000;
+  /**
+   * How long past its own deadline a task run's delivery is awaited, so the run
+   * can write how it ended before the delivery is called failed (DOR-3033).
+   */
+  static readonly TASK_SETTLE_GRACE_MS = 60_000;
 
   private readonly logger: Logger;
 
@@ -340,13 +370,14 @@ export class AdapterDelivery {
     let timer: NodeJS.Timeout | undefined;
     try {
       const deliveryPromise = this.deps.adapterRegistry!.deliver(subject, envelope, context);
+      const timeoutMs = deliveryTimeoutMs(subject, envelope);
 
       const result = await Promise.race([
         deliveryPromise,
         new Promise<DeliveryResult>((_, reject) => {
           timer = setTimeout(
-            () => reject(new Error('adapter delivery timeout (120s)')),
-            AdapterDelivery.TIMEOUT_MS
+            () => reject(new Error(`adapter delivery timeout (${Math.round(timeoutMs / 1000)}s)`)),
+            timeoutMs
           );
         }),
       ]);
