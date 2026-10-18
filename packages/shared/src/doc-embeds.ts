@@ -91,10 +91,11 @@ export type DocEmbedDecodeResult =
 export const DOC_EMBED_CATALOG: Readonly<Record<DocEmbedName, DocEmbedSpec>> = {
   chart: {
     title: 'Chart',
-    attributes: { kind: 'text', data: 'json', height: 'number' },
+    attributes: { kind: 'text', data: 'json', height: 'number', highlight: 'text' },
     example: {
       kind: 'bar',
       data: '[{"label":"Mon","value":4},{"label":"Tue","value":7},{"label":"Wed","value":5}]',
+      highlight: 'Tue',
     },
   },
   stat: {

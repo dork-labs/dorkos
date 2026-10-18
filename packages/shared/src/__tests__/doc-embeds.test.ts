@@ -192,6 +192,16 @@ describe('decodeDocEmbed validation', () => {
     });
   });
 
+  it('takes a highlight that names one of the chart’s labels', () => {
+    const data = '[{"label":"Mon","value":4},{"label":"Tue","value":7}]';
+    expect(decoded('chart', { kind: 'bar', data, highlight: 'Tue' })).toMatchObject({
+      highlight: 'Tue',
+    });
+    expect(issuesOf('chart', { kind: 'bar', data, highlight: 'Sun' })[0]?.path).toEqual([
+      'highlight',
+    ]);
+  });
+
   it('caps a chart’s height', () => {
     const data = '[{"label":"a","value":1}]';
     const height = String(DOC_EMBED_MAX_CHART_HEIGHT);

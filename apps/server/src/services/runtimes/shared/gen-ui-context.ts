@@ -38,7 +38,7 @@ A <node> is { "type": <type>, ...props }. Catalog:
           keyValue { items: [{ key, value }] }, progress { value: 0-100, label? },
           table { columns: [{ key, label, align? }], rows: [{ <key>: string|number|boolean|null }] },
           list { items: [{ title, subtitle?, icon?, image?, meta?, badge?, actions? }] },
-          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height? } (values >= 0),
+          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height?, highlight?: <one label> } (values >= 0),
           timeline { items: [{ title, time?, subtitle?, icon?, status?: "done"|"active"|"upcoming" }] },
           checklist { items: [{ label, checked?, note? }], action?, submitLabel? } (checked labels post back via action),
           compare { options: [{ name, recommended? }], rows: [{ label, values: (string|number|boolean|null)[] }] },

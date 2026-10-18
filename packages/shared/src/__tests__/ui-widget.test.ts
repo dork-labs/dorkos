@@ -759,3 +759,44 @@ describe('catalog state bindings', () => {
     expect(WidgetNodeSchema.safeParse(node).success).toBe(false);
   });
 });
+
+describe('chart highlight', () => {
+  const data = [
+    { label: 'Mon', value: 4 },
+    { label: 'Tue', value: 7 },
+  ];
+
+  it('accepts a highlight that names a data label', () => {
+    const parsed = WidgetNodeSchema.safeParse({
+      type: 'chart',
+      kind: 'bar',
+      data,
+      highlight: 'Tue',
+    });
+    expect(parsed.success && parsed.data.type === 'chart' && parsed.data.highlight).toBe('Tue');
+  });
+
+  it('refuses a highlight that names no data label, listing the labels', () => {
+    const parsed = WidgetNodeSchema.safeParse({
+      type: 'chart',
+      kind: 'bar',
+      data,
+      highlight: 'Sun',
+    });
+    expect(parsed.success).toBe(false);
+    const issue = parsed.error?.issues[0];
+    expect(issue?.path).toEqual(['highlight']);
+    expect(issue?.message).toContain('Mon, Tue');
+  });
+
+  it('leaves a highlight on bound data to the data that arrives', () => {
+    const parsed = WidgetNodeSchema.safeParse({
+      type: 'chart',
+      kind: 'bar',
+      data: [],
+      highlight: 'Tue',
+      bind: { data: { path: '/series' } },
+    });
+    expect(parsed.success).toBe(true);
+  });
+});

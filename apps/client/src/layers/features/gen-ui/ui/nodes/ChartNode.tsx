@@ -15,7 +15,8 @@ type ChartDatum = ChartNodeData['data'][number];
 
 /**
  * Categorical palette resolved from the `--chart-*` theme tokens, so series
- * colors track light/dark automatically.
+ * colors track light/dark automatically. Only for charts whose parts are
+ * different things (a pie's slices); one series is one colour.
  */
 const CHART_COLORS = [
   'hsl(var(--chart-1))',
@@ -25,7 +26,15 @@ const CHART_COLORS = [
   'hsl(var(--chart-5))',
 ] as const;
 
-const DEFAULT_HEIGHT = 180;
+/**
+ * One series, one colour: every bar in a quiet fill, so the data's shape reads
+ * before any hue does. The accent is kept for the one bar a chart highlights.
+ */
+const SERIES_FILL = 'hsl(var(--muted-foreground) / 0.35)';
+const HIGHLIGHT_FILL = CHART_COLORS[0];
+
+/** Plot height when the node gives none: enough to compare, short enough to read past. */
+const DEFAULT_HEIGHT = 160;
 
 /** Resting fill opacity for an area chart's shaded region (line stays opaque). */
 const AREA_FILL_OPACITY = 0.15;
@@ -43,7 +52,9 @@ export function ChartNode({ node }: { node: ChartNodeData }) {
     return <p className="text-muted-foreground text-xs">No data to chart.</p>;
   }
 
-  if (node.kind === 'bar') return <BarChart data={node.data} height={height} label={label} />;
+  if (node.kind === 'bar') {
+    return <BarChart data={node.data} height={height} label={label} highlight={node.highlight} />;
+  }
   if (node.kind === 'pie') return <PieChart data={node.data} height={height} label={label} />;
   return (
     <LineAreaChart data={node.data} height={height} area={node.kind === 'area'} label={label} />
@@ -53,7 +64,17 @@ export function ChartNode({ node }: { node: ChartNodeData }) {
 /** Vertical space reserved above the tallest bar for its value label. */
 const BAR_LABEL_SPACE = 18;
 
-function BarChart({ data, height, label }: { data: ChartDatum[]; height: number; label: string }) {
+function BarChart({
+  data,
+  height,
+  label,
+  highlight,
+}: {
+  data: ChartDatum[];
+  height: number;
+  label: string;
+  highlight?: string;
+}) {
   const motionOn = useWidgetMotion();
   const max = Math.max(...data.map((d) => d.value), 0) || 1;
   // Pixel heights, not percentages: a percentage height on a flex child resolves
@@ -67,9 +88,10 @@ function BarChart({ data, height, label }: { data: ChartDatum[]; height: number;
             <span className="text-muted-foreground text-2xs tabular-nums">{d.value}</span>
             <motion.div
               className="w-full origin-bottom rounded-t-sm"
+              data-highlighted={d.label === highlight || undefined}
               style={{
                 height: (d.value / max) * plot,
-                backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                backgroundColor: d.label === highlight ? HIGHLIGHT_FILL : SERIES_FILL,
               }}
               initial={motionOn ? { scaleY: 0 } : false}
               animate={motionOn ? { scaleY: 1 } : false}

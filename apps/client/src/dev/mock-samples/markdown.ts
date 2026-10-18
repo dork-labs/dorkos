@@ -125,7 +125,7 @@ export const MARKDOWN_EMBEDS_SAMPLE = `## Launch week
 
 ::stat[Up from last week]{label="Signups" value="1,204" delta="+18%" direction="up"}
 
-::chart{kind="bar" data='[{"label":"Mon","value":4},{"label":"Tue","value":7},{"label":"Wed","value":5}]'}
+::chart{kind="bar" data='[{"label":"Mon","value":4},{"label":"Tue","value":7},{"label":"Wed","value":5}]' highlight="Tue"}
 
 ::progress{value="60" label="Launch checklist"}
 

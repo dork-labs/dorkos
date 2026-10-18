@@ -170,6 +170,8 @@ export type WidgetNode =
       /** Data points. Values are non-negative in v1 (no zero-baseline handling). */
       data: { label: string; value: number }[];
       height?: number;
+      /** One data label to draw in the accent; every other bar stays muted. */
+      highlight?: string;
     }
   | {
       type: 'button';
@@ -755,19 +757,36 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
           })
         ),
       }),
-      z.object({
-        type: z.literal('chart'),
-        bind: widgetBindingSchemas.chart.optional(),
-        kind: chartKindSchema,
-        // v1 constraint: values are non-negative. The minimal renderer has no
-        // zero-baseline handling (negative bars/lines would render off-canvas),
-        // so the schema rejects them honestly instead of drawing garbage.
-        // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
-        // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
-        // and positive() would otherwise let through.
-        data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
-        height: z.coerce.number().finite().positive().optional(),
-      }),
+      z
+        .object({
+          type: z.literal('chart'),
+          bind: widgetBindingSchemas.chart.optional(),
+          kind: chartKindSchema,
+          // v1 constraint: values are non-negative. The minimal renderer has no
+          // zero-baseline handling (negative bars/lines would render off-canvas),
+          // so the schema rejects them honestly instead of drawing garbage.
+          // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
+          // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
+          // and positive() would otherwise let through.
+          data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
+          height: z.coerce.number().finite().positive().optional(),
+          highlight: z.string().optional(),
+        })
+        .superRefine((chart, context) => {
+          // A highlight that names no point would silently highlight nothing. Data
+          // bound to document state arrives later, so only authored data is checked.
+          if (
+            chart.highlight !== undefined &&
+            chart.bind?.data === undefined &&
+            !chart.data.some((d) => d.label === chart.highlight)
+          ) {
+            context.addIssue({
+              code: 'custom',
+              path: ['highlight'],
+              message: `Names no data label. Use one of: ${chart.data.map((d) => d.label).join(', ')}.`,
+            });
+          }
+        }),
       z.object({
         type: z.literal('button'),
         label: z.string(),
