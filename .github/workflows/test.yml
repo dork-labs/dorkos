@@ -390,7 +390,9 @@ jobs:
           pnpm --filter @dorkos/community test
           cd apps/server
           pnpm exec tsc -p tsconfig.spaces.json
-          pnpm exec vitest run src/services/spaces
+          # The archive cross-checks need unzip, bsdtar and python3, which only the
+          # test shards install; they test space code alone, which the shards run.
+          pnpm exec vitest run src/services/spaces --exclude '**/zip-cross-tools.test.ts'
       - name: Assert community HTTP paths against real Postgres
         env:
           COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community
