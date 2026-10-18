@@ -46,8 +46,8 @@ import { RemoteEdgeProofSchema } from './remote.js';
  * account's), a cloud metadata address, any private address range, or
  * anything on this service except the public `/v1` API. A computer reaches its
  * hub the way a person's Mac does, so it holds nothing a Mac does not. The
- * service enforces this at the computer's network boundary; the computer
- * cannot change it, and nothing on the computer is trusted to.
+ * service's network policy enforces this, outside the computer; the
+ * computer's own settings are not relied on.
  *
  * **How an agent computer links to its hub.** The hub mints a one-time link
  * code and hands it to the service (`POST /v1/computers/{computerId}/link-code`).
@@ -539,8 +539,14 @@ export type AgentComputerLinkCodeRequest = z.infer<typeof AgentComputerLinkCodeR
  * **The service never vouches for the computer's key.** The computer makes its
  * own signing key pair and sends the public half when it redeems the code; the
  * hub pins it then, as it does for a Mac. So a code that was already used is
- * worthless to anybody who reads it later. A second redeem for a computer that
- * is already linked unlinks it, tells the person, and mints a new code.
+ * worthless to anybody who reads it later.
+ *
+ * **An accepted risk.** The service holds the live code until the computer
+ * reads it, so someone inside the service could redeem it first, with a key
+ * of their own. That is accepted: the service already runs this computer. The
+ * hub treats a second redeem for a computer that is already linked as a
+ * security event: it unlinks the computer, tells the person, and mints a new
+ * code.
  *
  * The computer reads again when an `agent_computer_assignment_changed` command
  * arrives, and otherwise every `pollAfterSeconds`.

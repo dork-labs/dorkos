@@ -401,8 +401,8 @@ exits with status 0 within 5 seconds of SIGINT. Its image is public and signed.
 It may reach the public internet, its own hub through the hub's front door, and the model gateway.
 It may not reach the hosting supplier's private network (other machines, even the same account's),
 a cloud metadata address, any private address range, or anything on the service except the public
-`/v1` API. The service enforces this at the computer's network boundary; the computer cannot
-change it, and nothing on the computer is trusted to.
+`/v1` API. The service's network policy enforces this, outside the computer; the computer's own
+settings are not relied on.
 
 ### Linking an agent computer to its hub
 
@@ -422,9 +422,11 @@ change it, and nothing on the computer is trusted to.
 pollAfterSeconds }`. The service deletes the code once the computer has read it and never logs
   it, so a later read has `linkCode: null`. The code carries `ONE_TIME_CREDENTIAL_META`.
 - **The service never vouches for a key.** The computer makes its own Ed25519 key pair; the hub
-  pins its public half when the code is redeemed, as it does for a Mac. A used code is worthless. A
-  second redeem for a computer that is already linked unlinks it, tells the person, and mints a new
-  code.
+  pins its public half when the code is redeemed, as it does for a Mac. A used code is worthless.
+- **An accepted risk (H3).** The service holds the live code until the computer reads it, so
+  someone inside the service could redeem it first with a key of their own. That is accepted: the
+  service already runs the computer. The hub treats a second redeem for a computer that is already
+  linked as a security event: it unlinks the computer, tells the person, and mints a new code.
 - `agent_computer_assignment_changed` asks the computer to read its assignment again. It carries
   nothing else, and the service sends it only to a computer whose version knows it, as it does for
   the hub's own command.
@@ -443,7 +445,8 @@ pollAfterSeconds }`. The service deletes the code once the computer has read it 
 - **Inference on an agent computer.** `POST /v1/inference/tokens` also takes an agent computer's
   instance key. Tokens stay short-lived, the limits apply per computer and per account, what it
   spends is billed to the account that owns it, and the preview gate applies as it does today.
-  `agentRef` is the agent's id on the computer's hub: attribution only, never authorization.
+  `agentRef` is the agent's id on the computer's hub: the computer's own claim, used for
+  attribution and billing only, never for authorization.
 
 ### Asking a computer to dial its hub
 
