@@ -130,6 +130,16 @@ export class SessionPump {
    */
   private turnClosedWhileOpening = false;
   /**
+   * True while {@link dispatch} is opening a turn: from its checks until the
+   * turn is RUNNING or the dispatch has failed. The pump can sit WARM inside
+   * that span — between its launch finishing and the turn opening, or while it
+   * waits on a launch somebody else started — and a reclaim that reaped it
+   * there killed the turn being opened, which then failed "cannot go from
+   * reaped to running" (DOR-3012). {@link reap} and {@link reapReclaimable}
+   * decline while it is set.
+   */
+  private opening = false;
+  /**
    * Whether this process is doing anything, and the two clocks that bound the
    * answer (`process-quiet.ts`).
    *
@@ -317,24 +327,32 @@ export class SessionPump {
     // Fresh for the turn about to open: a tombstone left by a previous close
     // must not settle this one.
     this.turnClosedWhileOpening = false;
-    if (this.currentState === 'cold' || this.currentState === 'crashed') {
-      // The first message rides the launch rather than being pushed after it:
-      // it is in the stream from construction, so there is no window in which
-      // the process is up and the message is merely "accepted".
-      await this.launch(first);
+    this.opening = true;
+    try {
+      // A launch somebody else started (an explicit `warm()`, a stage) has to
+      // finish first, whatever state it left. Joining it through `launch(first)`
+      // would drop `first`: the memo returns the launch already running, which
+      // carries no message — and since a launch can now wait a long time for a
+      // warm slot, that window is no longer a few milliseconds (DOR-3012).
+      if (this.launchInFlight) await this.launchInFlight;
+      if (this.currentState === 'cold' || this.currentState === 'crashed') {
+        // The first message rides the launch rather than being pushed after
+        // it: it is in the stream from construction, so there is no window in
+        // which the process is up and the message is merely "accepted".
+        await this.launch(first);
+        this.pushRest(rest);
+        this.openTurn();
+        return;
+      }
+      if (this.currentState !== 'warm') {
+        throw new IllegalPumpTransitionError(this.currentState, 'running');
+      }
+      this.pushOrFail(first);
       this.pushRest(rest);
       this.openTurn();
-      return;
+    } finally {
+      this.opening = false;
     }
-    // A launch somebody else started (an explicit `warm()`) has to finish
-    // before this can push into its stream.
-    if (this.launchInFlight) await this.launchInFlight;
-    if (this.currentState !== 'warm') {
-      throw new IllegalPumpTransitionError(this.currentState, 'running');
-    }
-    this.pushOrFail(first);
-    this.pushRest(rest);
-    this.openTurn();
   }
 
   /**
@@ -565,26 +583,34 @@ export class SessionPump {
    * now is a normal outcome. Reap through the registry, which drops the spent
    * pump; a pump reaped directly is left in `reaped`, which is terminal.
    *
+   * @param opts.quiet - Log a decline at `debug`; for the warm-slot reclaim,
+   *   which asks on every check while a launch waits
    * @returns True when the process was closed, false when the pump declined
    *   (not warm, parked on a person, or not quiet — see {@link quietness} —
    *   unless its busy spell has run past the background-work ceiling)
    */
-  async reap(): Promise<boolean> {
+  async reap(opts: { quiet?: boolean } = {}): Promise<boolean> {
     if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
     if (this.currentState === 'crashed') {
       // Nothing left to close; retiring the record is the whole of it.
       this.setState('reaped');
       return true;
     }
-    if (this.currentState !== 'warm') {
+    if (this.currentState !== 'warm' || this.opening) {
       logger.debug('[SessionPump] declined to reap a session that is not warm', {
         sessionId: this.sessionId,
         state: this.currentState,
+        opening: this.opening,
       });
       return false;
     }
+    // A launch waiting for a warm slot asks every warm process on every check,
+    // so its declines are `debug`: at `warn` one wait wrote thousands of lines
+    // (DOR-3012). The idle reaper's declines keep their level.
+    const declined = (message: string, data: Record<string, unknown>): void =>
+      opts.quiet === true ? logger.debug(message, data) : logger.warn(message, data);
     if (this.opts.hasPendingInteraction?.()) {
-      logger.warn('[SessionPump] declined to reap a session parked on a person', {
+      declined('[SessionPump] declined to reap a session parked on a person', {
         sessionId: this.sessionId,
       });
       return false;
@@ -602,7 +628,7 @@ export class SessionPump {
     const quietness = this.quiet.quietness();
     if (!quietness.quiet) {
       if (!this.quiet.isPastCeiling()) {
-        logger.warn('[SessionPump] declined to reap a session that is still working', {
+        declined('[SessionPump] declined to reap a session that is still working', {
           sessionId: this.sessionId,
           because: quietness.because,
           holding: quietness.holding,
@@ -637,7 +663,8 @@ export class SessionPump {
    * @returns True when the process was closed, false when the pump declined
    */
   async reapReclaimable(): Promise<boolean> {
-    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
+    if (this.currentState !== 'warm' || this.opening) return false;
+    if (!this.quiet.isHoldingOnlyReclaimable()) return false;
     this.setState('reaped');
     await this.drain();
     return true;

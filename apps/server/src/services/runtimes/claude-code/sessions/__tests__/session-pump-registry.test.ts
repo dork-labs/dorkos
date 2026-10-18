@@ -8,6 +8,7 @@ import {
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
 import { backgroundTasksMessage, FakeQuery, initMessage } from './fake-pump-query.js';
+import { SLOT_WAIT_BEAT_MS } from '../slot-wait/open-turn-window.js';
 
 /** The idle window these tests measure against, unless one overrides it. */
 const IDLE_MS = 5 * 60 * 1000;
@@ -27,6 +28,9 @@ function launchOpts(
   return {
     maxWarmSessions: 12,
     warmIdleMs: IDLE_MS,
+    // No wait by default, so a full ceiling answers at once; the slot-wait
+    // block below sets its own.
+    slotWaitMs: 0,
     launch: () => {
       const query = new FakeQuery();
       queries.push(query);
@@ -318,7 +322,10 @@ describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
     await Promise.resolve();
     // The session record retires while its launch is still parked.
     await registry.evict('s2');
-    expect(registry.size).toBe(1);
+    // s1 left the registry the moment it was reaped (DOR-3012), but its process
+    // is still closing, so it still holds the only slot.
+    expect(registry.size).toBe(0);
+    expect(registry.liveCount()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(30_000);
     await refused;
@@ -340,10 +347,16 @@ describe('the warm-session constants', () => {
   // makes processes outlive records, or that lets the reaper fire after an
   // approval has already timed out, breaks here rather than in production.
   it('bounds processes below records, and idleness below both eviction and interaction', () => {
-    expect(SESSIONS.MAX_WARM_SESSIONS).toBe(12);
+    expect(SESSIONS.MIN_WARM_SESSIONS).toBe(12);
     expect(SESSIONS.WARM_IDLE_MS).toBe(5 * 60 * 1000);
     // Processes are a cache of records, so there must be fewer of them.
-    expect(SESSIONS.MAX_WARM_SESSIONS).toBeLessThan(SESSIONS.MAX_SESSIONS);
+    expect(SESSIONS.MAX_WARM_SESSIONS_AUTO).toBeLessThan(SESSIONS.MAX_SESSIONS);
+    // A turn waiting for a slot says so on a beat; the stall guard must hear
+    // one inside its shortest window, or it cuts the wait short (DOR-3012).
+    expect(SLOT_WAIT_BEAT_MS).toBeLessThan(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS);
+    // The room's default late-reply ceiling is an hour: the wait ends first, so
+    // the room hears the reason rather than giving up on its own.
+    expect(SESSIONS.WARM_SLOT_WAIT_MS).toBeLessThan(60 * 60 * 1000);
     // A process may never outlive the record it belongs to.
     expect(SESSIONS.WARM_IDLE_MS).toBeLessThan(SESSIONS.TIMEOUT_MS);
     // The reaper fires INSIDE the window a person has to answer an approval,

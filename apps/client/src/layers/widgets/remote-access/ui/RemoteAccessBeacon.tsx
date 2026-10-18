@@ -14,6 +14,7 @@ import {
   remoteAccessHeading,
   useRemoteAccess,
 } from '@/layers/entities/tunnel';
+import { RemoteSessionIndicator } from '@/layers/features/web-access';
 import { useConnectRipple } from '../model/use-connect-ripple';
 import { RemoteAccessPanel } from './RemoteAccessPanel';
 
@@ -77,6 +78,12 @@ function beaconLabel(state: string, host: string | null): string {
  * `prefers-reduced-motion` removes every part of that — the breath through
  * `motion-safe:`, the ripple by not rendering it — and the states stay legible
  * because each one is also a colour and a sentence.
+ *
+ * ## Beside it
+ *
+ * The other way in from afar draws here too: {@link RemoteSessionIndicator},
+ * present only while someone is using this computer through chat from the web
+ * (step B3, DOR-2946), on the same terms of drawing nothing otherwise.
  */
 export function RemoteAccessBeacon() {
   const remote = useRemoteAccess();
@@ -158,6 +165,7 @@ export function RemoteAccessBeacon() {
           </ResponsivePopoverContent>
         </ResponsivePopover>
       )}
+      <RemoteSessionIndicator />
     </>
   );
 }

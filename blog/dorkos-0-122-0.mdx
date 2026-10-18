@@ -1,0 +1,45 @@
+---
+title: DorkOS 0.122.0
+description: Every agent gets one Direct chat with you, docs can link to each other, and agents stop waking up for nothing.
+date: 2026-10-18
+author: DorkOS Team
+category: release
+tags: [release, chat, agents, docs]
+---
+
+DorkOS 0.122.0 gives every agent one Direct chat with you, lets docs on the canvas link to each other, and stops agents waking up for nothing.
+
+## Highlights
+
+### One Direct chat per agent
+
+Every agent now has one chat with you, called Direct. Click the agent or a message it sent you, and you land there.
+
+### Docs that link to each other
+
+Type `[[` in a canvas doc to link to another doc in the same folder. This is behind the **Docs** experiment in Settings.
+
+### Fewer needless wake-ups
+
+A failed command during normal work, like a search that finds nothing, no longer wakes an agent for an extra check.
+
+## Known issues
+
+- In a Direct chat, you can't scroll back past the last 50 messages yet. Older messages are still saved.
+- If a teammate's old chat history file is gone, the browser console shows a "not found" error. It is harmless: nothing breaks.
+
+## All Changes
+
+### Added
+
+- Markdown docs on the canvas can now link to each other, behind the new **Docs** experiment in Settings → Advanced → Experiments. Type `[[` to pick another doc from your chat's folder, or write a doc's title or file name between double brackets. Clicking a link opens that doc in the canvas. A link to a doc that doesn't exist yet looks different. It starts working the next time DorkOS reads the folder's docs: after you create or rename a file in the Files panel, save a doc with a new title, or come back to the DorkOS window.
+
+### Changed
+
+- Every agent now has one standing Direct chat with you. Clicking the agent, opening its chat, or tapping a message it sent you all lead there. It always opens as a normal chat, never as a room.
+- Messages an agent sends you while it works elsewhere land in its Direct chat, with an unread dot on the agent. When you answer, the agent sees what it sent you, so "yes, go ahead" makes sense to it.
+- Your old one-on-one direct messages with an agent now open as the start of that agent's Direct chat. Nothing was deleted. A direct message with two or more agents, or with another person, is still a room.
+
+### Fixed
+
+- Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.

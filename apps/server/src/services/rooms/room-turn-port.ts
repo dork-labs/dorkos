@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/room-turn-port
  */
+import type { TurnFailure } from './turn-guards/turn-waits.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -243,8 +244,12 @@ export interface RoomTurnRequest {
 
 /** One reason a turn has stopped and can make no progress without a person. */
 export interface RoomTurnWaiting {
-  /** What sort of answer the turn is parked on; picks the room's words. */
-  kind: WaitingKind;
+  /**
+   * What sort of answer the turn is parked on; picks the room's words. `slot`
+   * is the one that is not a person: every agent on this computer is busy, and
+   * the turn starts when one finishes (DOR-3012).
+   */
+  kind: WaitingKind | 'slot';
   /**
    * The tool an approval is about, when the prompt names one. **For the log
    * only** — see `buildWaitingNotice` on why it is not in the room's copy.
@@ -268,6 +273,12 @@ export interface RoomTurnReply {
   text: string | null;
   /** Set when the room got no answer for a reason a member should see. */
   unanswered?: RoomTurnUnanswered;
+  /**
+   * Why a `failed` turn failed: the runtime's refusal when it never started
+   * (so the room's notice can name it), and a detail for the log either way
+   * (DOR-3012).
+   */
+  failure?: TurnFailure;
 }
 
 /** An answer that arrived after the room stopped waiting for it. */

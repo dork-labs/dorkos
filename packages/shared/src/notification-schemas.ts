@@ -132,6 +132,11 @@ export const NOTIFICATION_KINDS = [
   'connector.destructive_pending',
   /** A held connected-app action ran when its cancel window ended. */
   'connector.destructive_executed',
+  /**
+   * A browser this computer had never seen used chat from the web here, over
+   * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
+   */
+  'web.new_device',
 ] as const;
 
 /** Every kind of notification DorkOS can raise. */

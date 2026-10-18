@@ -41,10 +41,7 @@ import {
   extensionDecisionHistoryBody,
   subjectIdForCopy,
 } from './extension-decision-copy.js';
-import {
-  CONNECTOR_HOLD_ENTRIES,
-  type ConnectorHoldPayloads,
-} from './connector-hold-notifications.js';
+import { DECLARED_ENTRIES, type DeclaredPayloads } from './declared-entries.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -67,7 +64,7 @@ export type RunCompletionStatus = 'completed' | 'failed' | 'blocked';
  * A payload carries ids and short, already-human sentences — never transcript
  * content, tool input, or anything that would be unsafe on a phone lock screen.
  */
-export interface NotificationPayloads extends ConnectorHoldPayloads {
+export interface NotificationPayloads extends DeclaredPayloads {
   /** An agent is parked on something only a person can answer. */
   'ask.pending': {
     sessionId: string;
@@ -1301,8 +1298,9 @@ const ENTRIES: NotificationRegistryMap = {
   },
 
   // An agent's held irreversible action in a connected app, and how it ended
-  // (spec `trusted-by-default-flip` §5.6). Declared beside its emitter.
-  ...CONNECTOR_HOLD_ENTRIES,
+  // (spec `trusted-by-default-flip` §5.6), and a new browser using chat from
+  // the web here (DOR-2946). Declared beside their emitters.
+  ...DECLARED_ENTRIES,
 };
 
 /**
@@ -1374,6 +1372,10 @@ export const NOTIFICATION_REGISTRY_KINDS: readonly NotificationKind[] = NOTIFICA
  * `services/connectors/execution/destructive-hold.ts` around an agent's
  * cancel window — see `connector-hold-notifications.ts`.
  *
+ * `web.new_device` joined them in DOR-2946. It is raised by
+ * `services/core/session-relay/relay-devices.ts` the first time a browser
+ * uses chat from the web here — see `web-device-notifications.ts`.
+ *
  * `schedule.armed_by_agent` joined them in DOR-2739. It is raised by
  * `services/tasks/lifecycle/create-task.ts` when one of our agents makes a
  * schedule on a Trusted install — see `emitters/schedule-armed.ts`.
@@ -1403,6 +1405,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'heartbeat.credits-offer',
   'connector.destructive_pending',
   'connector.destructive_executed',
+  'web.new_device',
 ];
 
 /**
