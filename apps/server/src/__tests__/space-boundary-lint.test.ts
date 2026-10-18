@@ -56,7 +56,9 @@ describe('the space server boundary', () => {
       ].join('\n')
     );
     expect(found).toEqual([
-      expect.stringMatching(/^spaces\/no-reach-in: '\.\.\/spaces\/config\.js' is the space server/u),
+      expect.stringMatching(
+        /^spaces\/no-reach-in: '\.\.\/spaces\/config\.js' is the space server/u
+      ),
     ]);
   });
 });

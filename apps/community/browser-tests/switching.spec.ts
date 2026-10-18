@@ -18,7 +18,10 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../../server/src/services/spaces/app.js';
 import { parseConfig } from '../../server/src/services/spaces/config.js';
 import { migrate } from '../../server/src/services/spaces/migrate.js';
-import { bootstrapFirstHost, responseCookies } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
+import {
+  bootstrapFirstHost,
+  responseCookies,
+} from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)

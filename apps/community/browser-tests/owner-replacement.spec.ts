@@ -39,7 +39,10 @@ import {
   type Owned,
   type ReplacementHost,
 } from '../../server/src/services/spaces/__tests__/owner-replacement-fixture.js';
-import { TENANCY_PASSWORD, type TenancyHarness } from '../../server/src/services/spaces/__tests__/tenancy-test-harness.js';
+import {
+  TENANCY_PASSWORD,
+  type TenancyHarness,
+} from '../../server/src/services/spaces/__tests__/tenancy-test-harness.js';
 
 // Replacing a community owner in a real browser (specs/community-owner-replacement task 3.1,
 // DOR-2542): the host's Owner section with its form and every row state, the owner's banner

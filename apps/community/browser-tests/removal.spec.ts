@@ -19,7 +19,10 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../../server/src/services/spaces/app.js';
 import { parseConfig } from '../../server/src/services/spaces/config.js';
 import { migrate } from '../../server/src/services/spaces/migrate.js';
-import { bootstrapFirstHost, responseCookies } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
+import {
+  bootstrapFirstHost,
+  responseCookies,
+} from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 // Deleting and removing one message or file, in the browser (specs/community-single-item-delete
 // task 1.2): the author's Delete, an admin's Remove within the rank rule, the dialogs' exact

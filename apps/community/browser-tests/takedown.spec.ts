@@ -20,7 +20,10 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../../server/src/services/spaces/app.js';
 import { parseConfig } from '../../server/src/services/spaces/config.js';
 import { migrate } from '../../server/src/services/spaces/migrate.js';
-import { bootstrapFirstHost, responseCookies } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
+import {
+  bootstrapFirstHost,
+  responseCookies,
+} from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 // Host takedowns in the browser (task 1.2 of specs/community-host-takedown): the host page's Take
 // down section with its no-store warning and every evidence state, Try again and Release (with a

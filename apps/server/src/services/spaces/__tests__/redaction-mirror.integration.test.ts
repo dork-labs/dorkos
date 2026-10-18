@@ -23,10 +23,7 @@ import {
 import { logger } from '../../../lib/logger.js';
 import { CommunityAgentEnrollmentStore } from '../../communities/remote/agent-enrollment-store.js';
 import { RemoteConnectionStore } from '../../communities/remote/connection-store.js';
-import {
-  RemoteMirrorStore,
-  type MirrorRoomInput,
-} from '../../communities/remote/mirror-store.js';
+import { RemoteMirrorStore, type MirrorRoomInput } from '../../communities/remote/mirror-store.js';
 import {
   RemoteCommunityAdapter,
   RemoteRedactionFeedUnsupportedError,

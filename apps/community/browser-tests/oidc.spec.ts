@@ -13,7 +13,10 @@ import { createCommunityApp } from '../../server/src/services/spaces/app.js';
 import { parseConfig } from '../../server/src/services/spaces/config.js';
 import { migrate } from '../../server/src/services/spaces/migrate.js';
 import { bootstrapFirstHost } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
-import { startFakeIssuer, type FakeIssuer } from '../../server/src/services/spaces/__tests__/fake-oidc-issuer.js';
+import {
+  startFakeIssuer,
+  type FakeIssuer,
+} from '../../server/src/services/spaces/__tests__/fake-oidc-issuer.js';
 
 // Single sign-on (task 6.2 of specs/community-host-operator-api) in a real browser: the button
 // with the host's label, a full redirect through an in-process fake issuer, joining with an

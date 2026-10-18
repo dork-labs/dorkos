@@ -115,8 +115,12 @@ describe('decisions only narrow', () => {
   it('allows the listed consumers and ignores files that do not import the port', () => {
     const imp = "import { runLadder } from '@dorkos/decisions';";
     expect(violation('apps/server/src/services/spaces/moderation/spam.ts', imp)).toBeUndefined();
-    expect(violation('apps/server/src/services/spaces/content/moderation/hint.ts', imp)).toBeUndefined();
-    expect(violation('apps/server/src/services/spaces/decisions/ladder-run.ts', imp)).toBeUndefined();
+    expect(
+      violation('apps/server/src/services/spaces/content/moderation/hint.ts', imp)
+    ).toBeUndefined();
+    expect(
+      violation('apps/server/src/services/spaces/decisions/ladder-run.ts', imp)
+    ).toBeUndefined();
     expect(violation('apps/server/src/services/decisions/service.ts', imp)).toBeUndefined();
     expect(violation('packages/decisions/src/ladder.ts', imp)).toBeUndefined();
     expect(

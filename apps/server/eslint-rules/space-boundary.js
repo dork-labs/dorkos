@@ -25,13 +25,20 @@ const IMAGE_PACKAGES = new Set(
 
 const inside = (path) => path === SPACES || path.startsWith(SPACES + sep);
 const packageOf = (specifier) =>
-  specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+  specifier
+    .split('/')
+    .slice(0, specifier.startsWith('@') ? 2 : 1)
+    .join('/');
 
 /** Each import, export-from and literal `import()` in a file, with whether it is type-only. */
 function importsOf(visit) {
   const each = (node) => {
     if (node.source?.type === 'Literal' && typeof node.source.value === 'string')
-      visit(node.source, node.source.value, node.importKind === 'type' || node.exportKind === 'type');
+      visit(
+        node.source,
+        node.source.value,
+        node.importKind === 'type' || node.exportKind === 'type'
+      );
   };
   return {
     ImportDeclaration: each,
@@ -46,7 +53,9 @@ export default {
     'stay-inside': {
       meta: {
         type: 'problem',
-        docs: { description: "The space server's code imports only itself and its image's packages." },
+        docs: {
+          description: "The space server's code imports only itself and its image's packages.",
+        },
         schema: [],
         messages: {
           outside:

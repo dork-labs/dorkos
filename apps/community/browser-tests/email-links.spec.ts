@@ -17,7 +17,10 @@ import { emailLinkComposers } from '../../server/src/services/spaces/email-links
 import { resolveEmailLinkRequests } from '../../server/src/services/spaces/email-links/resolver.js';
 import { deliverNextNotice } from '../../server/src/services/spaces/mail/worker.js';
 import { createSmtpTransport } from '../../server/src/services/spaces/mail/transport.js';
-import { startSmtpFake, type SmtpFake } from '../../server/src/services/spaces/__tests__/smtp-fake.js';
+import {
+  startSmtpFake,
+  type SmtpFake,
+} from '../../server/src/services/spaces/__tests__/smtp-fake.js';
 
 // DOR-2710: the forgot-password round trip in a real browser. The sign-in form's "Forgot
 // password?" asks for a link, the mail lands in an in-process SMTP server, the page the link
