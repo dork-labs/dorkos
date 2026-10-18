@@ -53,6 +53,7 @@ export interface WireTeamRoomAndRelayAdaptersInput {
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
   roomService: WireRoomsResult['roomService'];
   resolveOperatorAuthorId: WireRoomsResult['resolveOperatorAuthorId'];
+  directChats: WireRoomsResult['directChats'];
   roomStore: WireRoomsResult['roomStore'];
   roomAuthors: WireRoomsResult['roomAuthors'];
   activityService: WireCoreStoresResult['activityService'];
@@ -77,6 +78,7 @@ export async function wireTeamRoomAndRelayAdapters(
     dorkHome,
     roomService,
     resolveOperatorAuthorId,
+    directChats,
     roomStore,
     roomAuthors,
     activityService,
@@ -246,6 +248,7 @@ export async function wireTeamRoomAndRelayAdapters(
         authors: roomAuthors,
         mesh: refs.meshCore,
         operatorAuthorId: resolveOperatorAuthorId,
+        directChats,
         logger,
       }
     : undefined;

@@ -195,7 +195,7 @@ test.describe('Rooms in the command palette @smoke', () => {
       '🦦',
       '#3b82f6'
     );
-    const dm = await roomsApi.createDirectMessage(agent.name, [agent]);
+    await roomsApi.createDirectMessage(agent.name, [agent]);
 
     await openCockpit(basePage);
     const palette = await openCommandPalette(page);
@@ -218,9 +218,8 @@ test.describe('Rooms in the command palette @smoke', () => {
     await expect(palette.searchHandoff).toHaveCount(1);
     await expect(palette.searchHandoff).toContainText(agent.name);
 
+    // A DM with one agent opens as that agent's Direct chat (rule S12).
     await conversation.click();
-    await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${dm.id}`), {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
+    await expect(page).toHaveURL(/\/session\?/, { timeout: SERVER_ROUND_TRIP_MS });
   });
 });

@@ -726,7 +726,6 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     context,
     roomTurn,
     seedContext,
-    approvalVerdict,
     systemPromptAppend,
     additionalDirectories,
     accountHint,
@@ -852,7 +851,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       clientContext: context,
       ...(roomContext ? { roomContext } : {}),
       ...(seedContext ? { seedContext } : {}),
-      ...(approvalVerdict ? { approvalVerdict } : {}),
+      ...(opts.approvalVerdict ? { approvalVerdict: opts.approvalVerdict } : {}),
+      // A turn on an agent's Direct chat takes what reached it elsewhere (rule S12).
+      directNotesFor: [turnKey, sessionId],
       nativeContext: deps.getCapabilities().nativeContext,
     });
     // Nothing below may open a turn while this session still has one open

@@ -23,6 +23,7 @@ import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
+import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
@@ -169,6 +170,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
       return formatContextWarning(entry.data, 'codex');
     case 'approval_verdict':
       return formatApprovalVerdict(entry.data);
+    case 'direct_notes':
+      return formatDirectNotes(entry.data);
     case 'room_context':
       // The prefix Codex qualifies plugin-provided MCP tools with, so the
       // tool-only closing directive can name the posting tool rather than

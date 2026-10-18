@@ -18,15 +18,14 @@
  *    been in is eligible by the ordinary interaction rule; one they have never
  *    opened — the line an agent started itself — is eligible on its directed
  *    unread alone (`select-today-items.ts`, reason `today:dm-suppressed-unread`).
- *    That row is the room's own row, so clicking it opens the conversation, not
- *    the session.
+ *    Clicking it opens the agent's Direct chat (rule S12): the room's address
+ *    redirects there.
  * 2. **A notification**, for the same message, through the one notification
  *    system (DOR-1388) — which is what reaches somebody who is not looking at
  *    the panel at all.
  * 3. **The agent's row carries a dot** while its suppressed DM has a directed
- *    unread. A secondary signal on purpose: clicking the agent still opens its
- *    session, because that is the one door. The dot says "there is something
- *    over here"; Today is where it is.
+ *    unread, and clicking the agent opens its Direct chat, where the message is
+ *    (rule S12, DOR-2997).
  * 4. **⌘K and the agent's profile** find it any time, unread or not.
  *
  * Every step but the last is gated on the unread, so a read conversation goes
@@ -34,48 +33,13 @@
  *
  * @module features/dashboard-sidebar/model/rules/hand-made-dm
  */
-import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, oneToOneDmAgentRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+
+export { oneToOneDmAgentRef };
 import type { SidebarUnread } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
 import { deriveUnreadSignal } from './derive-unread-signal';
-
-/** How many people a one-to-one holds: the operator, and the one agent. */
-const ONE_TO_ONE_ROSTER_SIZE = 2;
-
-/**
- * The stable handle of the one agent a hand-made 1:1 direct message is with, or
- * `null` when this room is not one.
- *
- * Three things must all be true, and each rules out a room that is genuinely a
- * second place rather than a second door:
- *
- * - **It is a direct message.** A channel is a room whatever its roster.
- * - **Its roster is one agent and the operator, and nobody else.** Two agents is
- *   a group message — a conversation with no session behind it.
- * - **It is not bridged.** A bridged private chat is a Telegram or Slack chat
- *   projected in; its other end is a person somewhere else, and there is no
- *   session that is the same conversation. It keeps its row.
- *
- * An agent that opened the line itself (`relay_notify_user`) is this same shape
- * and follows the same rule, on purpose: the point is that the agent already has
- * a row, not that the operator started it.
- *
- * @param room - The room to judge.
- */
-export function oneToOneDmAgentRef(room: RoomSummary): string | null {
-  if (room.kind !== 'dm') return null;
-  // Absent and `null` both mean "not bridged" — `GET /api/rooms` resolves this
-  // field for every room it lists, and a fixture that omits it is describing an
-  // ordinary room.
-  if (room.bridge != null) return null;
-  const roster = room.participants;
-  if (roster == null || roster.length !== ONE_TO_ONE_ROSTER_SIZE) return null;
-  const agents = roster.filter((author) => author.kind === 'agent');
-  const people = roster.filter((author) => author.kind === 'human');
-  if (agents.length !== 1 || people.length !== 1) return null;
-  return agents[0].agentRef ?? null;
-}
 
 /**
  * Agent `projectPath` by the handle a roster names it with — one hash per agent,

@@ -51,6 +51,12 @@ export function lastInteractionAt(row: SidebarRowModel, state: SidebarState): nu
   return latest;
 }
 
+/** The later of two times, either of which may be unknown. */
+function latest(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b === null ? a : Math.max(a, b);
+}
+
 /**
  * Whether a row is exempt from the soft cap.
  *
@@ -86,7 +92,7 @@ export function orderToday(
   const rollups = rows.filter((row) => row.target.kind === 'rollup');
   const ordered = rows
     .filter((row) => row.target.kind !== 'rollup')
-    .map((row) => ({ row, at: lastInteractionAt(row, state) }))
+    .map((row) => ({ row, at: latest(lastInteractionAt(row, state), epochMs(row.activityAt)) }))
     .sort((a, b) => {
       const atA = a.at ?? Number.NEGATIVE_INFINITY;
       const atB = b.at ?? Number.NEGATIVE_INFINITY;

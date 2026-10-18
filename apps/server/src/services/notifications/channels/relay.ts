@@ -69,6 +69,12 @@ export interface RelayDeliveryRequest {
   channel?: string;
   /** Whether a DorkOS DM is an acceptable landing place when nothing external resolves. */
   dmFallback?: boolean;
+  /**
+   * The session the note was written from, when a turn wrote it. A DM note
+   * records it, so the agent's Direct chat does not show it a second time
+   * beside the turn that sent it (rule S12).
+   */
+  fromSessionId?: string;
   /** Relay-pipeline budget for the publish itself. */
   publishBudget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
 }
@@ -85,7 +91,7 @@ export type RelayDeliveryOutcome =
       messageId?: string;
       deliveredTo: number;
     }
-  | { ok: true; surface: 'dorkos-dm'; roomId: string; entryId: string }
+  | { ok: true; surface: 'dorkos-dm'; roomId: string; entryId: string; directChatId?: string }
   | { ok: false; reason: 'RELAY_DISABLED' }
   | { ok: false; reason: 'BINDINGS_DISABLED' }
   | { ok: false; reason: 'NOT_OPTED_IN'; bindingId: string; adapterId: string }
@@ -220,7 +226,20 @@ export async function deliverOverRelay(
  * refused the write (already logged by `deliverNotifyDm`).
  */
 function tryDm(notifyDm: NotifyDmDeps, request: RelayDeliveryRequest): RelayDeliveryOutcome | null {
-  const outcome = deliverNotifyDm({ agentId: request.agentId, message: request.message }, notifyDm);
+  const outcome = deliverNotifyDm(
+    {
+      agentId: request.agentId,
+      message: request.message,
+      ...(request.fromSessionId && { sessionId: request.fromSessionId }),
+    },
+    notifyDm
+  );
   if (!outcome.ok) return null;
-  return { ok: true, surface: 'dorkos-dm', roomId: outcome.roomId, entryId: outcome.entryId };
+  return {
+    ok: true,
+    surface: 'dorkos-dm',
+    roomId: outcome.roomId,
+    entryId: outcome.entryId,
+    ...(outcome.directChatId && { directChatId: outcome.directChatId }),
+  };
 }

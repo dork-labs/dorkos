@@ -2647,6 +2647,68 @@
           "releaseAt"
         ]
       },
+      "DirectChat": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The session to open in the 1:1 view. Created the first time anything needs it."
+          },
+          "sessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every id that session has held, current first. The room's entries keep the id their turn ran under, so this is how a reader tells which of them the session already shows."
+          },
+          "roomId": {
+            "type": "string",
+            "description": "The direct message underneath it, which holds the pings and older messages. Never shown as a room."
+          },
+          "agentPath": {
+            "type": "string",
+            "description": "The agent's directory."
+          }
+        },
+        "required": [
+          "sessionId",
+          "sessionIds",
+          "roomId",
+          "agentPath"
+        ]
+      },
+      "OpenDirectChatRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "agentPath": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The agent's directory, as Mesh registered it."
+              }
+            },
+            "required": [
+              "agentPath"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "roomId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A direct message holding only the person and one agent. Any other room is refused with NOT_A_DIRECT_CHAT, because it opens as a room."
+              }
+            },
+            "required": [
+              "roomId"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -29738,6 +29800,127 @@
                     "error",
                     "code"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/direct-chats": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Open an agent's Direct chat",
+        "description": "An agent's Direct chat is its standing one-to-one with the person who owns DorkOS. You plus one agent always opens the 1:1 view, so this names the chat to open for one agent, made the first time anything needs it. Name the agent by its directory, or name a direct message that holds only the person and one agent. The direct message underneath keeps the pings and older messages, and is never shown as a room. Safe to call again: the same agent always gets the same chat, until its direct message gains another member.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenDirectChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Direct chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectChat"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body named neither an agent nor a room",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, or a person other than the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No registered agent lives in that directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That room is not the owner’s two-member direct message with one agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/direct-chats/by-session/{sessionId}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Whether a chat is an agent’s Direct chat",
+        "description": "Whether this chat is an agent's Direct chat, and if so the direct message underneath it, so the 1:1 view can show the messages that reached it from elsewhere. Owner only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Direct chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectChat"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, or a person other than the owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "This chat is not a Direct chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

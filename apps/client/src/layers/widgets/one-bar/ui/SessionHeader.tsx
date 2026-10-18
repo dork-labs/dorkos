@@ -1,5 +1,6 @@
 import { ChevronRight, Folder } from 'lucide-react';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { DIRECT_CHAT_TITLE, useDirectChat } from '@/layers/entities/room';
 import {
   getOriginDescriptor,
   SessionOriginMark,
@@ -18,7 +19,8 @@ import { OneBar } from './OneBar';
  * said which of your forty conversations you were reading. The identity is the
  * agent's face and name, then the session's own title (D1).
  *
- * **Nothing is fetched here.** The agent, its visual, the title and the origin
+ * **Nothing is fetched here** but whether this is an agent's Direct chat, a
+ * cached read the chat panel already holds. The agent, its visual, the title and the origin
  * are all resolved once by the shell and ride `useOneBarState` — the title is
  * the same runtime-owned string the sidebar rows render, out of the same cache
  * and through the same {@link sessionDisplayTitle} helper, so the bar cannot
@@ -55,7 +57,10 @@ export function SessionHeader() {
     agentName,
     agentVisual
   );
-  const descriptor = getOriginDescriptor(origin);
+  // An agent's Direct chat is always called "Direct", never renamed, and its
+  // DM is not an origin worth naming: it is this chat (rule S12).
+  const { data: directChat } = useDirectChat(sessionId ?? null);
+  const descriptor = directChat ? undefined : getOriginDescriptor(origin);
   const originText = originLabel ?? descriptor?.label;
   // A room's own `originLabel` already carries its `#` — `room-store.ts`'s
   // `resolveRoomOrigins` follows the same rule `roomDisplayTitle` does — and
@@ -77,7 +82,7 @@ export function SessionHeader() {
   // hash-a-face-from-cwd fallback is deliberately NOT reached for: a face
   // implies an agent.
   const name = heldName ?? sessionDirectoryName ?? 'Chat';
-  const title = sessionDisplayTitle(sessionTitle ?? '');
+  const title = directChat ? DIRECT_CHAT_TITLE : sessionDisplayTitle(sessionTitle ?? '');
 
   return (
     <OneBar

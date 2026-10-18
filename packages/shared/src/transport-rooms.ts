@@ -36,6 +36,8 @@ import type {
   CanvasEditingResponse,
   CanvasThreadResponse,
   CreateRoomRequest,
+  DirectChat,
+  OpenDirectChatRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
   ListRoomEntriesQuery,
@@ -464,6 +466,20 @@ export interface RoomTransport {
    * @param id - The room to ask about.
    */
   listRoomSessions(id: string): Promise<RoomSessionsResponse>;
+  /**
+   * Open an agent's Direct chat, its standing 1:1 with the person (rule S12):
+   * by agent, or by a direct message holding only the person and one agent.
+   * Made the first time anything asks.
+   *
+   * @param req - The agent's Mesh id, or the room.
+   */
+  openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat>;
+  /**
+   * The Direct chat this session is, or `null` when it is not one.
+   *
+   * @param sessionId - The session on screen.
+   */
+  findDirectChat(sessionId: string): Promise<DirectChat | null>;
   /**
    * Put one emoji on one entry, or take it back.
    *

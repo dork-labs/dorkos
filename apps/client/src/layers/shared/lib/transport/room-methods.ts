@@ -23,6 +23,8 @@ import {
   type PublishRoomViewResponse,
   type RoomSignalView,
   type CreateRoomRequest,
+  type DirectChat,
+  type OpenDirectChatRequest,
   type HaltRoomResponse,
   type PromoteHoldResponse,
   type ListRoomEntriesQuery,
@@ -421,6 +423,31 @@ export function createRoomMethods(baseUrl: string) {
      */
     listRoomSessions(id: string): Promise<RoomSessionsResponse> {
       return fetchJSON<RoomSessionsResponse>(baseUrl, `/rooms/${id}/sessions`);
+    },
+
+    /** Open an agent's Direct chat (rule S12), made on first need. */
+    openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat> {
+      return fetchJSON<DirectChat>(baseUrl, '/direct-chats', {
+        method: 'POST',
+        body: JSON.stringify(req),
+      });
+    },
+
+    /**
+     * The Direct chat this session is, or `null`: a 404 is an ordinary answer,
+     * and so is a 403 — only the owner has Direct chats.
+     */
+    async findDirectChat(sessionId: string): Promise<DirectChat | null> {
+      try {
+        return await fetchJSON<DirectChat>(
+          baseUrl,
+          `/direct-chats/by-session/${encodeURIComponent(sessionId)}`
+        );
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 404 || status === 403) return null;
+        throw err;
+      }
     },
 
     /**

@@ -26,6 +26,7 @@ import {
   prefs,
   quietFixture,
   room,
+  session,
 } from '../fixtures';
 import {
   AGENT_ROW_FLOOR,
@@ -1059,6 +1060,40 @@ describe('D2 — one door to an agent', () => {
     expect(row?.reason).toBe('today:dm-suppressed-unread');
     expect(row?.target).toMatchObject({ kind: 'room', roomId: 'dm-ana', roomKind: 'dm' });
     expect(row?.unread).toEqual({ tier: 'directed', count: 1 });
+  });
+
+  it('draws an agent’s Direct chat once, as its DM, moved up by its newest ping or turn (S12)', () => {
+    // The session under the Direct chat never draws a second row: opening it
+    // counts as opening the DM, and its newest activity is the DM row's place.
+    const state = cockpit(
+      [
+        room({
+          id: 'dm-ana',
+          kind: 'dm',
+          title: 'Ana',
+          participants: [operator, agentAuthor(ANA, 'Ana')],
+          lastActivityAt: hoursAgo(0.2),
+        }),
+      ],
+      {
+        sessions: [
+          session({
+            id: 'direct-ana',
+            title: 'Direct',
+            cwd: ANA,
+            origin: 'room',
+            originRoomId: 'dm-ana',
+            updatedAt: hoursAgo(0.1),
+          }),
+          session({ id: 'work', title: 'Older work', cwd: ANA }),
+        ],
+        interactions: { 'session:direct-ana': hoursAgo(5), 'session:work': hoursAgo(1) },
+      }
+    );
+    const keys = todayRowsOf(state).map((row) => row.key);
+    expect(keys).not.toContain('session:direct-ana');
+    expect(keys).toContain('room:dm-ana');
+    expect(keys.indexOf('room:dm-ana')).toBeLessThan(keys.indexOf('session:work'));
   });
 
   it('drops out of Today once it has been read', () => {

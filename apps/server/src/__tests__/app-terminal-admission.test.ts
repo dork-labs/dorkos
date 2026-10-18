@@ -307,7 +307,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/sign-in-landings');
     // 77 -> 78: the docs in a space, for wiki links (DOR-2982).
     expect(mounts).toContain('/api/documents');
-    expect(mounts).toHaveLength(78);
+    // 78 -> 79: each agent's Direct chat (rule S12, DOR-2997).
+    expect(mounts).toContain('/api/direct-chats');
+    expect(mounts).toHaveLength(79);
     const byHand = [
       '/',
       '/x/fixture',

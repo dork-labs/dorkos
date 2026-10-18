@@ -91,7 +91,7 @@
     "apps/server/src/services/rooms/room-store.ts": 950,
     "apps/server/src/services/rooms/room-turn-runner.ts": 536,
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1074,
-    "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts": 513,
+    "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts": 510,
     "apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts": 542,
     "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 767,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 743,
@@ -144,7 +144,7 @@
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1337,
+    "packages/test-utils/src/mock-factories.ts": 1332,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
     "packages/test-utils/src/runtime-conformance.ts": 2432
   }

@@ -24,6 +24,9 @@ import {
 import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import type { AuthorOrigin } from './room-schemas.js';
 import { UiStateSchema, type UiState } from './schemas.js';
+import { DirectNotesDataSchema, type DirectNotesData } from './direct-notes-context.js';
+
+export type { DirectNote, DirectNotesData } from './direct-notes-context.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
 export type ContextKind =
@@ -36,6 +39,7 @@ export type ContextKind =
   | 'room_context'
   | 'seed_context'
   | 'approval_verdict'
+  | 'direct_notes'
   | 'accounts_access'
   | 'doc_events'
   | 'context_warning';
@@ -953,6 +957,7 @@ export type AdditionalContextEntry =
   | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData }
   | { kind: 'seed_context'; scope: 'per-turn'; data: SeedContextData }
   | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData }
+  | { kind: 'direct_notes'; scope: 'per-turn'; data: DirectNotesData }
   | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData }
   | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData };
 
@@ -988,6 +993,7 @@ export const CONTEXT_TAG = {
   room_context: 'room_context',
   seed_context: 'seed_context',
   approval_verdict: 'approval_verdict',
+  direct_notes: 'direct_notes',
   accounts_access: 'accounts_access',
   doc_events: 'doc_events',
   context_warning: 'context_warning',
@@ -1352,6 +1358,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('approval_verdict'),
     scope: z.literal('per-turn'),
     data: ApprovalVerdictDataSchema,
+  }),
+  z.object({
+    kind: z.literal('direct_notes'),
+    scope: z.literal('per-turn'),
+    data: DirectNotesDataSchema,
   }),
   z.object({
     kind: z.literal('context_warning'),

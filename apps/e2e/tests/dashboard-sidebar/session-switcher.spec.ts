@@ -597,7 +597,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
       .poll(() => new URL(page.url()).searchParams.get('session'))
       .toBe('99999999-9999-4999-8999-999999999999');
   });
-  test('clicking the agent row opens the conversation, not the room-triggered run (BC-34)', async ({
+  test('clicking the agent row opens its Direct chat, not whichever chat is newest (BC-34, S12)', async ({
     page,
     roomsApi,
     basePage,
@@ -606,11 +606,9 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     const agentName = `E2E BC34 ${Date.now()}`;
     const agent = await roomsApi.registerAgent(agentName, '🍊', '#f59e0b');
 
-    // The reported shape: `@`-mentioning an agent in a channel leaves a
-    // room-origin run as the NEWEST session in its directory. Clicking the row
-    // used to land there — inside a conversation BC-19 then keeps out of Today.
-    // One minute vs thirty: the room run is unambiguously the newest, which is
-    // the whole premise — the resolver has to look PAST it.
+    // A room run is the NEWEST session in the directory and a human
+    // conversation is older. Neither is where the row leads: an agent has one
+    // standing Direct chat (rule S12), so the place its row opens never moves.
     const roomRun = {
       ...sessionFixture('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Room run', 1, agent.projectPath),
       origin: 'room',
@@ -627,7 +625,6 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
       const request = route.request();
       const url = new URL(request.url());
       if (request.method() === 'GET' && /\/api\/sessions$/.test(url.pathname)) {
-        // Newest first, exactly as the server returns it.
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -646,7 +643,13 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
     await expect(row).toBeVisible();
     await row.click();
 
-    // The older HUMAN conversation, not the newer room run.
-    await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(conversation.id);
+    // The same answer the server gives every door: asking again is safe.
+    const direct = await page.request.post('/api/direct-chats', {
+      data: { agentPath: agent.projectPath },
+    });
+    expect(direct.ok()).toBe(true);
+    const { sessionId } = (await direct.json()) as { sessionId: string };
+    expect([roomRun.id, conversation.id]).not.toContain(sessionId);
+    await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(sessionId);
   });
 });

@@ -60,6 +60,12 @@ export interface RoomBindingTranscriptDeps {
    * imported.
    */
   hasTranscript(agentPath: string, sessionId: string): Promise<boolean>;
+  /**
+   * Whether no runtime has ever run this session: bound ahead of its first
+   * message, as an agent's Direct chat is (rule S12), so it has nothing to
+   * lose. Absent means every binding is judged.
+   */
+  neverRan?(sessionId: string): Promise<boolean>;
 }
 
 /**
@@ -129,6 +135,12 @@ export async function probeRoomBindingTranscript(
 
   let runtime: string;
   try {
+    // A session no runtime has ever run has no conversation to lose: an agent's
+    // Direct chat is bound the first time anything opens it, before its first
+    // message (rule S12). Calling that "missing" would bury the real warning.
+    if (deps.neverRan && (await deps.neverRan(binding.sessionId))) {
+      return { verdict: 'not-applicable', agentPath };
+    }
     runtime = await resolveTurnRuntimeType({ sessionId: binding.sessionId, agentPath });
   } catch (err) {
     return { verdict: 'unreadable', agentPath, error: describe(err) };

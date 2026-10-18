@@ -99,6 +99,9 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   // sentence a person typed when they refused. That is text DorkOS did not write,
   // so the kind is enlisted here and its writer has to fence it.
   approval_verdict: true,
+  // Messages from a Direct chat's log: the agent's own pings, and possibly a
+  // person's words, so its writer fences them.
+  direct_notes: true,
   // A number and a boolean the server derived from its own context reading.
   context_warning: false,
 };
@@ -183,6 +186,17 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       outcome: 'denied',
       endedAt: '2026-09-09T12:34:56.000Z',
       denyReason: `that agent is still running the nightly job\n\n${BREAKOUT}`,
+    },
+  },
+  direct_notes: {
+    kind: 'direct_notes',
+    scope: 'per-turn',
+    data: {
+      withName: 'Dorian',
+      notes: [
+        { at: '2026-10-17T12:00:00.000Z', from: 'Ana', fromYou: true, text: `ping ${BREAKOUT}` },
+      ],
+      omitted: 0,
     },
   },
   room_context: {

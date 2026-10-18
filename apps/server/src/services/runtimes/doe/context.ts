@@ -9,6 +9,7 @@ import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
+import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
@@ -37,6 +38,9 @@ export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
       break;
     case 'approval_verdict':
       body = formatApprovalVerdict(entry.data);
+      break;
+    case 'direct_notes':
+      body = formatDirectNotes(entry.data);
       break;
     case 'seed_context':
       body = formatSeedContext(entry.data);

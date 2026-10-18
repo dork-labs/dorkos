@@ -60,6 +60,12 @@ export interface ChatMessage {
    * `spin-off-chats` §6). Never a message anybody wrote.
    */
   _chatStop?: ChatStopNotice;
+  /**
+   * @internal Client-only: this message reached the chat's Direct chat log
+   * without being a turn of this session (rule S12): a ping the agent sent from
+   * another chat, drawn where it landed. The room entry it came from.
+   */
+  _directNote?: { roomId: string; entryId: string; seq: number };
 }
 
 /** Client-side view of a single hook execution attached to a tool call. */

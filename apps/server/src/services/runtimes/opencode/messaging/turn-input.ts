@@ -29,6 +29,7 @@ import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
+import { formatDirectNotes } from '../../shared/prose/direct-notes-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 
@@ -91,6 +92,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
       return formatContextWarning(entry.data, 'opencode');
     case 'approval_verdict':
       return formatApprovalVerdict(entry.data);
+    case 'direct_notes':
+      return formatDirectNotes(entry.data);
     case 'room_context':
       // OpenCode builds `sanitize(server) + "_" + sanitize(tool)` rather than
       // the `mcp__server__tool` the other two use, so the tool-only closing

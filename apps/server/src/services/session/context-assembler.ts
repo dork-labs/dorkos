@@ -24,11 +24,13 @@ import type {
   ApprovalVerdictData,
   ClientContext,
   ContextKind,
+  DirectNotesData,
   GitStatusData,
   RoomContextData,
 } from '@dorkos/shared/additional-context';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { getGitStatus } from '../core/git-status.js';
+import { logger } from '../../lib/logger.js';
 
 /** Inputs for {@link assembleAdditionalContext}. */
 export interface AssembleContextOpts {
@@ -66,6 +68,13 @@ export interface AssembleContextOpts {
    * the one place that reads a verdict off the store.
    */
   approvalVerdict?: ApprovalVerdictData;
+  /**
+   * The ids of the session this turn runs on, when it may be an agent's Direct
+   * chat (rule S12). What reached that chat without being a turn here is taken
+   * from the room log underneath it, never from a caller. A room turn reads its
+   * room through `roomContext` instead and takes none.
+   */
+  directNotesFor?: readonly string[];
   /**
    * Kinds the target runtime injects itself (from `getCapabilities().nativeContext`)
    * — omitted from the bag to avoid double-injection.
@@ -146,6 +155,8 @@ function clampSeed(text: string): string {
  * - `approval_verdict`: added when a late approval answer is being delivered to
  *   this session. The sixth kind that flows, and the only one that is not about
  *   the turn's own circumstances at all — it IS the reason the turn exists.
+ * - `direct_notes`: added when this session is an agent's Direct chat and
+ *   messages reached it without being turns here (rule S12, DOR-2997).
  * - `context_warning`: NOT emitted here. It is owed by the session, not derived
  *   from this turn's inputs, and must be TAKEN exactly once, so `triggerTurn`
  *   takes it beside the staged-context fold (`agent-compaction/context-warning.ts`, DOR-2732).
@@ -190,6 +201,12 @@ export async function assembleAdditionalContext(
     bag.push({ kind: 'approval_verdict', scope: 'per-turn', data: approvalVerdict });
   }
 
+  const takesNotes = opts.directNotesFor && !roomContext && !omits('direct_notes');
+  const directNotes = takesNotes ? takeDirectNotes(opts.directNotesFor ?? []) : undefined;
+  if (directNotes) {
+    bag.push({ kind: 'direct_notes', scope: 'per-turn', data: directNotes });
+  }
+
   return bag;
 }
 
@@ -203,4 +220,52 @@ export function appendDocEventsContext(
     scope: 'per-turn',
     data: CanvasChannelDocEventsContextSchema.parse(data),
   });
+}
+
+// === Direct chat notes (rule S12, DOR-2997) ===
+//
+// A Direct chat is an agent's standing 1:1 with the person, and the rooms
+// domain owns the log underneath it. The rooms subsystem wires the answer to
+// "did anything reach this session's Direct chat that it has not seen?" at
+// startup, the way it wires `setRoomMessageLookup`, so this layer never
+// imports the rooms store. Taking is a write: it moves the agent's read cursor
+// past what it hands back, so a message reaches exactly one turn.
+
+/** Takes what this session's Direct chat holds that the session has not seen, or null. */
+export type DirectNotesSource = (sessionId: string) => DirectNotesData | null;
+
+let source: DirectNotesSource | undefined;
+
+/**
+ * Wire the rooms domain's source. Called once by the rooms subsystem at
+ * startup; `undefined` unwires it.
+ *
+ * @param next - The source.
+ */
+export function setDirectNotesSource(next: DirectNotesSource | undefined): void {
+  source = next;
+}
+
+/**
+ * The notes this turn should carry, or `undefined` when there are none.
+ *
+ * Never throws: a note is background, and a turn must not fail over it.
+ *
+ * @param sessionIds - The ids this turn answers to, most canonical first.
+ */
+export function takeDirectNotes(sessionIds: readonly string[]): DirectNotesData | undefined {
+  if (!source) return undefined;
+  const ids = [...new Set(sessionIds)];
+  try {
+    for (const id of ids) {
+      const notes = source(id);
+      if (notes) return notes;
+    }
+  } catch (err) {
+    logger.warn('[DirectNotes] could not read a Direct chat for a turn', {
+      sessionIds: ids,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return undefined;
 }
