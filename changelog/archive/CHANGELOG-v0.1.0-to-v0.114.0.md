@@ -1,7 +1,56 @@
-# Changelog archive: v0.1.0 – v0.111.0
+# Changelog archive: v0.1.0 – v0.114.0
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.114.0] - 2026-10-13
+
+> DorkOS 0.114.0 makes the app fast again when your agents are busy: switching agents and tabs no longer freezes, and messages send without timing out. Mini apps can now show only where you choose, and agents work without the old posting limits, while turns started by strangers stay limited.
+
+### Added
+
+- Choose where a mini app's right-panel tab shows: everywhere, or only beside the agents, channels and pages you pick. Set it in Settings → Extensions under **Panel tab shows** (DOR-2867)
+- Hide a mini app's tab in a channel, in chats with one agent, or on one page with **Hide here** in the panel's **⋯** menu, and bring a hidden one back with **Show here** (DOR-2867)
+- Open a mini app's full page straight from its panel tab, with **Open full page** in the same menu (DOR-2867)
+- Mini apps can say where their tab belongs by default with `showIn`, and agents can set where a tab shows for you (DOR-2867)
+- Reach your mini apps' pages (the app calls them extensions) from the new Add-ons section at the bottom of the sidebar. Each page shows its own name and icon, and the one you are on is marked. It stays there when you open a space. On a phone it is in the All tab (DOR-2868)
+- A `DORKOS_CLOUD_API_URL` setting, to send only those requests somewhere else
+- The website now counts desktop app downloads, including ones from links on other sites. Each count carries a random one-time ID, no cookie and not your IP address, and none is made when your browser asks not to be tracked. The privacy page says so.
+- Try a separate Linux desktop through the **Agent computer** experiment on Apple Silicon Macs. Turn it on in **Settings → Experiments**, then open **Team**. View the desktop, take control, and stop it without losing its saved files. The experiment is off by default; live account sign-in and agent replies are not yet confirmed.
+- After your first run sets up an AI, the sidebar offers to join the DorkOS community, right after it asks your name and your work. Join opens the join form with the address filled in, and Not now hides it for good. It appears only once the community space exists (DOR-2873)
+- The person running a Community server can open sign-up only to people who live in certain countries, with `COMMUNITY_ALLOWED_COUNTRIES` (for example `US`). Everyone who creates an account then ticks a box that says "I live in the United States" first, whether they sign up with a password, Google, GitHub, or single sign-on, or join an open space. People who already have an account are never asked. A server behind a proxy that adds each visitor's country can also set `COMMUNITY_COUNTRY_HEADER`, so a sign-up from a country outside the list is turned away. Leave both unset and nothing changes (DOR-2847)
+
+### Changed
+
+- Agents now have the same freedom as people in rooms and notes. An agent can post as many messages in one turn as it needs, change a room's canvas more than three times in one turn, react more than 20 times an hour and send you more than 10 notes an hour. Agents are still asked to keep it short, and everything they post stays in the room for you to read. The safeguards that stop agents replying to each other forever are unchanged (DOR-2739)
+- The `rooms.maxPostsPerTurn` and `rooms.maxCanvasOpsPerTurn` settings are gone. Upgrading removes them from your config file (DOR-2739)
+- The "Running unattended at full power" banner is gone, and so is the Control Center line that said the same thing. Full power is the normal way agents work now (DOR-2739)
+- Saving a task or approving a schedule at Full autonomy no longer opens a confirmation first. Setting a Telegram or Slack connection to Full autonomy still asks, because strangers can message that chat (DOR-2739)
+- `dorkos task create` no longer prints a "Runs at full power" line (DOR-2739)
+- When someone outside your team starts a turn, for example with a Telegram or Slack message, that turn can post at most three messages in rooms and send you at most three notes. Your own agents' turns are never counted. A Codex or OpenCode agent posting into a room other than the one it is answering is not counted yet (DOR-2739)
+
+### Removed
+
+- The Add-ons list in the phone's You tab is gone. Find those pages under Add-ons in the All tab instead (DOR-2868)
+
+### Fixed
+
+- On a fresh install, requests for DorkOS credits, your balance and your plan now go to the DorkOS Cloud service. They went to the dorkos.ai website, which can't answer them, so every one failed (DOR-2673)
+- A brand-new install no longer says "While you were away" a few seconds after setup. Your first daily summary arrives the morning after you set DorkOS up.
+- On your first day, the sidebar shows one "Getting started" list instead of two. The card at the bottom waits until the list at the top is done, and the questions about your name and your work still get asked meanwhile.
+- Your first chat with DorkBot is listed under DorkBot's name, not "Session". A chat with no known agent now says "Chat".
+- One unfinished upload no longer keeps a deleted space stuck "deleting" for good. The server now waits at most a day for such an upload, then finishes removing the space.
+- A space server's log now says when a space is more than two days past its deletion date and still not gone.
+- One chat the app can't read no longer empties your recent chats list. That one chat is left out, and the rest of the list shows as usual.
+- When a space holds your message (you're muted, slow mode is on, or you haven't accepted the rules yet) and you send it again, its files are no longer uploaded a second time. The files you already uploaded go with it. This works in the DorkOS app and on the space's web page, even if you edit the message first.
+- A Codex or OpenCode chat started in an agent's folder now answers. Before, every message failed with "couldn't confirm this chat can use connected apps", and trying again never helped. When a chat has no recorded agent, it runs without connected apps instead.
+- While a space is on hold, you can now accept its rules from the DorkOS app, just as you already could on the space's web page. Accepting the rules changes nothing anyone else sees, so a hold doesn't stop it.
+- DorkOS no longer slows to a crawl while your agents are working. When any chat changed, every open window asked again for every agent's chats, and those requests piled up until switching tabs or agents took seconds and messages failed to send. The app now asks at most once every few seconds, asks that arrive together share one answer, and a new chat still shows up in your recent chats right away.
+- If someone asks to take over a space you own, DorkOS now tells you even while spaces are switched off. It checks in the background about once an hour.
+- DorkOS no longer slows down or freezes when you have a lot of Codex history. Switching agents and tabs stays quick, and messages send without timing out.
+- Opening a chat no longer searches every Claude project folder on your computer each time. DorkOS remembers where each chat lives after the first look, and checks the folder you opened it from first. On a computer with many projects and several Claude accounts, this saves a noticeable pause on every chat you open (DOR-2892)
+- The app stays quick while your agents work. Each time an agent wrote to a chat, DorkOS re-read that project's chats and rebuilt your Recent list from scratch, over and over. Now a chat that is being written to updates its row every few seconds, and the Recent list is rebuilt only when a chat is added or removed. A chat that an agent writes to without pausing now keeps its row up to date, instead of freezing until the agent stops (DOR-2893)
+- DorkOS no longer reads through your chats every five minutes for nothing. A background check listed all of them to clean up the canvas of deleted chats, even when no chat had been deleted. Now it only looks when there is something to clean up (DOR-2905)
 
 ## [0.111.0] - 2026-10-12
 
@@ -7054,6 +7103,7 @@ See [changelog/README.md](../README.md) for the fragment workflow.
 [0.83.0]: https://github.com/dork-labs/dorkos/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/dork-labs/dorkos/compare/v0.81.0...v0.82.0
 [0.81.0]: https://github.com/dork-labs/dorkos/compare/v0.76.0...v0.81.0
+[0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
 [0.111.0]: https://github.com/dork-labs/dorkos/compare/v0.110.0...v0.111.0
 [0.110.0]: https://github.com/dork-labs/dorkos/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/dork-labs/dorkos/compare/v0.103.0...v0.109.0
