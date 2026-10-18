@@ -69,6 +69,12 @@
  * feature says so through {@link missingRelayFeature}, so the page can say
  * "this computer needs an update for X" instead of breaking.
  *
+ * **Agent computers.** A cloud computer that runs a person's agents for their
+ * hub speaks this same protocol, version and handshake, plus a few operations
+ * of its own that only exist when both sides advertise them. They live in
+ * `session-relay-agent-computer.ts`; nothing in this module serves them, so a
+ * linked Mac stays chats only.
+ *
  * Frame encoding mirrors `stream-socket.ts`: one JSON object per WebSocket text
  * frame, parsed fail-soft, so a bad frame is a dropped frame and never a torn
  * down connection.
@@ -76,6 +82,7 @@
  * @module shared/session-relay
  */
 import { z } from 'zod';
+import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
 import {
   DENY_REASON_MAX_LENGTH,
   InterruptReceiptSchema,
@@ -104,6 +111,9 @@ export const SESSION_RELAY_MAX_FRAME_LENGTH = 1_048_576;
 
 /** Longest message a relayed sender may post, in characters. */
 export const SESSION_RELAY_MAX_MESSAGE_LENGTH = 200_000;
+
+/** The words of one relayed message: never empty, at most {@link SESSION_RELAY_MAX_MESSAGE_LENGTH}. */
+export const RelayMessageContentSchema = z.string().min(1).max(SESSION_RELAY_MAX_MESSAGE_LENGTH);
 
 /** Most streams one connection may hold open at once; the next is refused. */
 export const SESSION_RELAY_MAX_OPEN_STREAMS = 32;
@@ -154,31 +164,31 @@ export type SessionRelayFeature = (typeof SESSION_RELAY_FEATURES)[number];
  * A peer's advertised features. Plain strings rather than the enum, so a newer
  * peer's feature this build has never heard of is carried, not refused.
  */
-const AdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
+export const RelayAdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
 
 // === Ids ===
 
 /** Correlates one request with its one answer. Chosen by the web side. */
-const RequestIdSchema = z
+export const RelayRequestIdSchema = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[\w.:-]+$/);
 
 /** Names one open stream on the connection. Chosen by the web side. */
-const StreamIdSchema = RequestIdSchema;
+const StreamIdSchema = RelayRequestIdSchema;
 
 /**
  * A chat on the computer: a lowercase UUID (as `SessionSchema.id` is minted),
  * so it can never smuggle a path segment into a URL, and two spellings of one
  * id cannot pass two different checks.
  */
-const SessionIdSchema = z
+export const RelaySessionIdSchema = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 /** A registered agent on the computer, by its Mesh id (a ULID). Never a directory. */
-const AgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+export const RelayAgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 
 /** A tool call a chat is waiting on, as its runtime named it. */
 const ToolCallIdSchema = z
@@ -210,14 +220,14 @@ const base64url = (max: number) =>
 /** List an agent's chats, newest first. Titles and times only, never a path. */
 const ChatsListRequestSchema = z.strictObject({
   op: z.literal('chats.list'),
-  agentId: AgentIdSchema,
+  agentId: RelayAgentIdSchema,
 });
 
 /** Open a chat's durable stream, resuming after `resume` when given. */
 const SessionStreamRequestSchema = z.strictObject({
   op: z.literal('session.stream'),
   streamId: StreamIdSchema,
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   resume: ResumeCursorSchema.optional(),
 });
 
@@ -228,17 +238,17 @@ const SessionStreamRequestSchema = z.strictObject({
  */
 const SessionSendRequestSchema = z.strictObject({
   op: z.literal('session.send'),
-  sessionId: SessionIdSchema,
-  content: z.string().min(1).max(SESSION_RELAY_MAX_MESSAGE_LENGTH),
-  clientMessageId: RequestIdSchema.optional(),
+  sessionId: RelaySessionIdSchema,
+  content: RelayMessageContentSchema,
+  clientMessageId: RelayRequestIdSchema.optional(),
   disposition: MessageDispositionSchema.optional(),
-  newChat: z.strictObject({ agentId: AgentIdSchema }).optional(),
+  newChat: z.strictObject({ agentId: RelayAgentIdSchema }).optional(),
 });
 
 /** Stop the chat's running turn and empty its queue, as the Stop button does. */
 const SessionInterruptRequestSchema = z.strictObject({
   op: z.literal('session.interrupt'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
 });
 
 /** The decision an approval challenge is bound to. */
@@ -251,7 +261,7 @@ const ApprovalDecisionSchema = z.enum(['approve', 'deny']);
  */
 const InteractionChallengeRequestSchema = z.strictObject({
   op: z.literal('interaction.challenge'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   toolCallId: ToolCallIdSchema,
   decision: ApprovalDecisionSchema,
 });
@@ -259,7 +269,7 @@ const InteractionChallengeRequestSchema = z.strictObject({
 /** A WebAuthn assertion over a challenge the computer issued, base64url fields. */
 export const RelayApprovalProofSchema = z.strictObject({
   /** The `challengeId` the computer answered `interaction.challenge` with. */
-  challengeId: RequestIdSchema,
+  challengeId: RelayRequestIdSchema,
   credentialId: base64url(1_400),
   clientDataJSON: base64url(4_096),
   authenticatorData: base64url(1_024),
@@ -299,7 +309,7 @@ export type RelayInteractionAnswer = z.infer<typeof InteractionAnswerSchema>;
 
 const InteractionRespondRequestSchema = z.strictObject({
   op: z.literal('interaction.respond'),
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   answer: InteractionAnswerSchema,
 });
 
@@ -323,7 +333,7 @@ export type RelayRequestOp = RelayRequest['op'];
 
 /** One chat in a `chats.list` answer: what a sidebar row needs, and no path. */
 export const RelayChatSummarySchema = z.strictObject({
-  sessionId: SessionIdSchema,
+  sessionId: RelaySessionIdSchema,
   title: z.string().max(500),
   updatedAt: z.string().datetime(),
   lastMessagePreview: z.string().max(500).optional(),
@@ -337,13 +347,13 @@ export const RelayResultBodySchemas = {
   'chats.list': z.strictObject({
     chats: z.array(RelayChatSummarySchema).max(SESSION_RELAY_MAX_CHATS),
   }),
-  'session.send': z.strictObject({ sessionId: SessionIdSchema }),
+  'session.send': z.strictObject({ sessionId: RelaySessionIdSchema }),
   'session.interrupt': z.strictObject({
     receipt: InterruptReceiptSchema,
     cancelledQueued: z.array(QueuedMessageSchema),
   }),
   'interaction.challenge': z.strictObject({
-    challengeId: RequestIdSchema,
+    challengeId: RelayRequestIdSchema,
     /** The bytes to sign, base64url. Opaque to the web side. */
     challenge: base64url(256),
     /** When the computer stops accepting a proof over it. */
@@ -456,7 +466,7 @@ export const RelayHelloFrameSchema = z.strictObject({
     .max(64)
     .regex(/^[\w.:-]+$/),
   versions: RelayVersionRangeSchema,
-  features: AdvertisedFeaturesSchema,
+  features: RelayAdvertisedFeaturesSchema,
   /** The computer's DorkOS version, for "needs an update" copy. */
   appVersion: z.string().min(1).max(64),
   nonce: RelayNonceSchema,
@@ -523,7 +533,11 @@ export const RelayWebFrameSchema = z.discriminatedUnion('type', [
    * `stream.frame`s and one `stream.end`, which carries the refusal if it never
    * opened.
    */
-  z.strictObject({ type: z.literal('request'), id: RequestIdSchema, request: RelayRequestSchema }),
+  z.strictObject({
+    type: z.literal('request'),
+    id: RelayRequestIdSchema,
+    request: RelayRequestSchema,
+  }),
   z.strictObject({ type: z.literal('stream.close'), streamId: StreamIdSchema }),
   /**
    * How many viewers have a chat of this computer open right now. At 0, and
@@ -554,13 +568,13 @@ const RelayStreamFrameSchema = z.strictObject({
 export const RelayComputerFrameSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('result'),
-    id: RequestIdSchema,
+    id: RelayRequestIdSchema,
     ok: z.literal(true),
     body: z.unknown(),
   }),
   z.strictObject({
     type: z.literal('error'),
-    id: RequestIdSchema,
+    id: RelayRequestIdSchema,
     ok: z.literal(false),
     error: RelayErrorSchema,
   }),
@@ -696,7 +710,13 @@ export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z
  */
 export function encodeRelayFrame(
   frame:
-    RelayWebFrame | RelayComputerFrame | RelayHelloFrame | RelayHandshakeAnswer | RelaySealedFrame
+    | RelayWebFrame
+    | RelayComputerFrame
+    | AgentComputerWebFrame
+    | AgentComputerFrame
+    | RelayHelloFrame
+    | RelayHandshakeAnswer
+    | RelaySealedFrame
 ): string | null {
   let text: string;
   try {
