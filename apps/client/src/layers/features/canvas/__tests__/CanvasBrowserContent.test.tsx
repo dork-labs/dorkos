@@ -5,6 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { WORKBENCH_SANDBOX_EXTERNAL, WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
+// This suite rebuilds the transport on every render to test URL resolution;
+// the document channel keys on transport identity, so the page channel is
+// inert here. Its real composition is covered in CanvasBrowserContentFrame.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: () => ({ requiresReload: false, noteFrameLoaded: () => {} }),
+}));
 
 /** Mirror of the store's BrowserHistoryState (the real type comes from the mocked module). */
 interface BrowserHistoryEntry {
