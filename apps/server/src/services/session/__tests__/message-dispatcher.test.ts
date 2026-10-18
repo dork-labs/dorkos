@@ -849,6 +849,22 @@ describe('editing and removing what is waiting', () => {
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  // DOR-3060: a person sees another chat's message as its words; a reword would
+  // put those words to the model unfenced, as if the person wrote them.
+  it('never rewords another chat’s message, though it still moves', () => {
+    const fence =
+      '--- BEGIN CHAT MESSAGE c0ffee12 ---\nKind: message\nhi\n--- END CHAT MESSAGE c0ffee12 ---';
+    const theirs = store.enqueue({ sessionId: session, content: fence, clientId: 'chat:chat-a' });
+    const mine = store.enqueue({ sessionId: session, content: 'mine', clientId: TAB });
+
+    expect(editQueuedMessage(session, theirs.id, { content: 'hi' })).toBeDefined();
+    expect(store.get(theirs.id)?.content).toBe(fence);
+
+    editQueuedMessage(session, theirs.id, { content: 'hi', move: { after: mine.id } });
+    expect(store.list(session).map((r) => r.id)).toEqual([mine.id, theirs.id]);
+    expect(store.get(theirs.id)?.content).toBe(fence);
+  });
+
   it('will not reach into another session’s queue', async () => {
     const other = `${session}-other`;
     extraProjectors.push(other);
@@ -880,6 +896,18 @@ describe('clearing the queue on Stop', () => {
     expect(ingest).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'queue_update', queue: [] })
     );
+  });
+
+  // DOR-3060: Stop cancels another chat's message with the rest, but never
+  // hands it back to the person's composer, where a Send would make it theirs.
+  it('hands back only the person’s own words, not another chat’s message', () => {
+    store.enqueue({ sessionId: session, content: 'mine', clientId: TAB });
+    store.enqueue({ sessionId: session, content: 'an agent said this', clientId: 'chat:chat-a' });
+
+    const returned = clearQueuedMessages(session);
+
+    expect(returned.map((r) => r.content)).toEqual(['mine']);
+    expect(listQueuedMessages(session)).toEqual([]);
   });
 
   it('disarms the pending dispatches so nothing runs when the turn ends', async () => {

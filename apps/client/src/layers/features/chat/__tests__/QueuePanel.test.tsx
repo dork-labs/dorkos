@@ -28,6 +28,7 @@ const makeItem = (content: string, index: number, over: Partial<QueueItem> = {})
   id: `id-${index}`,
   content,
   mine: true,
+  fromChat: false,
   notice: null,
   ...over,
 });

@@ -47,6 +47,12 @@ export interface QueueItem {
    */
   mine: boolean;
   /**
+   * True when another chat sent this message (DOR-3060). It is never editable:
+   * the words are another agent's, and rewording them would hand them to the
+   * agent as the person's own. The server refuses the reword too.
+   */
+  fromChat: boolean;
+  /**
    * What happened to this message, when that is worth saying: "queued instead of
    * steered, because this runtime cannot steer". `null` for the overwhelming
    * majority, which got exactly what they asked for.
@@ -156,6 +162,7 @@ export function useMessageQueue({
         // chip reads as this window's, which is the honest answer for a surface
         // where there is only one window.
         mine: transport.clientId === undefined || message.enqueuedBy === transport.clientId,
+        fromChat: message.fromChats !== undefined || message.enqueuedBy.startsWith('chat:'),
         notice: queueDowngradeNotice(outcomes[message.id]),
         ...(message.waitingOn ? { waiting: describeWaitingOn(message.waitingOn) } : {}),
       })),
@@ -279,7 +286,8 @@ export function useMessageQueue({
   const startEditing = useCallback(
     (id: string): string | null => {
       const item = queue.find((queued) => queued.id === id);
-      if (!item) return null;
+      // Another chat's message is moved or removed, never reworded (DOR-3060).
+      if (!item || item.fromChat) return null;
       setEditingId(id);
       return item.content;
     },
