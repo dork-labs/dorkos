@@ -13,9 +13,10 @@ import {
   SOCIAL_QUEUE_ID,
   TEAM_REPORTS,
 } from './config.js';
+import { seedHeartbeat } from './heartbeat.js';
 
 /**
- * Seeding for the demo workspace's four flows, on top of the capture's own
+ * Seeding for the demo workspace's flows, on top of the capture's own
  * seed (`../seed.ts`). Like that seed, every state here comes from a real code
  * path: the social-queue extension is the real one reading real files, the
  * #team reports are posted by the agents' own identities through the real
@@ -35,6 +36,8 @@ export interface DemoSeeds {
   readonly approvalSessionId: string;
   /** The session where the mini app was built. */
   readonly miniAppSessionId: string;
+  /** The agent whose Heartbeat page holds the seeded beats. */
+  readonly heartbeatAgentId: string;
 }
 
 /** POST JSON and return the parsed body, throwing on a non-2xx response. */
@@ -93,13 +96,18 @@ function requeue(raw: string, daysAhead: number): { day: string; id: string; fil
   const { header, text } = parsePost(raw);
   const oldId = header.get('id') ?? '';
   const time = (header.get('scheduledFor') ?? '').slice(11, 19) || '09:30:00';
-  const when = new Date(Date.now() + daysAhead * 86_400_000);
-  const day = centralDay(when);
+  // Calendar days, not 24-hour steps: a 23- or 25-hour day at a clock change
+  // must not land "tomorrow" on today.
+  const [y, m, d] = centralDay(new Date()).split('-').map(Number);
+  const day = new Date(Date.UTC(y!, m! - 1, d! + daysAhead)).toISOString().slice(0, 10);
+  // The offset at the post's own time (approximately: as if it were UTC),
+  // which is a day or more away from now and can be across a clock change.
+  const offset = centralOffset(new Date(`${day}T${time}Z`));
   const id = `${day}${oldId.slice(10)}`;
   const lines = [
     '---',
     `id: ${id}`,
-    `scheduledFor: ${day}T${time}${centralOffset(when)}`,
+    `scheduledFor: ${day}T${time}${offset}`,
     'status: queued',
     'postedUrl:',
     `lane: ${header.get('lane') ?? '1'}`,
@@ -278,8 +286,10 @@ async function startSession(
  * person: "Turn on Launch Checklist?" under Needs you
  * (`extension-approval-queue.ts`).
  *
- * The tool itself is not called because it is served by DorkOS's MCP server,
- * which needs a real runtime, and test mode runs none. Called by an agent in a
+ * The tool itself is not called: DorkOS's MCP server is mounted in test mode,
+ * but its tool server is built from the Claude Code runtime, which test mode
+ * never starts, so every call answers 500 ("ClaudeCodeRuntime not available",
+ * `startup/steps/mcp-tasks-skills.ts`). Called by an agent in a
  * DorkOS chat on Trusted, the tool would also approve the copy as it made it,
  * so it would not wait; this is the state an agent's mini app is in on Careful,
  * or when an agent wrote the files itself.
@@ -309,7 +319,7 @@ async function buildMiniApp(): Promise<void> {
 }
 
 /**
- * Seed the four flows against the running demo server.
+ * Seed the flows against the running demo server (the heartbeat in `heartbeat.ts`).
  *
  * @param socialQueue - Whether {@link prepareSocialQueue} laid the extension down.
  * @returns What was made, for the printed links.
@@ -326,5 +336,6 @@ export async function seedDemo(socialQueue: boolean): Promise<DemoSeeds> {
   );
   const miniAppSessionId = await startSession(MINI_APP.agent, MINI_APP.scenario, MINI_APP.prompt);
   await buildMiniApp();
-  return { socialQueue, teamRoomId: roomId, approvalSessionId, miniAppSessionId };
+  const heartbeatAgentId = await seedHeartbeat();
+  return { socialQueue, teamRoomId: roomId, approvalSessionId, miniAppSessionId, heartbeatAgentId };
 }

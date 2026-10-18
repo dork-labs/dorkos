@@ -1,4 +1,4 @@
-import { bootStack, buildServerDeps, preflightStack } from '../boot.js';
+import { bootStack, buildServerDeps, preflightStack, teardownAllSync } from '../boot.js';
 import { CLIENT_URL, SHARD_INDEX } from '../config.js';
 import { DEMO_FAKE_HOME, DEMO_SHARD, marketingRepoPath } from './config.js';
 import { prepareFakeHome, prepareSocialQueue, seedDemo, type DemoSeeds } from './seed.js';
@@ -11,7 +11,7 @@ import { prepareFilesystem, seedData } from '../seed.js';
  *
  * Every run wipes the demo home and seeds it again, so every recording starts
  * from the same state. It is the capture stack (`../boot.ts`, `../seed.ts`) on its
- * own shard slot, plus the four video flows (`seed.ts` here), with the server
+ * own shard slot, plus the video flows (`seed.ts`, `heartbeat.ts` here), with the server
  * given an empty home of its own so nothing from the real `~/.dork`,
  * `~/.claude` or `~/.codex` can reach it.
  *
@@ -29,6 +29,7 @@ function flowLinks(seeds: DemoSeeds): [string, string][] {
     ['#team morning', `${CLIENT_URL}/channels?id=${seeds.teamRoomId}`],
     ['Phone approval', `${CLIENT_URL}/session?session=${seeds.approvalSessionId}`],
     ['Mini app', `${CLIENT_URL}/session?session=${seeds.miniAppSessionId}`],
+    ['Heartbeat', `${CLIENT_URL}/?profile=${seeds.heartbeatAgentId}&profilePage=heartbeat`],
   ];
 }
 
@@ -66,7 +67,18 @@ async function main(): Promise<void> {
   process.stdout.write('▸ Building server deps…\n');
   await buildServerDeps();
   process.stdout.write('▸ Booting…\n');
+  // The server and Vite run in their own process groups, so a Ctrl-C in the
+  // terminal never reaches them: until boot is done, a signal force-stops
+  // whatever has started (the same guard `record.ts` keeps).
+  const forceStop = () => {
+    teardownAllSync();
+    process.exit(1);
+  };
+  process.once('SIGINT', forceStop);
+  process.once('SIGTERM', forceStop);
   const stack = await bootStack({ isolatedHome: DEMO_FAKE_HOME });
+  process.off('SIGINT', forceStop);
+  process.off('SIGTERM', forceStop);
 
   let stopping = false;
   const stop = () => {

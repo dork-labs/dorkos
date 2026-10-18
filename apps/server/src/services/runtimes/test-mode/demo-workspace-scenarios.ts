@@ -15,13 +15,21 @@
  *   DorkOS to look again (`buildMiniApp` in `apps/e2e/capture/demo/seed.ts`), and DorkOS holds
  *   the new copy for a person's yes. Keep the id below and the seeder's id the
  *   same, or the chat names a mini app that is not there.
+ * - **`demo-heartbeat`** is an agent's side of a heartbeat beat that has work:
+ *   the beat itself (its timer wake, its check, its record, a raise's delivery)
+ *   is DorkOS's real beat runner, and this turn ends it through the real
+ *   `heartbeat.end_beat` capability. Which ending it picks is read from what
+ *   the beat found, so the demo seeder decides it by what promise it records.
  *
  * Reachable only when `DORKOS_TEST_RUNTIME=true` registers the test-mode
  * runtime, and only by selecting it through `POST /api/test/scenario`.
  *
  * @module services/runtimes/test-mode/demo-workspace-scenarios
  */
+import type { EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { composeRegistry } from '../../core/capabilities/registry.js';
+import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { DEMO_MODEL, DEMO_SESSION_ID, delay, streamText } from './demo-scenario-shared.js';
 import type { ScenarioFn } from './scenario-store.js';
 
@@ -131,13 +139,13 @@ const demoMiniApp: ScenarioFn = async function* () {
   yield* toolCall(
     'demo-mini-app-manifest',
     'Write',
-    `{"file_path":"~/.dork/extensions/${DEMO_MINI_APP_ID}/extension.json"}`,
+    `{"file_path":"extensions/${DEMO_MINI_APP_ID}/extension.json"}`,
     `Wrote extensions/${DEMO_MINI_APP_ID}/extension.json`
   );
   yield* toolCall(
     'demo-mini-app-write',
     'Write',
-    `{"file_path":"~/.dork/extensions/${DEMO_MINI_APP_ID}/index.ts","summary":"the checklist page"}`,
+    `{"file_path":"extensions/${DEMO_MINI_APP_ID}/index.ts","summary":"the checklist page"}`,
     `Wrote extensions/${DEMO_MINI_APP_ID}/index.ts`
   );
   yield* toolCall(
@@ -153,8 +161,52 @@ const demoMiniApp: ScenarioFn = async function* () {
   yield done();
 };
 
+/**
+ * How a demo beat ends, by what it found. A beat's prompt lists what its check
+ * gathered, so the promises the seeder recorded are named in it. A promise
+ * stays in the list until it is kept, so the changelog (recorded second) is
+ * checked first: a beat that names it is the later one.
+ */
+function beatEnding(found: string): EndBeatInput {
+  if (found.includes('changelog')) {
+    return {
+      summary: "Drafted this week's changelog from 6 merged pull requests. Ready to post at 5 PM.",
+    };
+  }
+  return {
+    summary: 'The beta invite is due today. Asked whether to send it.',
+    raises: [
+      {
+        rung: 'dm',
+        text:
+          'The beta invite email to the 40 people on the waitlist is due today. The draft ' +
+          'is ready. Should I send it?',
+      },
+    ],
+  };
+}
+
+/** An agent's turn in a heartbeat beat that found work. */
+const demoHeartbeat: ScenarioFn = async function* (content, ctx, opts) {
+  yield sessionStatus();
+  const ending = beatEnding(content);
+  yield* streamText(`${ending.summary}\n`);
+  // The real capability, under the agent's own identity, the way
+  // `sayInRoom` posts: it ends the beat this chat belongs to, or refuses.
+  const registry = composeRegistry([heartbeatDomain], {
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+  });
+  const ended = (await registry.invoke('heartbeat.end_beat', ending, {
+    identity: { agentPath: opts?.cwd ?? '', displayName: '', createdAt: new Date().toISOString() },
+    sessionId: ctx.sessionId,
+  })) as { ok: boolean; error?: string };
+  if (!ended.ok) throw new Error(`end_beat refused: ${ended.error ?? 'no reason'}`);
+  yield done();
+};
+
 /** The demo workspace's turns, keyed by the names `POST /api/test/scenario` accepts. */
 export const DEMO_WORKSPACE_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-phone-approval': demoPhoneApproval,
   'demo-mini-app': demoMiniApp,
+  'demo-heartbeat': demoHeartbeat,
 };

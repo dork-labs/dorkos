@@ -96,6 +96,7 @@ describe('the capture data directory is private', () => {
       CODEX_HOME: '/demo/home/.codex',
       XDG_CONFIG_HOME: '/demo/home/.config',
       XDG_DATA_HOME: '/demo/home/.local/share',
+      OPENCODE_DB: '/demo/home/.local/share/opencode/opencode.db',
     });
   });
 });

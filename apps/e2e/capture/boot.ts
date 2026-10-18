@@ -289,7 +289,7 @@ export interface Stack {
  * The environment that gives the server a home of its own, for
  * {@link BootOptions.isolatedHome}.
  *
- * `DORK_HOME` moves what DorkOS owns, but six spots in the server mirror
+ * `DORK_HOME` moves what DorkOS owns, but four spots in the server mirror
  * ANOTHER program's folder from the operator's real home (Hard Rule 3's
  * carve-outs: `~/.claude`, `~/.codex`, OpenCode's data dir, `~/.agents/skills`).
  * The search sweep is closed by `DORKOS_SEARCH_NO_EXTERNAL_HISTORY`; this closes
@@ -306,6 +306,8 @@ export function isolatedHomeEnv(home: string): NodeJS.ProcessEnv {
     CODEX_HOME: path.join(home, '.codex'),
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_DATA_HOME: path.join(home, '.local', 'share'),
+    // OpenCode's database path, read before its data dir when it is set.
+    OPENCODE_DB: path.join(home, '.local', 'share', 'opencode', 'opencode.db'),
   };
 }
 
