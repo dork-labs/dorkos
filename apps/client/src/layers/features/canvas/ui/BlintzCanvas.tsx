@@ -19,7 +19,7 @@ const loadMermaid = () =>
 /** Props for {@link BlintzCanvas}. */
 export interface BlintzCanvasProps extends Pick<
   MarkdownEditorProps,
-  'sourceRevision' | 'onSourceReady' | 'onSourceSelection' | 'onTaskToggleRequest'
+  'sourceRevision' | 'onSourceReady' | 'onSourceSelection' | 'onTaskToggleRequest' | 'wikiLinks'
 > {
   /** Current markdown document. Seeds the editor; on divergence it re-seeds. */
   value: string;
@@ -42,6 +42,7 @@ export interface BlintzCanvasProps extends Pick<
  * Uses the app's resolved theme and semantic colors through Blintz's public
  * theme contract. An open document follows theme changes without remounting.
  * ` ```mermaid ` code blocks draw as diagrams; mermaid loads on first use.
+ * `wikiLinks` comes from the Docs feature, only for a file-backed doc.
  */
 export function BlintzCanvas({
   value,
@@ -52,6 +53,7 @@ export function BlintzCanvas({
   onSourceReady,
   onSourceSelection,
   onTaskToggleRequest,
+  wikiLinks,
 }: BlintzCanvasProps) {
   const resolvedTheme = useResolvedTheme();
   return (
@@ -71,6 +73,7 @@ export function BlintzCanvas({
         onSourceReady={onSourceReady}
         onSourceSelection={onSourceSelection}
         onTaskToggleRequest={onTaskToggleRequest}
+        wikiLinks={wikiLinks}
         mermaid={loadMermaid}
         className={cn('desktop:select-text', className)}
       />

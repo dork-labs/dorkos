@@ -157,6 +157,8 @@
     "GET /api/diff/pending",
     "GET /api/directory",
     "GET /api/directory/default",
+    "GET /api/documents/index",
+    "GET /api/documents/resolve",
     "GET /api/events",
     "GET /api/extension-decisions",
     "GET /api/extensions",

@@ -5,6 +5,7 @@ import type { FileContentResponse, UiCanvasContent } from '@dorkos/shared/types'
 import { sameCanvasDocIncarnation } from '@dorkos/shared/canvas-doc-frame-wire';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { useDocWikiLinks } from '@/layers/features/docs';
 import { useCanvasFileSave } from '../../model/use-canvas-file-save';
 import { useCanvasDocumentClosePreparation } from '../../model/file-save/use-document-close';
 import type { FileSaveBinding } from '../../model/file-save/receipt-operation';
@@ -96,6 +97,13 @@ export function FileEditor({
   });
 
   const recovery = useFileSaveRecovery(fileSave.recovery, fileSaveObservation, recoveryBinding);
+  // Wiki links to the other docs in this space (Docs experiment; undefined while off).
+  const wikiLinks = useDocWikiLinks({
+    cwd,
+    sourcePath: markdown ? content.sourcePath : null,
+    content: draft,
+    saved: fileSave.status === 'saved',
+  });
   const editorActive = useRef(false);
   const editingRef = useRef(isEditing);
   useLayoutEffect(() => {
@@ -404,6 +412,7 @@ export function FileEditor({
                 value={value}
                 editable={isEditing}
                 onChange={isEditing ? handleChange : undefined}
+                wikiLinks={wikiLinks}
               />
             </div>
           ) : (

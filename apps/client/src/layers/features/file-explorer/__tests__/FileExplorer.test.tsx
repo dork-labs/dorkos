@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { FileEntry } from '@dorkos/shared/types';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { docKeys } from '@/layers/entities/doc';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 
 // Hoisted so the (hoisted) vi.mock factories below can reference them.
@@ -84,8 +85,10 @@ afterEach(() => cleanup());
  * header, the tree below it, both wired through the file-explorer store. The
  * mock transport's tree responds by requested path.
  */
-function renderExplorer(transport = createMockTransport()) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderExplorer(
+  transport = createMockTransport(),
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -168,6 +171,27 @@ describe('FileExplorer', () => {
         sourcePath: 'README.md',
       },
       'user'
+    );
+  });
+
+  it('marks the space’s doc index stale once a new file is created', async () => {
+    // Wiki links resolve against that index, so a link to the new doc stops
+    // showing as missing.
+    const transport = createMockTransport();
+    transport.readFileTree = vi.fn(async () => ({ entries: [file('README.md')] }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(docKeys.index(CWD), { docs: [], truncated: false });
+
+    renderExplorer(transport, queryClient);
+    await screen.findByRole('treeitem', { name: 'README.md' });
+    fireEvent.click(screen.getByRole('button', { name: 'New file' }));
+    const input = screen.getByRole('textbox', { name: 'New file name' });
+    fireEvent.change(input, { target: { value: 'idea.md' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.createEntry).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(queryClient.getQueryState(docKeys.index(CWD))?.isInvalidated).toBe(true)
     );
   });
 

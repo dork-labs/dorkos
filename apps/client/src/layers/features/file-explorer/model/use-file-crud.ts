@@ -8,6 +8,7 @@ import {
   type FileExplorerSource,
 } from './source';
 import { useTransport } from '@/layers/shared/model';
+import { docKeys } from '@/layers/entities/doc';
 import { toastCrudError, getErrorCode, COPY_INTO_SELF_MESSAGE } from '../lib/crud-errors';
 import { freeCopyName } from '../lib/copy-name';
 import type { EntryRef } from './types';
@@ -151,9 +152,14 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
       restore: (path: string, data: ExplorerListing | undefined): void => {
         queryClient.setQueryData(treeKey(path), data);
       },
-      /** Invalidate one directory level so it refetches from the server. */
+      /**
+       * Invalidate one directory level so it refetches from the server, and
+       * the docs index wiki links resolve against, so a doc created, renamed
+       * or deleted here is found (or missing) at once.
+       */
       invalidate: (path: string): void => {
         void queryClient.invalidateQueries({ queryKey: treeKey(path), exact: true });
+        void queryClient.invalidateQueries({ queryKey: docKeys.index(cwd) });
       },
     };
   }, [queryClient, transport, cwd, source, showHidden]);
