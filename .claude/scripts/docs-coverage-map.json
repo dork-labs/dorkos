@@ -455,7 +455,7 @@
       "guide": "official-community-operations.md",
       "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
       "patterns": [
-        "apps/community/src/live/monitoring.ts",
+        "apps/server/src/services/spaces/live/monitoring.ts",
         "apps/community/load/",
         "official-community-operations"
       ]

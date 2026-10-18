@@ -627,7 +627,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The community archive cross-checks (apps/community/src/archive/__tests__/
+      # The community archive cross-checks (apps/server/src/services/spaces/archive/__tests__/
       # zip-cross-tools.test.ts) read our ZIP64 exports with Info-ZIP unzip, bsdtar and
       # Python's zipfile, and FAIL under CI when one is missing, so a skip can never
       # quietly drop them. The runner image ships unzip and python3; bsdtar comes from

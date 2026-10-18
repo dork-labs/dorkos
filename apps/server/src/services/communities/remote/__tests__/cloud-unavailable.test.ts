@@ -5,7 +5,7 @@
  * membership journey works with DorkOS Cloud unreachable (spec
  * `community-membership-journeys`, verification matrix: "The full journey works
  * with DorkOS Cloud egress blocked"; task 3.2). The Community server's own half
- * is `apps/community/src/__tests__/tenancy-egress.integration.test.ts`.
+ * is `apps/server/src/services/spaces/__tests__/tenancy-egress.integration.test.ts`.
  *
  * Before any code opens a socket, this file wraps every TCP/TLS connect, every
  * DNS lookup and direct DNS query (`dns.resolve*`, `Resolver`, both callback

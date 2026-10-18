@@ -10,8 +10,8 @@
  * runs it on every change instead of once.
  *
  * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, `apps/server/src`, and
- * the space server's source (the space's own website, DOR-2653; its folder is
- * `SPACE_SRC_DIR` in `ci/space-server.env`, `apps/community/src` today) —
+ * the space server's code and its web page (DOR-2653; their folders are
+ * `SPACE_SRC_DIR` and `SPACE_WEB_DIR` in `ci/space-server.env`) —
  * every workspace whose strings can reach a screen a DorkOS user reads,
  * including server-authored copy the client renders verbatim (a provisioning
  * error, an MCP tool title) — for TypeScript/TSX source, using the real

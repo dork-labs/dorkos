@@ -1,6 +1,6 @@
 /**
  * How v0.117.0, the last release before export format 3, reads an archive's version: its
- * `readManifestVersion` from `apps/community/src/imports/archive.ts`, copied verbatim (renamed
+ * `readManifestVersion` from `apps/server/src/services/spaces/imports/archive.ts`, copied verbatim (renamed
  * here) with only the import paths changed. Every helper it calls is unchanged since that
  * release. It lets a test hand a format 3 archive to the importer an older host runs.
  */
