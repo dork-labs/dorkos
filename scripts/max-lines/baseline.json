@@ -125,7 +125,7 @@
     "packages/cli/src/commands/community-deploy/community-dispatcher.ts": 581,
     "packages/cli/src/commands/community-deploy/fly-graphql-contract.ts": 578,
     "packages/cli/src/commands/permissions.ts": 542,
-    "packages/cli/src/harness-sync-command.ts": 713,
+    "packages/cli/src/harness-sync-command.ts": 612,
     "packages/connector-providers/src/connector-schemas.ts": 975,
     "packages/evals/src/suite/memory.ts": 628,
     "packages/evals/src/suite/rooms-judgment.ts": 561,
