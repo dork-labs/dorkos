@@ -73,7 +73,10 @@ import { createTaggedLogger } from '../../lib/logger.js';
  */
 export interface NotifyDmRooms {
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): { id: string };
-  post(roomId: string, input: { authorId: string; text: string }): { id: string };
+  post(
+    roomId: string,
+    input: { authorId: string; text: string; sessionId?: string }
+  ): { id: string };
 }
 
 /** The author-registry surface — resolving the sending agent's own identity. */
@@ -142,11 +145,12 @@ export type NotifyDmOutcome =
  * @param input.agentId - The mesh id of the agent doing the notifying, as the
  *   server resolved it — never a value the model supplied.
  * @param input.message - What the agent wants the person to read.
+ * @param input.sessionId - The session that wrote it, when a turn did.
  * @param deps - Rooms, authors, mesh and the owner's author id.
  * @returns Where it landed, or a structured reason it did not. Never throws.
  */
 export function deliverNotifyDm(
-  input: { agentId: string; message: string },
+  input: { agentId: string; message: string; sessionId?: string },
   deps: NotifyDmDeps
 ): NotifyDmOutcome {
   const log = deps.logger ?? createTaggedLogger('NotifyDM');
@@ -193,7 +197,13 @@ export function deliverNotifyDm(
       { kind: 'dm', title: displayName, members: [deps.operatorAuthorId()], agentPaths: [] },
       author.id
     );
-    const entry = deps.rooms.post(room.id, { authorId: author.id, text: input.message });
+    // The session it was written from rides on the entry, so the agent's Direct
+    // chat can tell its own words from a ping sent from elsewhere (rule S12).
+    const entry = deps.rooms.post(room.id, {
+      authorId: author.id,
+      text: input.message,
+      ...(input.sessionId && { sessionId: input.sessionId }),
+    });
     const directChatId = directChatFor(deps, room.id, log);
     return { ok: true, roomId: room.id, entryId: entry.id, ...(directChatId && { directChatId }) };
   } catch (err) {

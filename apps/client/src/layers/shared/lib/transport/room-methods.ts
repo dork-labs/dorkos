@@ -433,7 +433,10 @@ export function createRoomMethods(baseUrl: string) {
       });
     },
 
-    /** The Direct chat this session is, or `null`: a 404 is an ordinary answer. */
+    /**
+     * The Direct chat this session is, or `null`: a 404 is an ordinary answer,
+     * and so is a 403 — only the owner has Direct chats.
+     */
     async findDirectChat(sessionId: string): Promise<DirectChat | null> {
       try {
         return await fetchJSON<DirectChat>(
@@ -441,7 +444,8 @@ export function createRoomMethods(baseUrl: string) {
           `/direct-chats/by-session/${encodeURIComponent(sessionId)}`
         );
       } catch (err) {
-        if ((err as { status?: number }).status === 404) return null;
+        const status = (err as { status?: number }).status;
+        if (status === 404 || status === 403) return null;
         throw err;
       }
     },

@@ -483,6 +483,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       },
       hasTranscript: async (agentPath, sessionId) =>
         (await transcripts.hasTranscript(agentPath, sessionId)).exists,
+      neverRan: async (sessionId) =>
+        !(await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
     };
     void repairRoomSessionBindings({ store: roomStore, ...refs.roomBindingTranscripts }).then(
       (report) => {

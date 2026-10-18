@@ -165,7 +165,9 @@ export function ProfileView({
     }
     // Everywhere else it is Talk: the agent's one standing Direct chat with
     // you (rule S12, DOR-2997), never whichever chat happens to be newest.
-    await openDirectChat({ agentPath: target.projectPath });
+    // The agent's own runtime, for a chat made now (a computer-placed agent).
+    const runtime = member.agent?.effectiveRuntimeId;
+    await openDirectChat({ agentPath: target.projectPath }, runtime ? { runtime } : {});
   }
 
   // A page is only reachable when a row of THIS profile pushes it. The row

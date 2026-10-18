@@ -5,6 +5,7 @@
  * @module services/rooms/direct-chat
  */
 import { setDirectNotesSource } from '../../session/context-assembler.js';
+import { onDispatchLifecycle } from '../../session/message-dispatcher.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { resolveOperatorAuthor } from '../operator-author.js';
 import { DirectChats, type DirectChatRooms, type DirectChatsDeps } from './direct-chats.js';
@@ -34,6 +35,9 @@ export function wireDirectChats(deps: {
   });
   active = chats;
   setDirectNotesSource((sessionId) => chats.takeUnseen(sessionId));
+  onDispatchLifecycle((event) => {
+    if (event.phase === 'started') chats.turnStarted(event.sessionId);
+  });
   return chats;
 }
 

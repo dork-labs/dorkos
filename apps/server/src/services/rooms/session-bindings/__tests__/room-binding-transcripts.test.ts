@@ -99,6 +99,15 @@ describe('probeRoomBindingTranscript', () => {
     expect(answer).toEqual({ verdict: 'missing', agentPath: ANA_PATH });
   });
 
+  it('judges nothing for a session no runtime has run yet (a fresh Direct chat, S12)', async () => {
+    const answer = await probeRoomBindingTranscript(
+      binding(),
+      deps({ hasTranscript: () => Promise.resolve(false), neverRan: () => Promise.resolve(true) })
+    );
+
+    expect(answer).toEqual({ verdict: 'not-applicable', agentPath: ANA_PATH });
+  });
+
   it('asks with the agent working directory and the bound session id', async () => {
     const asked: Array<[string, string]> = [];
     await probeRoomBindingTranscript(

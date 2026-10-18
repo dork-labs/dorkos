@@ -87,6 +87,8 @@ export const DIRECT_NOTES_LIMIT = 20;
 export class DirectChats {
   private readonly mintSessionId: () => string;
   private readonly now: () => string;
+  /** Notes handed to a turn that has not started yet, by session: where its cursor goes. */
+  private readonly taken = new Map<string, { roomId: string; authorId: string; seq: number }>();
 
   constructor(private readonly deps: DirectChatsDeps) {
     this.mintSessionId = deps.mintSessionId ?? randomUUID;
@@ -144,8 +146,11 @@ export class DirectChats {
   }
 
   /**
-   * What reached this session's Direct chat that the session has not seen, and
-   * move the agent's read cursor past it, so each message reaches one turn.
+   * What reached this session's Direct chat that the session has not seen.
+   *
+   * The agent's read cursor moves past them only when the turn that carries
+   * them starts ({@link DirectChats.turnStarted}), so a turn that never runs
+   * (held, refused, or failed on the way in) leaves them for the next one.
    *
    * Leaves out what this session wrote itself (it is already in the
    * transcript) and notices (the room speaking about itself).
@@ -160,10 +165,18 @@ export class DirectChats {
     if (!member) return null;
     const entries = this.deps.store.listEntriesAfter(chat.roomId, member.lastReadSeq);
     if (entries.length === 0) return null;
-    this.deps.store.setReadCursor(chat.roomId, chat.agentAuthorId, entries[entries.length - 1].seq);
+    this.taken.set(chat.sessionId, {
+      roomId: chat.roomId,
+      authorId: chat.agentAuthorId,
+      seq: entries[entries.length - 1].seq,
+    });
     const ownIds = new Set(chat.sessionIds);
     const unseen = entries.filter(
-      (entry) => entry.kind === 'post' && (entry.sessionId === null || !ownIds.has(entry.sessionId))
+      (entry) =>
+        // Top-level posts only, the same set the person sees in this chat.
+        entry.kind === 'post' &&
+        !entry.threadRootEntryId &&
+        (entry.sessionId === null || !ownIds.has(entry.sessionId))
     );
     if (unseen.length === 0) return null;
     const shown = unseen.slice(-DIRECT_NOTES_LIMIT);
@@ -179,6 +192,19 @@ export class DirectChats {
       notes,
       omitted: unseen.length - shown.length,
     };
+  }
+
+  /**
+   * A turn started on this session: the notes it was handed are now read.
+   *
+   * @param sessionId - Any id the session has held.
+   */
+  turnStarted(sessionId: string): void {
+    const chat = this.forSession(sessionId);
+    const taken = chat && this.taken.get(chat.sessionId);
+    if (!chat || !taken) return;
+    this.taken.delete(chat.sessionId);
+    this.deps.store.setReadCursor(taken.roomId, taken.authorId, taken.seq);
   }
 
   /** The one agent in the person's two-member DM, or `null` when the room is not one. */

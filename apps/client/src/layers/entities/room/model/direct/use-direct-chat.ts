@@ -17,14 +17,9 @@ import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import {
-  oneToOneDmAgentRef,
-  type DirectChat,
-  type OpenDirectChatRequest,
-} from '@dorkos/shared/room-schemas';
+import type { DirectChat, OpenDirectChatRequest } from '@dorkos/shared/room-schemas';
 import { newSessionTarget } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { useRooms } from '../use-rooms';
 
 /** Query key for the Direct chat a session is. */
 export const directChatKey = (sessionId: string) => ['direct-chat', sessionId] as const;
@@ -40,6 +35,7 @@ export function useDirectChat(sessionId: string | null): UseQueryResult<DirectCh
     queryKey: directChatKey(sessionId ?? ''),
     queryFn: () => transport.findDirectChat(sessionId!),
     enabled: sessionId !== null,
+    retry: false,
     // Which session is a Direct chat changes only when its DM gains a member.
     staleTime: 60_000,
   });
@@ -49,6 +45,13 @@ export function useDirectChat(sessionId: string | null): UseQueryResult<DirectCh
 export interface OpenDirectChatOptions {
   /** Replace the current history entry, so Back skips a redirect. */
   replace?: boolean;
+  /** The runtime a chat made now should start on, when the caller knows it. */
+  runtime?: string;
+  /**
+   * Say nothing when the room turns out not to be a Direct chat, or the viewer
+   * is not its owner: a redirect that falls back to drawing the room.
+   */
+  quiet?: boolean;
 }
 
 /**
@@ -69,10 +72,13 @@ export function useOpenDirectChat(): (
         const target = await newSessionTarget(transport, {
           session: chat.sessionId,
           dir: chat.agentPath,
+          ...(opts.runtime && { runtime: opts.runtime }),
         });
         await navigate({ ...target, ...(opts.replace && { replace: true }) });
         return true;
       } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (opts.quiet && (status === 403 || status === 409)) return false;
         toast.error('Couldn’t open that chat', {
           description: err instanceof Error ? err.message : undefined,
         });
@@ -81,17 +87,4 @@ export function useOpenDirectChat(): (
     },
     [transport, navigate]
   );
-}
-
-/**
- * Whether this room is the person's one-to-one with an agent, which reads as
- * that agent's Direct chat rather than as a room.
- *
- * @param roomId - The room, or undefined for none.
- */
-export function useIsDirectChatRoom(roomId: string | undefined): boolean {
-  const rooms = useRooms();
-  if (roomId === undefined) return false;
-  const room = rooms.data?.find((candidate) => candidate.id === roomId);
-  return room !== undefined && oneToOneDmAgentRef(room) !== null;
 }

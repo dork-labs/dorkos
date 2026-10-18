@@ -22,9 +22,7 @@ export type { ResolveRoomSessionDeps, RoomSessionLookup } from './model/use-room
 export { roomBoundSessionId } from './lib/room-bound-session';
 export {
   useDirectChat,
-  useIsDirectChatRoom,
   useOpenDirectChat,
-  directChatKey,
   type OpenDirectChatOptions,
 } from './model/direct/use-direct-chat';
 export { useTeamRoom } from './model/use-team-room';

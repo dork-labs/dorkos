@@ -255,6 +255,20 @@ describe('deliverNotifyDm', () => {
       expect(directChats.ensureForAgent(ANA_PATH, 'Ana').sessionId).toBe('direct-ana');
     });
 
+    it('records the session that wrote it, so that chat does not show it twice', () => {
+      const { harness, deps } = withDirectChats();
+
+      const outcome = deliverNotifyDm(
+        { agentId: ANA_ID, message: 'from my own Direct chat', sessionId: 'direct-ana' },
+        deps
+      );
+
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+      const [entry] = harness.service.listEntries(outcome.roomId, harness.human, { limit: 10 });
+      expect(entry!.sessionId).toBe('direct-ana');
+    });
+
     it('still delivers when the Direct chat cannot be opened, and says so in the log', () => {
       const { deps, warn } = withDirectChats();
       const broken = {

@@ -176,8 +176,10 @@ export function withDirectNotes(
 export function useDirectChatLog(sessionId: string | null): DirectChatLog {
   const chat = useDirectChat(sessionId);
   const roomId = chat.data?.roomId ?? null;
-  const room = useRoom(roomId).data;
-  const entries = useRoomEntries(roomId).data;
+  const roomQuery = useRoom(roomId);
+  const entriesQuery = useRoomEntries(roomId);
+  const room = roomQuery.data;
+  const entries = entriesQuery.data;
   useRoomStream(roomId, entries !== undefined);
   useMarkRoomRead(room, entries ?? EMPTY_ENTRIES);
 
@@ -187,7 +189,10 @@ export function useDirectChatLog(sessionId: string | null): DirectChatLog {
   const sessionIds = chat.data?.sessionIds ?? EMPTY_IDS;
 
   return useMemo(() => {
-    const loaded = roomId === null || (entries !== undefined && readSeq !== null);
+    // A log that cannot be read leaves the chat as it is, and must not hold
+    // the transcript's landing forever.
+    const failed = roomQuery.isError || entriesQuery.isError;
+    const loaded = roomId === null || failed || (entries !== undefined && readSeq !== null);
     return {
       roomId,
       entries: entries ?? EMPTY_ENTRIES,
@@ -200,7 +205,18 @@ export function useDirectChatLog(sessionId: string | null): DirectChatLog {
       readSeq,
       ready: sessionId === null || chat.isError || (chat.isFetched && loaded),
     };
-  }, [sessionId, chat.isError, chat.isFetched, roomId, room, entries, sessionIds, readSeq]);
+  }, [
+    sessionId,
+    chat.isError,
+    chat.isFetched,
+    roomId,
+    room,
+    entries,
+    sessionIds,
+    readSeq,
+    roomQuery.isError,
+    entriesQuery.isError,
+  ]);
 }
 
 const EMPTY_IDS: string[] = [];

@@ -39,7 +39,7 @@ export function useDirectChatRedirect(roomId: string | undefined): TeamRoomRedir
   useEffect(() => {
     if (!isDirect || roomId === undefined || failed || startedFor.current === roomId) return;
     startedFor.current = roomId;
-    void open({ roomId }, { replace: true }).then((ok) => {
+    void open({ roomId }, { replace: true, quiet: true }).then((ok) => {
       if (!ok) setFailedFor(roomId);
     });
   }, [isDirect, roomId, failed, open]);

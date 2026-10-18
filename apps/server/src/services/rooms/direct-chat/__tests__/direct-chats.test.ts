@@ -145,6 +145,19 @@ describe('what a turn in a Direct chat is told', () => {
       ['need your OK on #42', true],
     ]);
     expect(notes?.omitted).toBe(0);
+    chats.turnStarted(chat.sessionId);
+    expect(chats.takeUnseen(chat.sessionId)).toBeNull();
+  });
+
+  it('keeps them for the next turn when the turn that took them never starts', () => {
+    const { harness: h, chats } = open();
+    const chat = chats.ensureForAgent('/agents/ana', 'Ana');
+    h.service.post(chat.roomId, { authorId: chat.agentAuthorId, text: 'need your OK' });
+
+    expect(chats.takeUnseen(chat.sessionId)?.notes).toHaveLength(1);
+    // Held, refused or failed on the way in: no turn started.
+    expect(chats.takeUnseen(chat.sessionId)?.notes).toHaveLength(1);
+    chats.turnStarted(chat.sessionId);
     expect(chats.takeUnseen(chat.sessionId)).toBeNull();
   });
 

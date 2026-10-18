@@ -45,7 +45,9 @@ describe('useDirectChatRedirect', () => {
     const { result } = renderHook(() => useDirectChatRedirect('dm-ana'));
 
     expect(result.current).toBe('redirecting');
-    await waitFor(() => expect(open).toHaveBeenCalledWith({ roomId: 'dm-ana' }, { replace: true }));
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith({ roomId: 'dm-ana' }, { replace: true, quiet: true })
+    );
     expect(open).toHaveBeenCalledTimes(1);
   });
 

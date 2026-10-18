@@ -20,6 +20,7 @@ import { appRoutes } from '@/layers/shared/lib';
  * @module features/dashboard-sidebar/ui/SidebarChrome
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
@@ -51,6 +52,7 @@ import {
   clearPendingSessionTarget,
   usePendingSessionTarget,
   notifySessionLookupFailed,
+  resolveSessionForCwd,
   useStartNewSession,
 } from '@/layers/entities/session';
 import { useProfileStore } from '@/layers/features/profile';
@@ -277,6 +279,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const navigate = useNavigate();
   const router = useRouter();
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const startNewSession = useStartNewSession();
   const { open: openProfile } = useProfileDeepLink();
   const memberIdByPath = useMeshMemberIds();
@@ -408,13 +411,24 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           });
           if (isStillWanted()) await navigate(target);
         })
-        .catch((error: unknown) => {
+        .catch(async (error: unknown) => {
+          // Only the owner has Direct chats; anyone else still gets the
+          // agent's latest chat with them, as before.
+          if ((error as { status?: number }).status === 403) {
+            const resolved = await resolveSessionForCwd({ queryClient, transport }, agentPath);
+            if (!resolved || !isStillWanted()) return;
+            if (!resolved.isNew) return void (await openSession(resolved.sessionId, agentPath));
+            await navigate(
+              await newSessionTarget(transport, { session: resolved.sessionId, dir: agentPath })
+            );
+            return;
+          }
           reportClientError(transport, error);
           if (isStillWanted()) notifySessionLookupFailed(agentPath);
         })
         .finally(clearPending);
     },
-    [navigate, router, transport]
+    [navigate, openSession, queryClient, router, transport]
   );
 
   // DorkBot, found the only way the client can: `isSystem` is the flag on the

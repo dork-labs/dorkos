@@ -207,6 +207,7 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
         fromPrincipal: identity.subject,
         ...(args.channel ? { channel: args.channel } : {}),
         dmFallback: true,
+        ...(callingSession && { fromSessionId: callingSession }),
       },
       {
         relayCore: deps.relayCore,

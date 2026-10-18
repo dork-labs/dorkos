@@ -1,6 +1,8 @@
 ---
 covers:
+  - 'feat(rooms): one Direct chat per agent on the server (DOR-2997)'
   - 'feat(chat): one Direct chat per agent: you plus one agent always opens as a chat (DOR-2997)'
+  - 'fix(chat): review fixes for the Direct chat (DOR-2997)'
 ---
 
 ### Changed
