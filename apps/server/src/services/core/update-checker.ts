@@ -10,7 +10,7 @@
  */
 
 import { IS_DEV_BUILD } from '../../lib/version.js';
-import { currentServerRole } from '../../lib/server-role.js';
+import { isPersonalComputer } from './server-role/role-checks.js';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT = 5000; // 5 seconds
@@ -31,7 +31,8 @@ export async function getLatestVersion(): Promise<string | null> {
   if (IS_DEV_BUILD) return null;
   // A hub never updates itself: DorkOS Cloud upgrades hubs in waves, so an
   // "update available" there would ask a person to do something they cannot.
-  if (currentServerRole() === 'hub') return null;
+  // Nor does an agent computer, whose image its hub chooses (DOR-2940).
+  if (!isPersonalComputer()) return null;
 
   if (Date.now() - lastChecked < CACHE_TTL) return cachedLatest;
 

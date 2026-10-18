@@ -1,10 +1,15 @@
 /**
  * The errors the marketplace installer throws for a package it refuses:
- * one that fails validation, one whose conflicts block it, and one that is
- * not the package a person approved.
+ * one that fails validation, one whose conflicts block it, one that is not
+ * the package a person approved, and, on an agent computer, one that does not
+ * work on a cloud agent.
  *
  * @module services/marketplace/installer/errors
  */
+import {
+  CLOUD_AGENT_UNSUPPORTED_SENTENCE,
+  type CloudAgentUnsupportedReason,
+} from '@dorkos/marketplace';
 import type { ConflictReport } from '../types.js';
 
 /**
@@ -81,5 +86,28 @@ export class DisclosureChangedError extends Error {
         `see what it declares now.`
     );
     this.name = 'DisclosureChangedError';
+  }
+}
+
+/** The machine-readable code of {@link CloudAgentUnsupportedError}. */
+export const CLOUD_AGENT_UNSUPPORTED_CODE = 'cloud_agent_unsupported';
+
+/**
+ * Thrown on an agent computer for a package that does not work on a cloud
+ * agent (`cloudAgentSupport` in `@dorkos/marketplace`), before anything is
+ * written. The message is the same sentence the marketplace card shows.
+ */
+export class CloudAgentUnsupportedError extends Error {
+  /** Stable code a caller can key on. */
+  readonly code = CLOUD_AGENT_UNSUPPORTED_CODE;
+
+  /**
+   * Build the refusal.
+   *
+   * @param reason - Which rule refused it, for logs and tests; never shown.
+   */
+  constructor(readonly reason: CloudAgentUnsupportedReason) {
+    super(CLOUD_AGENT_UNSUPPORTED_SENTENCE);
+    this.name = 'CloudAgentUnsupportedError';
   }
 }

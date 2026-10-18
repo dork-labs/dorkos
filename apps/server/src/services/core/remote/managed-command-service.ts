@@ -69,6 +69,11 @@ import { errorName } from './managed-remote-support.js';
 import { remoteCredentials } from './remote-credentials.js';
 import { closeSessionRelay, sessionRelayDialer } from '../session-relay/index.js';
 import {
+  agentComputerAssignmentChanged,
+  agentComputerDialer,
+} from '../agent-computer/assignment-runner.js';
+import { isAgentComputer } from '../server-role/role-checks.js';
+import {
   isEnrolledUnder,
   readRemoteState,
   updateRemoteState,
@@ -480,7 +485,14 @@ export const managedRemoteCommands: ManagedCommandService = new ManagedCommandSe
       updateRemoteState,
       onSettled,
       onOpened,
-      relayDialer: sessionRelayDialer(),
+      // An agent computer dials its hub on its own dialer, and reads its
+      // assignment again on Cloud's word; no other role is given either. This
+      // service never starts on an agent computer today (it has no account
+      // link), so the wiring waits for a stream opened with the computer's own
+      // key, a follow-up; the computer polls meanwhile.
+      ...(isAgentComputer()
+        ? { relayDialer: agentComputerDialer(), agentComputerAssignmentChanged }
+        : { relayDialer: sessionRelayDialer() }),
     }),
   openStream: (context, signal) => openCloudV1Stream(context, V1_ROUTES.remoteCommands, signal),
   activity: {

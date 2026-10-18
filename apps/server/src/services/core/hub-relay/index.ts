@@ -21,10 +21,12 @@ import {
   onConnectionPromoted,
 } from './hub-relay-registry.js';
 import { HubViewerTracker } from './viewer-tracker.js';
+import { liveAgentComputerLinkDeps, type AgentComputerLinkDeps } from './agent-computer-link.js';
 
 export {
   HUB_RELAY_MAX_COMPUTERS,
   LinkedComputerKeyMismatchError,
+  LinkedComputersUnreadableError,
   readLinkedComputers,
   relaySecretHash,
   type LinkComputerInput,
@@ -73,6 +75,22 @@ export {
   type HubRelayWake,
 } from './computer-waker.js';
 export { HubViewerTracker, type ViewerCountTarget } from './viewer-tracker.js';
+export {
+  AGENT_COMPUTER_LINK_CODE_TTL_MS,
+  AGENT_COMPUTER_LINK_FAILURE_WINDOW_MS,
+  AGENT_COMPUTER_LINK_MAX_FAILURES,
+  AgentComputerCodeBook,
+  agentComputerCodes,
+  type AgentComputerCodeClaim,
+  type MintedAgentComputerCode,
+} from './agent-computer-codes.js';
+export {
+  mintAgentComputerLinkCode,
+  mintLinkCodeIfUnlinked,
+  redeemAgentComputerCode,
+  type AgentComputerLinkDeps,
+  type AgentComputerRedeemOutcome,
+} from './agent-computer-link.js';
 
 /**
  * The hub's open chat streams per computer. Each computer's live connection is
@@ -116,4 +134,16 @@ export async function forgetLinkedComputer(
   const was = await unlinkComputer(computerId, dorkHome);
   dropComputerConnection(computerId);
   return was;
+}
+
+/**
+ * The live hub's agent computer linking: its code book and Cloud handoff, and
+ * {@link linkComputer} and {@link forgetLinkedComputer}, so a second redeem
+ * closes the computer's live connection as an unlink from settings does.
+ */
+export function liveAgentComputerLink(): AgentComputerLinkDeps {
+  return liveAgentComputerLinkDeps(
+    (input) => linkComputer(input),
+    (computerId) => forgetLinkedComputer(computerId)
+  );
 }

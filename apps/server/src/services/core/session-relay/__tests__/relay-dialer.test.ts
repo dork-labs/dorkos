@@ -128,13 +128,16 @@ function setup(
   });
 
   /** Play the hub: answer the hello the computer sent, check its finish. */
-  function hubAnswers(signer: KeyObject = overrides.hubSigner ?? hub): RelayChannel | null {
+  function hubAnswers(
+    signer: KeyObject = overrides.hubSigner ?? hub,
+    origin: string = ORIGIN
+  ): RelayChannel | null {
     const socket = sockets.at(-1)!;
     socket.fire('open');
     const helloText = socket.sent[0]!;
     const answered = answerHello(helloText, 'computer-1', {
       sign: (data) => sign(null, data, signer),
-      origin: ORIGIN,
+      origin,
     });
     if (!answered.ok) throw new Error('hub refused the hello');
     socket.fire('message', JSON.stringify(answered.answer));
@@ -196,6 +199,36 @@ describe('RelayDialer', () => {
     expect(sockets).toHaveLength(1);
     expect(sockets[0]!.url).toBe('wss://dorian.hub.example.test/api/relay/computer');
     expect(sockets[0]!.headers).toEqual({ Authorization: `Bearer ${pin!.relaySecret}` });
+  });
+
+  it('dials now with no command, under the same checks, as an agent computer does (DOR-2940)', () => {
+    expect(setup({ pin: null }).dialer.dialNow()).toBe('ignored');
+    expect(setup({ owner: false }).dialer.dialNow()).toBe('refused:no-owner');
+    const { dialer, sockets } = setup();
+    expect(dialer.dialNow()).toBe('applied');
+    expect(dialer.dialNow()).toBe('applied');
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('tries a moved hub at its new origin, and says so only once the pinned key proves', () => {
+    const MOVED = 'https://moved.hub.example.test';
+    const h = setup();
+    const onProved = vi.fn();
+    expect(h.dialer.dialAt(MOVED, onProved)).toBe('applied');
+    expect(h.sockets[0]!.url).toBe('wss://moved.hub.example.test/api/relay/computer');
+    expect(onProved).not.toHaveBeenCalled();
+    expect(h.hubAnswers(undefined, MOVED)).not.toBeNull();
+    expect(onProved).toHaveBeenCalledTimes(1);
+  });
+
+  it('never says a moved hub proved itself when it signs with another key', () => {
+    const MOVED = 'https://moved.hub.example.test';
+    const h = setup();
+    const onProved = vi.fn();
+    h.dialer.dialAt(MOVED, onProved);
+    expect(h.hubAnswers(generateKeyPairSync('ed25519').privateKey, MOVED)).toBeNull();
+    expect(onProved).not.toHaveBeenCalled();
+    expect(h.dialer.connected).toBe(false);
   });
 
   it('advertises only the features the protocol knows', () => {

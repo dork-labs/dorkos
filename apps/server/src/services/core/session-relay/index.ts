@@ -53,6 +53,15 @@ export function wireSessionRelay(pieces: SessionRelayWiring): void {
 }
 
 /**
+ * The startup pieces {@link wireSessionRelay} handed over, or `null` before
+ * then. Read per request by a request server built elsewhere (an agent
+ * computer's, `services/core/agent-computer/assignment-runner.ts`).
+ */
+export function sessionRelayWiring(): SessionRelayWiring | null {
+  return wiring;
+}
+
+/**
  * Whether the person turned on chatting from the web (`sessionRelay.enabled`,
  * an experiment, off by default). Read on every call, so turning it off stops
  * the next dial and the next viewer report closes an open connection.

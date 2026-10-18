@@ -19,6 +19,7 @@ import { formatRelayLinkCode } from '@dorkos/shared/session-relay-link';
 import type { AuditActor, AuditOutcome } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { errorBody } from '../lib/route-utils.js';
+import { logger } from '../lib/logger.js';
 import { currentAuditActor } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {
@@ -57,6 +58,7 @@ function auditLinkChange(entry: {
   operation: 'create' | 'remove';
   summary: string;
   outcome: AuditOutcome;
+  error?: string;
   target: { type: string; id: string; name?: string };
 }): void {
   const scope = currentAuditActor();
@@ -100,7 +102,21 @@ export function mountHubComputerLinkRoutes(
   router.delete('/:computerId', async (c) => {
     const computerId = c.req.param('computerId');
     const name = deps.record(computerId)?.computerName;
-    const removed = await deps.forget(computerId);
+    let removed: boolean;
+    try {
+      removed = await deps.forget(computerId);
+    } catch (error) {
+      logger.warn('[HubRelay] A computer could not be unlinked', { error: (error as Error).name });
+      auditLinkChange({
+        action: 'hub.relay.computer.unlink',
+        operation: 'remove',
+        summary: 'A computer could not be unlinked',
+        outcome: 'failed',
+        error: 'store_failed',
+        target: { type: 'computer', id: computerId, ...(name ? { name } : {}) },
+      });
+      return c.json(errorBody("Couldn't unlink that computer. Try again.", 'UNLINK_FAILED'), 503);
+    }
     if (!removed) return c.json(errorBody('Not found', 'API_NOT_FOUND'), 404);
     auditLinkChange({
       action: 'hub.relay.computer.unlink',

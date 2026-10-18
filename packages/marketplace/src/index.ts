@@ -57,6 +57,21 @@ export type {
 export { DorkosSidecarSchema, DorkosEntrySchema, PricingSchema } from './dorkos-sidecar-schema.js';
 export type { DorkosSidecar, DorkosEntry, Pricing } from './dorkos-sidecar-schema.js';
 
+// Whether a package works on a cloud agent
+export {
+  cloudAgentSupport,
+  CLOUD_AGENT_UNSUPPORTED_REASONS,
+  CLOUD_AGENT_UNSUPPORTED_SENTENCE,
+  CLOUD_AGENT_RUNTIME,
+  CLOUD_COMPUTER_MCP_PROGRAMS,
+} from './cloud-agent-support.js';
+export type {
+  CloudAgentSupport,
+  CloudAgentUnsupportedReason,
+  CloudAgentPackageFacts,
+  CloudAgentMcpServerFacts,
+} from './cloud-agent-support.js';
+
 // Merge helper
 export { mergeMarketplace } from './merge-marketplace.js';
 export type { MergedMarketplaceEntry, MergeMarketplaceResult } from './merge-marketplace.js';

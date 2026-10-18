@@ -28568,7 +28568,7 @@
           "Hub"
         ],
         "summary": "Link a computer with a code",
-        "description": "Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the credential. The request is signed with the computer's own key; the answer carries the hub's key and is signed with it. A wrong, expired or used code and a bad signature get the same 401.",
+        "description": "Sent by DorkOS on the computer, never a browser, with no sign-in: the link code is the credential. The request is signed with the computer's own key; the answer carries the hub's key and is signed with it. A wrong, expired or used code and a bad signature get the same 401. A cloud agent computer redeems here too, under its relay id (`ac:` and its cloud computer id), with a code the hub minted for that computer alone; a second redeem for one computer unlinks it, mints a new code, and is refused with 409.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -28769,7 +28769,7 @@
             }
           },
           "409": {
-            "description": "That computer id is already linked under another key, or the hub cannot link another",
+            "description": "That computer id is already linked under another key, an agent computer's code was redeemed twice (`LINK_RESET`), or the hub cannot link another",
             "content": {
               "application/json": {
                 "schema": {
@@ -38451,6 +38451,30 @@
                     "contentHash": {
                       "type": "string"
                     },
+                    "cloudAgents": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "agent-runtime",
+                            "hooks",
+                            "claude-code-only",
+                            "relay-adapter",
+                            "mcp-program",
+                            "unreadable-declaration"
+                          ],
+                          "description": "Which rule refused it. Present only when `supported` is false."
+                        }
+                      },
+                      "required": [
+                        "supported"
+                      ],
+                      "description": "Whether the package works on a cloud agent."
+                    },
                     "readme": {
                       "type": "string"
                     }
@@ -38460,7 +38484,8 @@
                     "packagePath",
                     "preview",
                     "disclosed",
-                    "contentHash"
+                    "contentHash",
+                    "cloudAgents"
                   ]
                 }
               }
@@ -39547,6 +39572,30 @@
                     "contentHash": {
                       "type": "string",
                       "description": "The staged files, hashed: send it back as `approvedContentHash`."
+                    },
+                    "cloudAgents": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "agent-runtime",
+                            "hooks",
+                            "claude-code-only",
+                            "relay-adapter",
+                            "mcp-program",
+                            "unreadable-declaration"
+                          ],
+                          "description": "Which rule refused it. Present only when `supported` is false."
+                        }
+                      },
+                      "required": [
+                        "supported"
+                      ],
+                      "description": "Whether the package works on a cloud agent."
                     }
                   },
                   "required": [
@@ -39554,7 +39603,8 @@
                     "manifest",
                     "packagePath",
                     "disclosed",
-                    "contentHash"
+                    "contentHash",
+                    "cloudAgents"
                   ]
                 }
               }

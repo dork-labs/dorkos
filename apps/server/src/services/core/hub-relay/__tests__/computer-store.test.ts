@@ -18,11 +18,14 @@ vi.mock('node:crypto', async (importOriginal) => {
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+const audit = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: audit.record }));
 
 import { logger } from '../../../../lib/logger.js';
 import {
   HUB_RELAY_MAX_COMPUTERS,
   LinkedComputerKeyMismatchError,
+  LinkedComputersUnreadableError,
   findComputerBySecret,
   readLinkedComputers,
   relaySecretHash,
@@ -235,5 +238,167 @@ describe('the linked computer store', () => {
     fs.writeFileSync(file(), text);
     expect(readLinkedComputers(home)).toEqual([]);
     expect(findComputerBySecret(s, home)).toBeNull();
+  });
+});
+
+describe('format 2: agent computers (DOR-2940)', () => {
+  it('reads a format-1 record as a person`s computer, and writes format 2 next time', async () => {
+    const v1 = {
+      v: 1,
+      computerId: 'mac-1',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      computerName: 'Studio Mac',
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), JSON.stringify([v1]));
+    expect(readLinkedComputers(home)).toEqual([{ ...v1, v: 2, role: 'computer' }]);
+
+    // Any write moves the whole file to format 2, keeping the old record.
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
+    );
+    const stored = JSON.parse(fs.readFileSync(file(), 'utf8')) as Array<Record<string, unknown>>;
+    expect(stored.map((r) => [r.v, r.role, r.computerId])).toEqual([
+      [2, 'computer', 'mac-1'],
+      [2, 'computer', 'mac-2'],
+    ]);
+  });
+
+  it('drops a format-1 record in the reserved id space, and a store keeps every other link', async () => {
+    const legacy = {
+      v: 1,
+      computerId: 'ac:legacy',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const mac = {
+      v: 1,
+      computerId: 'mac-1',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), JSON.stringify([legacy, mac]));
+    expect(readLinkedComputers(home).map((c) => c.computerId)).toEqual(['mac-1']);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Dropped old computer records'),
+      { dropped: 1 }
+    );
+
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
+    );
+    // Written back, read again: the file still parses, and both links survive.
+    const reread = readLinkedComputers(home).map((c) => c.computerId);
+    expect(reread).toEqual(['mac-1', 'mac-2']);
+    const stored = JSON.parse(fs.readFileSync(file(), 'utf8')) as unknown[];
+    expect(stored).toHaveLength(2);
+  });
+
+  it('moves a file that does not parse aside, owner-only, and links again from a fresh list', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '[{"v": 9}]');
+    expect(readLinkedComputers(home)).toEqual([]);
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
+    );
+    expect(readLinkedComputers(home).map((c) => c.computerId)).toEqual(['mac-2']);
+    const aside = fs
+      .readdirSync(path.dirname(file()))
+      .filter((name) => name.startsWith('computers.json.bad-'));
+    expect(aside).toHaveLength(1);
+    const kept = path.join(path.dirname(file()), aside[0]!);
+    expect(fs.readFileSync(kept, 'utf8')).toBe('[{"v": 9}]');
+    expect(fs.statSync(kept).mode & 0o777).toBe(0o600);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('moved aside'),
+      expect.objectContaining({ movedTo: aside[0] })
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'hub.relay.computers.quarantined', outcome: 'failed' })
+    );
+  });
+
+  it('refuses to write, rather than overwrite, a bad file it cannot move', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '[{"v": 9}]');
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    });
+    try {
+      await expect(unlinkComputer('mac-2', home)).rejects.toBeInstanceOf(
+        LinkedComputersUnreadableError
+      );
+    } finally {
+      rename.mockRestore();
+    }
+    expect(fs.readFileSync(file(), 'utf8')).toBe('[{"v": 9}]');
+  });
+
+  it('stores an agent computer with its cloud id and role', async () => {
+    const record = await linkComputer(
+      {
+        role: 'agent-computer',
+        cloudComputerId: 'cmp_1',
+        computerId: 'ac:cmp_1',
+        secretHash: relaySecretHash(secret()),
+        computerKey: key(),
+        computerName: 'Cloud computer',
+      },
+      home
+    );
+    expect(record).toMatchObject({ v: 2, role: 'agent-computer', cloudComputerId: 'cmp_1' });
+    expect(readLinkedComputers(home)).toEqual([record]);
+  });
+
+  it('refuses an agent computer whose relay id is not its cloud id', async () => {
+    await expect(
+      linkComputer(
+        {
+          role: 'agent-computer',
+          cloudComputerId: 'cmp_1',
+          computerId: 'ac:cmp_2',
+          secretHash: relaySecretHash(secret()),
+          computerKey: key(),
+        },
+        home
+      )
+    ).rejects.toThrow();
+    expect(readLinkedComputers(home)).toEqual([]);
+  });
+
+  it('refuses a person`s computer in the agent computers` id space', async () => {
+    await expect(
+      linkComputer(
+        { computerId: 'ac:cmp_1', secretHash: relaySecretHash(secret()), computerKey: key() },
+        home
+      )
+    ).rejects.toThrow();
+  });
+
+  it('reads a file whose agent computer record is inconsistent as no computers', () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(
+      file(),
+      JSON.stringify([
+        {
+          v: 2,
+          role: 'agent-computer',
+          cloudComputerId: 'cmp_1',
+          computerId: 'ac:cmp_other',
+          secretHash: relaySecretHash(secret()),
+          computerKey: key(),
+          linkedAt: '2026-10-01T00:00:00.000Z',
+        },
+      ])
+    );
+    expect(readLinkedComputers(home)).toEqual([]);
   });
 });

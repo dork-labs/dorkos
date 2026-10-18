@@ -45,7 +45,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { Readable } from 'node:stream';
 import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
-import { resolveCreditsLaunch } from './credits-inference.js';
+import { noteCreditsTokenRefused, resolveCreditsLaunch } from './credits-inference.js';
+import { classifyCreditsRefusal } from './credits-refusals.js';
 import { CreditsUnavailableError, type CreditsLaunch } from './credits-protocols.js';
 
 /** The formats the relay carries, and the paths each may use. */
@@ -84,7 +85,16 @@ export interface CreditsRelayOptions {
   fetchImpl?: typeof fetch;
   /** Size and time limits. */
   limits?: Partial<CreditsRelayLimits>;
+  /**
+   * Told the id of a token the endpoint refused, and what the refusal means
+   * for it (`./credits-refusals.ts`). A `busy` answer is passed through and
+   * never told.
+   */
+  onTokenRefused?: (tokenId: string, kind: 'token' | 'account') => void;
 }
+
+/** The answers whose body is read for what they mean for the token. */
+const TOKEN_REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 402, 403]);
 
 /** A running relay. */
 export interface CreditsRelay {
@@ -155,6 +165,7 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer 
 export async function startCreditsRelay(options: CreditsRelayOptions = {}): Promise<CreditsRelay> {
   const limits = { ...DEFAULT_LIMITS, ...options.limits };
   const doFetch = options.fetchImpl ?? fetch;
+  const onTokenRefused = options.onTokenRefused ?? noteCreditsTokenRefused;
   const resolveLaunch =
     options.resolveLaunch ??
     ((protocol: RuntimeCreditsProtocol, runtimeLabel: string) =>
@@ -227,6 +238,18 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
         const value = upstream.headers.get(name);
         if (value !== null) returned[name] = value;
       }
+      // A refusal is read whole so its code can be kept, then passed
+      // on as it came. Only a token or account refusal is told
+      // (`noteCreditsTokenRefused`); a busy one goes through untouched.
+      if (TOKEN_REFUSED_STATUSES.has(upstream.status)) {
+        // A refusal is a short envelope; the request's time limit bounds it.
+        const text = await upstream.text();
+        const kind = classifyCreditsRefusal(upstream.status, parsedOrNull(text));
+        if (kind !== 'busy') onTokenRefused(launch.tokenId, kind);
+        res.writeHead(upstream.status, returned);
+        res.end(text);
+        return;
+      }
       res.writeHead(upstream.status, returned);
       if (upstream.body === null) {
         res.end();
@@ -293,4 +316,13 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };
+}
+
+/** A body parsed as JSON, or `null` when it is not JSON. */
+function parsedOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }

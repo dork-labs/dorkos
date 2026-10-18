@@ -263,7 +263,7 @@ import {
   ConnectorSessionAccessUpdateSchema,
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
-import { PackageTypeSchema } from '@dorkos/marketplace';
+import { CLOUD_AGENT_UNSUPPORTED_REASONS, PackageTypeSchema } from '@dorkos/marketplace';
 import {
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
@@ -3213,6 +3213,17 @@ registry.registerPath({
   },
 });
 
+/** Whether a package works on a cloud agent (`cloudAgentSupport` in `@dorkos/marketplace`). */
+const CloudAgentSupportSchema = z
+  .object({
+    supported: z.boolean(),
+    reason: z
+      .enum(CLOUD_AGENT_UNSUPPORTED_REASONS)
+      .optional()
+      .describe('Which rule refused it. Present only when `supported` is false.'),
+  })
+  .describe('Whether the package works on a cloud agent.');
+
 registry.registerPath({
   method: 'get',
   path: '/api/marketplace/packages/{name}',
@@ -3233,6 +3244,7 @@ registry.registerPath({
             preview: LocalPermissionPreviewSchema,
             disclosed: DisclosedEffectsSchema,
             contentHash: z.string(),
+            cloudAgents: CloudAgentSupportSchema,
             // Raw README markdown read from the staged clone; omitted when the
             // package ships no README (see routes/marketplace/packages.ts readPackageReadme).
             readme: z.string().optional(),
@@ -3277,6 +3289,7 @@ registry.registerPath({
             contentHash: z
               .string()
               .describe('The staged files, hashed: send it back as `approvedContentHash`.'),
+            cloudAgents: CloudAgentSupportSchema,
           }),
         },
       },

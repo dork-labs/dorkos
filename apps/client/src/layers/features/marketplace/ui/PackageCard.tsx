@@ -1,4 +1,5 @@
-import { Star, Check, Store, User } from 'lucide-react';
+import { Star, Check, Store, User, CloudOff } from 'lucide-react';
+import { cloudAgentSupport, CLOUD_AGENT_UNSUPPORTED_SENTENCE } from '@dorkos/marketplace';
 import { Button, DevLinkTag } from '@/layers/shared/ui';
 import { cn, packageDisplayLabel } from '@/layers/shared/lib';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -55,6 +56,11 @@ interface PackageCardProps {
    * `default`, which described nothing (DOR-1873).
    */
   variant?: 'comfortable' | 'compact';
+  /**
+   * Whether to say when the package doesn't work on cloud agents. Only where
+   * cloud agents apply (a hub); everywhere else nothing is shown.
+   */
+  showCloudAgentSupport?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +96,7 @@ interface PackageCardProps {
  * @param devLinked - Whether it runs from a dev link instead.
  * @param onClick - Handler for card-body clicks (opens detail sheet).
  * @param onInstallClick - Handler for the Install button click.
+ * @param showCloudAgentSupport - Whether to say it doesn't work on cloud agents.
  */
 export function PackageCard({
   pkg,
@@ -98,11 +105,14 @@ export function PackageCard({
   onClick,
   onInstallClick,
   variant = 'comfortable',
+  showCloudAgentSupport = false,
 }: PackageCardProps) {
   const packageType = pkg.type ?? 'plugin';
   const authorLabel = resolveAuthorLabel(pkg.author);
   const isCompact = variant === 'compact';
   const bridge = adapterBridge(pkg.type, pkg.adapterType);
+  // Judged from what the card knows (its type); the install dialog knows more.
+  const notOnCloudAgents = showCloudAgentSupport && !cloudAgentSupport(pkg).supported;
 
   const handleInstallClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -157,6 +167,16 @@ export function PackageCard({
 
       {/* Bridge line: what this adapter becomes on the Connections page */}
       {bridge && <p className="text-muted-foreground/90 text-2xs mb-3">{bridge.line}</p>}
+
+      {notOnCloudAgents && (
+        <p
+          className="text-muted-foreground text-2xs mb-3 flex items-center gap-1.5"
+          data-testid="package-card-cloud-agents"
+        >
+          <CloudOff className="size-3 shrink-0" aria-hidden />
+          {CLOUD_AGENT_UNSUPPORTED_SENTENCE}
+        </p>
+      )}
 
       {/* Description */}
       {pkg.description && (

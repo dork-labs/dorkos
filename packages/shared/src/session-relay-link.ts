@@ -140,6 +140,49 @@ export const RelayLinkComputerIdSchema = z
   .max(64)
   .regex(/^[\w.:-]+$/);
 
+/**
+ * The prefix that marks a relay computer id as a cloud agent computer's
+ * (DOR-2940). The space after it is reserved: a person's own computer never
+ * links under an id that starts with it, so the two kinds can never collide
+ * on one hub and a hub can tell an agent computer's redeem from a Mac's by
+ * the id alone, with no new field on the wire.
+ */
+export const AGENT_COMPUTER_RELAY_ID_PREFIX = 'ac:';
+
+/**
+ * What a cloud computer id must look like to be relayed: 1 to 61 of letters,
+ * digits, `_`, `.` and `-`, so the prefixed id fits
+ * {@link RelayLinkComputerIdSchema} with room to spare and holds no second
+ * colon. Cloud's ids are opaque, so one outside this is refused on both ends
+ * rather than rewritten: a rewrite could map two ids onto one.
+ */
+const CLOUD_COMPUTER_ID = /^[A-Za-z0-9_.-]{1,61}$/;
+
+/**
+ * The relay computer id an agent computer links and dials under: its cloud
+ * computer id behind {@link AGENT_COMPUTER_RELAY_ID_PREFIX}.
+ *
+ * @param cloudComputerId - The computer's id as Cloud and the hub name it.
+ * @returns The relay id, or `null` when the cloud id cannot be relayed.
+ */
+export function agentComputerRelayId(cloudComputerId: string): string | null {
+  return CLOUD_COMPUTER_ID.test(cloudComputerId)
+    ? `${AGENT_COMPUTER_RELAY_ID_PREFIX}${cloudComputerId}`
+    : null;
+}
+
+/**
+ * The cloud computer id inside an agent computer's relay id.
+ *
+ * @param relayComputerId - A relay computer id.
+ * @returns The cloud id, or `null` when the id is not an agent computer's.
+ */
+export function cloudComputerIdOf(relayComputerId: string): string | null {
+  if (!relayComputerId.startsWith(AGENT_COMPUTER_RELAY_ID_PREFIX)) return null;
+  const id = relayComputerId.slice(AGENT_COMPUTER_RELAY_ID_PREFIX.length);
+  return CLOUD_COMPUTER_ID.test(id) ? id : null;
+}
+
 /** Base64url of exactly 32 bytes, unpadded: a SHA-256. */
 const Sha256Base64urlSchema = z
   .string()

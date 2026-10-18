@@ -133,6 +133,23 @@ describe('DELETE /api/hub/computers/:computerId', () => {
     );
   });
 
+  it('answers a fixed refusal, never a bare 500, when the store fails, and records it', async () => {
+    links.forget.mockRejectedValueOnce(new Error('disk full'));
+    const res = await request(server).delete('/api/hub/computers/mac-1');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      error: "Couldn't unlink that computer. Try again.",
+      code: 'UNLINK_FAILED',
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'hub.relay.computer.unlink',
+        outcome: 'failed',
+        error: 'store_failed',
+      })
+    );
+  });
+
   it('answers 404 for a computer it does not serve', async () => {
     const res = await request(server).delete('/api/hub/computers/mac-2');
     expect(res.status).toBe(404);

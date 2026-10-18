@@ -42,6 +42,7 @@ import {
   closeAllComputerConnections,
   hubRelayComputerRoute,
 } from './services/core/hub-relay/index.js';
+import { stopAgentComputerLink } from './services/core/agent-computer/assignment-runner.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
 import { shutdownUsageReporter } from './services/core/usage-reporter.js';
 import { flushServerError, captureServerError } from './services/core/error-reporter.js';
@@ -73,6 +74,7 @@ import { composeCapabilities } from './startup/steps/capabilities.js';
 import { startAfterListen } from './startup/steps/after-listen.js';
 import { createServerRefs, type ServerRefs } from './startup/server-refs.js';
 import { currentServerRole } from './lib/server-role.js';
+import { isAgentComputer } from './services/core/server-role/role-checks.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
 //
@@ -321,7 +323,8 @@ async function start() {
       // and upgrades to the router above. Nothing listens until a tunnel opens.
       tunnelManager.attachIngresses(tunnelIngressesFor(frontDoorListener(frontDoor), server, PORT));
       // Reconnect Cloud's command stream when the boot rule allows it (DOR-2086); opens nothing.
-      managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
+      // Never on an agent computer, which holds no DorkOS account link (DOR-2940).
+      if (!isAgentComputer()) managedRemoteCommands.boot(db, currentRemoteBootPlan(env));
 
       // Fire-and-forget: record startup in the activity feed so the dashboard
       // shows when the server was last (re)started.
@@ -437,8 +440,10 @@ async function shutdownServices() {
   getAgentSendService()?.stop();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   refs.terminalManager?.destroyAll();
-  // A hub's linked computers redial on their next viewer.
+  // A hub's linked computers redial on their next viewer; an agent computer
+  // stops reading its assignment and closes its relay.
   closeAllComputerConnections();
+  stopAgentComputerLink();
   // Give back every port an open dev-server preview is holding.
   await previewListeners.close();
   // Cancel any pending managed-MCP OAuth token refresh timers.

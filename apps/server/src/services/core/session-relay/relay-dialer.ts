@@ -159,19 +159,48 @@ export class RelayDialer {
    * @param expiresAt - The command's `expiresAt`; past it, the command is ignored.
    */
   onViewerOpen(expiresAt: string): RemoteCommandOutcome {
-    const now = this.now();
     // Fails closed: an expiry that does not parse is treated as passed.
-    if (!(Date.parse(expiresAt) > now)) return 'ignored';
-    const pin = this.deps.readPin();
-    if (!pin) return 'ignored';
+    if (!(Date.parse(expiresAt) > this.now())) return 'ignored';
+    return this.dialNow();
+  }
+
+  /**
+   * Dial the pinned hub now unless already connected or dialing: what a
+   * `viewer_open` does once its expiry is checked, and what a cloud agent
+   * computer does at boot and after it links (DOR-2940). Every other check
+   * {@link onViewerOpen} makes is made here. Never throws.
+   */
+  dialNow(): RemoteCommandOutcome {
+    return this.tryDial(null);
+  }
+
+  /**
+   * Dial the pinned hub at another origin, without changing the pin: for a
+   * cloud agent computer whose hub moved (DOR-2940). The handshake there must
+   * be signed by the pinned key, as every handshake is; only once it is does
+   * `onProved` run, so the caller saves the new origin then and not before. A
+   * hub at the new origin that signs with another key is refused like any
+   * other, and the pin keeps the old origin. Never throws.
+   *
+   * @param hubOrigin - The origin to try, already checked as a public https one.
+   * @param onProved - Called once, when the hub there has proved the pinned key.
+   */
+  dialAt(hubOrigin: string, onProved: () => void): RemoteCommandOutcome {
+    return this.tryDial({ hubOrigin, onProved });
+  }
+
+  private tryDial(moved: { hubOrigin: string; onProved: () => void } | null): RemoteCommandOutcome {
+    const pinned = this.deps.readPin();
+    if (!pinned) return 'ignored';
     if (!this.deps.ownerExists()) return 'refused:no-owner';
     if (this.current.state !== 'idle') return 'applied';
-    if (now < this.redialAfter) return 'ignored';
+    if (this.now() < this.redialAfter) return 'ignored';
+    const pin = moved ? { ...pinned, hubOrigin: moved.hubOrigin } : pinned;
     try {
       // Read before dialing, so a key that cannot be read is a failed command
       // rather than a throw inside a socket listener.
       const computerKey = this.deps.computerKey();
-      this.dial(pin, computerKey);
+      this.dial(pin, computerKey, moved?.onProved ?? null);
       return 'applied';
     } catch (error) {
       logger.warn('[SessionRelay] Could not dial the hub', { error: (error as Error).name });
@@ -200,7 +229,7 @@ export class RelayDialer {
     return (this.deps.now ?? Date.now)();
   }
 
-  private dial(pin: RelayPin, computerKey: KeyObject): void {
+  private dial(pin: RelayPin, computerKey: KeyObject, onProved: (() => void) | null): void {
     const features = this.deps.server
       .features()
       .filter((feature) => (SESSION_RELAY_FEATURES as readonly string[]).includes(feature));
@@ -230,7 +259,7 @@ export class RelayDialer {
     socket.on(
       'message',
       guarded((data: unknown, isBinary?: boolean) =>
-        this.receive(socket, pin, handshake, computerKey, data, isBinary === true)
+        this.receive(socket, pin, handshake, computerKey, data, isBinary === true, onProved)
       )
     );
     socket.on(
@@ -260,7 +289,8 @@ export class RelayDialer {
     handshake: ComputerHandshake,
     computerKey: KeyObject,
     data: unknown,
-    isBinary: boolean
+    isBinary: boolean,
+    onProved: (() => void) | null
   ): void {
     const current = this.current;
     if (current.state === 'idle' || current.socket !== socket) return;
@@ -297,6 +327,15 @@ export class RelayDialer {
       this.heardFromHub(socket);
       logger.info('[SessionRelay] Connected to this computer’s own DorkOS in the cloud');
       this.reportLinkState();
+      if (onProved) {
+        try {
+          onProved();
+        } catch (error) {
+          logger.warn('[SessionRelay] Could not record the hub`s new address', {
+            error: (error as Error).name,
+          });
+        }
+      }
       return;
     }
 

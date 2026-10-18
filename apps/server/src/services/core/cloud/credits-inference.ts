@@ -43,6 +43,15 @@
  * that finds none waits for one bounded mint ({@link ensureCreditsToken}) and
  * refuses when that fails.
  *
+ * ## On an agent computer
+ *
+ * The same loop mints with the computer's own instance key instead of an
+ * account link (`./credits-credential.ts`), and OpenCode, its only runtime,
+ * always runs on credits (`../agent-computer/models.ts`). One thing is added:
+ * after the service refuses a token, the computer asks for none for fifteen
+ * minutes ({@link noteCreditsTokenRefused}), since a hub sends turns with
+ * nobody there to wait.
+ *
  * @module services/core/cloud/credits-inference
  */
 import {
@@ -68,13 +77,14 @@ import {
 } from './credits-protocols.js';
 import { noteCreditsAccount } from './credits-defaults.js';
 import {
-  captureCloudV1Context,
-  isCloudLinked,
-  problemOf,
-  readCloudInstanceToken,
-  resolveCloudIdentity,
-  type CloudV1Context,
-} from './v1-client.js';
+  captureCreditsContext,
+  creditsCredential,
+  creditsCredentialHeld,
+} from './credits-credential.js';
+import { problemOf, resolveCloudIdentity, type CloudV1Context } from './v1-client.js';
+import { AGENT_COMPUTER_REFUSAL_HOLD_MS } from '../agent-computer/models.js';
+import { mintRefusalHolds, problemCodeOf } from './credits-refusals.js';
+import { isAgentComputer } from '../server-role/role-checks.js';
 
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
 const MIN_REFRESH_DELAY_MS = 30_000;
@@ -99,6 +109,12 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = RETRY_DELAY_MS;
 /** The problem code the last mint under the current link was refused with, else `null`. */
 let mintRefusal: string | null = null;
+/**
+ * On an agent computer, when the service last refused a token (a mint
+ * answered with a 4xx, or the endpoint refusing the held one), else `null`.
+ * No mint is asked for until {@link AGENT_COMPUTER_REFUSAL_HOLD_MS} has passed.
+ */
+let refusedAt: number | null = null;
 
 /** Injectable clock so the expiry check is testable without waiting. */
 let now: () => number = () => Date.now();
@@ -123,7 +139,45 @@ export function __setCreditsStateForTests(state: {
   attemptGeneration += 1;
   inflight = null;
   mintRefusal = null;
+  refusedAt = null;
   now = state.now ?? (() => Date.now());
+}
+
+/** Whether an agent computer is inside its hold after a refusal; see {@link refusedAt}. */
+function inRefusalHold(): boolean {
+  if (refusedAt === null) return false;
+  if (now() - refusedAt < AGENT_COMPUTER_REFUSAL_HOLD_MS) return true;
+  refusedAt = null;
+  return false;
+}
+
+/**
+ * The credits endpoint refused the token a request carried, as the relay read
+ * it (`./credits-refusals.ts`). On an agent computer, and only when that token
+ * is the one held now (an answer about an older token says nothing about this
+ * one):
+ *
+ * - `token`: the token is dropped and a new one is minted at once, with the
+ *   usual backoff if that fails. No hold: the account is fine.
+ * - `account`: the token is dropped and no new one is asked for until the
+ *   hold ends ({@link AGENT_COMPUTER_REFUSAL_HOLD_MS}), so the turns a hub
+ *   keeps sending are refused at once rather than each asking again.
+ *
+ * A `busy` answer never reaches here. Anywhere but an agent computer a person
+ * is there to retry, and nothing changes.
+ *
+ * @param tokenId - The id of the token the endpoint refused. Not a secret.
+ * @param kind - What the refusal means for it.
+ */
+export function noteCreditsTokenRefused(tokenId: string, kind: 'token' | 'account'): void {
+  if (!isAgentComputer()) return;
+  if (minted === null || minted.token.tokenId !== tokenId) return;
+  minted = null;
+  if (kind === 'account') {
+    refusedAt = now();
+    return;
+  }
+  mintAndRetry();
 }
 
 /** Whether the held token is present, still current and inside its validity window. */
@@ -174,7 +228,7 @@ export function creditsMintRefusal(): string | null {
  * cloud outage refuses credits launches and never blocks anything else.
  */
 async function primeCreditsInference(): Promise<boolean> {
-  return primeCreditsInferenceGated(creditsKilled(), captureCloudV1Context);
+  return primeCreditsInferenceGated(creditsKilled(), captureCreditsContext);
 }
 
 /**
@@ -190,7 +244,7 @@ export async function primeCreditsInferenceGated(
   killed: boolean,
   capture: () => CloudV1Context | null
 ): Promise<boolean> {
-  if (killed) return false;
+  if (killed || inRefusalHold()) return false;
   return primeCreditsInferenceWithContext(capture());
 }
 
@@ -213,8 +267,9 @@ export async function primeCreditsInferenceWithContext(
     const { instanceId, accountKey } = await resolveCloudIdentity(context);
     if (!context.isCurrent() || attempt !== attemptGeneration) return false;
     // Which account the credits choices belong to, when that was not known
-    // (a link made before it was recorded); a new link sets it itself.
-    if (accountKey !== null) noteCreditsAccount(accountKey);
+    // (a link made before it was recorded); a new link sets it itself. Never
+    // on an agent computer, whose settings come from its hub.
+    if (accountKey !== null && !isAgentComputer()) noteCreditsAccount(accountKey);
     if (instanceId === null) {
       minted = null;
       return false;
@@ -225,6 +280,7 @@ export async function primeCreditsInferenceWithContext(
     if (!context.isCurrent() || attempt !== attemptGeneration) return false;
     minted = { token, isCurrent: context.isCurrent };
     mintRefusal = null;
+    refusedAt = null;
     scheduleRefresh(token);
     return true;
   } catch (error) {
@@ -237,6 +293,11 @@ export async function primeCreditsInferenceWithContext(
     if (answered && context.isCurrent() && attempt === attemptGeneration) {
       mintRefusal = answered;
     }
+    // A definite no (a 4xx that is not a wait, never an outage) holds an
+    // agent computer's mints.
+    const code =
+      answered ?? (error instanceof CloudApiResponseError ? problemCodeOf(error.body) : null);
+    if (isAgentComputer() && mintRefusalHolds(status, code)) refusedAt = now();
     if (
       context.isCurrent() &&
       attempt === attemptGeneration &&
@@ -311,7 +372,7 @@ let refreshesArmed = 0;
 function mintAndRetry(): void {
   const armedBefore = refreshesArmed;
   void mintOnce().then((ok) => {
-    if (!ok && isCloudLinked() && refreshesArmed === armedBefore) retryLater();
+    if (!ok && creditsCredentialHeld() && refreshesArmed === armedBefore) retryLater();
   });
 }
 
@@ -330,17 +391,17 @@ export function startCreditsLifecycle(): () => void {
   if (creditsKilled() || lifecycleRunning) return stopCreditsLifecycle;
   lifecycleRunning = true;
   retryDelayMs = RETRY_DELAY_MS;
-  if (isCloudLinked()) mintAndRetry();
-  let seenToken = readCloudInstanceToken();
+  if (creditsCredentialHeld()) mintAndRetry();
+  let seenToken = creditsCredential();
   stopWatchingLink = configManager.onChange((change) => {
     if (!change.paths.some((path) => path === 'cloud' || path === 'cloud.instanceToken')) return;
     // Only a changed link credential matters: the `cloud` block also carries
     // the person's credits choices, and saving one must not mint.
-    const token = readCloudInstanceToken();
+    const token = creditsCredential();
     if (token === seenToken) return;
     seenToken = token;
     retryDelayMs = RETRY_DELAY_MS;
-    if (isCloudLinked()) {
+    if (creditsCredentialHeld()) {
       // A first mint on a new link that fails retries from the start of the
       // waits, and replaces any long wait left over from the old link.
       mintAndRetry();
@@ -373,7 +434,7 @@ async function ensureCreditsToken(
 ): Promise<InferenceToken | null> {
   const held = handoutable();
   if (held) return held;
-  if (creditsKilled() || !isCloudLinked()) return null;
+  if (creditsKilled() || !creditsCredentialHeld()) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<false>((resolve) => {
     timer = setTimeout(() => resolve(false), timeoutMs);
@@ -417,7 +478,7 @@ export async function revokeHeldCreditsToken(): Promise<void> {
   inflight = null;
   attemptGeneration += 1;
   if (held === null) return;
-  const context = captureCloudV1Context();
+  const context = captureCreditsContext();
   if (context === null) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -471,7 +532,7 @@ export async function resolveCreditsLaunch(
   }
   if (protocol === undefined) throw new CreditsUnavailableError('not-supported', runtimeLabel);
   if (creditsKilled()) throw new CreditsUnavailableError('off', runtimeLabel);
-  if (!isCloudLinked()) throw new CreditsUnavailableError('not-linked', runtimeLabel);
+  if (!creditsCredentialHeld()) throw new CreditsUnavailableError('not-linked', runtimeLabel);
   const token = await ensureCreditsToken(waitMs);
   if (token === null) throw new CreditsUnavailableError('unreachable', runtimeLabel);
   const baseUrl = creditsEndpointFor(token.endpoints, protocol);
@@ -546,7 +607,7 @@ export function creditsWiringReport(
     runtimes.some((runtime) => runtime.type === type && wiredWith(runtime, token))
       ? 'wired'
       : 'follow-up';
-  const linked = isCloudLinked();
+  const linked = creditsCredentialHeld();
   return {
     enabled: !creditsKilled() && linked,
     killed: creditsKilled(),

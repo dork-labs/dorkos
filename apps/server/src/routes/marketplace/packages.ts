@@ -17,6 +17,7 @@ import { logger } from '../../lib/logger.js';
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
 import { disclosedEffectsOf } from '../../services/marketplace/preview/disclosed-effects.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
+import { stagedCloudAgentSupport } from '../../services/marketplace/lib/cloud-agent-facts.js';
 import {
   installCountsProvider,
   enrichWithInstallCounts,
@@ -319,6 +320,8 @@ export function mountPackageRoutes(
         // `approvedContentHash`, and compared with the hash the installer
         // records when the package lands (DOR-2306).
         contentHash: await packageContentHash(packagePath),
+        // Whether it works on a cloud agent; the app shows it only where that applies.
+        cloudAgents: await stagedCloudAgentSupport(packagePath, manifest, preview),
         ...(readme !== undefined && { readme }),
       });
     } catch (err) {

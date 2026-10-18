@@ -169,12 +169,31 @@ export interface MarketplacePackageDetail {
    */
   contentHash: string;
   /**
+   * Whether the package works on a cloud agent, judged by `cloudAgentSupport`
+   * in `@dorkos/marketplace` from the staged package. The app shows it only
+   * where cloud agents apply. Absent from an older server.
+   */
+  cloudAgents?: MarketplaceCloudAgentSupport;
+  /**
    * Raw markdown of the package's root `README.md`, read from the staged clone
    * (case-insensitive, capped at 200 KB). Omitted when the package ships no
    * README so the UI renders nothing rather than an empty section.
    */
   readme?: string;
 }
+
+/**
+ * Whether a package works on a cloud agent, and if not, which rule said so.
+ * Mirrors `CloudAgentSupport` in `@dorkos/marketplace`, redeclared here for
+ * the same reason as {@link MarketplacePackageType}.
+ */
+export type MarketplaceCloudAgentSupport =
+  | { supported: true }
+  | {
+      supported: false;
+      /** Which rule refused it: `agent-runtime`, `hooks`, `claude-code-only`, `relay-adapter`, `mcp-program`, `unreadable-declaration`. */
+      reason: string;
+    };
 
 /** Minimal manifest summary included in detail and preview responses. */
 export interface MarketplaceManifestSummary {

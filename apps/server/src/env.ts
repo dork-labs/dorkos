@@ -242,11 +242,13 @@ export const serverEnvSchema = z.object({
   //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
   // What this server is (ADR 261015-042933, DOR-2934): `computer` (the default,
-  // a person's own DorkOS) or `hub` (a person's own DorkOS in the cloud). Read
-  // by `lib/server-role.ts` and nowhere else. A hub runs no agents, keeps login
-  // on, takes its owner from provisioning, and refuses
-  // DORKOS_ALLOW_INSECURE_BIND (below the schema).
-  DORKOS_SERVER_ROLE: z.enum(['computer', 'hub']).default('computer'),
+  // a person's own DorkOS), `hub` (a person's own DorkOS in the cloud) or
+  // `agent-computer` (a sealed machine where a hub's agents work, DOR-2940).
+  // Read by `lib/server-role.ts` and nowhere else. A hub runs no agents, keeps
+  // login on, takes its owner from provisioning, and refuses
+  // DORKOS_ALLOW_INSECURE_BIND (below the schema). An agent computer refuses it
+  // too, and listens on loopback whatever DORKOS_HOST says.
+  DORKOS_SERVER_ROLE: z.enum(['computer', 'hub', 'agent-computer']).default('computer'),
   // A hub's DorkOS Cloud instance key (DOR-2935), set by Cloud when it boots
   // the hub image. Required on a hub and read only there, by the assignment
   // sync (`services/core/hub/hub-assignment-runner.ts`); it is not this
@@ -254,6 +256,9 @@ export const serverEnvSchema = z.object({
   // and removed from `process.env` once read (below the schema), so no child
   // process (a terminal, an agent, an MCP server) inherits it.
   DORKOS_HUB_INSTANCE_KEY: z.string().min(16).optional(),
+  // An agent computer's own instance key is not read here: it comes from a
+  // file, never the environment, through
+  // `services/core/agent-computer/instance-key.ts`, its one reader (DOR-2940).
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
   // in login-off mode: with login on, the guard is inert because auth cookies
@@ -448,6 +453,9 @@ if (process.env.DORKOS_HUB_INSTANCE_KEY) {
   keptKeys[HUB_KEY_SLOT] = process.env.DORKOS_HUB_INSTANCE_KEY;
 }
 
+/** The only address an agent computer listens on (DOR-2940). */
+export const AGENT_COMPUTER_HOST = '127.0.0.1';
+
 const result = serverEnvSchema
   .superRefine((parsed, ctx) => {
     // A hub keeps login on and owns no network boundary of its own to vouch
@@ -462,14 +470,23 @@ const result = serverEnvSchema
         message: 'must be set when DORKOS_SERVER_ROLE is hub',
       });
     }
-    if (parsed.DORKOS_SERVER_ROLE === 'hub' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
+    if (parsed.DORKOS_SERVER_ROLE !== 'computer' && parsed.DORKOS_ALLOW_INSECURE_BIND) {
       ctx.addIssue({
         code: 'custom',
         path: ['DORKOS_ALLOW_INSECURE_BIND'],
-        message: 'must not be set when DORKOS_SERVER_ROLE is hub',
+        message: `must not be set when DORKOS_SERVER_ROLE is ${parsed.DORKOS_SERVER_ROLE}`,
       });
     }
   })
+  // An agent computer is reached only by the agents running on it (DOR-2940),
+  // so it listens on loopback whatever the environment asks. Rewritten here,
+  // once, so every reader of the bind host (the main listener, the preview
+  // listeners, the local dial address) agrees.
+  .transform((parsed) =>
+    parsed.DORKOS_SERVER_ROLE === 'agent-computer'
+      ? { ...parsed, DORKOS_HOST: AGENT_COMPUTER_HOST }
+      : parsed
+  )
   .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {

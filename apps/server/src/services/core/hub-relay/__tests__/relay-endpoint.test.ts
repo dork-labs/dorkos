@@ -44,7 +44,8 @@ const ORIGIN = `https://${HOST}`;
 const PROOF = { header: 'x-example-proof', secret: 'a'.repeat(40) };
 const SECRET = randomBytes(32).toString('base64url');
 const COMPUTER = {
-  v: 1 as const,
+  v: 2 as const,
+  role: 'computer' as const,
   computerId: 'computer-1',
   secretHash: relaySecretHash(SECRET),
   computerKey: 'A'.repeat(43),

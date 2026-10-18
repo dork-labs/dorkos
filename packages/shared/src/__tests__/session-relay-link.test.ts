@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RELAY_LINK_CODE_LENGTH,
+  RelayLinkComputerIdSchema,
   RelayLinkRequestSchema,
   RelayLinkResponseSchema,
   formatRelayLinkCode,
@@ -8,6 +9,8 @@ import {
   parseRelayLinkCode,
   relayLinkRequestTranscript,
   relayLinkResponseTranscript,
+  agentComputerRelayId,
+  cloudComputerIdOf,
 } from '../session-relay-link.js';
 import { SESSION_RELAY_TRANSCRIPT_LABEL } from '../session-relay.js';
 
@@ -155,5 +158,28 @@ describe('link request and response shapes', () => {
     expect(
       RelayLinkResponseSchema.safeParse({ ...answer, issuer: 'http://id.dorkos.ai' }).success
     ).toBe(false);
+  });
+});
+
+describe('agent computer relay ids (DOR-2940)', () => {
+  it('puts a cloud computer id behind the reserved prefix, and reads it back', () => {
+    expect(agentComputerRelayId('cmp_01HZX.a-b')).toBe('ac:cmp_01HZX.a-b');
+    expect(cloudComputerIdOf('ac:cmp_01HZX.a-b')).toBe('cmp_01HZX.a-b');
+    expect(RelayLinkComputerIdSchema.safeParse(agentComputerRelayId('x'.repeat(61))).success).toBe(
+      true
+    );
+  });
+
+  it.each(['', 'has space', 'a:b', 'x'.repeat(62), 'é'])(
+    'refuses %j rather than rewrite it',
+    (id) => {
+      expect(agentComputerRelayId(id)).toBeNull();
+    }
+  );
+
+  it('reads no cloud id from a person`s computer id, or a malformed one', () => {
+    expect(cloudComputerIdOf('mac-abc')).toBeNull();
+    expect(cloudComputerIdOf('ac:')).toBeNull();
+    expect(cloudComputerIdOf('ac:a:b')).toBeNull();
   });
 });

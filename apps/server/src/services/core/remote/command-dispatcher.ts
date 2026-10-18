@@ -30,8 +30,12 @@
  *
  * Commands run one at a time, in the order they arrived. `viewer_open` goes to
  * the session relay's dialer, which dials only the hub this computer pinned.
+ * `agent_computer_assignment_changed` carries no authority either: on an agent
+ * computer it asks the assignment runner to read again now (the read itself is
+ * made with the computer's own key and checked as every read is), and on any
+ * other role, which is given no reader, it is acknowledged `ignored`.
  * `inbox_pending` and `hub_assignment_changed` carry no authority, and this
- * build has no seat path to signal and no hub mode here, so each is
+ * build has no seat path to signal and no hub reader here, so each is
  * acknowledged `ignored`;
  * `keepalive` never reaches here.
  *
@@ -102,6 +106,15 @@ export interface CommandDispatcherDeps {
    * command is acknowledged `ignored`, as it was before the relay existed.
    */
   relayDialer?: { onViewerOpen(expiresAt: string): RemoteCommandOutcome };
+  /**
+   * Read an agent computer's assignment again now, for
+   * `agent_computer_assignment_changed` (DOR-2940). Given only on an agent
+   * computer; absent, the command is acknowledged `ignored`. Ready, not yet
+   * reached: this stream runs only on a computer linked to a person's
+   * account, so no command arrives on an agent computer until a stream opened
+   * with its own key does (a follow-up). It polls meanwhile.
+   */
+  agentComputerAssignmentChanged?: () => RemoteCommandOutcome;
 }
 
 /** How each refused open reads in an acknowledgement. */
@@ -271,6 +284,10 @@ export class CommandDispatcher {
     // the dialer reads only the pin.
     if (command.kind === 'viewer_open') {
       return this.deps.relayDialer?.onViewerOpen(command.expiresAt) ?? 'ignored';
+    }
+    // A signal with no authority: the read it asks for is the computer's own.
+    if (command.kind === 'agent_computer_assignment_changed') {
+      return this.deps.agentComputerAssignmentChanged?.() ?? 'ignored';
     }
     // Signals only: no authority, and no seat path or hub mode here to wake.
     if (command.kind === 'inbox_pending' || command.kind === 'hub_assignment_changed') {

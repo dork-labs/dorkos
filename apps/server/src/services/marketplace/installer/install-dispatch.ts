@@ -25,8 +25,10 @@ import {
   disclosedEffectsOf,
   sameDisclosedEffects,
 } from '../preview/disclosed-effects.js';
-import type { InstallRequest, InstallResult } from '../types.js';
-import { ConflictError, DisclosureChangedError } from './errors.js';
+import type { InstallRequest, InstallResult, PermissionPreview } from '../types.js';
+import { CloudAgentUnsupportedError, ConflictError, DisclosureChangedError } from './errors.js';
+import { stagedCloudAgentSupport } from '../lib/cloud-agent-facts.js';
+import { isAgentComputer } from '../../core/server-role/role-checks.js';
 import type { InstallerDeps } from './marketplace-installer.js';
 import { recordableContentHash, recordSourceOf } from './metadata.js';
 import { assertInstallable, type PackageStager, type StagedPackage } from './staging.js';
@@ -34,6 +36,32 @@ import { INSTALL_ROOT_DIR_BY_TYPE, projectScopeRoot } from '../lib/install-roots
 import { DevLinkError, packageIsDevLinked } from '../dev-links/errors.js';
 import { devLinkInSlot } from '../dev-links/registry.js';
 import { withInstallTargetLock } from '../transaction.js';
+
+/**
+ * On an agent computer, refuse a staged package that does not work on a cloud
+ * agent (`cloudAgentSupport`), before anything is written or removed. Every
+ * other role installs it. The install and the update both ask, the update
+ * before its uninstall, so a refused new version leaves the old one in place.
+ *
+ * @param staged - The staged package.
+ * @param preview - Its permission preview.
+ * @param req - The install request, for a runtime a person chose for an agent.
+ * @throws {CloudAgentUnsupportedError} When it does not work on a cloud agent.
+ */
+export async function refuseOffCloudAgents(
+  staged: Pick<StagedPackage, 'packagePath' | 'manifest'>,
+  preview: PermissionPreview,
+  req: Pick<InstallRequest, 'agentIdentity'>
+): Promise<void> {
+  if (!isAgentComputer()) return;
+  const support = await stagedCloudAgentSupport(
+    staged.packagePath,
+    staged.manifest,
+    preview,
+    req.agentIdentity?.runtime
+  );
+  if (!support.supported) throw new CloudAgentUnsupportedError(support.reason);
+}
 
 /** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
 const DIRECT_SOURCE_LABEL = '<direct>';
@@ -95,6 +123,10 @@ export class InstallDispatcher {
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
       });
+
+      // An agent computer runs only what works on a cloud agent (DOR-2940):
+      // anything else is refused here, before a single file is written.
+      await refuseOffCloudAgents(staged, preview, req);
 
       // The last window (DOR-647). This preview is a SECOND resolve of the
       // package: the approval bound what the first one disclosed, so a source that

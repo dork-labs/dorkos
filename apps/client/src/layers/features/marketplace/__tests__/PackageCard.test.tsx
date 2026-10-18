@@ -35,6 +35,23 @@ describe('PackageCard', () => {
 
   afterEach(cleanup);
 
+  it('says a relay adapter won`t run on a cloud agent, only when asked to', () => {
+    const relay = makePackage({ type: 'adapter', adapterType: 'telegram' });
+    const { unmount } = render(<PackageCard pkg={relay} onClick={() => {}} />);
+    expect(screen.queryByTestId('package-card-cloud-agents')).not.toBeInTheDocument();
+    unmount();
+
+    render(<PackageCard pkg={relay} onClick={() => {}} showCloudAgentSupport />);
+    expect(screen.getByTestId('package-card-cloud-agents')).toHaveTextContent(
+      "This doesn't work on cloud agents yet."
+    );
+  });
+
+  it('says nothing for a package that works on a cloud agent', () => {
+    render(<PackageCard pkg={makePackage()} onClick={() => {}} showCloudAgentSupport />);
+    expect(screen.queryByTestId('package-card-cloud-agents')).not.toBeInTheDocument();
+  });
+
   it('renders package name, type badge, and description', () => {
     const pkg = makePackage();
     render(<PackageCard pkg={pkg} onClick={() => {}} />);

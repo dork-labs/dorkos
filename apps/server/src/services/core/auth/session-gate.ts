@@ -23,6 +23,10 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **On an agent computer, none of these.** Its gate decides every path,
+ *   not only `/api` and `/mcp`: the liveness probe passes, `/mcp` and A2A go
+ *   to their own authorizer, and everything else needs a live agent identity
+ *   (`services/core/agent-computer/agent-gate.ts`).
  * - **`/api/hub/link`, on a hub only, and only that exact path** — a computer
  *   redeeming the one-time link code its owner minted (`routes/hub-link.ts`,
  *   step B3). The computer never signs in to the hub; the code is its
@@ -44,6 +48,9 @@ import { isSessionGatedPath } from './gated-paths.js';
 import { gateAccessFor, type GateAccess } from './gate-policy.js';
 import { currentServerRole } from '../../../lib/server-role.js';
 import { publicComputerSessionExpired } from '../hub/public-computer.js';
+import { decideAgentComputerGate } from '../agent-computer/agent-gate.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+import type { AgentComputerWriteRefusal } from '../agent-computer/agent-writes.js';
 import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
 import {
   requestSessionRoute,
@@ -285,10 +292,16 @@ export function authRequiredBody(): typeof AUTH_REQUIRED_BODY & { signInWith?: '
 
 /** What the session gate decided about one request. */
 export type SessionGateDecision =
-  /** Let it through. `user` is set when the gate proved who is calling. */
-  | { allowed: true; user?: RequestUser }
-  /** Answer `401` with {@link authRequiredBody}. */
-  | { allowed: false };
+  /**
+   * Let it through. `user` is set when the gate proved a person; on an agent
+   * computer, `agentIdentity` when it proved an agent.
+   */
+  | { allowed: true; user?: RequestUser; agentIdentity?: AgentIdentity }
+  /**
+   * Answer `401` with {@link authRequiredBody}, or `403` with `refusal` when an
+   * agent computer refuses a write it does not allow an agent.
+   */
+  | { allowed: false; refusal?: AgentComputerWriteRefusal };
 
 /**
  * Decide whether a request may pass the session gate, and who it is.
@@ -320,6 +333,12 @@ export async function decideSessionGate(
   // case rule is one router change away from letting an uppercased prefix slip
   // past `isSessionGatedPath` to a gated route.
   const lowered = path.toLowerCase();
+
+  // A sealed agent computer gates every path and admits no person: before the
+  // exemptions below, which exist so a person can load the app and sign in.
+  // It is handed the path as the router matches it, not `lowered`: it reads
+  // what it refuses loosely and what it lets through exactly, case and all.
+  if (access === 'agent') return decideAgentComputerGate(method, path, request.headers);
 
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are

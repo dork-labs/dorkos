@@ -42,8 +42,12 @@ vi.mock('@/layers/entities/mesh', () => ({
 
 // The install preview names the folder the files land in, so the dialog reads
 // `dorkHome` from the server config. A fixed value keeps the assertion stable.
+// Whether this is a hub decides whether the dialog says what won't run on a
+// cloud agent.
+const hub = vi.hoisted(() => ({ value: false }));
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: { dorkHome: '/Users/kai/.dork' } }),
+  useIsHub: () => hub.value,
 }));
 
 // ---------------------------------------------------------------------------
@@ -245,6 +249,7 @@ describe('InstallConfirmationDialog', () => {
     setInstallState();
     setInstalledPackages();
     setMeshAgents();
+    hub.value = false;
     // Default: mutateAsync resolves with a stub result. Individual tests
     // override with `.mockRejectedValueOnce(...)` to exercise the error path.
     installMutateAsync.mockResolvedValue({ success: true, warnings: [] });
@@ -597,5 +602,44 @@ describe('InstallConfirmationDialog', () => {
     // disabled until an agent is picked.
     expect(screen.getByText('Install Code Reviewer?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^install$/i })).toBeDisabled();
+  });
+
+  describe('on cloud agents', () => {
+    const notOnCloudAgents = "This doesn't work on cloud agents yet.";
+    const unsupported = (): MarketplacePackageDetail => ({
+      ...makeDetail(),
+      cloudAgents: { supported: false, reason: 'agent-runtime' },
+    });
+
+    it('says so on a hub, and still lets the install go ahead', () => {
+      hub.value = true;
+      useMarketplaceStore.getState().openInstallConfirm(makePackage());
+      setPreviewState({ data: unsupported() });
+      render(<InstallConfirmationDialog />);
+
+      expect(screen.getByTestId('install-cloud-agents')).toHaveTextContent(notOnCloudAgents);
+      expect(screen.getByRole('button', { name: /^install$/i })).toBeEnabled();
+    });
+
+    it('says nothing on a person`s own computer', () => {
+      useMarketplaceStore.getState().openInstallConfirm(makePackage());
+      setPreviewState({ data: unsupported() });
+      render(<InstallConfirmationDialog />);
+
+      expect(screen.queryByText(notOnCloudAgents)).not.toBeInTheDocument();
+    });
+
+    it('says nothing on a hub for a package that works there, or an older server', () => {
+      hub.value = true;
+      useMarketplaceStore.getState().openInstallConfirm(makePackage());
+      setPreviewState({ data: { ...makeDetail(), cloudAgents: { supported: true } } });
+      const { unmount } = render(<InstallConfirmationDialog />);
+      expect(screen.queryByText(notOnCloudAgents)).not.toBeInTheDocument();
+      unmount();
+
+      setPreviewState({ data: makeDetail() });
+      render(<InstallConfirmationDialog />);
+      expect(screen.queryByText(notOnCloudAgents)).not.toBeInTheDocument();
+    });
   });
 });

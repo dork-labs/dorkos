@@ -29,6 +29,7 @@
  */
 import { isLoopbackHost } from '../../../lib/trusted-origins.js';
 import { hasAnyUser } from './index.js';
+import { isAgentComputer } from '../server-role/role-checks.js';
 
 /**
  * The error code returned (409) and logged when exposure is blocked. This is the
@@ -70,9 +71,13 @@ export function readExposureState(): ExposureState {
 
 /**
  * Whether the instance may currently be exposed beyond localhost. Convenience
- * over `isExposureAllowed(readExposureState())` for the tunnel enforcement points.
+ * over `isExposureAllowed(readExposureState())` for the tunnel enforcement
+ * points, Wi-Fi access and managed remote access. Never on an agent computer
+ * (DOR-2940), which is reached only by the agents running on it, so none of
+ * them ever opens there.
  */
 export function canExpose(): boolean {
+  if (isAgentComputer()) return false;
   return isExposureAllowed(readExposureState());
 }
 
