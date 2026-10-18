@@ -266,6 +266,18 @@ it.each(['network', 'malformed'] as const)(
     expect(transport.writeFile).not.toHaveBeenCalled();
   }
 );
+it('a 404 says the file cannot be edited here, not that evidence is temporarily missing', async () => {
+  port.discover.mockRejectedValue(
+    Object.assign(new Error('The document save evidence is not available.'), { status: 404 })
+  );
+  view();
+  await screen.findByText('This file can’t be edited from this canvas.');
+  expect(
+    screen.queryByText('Previous save evidence is unavailable.', { exact: false })
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
+  expect(transport.writeFile).not.toHaveBeenCalled();
+});
 it('a failed explicit proof-only action stays blocked without replaying file content', async () => {
   port.discover.mockResolvedValue(review());
   port.recover.mockRejectedValue(new Error('lost proof response'));

@@ -20,6 +20,9 @@ export function FileSaveRecoveryPanel({
           Previous save evidence is unavailable. New saves stay blocked until it can be checked.
         </p>
       )}
+      {recovery.phase === 'refused' && (
+        <p role="alert">This file can’t be edited from this canvas.</p>
+      )}
       {recovery.phase === 'local_uncertain' && (
         <p role="alert">
           Use Retry original save. Checking previous saves won’t confirm this save.

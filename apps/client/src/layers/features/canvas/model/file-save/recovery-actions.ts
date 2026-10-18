@@ -19,6 +19,12 @@ export interface FileSaveRecoveryRecord<Owner> {
   recoveryBusy?: boolean;
   recoveryWork?: object;
 }
+/** The server answers 404 when this document's file cannot be saved from here at all. */
+function refusedByServer(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404
+  );
+}
 /** Build serialized proof-only actions for one committed file-save owner. */
 export function createFileSaveRecoveryActions<Owner extends object>({
   owner,
@@ -91,10 +97,11 @@ export function createFileSaveRecoveryActions<Owner extends object>({
           if (readOnlyInspection) record.recoveryGate = 'observed_clear';
           observed = true;
           return { status: 'observed', value };
-        } catch {
+        } catch (error) {
           if (!requestCurrent()) return { status: 'idle' };
           record.recoveryGate = 'unavailable';
-          return { status: 'unavailable' };
+          // Saves stay blocked either way; a 404 only changes what the person is told.
+          return { status: refusedByServer(error) ? 'refused' : 'unavailable' };
         } finally {
           // An old observed cache cannot satisfy a recheck after work lost currentness.
           if (!observed && record.discovery === priorDiscovery) record.discovery = undefined;

@@ -56,12 +56,23 @@ function synchronousSource<T>(value: T): T {
   }
   return value;
 }
+/**
+ * Which root a session document's file may resolve under.
+ *
+ * - `agent`: the session's registered agent directory, and nothing else.
+ * - `agent-or-recorded-cwd`: the agent directory when the session has one; for a
+ *   session with no agent, the directory the server itself recorded for the
+ *   document when the session opened it (`resolvedCwd`). Never a caller's path.
+ */
+type SessionSourceRoot = 'agent' | 'agent-or-recorded-cwd';
+
 /** Read source binding and current tree policy WITHOUT filesystem calls, including inside a supplied tx. */
 function readSourceDescriptor(
   deps: Pick<DocSourceDependencies, 'db' | 'documents'> &
     Partial<Pick<DocSourceDependencies, 'roomRepos'>>,
   documentId: string,
-  tx?: DbTransaction
+  tx: DbTransaction | undefined,
+  sessionRoot: SessionSourceRoot
 ): DocSourceDescriptor {
   const executor = tx ?? deps.db;
   const physical = readPreparedPhysicalDocument(executor, documentId);
@@ -93,9 +104,19 @@ function readSourceDescriptor(
   const parsed = parseScope(scope);
   if (parsed.kind === 'session') {
     const session = readPreparedSourceSession(executor, parsed.id);
-    if (!session?.agentPath) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
-    result.rootCandidate = session.agentPath;
-    result.matchRoot = physical.resolvedCwd;
+    if (session?.agentPath) {
+      result.rootCandidate = session.agentPath;
+      result.matchRoot = physical.resolvedCwd;
+    } else if (session && sessionRoot === 'agent-or-recorded-cwd' && physical.resolvedCwd) {
+      // A chat with no agent has no agent directory to confine the file to, so
+      // its root is the folder the server recorded when the session opened the
+      // document. The row is reread on every check: binding the session to an
+      // agent later moves the root to that agent and refuses a stale capture.
+      result.rootCandidate = physical.resolvedCwd;
+      result.matchRoot = physical.resolvedCwd;
+    } else {
+      throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
+    }
   } else if (parsed.kind === 'room') {
     if (!physical.resolvedCwd) throw new DocRouteGrantError('LOCAL_SOURCE_UNAVAILABLE');
     if (physical.treeKind === 'room-main' || physical.treeKind === 'worktree') {
@@ -126,16 +147,28 @@ export function readDocSourceDescriptor(
   documentId: string,
   tx?: DbTransaction
 ): DocSourceDescriptor {
-  return readSourceDescriptor(deps, documentId, tx);
+  return readSourceDescriptor(deps, documentId, tx, 'agent');
 }
 
-/** Ordinary document saves read only current session/agent-cwd source policy, without Room dependencies. */
+/**
+ * Ordinary document saves read only current session/agent-cwd source policy, without Room dependencies.
+ *
+ * A session with no agent falls back to the document's server-recorded folder
+ * (see {@link SessionSourceRoot}). A source this policy will not admit is the
+ * save path's usual disclosure-safe "not available", never a server fault.
+ */
 export function readSessionDocSourceDescriptor(
   deps: Pick<DocSourceDependencies, 'db' | 'documents'>,
   documentId: string,
   tx?: DbTransaction
 ): DocSourceDescriptor {
-  const source = readSourceDescriptor(deps, documentId, tx);
+  let source: DocSourceDescriptor;
+  try {
+    source = readSourceDescriptor(deps, documentId, tx, 'agent-or-recorded-cwd');
+  } catch (error) {
+    if (error instanceof DocRouteGrantError) throw new DocChannelNotFoundError({ cause: error });
+    throw error;
+  }
   if (parseScope(source.scope).kind !== 'session') throw new DocChannelNotFoundError();
   return source;
 }
