@@ -87,23 +87,27 @@ for path in \
   expect true "in scope: $path" "$path"
 done
 
-# Literal paths of today's layout, scored while apps/community still exists. The
-# fixtures above follow the file, so a wrong value (SPACE_DIR=apps, say) could
-# pass them while widening or emptying the scope; these pin the real one. The
-# move PR (7d) deletes apps/community, which retires this block; drop it then.
+# Literal paths of the layout while apps/community is a build shell (server-merge
+# step 7, between the move and the image from the server package): the code in
+# apps/server/src/services/spaces, the rest still in apps/community. The fixtures
+# above follow the file, so a wrong value (SPACE_DIR=apps, say) could pass them
+# while widening or emptying the scope; these pin the real one. Retire the block
+# when apps/community goes (7g).
 if [ -d "$repo_root/apps/community" ]; then
-  if [ "$SPACE_DIR" = apps/community ] && [ "$SPACE_SRC_DIR" = apps/community/src ] &&
+  if [ "$SPACE_DIR" = apps/community ] && [ "$SPACE_SRC_DIR" = apps/server/src/services/spaces ] &&
     [ "$SPACE_WEB_DIR" = apps/community/src/browser ]; then
     pass=$((pass + 1))
   else
     fail=$((fail + 1))
     echo "FAIL: apps/community exists, but ci/space-server.env names $SPACE_DIR, $SPACE_SRC_DIR, $SPACE_WEB_DIR" >&2
   fi
-  for path in apps/community/src/app.ts apps/community/migrations/0001_foundation.sql; do
-    expect true "in scope (today's layout): $path" "$path"
+  for path in apps/server/src/services/spaces/app.ts apps/community/migrations/0001_foundation.sql \
+    apps/community/src/browser/CommunityApp.tsx apps/community/Dockerfile; do
+    expect true "in scope (build-shell layout): $path" "$path"
   done
-  for path in apps/communityx/src/app.ts apps/server/src/index.ts apps/client/src/main.tsx; do
-    expect false "out of scope (today's layout): $path" "$path"
+  for path in apps/communityx/src/app.ts apps/server/src/index.ts apps/server/src/services/spacesx/a.ts \
+    apps/server/src/services/relay/relay-service.ts apps/client/src/main.tsx; do
+    expect false "out of scope (build-shell layout): $path" "$path"
   done
 fi
 

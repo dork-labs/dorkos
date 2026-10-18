@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { lexWithoutComments } from '../../../../../../scripts/lib/code-only.mjs';
 import { parseConfig } from '../config.js';
 import { MIGRATIONS_DIR } from '../startup/space-root.js';
 import { createSpaceServer } from '../startup/space-server.js';
@@ -21,9 +22,9 @@ describe('createSpaceServer', () => {
   it('leaves the paid post checks to the entry', () => {
     // Purpose: fails if the library reads the paid flag or the environment itself, so that
     // importing it could arm a paid model call; only main.ts arms them (AGENTS.md money paths).
-    const library = readFileSync(new URL('startup/space-server.ts', SRC), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//gu, '')
-      .replace(/\/\/.*$/gmu, '');
+    const library = lexWithoutComments(
+      readFileSync(new URL('startup/space-server.ts', SRC), 'utf8')
+    ).code;
     expect(library).not.toMatch(/\bPAID_DECISIONS_ARMED\b|\bDECISIONS_PAID_FLAG\b|process\.env/u);
     const entry = readFileSync(new URL('main.ts', SRC), 'utf8');
     expect(entry).toMatch(/paidDecisionsArmed: PAID_DECISIONS_ARMED/u);

@@ -250,9 +250,12 @@ export function withSpaceSource(roots: readonly string[], spaceSrcDir: string): 
   return covered ? [...roots] : [...roots, spaceSrcDir];
 }
 
+const SPACE_SERVER = readSpaceServer(join(SCRIPT_DIR, '..'));
+// The space's web page is product copy too; it sits outside the server's code from the move
+// into apps/server (server-merge step 7) until it joins apps/client.
 const DEFAULT_SCAN_ROOTS = withSpaceSource(
-  PRODUCT_SCAN_ROOTS,
-  readSpaceServer(join(SCRIPT_DIR, '..')).spaceSrcDir
+  withSpaceSource(PRODUCT_SCAN_ROOTS, SPACE_SERVER.spaceSrcDir),
+  SPACE_SERVER.spaceWebDir
 );
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
