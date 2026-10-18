@@ -140,7 +140,7 @@ const TERM_GRACE_MS = 3_000;
 /** How long we wait for a SIGKILL'd survivor to actually disappear. */
 const KILL_GRACE_MS = 2_000;
 
-function run(command: string, label: string): Managed {
+function run(command: string, label: string, extraEnv: NodeJS.ProcessEnv = {}): Managed {
   // A new process group (`detached`) so a group kill can signal the whole
   // subtree: `sh -c 'a && b'` does not forward signals to its running child, so
   // killing the sh PID alone would orphan the server/Vite — a group kill won't.
@@ -149,7 +149,7 @@ function run(command: string, label: string): Managed {
   // output surfaces; it is destroyed on teardown so it can't keep us alive.
   const child = spawn('sh', ['-c', command], {
     cwd: REPO_ROOT,
-    env: baseEnv(),
+    env: { ...baseEnv(), ...extraEnv },
     stdio: ['ignore', 'ignore', 'pipe'],
     detached: true,
   });
@@ -263,7 +263,11 @@ export async function preflightStack(): Promise<void> {
  */
 export function buildServerDeps(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', 'turbo run build --filter=@dorkos/server'], {
+    // The client's workspace packages too (`@dorkos/client^...`, its deps and
+    // not the client itself): Vite serves the client from source but imports
+    // those from their `dist`, and a fresh worktree has none.
+    const command = "turbo run build --filter=@dorkos/server --filter='@dorkos/client^...'";
+    const child = spawn('sh', ['-c', command], {
       cwd: REPO_ROOT,
       env: baseEnv(),
       stdio: ['ignore', 'ignore', 'inherit'],
@@ -281,6 +285,40 @@ export interface Stack {
   teardown(): Promise<void>;
 }
 
+/**
+ * The environment that gives the server a home of its own, for
+ * {@link BootOptions.isolatedHome}.
+ *
+ * `DORK_HOME` moves what DorkOS owns, but six spots in the server mirror
+ * ANOTHER program's folder from the operator's real home (Hard Rule 3's
+ * carve-outs: `~/.claude`, `~/.codex`, OpenCode's data dir, `~/.agents/skills`).
+ * The search sweep is closed by `DORKOS_SEARCH_NO_EXTERNAL_HISTORY`; this closes
+ * the rest by pointing `HOME`, and every variable those spots read first, at an
+ * empty folder.
+ *
+ * @param home - The folder to use as the server's home.
+ * @returns The variables to lay over {@link baseEnv}.
+ */
+export function isolatedHomeEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    HOME: home,
+    CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+    CODEX_HOME: path.join(home, '.codex'),
+    XDG_CONFIG_HOME: path.join(home, '.config'),
+    XDG_DATA_HOME: path.join(home, '.local', 'share'),
+  };
+}
+
+/** How {@link bootStack} starts the server. */
+export interface BootOptions {
+  /**
+   * Run the server with this folder as its home ({@link isolatedHomeEnv}).
+   * The server is then started with the package's own `tsx` rather than
+   * through `pnpm`, which reads its own settings from the real home.
+   */
+  readonly isolatedHome?: string;
+}
+
 /** Timeout for the workspace build + server first response. */
 const SERVER_TIMEOUT_MS = 240_000;
 /** Timeout for the Vite dev client. */
@@ -293,9 +331,17 @@ const CLIENT_TIMEOUT_MS = 120_000;
  * tsx so scenario edits stay live. On success the live group pids are written to
  * the pidfile so a crash can be reconciled next boot. The caller must
  * `teardown()`.
+ *
+ * @param options - See {@link BootOptions}.
  */
-export async function bootStack(): Promise<Stack> {
-  const server = run('pnpm --filter @dorkos/server exec tsx src/index.ts', 'server');
+export async function bootStack(options: BootOptions = {}): Promise<Stack> {
+  const server = options.isolatedHome
+    ? run(
+        'cd apps/server && exec ./node_modules/.bin/tsx src/index.ts',
+        'server',
+        isolatedHomeEnv(options.isolatedHome)
+      )
+    : run('pnpm --filter @dorkos/server exec tsx src/index.ts', 'server');
   const client = run('pnpm --filter @dorkos/client exec vite', 'client');
 
   const stack: Stack = { teardown: teardownAll };
