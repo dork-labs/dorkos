@@ -28,7 +28,10 @@ async function runningAfterTurn(extra: Partial<TriggerTurnDeps> = {}): Promise<s
       sendMessage: () =>
         (async function* (): AsyncGenerator<StreamEvent> {
           try {
-            yield { type: 'background_task_started', data: { taskId: 'helper-1' } };
+            yield {
+              type: 'background_task_started',
+              data: { taskId: 'helper-1', taskType: 'agent', startedAt: Date.now() },
+            };
             yield { type: 'done', data: { sessionId: SESSION } };
           } finally {
             ended = true;
