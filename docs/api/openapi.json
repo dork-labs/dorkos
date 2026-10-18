@@ -2598,6 +2598,12 @@
           },
           "waitingOn": {
             "$ref": "#/components/schemas/QueuedWaitingOn"
+          },
+          "fromChats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueuedChatEntry"
+            }
           }
         },
         "required": [
@@ -2664,6 +2670,68 @@
           "pins",
           "since",
           "releaseAt"
+        ]
+      },
+      "QueuedChatEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatMessageKind"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ChatMessageSender"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "legacy": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "from",
+          "text"
+        ]
+      },
+      "ChatMessageKind": {
+        "type": "string",
+        "enum": [
+          "message",
+          "report",
+          "start",
+          "stop"
+        ]
+      },
+      "ChatMessageSender": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatTitle": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chatId",
+          "agentName"
         ]
       },
       "DirectChat": {
@@ -4845,36 +4913,6 @@
           "delivery",
           "status",
           "sentAt"
-        ]
-      },
-      "ChatMessageKind": {
-        "type": "string",
-        "enum": [
-          "message",
-          "report",
-          "start",
-          "stop"
-        ]
-      },
-      "ChatMessageSender": {
-        "type": "object",
-        "properties": {
-          "chatId": {
-            "type": "string"
-          },
-          "chatTitle": {
-            "type": "string"
-          },
-          "agentId": {
-            "type": "string"
-          },
-          "agentName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "chatId",
-          "agentName"
         ]
       },
       "ChatDelivery": {
