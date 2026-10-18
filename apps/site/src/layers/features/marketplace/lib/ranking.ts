@@ -20,6 +20,21 @@ export interface RankFilters {
   q?: string;
 }
 
+/**
+ * Whether a package belongs to a category.
+ *
+ * Membership matches the sidecar `categories[]`, with a fallback to the singular
+ * CC-inline `category` for packages that predate the sidecar. `.some` (rather
+ * than `.includes`) keeps the comparison well-typed against the enum-typed
+ * `categories[]` while `category` may be an unvalidated URL string.
+ *
+ * @param pkg - A merged marketplace entry
+ * @param category - The category slug to test
+ */
+export function isInCategory(pkg: MergedMarketplaceEntry, category: string): boolean {
+  return pkg.dorkos?.categories?.some((c) => c === category) ?? pkg.category === category;
+}
+
 /** A ranked entry — the merged entry plus the computed score. */
 export type RankedPackage = MergedMarketplaceEntry & { score: number };
 
@@ -46,13 +61,7 @@ export function rankPackages(
   }
   if (filters.category) {
     const wanted = filters.category;
-    // Membership match against the sidecar categories[], with a fallback to the
-    // singular CC-inline category for packages that predate the sidecar.
-    // `.some` (rather than `.includes`) keeps the comparison well-typed against
-    // the enum-typed categories[] while `wanted` is an unvalidated URL string.
-    filtered = filtered.filter(
-      (p) => p.dorkos?.categories?.some((c) => c === wanted) ?? p.category === wanted
-    );
+    filtered = filtered.filter((p) => isInCategory(p, wanted));
   }
   if (filters.q) {
     const q = filters.q.toLowerCase();
