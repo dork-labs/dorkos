@@ -3,6 +3,7 @@ covers:
   - 'feat(server): store doc comments and wake the agents they mention (DOR-2983)'
   - 'fix(docs): count a doc comment as a request only from the owner in person, and bound every wake (DOR-2983)'
   - "fix(docs): keep the owner's in-person comments the owner's, and hand back a failed wake's turn (DOR-2983)"
+  - 'fix(docs): keep doc comment reads off the tokenless MCP surface, and file the tools under Messages (DOR-2983)'
 ---
 
 ### Added

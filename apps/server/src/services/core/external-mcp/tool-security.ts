@@ -201,6 +201,10 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // It answers only for a caller with an agent identity anyway; this keeps a
   // tokenless one from asking at all.
   'memory_read',
+  // The comment threads on a doc (DOR-2983): other people's and agents' words,
+  // and the doc's own text around them. Somebody's conversation, like the room
+  // reads above, so a tokenless caller may not read it.
+  'doc_comment_list',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
