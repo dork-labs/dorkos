@@ -69,7 +69,6 @@ export function CanvasMarkdownContent({
     (s) => s.openDocuments.find((d) => d.id === documentId)?.editing ?? false
   );
   const cwd = useAppStore((s) => s.selectedCwd);
-  const embeds = useDocEmbeds();
 
   // Edit mode is the AND of this editor's own state and the store's flag for
   // this document, derived rather than mirrored. The store's flag can be cleared
@@ -85,6 +84,8 @@ export function CanvasMarkdownContent({
     loadedContent: content.content,
   });
   const fileBacked = fileSave.canSave;
+  // A file-backed doc can be switched to edit, so its author sees embed diagnostics.
+  const embeds = useDocEmbeds(fileBacked);
   // Wiki links to the other docs in this space: file-backed docs only, and
   // only with the Docs experiment on (undefined otherwise).
   const wikiLinks = useDocWikiLinks({
@@ -284,6 +285,7 @@ export function CanvasMarkdownContent({
             onChange={editing ? handleChange : undefined}
             wikiLinks={wikiLinks}
             embeds={embeds}
+            embedDiagnostics={fileBacked}
           />
         </Suspense>
       </div>

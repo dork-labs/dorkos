@@ -79,16 +79,19 @@ vi.mock('../ui/BlintzCanvas', () => ({
     editable,
     onChange,
     embeds,
+    embedDiagnostics,
   }: {
     value: string;
     editable: boolean;
     onChange?: (md: string) => void;
     embeds?: Record<string, unknown>;
+    embedDiagnostics?: boolean;
   }) => (
     <div
       data-testid="blintz-canvas"
       data-editable={String(editable)}
       data-embeds={embeds ? Object.keys(embeds).join(',') : 'none'}
+      data-embed-diagnostics={String(embedDiagnostics)}
     >
       <span data-testid="blintz-value">{value}</span>
       <button data-testid="blintz-fire-change" onClick={() => onChange?.('edited body')}>
@@ -257,6 +260,21 @@ describe('CanvasMarkdownContent', () => {
       docs.embeds = { chart: {} };
       await renderEditor(generated);
       expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-embeds', 'chart');
+    });
+
+    it('shows embed diagnostics only to someone who can edit the doc', async () => {
+      docs.embeds = { chart: {} };
+      await renderEditor();
+      // File-backed: the pencil is there, so the author sees why an embed failed.
+      expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-embed-diagnostics', 'true');
+      cleanup();
+
+      mockFileSave.canSave = false;
+      await renderEditor(generated);
+      expect(screen.getByTestId('blintz-canvas')).toHaveAttribute(
+        'data-embed-diagnostics',
+        'false'
+      );
     });
 
     it('offers Save as web page for a file-backed doc only, with what it shows', async () => {

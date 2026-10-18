@@ -73,18 +73,19 @@ describe('renderDocToHtml', () => {
     expect(html).toContain('Shipped on Friday');
   });
 
-  it('shows readers a quiet note, not the author’s issues, for an embed that does not validate', async () => {
+  it('shows readers one quiet line, not the author’s issues, for an embed that does not validate', async () => {
     const html = await renderDocToHtml(`::chart{kind="bar" data='[{"label":"a","value":-1}]'}`);
-    expect(html).toContain('data-doc-embed-unavailable');
-    expect(html).toContain('This part of the doc can’t be shown here.');
+    expect(html).toContain('This chart couldn’t be drawn.');
     expect(html).not.toContain('data.0.value');
-    expect(html).not.toContain('Can’t show this chart');
+    expect(html).not.toContain('kind=');
   });
 
-  it('shows the same note for a name with no component', async () => {
-    const html = await renderDocToHtml('::callout{text="hi"}');
-    expect(html).toContain('data-doc-embed-unavailable');
+  it('leaves out a name nothing draws, silently', async () => {
+    const html = await renderDocToHtml('Before\n\n::callout{text="hi"}\n\nAfter');
+    expect(html).not.toContain('data-doc-embed-unavailable');
     expect(html).not.toContain('callout');
+    expect(html).toContain('<p>Before</p>');
+    expect(html).toContain('<p>After</p>');
   });
 
   it('keeps an escaped \\::name line as text', async () => {
@@ -117,7 +118,7 @@ describe('renderDocToHtml', () => {
     }
     const embeds: EmbedRegistry = { broken: { component: Broken } };
     const html = await renderDocToHtml('::broken', { embeds });
-    expect(html).toContain('data-doc-embed-unavailable');
+    expect(html).toContain('This part couldn’t be drawn.');
     expect(html).not.toContain('bad render');
   });
 

@@ -54,3 +54,25 @@
   color: hsl(var(--brand-text));
   text-decoration-color: hsl(var(--brand-text) / 0.45);
 }
+
+/* Docs embeds. A reader who cannot edit a doc sees nothing where an embed
+   nobody registered sits: the placeholder is for the author. A container's own
+   markdown is not inside the hidden frame and still shows. */
+.dorkos-markdown[data-embed-diagnostics='off']
+  .blintz-embed-host:not(.is-container):has(.blintz-embed[data-embed-state='unknown']),
+.dorkos-markdown[data-embed-diagnostics='off']
+  .blintz-embed[data-embed-state='unknown']
+  > .blintz-embed-notice {
+  display: none;
+}
+
+/* The author's notice for an embed that does not validate: a tint, not an
+   alarm border. */
+.dorkos-markdown .milkdown .blintz-embed-notice.is-error {
+  border-color: transparent;
+  background: hsl(var(--destructive) / 0.08);
+  color: hsl(var(--destructive));
+}
+.dorkos-markdown .milkdown .blintz-embed-notice.is-error .blintz-embed-notice-source {
+  color: hsl(var(--destructive));
+}

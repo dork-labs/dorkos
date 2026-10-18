@@ -150,6 +150,22 @@ describe('BlintzCanvas public source callbacks', () => {
     expect(editorControl.props?.embeds).toBeUndefined();
   });
 
+  it('hides embed diagnostics only for a reader with embeds on', () => {
+    const embeds = { note: { component: () => null } };
+    const wrapper = () => screen.getByTestId('markdown-editor').parentElement!;
+    const { unmount } = render(
+      <BlintzCanvas value="::note" editable={false} embeds={embeds} embedDiagnostics={false} />
+    );
+    expect(wrapper()).toHaveAttribute('data-embed-diagnostics', 'off');
+    unmount();
+    const second = render(<BlintzCanvas value="::note" editable={false} embeds={embeds} />);
+    expect(wrapper()).not.toHaveAttribute('data-embed-diagnostics');
+    second.unmount();
+    // Docs off: no embeds, so Blintz's own placeholders stay as they were.
+    render(<BlintzCanvas value="::note" editable={false} embedDiagnostics={false} />);
+    expect(wrapper()).not.toHaveAttribute('data-embed-diagnostics');
+  });
+
   it('keeps legacy callers callback-free', () => {
     render(<BlintzCanvas value="# raw" editable={false} />);
     expect(editorControl.props?.sourceRevision).toBeUndefined();

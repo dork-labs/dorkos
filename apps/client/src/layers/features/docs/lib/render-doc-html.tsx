@@ -14,9 +14,10 @@
  * their markup (inline SVG, styles) is the app's own output from validated
  * props, which a generic sanitizer would strip.
  *
- * The output is for readers, so an embed that cannot be drawn (an unknown
- * name, attributes that do not validate, a component that throws) becomes one
- * quiet note. The author's diagnostics stay in the editor.
+ * The output is for readers, so it carries no author diagnostics: an embed
+ * with a name nothing draws is left out, and one that does not validate or
+ * whose component throws becomes one quiet line ("This chart couldn't be
+ * drawn."), with no code and no error text. The diagnostics stay in the editor.
  *
  * Math (`$…$`, `$$…$$` and ` ```latex ` blocks, the forms the editor draws) is
  * rendered by KaTeX as MathML, which every current browser draws without a
@@ -122,13 +123,10 @@ function isLabel(node: RootContent | undefined): boolean {
   );
 }
 
-/** The reader's note for an embed that cannot be drawn. */
-const UNAVAILABLE = renderToStaticMarkup(<DocEmbedUnavailable />);
-
 /**
- * Draw one embed after the same check the editor's embed view makes. Anything
- * the editor would show a notice for (an unknown name, invalid attributes, a
- * component that throws) becomes the reader's quiet note, never a failed render.
+ * Draw one embed after the same check the editor's embed view makes. A name
+ * nothing is registered for draws nothing; invalid attributes or a component
+ * that throws draw the reader's quiet line, never a failed render.
  */
 async function renderEmbed(
   registry: EmbedRegistry,
@@ -139,16 +137,17 @@ async function renderEmbed(
   const definition = Object.prototype.hasOwnProperty.call(registry, name)
     ? registry[name]
     : undefined;
-  if (!definition) return UNAVAILABLE;
+  if (!definition) return '';
+  const unavailable = () => renderToStaticMarkup(<DocEmbedUnavailable name={name} />);
   const { issues } = await validateEmbedAttributes(definition.validate, attributes);
-  if (issues?.length) return UNAVAILABLE;
+  if (issues?.length) return unavailable();
   const Embed = definition.component;
   try {
     return renderToStaticMarkup(
       <Embed name={name} attributes={attributes} label={label} editable={false} />
     );
   } catch {
-    return UNAVAILABLE;
+    return unavailable();
   }
 }
 

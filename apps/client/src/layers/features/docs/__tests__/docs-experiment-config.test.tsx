@@ -48,7 +48,7 @@ function withConfig(config: ServerConfig) {
 describe('the docs.enabled experiment, read from the server config', () => {
   it('hands the editor the embeds and shows Save as web page when it is on', () => {
     const wrapper = withConfig(configWithDocs(true));
-    expect(renderHook(() => useDocEmbeds(), { wrapper }).result.current).toBe(DOC_EMBEDS);
+    expect(renderHook(() => useDocEmbeds(true), { wrapper }).result.current).toBe(DOC_EMBEDS);
     render(<SaveAsWebPageButton markdown="# Doc" sourcePath="doc.md" />, { wrapper });
     expect(screen.getByRole('button', { name: 'Save as web page' })).toBeInTheDocument();
   });
@@ -58,7 +58,7 @@ describe('the docs.enabled experiment, read from the server config', () => {
     ['not registered yet', undefined],
   ])('passes nothing when it is %s', (_label, enabled) => {
     const wrapper = withConfig(configWithDocs(enabled));
-    expect(renderHook(() => useDocEmbeds(), { wrapper }).result.current).toBeUndefined();
+    expect(renderHook(() => useDocEmbeds(true), { wrapper }).result.current).toBeUndefined();
     render(<SaveAsWebPageButton markdown="# Doc" sourcePath="doc.md" />, { wrapper });
     expect(screen.queryByRole('button', { name: 'Save as web page' })).not.toBeInTheDocument();
   });

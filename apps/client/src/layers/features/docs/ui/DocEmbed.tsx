@@ -1,11 +1,6 @@
 import { useMemo } from 'react';
 import type { EmbedProps } from 'blintz';
-import {
-  DOC_EMBED_CATALOG,
-  decodeDocEmbed,
-  isDocEmbedName,
-  type DocEmbedIssue,
-} from '@dorkos/shared/doc-embeds';
+import { DOC_EMBED_CATALOG, decodeDocEmbed, isDocEmbedName } from '@dorkos/shared/doc-embeds';
 import { WidgetNodeView, WidgetStillProvider } from '@/layers/features/gen-ui';
 
 /**
@@ -18,8 +13,9 @@ import { WidgetNodeView, WidgetStillProvider } from '@/layers/features/gen-ui';
  * nothing in it can act; and it renders still, because a doc re-renders far
  * more often than a chat reply arrives.
  *
- * The editor validates before it renders, so in the editor an invalid embed
- * never reaches here. The invalid state is still handled for any other caller.
+ * For someone who can edit the doc, Blintz validates first and shows the author
+ * what is wrong, so an invalid embed never reaches here. For a reader, it does,
+ * and gets {@link DocEmbedUnavailable}: no code, no error text.
  *
  * @param props - The directive as Blintz passes it: name, string attributes and
  *   the `[label]`, shown as a caption.
@@ -31,7 +27,7 @@ export function DocEmbed({ name, attributes, label }: EmbedProps) {
     () => decodeDocEmbed(name, JSON.parse(key) as Record<string, string>),
     [name, key]
   );
-  if (!result.ok) return <DocEmbedProblem name={name} issues={result.issues} />;
+  if (!result.ok) return <DocEmbedUnavailable name={name} />;
   return (
     <WidgetStillProvider value>
       <figure className="dorkos-doc-embed my-2 text-sm" data-doc-embed={name}>
@@ -42,52 +38,18 @@ export function DocEmbed({ name, attributes, label }: EmbedProps) {
   );
 }
 
-/** Blintz's `path: message` form, so both notices read alike. */
-function formatIssue(issue: DocEmbedIssue): string {
-  const path = issue.path?.join('.');
-  return path ? `${path}: ${issue.message}` : issue.message;
-}
-
 /**
- * The author's "can't show this" state for an embed whose attributes do not
- * decode, with what is wrong.
+ * What a reader sees where an embed could not be drawn: one quiet line. The
+ * reader can do nothing about the doc's source, so the author's diagnostics
+ * stay with people who can edit it.
  *
- * @param name - The directive name as written.
- * @param issues - What is wrong.
+ * @param name - The directive name; a catalog name reads as its title.
  */
-export function DocEmbedProblem({
-  name,
-  issues,
-}: {
-  name: string;
-  issues: readonly DocEmbedIssue[];
-}) {
-  const title = isDocEmbedName(name) ? DOC_EMBED_CATALOG[name].title.toLowerCase() : name;
-  return (
-    <div
-      role="note"
-      className="text-muted-foreground my-2 rounded-md border border-dashed p-3 text-xs"
-      data-doc-embed-problem={name}
-    >
-      <p className="text-foreground font-medium">{`Can’t show this ${title}`}</p>
-      <ul className="mt-1 list-disc pl-4">
-        {issues.map((issue, index) => (
-          <li key={index}>{formatIssue(issue)}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * What a reader of a saved or published doc sees where an embed could not be
- * drawn. Quiet and neutral on purpose: the reader can do nothing about the
- * doc's source, so the author's diagnostics stay in the editor.
- */
-export function DocEmbedUnavailable() {
+export function DocEmbedUnavailable({ name }: { name: string }) {
+  const what = isDocEmbedName(name) ? DOC_EMBED_CATALOG[name].title.toLowerCase() : 'part';
   return (
     <p role="note" className="text-muted-foreground my-2 text-xs italic" data-doc-embed-unavailable>
-      This part of the doc can’t be shown here.
+      {`This ${what} couldn’t be drawn.`}
     </p>
   );
 }

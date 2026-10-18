@@ -34,6 +34,12 @@ export interface BlintzCanvasProps extends Pick<
   onChange?: (markdown: string) => void;
   /** Extra class on the editor host element. */
   className?: string;
+  /**
+   * Whether the reader can edit this doc (now, or by switching to edit) and so
+   * should see why an embed did not draw. When `false`, an embed nobody
+   * registered draws nothing. Only meaningful alongside `embeds`.
+   */
+  embedDiagnostics?: boolean;
 }
 
 /**
@@ -61,11 +67,16 @@ export function BlintzCanvas({
   onTaskToggleRequest,
   wikiLinks,
   embeds,
+  embedDiagnostics = true,
 }: BlintzCanvasProps) {
   const resolvedTheme = useResolvedTheme();
   return (
     // The ancestor supplies inherited theme tokens without adding another inset.
-    <div data-theme={resolvedTheme} className="dorkos-markdown contents">
+    <div
+      data-theme={resolvedTheme}
+      data-embed-diagnostics={embeds && !embedDiagnostics ? 'off' : undefined}
+      className="dorkos-markdown contents"
+    >
       {/* desktop:select-text — the desktop shell defaults chrome to
           non-selectable on every platform (index.css). Canvas documents are
           content, and in view mode (`editable={false}`) the ProseMirror surface

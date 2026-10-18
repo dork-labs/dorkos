@@ -63,7 +63,7 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
   // Read out of a file: shown, never edited here — the file's own tree is what
   // a save would have to reach, and this is not the editor that can.
   const editable = content.sourcePath === undefined;
-  const embeds = useDocEmbeds();
+  const embeds = useDocEmbeds(editable);
 
   useRoomCanvasEditLock(roomId, editing ? document.id : null);
 
@@ -134,6 +134,7 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
             editable={editing}
             onChange={setDraft}
             embeds={embeds}
+            embedDiagnostics={editable}
           />
         </Suspense>
       </div>

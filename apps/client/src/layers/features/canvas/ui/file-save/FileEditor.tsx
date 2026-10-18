@@ -78,7 +78,7 @@ export function FileEditor({
 }: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
-  const embeds = useDocEmbeds();
+  const embeds = useDocEmbeds(editable);
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState(loaded);
@@ -416,6 +416,7 @@ export function FileEditor({
                 onChange={isEditing ? handleChange : undefined}
                 wikiLinks={wikiLinks}
                 embeds={embeds}
+                embedDiagnostics={editable}
               />
             </div>
           ) : (

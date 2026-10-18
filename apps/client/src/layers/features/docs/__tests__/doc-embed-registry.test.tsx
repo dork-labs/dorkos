@@ -10,7 +10,7 @@ import { render, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MarkdownEditor, validateEmbedAttributes } from 'blintz';
 import { DOC_EMBED_CATALOG, DOC_EMBED_NAMES } from '@dorkos/shared/doc-embeds';
-import { DOC_EMBEDS } from '../ui/doc-embed-registry';
+import { DOC_EMBEDS, DOC_EMBEDS_FOR_READERS } from '../ui/doc-embed-registry';
 
 afterEach(cleanup);
 
@@ -23,8 +23,12 @@ function directive(name: (typeof DOC_EMBED_NAMES)[number]): string {
 }
 
 /** Mount the real editor and wait for the embed frame Blintz draws for `name`. */
-async function mountEmbed(markdown: string, name: string): Promise<HTMLElement> {
-  render(<MarkdownEditor value={markdown} editable={false} embeds={DOC_EMBEDS} />);
+async function mountEmbed(
+  markdown: string,
+  name: string,
+  embeds = DOC_EMBEDS
+): Promise<HTMLElement> {
+  render(<MarkdownEditor value={markdown} editable={false} embeds={embeds} />);
   let frame: HTMLElement | null = null;
   await waitFor(
     () => {
@@ -59,6 +63,17 @@ describe('DOC_EMBEDS in the real editor', () => {
     expect(frame).toHaveAttribute('data-embed-state', 'invalid');
     expect(frame).toHaveTextContent('data.0.value');
     expect(frame.querySelector('[data-doc-embed]')).toBeNull();
+  });
+
+  it('shows a reader one quiet line, without the author’s issues', async () => {
+    const frame = await mountEmbed(
+      `::chart{kind="bar" data='[{"label":"a","value":-1}]'}\n`,
+      'chart',
+      DOC_EMBEDS_FOR_READERS
+    );
+    expect(frame).toHaveTextContent('This chart couldn’t be drawn.');
+    expect(frame).not.toHaveTextContent('data.0.value');
+    expect(frame).not.toHaveTextContent('kind=');
   });
 
   it('leaves a name outside the catalog to Blintz’s placeholder', async () => {
