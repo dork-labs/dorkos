@@ -305,7 +305,7 @@ await context.addInitScript(() => {
 await page.goto(queueBesideChatLink);
 ```
 
-Use a desktop-size window: below that width the panel opens as a sheet and does not reopen on load.
+Use a desktop-size window: below that width the panel opens as a sheet and does not reopen on load. The extension's tab arrives a moment after the built-in ones, so if the panel opens on Profile, click the "Social queue" tab (in Playwright: `page.getByRole('tab', { name: 'Social queue' }).click()`). Queue times are 09:30 Central; a computer in another time zone shows them in its own time.
 
 What is staged, said plainly:
 
