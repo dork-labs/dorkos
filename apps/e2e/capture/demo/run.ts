@@ -1,6 +1,6 @@
 import { bootStack, buildServerDeps, preflightStack, teardownAllSync } from '../boot.js';
 import { CLIENT_URL, SHARD_INDEX } from '../config.js';
-import { DEMO_FAKE_HOME, DEMO_SHARD, marketingRepoPath } from './config.js';
+import { DEMO_FAKE_HOME, DEMO_SHARD, SOCIAL_QUEUE_PANEL_TAB, marketingRepoPath } from './config.js';
 import { prepareFakeHome, prepareSocialQueue, seedDemo, type DemoSeeds } from './seed.js';
 import { warmUp } from './warmup.js';
 import { prepareFilesystem, seedData } from '../seed.js';
@@ -26,6 +26,14 @@ function flowLinks(seeds: DemoSeeds): [string, string][] {
     ...(seeds.socialQueue
       ? [['Social queue', `${CLIENT_URL}/x/social-queue`] as [string, string]]
       : []),
+    ...(seeds.socialChatSessionId
+      ? [
+          ['Queue beside chat', `${CLIENT_URL}/session?session=${seeds.socialChatSessionId}`] as [
+            string,
+            string,
+          ],
+        ]
+      : []),
     ['#team morning', `${CLIENT_URL}/channels?id=${seeds.teamRoomId}`],
     ['Phone approval', `${CLIENT_URL}/session?session=${seeds.approvalSessionId}`],
     ['Mini app', `${CLIENT_URL}/session?session=${seeds.miniAppSessionId}`],
@@ -35,15 +43,16 @@ function flowLinks(seeds: DemoSeeds): [string, string][] {
 
 /** Print where each flow starts. */
 function printLinks(seeds: DemoSeeds): void {
-  const rows = flowLinks(seeds).map(([label, link]) => `  ${label.padEnd(16)} ${link}`);
+  const rows = flowLinks(seeds).map(([label, link]) => `  ${label.padEnd(18)} ${link}`);
   if (!seeds.socialQueue) {
     rows.unshift(
-      '  Social queue     skipped: no dorkos-marketing checkout (set DEMO_MARKETING_REPO)'
+      '  Social queue       skipped: no dorkos-marketing checkout (set DEMO_MARKETING_REPO)'
     );
   }
   process.stdout.write(
     `\n✓ DorkOS demo is up: ${CLIENT_URL}\n\n${rows.join('\n')}\n\n` +
       'Open the phone approval at phone size. The mini app waits under "Needs you" (top right).\n' +
+      'Beside the queue chat, open the right panel (Cmd+.) on the Social queue tab.\n' +
       'Press Ctrl-C to stop. The next run starts fresh.\n'
   );
 }
@@ -95,7 +104,10 @@ async function main(): Promise<void> {
     await seedData();
     const seeds = await seedDemo(socialQueue);
     process.stdout.write('▸ Warming up the pages…\n');
-    await warmUp([CLIENT_URL, ...flowLinks(seeds).map(([, link]) => link)]);
+    await warmUp(
+      [CLIENT_URL, ...flowLinks(seeds).map(([, link]) => link)],
+      seeds.socialQueue ? SOCIAL_QUEUE_PANEL_TAB : undefined
+    );
     printLinks(seeds);
   } catch (err) {
     await stack.teardown();

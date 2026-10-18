@@ -1,5 +1,6 @@
 import { chromium } from '@playwright/test';
 import { DESKTOP_VIEWPORT, MOBILE_VIEWPORT } from '../config.js';
+import { RIGHT_PANEL_STATE_KEY } from './config.js';
 
 /**
  * Open every page the demo's flows start on, once, in a hidden browser, before
@@ -19,12 +20,21 @@ import { DESKTOP_VIEWPORT, MOBILE_VIEWPORT } from '../config.js';
  * fatal, because the stack itself is already up and seeded.
  *
  * @param urls - The pages to open.
+ * @param panelTab - A right-panel tab to have open on every page, when one should be warmed too.
  */
-export async function warmUp(urls: readonly string[]): Promise<void> {
+export async function warmUp(urls: readonly string[], panelTab?: string): Promise<void> {
   const browser = await chromium.launch();
   try {
     for (const viewport of [DESKTOP_VIEWPORT, MOBILE_VIEWPORT]) {
       const page = await browser.newPage({ viewport });
+      if (panelTab) {
+        // Every page with the right panel open on this tab, so the tab's own
+        // code is loaded before anyone films it beside a chat.
+        await page.addInitScript(
+          ([key, tab]) => localStorage.setItem(key, JSON.stringify({ open: true, activeTab: tab })),
+          [RIGHT_PANEL_STATE_KEY, panelTab] as const
+        );
+      }
       for (const target of urls) {
         try {
           // Two loads: the first is the one that finds new libraries; the
