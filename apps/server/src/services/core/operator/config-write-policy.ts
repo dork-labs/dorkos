@@ -797,6 +797,9 @@ export const CONFIG_WRITE_POLICY = {
   // what makes the verdict cheap: refusing the agent takes nothing away from the
   // person, who was never going to reach for a config door to begin with.
   'runtimes.claudeCode.persistentSession': 'operator-only',
+  // How many agents may run at once (DOR-3012): memory on this machine, so the
+  // person sets it, like `scheduler.maxConcurrentRuns`.
+  'runtimes.claudeCode.maxWarmProcesses': 'operator-only',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
@@ -1200,6 +1203,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // and the wipe floor says an agent may not widen it back (DOR-1505).
       'uploads.allowedTypes',
       'runtimes.claudeCode.persistentSession',
+      // How many agents may run at once: a person who lowered it to save memory
+      // must not have an agent raise it back (DOR-3012).
+      'runtimes.claudeCode.maxWarmProcesses',
       'scheduler.maxConcurrentRuns',
       // Whether the computer stays awake for the work, and whether it is woken
       // for it: battery, and whether the machine is on while nobody is there.
