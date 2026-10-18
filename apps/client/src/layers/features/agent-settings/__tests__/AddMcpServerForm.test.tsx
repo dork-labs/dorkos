@@ -115,6 +115,20 @@ describe('AddMcpServerForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   }
 
+  it('says a Wi-Fi refusal plainly and calmly, not as an error (DOR-2969)', async () => {
+    const sentence = 'Do this in the app on the computer DorkOS runs on.';
+    const transport = createMockTransport({
+      addAgentMcpServer: vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error(sentence), { code: 'NOT_FROM_WIFI' })),
+    });
+    renderForm(transport, TRANSPORTS);
+    addHttpServer();
+    const shown = await screen.findByText(sentence);
+    expect(shown.className).toContain('text-muted-foreground');
+    expect(shown.className).not.toContain('text-destructive');
+  });
+
   /** The roster `mcp.add` returns for a server it could tell needs OAuth. */
   function oauthRoster() {
     return [

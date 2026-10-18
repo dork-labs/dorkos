@@ -44,9 +44,14 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
+import {
+  frontDoorPathsOf,
+  frontDoorSubjectOf,
+} from '../services/core/operator/front-door-settings.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
+  refuseFrontDoorChange,
   refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
@@ -527,6 +532,22 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
           message: 'Only the owner of this DorkOS can change its DorkOS account settings.',
           paths: cloudPaths,
         };
+      }
+
+      // ## THE FRONT-DOOR BAR — how DorkOS is reached is changed at this computer
+      //
+      // The Owner-only front-door settings (`front-door-settings.ts`, DOR-2969)
+      // take the bar every front-door route runs: the owner, using the app, at
+      // this computer. Never Wi-Fi, a tunnel, the relay, an agent or a key, so
+      // a device reached from outside cannot widen its own reach.
+      const frontDoorPaths = frontDoorPathsOf(paths);
+      const frontDoor =
+        frontDoorPaths.length > 0
+          ? refuseFrontDoorChange(caller, frontDoorSubjectOf(frontDoorPaths[0]!))
+          : undefined;
+      if (frontDoor) {
+        const { status, code, error } = frontDoor;
+        return { status, code, error, message: error, paths: frontDoorPaths };
       }
 
       return undefined;

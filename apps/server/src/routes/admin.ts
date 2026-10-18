@@ -1,11 +1,26 @@
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRateLimit } from '../http/rate-limiter.js';
 import { readJsonBody } from '../http/request-body.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { env } from '../env.js';
 import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
+
+/**
+ * A reset wipes the data folder, sign-ins and keys included, so it is a
+ * front-door change (DOR-2969): only the owner, at this computer, in the app.
+ */
+function refuseResetAway(c: Context<ApiEnv>): Response | undefined {
+  const refusal = refuseFrontDoorChange(honoRequestFacts(c), 'DorkOS');
+  if (!refusal) return undefined;
+  return c.json(
+    { error: 'Reset DorkOS in the app on the computer it runs on.', code: refusal.code },
+    403
+  );
+}
 
 /**
  * Error code accompanying the 409 when the desktop app owns the server's
@@ -249,9 +264,14 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
    * `POST /api/admin/reset/prepare` — hand out the one-time token `POST /reset`
    * demands. See {@link createAdminRoutes} for what this does and does not buy.
    */
-  router.post('/reset/prepare', prepareLimiter, (c) => c.json(resetTokens.mint(), 200));
+  router.post('/reset/prepare', prepareLimiter, (c) => {
+    const refused = refuseResetAway(c);
+    return refused ?? c.json(resetTokens.mint(), 200);
+  });
 
   router.post('/reset', adminLimiter, (c) => {
+    const refused = refuseResetAway(c);
+    if (refused) return refused;
     const { confirm, token } = readJsonBody(c, { emptyAs: {} }) as {
       confirm?: unknown;
       token?: unknown;

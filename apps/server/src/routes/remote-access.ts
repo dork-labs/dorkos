@@ -15,6 +15,8 @@
  *    approval token, is refused in every posture;
  * 3. the local-caller bar (`isAtThisComputer`): a phone over a tunnel, managed
  *    access itself, or another device on the network is refused;
+ * 3b. the front-door bar (`refuseFrontDoorChange`, DOR-2969): at this computer,
+ *    only the install's owner using the app, never an API key;
  * 4. for anything managed, a real login (`canExpose`), answered with the same
  *    `AUTH_REQUIRED_FOR_EXPOSURE` the person's own tunnel uses, so the client
  *    routes the person into creating an owner account.
@@ -41,7 +43,11 @@ import type { RemoteAccessReport } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { requireOperatorCookieUnderLogin, readCallerAuthority } from '../lib/caller-authority.js';
+import {
+  refuseFrontDoorChange,
+  requireOperatorCookieUnderLogin,
+  readCallerAuthority,
+} from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import {
   AUTH_REQUIRED_FOR_EXPOSURE,
@@ -115,6 +121,9 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
       403
     );
   }
+  // The front-door bar: the install's owner, using the app, never a key.
+  const frontDoor = refuseFrontDoorChange(caller, 'remote access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   return undefined;
 }
 

@@ -1,0 +1,9 @@
+---
+covers:
+  - 'feat(server): a Wi-Fi sign-in can chat and read, but not change how DorkOS is reached (DOR-2969 part 3)'
+---
+
+### Security
+
+- A phone or laptop signed in over Wi-Fi can chat, read, and answer approvals, but it can't open the terminal, edit files directly, see or make API keys, install packages or extensions, reset DorkOS, or sign out your other devices. It can't allow an agent's destructive action either. Those stay on the computer DorkOS runs on, and the app says so plainly when you try. (DOR-2969)
+- Changing how DorkOS is reached now happens only in the app on the computer it runs on, by its owner: remote access, Wi-Fi access, the password setting, accounts and keys, and which code DorkOS runs. API keys and agents can't change these either. (DOR-2969)

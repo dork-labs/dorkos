@@ -15,6 +15,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AccountUsageStore as AccountUsageStoreType } from '../../services/core/usage/account-usage-store.js';
 
+// The cockpit's user owns this install: account folders are a front-door
+// setting, changed by the owner at this computer (DOR-2969).
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_cockpit',
+}));
+
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));

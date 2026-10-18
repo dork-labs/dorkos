@@ -142,6 +142,11 @@ import { projectsOfFolders } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import {
+  isFromWifi,
+  NOT_FROM_WIFI,
+  WIFI_ACTION_REFUSAL,
+} from '../services/core/auth/sessions/wifi-level.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -542,6 +547,14 @@ export function createApprovalsRoutes(
   router.post('/:id/grant', async (c) => {
     const authority = personOrRefuse(c);
     if (authority instanceof Response) return authority;
+    // A Wi-Fi sign-in answers approvals, but never a destructive one (DOR-2969):
+    // that is the computer's owner's call, made at the computer.
+    if (
+      isFromWifi(honoRequestFacts(c)) &&
+      approvals.answerScope(c.req.param('id'))?.tier === 'destructive'
+    ) {
+      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    }
 
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
     // `answer` defaults to `once`, so an absent body is a plain one-time yes.

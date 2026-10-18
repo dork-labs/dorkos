@@ -13,7 +13,7 @@ import type { Mutation } from '@tanstack/react-query';
 import { queryClient } from '../query-client';
 
 vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
 /** Minimal stand-in for the Mutation the cache handler receives; only `meta` is read. */
@@ -30,9 +30,13 @@ function mutationWithMeta(
  * @param meta - The mutation's `meta`, or undefined when it declared none.
  * @param code - The error's `code`, as the transport attaches a server refusal's.
  */
-function fireMutationError(meta: Record<string, unknown> | undefined, code?: string): void {
+function fireMutationError(
+  meta: Record<string, unknown> | undefined,
+  code?: string,
+  message = 'boom'
+): void {
   const handler = queryClient.getMutationCache().config.onError;
-  const error = Object.assign(new Error('boom'), code === undefined ? {} : { code });
+  const error = Object.assign(new Error(message), code === undefined ? {} : { code });
   void handler?.(
     error,
     undefined,
@@ -75,6 +79,23 @@ describe('mutation error toast policy', () => {
     expect(headline).not.toContain('boom');
     expect(headline).not.toContain('\u2014');
   });
+
+  // DOR-2969: a refusal because of where this device is, by design, not a fault.
+  it.each(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
+    'says a %s refusal calmly, with no Report action',
+    (code) => {
+      vi.mocked(toast).mockClear();
+      fireMutationError(
+        { errorLabel: 'Couldn’t save.' },
+        code,
+        'Files can be changed only on the computer DorkOS runs on.'
+      );
+      expect(toast).toHaveBeenCalledWith(
+        'Files can be changed only on the computer DorkOS runs on.'
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+    }
+  );
 
   it('stays silent when the mutation opts out via meta.suppressErrorToast', () => {
     fireMutationError({ suppressErrorToast: true });
