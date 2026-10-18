@@ -8,6 +8,12 @@
  * day is a record line, never a reason for another turn (triage reads it as
  * quiet).
  *
+ * A tool that failed inside one of the agent's runtimes (`runtime.tool_used`)
+ * is mostly normal work: a grep with no match, a `--help` that exits 1. The
+ * turn that ran it already saw the error and went on. So one such failure is
+ * information, and it asks for a turn only when it looks like real trouble
+ * (see {@link isTroubleToolFailure}).
+ *
  * @module services/heartbeats/gatherers/health
  */
 import { and, desc, eq, gt, inArray, like, not } from 'drizzle-orm';
@@ -18,13 +24,66 @@ import {
   heartbeatBeats,
   type Db,
 } from '@dorkos/db';
+import { FILE_WRITING_TOOLS } from '../measures/measure-records.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
 /** One day, in ms. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The most audit rows one beat reads. */
+/** The most failures one beat reports. */
 const AUDIT_LIMIT = 20;
+
+/**
+ * The most audit rows one beat reads to find them: more than it reports, so a
+ * burst of harmless tool failures cannot push a refusal out of the window.
+ */
+const AUDIT_READ_LIMIT = 100;
+
+/** How often the same tool call failing since the last beat counts as trouble. */
+export const REPEATED_TOOL_FAILURES = 3;
+
+/** Errors that mean the computer itself is in trouble, whatever tool met them. */
+const MACHINE_TROUBLE =
+  /ENOSPC|no space left|EDQUOT|disk quota|EROFS|read-only file system|ENOMEM|out of memory/i;
+
+/** Errors that mean the agent could not write where it works. */
+const ACCESS_TROUBLE = /EACCES|EPERM|permission denied|operation not permitted/i;
+
+/**
+ * Whether a failed runtime tool call is trouble rather than everyday work. Its
+ * error says the disk is full, read-only or out of memory; or a file-writing
+ * tool was denied access (a shell `find` meets "permission denied" all day,
+ * an `Edit` should not); or the same call failed {@link REPEATED_TOOL_FAILURES}
+ * times since the last beat. The error is often absent (a main turn's stream
+ * carries none), so repetition is the rule that always applies.
+ *
+ * @param failure - The failure.
+ * @param failure.tool - The tool's name.
+ * @param failure.error - Its recorded error, when there is one.
+ * @param failure.repeats - How many times the same call failed since the last beat.
+ */
+export function isTroubleToolFailure(failure: {
+  tool: string;
+  error: string | null;
+  repeats: number;
+}): boolean {
+  if (failure.repeats >= REPEATED_TOOL_FAILURES) return true;
+  if (!failure.error) return false;
+  if (MACHINE_TROUBLE.test(failure.error)) return true;
+  return FILE_WRITING_TOOLS.has(failure.tool.toLowerCase()) && ACCESS_TROUBLE.test(failure.error);
+}
+
+/**
+ * The tool and the call a `runtime.tool_used` summary names ("Tried Bash (in a
+ * helper): grep foo"): the call is the tool and its target, helper or not.
+ *
+ * @param summary - The row's summary.
+ */
+function toolCallOf(summary: string): { tool: string; call: string } {
+  const match = /^Tried (\S+?)(?: \(in a helper\))?(?::\s*(.*))?$/s.exec(summary);
+  if (!match) return { tool: '', call: summary };
+  return { tool: match[1]!, call: `${match[1]}\u0000${match[2] ?? ''}` };
+}
 
 /** Beat outcomes that ran a turn. */
 const TURN_OUTCOMES: readonly string[] = ['worked', 'no-end-beat', 'failed'];
@@ -41,13 +100,15 @@ export const USAGE_HIGH_FACTOR = 2;
  * @param since - The window's start.
  */
 function ownFailures(db: Db, ctx: GatherContext, since: string): Change[] {
-  return db
+  const rows = db
     .select({
       id: auditEvents.id,
       at: auditEvents.at,
       action: auditEvents.action,
       outcome: auditEvents.outcome,
       sessionId: auditEvents.sessionId,
+      summary: auditEvents.summary,
+      error: auditEvents.error,
     })
     .from(auditEvents)
     .where(
@@ -59,17 +120,36 @@ function ownFailures(db: Db, ctx: GatherContext, since: string): Change[] {
       )
     )
     .orderBy(desc(auditEvents.seq))
-    .limit(AUDIT_LIMIT)
+    .limit(AUDIT_READ_LIMIT)
     .all()
-    .filter((row) => !row.sessionId || !ctx.ownBeatSessions.has(row.sessionId))
-    .map((row) => ({
-      gatherer: 'health' as const,
-      key: `audit:${row.id}`,
-      summary: `${row.action} was ${row.outcome === 'refused' ? 'refused' : 'a failure'}.`,
-      at: row.at,
-      ref: { kind: 'audit', id: row.id },
-      signal: 'self-refused' as const,
-    }));
+    .filter((row) => !row.sessionId || !ctx.ownBeatSessions.has(row.sessionId));
+  const isToolFailure = (row: (typeof rows)[number]): boolean =>
+    row.action === 'runtime.tool_used' && row.outcome === 'failed';
+  const repeats = new Map<string, number>();
+  for (const row of rows.filter(isToolFailure)) {
+    const { call } = toolCallOf(row.summary);
+    repeats.set(call, (repeats.get(call) ?? 0) + 1);
+  }
+  const signalOf = (row: (typeof rows)[number]): Change['signal'] => {
+    if (!isToolFailure(row)) return 'self-refused';
+    const { tool, call } = toolCallOf(row.summary);
+    return isTroubleToolFailure({ tool, error: row.error, repeats: repeats.get(call) ?? 0 })
+      ? 'self-refused'
+      : 'info';
+  };
+  const changes = rows.map((row) => ({
+    gatherer: 'health' as const,
+    key: `audit:${row.id}`,
+    summary: `${row.action} was ${row.outcome === 'refused' ? 'refused' : 'a failure'}.`,
+    at: row.at,
+    ref: { kind: 'audit', id: row.id },
+    signal: signalOf(row),
+  }));
+  // Trouble first, newest first within each, so the cap drops information only.
+  return [
+    ...changes.filter((change) => change.signal !== 'info'),
+    ...changes.filter((change) => change.signal === 'info'),
+  ].slice(0, AUDIT_LIMIT);
 }
 
 /**
