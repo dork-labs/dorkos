@@ -1,11 +1,12 @@
+import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   assertNoMigrationGap,
   assertCompatibilityFloor,
   COMMUNITY_MIGRATIONS,
 } from '../migrate.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 describe('community migration list', () => {
   // Purpose: two branches that each take "the next number" must not both land with a gap or a
@@ -14,9 +15,7 @@ describe('community migration list', () => {
     COMMUNITY_MIGRATIONS.forEach(([version, filename], index) => {
       expect(version).toBe(index + 1);
       expect(filename.startsWith(`${String(version).padStart(4, '0')}_`)).toBe(true);
-      expect(
-        existsSync(fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)))
-      ).toBe(true);
+      expect(existsSync(join(MIGRATIONS_DIR, filename))).toBe(true);
     });
   });
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE, parseConfig } from '../config.js';
 import { createBlobStore, FileSystemBlobStore, S3BlobStore } from '../storage/index.js';
+import { SPACE_ROOT, WEB_DIR } from './space-paths.js';
 
 const valid = {
   COMMUNITY_DATABASE_URL: 'postgres://postgres:pass@localhost:5432/community',
@@ -592,13 +593,13 @@ describe('community startup config', () => {
     expect(evidence('evidence')).toThrow('COMMUNITY_EVIDENCE_PATH must be an absolute path');
     for (const path of ['/srv/data/blobs', '/srv/data/blobs/evidence', '/srv/data', '/'])
       expect(evidence(path), path).toThrow('COMMUNITY_STORAGE_PATH');
-    const served = fileURLToPath(new URL('../../dist/', import.meta.url));
+    const served = WEB_DIR;
     for (const path of [served, join(served, 'evidence'), join(served, '..')])
       expect(evidence(path), path).toThrow('the web app folder');
     expect(evidence(join(tmpdir(), 'evidence'))).toThrow('the temporary folder');
     expect(evidence('/srv/evidence')).not.toThrow();
     // A link that points into the temporary folder is still inside it.
-    const outside = await mkdtemp(join(fileURLToPath(new URL('../../', import.meta.url)), '.cfg-'));
+    const outside = await mkdtemp(join(fileURLToPath(SPACE_ROOT), '.cfg-'));
     try {
       await symlink(tmpdir(), join(outside, 'link'));
       expect(evidence(join(outside, 'link', 'evidence'))).toThrow('the temporary folder');

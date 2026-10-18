@@ -1,9 +1,10 @@
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeEach, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { migrate } from '../migrate.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for tenant relation tests');
@@ -43,10 +44,7 @@ async function applyMigrationsThroughSix(db: Pool): Promise<void> {
     [5, '0005_tenant_expand.sql'],
     [6, '0006_tenant_backfill.sql'],
   ] as const) {
-    const source = await readFile(
-      fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-      'utf8'
-    );
+    const source = await readFile(join(MIGRATIONS_DIR, filename), 'utf8');
     await db.query(source);
     await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
   }

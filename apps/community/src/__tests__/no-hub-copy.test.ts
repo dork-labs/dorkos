@@ -5,18 +5,26 @@
  * never identifiers, comments or import paths, so the live-stream code may keep its own name.
  */
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { SPACE_SRC, SPACE_WEB_SRC } from './space-paths.js';
 
-const SRC = new URL('../', import.meta.url);
 const WORD = /\bhubs?\b/iu;
 
-/** Non-test source files under `src/`, relative to it. */
-function sources(): string[] {
-  return readdirSync(SRC, { recursive: true, encoding: 'utf8' }).filter(
-    (name) =>
-      /\.tsx?$/u.test(name) && !/(^|\/)__tests__\//u.test(name) && !/\.test\.tsx?$/u.test(name)
-  );
+/** Non-test source files of the server and of its page, each as a URL. */
+function sources(): URL[] {
+  const under = (root: URL) =>
+    readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .filter(
+        (name) =>
+          /\.tsx?$/u.test(name) && !/(^|\/)__tests__\//u.test(name) && !/\.test\.tsx?$/u.test(name)
+      )
+      .map((name) => new URL(name, root));
+  // The page's source sits inside the server's for now; each file is read once.
+  const page = under(SPACE_WEB_SRC);
+  const pageFiles = new Set(page.map(String));
+  return [...under(SPACE_SRC).filter((url) => !pageFiles.has(String(url))), ...page];
 }
 
 /** Every copy position in one file's text that says "hub": strings, templates and JSX text. */
@@ -52,9 +60,9 @@ describe('space page copy', () => {
     // "hub" or "hubs", the internal word VOICE retires from copy.
     const files = sources();
     expect(files.length).toBeGreaterThan(100);
-    const found = files.flatMap((name) => hubCopy(name, readFileSync(new URL(name, SRC), 'utf8')));
-    const page = readFileSync(new URL('browser/index.html', SRC), 'utf8');
-    if (WORD.test(page)) found.push('browser/index.html');
+    const found = files.flatMap((url) => hubCopy(fileURLToPath(url), readFileSync(url, 'utf8')));
+    const page = readFileSync(new URL('index.html', SPACE_WEB_SRC), 'utf8');
+    if (WORD.test(page)) found.push('index.html');
     expect(found).toEqual([]);
   });
 

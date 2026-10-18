@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { SPACE_ROOT } from '../../startup/space-root.js';
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import { CommunityEvidenceRecordV1Schema } from '@dorkos/shared/community-admin-wire';
@@ -7,9 +8,9 @@ import type { HostActor } from '../../host/authority.js';
 /** `record.json` as the server writes it into the evidence store. */
 export type EvidenceRecord = z.infer<typeof CommunityEvidenceRecordV1Schema>;
 
-/** This server's version, from its package.json (beside `src/` and `dist-server/` alike). */
+/** This server's version, from its package.json in {@link SPACE_ROOT}. */
 export const COMMUNITY_SERVER_VERSION: string = (
-  createRequire(import.meta.url)('../../../package.json') as { version: string }
+  createRequire(new URL('package.json', SPACE_ROOT))('./package.json') as { version: string }
 ).version;
 
 /** What every record says about where its IP addresses came from. */

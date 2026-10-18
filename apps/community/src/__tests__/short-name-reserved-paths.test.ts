@@ -8,6 +8,7 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
 import { OWNER_CLAIM_PATH } from '../browser/owner-claim.js';
+import { SPACE_WEB_SRC } from './space-paths.js';
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -52,7 +53,7 @@ describe('reserved short names', () => {
       ...topLevelPaths(source('../main.ts')),
       ...topLevelPaths(source('../startup/space-server.ts')),
       ...topLevelPaths(source('../pages/register.ts')),
-      ...topLevelPaths(source('../browser/BrowserRoot.tsx')),
+      ...topLevelPaths(readFileSync(new URL('BrowserRoot.tsx', SPACE_WEB_SRC), 'utf8')),
       OWNER_CLAIM_PATH.slice(1),
       // The pages a mailed link opens; pages/register.ts serves them from this one list.
       ...Object.values(COMMUNITY_EMAIL_LINK_PAGES).map((page) => page.slice(1)),

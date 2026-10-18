@@ -10,8 +10,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { LINK_SECRET_SCRIPT } from '../headers/link-secret-script.js';
 import { PAGE_CSP } from '../headers/security-headers.js';
+import { SPACE_WEB_SRC } from './space-paths.js';
 
-const html = readFileSync(new URL('../browser/index.html', import.meta.url), 'utf8');
+const html = readFileSync(new URL('index.html', SPACE_WEB_SRC), 'utf8');
 
 describe('the page start script', () => {
   it('is the one inline script the page carries, exactly as the policy hashes it', () => {

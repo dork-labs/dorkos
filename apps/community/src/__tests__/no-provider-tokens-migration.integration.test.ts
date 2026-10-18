@@ -3,12 +3,13 @@
  * release, and nothing else on the account row. Applied to a database that has every earlier
  * migration and a provider link that still holds its tokens, as one signed in before would.
  */
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { afterAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { COMMUNITY_MIGRATIONS, migrate } from '../migrate.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -35,9 +36,7 @@ it('clears every stored provider token, and keeps the links and passwords (0045)
     );
     for (const [version, file] of COMMUNITY_MIGRATIONS) {
       if (version >= MIGRATION[0]) break;
-      await db.query(
-        await readFile(fileURLToPath(new URL(`../../migrations/${file}`, import.meta.url)), 'utf8')
-      );
+      await db.query(await readFile(join(MIGRATIONS_DIR, file), 'utf8'));
       await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
     }
     const userId = randomUUID();
