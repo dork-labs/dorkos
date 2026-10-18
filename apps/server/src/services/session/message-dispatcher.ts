@@ -476,6 +476,9 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
     ...(runtime.isHelperWorking !== undefined
       ? { isHelperWorking: (sid: string) => runtime.isHelperWorking!(sid) }
       : {}),
+    ...(runtime.liveHelperIds !== undefined
+      ? { liveHelperIds: (sid: string) => runtime.liveHelperIds!(sid) }
+      : {}),
     getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
     getCapabilities: () => runtime.getCapabilities(),

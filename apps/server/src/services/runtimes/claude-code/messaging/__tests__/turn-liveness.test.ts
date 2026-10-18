@@ -83,6 +83,21 @@ describe('the warm path reads every live task, not only subagents', () => {
     expect(liveness.liveAgentCount()).toBe(2);
   });
 
+  it('names every live task, and forgets one once it settles (FB-18)', () => {
+    const liveness = createTurnLiveness();
+    expect(liveness.liveTaskIds()).toEqual([]);
+    liveness.observe(
+      tasksChanged([
+        { id: 'agent-1', type: 'local_agent' },
+        { id: 'shell-1', type: 'local_bash' },
+      ])
+    );
+    expect(liveness.liveTaskIds()).toEqual(['agent-1', 'shell-1']);
+
+    liveness.observe(taskSettled('agent-1'));
+    expect(liveness.liveTaskIds()).toEqual(['shell-1']);
+  });
+
   it('counts a task type nobody has catalogued as work that holds the process', () => {
     const liveness = createTurnLiveness();
     liveness.observe(
