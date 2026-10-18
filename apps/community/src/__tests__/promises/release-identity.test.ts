@@ -4,7 +4,8 @@
  * migration compatibility id. The program merge moves the code that makes all three; these fail
  * if the move changes one by accident. A deliberate change is its own PR, agreed with Cloud.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -12,6 +13,7 @@ import {
   COMMUNITY_RELEASE_WORKFLOW,
 } from '@dorkos/shared/community-release-manifest';
 import { describe, expect, it } from 'vitest';
+import { communityMigrationCompatibilityId } from '../../../../../scripts/lib/community-migration-id.mjs';
 import { REPO_ROOT } from './image-imports.js';
 
 const read = (path: string) => readFileSync(join(REPO_ROOT, path), 'utf8');
@@ -53,19 +55,28 @@ describe('the release identity', () => {
   });
 
   it('computes the migration compatibility id from the migrations the server runs', () => {
-    // Purpose: the CLI bakes this id in and the release manifest carries it; a launcher refuses
-    // a release whose id differs. Fails if either stops reading the folder the server migrates
-    // from, or the two stop hashing it the same way: each sorted .sql file's name, a NUL, its
-    // bytes, a NUL.
-    expect(cliBuild).toContain(`path.join(ROOT, '${migrations}')`);
+    // Purpose: the CLI bakes this id in and every release manifest carries it; a launcher refuses
+    // a release whose id differs. Fails if either producer stops calling the one shared function
+    // on the folder the server migrates from, or the function stops hashing it as it always has.
+    expect(cliBuild).toMatch(
+      new RegExp(
+        String.raw`communityMigrationCompatibilityId\(\s*path\.join\(ROOT, '${migrations}'\)\s*\)`,
+        'u'
+      )
+    );
+    expect(manifestGenerator).toContain('communityMigrationCompatibilityId(values.migrations!)');
     const named = /--migrations (\S+)/u.exec(workflow)?.[1];
     expect(named && expandSpaceDir(named)).toBe(migrations);
-    for (const source of [cliBuild, manifestGenerator]) {
-      expect(source).toMatch(/\.filter\(\(entry\) => entry\.endsWith\('\.sql'\)\)\s*\.sort\(\)/u);
-      expect(source).toMatch(
-        /\.update\(filename\);\s*\w+\.update\('\\0'\);\s*\w+\.update\([^\n]*readFile(?:Sync)?\([^\n]*filename\)\)\)?;\s*\w+\.update\('\\0'\);/u
-      );
-      expect(source).toContain('`sha256:${');
-    }
+    const reference = createHash('sha256');
+    for (const filename of readdirSync(join(REPO_ROOT, migrations)).sort())
+      if (filename.endsWith('.sql'))
+        reference
+          .update(filename)
+          .update('\0')
+          .update(readFileSync(join(REPO_ROOT, migrations, filename)))
+          .update('\0');
+    expect(communityMigrationCompatibilityId(join(REPO_ROOT, migrations))).toBe(
+      `sha256:${reference.digest('hex')}`
+    );
   });
 });

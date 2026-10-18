@@ -6,13 +6,17 @@
  * following workspace packages into their TypeScript source so one that drags SQLite in is seen.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { builtinModules } from 'node:module';
+import { isAbsolute, join, relative } from 'node:path';
 import { build, type Plugin } from 'esbuild';
 
 /** The repository root. */
 export const REPO_ROOT = new URL('../../../../../', import.meta.url).pathname;
 
-/** Packages the space image must never reach, with why. */
+/**
+ * What the space image must never import, with why. An import matches when it names one of these
+ * or reaches one through a subpath of another package, such as `drizzle-orm/better-sqlite3`.
+ */
 export const FORBIDDEN_IN_SPACE_IMAGE: Readonly<Record<string, string>> = {
   'better-sqlite3': 'the machine store',
   '@dorkos/db': 'the machine store',
@@ -20,7 +24,22 @@ export const FORBIDDEN_IN_SPACE_IMAGE: Readonly<Record<string, string>> = {
   '@openai/codex-sdk': 'a runtime SDK',
   '@opencode-ai/sdk': 'a runtime SDK',
   'node-pty': 'the terminal',
+  // Finds node-pty at run time through `createRequire`, which no import walk can see.
+  '@dorkos/shared/node-pty-spawn-helper': 'the terminal',
 };
+
+/**
+ * Files on the walk allowed to load code by a name the walk cannot read, with what they load.
+ * Anything else that does is refused: a computed `import()` or a `createRequire` could load a
+ * forbidden package unseen.
+ */
+export const DYNAMIC_LOADS_ALLOWED: Readonly<Record<string, string>> = {
+  'apps/community/src/takedown/evidence/record.ts': "the space package's own package.json",
+};
+
+const forbids = (specifier: string, name: string) => `/${specifier}/`.includes(`/${name}/`);
+const BUILTINS = new Set(builtinModules);
+const DYNAMIC_LOAD = /\bcreateRequire\s*\(|\bimport\(\s*[^'"\s)]/u;
 
 interface Workspace {
   dir: string;
@@ -80,24 +99,37 @@ function resolveWorkspace(workspace: Workspace, subpath: string): string | null 
   return null;
 }
 
+/** What one walk found. */
+export interface ImageImports {
+  /** Every import of a package, by its full specifier, with the first file that has it. */
+  specifiers: Map<string, string>;
+  /** Every package reached, workspace packages included, with the first file that imports it. */
+  packages: Map<string, string>;
+  /** Walked repository files that load code by a computed name, outside the allowed list. */
+  dynamicLoads: string[];
+}
+
 /**
- * Every outside package an entry's import graph reaches, each with the first file that imports
- * it. Workspace packages are followed into their source and listed too.
+ * Walk an entry's whole import graph. Workspace packages are followed into their source.
  *
- * @param entry - The entry file, relative to the repository root.
+ * @param entry - The entry file (absolute, or relative to the repository root), or source text
+ *   to walk as if it were a file in the repository root.
  */
-export async function packagesReachedFrom(entry: string): Promise<Map<string, string>> {
+export async function walkImports(entry: string | { contents: string }): Promise<ImageImports> {
   const known = workspaces();
-  const reached = new Map<string, string>();
+  const specifiers = new Map<string, string>();
+  const packages = new Map<string, string>();
   const walk: Plugin = {
     name: 'space-image-imports',
     setup(builder) {
       // esbuild reads the filter as a Go regular expression, which takes no `u` flag.
       builder.onResolve({ filter: /^[^./]/ }, (args) => {
-        if (args.path.startsWith('node:')) return { external: true };
+        if (args.path.startsWith('node:') || BUILTINS.has(args.path)) return { external: true };
         const parts = args.path.split('/');
         const name = args.path.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
-        if (!reached.has(name)) reached.set(name, relative(REPO_ROOT, args.importer));
+        const importer = relative(REPO_ROOT, args.importer) || '<source>';
+        if (!specifiers.has(args.path)) specifiers.set(args.path, importer);
+        if (!packages.has(name)) packages.set(name, importer);
         const workspace = known.get(name);
         if (!workspace) return { external: true };
         const file = resolveWorkspace(workspace, `.${args.path.slice(name.length)}`);
@@ -106,8 +138,12 @@ export async function packagesReachedFrom(entry: string): Promise<Map<string, st
       });
     },
   };
-  await build({
-    entryPoints: [join(REPO_ROOT, entry)],
+  const result = await build({
+    ...(typeof entry === 'string'
+      ? { entryPoints: [isAbsolute(entry) ? entry : join(REPO_ROOT, entry)] }
+      : { stdin: { contents: entry.contents, resolveDir: REPO_ROOT, loader: 'ts' as const } }),
+    metafile: true,
+    absWorkingDir: REPO_ROOT,
     bundle: true,
     write: false,
     platform: 'node',
@@ -117,13 +153,26 @@ export async function packagesReachedFrom(entry: string): Promise<Map<string, st
     // Assets a browser page imports never reach the server; read them as nothing.
     loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty', '.node': 'empty' },
   });
-  return reached;
+  const dynamicLoads = Object.keys(result.metafile.inputs)
+    .filter((input) => !input.includes('node_modules/') && !input.startsWith('<'))
+    .filter((file) => !Object.hasOwn(DYNAMIC_LOADS_ALLOWED, file))
+    .filter((file) => DYNAMIC_LOAD.test(readFileSync(join(REPO_ROOT, file), 'utf8')));
+  return { specifiers, packages, dynamicLoads };
 }
 
-/** The forbidden packages an entry reaches, each as "<package> (<why>), first from <file>". */
-export async function forbiddenReachedFrom(entry: string): Promise<string[]> {
-  const reached = await packagesReachedFrom(entry);
-  return Object.entries(FORBIDDEN_IN_SPACE_IMAGE)
-    .filter(([name]) => reached.has(name))
-    .map(([name, why]) => `${name} (${why}), first from ${reached.get(name)}`);
+/**
+ * What an entry must not reach: each forbidden import as "<name> (<why>), first from <file>",
+ * then each file that loads code by a computed name.
+ *
+ * @param entry - As for {@link walkImports}.
+ */
+export async function forbiddenReachedFrom(
+  entry: string | { contents: string }
+): Promise<string[]> {
+  const { specifiers, dynamicLoads } = await walkImports(entry);
+  const found = Object.entries(FORBIDDEN_IN_SPACE_IMAGE).flatMap(([name, why]) => {
+    const first = [...specifiers].find(([specifier]) => forbids(specifier, name));
+    return first ? [`${name} (${why}), first from ${first[1]}`] : [];
+  });
+  return [...found, ...dynamicLoads.map((file) => `a load by a computed name in ${file}`)];
 }
