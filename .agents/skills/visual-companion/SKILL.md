@@ -267,7 +267,9 @@ still open (your turn ended without closing it) → done or dismissed; or not se
 and Try again). While your chat waits on the person (DorkOS lifecycle `blocked`), the page
 says you need them, with Open chat. Send only ever carries notes that haven't gone, so it can't repeat, and
 pinning stays safe while you work. The companion writes `delivery` events (queued,
-delivered, failed, unrouted) and replays queued Sends after a restart. `GET vc/review-status`
+delivering, delivered, failed, unrouted) and replays queued Sends after a restart. One caught
+mid-request (`delivering`) is never replayed: it may have landed, so the page says it's not
+sure it was sent and offers Try again. `GET vc/review-status`
 adds your chat's DorkOS `status.lifecycle` (`idle`, `streaming`, `blocked`, `error` or
 `interrupted`). A Send DorkOS already took is never sent again. So **answer every note**
 with `vc review resolve|dismiss`: a note you act on but never close shows as "still open"

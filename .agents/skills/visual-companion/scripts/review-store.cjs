@@ -5,7 +5,7 @@
 //   pin          (same n, same text) keeps its status; new text reopens it
 //   pin-resolve  { n, status: 'resolved' | 'dismissed', reply } — the agent's answer
 //   pin-delete   removes it
-//   delivery     { notes:[n], state: 'queued'|'delivered'|'failed', reason } — where a Send is
+//   delivery     { notes:[n], state: 'queued'|'delivering'|'delivered'|'failed', reason } — where a Send is
 // Crops (shots/notes/<screen>-<n>.png) are found on disk, never stored in events.
 const fs = require('fs');
 const path = require('path');

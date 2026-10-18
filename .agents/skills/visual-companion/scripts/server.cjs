@@ -460,9 +460,10 @@ const routeSent = [];
 // ========== Delivery ==========
 //
 // Where each Send is, written to the events log so a reload (or another tab) reads
-// the truth: queued (the companion holds it), delivered (DorkOS took it, which
-// starts the agent's turn), failed or unrouted (with why). Only state changes are
-// written, never every retry.
+// the truth: queued (the companion holds it), delivering (written just before the
+// POST, so a crash mid-request is visible), delivered (DorkOS took it, which starts
+// the agent's turn), failed or unrouted (with why). Only state changes are written,
+// never every retry.
 const sendNotes = (e) =>
   e.review && Array.isArray(e.review.notes)
     ? e.review.notes.map((x) => x.n).filter((n) => n != null)
@@ -741,6 +742,9 @@ async function deliverRoute() {
     };
   }
   let status;
+  // On disk before the request leaves: if the server dies before `delivered` is
+  // written, the restart sees `delivering` and never replays it blind.
+  markDelivery(batch, 'delivering');
   try {
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     status = res.status;
@@ -1317,7 +1321,9 @@ function startServer() {
 
   // A Send still waiting when the server stopped goes back in line: the person was
   // told "queued", so a restart must not quietly drop it. One that DorkOS already
-  // took is never sent again, whatever was written after its `delivered` line.
+  // took is never sent again, whatever was written after its `delivered` line. One
+  // caught mid-request (`delivering`) may or may not have landed, so it is never
+  // replayed: it is marked failed/unsure and the person decides to send it again.
   function replayQueued() {
     const evs = readEvents();
     const sends = new Map();
@@ -1332,7 +1338,12 @@ function startServer() {
     }
     for (const [k, d] of lastBySend) {
       const e = sends.get(k);
-      if (!e || landed.has(k) || d.state !== 'queued') continue;
+      if (!e || landed.has(k)) continue;
+      if (d.state === 'delivering') {
+        markDelivery([e], 'failed', 'unsure');
+        continue;
+      }
+      if (d.state !== 'queued') continue;
       if (Date.now() - e.timestamp > 30 * 60e3) continue;
       if (!screenWakes(e.screen) || !readRoute(e.screen)) continue;
       e._delivery = d.state + '|' + (d.reason || '');

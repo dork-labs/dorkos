@@ -1210,6 +1210,7 @@
     if (!isSent(p)) return sending && p._sending ? 'sending' : 'ready';
     const d = p.delivery && p.delivery.state;
     if (d === 'failed' || d === 'unrouted') return 'failed';
+    if (d === 'delivering') return 'sending';
     if (d === 'queued') return p.delivery.reason === 'sending' ? 'sending' : 'queued';
     if (d === 'delivered') {
       const life = status && status.lifecycle;
@@ -1230,6 +1231,7 @@
     timeout: () => `Couldn’t reach ${AG()} for 30 minutes, so it stopped trying.`,
     offline: () => 'The companion isn’t running, so nothing left this page.',
     lost: () => 'The companion restarted and lost this one. Send it again.',
+    unsure: () => `Not sure it was sent: the companion restarted mid-send.`,
   };
   const why = (p) => {
     const r = p && p.delivery && p.delivery.reason;

@@ -49,6 +49,7 @@ async function fakeDorkos(answer = () => 202) {
       }
       const status = fake.answer();
       fake.calls.push(JSON.parse(body || '{}'));
+      if (status === null) return; // hold the request open: DorkOS never answers
       if (status === 202) fake.accepted.push(fake.calls[fake.calls.length - 1]);
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end('{}');
@@ -246,6 +247,29 @@ test('a Send that never landed is replayed once after a restart', async () => {
   vc(dir, ['start', '--port', String(port())], { env });
   await new Promise((r) => setTimeout(r, 4000));
   assert.equal(fake.accepted.length, 1, 'replayed exactly once');
+});
+
+test('a Send caught mid-request is never replayed blind; it is marked unsure', async () => {
+  const fake = await fakeDorkos(() => null); // DorkOS takes the request and never answers
+  const dir = project();
+  dirs.push(dir);
+  const { base, env } = openReview(dir, fake, 'midway');
+  await post(base, { type: 'send', screen: 'midway', message: 'did this land?' });
+  await waitFor(() => fake.calls.length === 1, 8000, 50, 'the request reached DorkOS');
+  const deliveries = () => events(dir).filter((e) => e.type === 'delivery');
+  assert.equal(deliveries().at(-1).state, 'delivering', 'written before the request left');
+  // The server dies before any answer, so it never learns whether DorkOS took it.
+  vc(dir, ['stop'], { env });
+  fake.answer = () => 202;
+  vc(dir, ['start', '--port', String(port())], { env });
+  await waitFor(
+    () => deliveries().some((e) => e.state === 'failed' && e.reason === 'unsure'),
+    5000,
+    50,
+    'marked unsure on restart'
+  );
+  await new Promise((r) => setTimeout(r, 3000)); // replay runs 1.5s after start
+  assert.equal(fake.calls.length, 1, 'not sent again on its own');
 });
 
 test('a crop only loads an http(s) page on this computer', () => {
