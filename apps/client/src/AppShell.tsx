@@ -110,12 +110,7 @@ import {
   useRightPanelShortcut,
   RIGHT_PANEL_GROUP_ID,
 } from '@/layers/features/right-panel';
-import {
-  useLegacyProfileLinkRedirect,
-  useProfileDockDeepLink,
-  useScopeProfilePickToChat,
-  useProfileShortcut,
-} from '@/layers/features/profile';
+import { useProfileRootLinks, useProfileShortcut } from '@/layers/features/profile';
 
 /**
  * How long a config read may hang before the shell calls the server unreachable.
@@ -278,11 +273,9 @@ export function AppShell() {
   useProfileShortcut();
   useControlCenterShortcut();
   // Mounted at the shell, not inside the panel: a link that opens the profile
-  // has to work when the profile is not already what you are looking at.
-  useLegacyProfileLinkRedirect();
-  useProfileDockDeepLink();
-  // A profile opened elsewhere never follows you into a chat (FB-60).
-  useScopeProfilePickToChat();
+  // has to work when the profile is not already what you are looking at, and a
+  // profile opened elsewhere never follows you into a chat (FB-60).
+  useProfileRootLinks();
   useRightPanelPersistence();
   // In-window tabs (DOR-540): location sync, the tab keys, Recently closed and
   // restored-tab tidying. All no-op outside the desktop shell (DOR-568).

@@ -27,6 +27,7 @@ export { useProfileShortcut } from './model/use-profile-shortcut';
 export {
   useProfileDockDeepLink,
   useLegacyProfileLinkRedirect,
+  useProfileRootLinks,
 } from './model/use-profile-dock-deep-link';
 export { useScopeProfilePickToChat } from './model/use-docked-agent';
 export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
