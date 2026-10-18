@@ -11,6 +11,10 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRateLimiter, type RateLimiter } from '../../../http/rate-limiter.js';
 import { countWhileRunning } from '../turn-power/live-outsider-turns.js';
+import {
+  getAgentIdentityService,
+  type AgentIdentityService,
+} from '../agent-identity/agent-identity-service.js';
 
 // === Rate limits ===
 
@@ -66,7 +70,8 @@ const READ_ONLY_MODES: ReadonlySet<PermissionMode> = new Set<PermissionMode>(['p
 /**
  * Whether a turn's permission mode lets a tool of this tier run. Only a
  * read-only mode refuses anything: every other mode leaves the decision to the
- * hub's gate, which never auto-approves a destructive tool for a bridged call.
+ * hub's gate, which asks a person before every destructive tool a bridged call
+ * makes (`via: 'agent-computer'` on the identity, `resolveCallPermission`).
  *
  * @param mode - The turn's mode, from the hub's record.
  * @param tier - The tool's tier.
@@ -112,24 +117,58 @@ export async function withOutsiderCap<T>(
 
 // === Refusals in fixed words ===
 
-/** Why a tool the gate refused did not run. */
-const DENIED = 'That tool is not allowed for this agent right now.';
+/**
+ * Every code a runner's failure may cross with, and the one sentence each is
+ * said in. Anything else (`ENOENT`, a handler's own code) is `tool_error`:
+ * the tool's own words never cross, since they can carry a path, a stack or a
+ * raw error from inside the hub.
+ */
+const FIXED_REFUSALS: Readonly<Record<string, string>> = {
+  denied: 'That tool is not allowed for this agent right now.',
+  tool_error: 'The tool could not finish.',
+};
 
-/** Every other failure inside the tool. */
-const TOOL_FAILED = 'The tool could not finish.';
-
-/** A code that names nothing about the hub: letters and underscores only. */
-const PLAIN_CODE = /^[A-Za-z_]{1,64}$/;
+/** A failure, said in fixed words. */
+export type FixedRefusal = { ok: false; code: string; message: string };
 
 /**
- * A runner's failure, said in fixed words. The tool's own sentence never
- * crosses: it can carry a path, a stack or a raw error from inside the hub.
- * A plain code (`NOT_ON_THIS_SURFACE`) is kept, since it names a rule and
- * nothing else; anything else becomes `tool_error`.
+ * A runner's failure, said in fixed words: one of {@link FIXED_REFUSALS}.
  *
  * @param code - The code the runner gave.
  */
-export function fixedRefusal(code: string): { ok: false; code: string; message: string } {
-  if (code === 'denied') return { ok: false, code, message: DENIED };
-  return { ok: false, code: PLAIN_CODE.test(code) ? code : 'tool_error', message: TOOL_FAILED };
+export function fixedRefusal(code: string): FixedRefusal {
+  const known = Object.hasOwn(FIXED_REFUSALS, code) ? code : 'tool_error';
+  return { ok: false, code: known, message: FIXED_REFUSALS[known]! };
+}
+
+/**
+ * Whether a tool's ordinary answer is really the gate refusing it: a `denied`
+ * payload, which names areas and settings, crosses only as {@link fixedRefusal}.
+ *
+ * @param output - The tool's answer.
+ */
+export function isDeniedPayload(output: unknown): boolean {
+  return (
+    typeof output === 'object' &&
+    output !== null &&
+    (output as { status?: unknown }).status === 'denied'
+  );
+}
+
+// === The agent's standing ===
+
+/**
+ * Whether an agent is shut off, as the agent-identity service records it: its
+ * tokens revoked or run out. The live `agent` dependency of the bridge reads
+ * this, so a bridged call is blocked exactly as the same agent's `/mcp` call
+ * would be. An agent that never held a token is not shut off.
+ *
+ * @param agentPath - The agent's home on the hub.
+ * @param service - The identity service; defaults to the live one.
+ */
+export async function agentInactiveOf(
+  agentPath: string,
+  service: Pick<AgentIdentityService, 'describeAgent'> | undefined = getAgentIdentityService()
+): Promise<'revoked' | 'expired' | undefined> {
+  return (await service?.describeAgent(agentPath))?.inactive;
 }

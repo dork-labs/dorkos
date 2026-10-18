@@ -11,9 +11,9 @@
  * - every `act` or `destructive` action whose area is one of
  *   {@link HUB_SETUP_AREAS} (settings, permissions, safety, packages,
  *   connections), so a tool added to those areas is a setup tool by default;
- * - and a named subset of the `agents` area ({@link HUB_SETUP_AGENT_ACTIONS}):
- *   creating, changing and registering agents. The rest of that area (starting
- *   a chat, scanning, the sidebar) stays agent work.
+ * - and a named set ({@link HUB_SETUP_AGENT_ACTIONS}): creating, changing,
+ *   registering and pausing agents, and routing document events. The rest of
+ *   the `agents` area (starting a chat, scanning, the sidebar) stays agent work.
  *
  * Reads are never setup tools. The rule is worked out from tier and area,
  * never listed tool by tool, and `__tests__/hub-setup-tools.test.ts` pins its
@@ -21,8 +21,13 @@
  * area that moves a tool fails a test.
  *
  * DorkBot alone, and only once its owner granted it (`setup-grants-store.ts`),
- * may use the setup set from an agent computer. Its destructive calls still
- * raise their card.
+ * may use the setup set from an agent computer, and only while it is the only
+ * agent that works on that computer: everything on one computer can reach
+ * everything else there, so a grant to DorkBot on a shared computer would be a
+ * grant to every agent beside it. Its destructive calls still raise their card.
+ *
+ * The named set also takes in pausing and resuming an agent and routing
+ * document events to one, whose area is none of the above.
  *
  * @module services/core/tool-bridge/hub-setup-tools
  */
@@ -41,8 +46,9 @@ export const HUB_SETUP_AREAS: ReadonlySet<PermissionAreaId> = new Set<Permission
 ]);
 
 /**
- * The `agents` actions that set up the hub, by capability id or hand tool
- * name: what agents exist and how each is set up.
+ * The actions outside those areas that set up the hub, by capability id or
+ * hand tool name, whatever their area: what agents exist and how each is set
+ * up, whether an agent is paused, and which document events reach an agent.
  */
 export const HUB_SETUP_AGENT_ACTIONS: ReadonlySet<string> = new Set([
   'create_agent',
@@ -51,11 +57,22 @@ export const HUB_SETUP_AGENT_ACTIONS: ReadonlySet<string> = new Set([
   'mesh_register',
   'mesh_unregister',
   'mesh_deny',
+  'agent.pause',
+  'agent.resume',
+  'ui.configure_doc_channel',
+  'ui.approve_doc_route',
 ]);
 
 /** The refusal an agent gets for a setup tool it may not use. */
 export const HUB_SETUP_REFUSAL =
   'Only DorkBot, with your OK, can set things up from a cloud computer.';
+
+/**
+ * The refusal DorkBot gets, grant and all, while another agent works on its
+ * computer: the grant reaches whatever runs there, so it holds only while
+ * DorkBot is the only agent on it.
+ */
+export const DORKBOT_NEEDS_OWN_COMPUTER = "DorkBot's setup level needs its own cloud computer.";
 
 /** The refusal code that rides beside {@link HUB_SETUP_REFUSAL}. */
 export const HUB_SETUP_REFUSAL_CODE = 'setup_refused';
@@ -89,7 +106,7 @@ function writes(tier: CapabilityTier): boolean {
 export function isHubSetupAction(action: Pick<BridgeAction, 'id' | 'tier' | 'area'>): boolean {
   if (!writes(action.tier)) return false;
   if (action.area !== null && HUB_SETUP_AREAS.has(action.area)) return true;
-  return action.area === 'agents' && HUB_SETUP_AGENT_ACTIONS.has(action.id);
+  return HUB_SETUP_AGENT_ACTIONS.has(action.id);
 }
 
 /**
@@ -117,6 +134,8 @@ export interface HubSetupCaller {
   readonly agentIsDorkBot: boolean;
   /** Whether the owner granted DorkBot its setup level. */
   readonly setupGranted: boolean;
+  /** Whether the calling agent is the only agent that works on its computer. */
+  readonly aloneOnComputer: boolean;
 }
 
 /**
@@ -134,7 +153,8 @@ export function hubSetupToolRefusal(
   input?: unknown
 ): string | null {
   if (!isHubSetupCall(action, input)) return null;
-  return who.agentIsDorkBot && who.setupGranted ? null : HUB_SETUP_REFUSAL;
+  if (!who.agentIsDorkBot || !who.setupGranted) return HUB_SETUP_REFUSAL;
+  return who.aloneOnComputer ? null : DORKBOT_NEEDS_OWN_COMPUTER;
 }
 
 /**

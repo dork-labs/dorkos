@@ -28,11 +28,15 @@ import { createHubAgentGrantRoutes, type HubAgentGrantRoutesDeps } from '../hub-
 const SCOUT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
 const ATLAS = '01KJXYKJYW4N8QGQ5W4GB6YM9K';
 
-const caller: { credential: 'cookie' | 'api-key' | null } = { credential: 'cookie' };
+const caller: { credential: 'cookie' | 'api-key' | null; userId: string } = {
+  credential: 'cookie',
+  userId: 'user_owner',
+};
 let grants: SetupGrants;
 
 const deps = {
   isHub: vi.fn(() => true),
+  ownerId: vi.fn((): string | null => 'user_owner'),
   read: vi.fn(() => grants),
   setDorkBotSetup: vi.fn(async (granted: boolean) => {
     grants = { ...grants, dorkbotSetup: granted };
@@ -54,7 +58,7 @@ const server = listeningServer(
     {
       before: async (c, next) => {
         if (caller.credential)
-          c.set('user', { userId: 'user_owner', credential: caller.credential });
+          c.set('user', { userId: caller.userId, credential: caller.credential });
         await next();
       },
     }
@@ -64,8 +68,10 @@ const server = listeningServer(
 beforeEach(() => {
   vi.clearAllMocks();
   caller.credential = 'cookie';
+  caller.userId = 'user_owner';
   grants = NO_SETUP_GRANTS;
   deps.isHub.mockReturnValue(true);
+  deps.ownerId.mockReturnValue('user_owner');
 });
 
 const ROUTES = [
@@ -106,6 +112,37 @@ describe('who is answered', () => {
     const res = await send(method, path, body);
     expect(res.status).toBe(403);
     for (const write of writes()) expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each(ROUTES)(
+    '%s %s refuses a signed-in account that is not the owner',
+    async (method, path, body) => {
+      caller.userId = 'user_invited';
+      const res = await send(method, path, body);
+      expect(res.status).toBe(403);
+      expect(deps.read).not.toHaveBeenCalled();
+      for (const write of writes()) expect(write).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses everyone while the hub has no owner', async () => {
+    deps.ownerId.mockReturnValue(null);
+    expect((await request(server).get('/api/hub/agent-grants')).status).toBe(403);
+  });
+
+  it('records a refused change, and not a refused read', async () => {
+    caller.credential = 'api-key';
+    await send('put', '/api/hub/agent-grants/dorkbot-setup', { granted: true });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'hub.agent_grants.dorkbot_setup',
+        outcome: 'refused',
+        error: 'api_key',
+      })
+    );
+    audit.record.mockClear();
+    await request(server).get('/api/hub/agent-grants');
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it.each(ROUTES)('%s %s refuses nobody signed in', async (method, path, body) => {

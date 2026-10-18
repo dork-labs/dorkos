@@ -28,6 +28,7 @@ import {
   AgentComputerRequestSchema,
   AgentComputerWebFrameSchema,
   RELAY_CALL_FEATURES,
+  agentComputerManifestOf,
   RelayCallFrameSchema,
   RelayCallSchema,
   encodeAgentComputerRequestFrame,
@@ -101,6 +102,30 @@ describe('agents.sync', () => {
     for (const request of EVERY_REQUEST.slice(0, 2)) {
       expect(AgentComputerRequestSchema.safeParse(request).success).toBe(true);
     }
+  });
+
+  it('carries only the manifest fields an agent computer may hold', () => {
+    const secrets = {
+      mcpServers: [
+        {
+          name: 'linear',
+          connection: { env: { LINEAR_API_KEY: 'lin_123' }, headers: { Authorization: 'x' } },
+        },
+      ],
+      account: 'claude-work',
+      permissions: { areas: { packages: 'allowed' } },
+      workspace: { mode: 'home' },
+      registeredBy: 'dorkos',
+      apiKey: 'sk-123',
+    };
+    for (const [field, value] of Object.entries(secrets)) {
+      const request = { ...SYNC, manifest: { ...SYNC.manifest, [field]: value } };
+      expect(AgentComputerRequestSchema.safeParse(request).success, field).toBe(false);
+    }
+    const cut = agentComputerManifestOf({ ...SYNC.manifest, ...secrets });
+    expect(cut).toEqual(SYNC.manifest);
+    expect(AgentComputerRequestSchema.safeParse({ ...SYNC, manifest: cut }).success).toBe(true);
+    expect(JSON.stringify(cut)).not.toMatch(/lin_123|sk-123|Authorization/);
   });
 
   it('carries exactly the identity files, by name', () => {
@@ -187,16 +212,19 @@ describe('agents.sync', () => {
       files: [...AGENT_COMPUTER_IDENTITY_FILES, 'SOUL.md'].map((name) => ({ name, text: 'x' })),
     };
     expect(AgentComputerRequestSchema.safeParse(manyFiles).success).toBe(false);
-    const bigManifest = { ...SYNC, manifest: jsonOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES) };
+    const bigManifest = {
+      ...SYNC,
+      manifest: { persona: 'x'.repeat(AGENT_COMPUTER_MAX_MANIFEST_BYTES) },
+    };
     expect(AgentComputerRequestSchema.safeParse(bigManifest).success).toBe(false);
   });
 
   it('measures the manifest itself, in bytes, rather than trusting a length', () => {
     // A third of the cap in characters, but three bytes each in UTF-8.
     const chars = Math.ceil(AGENT_COMPUTER_MAX_MANIFEST_BYTES / 3) + 10;
-    const wide = { ...SYNC, manifest: { pad: '€'.repeat(chars) } };
+    const wide = { ...SYNC, manifest: { persona: '€'.repeat(chars) } };
     expect(AgentComputerRequestSchema.safeParse(wide).success).toBe(false);
-    const claimed = { ...SYNC, manifest: { length: 1, pad: 'x'.repeat(100_000) } };
+    const claimed = { ...SYNC, manifest: { name: 'x', persona: 'x'.repeat(100_000) } };
     expect(AgentComputerRequestSchema.safeParse(claimed).success).toBe(false);
   });
 
@@ -491,6 +519,9 @@ const cjkOfBytes = (bytes: number) => '中'.repeat(Math.floor((bytes - 2) / 3));
 /** A JSON object of about `bytes` serialized bytes, in CJK. */
 const cjkObjectOfBytes = (bytes: number) => ({ p: cjkOfBytes(bytes - 8) });
 
+/** A manifest of about `bytes` serialized bytes, in CJK, in a field it may carry. */
+const cjkManifestOfBytes = (bytes: number) => ({ persona: cjkOfBytes(bytes - 14) });
+
 describe('the largest legal frame of each kind still seals', () => {
   /** Accepted by its schema, and so encodes within what one sealed frame carries. */
   function expectFits(encoded: { ok: boolean }, text?: string | null) {
@@ -502,7 +533,7 @@ describe('the largest legal frame of each kind still seals', () => {
     const sync = {
       op: 'agents.sync',
       agentId: AGENT,
-      manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
+      manifest: cjkManifestOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
       files: AGENT_COMPUTER_IDENTITY_FILES.map((name) => ({
         name,
         text: cjkOfBytes(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES),
@@ -520,7 +551,7 @@ describe('the largest legal frame of each kind still seals', () => {
     const sync = {
       op: 'agents.sync',
       agentId: AGENT,
-      manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES + 6000),
+      manifest: cjkManifestOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES + 6000),
       files: [],
       packages: [],
     } as unknown as AgentComputerRequest;
@@ -642,7 +673,14 @@ describe('opaque JSON has a depth limit', () => {
 
   it.each([
     ['a tool input', (v: object) => RelayCallSchema.safeParse({ ...EVERY_CALL[1], input: v })],
-    ['a manifest', (v: object) => AgentComputerRequestSchema.safeParse({ ...SYNC, manifest: v })],
+    [
+      'a manifest',
+      (v: object) =>
+        AgentComputerRequestSchema.safeParse({
+          ...SYNC,
+          manifest: { behavior: (v as { a: unknown }).a },
+        }),
+    ],
     [
       'a tool output',
       (v: object) => ({

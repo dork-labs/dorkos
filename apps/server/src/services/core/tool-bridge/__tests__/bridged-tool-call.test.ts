@@ -4,7 +4,10 @@
  *
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   RelayToolCallOutcome,
   RelayToolSummary,
@@ -18,6 +21,10 @@ import {
   agentIsReadingOutsider,
   resetLiveOutsiderTurns,
 } from '../../turn-power/live-outsider-turns.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../agent-identity/__tests__/agent-home-fixture.js';
 import { createBridgedToolRateLimits } from '../bridge-guards.js';
 import {
   handleBridgedToolCall,
@@ -27,7 +34,11 @@ import {
   type BridgedToolRun,
   type BridgedTurn,
 } from '../bridged-tool-call.js';
-import { HUB_SETUP_REFUSAL, type BridgeAction } from '../hub-setup-tools.js';
+import {
+  DORKBOT_NEEDS_OWN_COMPUTER,
+  HUB_SETUP_REFUSAL,
+  type BridgeAction,
+} from '../hub-setup-tools.js';
 
 const COMPUTER = 'cc-1';
 const SCOUT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
@@ -87,17 +98,31 @@ const ACTIONS: Record<string, BridgeAction> = {
   },
 };
 
-const AGENTS: Record<string, BridgedAgent> = {
-  [SCOUT]: { agentPath: '/hub/agents/scout', displayName: 'Scout', isSystem: false },
-  [DORKBOT]: { agentPath: '/hub/agents/dorkbot', displayName: 'DorkBot', isSystem: true },
-};
+// Real agent folders, registered as homes, so the outsider count is kept per
+// agent: an unplaced folder is counted for every agent, which no test could
+// tell from a working cap.
+const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'bridged-tool-call-'));
+const SCOUT_HOME = path.join(ROOT, 'scout');
+const DORKBOT_HOME = path.join(ROOT, 'dorkbot');
+for (const home of [SCOUT_HOME, DORKBOT_HOME]) fs.mkdirSync(home, { recursive: true });
+registerTestHomes([SCOUT_HOME, DORKBOT_HOME]);
+afterAll(() => {
+  clearTestHomes();
+  fs.rmSync(ROOT, { recursive: true, force: true });
+});
+
+let AGENTS: Record<string, BridgedAgent>;
 
 const ownerTurn = (agentId: string): BridgedTurn => ({
   agentId,
   tier: 'owner',
   permissionMode: 'default',
   outsiderCapped: false,
+  running: true,
 });
+
+let place: Record<string, string>;
+let mcpOn: boolean;
 
 let turns: Record<string, BridgedTurn>;
 let granted: boolean;
@@ -107,14 +132,23 @@ let deps: BridgedToolDeps;
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
+  AGENTS = {
+    [SCOUT]: { agentPath: SCOUT_HOME, displayName: 'Scout', isSystem: false, paused: false },
+    [DORKBOT]: { agentPath: DORKBOT_HOME, displayName: 'DorkBot', isSystem: true, paused: false },
+  };
+  place = { [SCOUT]: COMPUTER, [DORKBOT]: COMPUTER };
+  mcpOn = true;
   turns = { [SESSION]: ownerTurn(SCOUT), [DORKBOT_SESSION]: ownerTurn(DORKBOT) };
   granted = false;
   calls = [];
   answer = async () => ({ ok: true, output: { done: true } });
   deps = {
-    agentWorksOn: (agentId) => (AGENTS[agentId] ? COMPUTER : null),
+    agentWorksOn: (agentId) => place[agentId] ?? null,
+    agentsOn: (computerId) => Object.keys(place).filter((id) => place[id] === computerId),
     turnFor: (sessionId) => turns[sessionId] ?? null,
-    agent: (agentId) => AGENTS[agentId] ?? null,
+    // As the live one is: read asynchronously from the identity service.
+    agent: async (agentId) => AGENTS[agentId] ?? null,
+    mcpEnabled: () => mcpOn,
     actionForTool: (tool) => ACTIONS[tool] ?? null,
     dorkbotSetupGranted: () => granted,
     limits: createBridgedToolRateLimits(),
@@ -150,13 +184,40 @@ describe('what the hub checks before it runs anything', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       caller: 'agent-computer',
-      identity: { agentPath: '/hub/agents/scout', displayName: 'Scout' },
+      identity: { agentPath: SCOUT_HOME, displayName: 'Scout' },
       sessionId: SESSION,
+      computerId: COMPUTER,
       tool: 'post_to_room',
       input: { roomId: 'r1', text: 'hi' },
     });
     expect(calls[0]).not.toHaveProperty('userId');
     expect(calls[0]).not.toHaveProperty('trusted');
+    expect(calls[0]!.identity).not.toHaveProperty('inactive');
+    expect(calls[0]!.identity).not.toHaveProperty('outsiderCapped');
+  });
+
+  it('runs nothing while external MCP is off', async () => {
+    mcpOn = false;
+    expect(await call()).toMatchObject({ ok: false, code: 'mcp_disabled' });
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a paused agent', async () => {
+    AGENTS[SCOUT] = { ...AGENTS[SCOUT]!, paused: true };
+    expect(await call()).toMatchObject({ ok: false, code: 'agent_paused' });
+    expect(calls).toEqual([]);
+  });
+
+  it('runs a revoked agent marked so, for the gate to block', async () => {
+    AGENTS[SCOUT] = { ...AGENTS[SCOUT]!, inactive: 'revoked' };
+    await call();
+    expect(calls[0]!.identity.inactive).toBe('revoked');
+  });
+
+  it('refuses a session whose turn has ended', async () => {
+    turns[SESSION] = { ...ownerTurn(SCOUT), running: false };
+    expect(await call()).toMatchObject({ ok: false, code: 'turn_ended' });
+    expect(calls).toEqual([]);
   });
 
   it('refuses an agent that does not work on this computer', async () => {
@@ -212,8 +273,18 @@ describe('setup tools', () => {
     expect(calls).toEqual([]);
   });
 
+  it('are refused to DorkBot, grant and all, while another agent shares its computer', async () => {
+    granted = true;
+    expect(
+      await call({ agentId: DORKBOT, sessionId: DORKBOT_SESSION, tool: 'marketplace_install' })
+    ).toEqual({ ok: false, code: 'setup_refused', message: DORKBOT_NEEDS_OWN_COMPUTER });
+    expect(DORKBOT_NEEDS_OWN_COMPUTER.split(/\s+/).length).toBeLessThanOrEqual(15);
+    expect(calls).toEqual([]);
+  });
+
   it('run for DorkBot with the grant, and a destructive one still goes to the gate unapproved', async () => {
     granted = true;
+    place[SCOUT] = 'cc-2';
     await call({ agentId: DORKBOT, sessionId: DORKBOT_SESSION, tool: 'marketplace_install' });
     await call({
       agentId: DORKBOT,
@@ -228,6 +299,7 @@ describe('setup tools', () => {
 
   it('are refused to DorkBot, grant or not, in a turn that read an outsider`s words', async () => {
     granted = true;
+    place[SCOUT] = 'cc-2';
     turns[DORKBOT_SESSION] = { ...ownerTurn(DORKBOT), outsiderCapped: true };
     expect(
       await call({ agentId: DORKBOT, sessionId: DORKBOT_SESSION, tool: 'marketplace_install' })
@@ -269,18 +341,22 @@ describe('the hub`s record of the turn', () => {
     });
   });
 
-  it('runs a capped turn counted as reading an outsider`s words, so the gate asks', async () => {
-    const seen: boolean[] = [];
+  it('runs a capped turn marked capped, and counted as reading an outsider`s words', async () => {
+    const seen: [boolean, boolean][] = [];
     answer = async () => {
-      seen.push(agentIsReadingOutsider('/hub/agents/scout'));
+      seen.push([agentIsReadingOutsider(SCOUT_HOME), agentIsReadingOutsider(DORKBOT_HOME)]);
       return { ok: true, output: null };
     };
     await call();
     turns[SESSION] = { ...ownerTurn(SCOUT), outsiderCapped: true };
     await call();
-    expect(seen).toEqual([false, true]);
-    // Counted for the call only.
-    expect(agentIsReadingOutsider('/hub/agents/scout')).toBe(false);
+    // Scout is counted during its capped call, and only then; DorkBot never is.
+    expect(seen).toEqual([
+      [false, false],
+      [true, false],
+    ]);
+    expect(calls.map((run) => run.identity.outsiderCapped)).toEqual([undefined, true]);
+    expect(agentIsReadingOutsider(SCOUT_HOME)).toBe(false);
   });
 });
 
@@ -323,6 +399,32 @@ describe('what crosses back', () => {
       message: 'The tool failed before it could answer.',
     });
     expect(JSON.stringify(failed)).not.toContain('/Users');
+  });
+
+  it('never a code outside the fixed list, nor a denial`s own words', async () => {
+    answer = async () => ({ ok: false, code: 'ENOENT', message: `Cannot read ${PATHY}` });
+    expect(await call()).toMatchObject({ code: 'tool_error' });
+    // A denial that came back as an ordinary answer, naming areas and settings.
+    answer = async () => ({
+      ok: true,
+      output: {
+        status: 'denied',
+        reason: 'permission_blocked',
+        message: 'Area packages is Blocked',
+      },
+    });
+    expect(await call()).toEqual({
+      ok: false,
+      code: 'denied',
+      message: 'That tool is not allowed for this agent right now.',
+    });
+  });
+
+  it('calls an answer too deep to read invalid, not too large', async () => {
+    let deep: unknown = 'x';
+    for (let i = 0; i < 40; i++) deep = { a: deep };
+    answer = async () => ({ ok: true, output: deep as never });
+    expect(await call()).toMatchObject({ ok: false, code: 'output_invalid' });
   });
 
   it('never a tool`s own failure sentence, or a code that is not plain', async () => {
@@ -371,7 +473,12 @@ describe('tools.list', () => {
     ]);
   });
 
-  it('shows DorkBot the setup tools only with the grant', async () => {
+  it('shows DorkBot the setup tools only with the grant, and alone on its computer', async () => {
+    granted = true;
+    const shared = await list(DORKBOT, DORKBOT_SESSION);
+    expect(shared.ok && shared.tools.map((tool) => tool.name)).not.toContain('marketplace_install');
+    place[SCOUT] = 'cc-2';
+    granted = false;
     const without = await list(DORKBOT, DORKBOT_SESSION);
     expect(without.ok && without.tools.map((tool) => tool.name)).not.toContain(
       'marketplace_install'
@@ -390,6 +497,14 @@ describe('tools.list', () => {
       'post_to_room',
       'read_room_history',
     ]);
+  });
+
+  it('reads the grant once per list', async () => {
+    const read = vi.fn(() => true);
+    deps.dorkbotSetupGranted = read;
+    place[SCOUT] = 'cc-2';
+    await list(DORKBOT, DORKBOT_SESSION);
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a session the hub did not start', async () => {

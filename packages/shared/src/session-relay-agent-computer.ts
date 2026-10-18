@@ -127,6 +127,50 @@ export const AGENT_COMPUTER_IDENTITY_FILES = [
   CONVENTION_FILES.heartbeat,
 ] as const;
 
+/**
+ * The only `agent.json` fields `agents.sync` carries: who the agent is and how
+ * it behaves. Everything that can hold or point at a secret stays on the hub:
+ * `mcpServers` (whose connections carry `env` and `headers`), `account` (which
+ * account a session bills), `permissions` (the hub's gate reads them, the
+ * computer never decides by them), `workspace` (a path on the hub), and the
+ * registration bookkeeping. A field added to `agent.json` reaches a computer
+ * only once somebody adds it here.
+ */
+export const AGENT_COMPUTER_MANIFEST_FIELDS = [
+  'id',
+  'name',
+  'displayName',
+  'description',
+  'runtime',
+  'capabilities',
+  'behavior',
+  'namespace',
+  'persona',
+  'personaEnabled',
+  'traits',
+  'conventions',
+  'color',
+  'icon',
+  'isSystem',
+  'model',
+  'effort',
+] as const;
+
+const MANIFEST_FIELDS: ReadonlySet<string> = new Set(AGENT_COMPUTER_MANIFEST_FIELDS);
+
+/**
+ * An `agent.json` cut to what an agent computer may hold
+ * ({@link AGENT_COMPUTER_MANIFEST_FIELDS}). The hub builds every `agents.sync`
+ * manifest with this; the schema refuses one that was not.
+ *
+ * @param manifest - The agent's `agent.json`, as the hub reads it.
+ */
+export function agentComputerManifestOf(
+  manifest: Readonly<Record<string, unknown>>
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(manifest).filter(([key]) => MANIFEST_FIELDS.has(key)));
+}
+
 /** One identity file name. See {@link AGENT_COMPUTER_IDENTITY_FILES}. */
 export type AgentComputerIdentityFile = (typeof AGENT_COMPUTER_IDENTITY_FILES)[number];
 
@@ -243,8 +287,15 @@ const AgentsSyncPutSchema = z
   .strictObject({
     op: z.literal('agents.sync'),
     agentId: RelayAgentIdSchema,
-    /** The agent's `agent.json`, opaque to the relay. */
-    manifest: boundedJsonObject(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
+    /**
+     * The agent's `agent.json`, cut to {@link AGENT_COMPUTER_MANIFEST_FIELDS}
+     * by {@link agentComputerManifestOf}. Any other top-level field refuses
+     * the whole frame.
+     */
+    manifest: boundedJsonObject(AGENT_COMPUTER_MAX_MANIFEST_BYTES).refine(
+      (manifest) => Object.keys(manifest).every((key) => MANIFEST_FIELDS.has(key)),
+      { message: 'The manifest carries a field an agent computer never gets' }
+    ),
     files: z
       .array(
         z.strictObject({

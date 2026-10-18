@@ -25,7 +25,7 @@ const json = (schema: z.ZodType, description: string) => ({
 const GRANTS = json(SetupGrantsSchema, 'The grants as now stored');
 const OWNER_ONLY = json(
   ErrorSchema,
-  "Not the person's own browser sign-in: an agent or an API key never reaches these routes"
+  "Not the hub owner's own browser sign-in: an agent, an API key or another account never reaches these routes"
 );
 const NOT_A_HUB = json(ErrorSchema, 'Not a hub');
 const INVALID = json(ErrorSchema, 'The body is not one of the shapes above');
@@ -54,8 +54,8 @@ export function registerAgentGrantsOpenApi(registry: OpenAPIRegistry): void {
     summary: "Turn DorkBot's setup level on or off",
     description:
       'With it on, DorkBot alone, working on an agent computer, may use the tools that set ' +
-      'up the hub: settings, permissions, packages, connections and agents. Its destructive ' +
-      'calls still ask for approval.',
+      'up the hub: settings, permissions, packages, connections and agents, but only while ' +
+      'DorkBot is the only agent on its computer. Its destructive calls still ask for approval.',
     request: { body: { content: { 'application/json': { schema: DorkBotSetupBodySchema } } } },
     responses: { 200: GRANTS, 400: INVALID, 403: OWNER_ONLY, 404: NOT_A_HUB },
   });

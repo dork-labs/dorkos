@@ -15,6 +15,10 @@
  * `ok: false` with its code only: its own sentence can carry a path or a raw
  * error from inside the hub, so it stays here.
  *
+ * Every call runs in its own audit scope: the agent, in the bridged session.
+ * The computer is not part of the audit actor (the audit schema has no field
+ * for it); the relay records which computer each call came from.
+ *
  * Gap, for part 5: the external server has no invoking session, so a
  * capability that reads `sessionId` (its own chat) does not get the bridged
  * one yet.
@@ -28,6 +32,7 @@ import type {
   RelayToolSummary,
 } from '@dorkos/shared/session-relay-agent-computer';
 import type { McpServerFactory } from '../../../routes/mcp.js';
+import { runAsAgent } from '../../audit/audit-trail.js';
 import type { BridgedToolRun, BridgedToolRunner } from './bridged-tool-call.js';
 
 /**
@@ -70,7 +75,9 @@ export function outcomeOfToolResult(result: ToolResult): RelayToolCallOutcome {
     .map((block) => block.text as string)
     .join('\n');
   const payload = result.structuredContent ?? parsedText(text);
-  if (result.isError) {
+  // The gate's refusal arrives as an ordinary answer, naming areas and
+  // settings: it is a failure, and crosses as one.
+  if (result.isError || codeOf(payload) === 'denied') {
     return { ok: false, code: codeOf(payload), message: 'The tool could not finish.' };
   }
   return { ok: true, output: payload as Extract<RelayToolCallOutcome, { ok: true }>['output'] };
@@ -87,13 +94,20 @@ export function createMcpBridgedToolRunner(serverFactory: McpServerFactory): Bri
     run: BridgedToolRun,
     use: (client: Client) => Promise<T>
   ): Promise<T> {
-    // The agent, and never a person: no `userId`, and a machine is calling.
-    const server = await serverFactory({ identity: run.identity, agentIdentityPresented: true });
+    // The agent, and never a person: no `userId`, a machine is calling, and
+    // the caller kind rides along so the gate knows a bridged call.
+    const server = await serverFactory({
+      identity: run.identity,
+      agentIdentityPresented: true,
+      callerKind: run.caller,
+    });
     const client = new Client({ name: `dorkos-${run.caller}`, version: '1.0.0' });
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     await Promise.all([client.connect(clientSide), server.connect(serverSide)]);
     try {
-      return await use(client);
+      // Its own audit scope, as the agent in the bridged session: never the
+      // scope of whatever relay frame or request happened to deliver the call.
+      return await runAsAgent(run.identity, run.sessionId, () => use(client));
     } finally {
       await client.close().catch(() => undefined);
       await server.close().catch(() => undefined);

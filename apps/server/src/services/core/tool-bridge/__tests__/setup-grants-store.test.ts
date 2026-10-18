@@ -128,6 +128,10 @@ describe('pair allowances', () => {
   });
 });
 
+/** A static import or re-export, or a dynamic `import()`, of the store or of the folder's barrel. */
+const storeImport =
+  /(?:\bfrom|\bimport\s*\()\s*['"`][^'"`]*(?:setup-grants-store|\/tool-bridge(?:\/index)?)(?:\.js)?['"`]/;
+
 describe('who can write it', () => {
   const serverSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -141,9 +145,7 @@ describe('who can write it', () => {
           if (entry.name !== '__tests__' && entry.name !== 'node_modules') walk(full);
         } else if (/\.tsx?$/.test(entry.name)) {
           const text = fs.readFileSync(full, 'utf8');
-          const store =
-            /from '[^']*(setup-grants-store|core\/tool-bridge|tool-bridge\/index)(\.js)?'/;
-          if (store.test(text)) {
+          if (storeImport.test(text)) {
             found.push(path.relative(serverSrc, full));
           }
         }
@@ -152,6 +154,19 @@ describe('who can write it', () => {
     walk(serverSrc);
     return found.sort();
   }
+
+  it('catches every way of naming the store', () => {
+    const spellings = [
+      "import { readSetupGrants } from '../tool-bridge/setup-grants-store.js';",
+      "export { readSetupGrants } from './setup-grants-store.js';",
+      "import { readSetupGrants } from '../tool-bridge';",
+      "import { readSetupGrants } from '../../services/core/tool-bridge/index.js';",
+      "const store = await import('../core/tool-bridge/setup-grants-store.js');",
+      'const store = await import(`../tool-bridge/index.js`);',
+    ];
+    for (const line of spellings) expect(storeImport.test(line), line).toBe(true);
+    expect(storeImport.test("import { x } from '../tool-bridge-extra.js';")).toBe(false);
+  });
 
   it('is reached only by the owner`s routes and the bridge itself', () => {
     expect(importers()).toEqual(

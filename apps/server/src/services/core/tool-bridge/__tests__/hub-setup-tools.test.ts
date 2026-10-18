@@ -16,6 +16,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 const {
+  DORKBOT_NEEDS_OWN_COMPUTER,
   HUB_SETUP_AGENT_ACTIONS,
   HUB_SETUP_REFUSAL,
   bridgeActionFor,
@@ -34,7 +35,11 @@ const everyAction = [...capabilities.map(bridgeActionForCapability), ...handTool
 
 /** Every setup action today, by id. Moving one in or out is a decision, made here. */
 const EXPECTED_SETUP = [
-  // agents, by name
+  // named, whatever their area
+  'agent.pause',
+  'agent.resume',
+  'ui.approve_doc_route',
+  'ui.configure_doc_channel',
   'create_agent',
   'mesh_deny',
   'mesh_register',
@@ -70,8 +75,8 @@ const EXPECTED_SETUP = [
   'permissions.change',
 ].sort();
 
-const GRANTED_DORKBOT = { agentIsDorkBot: true, setupGranted: true };
-const NOT_DORKBOT = { agentIsDorkBot: false, setupGranted: true };
+const GRANTED_DORKBOT = { agentIsDorkBot: true, setupGranted: true, aloneOnComputer: true };
+const NOT_DORKBOT = { agentIsDorkBot: false, setupGranted: true, aloneOnComputer: true };
 
 describe('the hub-setup table', () => {
   it('classifies every registered capability and hand tool exactly as written down', () => {
@@ -79,11 +84,11 @@ describe('the hub-setup table', () => {
     expect(setup.sort()).toEqual(EXPECTED_SETUP);
   });
 
-  it('names only agent actions that exist, each in the agents area', () => {
+  it('names only actions that exist, each one that changes something', () => {
     for (const id of HUB_SETUP_AGENT_ACTIONS) {
       const action = everyAction.find((candidate) => candidate.id === id);
       expect(action, id).toBeDefined();
-      expect(action!.area, id).toBe('agents');
+      expect(action!.tier, id).not.toBe('observe');
     }
   });
 
@@ -126,20 +131,31 @@ describe('the refusal', () => {
 
   it('refuses a setup tool to every agent but DorkBot with its grant', () => {
     expect(hubSetupToolRefusal(install, NOT_DORKBOT)).toBe(HUB_SETUP_REFUSAL);
-    expect(hubSetupToolRefusal(install, { agentIsDorkBot: true, setupGranted: false })).toBe(
+    expect(hubSetupToolRefusal(install, { ...GRANTED_DORKBOT, setupGranted: false })).toBe(
       HUB_SETUP_REFUSAL
     );
     expect(hubSetupToolRefusal(install, GRANTED_DORKBOT)).toBeNull();
+    expect(hubSetupToolRefusal(install, { ...GRANTED_DORKBOT, aloneOnComputer: false })).toBe(
+      DORKBOT_NEEDS_OWN_COMPUTER
+    );
   });
 
   it('never refuses an ordinary tool', () => {
     const post = bridgeActionFor('post_to_room', capabilities)!;
-    expect(hubSetupToolRefusal(post, { agentIsDorkBot: false, setupGranted: false })).toBeNull();
+    expect(
+      hubSetupToolRefusal(post, {
+        agentIsDorkBot: false,
+        setupGranted: false,
+        aloneOnComputer: false,
+      })
+    ).toBeNull();
   });
 
   it('says it in at most 15 words', () => {
-    expect(HUB_SETUP_REFUSAL.split(/\s+/).length).toBeLessThanOrEqual(15);
-    expect(HUB_SETUP_REFUSAL).not.toMatch(/\bhub\b|\bwe\b/i);
+    for (const copy of [HUB_SETUP_REFUSAL, DORKBOT_NEEDS_OWN_COMPUTER]) {
+      expect(copy.split(/\s+/).length).toBeLessThanOrEqual(15);
+      expect(copy).not.toMatch(/\bhub\b|\bwe\b/i);
+    }
   });
 });
 

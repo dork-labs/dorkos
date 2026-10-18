@@ -7,6 +7,7 @@
  * @module services/core/tool-bridge
  */
 export {
+  DORKBOT_NEEDS_OWN_COMPUTER,
   HUB_SETUP_AGENT_ACTIONS,
   HUB_SETUP_AREAS,
   HUB_SETUP_REFUSAL,
@@ -56,6 +57,7 @@ export { createMcpBridgedToolRunner, outcomeOfToolResult } from './mcp-tool-runn
 export {
   BRIDGE_CALLS_PER_COMPUTER_PER_MINUTE,
   BRIDGE_CALLS_PER_TURN_PER_MINUTE,
+  agentInactiveOf,
   createBridgedToolRateLimits,
   type BridgedToolRateLimits,
 } from './bridge-guards.js';
