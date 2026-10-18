@@ -8,7 +8,7 @@ import { registerShortNamePages } from '../short-names/pages.js';
 
 /**
  * Serve the browser page: its built assets and every path that opens it. Registered after the
- * API, so an API route always answers first. `main.ts` passes the built `dist/` folder; the route
+ * API, so an API route always answers first. `createSpaceServer` passes the built `dist/` folder; the route
  * census and the page contract pass a folder of their own.
  */
 export function registerPages(app: Hono, { distDir }: { distDir: string }): void {

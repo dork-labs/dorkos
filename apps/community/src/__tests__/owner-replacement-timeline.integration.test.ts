@@ -54,7 +54,7 @@ const DAY_NAME =
 let h: TenancyHarness;
 /** A host whose worker can write every notice but the claim-reissued one. */
 let partial: TenancyHarness;
-/** A host started as main.ts starts one: mail, every composer, the wall clock, nothing else. */
+/** A host started as createSpaceServer starts one: mail, every composer, the wall clock, nothing else. */
 let asMain: TenancyHarness;
 let asMainOperator = '';
 let asMainOwnership = '';
@@ -270,7 +270,7 @@ async function moveTo(id: string, state: 'notifying' | 'waiting' | 'claimable') 
 beforeAll(async () => {
   smtp = await startSmtpFake();
   // Mail is set up (the address is never dialled: tests send through the fake themselves), and
-  // the app is given the real composers, as main.ts gives it the worker's set.
+  // the app is given the real composers, as createSpaceServer gives it the worker's set.
   const env = {
     COMMUNITY_SMTP_URL: 'smtp://127.0.0.1:2525',
     COMMUNITY_MAIL_FROM: 'notices@community.test',
@@ -1099,15 +1099,15 @@ describe('object-only links through a lost reply (AC-19)', () => {
 });
 
 describe('requests are open on a host with mail', () => {
-  it("main.ts gives the app the worker's composers and nothing else, and runs mail and the timeline", async () => {
-    // Purpose: fails if main.ts puts a rollout switch (or any other option) back between a host
+  it("createSpaceServer gives the app the worker's composers and nothing else, and runs mail and the timeline", async () => {
+    // Purpose: fails if createSpaceServer puts a rollout switch (or any other option) back between a host
     // and a request, gives the app other composers than the mail worker's, or stops starting the
     // mail worker or the timeline. The next test runs the app built the same way.
-    const startup = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+    const startup = await readFile(new URL('../startup/space-server.ts', import.meta.url), 'utf8');
     expect(startup).toMatch(
       /const noticeComposers: NoticeComposers = \{\s*\.\.\.ownerReplacementComposers\(config\),\s*\.\.\.signInLinkComposers\(config\),\s*(?:\/\/[^\n]*\n\s*)?\.\.\.emailLinkComposers\(config\),\s*\};/u
     );
-    // `live` is the started live-stream hub, which only main.ts can stop on shutdown.
+    // `live` is the started live-stream hub, which only createSpaceServer can stop on shutdown.
     expect(startup).toMatch(
       /createCommunityApp\(\{\s*config,\s*pool,\s*blobStore,\s*noticeComposers,\s*live,\s*\}\)/u
     );
@@ -1116,9 +1116,11 @@ describe('requests are open on a host with mail', () => {
     );
     expect(startup).toContain('startOwnerReplacementTimeline({ pool, config })');
     expect(startup).not.toContain('ownerReplacementOpen');
+    const entry = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+    expect(entry).not.toContain('ownerReplacementOpen');
   });
 
-  it('takes a request on a host built as main.ts builds the app, and the owner gets the email', async () => {
+  it('takes a request on a host built as createSpaceServer builds the app, and the owner gets the email', async () => {
     // Purpose: fails if anything but mail and the worker's composers stands between a host and a
     // request, or if the accepted request does not reach the owner by email with a working
     // keep-ownership link.

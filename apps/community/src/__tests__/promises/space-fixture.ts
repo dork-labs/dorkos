@@ -1,6 +1,6 @@
 /**
  * The space the contract files run against (DOR-2875): a real server on its own Postgres
- * database, built by the tenancy harness the way `main.ts` builds it, with its first host
+ * database, built by the tenancy harness the way `createSpaceServer` builds it, with its first host
  * operator signed in and one host API key per scope set the cases need.
  */
 import type { CommunityAdminHostApiKeyScopeSchema } from '@dorkos/shared/community-admin-wire';

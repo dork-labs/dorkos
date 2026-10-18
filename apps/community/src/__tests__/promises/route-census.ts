@@ -1,6 +1,6 @@
 /**
  * The space server's route census (specs/server-merge step 1, DOR-2875). It composes the app the
- * way `main.ts` does (`createCommunityApp`, then `registerPages`) and reads every method and path
+ * way `createSpaceServer` does (`createCommunityApp`, then `registerPages`) and reads every method and path
  * from Hono's own route table, never from a hand list. The pool is never connected: registering
  * routes reads no database, so the census runs in the ordinary unit suite.
  *
@@ -103,7 +103,7 @@ export interface CensusApp {
 }
 
 /**
- * Compose the app as `main.ts` does, with the mail composers `main.ts` passes, against a database
+ * Compose the app as `createSpaceServer` does, with the mail composers it passes, against a database
  * it never reaches.
  *
  * @param testRuntime - Compose the test runtime's app, which adds the test-only routes.

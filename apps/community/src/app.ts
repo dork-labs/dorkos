@@ -100,7 +100,7 @@ export function createCommunityApp({
   config: CommunityConfig;
   pool: Pool;
   /**
-   * Live-stream fan-out. `main.ts` passes one it started (pinned open, self-tested) and stops it
+   * Live-stream fan-out. `createSpaceServer` passes one it started (pinned open, self-tested) and stops it
    * on shutdown. Without one the app makes its own, which listens only while a stream is open
    * and stops when `pool` ends (see {@link stopLiveWithPool}).
    */
@@ -108,7 +108,7 @@ export function createCommunityApp({
   /**
    * The mail composers the running mail worker has, by notice kind. A feature that must reach a
    * person by mail refuses to start while its notice cannot be composed, so a queued notice is
-   * never one the worker would fail as unsupported. `main.ts` passes the worker's own set.
+   * never one the worker would fail as unsupported. `createSpaceServer` passes the worker's own set.
    */
   noticeComposers?: NoticeComposers;
   hooks?: {
