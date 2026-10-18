@@ -81,7 +81,8 @@ test.setTimeout(90_000);
 async function send(page: Page, text: string) {
   await page.getByLabel('Message #general').fill(text);
   await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText(text)).toBeVisible();
+  // Scoped to sent entries: the composer can still hold the text for a moment after Send.
+  await expect(page.locator('.entry-text').getByText(text, { exact: true })).toBeVisible();
 }
 
 /** Delete the message with this text through the API, as the tab's own session. */
