@@ -116,16 +116,19 @@ describe('what the census composes', () => {
       if (setting !== 'COMMUNITY_TEST_RUNTIME') expect(FULL_ENV).toHaveProperty(setting);
   });
 
-  it('main.ts adds no routes of its own', () => {
-    // Purpose: the census composes the app as main.ts does without running main.ts, so a route
-    // added there would be unseen. Fails if main.ts routes anything outside `registerPages`.
-    const main = readFileSync(new URL('main.ts', SRC), 'utf8');
+  it.each(['main.ts', 'startup/space-server.ts'])('%s adds no routes of its own', (file) => {
+    // Purpose: the census composes the app as createSpaceServer does without running it, so a
+    // route added there or in the entry would be unseen. Fails if either routes anything outside
+    // `registerPages`.
+    const source = readFileSync(new URL(file, SRC), 'utf8');
     expect(
-      main.match(
+      source.match(
         /\bapp\.(?:get|post|put|patch|delete|options|head|all|use|on|route|basePath|mount)\(/gu
       )
     ).toBeNull();
-    expect(main.match(/\bregister\w+\(app\b/gu)).toEqual(['registerPages(app']);
+    expect(source.match(/\bregister\w+\(app\b/gu)).toEqual(
+      file === 'main.ts' ? null : ['registerPages(app']
+    );
   });
 });
 

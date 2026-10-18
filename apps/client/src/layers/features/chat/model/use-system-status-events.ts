@@ -28,6 +28,7 @@
  * @module features/chat/model/use-system-status-events
  */
 import { useEffect, useRef } from 'react';
+import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SystemStatusState, OperationProgressState } from './chat-types';
 
@@ -69,7 +70,11 @@ function deriveStripFromTurn(turn: SessionEvent[]): StripSignals {
       // `status`. A generic status token (e.g. `'requesting'`, whose thinking
       // phase the activity label already owns) is deliberately NOT surfaced —
       // skip it so it neither shows nor clears a running hook flash.
-      if (!event.status) systemStatus = { message: event.message };
+      // A turn waiting for a free agent slot is the one token that IS shown:
+      // nothing else on screen says why the turn has not started (DOR-3012).
+      if (!event.status || event.status === SLOT_WAIT_STATUS) {
+        systemStatus = { message: event.message };
+      }
       continue;
     }
     // Any other turn event after a hook flash means the turn moved on → clear it.

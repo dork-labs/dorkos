@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.122.0] - 2026-10-18
+
+> DorkOS 0.122.0 gives every agent one Direct chat with you, lets docs on the canvas link to each other, and stops agents waking up for nothing.
+
+### Added
+
+- Markdown docs on the canvas can now link to each other, behind the new **Docs** experiment in Settings → Advanced → Experiments. Type `[[` to pick another doc from your chat's folder, or write a doc's title or file name between double brackets. Clicking a link opens that doc in the canvas. A link to a doc that doesn't exist yet looks different. It starts working the next time DorkOS reads the folder's docs: after you create or rename a file in the Files panel, save a doc with a new title, or come back to the DorkOS window.
+
+### Changed
+
+- Every agent now has one standing Direct chat with you. Clicking the agent, opening its chat, or tapping a message it sent you all lead there. It always opens as a normal chat, never as a room.
+- Messages an agent sends you while it works elsewhere land in its Direct chat, with an unread dot on the agent. When you answer, the agent sees what it sent you, so "yes, go ahead" makes sense to it.
+- Your old one-on-one direct messages with an agent now open as the start of that agent's Direct chat. Nothing was deleted. A direct message with two or more agents, or with another person, is still a room.
+
+### Fixed
+
+- Agents no longer wake up for an extra check every time a command fails during normal work, like a search that finds nothing. They still wake when something is really wrong: the disk is full, they can't write their own files, or the same command keeps failing.
+
 ## [0.121.0] - 2026-10-17
 
 > DorkOS 0.121.0 makes connecting apps work again, lets agents keep longer notes, and draws diagrams in documents.
@@ -348,37 +366,10 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - The app stays quick while your agents work. Each time an agent wrote to a chat, DorkOS re-read that project's chats and rebuilt your Recent list from scratch, over and over. Now a chat that is being written to updates its row every few seconds, and the Recent list is rebuilt only when a chat is added or removed. A chat that an agent writes to without pausing now keeps its row up to date, instead of freezing until the agent stops (DOR-2893)
 - DorkOS no longer reads through your chats every five minutes for nothing. A background check listed all of them to clean up the canvas of deleted chats, even when no chat had been deleted. Now it only looks when there is something to clean up (DOR-2905)
 
-## [0.111.0] - 2026-10-12
+Older releases (v0.1.0 – v0.111.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.111.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.111.0.md).
 
-> DorkOS 0.111.0 fixes who gets credit for a room post: a post from a chat an agent started is now stamped with that agent, never with you. A chat can also be set to never ask, and agents can find the right app for a job.
-
-### Added
-
-- A Claude Code chat can now be set to **Never ask**. Turn it on under **Ask first** on the chat's trust dial. The agent runs only what you have already allowed, and refuses everything else instead of stopping to ask you. It never gets to do more than **Ask first** lets it. Only you can turn it on: no DorkOS tool lets an agent switch a chat to it, and a chat set to it cannot start another chat that would ask you. Codex and OpenCode chats don't offer it
-- An agent can now describe a job in plain words, such as "summarise my inbox", and get back a short list of apps that could do it, with the ways to connect each one (DOR-2854)
-- When an agent looks up an app, it can now see whether you have already given it an account there. When it looks up a marketplace package, it can see whether that package is already installed for it. If DorkOS can't tell, the agent is told that instead of being told no (DOR-2854)
-
-### Changed
-
-- Agents are now told to mention a connection or a DorkOS package when it would clearly make a task go better and you do not have it yet: what it is, why it would help, and that you decide on the Connections or Marketplace page (DOR-2852)
-- They are told to mention it only once, to leave it out when it would change nothing for the task, and in a shared room to bring it up only if someone asked
-- The top Autonomy level is now called Self-starter instead of Rogue. A Self-starter agent takes the next step in its job before you ask, but still waits for your yes on things that need one
-- The two top Chaos levels are now called Bold and Daredevil instead of Reckless and YOLO. Both still move fast on their own work, but neither force pushes, drops tables, deletes what it didn't make, or skips the checks that protect your data
-- Every Autonomy level now has clearer instructions, including the default. No level can make an agent skip asking first anymore. A lower level only makes it check in more. Your saved slider positions stay the same
-
-### Fixed
-
-- In a chat that answers for an agent in a channel, a message another agent or person posted in that channel now shows their name and face, with the channel it came from. Before, it looked like you wrote it
-- Your own channel posts in that chat still show as yours, with the channel beside them
-
-### Security
-
-- Room posts from a chat an agent started are now stamped with that agent, never with you. Before, a chat an agent started in a folder of its own saved its channel posts under your name, so they could look like your approval
-- A chat with no agent behind it can no longer post, react or act in channels as you. It is refused instead
-
-Older releases (v0.1.0 – v0.110.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.110.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.110.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.121.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.122.0...HEAD
+[0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
 [0.120.0]: https://github.com/dork-labs/dorkos/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/dork-labs/dorkos/compare/v0.118.0...v0.119.0
@@ -388,4 +379,3 @@ Older releases (v0.1.0 – v0.110.0) are archived in [changelog/archive/CHANGELO
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
 [0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
 [0.114.0]: https://github.com/dork-labs/dorkos/compare/v0.111.0...v0.114.0
-[0.111.0]: https://github.com/dork-labs/dorkos/compare/v0.110.0...v0.111.0

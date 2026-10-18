@@ -28,6 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Where the space server lives (ci/space-server.env, DOR-3007): its
+      # KEY=value lines become this job's environment, read below as
+      # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. This file's own name and the
+      # image name stay as they are: the launcher trusts both.
+      - name: Read where the space server lives
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
+
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
@@ -75,7 +82,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: ./apps/community/Dockerfile
+          file: ./${{ env.SPACE_DIR }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -108,7 +115,7 @@ jobs:
             --digest "${{ steps.image.outputs.digest }}" \
             --index community-image-index.json \
             --output "${{ steps.release.outputs.manifest }}" \
-            --migrations apps/community/migrations \
+            --migrations "$SPACE_DIR/migrations" \
             --workflow-ref "$GITHUB_WORKFLOW_REF" \
             --minimum-flyctl "$MINIMUM_FLYCTL_VERSION" \
             --minimum-neon-cli "$MINIMUM_NEON_CLI_VERSION"

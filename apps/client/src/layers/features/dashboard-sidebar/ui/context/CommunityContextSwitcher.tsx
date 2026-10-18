@@ -1,7 +1,8 @@
 import { appRoutes } from '@/layers/shared/lib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
+import { ChevronDown, HardDrive, Lock, UsersRound } from 'lucide-react';
+import { useConfig } from '@/layers/entities/config';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
   COMMUNITY_HOST_ADMIN_PATH,
@@ -183,8 +184,18 @@ export function CommunityContextSwitcher({
   const guarded = useGuardedMenuNodes([...menu.identityNodes, ...menu.nodes]);
   const identityNodes = guarded.nodes.slice(0, menu.identityNodes.length);
   const actionNodes = guarded.nodes.slice(menu.identityNodes.length);
-  const installationLabel = menu.teamName;
-  const installationLabelPending = menu.nameUnknown;
+  // On a hub, this DorkOS is the person's private space (spec A6): nobody else
+  // can be in it, so it says so instead of naming a machine.
+  // Until the server says what it is, neither name is shown, so a hub never
+  // flashes a team name first.
+  const config = useConfig().data;
+  const isHub = config?.serverRole === 'hub';
+  const installationLabel = isHub ? 'Private' : menu.teamName;
+  const installationLabelPending = config === undefined || (!isHub && menu.nameUnknown);
+  const InstallationIcon = isHub ? Lock : HardDrive;
+  // What another space calls this DorkOS: its team name, never "Private",
+  // which is only what it is to its owner.
+  const installName = menu.nameUnknown ? 'My DorkOS' : menu.teamName;
   const targetPending = selectedRef !== undefined && connections.data === undefined;
   const labelPending = selectedRef === undefined ? installationLabelPending : targetPending;
   const label = selectedRef === undefined ? installationLabel : (selected?.label ?? 'Space');
@@ -277,11 +288,12 @@ export function CommunityContextSwitcher({
             data-testid="sidebar-header-block"
             aria-label={labelPending ? 'Context menu' : `${label} menu`}
             aria-busy={pendingRef !== null || undefined}
+            title={isHub && selectedRef === undefined ? 'Just you and your agents' : undefined}
             className={triggerClassName}
           >
             {compact ? (
               selectedRef === undefined ? (
-                <HardDrive className="size-4 shrink-0" aria-hidden />
+                <InstallationIcon className="size-4 shrink-0" aria-hidden />
               ) : (
                 <UsersRound className="size-4 shrink-0" aria-hidden />
               )
@@ -291,7 +303,12 @@ export function CommunityContextSwitcher({
                 data-testid="sidebar-team-name-skeleton"
               />
             ) : (
-              <span className="truncate">{label}</span>
+              <>
+                {isHub && selectedRef === undefined && (
+                  <Lock className="size-3.5 shrink-0" aria-hidden />
+                )}
+                <span className="truncate">{label}</span>
+              </>
             )}
             <ChevronDown
               className={compact ? 'size-3 shrink-0 opacity-50' : 'size-3.5 shrink-0 opacity-50'}
@@ -346,12 +363,19 @@ export function CommunityContextSwitcher({
             >
               <ResponsiveDropdownMenuRadioItem
                 value="installation"
-                icon={HardDrive}
+                icon={InstallationIcon}
                 disabled={pendingRef !== null}
                 itemRef={selectedRef === undefined ? selectedItem : undefined}
                 className={pendingRef !== null ? 'opacity-50' : undefined}
               >
-                <span className="min-w-0 flex-1 truncate">{installationLabel}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {installationLabel}
+                  {isHub && (
+                    <span className="text-muted-foreground block truncate text-xs">
+                      Just you and your agents
+                    </span>
+                  )}
+                </span>
               </ResponsiveDropdownMenuRadioItem>
               {visibleDestinations.map((connection) => {
                 const descriptor = navigationDescriptor(connection);
@@ -437,14 +461,14 @@ export function CommunityContextSwitcher({
         onOpenChange={(next) => {
           if (!next) setConnectRequest(null);
         }}
-        installName={installationLabelPending ? 'My DorkOS' : installationLabel}
+        installName={installName}
         onConnected={(ref) => void selectConnected(ref)}
       />
       <CommunityHostingDialogs
         entry={hosting}
         dialog={hostingDialog}
         onDialogChange={setHostingDialog}
-        installName={installationLabelPending ? 'My DorkOS' : installationLabel}
+        installName={installName}
         onConnected={(ref) => void selectConnected(ref)}
       />
       <DisconnectCommunityDialog

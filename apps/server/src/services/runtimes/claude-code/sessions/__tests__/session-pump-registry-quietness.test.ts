@@ -51,6 +51,7 @@ function launchOpts(
   return {
     maxWarmSessions: CEILING,
     warmIdleMs: IDLE_MS,
+    slotWaitMs: 0,
     launch: () => {
       const query = new FakeQuery();
       queries.set(sessionId, query);
@@ -120,6 +121,9 @@ describe('the idle timer counts what the process says, not only what DorkOS aske
 
     await vi.advanceTimersByTimeAsync(IDLE_MS);
     expect(registry.warmth('s1')).toBe('cold');
+    // Let the reaped process finish closing on this clock: shutdown waits for a
+    // close still under way (DOR-3012), and its timer lives here.
+    await vi.advanceTimersByTimeAsync(100);
   });
 });
 

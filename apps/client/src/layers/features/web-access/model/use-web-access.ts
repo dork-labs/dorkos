@@ -19,12 +19,10 @@ import type {
 } from '@dorkos/shared/session-relay-link';
 import { useExperimentEnabledState, useIsHub, useLocalCaller } from '@/layers/entities/config';
 import { useTransport } from '@/layers/shared/model';
+import { WEB_ACCESS_STATUS_KEY as statusKey } from './query-keys';
 
 /** The experiment's setting path (`UserConfigSchema` `sessionRelay.enabled`). */
 export const SESSION_RELAY_EXPERIMENT = 'sessionRelay.enabled';
-
-/** TanStack Query key for the link's status. */
-const statusKey = ['session-relay', 'status'] as const;
 
 /** What the section reads and does. */
 export interface WebAccess {

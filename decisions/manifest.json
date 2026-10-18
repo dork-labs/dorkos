@@ -7722,6 +7722,16 @@
       "extractedFrom": null,
       "specSlug": "conversation-model",
       "amends": ["261006-235240", "261009-171114"]
+    },
+    {
+      "id": "261018-124422",
+      "slug": "one-program-before-launch",
+      "title": "The space server becomes part of the DorkOS server package before launch (server-merge step 7 moves before launch)",
+      "status": "accepted",
+      "created": "2026-10-18",
+      "extractedFrom": null,
+      "specSlug": "server-merge",
+      "amends": ["261006-235238", "261015-042933"]
     }
   ]
 }

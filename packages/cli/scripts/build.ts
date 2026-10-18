@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import { createHash } from 'node:crypto';
 import { builtinModules } from 'node:module';
 import { buildNativeObserver } from '../../browser/scripts/build-native-observer.ts';
+import { communityMigrationCompatibilityId } from '../../../scripts/lib/community-migration-id.mjs';
 import { importBrowserNativeArtifact } from './browser-native-artifact.ts';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
@@ -18,21 +19,10 @@ const PACKAGES_DIR = path.join(ROOT, 'packages');
 // Read CLI package version for injection into the binary
 const { version } = JSON.parse(readFileSync(path.join(CLI_PKG, 'package.json'), 'utf-8'));
 
-function communityMigrationCompatibilityId(): string {
-  const migrations = path.join(ROOT, 'apps/community/migrations');
-  const hash = createHash('sha256');
-  for (const filename of readdirSync(migrations)
-    .filter((entry) => entry.endsWith('.sql'))
-    .sort()) {
-    hash.update(filename);
-    hash.update('\0');
-    hash.update(readFileSync(path.join(migrations, filename)));
-    hash.update('\0');
-  }
-  return `sha256:${hash.digest('hex')}`;
-}
-
-const communityMigrationId = communityMigrationCompatibilityId();
+// The id every release manifest also carries; one function computes both.
+const communityMigrationId = communityMigrationCompatibilityId(
+  path.join(ROOT, 'apps/community/migrations')
+);
 
 // --- Vintage-consistency invariant -----------------------------------------
 //

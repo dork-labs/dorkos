@@ -197,4 +197,34 @@ describe('WebAccessSection', () => {
     expect(screen.getByRole('button', { name: 'Unlink' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: 'Chat' })).toBeDisabled();
   });
+
+  it('lists the browsers that used chat from the web here, once linked', async () => {
+    const listSessionRelayDevices = vi.fn().mockResolvedValue({
+      devices: [
+        {
+          label: 'Safari on iPhone',
+          firstSeenAt: '2026-10-17T09:00:00.000Z',
+          lastSeenAt: new Date().toISOString(),
+        },
+      ],
+    });
+    renderSection({
+      getSessionRelayStatus: vi.fn().mockResolvedValue(LINKED),
+      listSessionRelayDevices,
+    });
+    const list = await screen.findByTestId('web-access-devices');
+    expect(within(list).getByText('Safari on iPhone')).toBeInTheDocument();
+    expect(within(list).getByText('Just now')).toBeInTheDocument();
+  });
+
+  it('reads no devices before it is linked', async () => {
+    const listSessionRelayDevices = vi.fn().mockResolvedValue({ devices: [] });
+    renderSection({
+      getSessionRelayStatus: vi.fn().mockResolvedValue(NOT_LINKED),
+      listSessionRelayDevices,
+    });
+    await screen.findByText('Chat from the web');
+    expect(listSessionRelayDevices).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('web-access-devices')).not.toBeInTheDocument();
+  });
 });

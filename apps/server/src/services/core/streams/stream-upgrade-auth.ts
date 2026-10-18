@@ -107,10 +107,11 @@ export async function authorizeStreamUpgrade(
   const locals: StreamUpgradeLocals = {};
   const { headers } = req;
 
-  const access = gateAccessFor(upgradeFacts(req));
+  const facts = upgradeFacts(req);
+  const access = gateAccessFor(facts);
   if (access === 'refused') return { ok: false, status: 401, message: 'Unauthorized' };
   if (access === 'credential') {
-    const user = await verifyRequestAuth({ headers });
+    const user = await verifyRequestAuth(facts);
     if (!user) return { ok: false, status: 401, message: 'Unauthorized' };
     locals.user = user;
   }

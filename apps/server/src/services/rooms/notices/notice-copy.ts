@@ -276,6 +276,25 @@ const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
 };
 
 /**
+ * The durable `notice` for a turn waiting for a free agent slot on this
+ * computer, rather than for a person (DOR-3012).
+ *
+ * An `agent_busy` line, not an `awaiting_approval` one: nobody has to do
+ * anything, the agent is occupied rather than stopped, and the room keeps
+ * showing it as working. It says what happens next and nothing else.
+ *
+ * @param agentName - Display name of the agent that is waiting.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildSlotWaitNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} will answer once another agent here finishes. All of them are busy.`,
+    notice: 'agent_busy',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` a halt writes: somebody stopped everything running here.
  *
  * **A halt is a control action, never a message** (room-participation spec
@@ -362,11 +381,14 @@ const AGENT_HALT_LINES: Record<AgentHaltOutcome, (agentName: string) => string> 
  *
  * @param agentName - Display name of the agent whose turn failed.
  * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param outOfUsageUntil - Set when the agent's account ran out of usage.
+ * @param refusal - Why the runtime refused the turn before it started, if it did.
  */
 export function buildTurnFailedNotice(
   agentName: string,
   subjectAuthorId: string,
-  outOfUsageUntil?: string | null
+  outOfUsageUntil?: string | null,
+  refusal?: string
 ): RoomEntryBody {
   // A usage limit is not a problem to go and look at: it says when it ends
   // (DOR-2823). `undefined` is an ordinary failure; `null` is a limit with no
@@ -381,12 +403,30 @@ export function buildTurnFailedNotice(
       subjectAuthorId,
     };
   }
+  // A turn the runtime refused before the agent saw it says why, when the
+  // reason is one a person can understand without opening the chat (DOR-3012).
+  const refused = refusal !== undefined ? REFUSAL_LINES[refusal] : undefined;
   return {
-    text: `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
+    text:
+      refused?.(agentName) ??
+      `${agentName} ran into a problem and could not answer here. Open ${agentName}'s chat to see what went wrong.`,
     notice: 'turn_failed',
     subjectAuthorId,
   };
 }
+
+/**
+ * The room's line for each refusal worth naming, keyed by `TurnRefusal`. One
+ * missing here keeps the general line, which points at the chat.
+ */
+const REFUSAL_LINES: Partial<Record<string, (agentName: string) => string>> = {
+  'warm-ceiling': (agentName) =>
+    `${agentName} couldn't start: every agent here stayed busy too long. Send it again.`,
+  'pending-interaction': (agentName) =>
+    `${agentName} is waiting on an answer in its chat, so it couldn't start here.`,
+  'crash-loop': (agentName) =>
+    `${agentName} keeps stopping, so it couldn't answer here. Open ${agentName}'s chat to see why.`,
+};
 
 /**
  * A reset time as a person reads a clock on this machine ("4:10 PM"), with the

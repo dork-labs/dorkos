@@ -220,8 +220,8 @@ export const ClaudeCodeSettingsSchema = z.object({
    * agent is the same executable with the same permissions and the same
    * per-dispatch boundary check, held open for longer — nothing about what
    * it may DO changes. The real cost is memory, and the bounds on it live
-   * in code rather than under this setting: at most twelve stay warm, about
-   * 1 GB each worst case, and the idle reaper closes the rest.
+   * in `maxWarmProcesses` below, and the idle
+   * reaper closes the rest.
    *
    * Read when a chat's agent starts, so a chat already under way keeps
    * the way it started until its process is replaced. That is what lets
@@ -229,6 +229,17 @@ export const ClaudeCodeSettingsSchema = z.object({
    * the same work (spec `persistent-session-runtime` §P3).
    */
   persistentSession: z.boolean().default(true),
+  /**
+   * The most chats whose agent may be running at once on this machine
+   * (DOR-3012). `null`, the default, sizes it to the machine's memory: one per
+   * 2 GB, at least 12 and at most 32. A number pins it.
+   *
+   * A chat past the limit is never refused outright: the least recently used
+   * idle agent is closed to make room, and when every one is mid-turn the chat
+   * waits for one to finish. Read when an agent starts, so a change applies to
+   * the next one.
+   */
+  maxWarmProcesses: z.number().int().min(1).max(128).nullable().default(null),
 });
 
 /** Explicit inference metadata. Secrets live in the credential store. */
@@ -356,6 +367,7 @@ export const RuntimesConfigSchema = z
       // this one, and the `runtimes` literal below — and all three have to
       // agree or the shallow defaults-merge lands somebody on the old value.
       persistentSession: true,
+      maxWarmProcesses: null,
     })),
     doe: DoeRuntimeSettingsSchema,
     opencode: z
@@ -454,6 +466,7 @@ export const RuntimesConfigSchema = z
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: true,
+      maxWarmProcesses: null,
     },
     opencode: {
       enabled: true,

@@ -244,6 +244,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         defaultEffort: 'high',
         defaultTrustStop: null,
         persistentSession: true,
+        maxWarmProcesses: 16,
       },
       doe: {
         enabled: true,

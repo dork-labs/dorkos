@@ -78,6 +78,7 @@ describe('the post checks only narrow', () => {
       'live/monitoring.ts',
       'main.ts',
       'routes/community/moderation/reports.ts',
+      'startup/space-server.ts',
     ]);
   });
 

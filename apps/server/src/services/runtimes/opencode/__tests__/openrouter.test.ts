@@ -53,6 +53,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
         defaultEffort: null,
         defaultTrustStop: null,
         persistentSession: false,
+        maxWarmProcesses: null,
       },
       opencode: {
         enabled: true,

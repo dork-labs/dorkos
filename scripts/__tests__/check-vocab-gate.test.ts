@@ -33,6 +33,7 @@ import {
   scanSource,
   stripNonProse,
   termMatcher,
+  withSpaceSource,
   type AllowlistEntry,
   type BannedTerm,
 } from '../check-vocab-gate.ts';
@@ -480,6 +481,27 @@ describe("isAllowlisted's `contains` field", () => {
 // ---------------------------------------------------------------------------
 // File discovery
 // ---------------------------------------------------------------------------
+
+// DOR-3007: the space server's source folder comes from ci/space-server.env.
+describe('withSpaceSource', () => {
+  const roots = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
+
+  it('adds the space source while it lives outside every product root', () => {
+    expect(withSpaceSource(roots, 'apps/community/src')).toEqual([...roots, 'apps/community/src']);
+  });
+
+  it('adds nothing once a product root already holds it, so no hit is reported twice', () => {
+    expect(withSpaceSource(roots, 'apps/server/src/services/spaces')).toEqual(roots);
+    expect(withSpaceSource(roots, 'apps/server/src')).toEqual(roots);
+  });
+
+  it('treats a sibling with a shared prefix as outside', () => {
+    expect(withSpaceSource(roots, 'apps/server/srcx/spaces')).toEqual([
+      ...roots,
+      'apps/server/srcx/spaces',
+    ]);
+  });
+});
 
 describe('collectFiles', () => {
   it('finds source files under the scan roots and skips tests, dev/, and node_modules', () => {

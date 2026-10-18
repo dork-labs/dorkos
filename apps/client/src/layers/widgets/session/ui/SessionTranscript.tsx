@@ -220,7 +220,11 @@ export function SessionTranscript({
   // An agent's Direct chat also draws the pings that reached it from the
   // agent's other chats, where they landed (rule S12). Like stop lines, they
   // are not transcript messages, so none of the rules below count them.
-  const direct = useMemo(() => withDirectNotes(transcript, directLog), [transcript, directLog]);
+  const transcriptWhole = !earlier.canLoadEarlier;
+  const direct = useMemo(
+    () => withDirectNotes(transcript, directLog, transcriptWhole),
+    [transcript, directLog, transcriptWhole]
+  );
   const messages = useMemo(
     () => interleaveStopNotices(direct.messages, stops),
     [direct.messages, stops]

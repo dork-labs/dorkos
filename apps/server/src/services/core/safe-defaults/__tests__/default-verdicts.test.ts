@@ -197,6 +197,8 @@ const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
     'Lower is not more protective here: a shorter window with the same request count allows MORE traffic, not less. The count (`maxPerWindow`) is the bound that carries.',
   'rooms.replyWaitMinutes':
     'How long a room waits before carrying on without an answer. Neither direction is more protective: the turn runs either way, and the answer is posted late rather than dropped, so a shorter wait costs nothing and a longer one spends nothing.',
+  'runtimes.claudeCode.maxWarmProcesses':
+    'Unset sizes it to the machine, so there is no default number for a lowered one to be below. It bounds memory, not what an agent may do, and a full ceiling queues turns rather than refusing them (DOR-3012).',
   'rooms.lateReplyCeilingMinutes':
     'When a room stops listening to a turn that never closes. Bounds a subscription, not a spend, so lower is tidier rather than safer. The `maxAutomaticTurns*` caps are the bounds that carry.',
 };

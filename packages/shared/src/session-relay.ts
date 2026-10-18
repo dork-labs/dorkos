@@ -159,8 +159,10 @@ export type RelayVersionRange = z.infer<typeof RelayVersionRangeSchema>;
 
 /**
  * Everything a relayed caller can ask a computer to do, one feature per kind of
- * request. A computer advertises the ones it has in `hello`; a request for one
- * it lacks is refused before it is sent, naming the feature.
+ * request, plus one per optional field a request frame may carry. A computer
+ * advertises the ones it has in `hello`; a request for one it lacks is refused
+ * before it is sent, naming the feature, and an optional field it lacks is
+ * left off, since every frame is strict and an older computer would refuse it.
  */
 export const SESSION_RELAY_FEATURES = [
   'chats.list',
@@ -169,7 +171,15 @@ export const SESSION_RELAY_FEATURES = [
   'session.interrupt',
   'interaction.approval',
   'interaction.question',
+  'request.device',
 ] as const;
+
+/**
+ * The feature a computer advertises when it reads `device` on a request frame
+ * ({@link RelayDeviceSchema}). A hub sends `device` only to a computer that
+ * advertised it.
+ */
+export const SESSION_RELAY_DEVICE_FEATURE = 'request.device' satisfies SessionRelayFeature;
 
 /** One feature id. See {@link SESSION_RELAY_FEATURES}. */
 export type SessionRelayFeature = (typeof SESSION_RELAY_FEATURES)[number];
@@ -220,6 +230,50 @@ const ResumeCursorSchema = z
   .string()
   .max(256)
   .regex(/^[0-9a-f-]+-\d+-g\d+-\d+$/);
+
+/** No control characters, so a value can never split a line it is written into. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
+
+/**
+ * Invisible format characters (`\p{Cf}`, direction marks among them) and the
+ * Unicode line and paragraph separators: a name carrying one could read as
+ * another name, or break a line where a transcript does not.
+ */
+const INVISIBLE = /[\p{Cf}\u2028\u2029]/u;
+
+/**
+ * A name a person reads: a computer's name on its hub, a browser's label on
+ * its computer. At most 64 characters, no control or invisible characters,
+ * and never trimmed, since a signed name is signed exactly: leading or
+ * trailing whitespace is refused instead.
+ */
+export const RelayDisplayNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(NO_CONTROL)
+  .refine((name) => name.trim() === name, 'no leading or trailing whitespace')
+  .refine((name) => !INVISIBLE.test(name), 'no invisible characters');
+
+/**
+ * The browser a request came from, as the hub knows it: an opaque id that
+ * stays the same for one browser (never a sign-in token, and never derived
+ * from one) and a label for people, such as `Safari on iPhone`. The computer
+ * keeps the devices it has seen and tells its owner about a new one; it never
+ * decides what to allow from it.
+ */
+export const RelayDeviceSchema = z.strictObject({
+  id: z
+    .string()
+    .min(8)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/),
+  label: RelayDisplayNameSchema,
+});
+
+/** See {@link RelayDeviceSchema}. */
+export type RelayDevice = z.infer<typeof RelayDeviceSchema>;
 
 /** Base64url text, as WebAuthn encodes binary fields. */
 const base64url = (max: number) =>
@@ -551,6 +605,8 @@ export const RelayWebFrameSchema = z.discriminatedUnion('type', [
     type: z.literal('request'),
     id: RelayRequestIdSchema,
     request: RelayRequestSchema,
+    /** The browser that asked; sent only to a computer that advertised `request.device`. */
+    device: RelayDeviceSchema.optional(),
   }),
   z.strictObject({ type: z.literal('stream.close'), streamId: StreamIdSchema }),
   /**

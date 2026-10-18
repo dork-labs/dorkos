@@ -25,12 +25,21 @@ vi.mock('../../config-manager.js', () => ({
   },
 }));
 vi.mock('../index.js', () => ({
-  // One session exists: the cookie `session=owner`. Everything else verifies
-  // as nobody, so a cell admits a credential only when it presents that one.
+  // The owner has one session per route: the cookie `session=owner@<route>`
+  // is the one made on that route, and `session=owner@legacy` one made before
+  // routes were recorded. Everything else verifies as nobody, so a cell admits
+  // a credential only when it presents one of those.
   getAuth: () => ({
     api: {
-      getSession: async ({ headers }: { headers: Headers }) =>
-        headers.get('cookie') === 'session=owner' ? { user: { id: 'owner' } } : null,
+      getSession: async ({ headers }: { headers: Headers }) => {
+        const made = /^session=owner@(\w+)$/.exec(headers.get('cookie') ?? '')?.[1];
+        if (!made) return null;
+        const route = made === 'legacy' ? null : made;
+        return {
+          user: { id: 'owner' },
+          session: { id: `session-${made}`, route, createdAt: new Date() },
+        };
+      },
       verifyApiKey: async () => ({ valid: false }),
     },
   }),
@@ -66,6 +75,7 @@ import {
   type GateAccess,
 } from '../gate-policy.js';
 import { classifyRequest } from '../../../../lib/request-classifier.js';
+import { requestSessionRoute, SESSION_ROUTES } from '../sessions/session-route.js';
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { authorizeStreamUpgrade } from '../../streams/stream-upgrade-auth.js';
 import { markIngress, type IngressKind } from '../../remote/ingress-mark.js';
@@ -311,28 +321,64 @@ describe('who counts as at this computer', () => {
   });
 });
 
-describe('a credential lets another device in', () => {
+/** Every route a session can be made on, and a session from before routes were recorded. */
+const MADE_ON = [...SESSION_ROUTES, 'legacy'] as const;
+
+/** A caller's facts carrying the owner session made on `made`. */
+function withSession(facts: Facts, made: (typeof MADE_ON)[number]): Facts {
+  return { ...facts, headers: { ...facts.headers, cookie: `session=owner@${made}` } };
+}
+
+describe('a credential lets another device in, only on its own route', () => {
   beforeEach(() => {
     posture.ask = false;
     posture.owner = true;
     posture.insecureBind = false;
   });
 
-  it.each(
-    CALLERS.filter(
-      (caller) => caller.expected({ ask: false, exposure: true }) === 'credential'
-    ).map((caller) => [caller.name, caller])
-  )('%s, with the owner session', async (_label, caller) => {
+  const credentialed = CALLERS.filter(
+    (caller) => caller.expected({ ask: false, exposure: true }) === 'credential'
+  ).map((caller) => [caller.name, caller] as const);
+
+  it.each(credentialed)('%s, with the session made on its route', async (_label, caller) => {
     posture.insecureBind = caller.insecureBind === true;
-    const facts = {
-      ...caller.facts,
-      headers: { ...caller.facts.headers, cookie: 'session=owner' },
-    };
+    const route = requestSessionRoute(caller.facts)!;
+    const facts = withSession(caller.facts, route);
     expect(await decideSessionGate('POST', '/api/sessions', facts)).toEqual({
       allowed: true,
-      user: { userId: 'owner', credential: 'cookie' },
+      user: { userId: 'owner', credential: 'cookie', sessionId: `session-${route}`, route },
     });
     expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({ ok: true });
+  });
+
+  it.each(credentialed)(
+    '%s, with a session made anywhere else, is refused',
+    async (_label, caller) => {
+      posture.insecureBind = caller.insecureBind === true;
+      const route = requestSessionRoute(caller.facts);
+      for (const made of MADE_ON.filter((other) => other !== route)) {
+        const facts = withSession(caller.facts, made);
+        expect(await decideSessionGate('POST', '/api/sessions', facts)).toEqual({
+          allowed: false,
+        });
+        expect(await decideSessionGate('GET', '/api/sessions', facts)).toEqual({
+          allowed: false,
+        });
+        expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({
+          ok: false,
+          status: 401,
+        });
+      }
+    }
+  );
+
+  it('at this computer, asking for a password, takes a local or older session only', async () => {
+    posture.ask = true;
+    const local = CALLERS.find((caller) => caller.name === 'local (this computer)')!.facts;
+    for (const made of MADE_ON) {
+      const decision = await decideSessionGate('POST', '/api/sessions', withSession(local, made));
+      expect(decision.allowed).toBe(made === 'local' || made === 'legacy');
+    }
   });
 });
 
