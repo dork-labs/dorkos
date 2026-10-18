@@ -45,7 +45,9 @@ import { RemoteEdgeProofSchema } from './remote.js';
  * the hosting supplier's private network (other machines, even the same
  * account's), a cloud metadata address, any private address range, or
  * anything on this service except the public `/v1` API. A computer reaches its
- * hub the way a person's Mac does, so it holds nothing a Mac does not.
+ * hub the way a person's Mac does, so it holds nothing a Mac does not. The
+ * service enforces this at the computer's network boundary; the computer
+ * cannot change it, and nothing on the computer is trusted to.
  *
  * **How an agent computer links to its hub.** The hub mints a one-time link
  * code and hands it to the service (`POST /v1/computers/{computerId}/link-code`).
@@ -537,8 +539,8 @@ export type AgentComputerLinkCodeRequest = z.infer<typeof AgentComputerLinkCodeR
  * **The service never vouches for the computer's key.** The computer makes its
  * own signing key pair and sends the public half when it redeems the code; the
  * hub pins it then, as it does for a Mac. So a code that was already used is
- * worthless to anybody who reads it later, and nothing here could let the
- * service, or anyone who got into it, link a key of its own choosing.
+ * worthless to anybody who reads it later. A second redeem for a computer that
+ * is already linked unlinks it, tells the person, and mints a new code.
  *
  * The computer reads again when an `agent_computer_assignment_changed` command
  * arrives, and otherwise every `pollAfterSeconds`.
@@ -576,6 +578,13 @@ export type AgentComputerAssignment = z.infer<typeof AgentComputerAssignmentSche
 export const AGENT_COMPUTER_BUSY_TTL_SECONDS = 600 as const;
 
 /**
+ * The longest an agent computer runs without a break, however often it says
+ * it is busy: six hours. Past it the service stops the computer and tells the
+ * owner, whatever `busy` says.
+ */
+export const AGENT_COMPUTER_BUSY_MAX_SECONDS = 21600 as const;
+
+/**
  * `PUT /v1/agent-computers/self/activity` — whether this agent computer is in
  * the middle of work. That computer's own instance key only; answered `204`
  * with no body.
@@ -584,8 +593,9 @@ export const AGENT_COMPUTER_BUSY_TTL_SECONDS = 600 as const;
  *   {@link AGENT_COMPUTER_BUSY_TTL_SECONDS} unless it is sent again, so a turn
  *   that crashed cannot keep a computer running forever. A computer that is
  *   still working sends it again before then.
- * - **A hard cap still applies.** However often busy is renewed, the service
- *   stops a computer that reaches its per-computer limit on running time.
+ * - **A hard cap still applies.** After {@link AGENT_COMPUTER_BUSY_MAX_SECONDS}
+ *   of running without a break the service stops the computer and tells the
+ *   owner, whatever `busy` says.
  * - **Idle stop.** The service stops a computer for being idle only once its
  *   idle window has passed with `busy` false or expired.
  */

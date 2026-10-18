@@ -17,14 +17,15 @@ import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
  * - What a computer spends is billed to the account that owns it, and the
  *   preview gate applies to it exactly as it does today.
  * - `agentRef`, when present, is the agent's id on the hub the computer works
- *   for: the agent lives on the hub, and the computer only runs it.
+ *   for: the agent lives on the hub, and the computer only runs it. It is
+ *   attribution only, never authorization: the service grants nothing on it.
  */
 export const InferenceTokenRequestSchema = z
   .object({
     instanceId: IdSchema,
     seatRef: IdSchema.optional(),
     agentRef: IdSchema.optional().describe(
-      'The agent the token is for. On a cloud agent computer, the agent`s id on its hub.'
+      'The agent the token is for. On a cloud agent computer, the agent`s id on its hub. Attribution only, never authorization.'
     ),
   })
   .describe('Mint a short-lived inference token for one instance.');

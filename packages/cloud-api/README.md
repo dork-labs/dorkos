@@ -401,7 +401,8 @@ exits with status 0 within 5 seconds of SIGINT. Its image is public and signed.
 It may reach the public internet, its own hub through the hub's front door, and the model gateway.
 It may not reach the hosting supplier's private network (other machines, even the same account's),
 a cloud metadata address, any private address range, or anything on the service except the public
-`/v1` API.
+`/v1` API. The service enforces this at the computer's network boundary; the computer cannot
+change it, and nothing on the computer is trusted to.
 
 ### Linking an agent computer to its hub
 
@@ -421,7 +422,9 @@ a cloud metadata address, any private address range, or anything on the service 
 pollAfterSeconds }`. The service deletes the code once the computer has read it and never logs
   it, so a later read has `linkCode: null`. The code carries `ONE_TIME_CREDENTIAL_META`.
 - **The service never vouches for a key.** The computer makes its own Ed25519 key pair; the hub
-  pins its public half when the code is redeemed, as it does for a Mac. A used code is worthless.
+  pins its public half when the code is redeemed, as it does for a Mac. A used code is worthless. A
+  second redeem for a computer that is already linked unlinks it, tells the person, and mints a new
+  code.
 - `agent_computer_assignment_changed` asks the computer to read its assignment again. It carries
   nothing else, and the service sends it only to a computer whose version knows it, as it does for
   the hub's own command.
@@ -429,7 +432,8 @@ pollAfterSeconds }`. The service deletes the code once the computer has read it 
 ### Busy computers and sleeping hubs
 
 - **`PUT /v1/agent-computers/self/activity`** (that computer's key) takes `{ busy }` and answers 204. Busy holds for `AGENT_COMPUTER_BUSY_TTL_SECONDS` (ten minutes) unless sent again, so a
-  crashed turn cannot keep a computer running forever, and a hard cap per computer still applies.
+  crashed turn cannot keep a computer running forever. `AGENT_COMPUTER_BUSY_MAX_SECONDS` = 21600:
+  after 6 hours in a row, the service stops the computer and tells the owner, whatever `busy` says.
   The service stops a computer for being idle only once its idle window has passed with `busy`
   false or expired.
 - **`PUT /v1/hubs/self/next-wake`** (the hub's key) takes `{ at }`, a time or null, and answers 204. The service wakes the hub at `at` for its due schedules, at most once every
@@ -439,7 +443,7 @@ pollAfterSeconds }`. The service deletes the code once the computer has read it 
 - **Inference on an agent computer.** `POST /v1/inference/tokens` also takes an agent computer's
   instance key. Tokens stay short-lived, the limits apply per computer and per account, what it
   spends is billed to the account that owns it, and the preview gate applies as it does today.
-  `agentRef` is the agent's id on the computer's hub.
+  `agentRef` is the agent's id on the computer's hub: attribution only, never authorization.
 
 ### Asking a computer to dial its hub
 
