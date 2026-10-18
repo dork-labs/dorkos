@@ -24,6 +24,11 @@
  *   (boot-time seeding, the cloud link, which its routes cannot reach here)
  *   are not.
  *
+ * Not covered, on purpose: destructive HTTP routes that never pass through
+ * the registry (deleting a room or a session) stay agent work; and the event
+ * streams are refused by a list of their paths in the agent gate, so a new
+ * stream is open to agents (reads only) until it is added there.
+ *
  * Left alone on purpose: the terminal (its socket is authorized by an id a
  * gated route mints, and an agent already has a shell here) and A2A (its own
  * authorizer, `middleware/mcp-auth.ts`, decides it as it decides `/mcp`).
@@ -54,6 +59,7 @@ export const HUB_OWNED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ['tasks_delete', 'schedules'],
   ['create_extension', 'extensions'],
   ['reload_extensions', 'extensions'],
+  ['test_extension', 'extensions'],
   ['marketplace.install', 'packages'],
   ['marketplace.update', 'packages'],
   ['marketplace.uninstall', 'packages'],
@@ -61,6 +67,14 @@ export const HUB_OWNED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ['permissions.change', 'permissions'],
   ['permissions.request_access', 'permissions'],
   ['operator.config_patch', 'settings'],
+  ['mcp.add', 'MCP servers'],
+  ['mcp.import', 'MCP servers'],
+  ['mcp.update', 'MCP servers'],
+  ['mcp.enable', 'MCP servers'],
+  ['mcp.disable', 'MCP servers'],
+  ['mcp.remove', 'MCP servers'],
+  ['mcp.test', 'MCP servers'],
+  ['mcp.browser_preset', 'MCP servers'],
   ['mcp.signin', 'sign-ins'],
   ['mcp.set_client', 'sign-ins'],
   ['connectors.request_connection', 'connections'],
