@@ -172,23 +172,40 @@ describe('the credits relay', () => {
     expect(refusedTokens).toEqual(['it_1:token']);
   });
 
-  it('says what a refusal means for the token, from the public codes, body intact', async () => {
+  it('says what a refusal means for the token, from dorkos_reason only, body intact', async () => {
     const grant = relay.issue('openai-chat-completions', 'OpenCode');
+    /** The published refusal envelope (`InferenceErrorBodySchema`). */
+    const envelope = (reason?: string, code = 'some_endpoint_word') =>
+      JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'refused',
+          dorkos_code: code,
+          ...(reason !== undefined && { dorkos_reason: reason }),
+        },
+        request_id: null,
+      });
     const cases: Array<[number, string, string | null]> = [
       // The token is no good: drop it and mint again.
-      [401, '{"code":"expired_token","status":401,"title":"x"}', 'token'],
-      [401, '{"error":{"code":"token_revoked"}}', 'token'],
+      [401, envelope('token_expired'), 'token'],
+      [403, envelope('token_revoked'), 'token'],
       [401, '{}', 'token'],
-      // The account may not spend: hold.
-      [402, '{"code":"balance_exhausted","status":402,"title":"x"}', 'account'],
-      [403, '{"error":{"code":"daily_limit_reached"}}', 'account'],
-      [403, '{"code":"entitlement_required","status":403,"title":"x"}', 'account'],
+      [401, 'not json', 'token'],
+      // The contract says the account cannot spend: hold.
+      [402, envelope('balance_exhausted'), 'account'],
+      [403, envelope('daily_limit_reached'), 'account'],
+      [403, envelope('entitlement_required'), 'account'],
       // Busy, or nothing it can be sure of: passed through, nothing told.
-      [403, '{"error":{"code":"concurrency_exceeded"}}', null],
-      [402, '{"error":{"code":"turn_budget_exhausted"}}', null],
-      [403, '{"code":"forbidden","status":403,"title":"x"}', null],
+      [403, envelope('concurrency_exceeded'), null],
+      [402, envelope('turn_budget_exhausted'), null],
+      [403, envelope(), null],
+      [403, envelope('a_reason_from_a_later_release'), null],
+      [401, envelope('a_reason_from_a_later_release'), null],
+      [403, envelope(undefined, 'balance_exhausted'), null],
+      [403, '{"error":{"dorkos_reason":"balance_exhausted"}}', null],
       [403, 'not json', null],
-      [429, '{"code":"rate_limited","status":429,"title":"x"}', null],
+      [429, envelope('rate_limited'), null],
       [200, '{}', null],
     ];
     for (const [status, body, kind] of cases) {

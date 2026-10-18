@@ -83,7 +83,7 @@ import {
 } from './credits-credential.js';
 import { problemOf, resolveCloudIdentity, type CloudV1Context } from './v1-client.js';
 import { AGENT_COMPUTER_REFUSAL_HOLD_MS } from '../agent-computer/models.js';
-import { mintRefusalHolds, refusalCodeOf } from './credits-refusals.js';
+import { mintRefusalHolds, problemCodeOf } from './credits-refusals.js';
 import { isAgentComputer } from '../server-role/role-checks.js';
 
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
@@ -296,7 +296,7 @@ export async function primeCreditsInferenceWithContext(
     // A definite no (a 4xx that is not a wait, never an outage) holds an
     // agent computer's mints.
     const code =
-      answered ?? (error instanceof CloudApiResponseError ? refusalCodeOf(error.body) : null);
+      answered ?? (error instanceof CloudApiResponseError ? problemCodeOf(error.body) : null);
     if (isAgentComputer() && mintRefusalHolds(status, code)) refusedAt = now();
     if (
       context.isCurrent() &&

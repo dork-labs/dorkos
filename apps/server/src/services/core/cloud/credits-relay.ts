@@ -46,7 +46,7 @@ import { Readable } from 'node:stream';
 import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { noteCreditsTokenRefused, resolveCreditsLaunch } from './credits-inference.js';
-import { classifyCreditsRefusal, refusalCodeOf } from './credits-refusals.js';
+import { classifyCreditsRefusal } from './credits-refusals.js';
 import { CreditsUnavailableError, type CreditsLaunch } from './credits-protocols.js';
 
 /** The formats the relay carries, and the paths each may use. */
@@ -244,7 +244,7 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
       if (TOKEN_REFUSED_STATUSES.has(upstream.status)) {
         // A refusal is a short envelope; the request's time limit bounds it.
         const text = await upstream.text();
-        const kind = classifyCreditsRefusal(upstream.status, refusalCodeOf(parsedOrNull(text)));
+        const kind = classifyCreditsRefusal(upstream.status, parsedOrNull(text));
         if (kind !== 'busy') onTokenRefused(launch.tokenId, kind);
         res.writeHead(upstream.status, returned);
         res.end(text);
