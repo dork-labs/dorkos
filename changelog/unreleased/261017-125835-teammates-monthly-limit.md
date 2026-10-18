@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(spaces): set how much teammates can spend on your agents in a space each month (DOR-2956)'
+  - "feat(spaces): teammates' monthly limit survives a damaged file and never saves as zero (DOR-2956)"
 ---
 
 ### Added
