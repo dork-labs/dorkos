@@ -8,7 +8,11 @@
  */
 import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { encodeRelayFrame, relayWelcomeTranscript } from '@dorkos/shared/session-relay';
+import {
+  encodeRelayFrame,
+  relayWelcomeTranscript,
+  SESSION_RELAY_MAX_INNER_FRAME_BYTES,
+} from '@dorkos/shared/session-relay';
 import {
   answerHello,
   finishComputerHandshake,
@@ -274,6 +278,14 @@ describe('the handshake', () => {
 });
 
 describe('the sealed channel', () => {
+  it('seals an inner frame of exactly the shared byte limit, and refuses one byte more', () => {
+    // Pins the protocol's constant to this channel's own arithmetic, so the two
+    // can never drift apart.
+    const { hub } = connect();
+    expect(hub.seal('x'.repeat(SESSION_RELAY_MAX_INNER_FRAME_BYTES))).not.toBeNull();
+    expect(hub.seal('x'.repeat(SESSION_RELAY_MAX_INNER_FRAME_BYTES + 1))).toBeNull();
+  });
+
   it('keeps frames secret: the box never holds the text', () => {
     const { hub } = connect();
     const sealed = hub.seal(frame(42))!;

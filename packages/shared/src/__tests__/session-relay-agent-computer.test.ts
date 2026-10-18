@@ -477,6 +477,20 @@ describe('the largest legal frame of each kind still seals', () => {
     expectFits(encodeAgentComputerRequestFrame('r'.repeat(64), sync));
   });
 
+  it('agents.sync with an oversized manifest is refused as too large, not malformed', () => {
+    const sync = {
+      op: 'agents.sync',
+      agentId: AGENT,
+      manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES + 6000),
+      files: [],
+      packages: [],
+    } as unknown as AgentComputerRequest;
+    expect(encodeAgentComputerRequestFrame('r1', sync)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ status: 413 }),
+    });
+  });
+
   it('turn.start: the longest message fits, or is refused before it is sent', () => {
     const wide = { ...TURN, content: '中'.repeat(SESSION_RELAY_MAX_MESSAGE_LENGTH) };
     expectFits(encodeAgentComputerRequestFrame('r'.repeat(64), wide));

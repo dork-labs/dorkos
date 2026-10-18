@@ -494,6 +494,9 @@ const RelayCallEnvelopeSchema = z.object({ type: z.literal('call'), id: CallIdSc
  * opened, so the sequence is intact; only the inner frame was refused. Any
  * other undecodable frame still closes the connection.
  *
+ * For an agent computer's connection only. A linked Mac never sends a `call`,
+ * so one arriving from a Mac still closes its connection.
+ *
  * @param innerText - The opened inner frame's text.
  */
 export function readRelayCallId(innerText: string): string | null {
@@ -531,6 +534,10 @@ const RELAY_BAD_ANSWER: RelayError = {
 
 /** Whether a schema issue is a size cap, as opposed to a wrong shape. */
 function isTooLargeIssue(issue: z.core.$ZodIssue): boolean {
+  // A plain union reports one wrapping issue; the size refusal sits inside it.
+  if (issue.code === 'invalid_union') {
+    return issue.errors.some((branch) => branch.some(isTooLargeIssue));
+  }
   return issue.code === 'too_big' || /too large|byte limit/i.test(issue.message);
 }
 
