@@ -10,7 +10,8 @@
  * runs it on every change instead of once.
  *
  * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, `apps/server/src`, and
- * `apps/community/src` (the space's own website, DOR-2653) —
+ * the space server's source (the space's own website, DOR-2653; its folder is
+ * `SPACE_SRC_DIR` in `ci/space-server.env`, `apps/community/src` today) —
  * every workspace whose strings can reach a screen a DorkOS user reads,
  * including server-authored copy the client renders verbatim (a provisioning
  * error, an MCP tool title) — for TypeScript/TSX source, using the real
@@ -161,6 +162,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { readSpaceServer } from './lib/space-server.mjs';
 
 /** `relative()`'s output with OS separators normalized to `/`, for portable path matching. */
 function toPosixRelative(from: string, to: string): string {
@@ -227,18 +229,31 @@ export interface Violation {
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
+/** Workspaces that render product copy a DorkOS user reads. */
+const PRODUCT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
+
 /**
- * Workspaces that render product copy a DorkOS user reads. `apps/community/src`
- * joined in DOR-2653: it is the space's own website and the API errors and
- * emails that site and the DorkOS app show, swept to "space" once DOR-2631
- * had renamed the app.
+ * Add the space server's source to the scan roots unless a root already holds it.
+ *
+ * The space server's source joined the scan in DOR-2653: it is the space's own
+ * website and the API errors and emails that site and the DorkOS app show,
+ * swept to "space" once DOR-2631 had renamed the app. Its folder comes from
+ * `ci/space-server.env` (DOR-3007). Once the space server moves inside
+ * `apps/server/src`, that root already reaches it, and listing it again would
+ * report every hit in it twice.
+ *
+ * @param roots - The product roots.
+ * @param spaceSrcDir - The space server's source folder.
  */
-const DEFAULT_SCAN_ROOTS = [
-  'apps/client/src',
-  'apps/site/src',
-  'apps/server/src',
-  'apps/community/src',
-];
+export function withSpaceSource(roots: readonly string[], spaceSrcDir: string): string[] {
+  const covered = roots.some((root) => spaceSrcDir === root || spaceSrcDir.startsWith(`${root}/`));
+  return covered ? [...roots] : [...roots, spaceSrcDir];
+}
+
+const DEFAULT_SCAN_ROOTS = withSpaceSource(
+  PRODUCT_SCAN_ROOTS,
+  readSpaceServer(join(SCRIPT_DIR, '..')).spaceSrcDir
+);
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
 const EXCLUDED_SEGMENTS = [

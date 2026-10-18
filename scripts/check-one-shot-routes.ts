@@ -37,13 +37,17 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readSpaceServer } from './lib/space-server.mjs';
+
+/** The space server's folder, from `ci/space-server.env` (DOR-3007). */
+const { spaceDir } = readSpaceServer(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 /** The folders whose source is scanned, relative to the repository root. */
-export const SCANNED_ROOTS = [
-  'apps/community/browser-tests',
-  'apps/community/acceptance',
+export const SCANNED_ROOTS: readonly string[] = [
+  `${spaceDir}/browser-tests`,
+  `${spaceDir}/acceptance`,
   'apps/e2e',
-] as const;
+];
 
 /** The marker that keeps a reasoned `times:` line. */
 export const ALLOW_MARKER = 'one-shot-route-allow:';
