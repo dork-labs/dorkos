@@ -1,4 +1,7 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
+import type { BlintzPlugin } from 'blintz';
+import { docRefFor } from '@/layers/entities/doc';
+import { DocCommentsFrame, useDocEmbeds, useDocWikiLinks } from '@/layers/features/docs';
 import { useLiveDocsOn } from '../model/live-docs-context';
 
 // Lazy: live editing brings Yjs and the Blintz collaboration plugin, loaded
@@ -9,6 +12,54 @@ const LiveDocEditor = lazy(() =>
 const BlintzCanvas = lazy(() =>
   import('./BlintzCanvas').then((m) => ({ default: m.BlintzCanvas }))
 );
+
+/** What the live editor is handed by `LiveDocEditor`. */
+interface LiveBinding {
+  plugins: BlintzPlugin[];
+  editable: boolean;
+  onChange: (markdown: string) => void;
+}
+
+/**
+ * The live editor with everything today's editor has: wiki links, embeds and
+ * comments. The comments plugin and the collaboration plugin go to Blintz as
+ * one array.
+ */
+function LiveBlintz({
+  cwd,
+  sourcePath,
+  loaded,
+  binding,
+}: {
+  cwd: string;
+  sourcePath: string;
+  loaded: string;
+  binding: LiveBinding;
+}) {
+  // The doc as the editor shows it now, for wiki-link titles and comment
+  // anchors. The live copy is saved by the server shortly after each change.
+  const [text, setText] = useState(loaded);
+  const embeds = useDocEmbeds();
+  const wikiLinks = useDocWikiLinks({ cwd, sourcePath, content: text });
+  const onChange = (markdown: string) => {
+    setText(markdown);
+    binding.onChange(markdown);
+  };
+  return (
+    <DocCommentsFrame doc={docRefFor(cwd, sourcePath)} value={text} saved={text}>
+      {(commentPlugins) => (
+        <BlintzCanvas
+          value={loaded}
+          editable={binding.editable}
+          onChange={onChange}
+          wikiLinks={wikiLinks}
+          embeds={embeds}
+          plugins={[...(commentPlugins ?? []), ...binding.plugins]}
+        />
+      )}
+    </DocCommentsFrame>
+  );
+}
 
 /** The files live editing serves: markdown Blintz edits. */
 const LIVE_MARKDOWN = /\.(md|markdown)$/i;
@@ -54,15 +105,15 @@ export function LiveDocSlot({
         doc={{ cwd, path: sourcePath }}
         fallback={children}
         onFileChanged={onFileChanged}
-        renderEditor={({ plugins, key, editable: editing, onChange }) => (
+        renderEditor={({ key, ...binding }) => (
           <div className="px-2 pb-6">
             <Suspense fallback={loading}>
-              <BlintzCanvas
+              <LiveBlintz
                 key={key}
-                value={loaded}
-                editable={editing}
-                onChange={onChange}
-                plugins={plugins}
+                cwd={cwd}
+                sourcePath={sourcePath}
+                loaded={loaded}
+                binding={binding}
               />
             </Suspense>
           </div>

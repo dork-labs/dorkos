@@ -33,3 +33,8 @@ export function DocCommentsFrame({
 export function SaveAsWebPageButton(): null {
   return null;
 }
+
+/** Docs off: no live editing; today's editor, which saves the file itself. */
+export function LiveDocEditor({ fallback }: { fallback: ReactNode }): ReactNode {
+  return fallback;
+}

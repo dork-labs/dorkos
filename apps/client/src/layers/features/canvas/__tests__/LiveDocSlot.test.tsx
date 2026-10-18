@@ -58,6 +58,18 @@ vi.mock('../ui/BlintzCanvas', () => ({
   },
 }));
 
+// The comments surface, as a stand-in that hands the editor one known plugin.
+const COMMENT_PLUGIN = vi.hoisted(() => ({ comments: true }));
+vi.mock('@/layers/features/docs/ui/DocCommentsSurface', () => ({
+  DocCommentsSurface: ({
+    enabled,
+    children,
+  }: {
+    enabled: boolean;
+    children: (plugins: unknown[] | undefined) => ReactNode;
+  }) => children(enabled ? [COMMENT_PLUGIN] : undefined),
+}));
+
 import { LiveDocsContext } from '../model/live-docs-context';
 import { LiveDocSlot } from '../ui/LiveDocSlot';
 
@@ -148,6 +160,31 @@ describe('LiveDocSlot', () => {
     server.note({ type: 'changed', changedBy: { kind: 'agent', name: 'Ada' } });
     expect(await screen.findByText('Ada changed this doc')).toBeInTheDocument();
     sam.destroy();
+  });
+
+  it('gives the live editor the comments plugin and the collaboration plugin, in one array', async () => {
+    const server = new FakeDocServer('# Plan');
+    const transport = createMockTransport({
+      connectDocCollab: server.transport().connectDocCollab,
+    });
+    const config = await transport.getConfig();
+    transport.getConfig = vi.fn(async () => ({
+      ...config,
+      experiments: [
+        {
+          key: 'docs.enabled',
+          title: 'Docs',
+          description: '',
+          enabled: true,
+          lockedByEnv: false,
+        },
+      ],
+    }));
+    renderSlot(transport, { on: true });
+    const editor = await screen.findByTestId('live-editor', {}, LAZY);
+    expect(editor).toHaveAttribute('data-plugins', '2');
+    expect(editorChange.plugins[0]).toBe(COMMENT_PLUGIN);
+    expect(editorChange.plugins[1]).toHaveProperty('fragment');
   });
 
   it('falls back to today’s editor when the server will not serve the doc live', async () => {

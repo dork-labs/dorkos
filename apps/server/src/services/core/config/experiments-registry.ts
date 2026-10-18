@@ -119,8 +119,7 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     // off, `/api/documents` answers 404 and the canvas editor gets no Docs props.
     path: 'docs.enabled',
     title: 'Docs',
-    // Grows with each Docs piece that lands: live editing next.
-    description: 'Write markdown docs with your agents: link with [[, embed charts, and comment.',
+    description: 'Write markdown docs with your agents: link, embed, comment and edit together.',
     costNote: 'Early and still changing. Links find docs in the same folder tree.',
     graduationIssue: 'DOR-2993',
   },
