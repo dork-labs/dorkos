@@ -261,7 +261,7 @@ it.each(['network', 'malformed'] as const)(
     if (mode === 'network') port.discover.mockRejectedValue(new Error('offline'));
     else port.discover.mockResolvedValue({} as FileSaveDiscovery);
     view();
-    await screen.findByText('Previous save evidence is unavailable.', { exact: false });
+    await screen.findByText('Couldn’t check previous saves, so editing is off.');
     expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
     expect(transport.writeFile).not.toHaveBeenCalled();
   }
@@ -273,10 +273,21 @@ it('a 404 says the file cannot be edited here, not that evidence is temporarily 
   view();
   await screen.findByText('This file can’t be edited from this canvas.');
   expect(
-    screen.queryByText('Previous save evidence is unavailable.', { exact: false })
+    screen.queryByText('Couldn’t check previous saves, so editing is off.')
   ).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
   expect(transport.writeFile).not.toHaveBeenCalled();
+});
+it('a failed check is one sentence with Check again beside it, which asks the server again', async () => {
+  port.discover.mockRejectedValueOnce(new Error('offline'));
+  view();
+  const banner = await screen.findByRole('region', { name: 'Previous file saves' });
+  await screen.findByText('Couldn’t check previous saves, so editing is off.');
+  expect(banner.querySelectorAll('p')).toHaveLength(1);
+  expect(screen.queryByRole('button', { name: 'Load current file' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  expect(port.discover).toHaveBeenCalledTimes(2);
 });
 it('a failed explicit proof-only action stays blocked without replaying file content', async () => {
   port.discover.mockResolvedValue(review());
@@ -284,7 +295,7 @@ it('a failed explicit proof-only action stays blocked without replaying file con
   view();
   await screen.findByRole('button', { name: 'Recover original receipt' });
   fireEvent.click(screen.getByRole('button', { name: 'Recover original receipt' }));
-  await screen.findByText('Previous save evidence is unavailable.', { exact: false });
+  await screen.findByText('Couldn’t check previous saves, so editing is off.');
   expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
   expect(port.recover).toHaveBeenCalledTimes(1);
   expect(transport.writeFile).not.toHaveBeenCalled();
@@ -312,7 +323,7 @@ it('inspection failure keeps visible editing blocked instead of adopting malform
     encoding: 'utf-8',
   });
   fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
-  await screen.findByText('Previous save evidence is unavailable.', { exact: false });
+  await screen.findByText('Couldn’t check previous saves, so editing is off.');
   expect(screen.getByLabelText('draft')).toHaveValue('base');
   expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
 });
