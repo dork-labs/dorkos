@@ -180,4 +180,24 @@ describe('useSystemStatusEvents — session hooks', () => {
     );
     expect(setStatus).not.toHaveBeenCalled();
   });
+
+  it('surfaces a turn waiting for a free agent slot, and clears it once the turn starts (DOR-3012)', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
+    const waiting: SessionEvent = {
+      seq: 2,
+      type: 'system_status',
+      message: 'Waiting to start: every agent on this computer is busy.',
+      status: 'waiting_for_slot',
+    };
+    const { rerender } = renderHook(
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
+      { initialProps: { turn: [{ seq: 1, type: 'turn_start' }, waiting] as SessionEvent[] } }
+    );
+    expect(setStatus).toHaveBeenLastCalledWith({
+      message: 'Waiting to start: every agent on this computer is busy.',
+    });
+    rerender({ turn: [{ seq: 1, type: 'turn_start' }, waiting, textDelta(3)] });
+    expect(setStatus).toHaveBeenLastCalledWith(null);
+  });
 });

@@ -28,6 +28,7 @@ import {
   RELAY_SEND_BUFFER_MAX_BYTES,
   RELAY_SILENCE_TIMEOUT_MS,
   RelayDialer,
+  type RelayDialerDeps,
   type RelayRequestServer,
   type RelaySocket,
 } from '../relay-dialer.js';
@@ -89,6 +90,8 @@ function setup(
     owner?: boolean;
     hubSigner?: KeyObject;
     computerKey?: () => KeyObject;
+    onLinkState?: RelayDialerDeps['onLinkState'];
+    onDevice?: RelayDialerDeps['onDevice'];
   } = {}
 ) {
   const { hub, computer } = keys();
@@ -120,6 +123,8 @@ function setup(
       sockets.push(socket);
       return socket;
     },
+    onLinkState: overrides.onLinkState,
+    onDevice: overrides.onDevice,
   });
 
   /** Play the hub: answer the hello the computer sent, check its finish. */
@@ -329,6 +334,49 @@ describe('RelayDialer', () => {
     );
     expect(h.handled).toEqual([]);
     expect(h.dialer.connected).toBe(false);
+  });
+
+  it('reports its connection and the viewer count on each change, and once more when it ends', () => {
+    const states: unknown[] = [];
+    const h = setup({ onLinkState: (state) => states.push(state) });
+    h.dialer.onViewerOpen(LATER);
+    const channel = h.hubAnswers()!;
+    h.hubSends(channel, { type: 'viewers', count: 2 });
+    h.hubSends(channel, { type: 'viewers', count: 2 });
+    h.hubSends(channel, { type: 'viewers', count: 0 });
+    expect(h.dialer.viewers).toBe(0);
+    h.dialer.close();
+    expect(states).toEqual([
+      { connected: true, viewers: 0 },
+      { connected: true, viewers: 2 },
+      { connected: true, viewers: 0 },
+      { connected: false, viewers: 0 },
+    ]);
+  });
+
+  it('hands over the device a request names before serving it, and survives a throw there', () => {
+    const onDevice = vi.fn(() => {
+      throw new Error('listener broke');
+    });
+    const h = setup({ onDevice });
+    h.dialer.onViewerOpen(LATER);
+    const channel = h.hubAnswers()!;
+    const device = { id: 'browser-id-0001', label: 'Safari on iPhone' };
+    h.hubSends(channel, {
+      type: 'request',
+      id: 'r1',
+      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      device,
+    });
+    h.hubSends(channel, {
+      type: 'request',
+      id: 'r2',
+      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+    });
+    expect(onDevice).toHaveBeenCalledTimes(1);
+    expect(onDevice).toHaveBeenCalledWith(device);
+    expect(h.handled.map((frame) => frame.type === 'request' && frame.id)).toEqual(['r1', 'r2']);
+    expect(h.dialer.connected).toBe(true);
   });
 
   it('answers a heartbeat', () => {

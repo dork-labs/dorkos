@@ -199,6 +199,15 @@ describe('the session gate on an agent computer', () => {
     expect((await decideSessionGate('GET', '/api/config', asAgent)).allowed).toBe(true);
   });
 
+  it('lets an agent pause another agent, never resume one a person paused', async () => {
+    const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
+    expect((await decideSessionGate('POST', '/api/agents/a1/pause', asAgent)).allowed).toBe(true);
+    expect(await decideSessionGate('POST', '/api/agents/a1/resume', asAgent)).toMatchObject({
+      allowed: false,
+      refusal: { code: 'AGENT_COMPUTER_HUB_OWNED' },
+    });
+  });
+
   it('refuses every write it does not list, the hub`s and a person`s alike', async () => {
     const asAgent = local({ 'x-dorkos-agent': 'agent-live' });
     for (const [method, path] of [

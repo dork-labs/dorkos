@@ -80,7 +80,6 @@ export const AGENT_COMPUTER_WRITES: ReadonlyMap<string, string> = new Map([
   ['POST /api/agents/:id/commitments', 'records a commitment'],
   ['PATCH /api/commitments/:id', 'updates a commitment'],
   ['POST /api/agents/:id/pause', 'pauses an agent; anyone may stop any agent'],
-  ['POST /api/agents/:id/resume', 'resumes a paused agent'],
   // Finding agents, and saying this one is alive.
   ['POST /api/agents/resolve', 'reads agents by path; a read sent as a POST'],
   ['POST /api/mesh/discover', 'lists agents on disk without registering them'],

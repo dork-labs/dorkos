@@ -45,12 +45,8 @@ import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
 import { creditsKilled } from './credits-availability.js';
 import { CreditsUnavailableError, creditsFormatOf } from './credits-protocols.js';
-import {
-  captureCloudV1Context,
-  problemOf,
-  readCloudInstanceToken,
-  type CloudV1Context,
-} from './v1-client.js';
+import { captureCreditsContext, creditsCredential } from './credits-credential.js';
+import { problemOf, type CloudV1Context } from './v1-client.js';
 
 /** How long a read list is reused before the service is asked again. */
 const CATALOG_TTL_MS = 5 * 60_000;
@@ -251,14 +247,14 @@ export async function readCreditsCatalogWithContext(
 export function readCreditsCatalog(): Promise<CreditsCatalogRead | null> {
   let token: string | null;
   try {
-    token = readCloudInstanceToken();
+    token = creditsCredential();
   } catch {
     // A config that cannot be read is no link, never a thrown read.
     token = null;
   }
   return readCreditsCatalogWithContext(
     creditsKilled(),
-    captureCloudV1Context(),
+    captureCreditsContext(),
     token ? creditsLinkKey(token) : null
   );
 }
@@ -362,12 +358,12 @@ export async function creditsModelsFor(
 
 /** Metadata-only catalog read for readiness. Never fetches or mints a token. */
 export function peekCreditsModelsFor(protocol: RuntimeCreditsProtocol): readonly InferenceModel[] {
-  if (creditsKilled() || captureCloudV1Context() === null) return [];
+  if (creditsKilled() || captureCreditsContext() === null) return [];
   let models: readonly InferenceModel[] | null;
   if (cached?.isCurrent() && now() - cached.readAt < CATALOG_TTL_MS) models = cached.models;
   else {
     try {
-      const token = readCloudInstanceToken();
+      const token = creditsCredential();
       models = token ? lastGoodFor(creditsLinkKey(token)) : null;
     } catch {
       return [];

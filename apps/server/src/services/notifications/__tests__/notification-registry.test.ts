@@ -175,6 +175,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     serviceName: 'Gmail',
     outcome: 'success',
   },
+  'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
 };
 
 /** The tier every kind is declared at, from the spec's own table. */
@@ -216,6 +217,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_pending': 'notable',
   // News: it ran (spec trusted-by-default-flip §5.6).
   'connector.destructive_executed': 'quiet',
+  'web.new_device': 'notable',
 };
 
 /**
@@ -315,6 +317,7 @@ describe('notification registry', () => {
       'signin.required',
       'turn.completed',
       'update.installed',
+      'web.new_device',
     ]);
 
     const reserved = NOTIFICATION_KINDS.filter((k) => !WIRED_NOTIFICATION_KINDS.includes(k));

@@ -2,6 +2,8 @@ import { generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   RelayComputerFrameSchema,
+  RelayDeviceSchema,
+  SESSION_RELAY_DEVICE_FEATURE,
   RelayRequestSchema,
   RelayResultBodySchemas,
   RelayWebFrameSchema,
@@ -390,9 +392,10 @@ describe('needs an update for one feature', () => {
     }
   });
 
-  it('every feature is reachable by some request', () => {
+  it('every feature but the optional device field is reachable by some request', () => {
     const reached = new Set(EVERY_REQUEST.map(relayFeatureFor));
-    expect([...reached].sort()).toEqual([...SESSION_RELAY_FEATURES].sort());
+    const requestFeatures = SESSION_RELAY_FEATURES.filter((f) => f !== 'request.device');
+    expect([...reached].sort()).toEqual([...requestFeatures].sort());
   });
 
   it('names the one feature a computer lacks and passes the ones it has', () => {
@@ -469,5 +472,35 @@ describe('the hub proves itself to the computer', () => {
   it('closes an idle relay after three minutes, so a hub can sleep', () => {
     expect(SESSION_RELAY_IDLE_CLOSE_MS).toBe(3 * 60 * 1000);
     expect(RelayWebFrameSchema.safeParse({ type: 'viewers', count: -1 }).success).toBe(false);
+  });
+});
+
+describe('the browser a request names', () => {
+  const frame = {
+    type: 'request',
+    id: 'r1',
+    request: { op: 'chats.list', agentId: '01ARZ3NDEKTSV4RRFFQ69G5FAV' },
+  };
+
+  it('is optional on a request frame, and checked when present', () => {
+    expect(RelayWebFrameSchema.safeParse(frame).success).toBe(true);
+    const device = { id: 'browser-id-0001', label: 'Safari on iPhone' };
+    expect(RelayWebFrameSchema.safeParse({ ...frame, device }).success).toBe(true);
+    for (const bad of [
+      { id: 'short', label: 'Safari' },
+      { id: 'browser-id/0001', label: 'Safari' },
+      { id: 'browser-id-0001', label: 'x'.repeat(65) },
+      { id: 'browser-id-0001', label: 'Safari\non iPhone' },
+      { id: 'browser-id-0001', label: 'Safari\u202Eon iPhone' },
+      { id: 'browser-id-0001', label: ' Safari' },
+      { id: 'browser-id-0001', label: 'Safari', token: 'x' },
+    ]) {
+      expect(RelayDeviceSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('is advertised as its own feature, so a hub sends it only to a computer that reads it', () => {
+    expect(SESSION_RELAY_FEATURES).toContain(SESSION_RELAY_DEVICE_FEATURE);
+    expect(SESSION_RELAY_DEVICE_FEATURE).toBe('request.device');
   });
 });

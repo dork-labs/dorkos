@@ -21132,49 +21132,10 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good api k
 
 exports[`the chain matrix > login on, foreign host, loopback origin > good cookie, DELETE the probe 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.delete",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "remove",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "DELETE /api/chain-probe (200)",
-      "target": {
-        "id": "/api/chain-probe",
-        "name": "DELETE /api/chain-probe",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "DELETE",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21187,14 +21148,17 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, loopback origin > good cookie, GET a route that writes the Node response itself 1`] = `
 {
   "audit": [],
-  "body": "written to the Node response",
+  "body": {
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
+  },
   "complete": true,
   "headers": {
     "access-control-allow-credentials": "true",
@@ -21202,11 +21166,11 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "access-control-allow-methods": null,
     "access-control-allow-origin": "http://localhost:4242",
     "cache-control": null,
-    "content-type": "text/plain",
+    "content-type": "application/json",
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -21245,8 +21209,8 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
 {
   "audit": [],
   "body": {
-    "code": "API_NOT_FOUND",
-    "error": "Not found",
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21259,7 +21223,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 404,
+  "status": 401,
 }
 `;
 
@@ -21267,23 +21231,8 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21296,7 +21245,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -21304,23 +21253,8 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21333,7 +21267,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -21341,23 +21275,8 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21370,7 +21289,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -21378,23 +21297,8 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21407,7 +21311,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -21426,57 +21330,16 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, loopback origin > good cookie, POST JSON to the probe 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/chain-probe (200)",
-      "target": {
-        "id": "/api/chain-probe",
-        "name": "POST /api/chain-probe",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": {
-      "hello": "world",
-    },
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "POST",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21489,72 +21352,16 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, loopback origin > good cookie, POST to a route that records itself 1`] = `
 {
-  "audit": [
-    {
-      "action": "probe.recorded",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "probe",
-    },
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/chain-probe/records (200)",
-      "target": {
-        "id": "/api/chain-probe/records",
-        "name": "POST /api/chain-probe/records",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": {},
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "POST",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21567,41 +21374,16 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, loopback origin > good cookie, POST to an unknown /api path 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "error": "HTTP 404",
-      "operation": "execute",
-      "outcome": "failed",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/no-such-route (404)",
-      "target": {
-        "id": "/api/no-such-route",
-        "name": "POST /api/no-such-route",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "code": "API_NOT_FOUND",
-    "error": "Not found",
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -21614,7 +21396,7 @@ exports[`the chain matrix > login on, foreign host, loopback origin > good cooki
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 404,
+  "status": 401,
 }
 `;
 
@@ -24121,49 +23903,10 @@ exports[`the chain matrix > login on, foreign host, none origin > good api key, 
 
 exports[`the chain matrix > login on, foreign host, none origin > good cookie, DELETE the probe 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.delete",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "remove",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "DELETE /api/chain-probe (200)",
-      "target": {
-        "id": "/api/chain-probe",
-        "name": "DELETE /api/chain-probe",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "DELETE",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24176,14 +23919,17 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, D
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, none origin > good cookie, GET a route that writes the Node response itself 1`] = `
 {
   "audit": [],
-  "body": "written to the Node response",
+  "body": {
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
+  },
   "complete": true,
   "headers": {
     "access-control-allow-credentials": "true",
@@ -24191,11 +23937,11 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "access-control-allow-methods": null,
     "access-control-allow-origin": null,
     "cache-control": null,
-    "content-type": "text/plain",
+    "content-type": "application/json",
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -24234,8 +23980,8 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
 {
   "audit": [],
   "body": {
-    "code": "API_NOT_FOUND",
-    "error": "Not found",
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24248,7 +23994,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 404,
+  "status": 401,
 }
 `;
 
@@ -24256,23 +24002,8 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24285,7 +24016,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -24293,23 +24024,8 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24322,7 +24038,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -24330,23 +24046,8 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24359,7 +24060,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -24367,23 +24068,8 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
 {
   "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": null,
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "GET",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24396,7 +24082,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, G
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
@@ -24415,57 +24101,16 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, H
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, none origin > good cookie, POST JSON to the probe 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/chain-probe (200)",
-      "target": {
-        "id": "/api/chain-probe",
-        "name": "POST /api/chain-probe",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": {
-      "hello": "world",
-    },
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "POST",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24478,72 +24123,16 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, P
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, none origin > good cookie, POST to a route that records itself 1`] = `
 {
-  "audit": [
-    {
-      "action": "probe.recorded",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "probe",
-    },
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "operation": "execute",
-      "outcome": "ok",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/chain-probe/records (200)",
-      "target": {
-        "id": "/api/chain-probe/records",
-        "name": "POST /api/chain-probe/records",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "actor": {
-      "id": "<owner>",
-      "name": "<owner>",
-      "type": "person",
-    },
-    "agent": null,
-    "body": {},
-    "credential": {
-      "idHash": "<owner-hash>",
-      "kind": "cookie",
-    },
-    "method": "POST",
-    "surface": "app",
-    "user": {
-      "credential": "cookie",
-      "userId": "<owner>",
-    },
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24556,41 +24145,16 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, P
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 200,
+  "status": 401,
 }
 `;
 
 exports[`the chain matrix > login on, foreign host, none origin > good cookie, POST to an unknown /api path 1`] = `
 {
-  "audit": [
-    {
-      "action": "http.post",
-      "actor": {
-        "id": "<owner>",
-        "name": "<owner>",
-        "type": "person",
-      },
-      "credential": {
-        "idHash": "<owner-hash>",
-        "kind": "cookie",
-      },
-      "error": "HTTP 404",
-      "operation": "execute",
-      "outcome": "failed",
-      "source": {
-        "surface": "app",
-      },
-      "summary": "POST /api/no-such-route (404)",
-      "target": {
-        "id": "/api/no-such-route",
-        "name": "POST /api/no-such-route",
-        "type": "route",
-      },
-    },
-  ],
+  "audit": [],
   "body": {
-    "code": "API_NOT_FOUND",
-    "error": "Not found",
+    "code": "AUTH_REQUIRED",
+    "error": "Unauthorized",
   },
   "complete": true,
   "headers": {
@@ -24603,7 +24167,7 @@ exports[`the chain matrix > login on, foreign host, none origin > good cookie, P
     "vary": "origin",
     "x-content-type-options": "nosniff",
   },
-  "status": 404,
+  "status": 401,
 }
 `;
 
@@ -29415,6 +28979,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29524,6 +29090,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29561,6 +29129,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29598,6 +29168,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29635,6 +29207,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29717,6 +29291,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -29795,6 +29371,8 @@ exports[`the chain matrix > login on, loopback host, loopback origin > good cook
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32404,6 +31982,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32513,6 +32093,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32550,6 +32132,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32587,6 +32171,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32624,6 +32210,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32706,6 +32294,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },
@@ -32784,6 +32374,8 @@ exports[`the chain matrix > login on, loopback host, none origin > good cookie, 
     "surface": "app",
     "user": {
       "credential": "cookie",
+      "route": "local",
+      "sessionId": "<session>",
       "userId": "<owner>",
     },
   },

@@ -65,6 +65,7 @@ export const notifications = sqliteTable(
         'heartbeat.credits-offer',
         'connector.destructive_pending',
         'connector.destructive_executed',
+        'web.new_device',
       ],
     }).notNull(),
 

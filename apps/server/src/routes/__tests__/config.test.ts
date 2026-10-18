@@ -1929,6 +1929,7 @@ describe('GET /api/config', () => {
           defaultEffort: null,
           defaultTrustStop: null,
           persistentSession: false,
+          maxWarmProcesses: null,
         },
       });
 

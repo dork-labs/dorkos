@@ -44,6 +44,13 @@ interface MockRouterState {
   matches: MockRouteMatch[];
 }
 
+// The web-access indicator rides the beacon but needs the live event feed,
+// which these tests do not provide.
+vi.mock('@/layers/features/web-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/web-access')>()),
+  RemoteSessionIndicator: () => null,
+}));
+
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: MockRouterState) => unknown }) =>

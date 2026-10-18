@@ -264,6 +264,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/remote-access/withdraw',
       'POST /api/session-relay/link',
       'POST /api/session-relay/pause',
+      'POST /api/session-relay/presence/end',
       'POST /api/session-relay/resume',
       'POST /api/sign-in-landings/:id/retry',
       'POST /api/tunnel/start',
@@ -364,6 +365,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'DELETE /api/mesh/denied/:encodedPath',
       'PATCH /api/agents/:id/permissions',
       'PATCH /api/agents/current',
+      // Pausing stays open (anyone may stop any agent); resuming one a person
+      // paused is that person's call, never an agent's.
+      'POST /api/agents/:id/resume',
       'PATCH /api/mesh/agents/:id',
       'POST /api/agents',
       'POST /api/agents/create',

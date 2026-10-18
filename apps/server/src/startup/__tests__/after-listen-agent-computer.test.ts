@@ -1,8 +1,9 @@
 /**
  * What `startAfterListen` leaves off on an agent computer (DOR-2940): the
- * tasks scheduler, the tunnel autostart, the DorkOS account link and the
- * credits lifecycle. A person's own computer starts each, so a stub that
- * never starts anything cannot pass.
+ * tasks scheduler, the tunnel autostart and the DorkOS account link. A
+ * person's own computer starts each, so a stub that never starts anything
+ * cannot pass. The credits lifecycle starts on both: credits are the only way
+ * an agent computer pays for models, minted with its own key (part 9).
  *
  * @vitest-environment node
  */
@@ -108,13 +109,13 @@ afterEach(() => {
 });
 
 describe('startAfterListen on an agent computer', () => {
-  it('starts no scheduler, tunnel, account link or credits', async () => {
+  it('starts no scheduler, tunnel or account link, and keeps a credits token', async () => {
     role.value = 'agent-computer';
     await startAfterListen(refs as never, built());
     expect(refs.schedulerService.start).not.toHaveBeenCalled();
     expect(started.autostartOwnTunnel).not.toHaveBeenCalled();
     expect(started.initOnStartup).not.toHaveBeenCalled();
-    expect(started.startCreditsLifecycle).not.toHaveBeenCalled();
+    expect(started.startCreditsLifecycle).toHaveBeenCalledTimes(1);
     // Its own agents' document work still runs.
     expect(started.docDelivery).toHaveBeenCalledTimes(1);
   });

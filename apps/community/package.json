@@ -59,6 +59,7 @@
     "@types/yauzl": "3.4.0",
     "@vitejs/plugin-react": "5.2.0",
     "axe-core": "^4.13.0",
+    "esbuild": "^0.28.2",
     "fast-check": "^4.10.2",
     "jsdom": "^29.1.1",
     "smtp-server": "3.19.16",

@@ -35,6 +35,7 @@ import {
   contractSuite,
   type ComposedServer,
   type ContractCase,
+  signInAt,
 } from './harness.js';
 
 /** No ngrok token reaches any server here, whatever this shell exports. */
@@ -904,13 +905,8 @@ describe('contract: remote access, reached by a name that is not this computer',
     // "off" in the old sense, yet another device must sign in as that owner.
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
-    cookie = {
-      cookie: signedIn.headers
-        .getSetCookie()
-        .map((value) => value.split(';')[0]!)
-        .join('; '),
-    };
+    // Signed in there, since a sign-in works only where it was made (DOR-2969).
+    cookie = await signInAt(server.baseUrl, PROXIED_HOST, OWNER);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
     await server?.close();

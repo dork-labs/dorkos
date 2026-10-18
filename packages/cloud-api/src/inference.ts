@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
+import {
+  IdSchema,
+  SecretValueSchema,
+  TimestampSchema,
+  UNRECOGNISED,
+  tolerantEnum,
+} from './primitives.js';
 
 /**
  * `POST /v1/inference/tokens` — mint a short-lived inference token.
@@ -207,10 +213,8 @@ export const InferenceTokenRevokeResponseSchema = z
  *
  * What either limit is, and how it is arrived at, is not published here.
  *
- * This is a published vocabulary rather than a field: no response shape in this
- * contract references it yet. Both sides can agree on the words before the row
- * that carries them exists, and a reader should expect the field it eventually
- * appears on to arrive in a later release.
+ * It is carried as `error.dorkos_reason` on {@link InferenceErrorBodySchema},
+ * the body the inference endpoint refuses a request with.
  */
 export const InferenceRefusalReasonSchema = z
   .enum([
@@ -230,3 +234,71 @@ export const InferenceRefusalReasonSchema = z
 
 /** Why an inference request was refused. */
 export type InferenceRefusalReason = z.infer<typeof InferenceRefusalReasonSchema>;
+
+/**
+ * The refusals that mean the account itself cannot run inference right now,
+ * so a caller holds off asking for a new token for a while. Every other reason
+ * means something else: wait and retry the same work (`rate_limited`,
+ * `concurrency_exceeded`), end that one turn (`turn_budget_exhausted`), get a
+ * new token (`token_revoked`, `token_expired`), or try another model.
+ */
+export const ACCOUNT_HOLD_REASONS: ReadonlySet<InferenceRefusalReason> = new Set([
+  'balance_exhausted',
+  'daily_limit_reached',
+  'entitlement_required',
+]);
+
+/**
+ * Whether a refusal's reason starts the account hold. Anything that is not
+ * one of {@link ACCOUNT_HOLD_REASONS}, a reason this release does not know, a
+ * missing reason or a malformed one included, does not: it passes through as
+ * busy. That is the fail-safe a hold depends on.
+ *
+ * @param reason - The `dorkos_reason` a refusal carried, as read.
+ */
+export function startsAccountHold(reason: unknown): boolean {
+  return typeof reason === 'string' && ACCOUNT_HOLD_REASONS.has(reason as InferenceRefusalReason);
+}
+
+/**
+ * The body the inference endpoint refuses a request with: the error envelope
+ * the model vendors' own clients already parse, with the service's own two
+ * fields inside `error`.
+ *
+ * - `error.dorkos_code` is the endpoint's own word for what happened. An open
+ *   string: a client never branches on it, and never starts a hold from it.
+ * - `error.dorkos_reason` is the published {@link InferenceRefusalReasonSchema}
+ *   word, when the endpoint has one. It may be missing, and one this release
+ *   does not know reads as unrecognised rather than failing the parse, so a
+ *   reason added later never breaks a computer. Only
+ *   {@link startsAccountHold} decides what it means.
+ * - `request_id` is null.
+ *
+ * A rate-limited refusal also carries a `retry-after` header: the number of
+ * seconds to wait, worked out from the limit's window.
+ */
+export const InferenceErrorBodySchema = z
+  .object({
+    type: z.literal('error'),
+    error: z.object({
+      type: z.string().describe('The vendor-style error type.'),
+      message: z.string().describe('What went wrong, for a log; never shown as a decision.'),
+      dorkos_code: z
+        .string()
+        .optional()
+        .describe('The endpoint`s own word for the refusal. Never branched on.'),
+      dorkos_reason: tolerantEnum(InferenceRefusalReasonSchema)
+        .optional()
+        .catch(UNRECOGNISED)
+        .describe(
+          'The published refusal reason, when there is one. Unknown reads as unrecognised.'
+        ),
+    }),
+    request_id: z.string().nullable().optional(),
+  })
+  .describe(
+    'The body an inference request is refused with: the vendor error envelope plus two fields of the service`s own.'
+  );
+
+/** The body an inference request is refused with. */
+export type InferenceErrorBody = z.infer<typeof InferenceErrorBodySchema>;

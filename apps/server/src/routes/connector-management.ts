@@ -1,5 +1,5 @@
 /** Owner review and exact permission-reconciliation HTTP boundary for connectors. */
-import type { IncomingHttpHeaders } from 'node:http';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import {
@@ -78,7 +78,9 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication' | 'pollAuthentication'
   >;
   /** Request verifier used when login-off middleware did not populate an API-key user. */
-  readonly verifyUser?: (req: { headers: IncomingHttpHeaders }) => Promise<RequestUser | null>;
+  readonly verifyUser?: (
+    req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>
+  ) => Promise<RequestUser | null>;
 }
 
 /** The 401 for a program that did not prove a verified API key. */
@@ -115,7 +117,8 @@ async function resolveReviewRequester(
   const { headers } = c.env.incoming;
   if (headers.authorization !== undefined) {
     const verifier = deps.verifyUser ?? verifyRequestAuth;
-    const user = existing?.credential === 'api-key' ? existing : await verifier({ headers });
+    const user =
+      existing?.credential === 'api-key' ? existing : await verifier(honoRequestFacts(c));
     if (user?.credential !== 'api-key' || !user.credentialId) return programKeyRequired(c);
     const owner = deps.resolveOwner(user);
     if (!owner) return c.json({ error: 'DorkOS could not verify who owns this account.' }, 401);

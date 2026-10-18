@@ -37,6 +37,7 @@
  */
 import { z } from 'zod';
 import {
+  RelayDisplayNameSchema,
   RelayPinnedHubKeySchema,
   RelaySignatureSchema,
   SESSION_RELAY_TRANSCRIPT_LABEL,
@@ -193,24 +194,11 @@ const Sha256Base64urlSchema = z
 const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
 
 /**
- * Invisible format characters (`\p{Cf}`, direction marks among them) and the
- * Unicode line and paragraph separators: a name carrying one could read as
- * another name, or break a line where the transcript does not.
- */
-const INVISIBLE = /[\p{Cf}\u2028\u2029]/u;
-
-/**
  * The name a computer gives itself, as its owner sees it on the hub. Never
  * trimmed, since both ends sign the exact text: a name with leading or
  * trailing whitespace is refused instead.
  */
-export const RelayLinkComputerNameSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(NO_CONTROL)
-  .refine((name) => name.trim() === name, 'no leading or trailing whitespace')
-  .refine((name) => !INVISIBLE.test(name), 'no invisible characters');
+export const RelayLinkComputerNameSchema = RelayDisplayNameSchema;
 
 /**
  * What a computer sends to `POST /api/hub/link`. `signature` is the
@@ -443,3 +431,46 @@ export const SessionRelayLinkRefusalSchema = z.enum([
 
 /** See {@link SessionRelayLinkRefusalSchema}. */
 export type SessionRelayLinkRefusal = z.infer<typeof SessionRelayLinkRefusalSchema>;
+
+// === Who is using this computer from the web ===
+
+/**
+ * One browser that used chat from the web here, as this computer remembers
+ * it: the hub's label for it and when it was first and last seen. Never its
+ * id, and never anything it said.
+ */
+export const SessionRelayDeviceSchema = z.object({
+  label: z.string(),
+  /** When this computer first saw it (ISO 8601). */
+  firstSeenAt: z.string(),
+  /** When it last asked this computer for something (ISO 8601). */
+  lastSeenAt: z.string(),
+});
+
+/** See {@link SessionRelayDeviceSchema}. */
+export type SessionRelayDevice = z.infer<typeof SessionRelayDeviceSchema>;
+
+/**
+ * `GET /api/session-relay/presence`, and the `session_relay_presence` event
+ * on the global stream: whether someone is using this computer from the web
+ * right now, which is the relay connected with at least one chat open on the
+ * hub.
+ */
+export const SessionRelayPresenceSchema = z.object({
+  active: z.boolean(),
+  /** When it became active (ISO 8601); absent while not active. */
+  since: z.string().optional(),
+  /** The browsers seen since then, most recent first; empty while not active. */
+  devices: z.array(SessionRelayDeviceSchema),
+});
+
+/** See {@link SessionRelayPresenceSchema}. */
+export type SessionRelayPresence = z.infer<typeof SessionRelayPresenceSchema>;
+
+/** `GET /api/session-relay/devices`: every browser seen here, most recent first. */
+export const SessionRelayDeviceListSchema = z.object({
+  devices: z.array(SessionRelayDeviceSchema),
+});
+
+/** See {@link SessionRelayDeviceListSchema}. */
+export type SessionRelayDeviceList = z.infer<typeof SessionRelayDeviceListSchema>;

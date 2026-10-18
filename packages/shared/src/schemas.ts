@@ -2490,6 +2490,13 @@ export const SystemStatusEventSchema = z
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 
 /**
+ * The `status` a turn carries while it waits for a free agent slot on this
+ * computer (DOR-3012). Unlike the SDK's own tokens it is shown: the chat's
+ * status strip reads its `message`, and a room says the agent is waiting.
+ */
+export const SLOT_WAIT_STATUS = 'waiting_for_slot';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its

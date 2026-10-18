@@ -93,6 +93,17 @@ describe('parseSpaceServerEnv', () => {
     });
   });
 
+  it('reads a checkout with Windows line endings the same way', () => {
+    // Purpose: fails if a CRLF checkout (Git for Windows' default) makes every line unreadable.
+    expect(parseSpaceServerEnv(`# where it lives\r\n\r\n${good.replaceAll('\n', '\r\n')}`)).toEqual(
+      {
+        spaceDir: 'a/b',
+        spaceSrcDir: 'a/b/src',
+        spaceWebDir: 'a/b/web',
+      }
+    );
+  });
+
   it.each([
     ['a missing key', 'SPACE_DIR=a/b\nSPACE_SRC_DIR=a/b/src\n'],
     ['an empty value', good.replace('SPACE_SRC_DIR=a/b/src', 'SPACE_SRC_DIR=')],

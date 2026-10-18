@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { session, workspaces, eq, type Db } from '@dorkos/db';
 import { fromNodeHeaders, type Auth } from '../../../../core/auth/index.js';
 import { findOwnerAccount } from '../../../../core/auth/accounts.js';
+import { sessionWorksOn } from '../../../../core/auth/sessions/session-route.js';
 import type { ConfigManager } from '../../../../core/config-manager.js';
 import {
   constructOwnedBrowserEngine,
@@ -264,11 +265,16 @@ export function createLiveBrowserAuthority(options: {
         })
       );
       const authenticated = await bounded(original, 2000);
+      // A session works only on the route it was made on (DOR-2969). This
+      // reads only a cookie, with no request to say which route it came in
+      // on, so it accepts only a session that works at this computer. Whoever
+      // lets another route reach it must pass that request's route here.
       if (
         signal.aborted ||
         enteredEpoch !== epoch ||
         !authenticated?.session?.id ||
-        !authenticated.user?.id
+        !authenticated.user?.id ||
+        !sessionWorksOn(authenticated.session, 'local')
       )
         throw new BrokerError('AUTHORITY_REFUSED');
       const credential = options.db

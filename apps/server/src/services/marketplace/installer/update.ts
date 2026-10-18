@@ -13,7 +13,8 @@ import {
 } from '../preview/disclosed-effects.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 import { DisclosureChangedError } from './errors.js';
-import type { InstallDispatcher } from './install-dispatch.js';
+import { refuseOffCloudAgents, type InstallDispatcher } from './install-dispatch.js';
+import { isAgentComputer } from '../../core/server-role/role-checks.js';
 import type { InstallerDeps } from './marketplace-installer.js';
 import { assertInstallable, type PackageStager } from './staging.js';
 
@@ -56,15 +57,20 @@ export class InstallUpdater {
     // half runs the same checks again; they pass the second time by definition.
     await assertInstallable(staged);
 
-    // An approved update: check what the new version declares against what
-    // the person approved, still before the uninstall, so a refusal leaves the
-    // package untouched rather than removed.
-    if (req.approvedDisclosure !== undefined) {
+    // Two checks on what the new version declares, still before the
+    // uninstall, so a refusal leaves the package untouched rather than
+    // removed: on an agent computer, whether it works on a cloud agent
+    // (DOR-2940); for an approved update, whether it is what was approved.
+    if (req.approvedDisclosure !== undefined || isAgentComputer()) {
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
       });
+      await refuseOffCloudAgents(staged, preview, req);
       const resolvedDisclosure = disclosedEffectsOf(preview);
-      if (!sameDisclosedEffects(req.approvedDisclosure, resolvedDisclosure)) {
+      if (
+        req.approvedDisclosure !== undefined &&
+        !sameDisclosedEffects(req.approvedDisclosure, resolvedDisclosure)
+      ) {
         throw new DisclosureChangedError(
           describeDisclosedEffects(req.approvedDisclosure),
           describeDisclosedEffects(resolvedDisclosure)

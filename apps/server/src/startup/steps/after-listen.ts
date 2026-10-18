@@ -258,12 +258,15 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   void recoverManagedUsageMirrors();
   refs.managedUsageMirrorRecoveryInterval = scheduleJittered(recoverManagedUsageMirrors, 60_000);
 
-  // A sealed agent computer (DOR-2940) stops here: no tunnel, no DorkOS
-  // account link and no credits, since its accounts will come from its hub.
-  // Retained document work still runs: it is this machine's own agents' work.
-  // It finds its hub through its own key, links with the code the hub minted
-  // for it, and dials the hub it pinned.
+  // A sealed agent computer (DOR-2940) stops here: no tunnel and no DorkOS
+  // account link, since its accounts will come from its hub. It keeps a live
+  // credits token, minted with its own instance key, because credits are the
+  // only way its OpenCode pays for models. Retained document work still runs:
+  // it is this machine's own agents' work. It finds its hub through its own
+  // key, links with the code the hub minted for it, and dials the hub it
+  // pinned.
   if (isAgentComputer()) {
+    startCreditsLifecycle();
     docDeliveryRunner.start();
     startAgentComputerLink();
     return;

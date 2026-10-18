@@ -13,6 +13,7 @@ import {
 } from '../../services/marketplace/preview/disclosed-effects.js';
 import type { ApprovedPackage } from '../../services/marketplace/consent/global-plugin-consent.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
+import { stagedCloudAgentSupport } from '../../services/marketplace/lib/cloud-agent-facts.js';
 import { PackageNotInstalledError } from '../../services/marketplace/flows/uninstall/support.js';
 import {
   installationUpdateName,
@@ -143,6 +144,8 @@ export function mountPackageActionRoutes(
         packagePath,
         disclosed: disclosedEffectsOf(preview),
         contentHash: await packageContentHash(packagePath),
+        // Whether it works on a cloud agent; the app shows it only where that applies.
+        cloudAgents: await stagedCloudAgentSupport(packagePath, manifest, preview),
       });
     } catch (err) {
       logger.error(`[Marketplace] Failed to preview package ${name}`, err);
