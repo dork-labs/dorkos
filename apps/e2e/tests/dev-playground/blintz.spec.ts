@@ -42,9 +42,10 @@ async function expectDocumentColors(page: Page, reading: Locator): Promise<void>
   }
   await expect(reading.locator('p code').first()).toHaveCSS('color', foreground);
   await expect(reading.locator('p code').first()).toHaveCSS('background-color', muted);
+  // Links take the app's link ink, not Blintz's primary (DOR-2982).
   await expect(reading.locator('a').first()).toHaveCSS(
     'color',
-    await hostColor(page, 'status-info-fg')
+    await hostColor(page, 'brand-text')
   );
   await expect(reading.locator('.milkdown-code-block').first()).toHaveCSS(
     'background-color',
