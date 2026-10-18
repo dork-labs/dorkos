@@ -23,16 +23,25 @@ function renderCell(value: string | number | boolean | null): string {
   return String(value);
 }
 
-/** `table` node — columnar data using the shared Table primitives; body rows cascade in. */
+/**
+ * `table` node — columnar data using the shared Table primitives; body rows
+ * cascade in. Whitespace first: no line under the header, which reads in the
+ * small muted style, and rows parted by the low-contrast `--border` only. The
+ * colour is named on purpose: inside the markdown editor Tailwind's default
+ * border colour is not applied, and a bare `border-b` draws in full ink.
+ */
 export function TableNode({ node }: { node: TableNodeData }) {
   const motionOn = useWidgetMotion();
   return (
     <div className="overflow-x-auto">
       <Table>
-        <TableHeader>
-          <TableRow>
+        <TableHeader className="[&_tr]:border-b-0">
+          <TableRow className="hover:bg-transparent">
             {node.columns.map((col) => (
-              <TableHead key={col.key} className={cn(col.align && ALIGN_CLASS[col.align])}>
+              <TableHead
+                key={col.key}
+                className={cn('h-8 text-xs', col.align && ALIGN_CLASS[col.align])}
+              >
                 {col.label}
               </TableHead>
             ))}
@@ -44,7 +53,11 @@ export function TableNode({ node }: { node: TableNodeData }) {
           animate={motionOn ? 'visible' : false}
         >
           {node.rows.map((row, i) => (
-            <MotionTableRow key={i} variants={motionOn ? widgetEntrance : undefined}>
+            <MotionTableRow
+              key={i}
+              className="border-border"
+              variants={motionOn ? widgetEntrance : undefined}
+            >
               {node.columns.map((col) => (
                 <TableCell
                   key={col.key}

@@ -9,7 +9,7 @@ import { WidgetActionButton } from './ActionNodes';
 
 type ListNodeData = Extract<WidgetNode, { type: 'list' }>;
 
-/** `list` node — items cascade in and lift on hover; optional icon, badge, and actions. */
+/** `list` node — items cascade in; optional icon, badge, and actions. */
 export function ListNode({ node }: { node: ListNodeData }) {
   const motionOn = useWidgetMotion();
   const path = useWidgetNodePath();
@@ -25,7 +25,8 @@ export function ListNode({ node }: { node: ListNodeData }) {
         return (
           <motion.li
             key={i}
-            className="hover:bg-muted/40 -mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors first:pt-0 last:pb-0"
+            // Flush with the content edge, so the dividers line up with the text.
+            className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
             variants={motionOn ? widgetEntrance : undefined}
           >
             {item.image && (
