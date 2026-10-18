@@ -63,7 +63,7 @@ import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
 import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
+import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
@@ -97,6 +97,17 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createTeammateTierHook } from '../teammate-tier-hook.js';
+import {
+  firstTimeToldAbout,
+  folderAllowsWaitingStatus,
+  mergeFolderAllows,
+  resolveFolderAllows,
+} from '../folder-settings/apply-folder-allows.js';
+import {
+  askForFolderAllows,
+  folderAllowApprovalGateway,
+  mayAskAboutFolderAllows,
+} from '../folder-settings/folder-allow-approval.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -767,6 +778,54 @@ export async function resolveLaunch(args: {
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
     sdkOptions.settings = { ...base, env: creditsSettings };
+  }
+  // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
+  // folder it has not been told to trust. Only an approved list rides, only
+  // into `settings.permissions.allow` (never `allowedTools`, DOR-519), only in
+  // the exact registered home, and never on a teammate's turn.
+  const folderAllows = await resolveFolderAllows({
+    teammate,
+    agent: meshAgent
+      ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
+      : undefined,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+  });
+  if (folderAllows.kind === 'applied') {
+    mergeFolderAllows(sdkOptions, folderAllows.rules);
+    logger.info('[FolderAllows] Applying the agent folder allow list', {
+      agentId: meshAgentId,
+      hash: folderAllows.hash,
+      rules: folderAllows.rules.length,
+      dropped: folderAllows.dropped,
+    });
+  } else if (folderAllows.kind !== 'none') {
+    logger.info('[FolderAllows] Not applying an unapproved agent folder allow list', {
+      agentId: meshAgentId,
+      hash: folderAllows.hash,
+      state: folderAllows.kind,
+    });
+    if (folderAllows.kind === 'waiting') {
+      const gateway = folderAllowApprovalGateway();
+      if (gateway && mayAskAboutFolderAllows(folderAllows.request)) {
+        void askForFolderAllows(gateway, folderAllows.request).catch((err: unknown) => {
+          logger.warn('[FolderAllows] Could not ask about an agent folder allow list', {
+            agentId: meshAgentId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+      // Never ask refuses what the list would have allowed; say why (DOR-3042).
+      if (
+        effectivePermissionMode === NEVER_ASK_MODE_ID &&
+        firstTimeToldAbout(session, folderAllows.request)
+      ) {
+        statusEvents.push({
+          type: 'system_status',
+          data: { message: folderAllowsWaitingStatus(folderAllows.request.agentName) },
+        });
+      }
+    }
   }
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
