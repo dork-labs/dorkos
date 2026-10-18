@@ -30,7 +30,8 @@ function preflight(overrides: Record<string, unknown> = {}): Reply {
       communityName: 'Acme Ops',
       state: 'claimable',
       claimableAfter: '2026-10-04T10:00:00.000Z',
-      claimExpiresAt: '2026-10-18T10:00:00.000Z',
+      // Far ahead: the component checks this against the real clock.
+      claimExpiresAt: '2099-10-18T10:00:00.000Z',
       requiresSingleSignOn: false,
       ...overrides,
     },
