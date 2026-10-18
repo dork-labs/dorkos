@@ -149,3 +149,26 @@ function loginIsOn(): boolean {
     return true;
   }
 }
+
+/**
+ * Who made a `post_to_room` call, as `postFromTool` reads it to vouch for the
+ * post (spec `trusted-by-default-flip` §4, ADR `261018-030117`): the session the
+ * surface verified, and the agent's home when the author is that verified agent.
+ * Never from an argument.
+ *
+ * @param context - What the registry resolved about this call.
+ * @param author - The author {@link callerAuthor} resolved for it.
+ */
+export function toolPostCaller(
+  context: CapabilityHandlerContext,
+  author: AuthorRecord
+): { callerSessionId?: string; callerAgentPath?: string } {
+  const agentPath =
+    author.kind === 'agent' && context.identity && !context.identity.inactive
+      ? context.identity.agentPath
+      : undefined;
+  return {
+    ...(context.sessionId !== undefined ? { callerSessionId: context.sessionId } : {}),
+    ...(agentPath !== undefined ? { callerAgentPath: agentPath } : {}),
+  };
+}

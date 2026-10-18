@@ -7722,6 +7722,16 @@
       "extractedFrom": null,
       "specSlug": "conversation-model",
       "amends": ["261006-235240", "261009-171114"]
+    },
+    {
+      "id": "261018-030117",
+      "slug": "on-trusted-our-agents-keep-their-power-between-each-other",
+      "title": "On Trusted, our own agents keep their power when they talk to each other",
+      "status": "proposed",
+      "created": "2026-10-18",
+      "extractedFrom": null,
+      "specSlug": "trusted-by-default-flip",
+      "amends": ["261004-235818", "261009-171114"]
     }
   ]
 }

@@ -152,6 +152,11 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
     steerInto: (id, content, messageId) => steerInto(id, content, messageId),
     canonicalId: async (id) => aliases.get(id) ?? id,
     turnLevelOf: (id) => levels.get(id),
+    // Careful unless a test says otherwise: these tests are about the bound a
+    // sender carries; Trusted's carve-out for our own agents has its own block.
+    agentWordsKeepPower: () => false,
+    agentReadingOutsider: () => false,
+    sessionReadOutsider: () => false,
     emitActivity,
     onLifecycle: (listener) => {
       lifecycle = listener;
@@ -1109,5 +1114,100 @@ describe('beginStart / settleStart', () => {
     const begun = await service.beginStart(ANA, 'new-chat', 'Go.', 'q-start');
     service.settleStart(begun.id, null);
     expect(store.get(begun.id)).toBeUndefined();
+  });
+});
+
+// ADR 261018-030117: on Trusted, a message one of our agents sent from a turn
+// that read no outsider's words carries no bound, so the chat it wakes (a
+// queued message, a report back, a spin-off's first turn) runs at its own level.
+describe('on Trusted, a message from one of our own agents', () => {
+  let trusted: ChatMessageService;
+  let readingOutsider: boolean;
+  let sessionsThatReadOutsider: Set<string>;
+
+  beforeEach(() => {
+    readingOutsider = false;
+    sessionsThatReadOutsider = new Set();
+    trusted = build({
+      agentWordsKeepPower: () => true,
+      agentReadingOutsider: () => readingOutsider,
+      sessionReadOutsider: (id) => sessionsThatReadOutsider.has(id),
+    });
+  });
+
+  it('still bounds a chat that read a stranger’s words earlier, though its latest turn is clean', async () => {
+    // Background work the marked turn started still calls as the chat.
+    chat('chat-b');
+    levels.set(ANA.sessionId, LOOSE);
+    sessionsThatReadOutsider.add(ANA.sessionId);
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    expect(trusted.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual(LOOSE);
+  });
+
+  it('launches the queued row with no bound from the sender', async () => {
+    chat('chat-b');
+    levels.set(ANA.sessionId, TIGHT);
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    expect(trusted.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeNull();
+  });
+
+  it('launches with no bound when the sender’s level is unknown and it reads no stranger', async () => {
+    chat('chat-b');
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    expect(trusted.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeNull();
+  });
+
+  it('launches a later batched turn with no bound either', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    levels.set(ANA.sessionId, MIDDLE);
+    await trusted.send(ANA, { to: 'chat-b', message: 'first words' });
+    await trusted.send(ANA, { to: 'chat-b', message: 'second words' });
+    const tail = queue.list('chat-b').at(-1)!;
+    expect(store.listByQueueMessage(tail.id)).toHaveLength(2);
+    expect(trusted.ceilingForQueuedMessage(tail.id)).toBeNull();
+  });
+
+  it('starts a spin-off’s first turn with no bound from the chat that started it', async () => {
+    levels.set(ANA.sessionId, TIGHT);
+    await trusted.beginStart(ANA, 'new-chat', 'Build the thing.', 'q-start-trusted');
+    expect(trusted.ceilingForQueuedMessage('q-start-trusted')).toBeNull();
+  });
+
+  it('still bounds a sender whose turn read a stranger’s words', async () => {
+    chat('chat-b');
+    const marked: TurnPermissionLevel = { ...LOOSE, outsider: true };
+    levels.set(ANA.sessionId, marked);
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    expect(trusted.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual(marked);
+  });
+
+  it('still bounds an unknown-level sender while its agent reads a stranger’s words', async () => {
+    chat('chat-b');
+    readingOutsider = true;
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    expect(trusted.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBe(
+      'runtime-default'
+    );
+  });
+
+  it('keeps only the unvouched bound in a batch that mixes both', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    levels.set(ANA.sessionId, MIDDLE);
+    await trusted.send(ANA, { to: 'chat-b', message: 'vouched' });
+    const marked: TurnPermissionLevel = { ...TIGHT, outsider: true };
+    levels.set(ANA.sessionId, marked);
+    await trusted.send(ANA, { to: 'chat-b', message: 'read a stranger' });
+    const tail = queue.list('chat-b').at(-1)!;
+    expect(trusted.ceilingForQueuedMessage(tail.id)).toEqual(marked);
+  });
+
+  it('holds the sender’s level again if the install moves to Careful before launch', async () => {
+    chat('chat-b');
+    levels.set(ANA.sessionId, MIDDLE);
+    await trusted.send(ANA, { to: 'chat-b', message: 'hi' });
+    const careful = build({ agentWordsKeepPower: () => false });
+    expect(careful.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual(MIDDLE);
   });
 });

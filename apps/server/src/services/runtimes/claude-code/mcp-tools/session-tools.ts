@@ -92,6 +92,7 @@ import {
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
+import { startRaisesNoCard } from './session-start-card.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -499,7 +500,8 @@ export function createSessionStartHandler(
       args.permissionMode,
       caller.chat,
       runtimeType,
-      await chatlessCallerStop(caller.chat, runtime, agentPath)
+      await chatlessCallerStop(caller.chat, runtime, agentPath),
+      await startRaisesNoCard(agentPath, caller.chat?.sessionId)
     );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
@@ -700,7 +702,8 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session runs at your own permission level unless you ask for a lower one; a ' +
-        'higher one is refused, and Full autonomy is granted only when named in permissionMode. ' +
+        'higher one is refused. When starting it needs an approval, Full autonomy is granted only ' +
+        'when named in permissionMode. ' +
         'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
         'that link, never the id.',

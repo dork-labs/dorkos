@@ -58,6 +58,15 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
+/** Posts one of this install's agents wrote in a turn that read no outsider's words. */
+const vouchedEntries = new Map<string, true>();
+/**
+ * Conversations that ran a turn which read an outsider's words, in this
+ * process. Sticky on purpose: background work such a turn started (a helper, a
+ * monitor, a Codex terminal) keeps running, and calling as the session, after a
+ * later clean turn overwrites the session's level.
+ */
+const outsiderSessions = new Map<string, true>();
 /** Where each marked turn stood, so a turn its agent starts later is counted against the same agent. */
 const outsiderPlaces = new Map<string, { cwd?: string; forAgent?: string }>();
 /** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
@@ -65,7 +74,7 @@ const turnSerials = new Map<string, number>();
 let nextTurnSerial = 0;
 
 /** Set a key as the newest, dropping the oldest past the bound. */
-function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
+function remember<T>(map: Map<string, T>, key: string, level: T) {
   map.delete(key);
   map.set(key, level);
   if (map.size > TURN_LEVEL_MEMORY) {
@@ -146,15 +155,79 @@ export function outsiderBoundOf(
 }
 
 /**
+ * Whether DorkOS can vouch for what one of this install's agents sends from
+ * these sessions: none of their latest turns read an outsider's words (ADR
+ * `261018-030117`). Read as the post or message is written, like
+ * {@link postLevelFor}, and from the same verified sessions.
+ *
+ * A level answers when every session has one: vouched unless one is marked.
+ * When any is unknown (an id this process has no turn under), the agent
+ * answers instead, as {@link outsiderBoundOf} reads it: vouched only while none
+ * of its turns that read an outsider's words is running. Never vouched: a
+ * caller with no session at all, a marked level, or a conversation that ran a
+ * marked turn in this process ({@link sessionReadOutsider}).
+ *
+ * It decides no power alone. On Trusted, a vouched agent's post or message does
+ * not lower the turn it starts (`agentWordsKeepPower`); on Careful it changes
+ * nothing.
+ *
+ * @param sessionIds - The sessions that made the call, as the surface verified them.
+ * @param agentPath - The sending agent's home, from its verified identity.
+ */
+export function vouchesForAgent(
+  sessionIds: readonly (string | null | undefined)[],
+  agentPath: string | undefined
+): boolean {
+  const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
+  // No session, no vouch: a caller the surface could not tie to a turn (the
+  // external `/mcp` server, a process the agent left running) may be doing the
+  // bidding of a turn that ended long ago.
+  if (named.length === 0) return false;
+  if (named.some(sessionReadOutsider)) return false;
+  const levels = named.map((id) => turnLevels.get(id));
+  if (levels.some((level) => level?.outsider === true)) return false;
+  if (levels.every((level) => level !== undefined)) return true;
+  return agentPath !== undefined && agentPath !== '' && !agentIsReadingOutsider(agentPath);
+}
+
+/**
+ * Whether a conversation ran a turn in this process that read an outsider's
+ * words, under this id or its first one. Once true it stays true: background
+ * work that turn started can still call as the session after a clean turn.
+ *
+ * @param sessionId - The conversation, as the surface verified it.
+ */
+export function sessionReadOutsider(sessionId: string): boolean {
+  return outsiderSessions.has(sessionId) || outsiderSessions.has(primaryOf(sessionId));
+}
+
+/**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
  * cannot change it.
  *
  * @param entryId - The post's id.
  * @param level - The level from {@link postLevelFor}; `undefined` keeps nothing.
+ * @param vouched - Whether {@link vouchesForAgent} vouched for its author.
  */
-export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | undefined): void {
+export function noteEntryLevel(
+  entryId: string,
+  level: TurnPermissionLevel | undefined,
+  vouched = false
+): void {
   if (level !== undefined) remember(entryLevels, entryId, level);
+  // A marked level is never vouched, whatever the caller passed.
+  if (vouched && level?.outsider !== true) remember(vouchedEntries, entryId, true as const);
+}
+
+/**
+ * Whether a room post was vouched for as it was written ({@link noteEntryLevel}).
+ * False after a restart: memory only, like the levels, so it fails closed.
+ *
+ * @param entryId - The post's id.
+ */
+export function entryIsVouched(entryId: string): boolean {
+  return vouchedEntries.has(entryId);
 }
 
 /**
@@ -167,6 +240,7 @@ export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | und
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  if (outsiderSessions.has(from) && from !== to) remember(outsiderSessions, to, true as const);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
 }
@@ -290,6 +364,9 @@ export function recordTurnLevels(
           }
           const events = target.sendMessage(sessionId, content, opts);
           if (!level.outsider) return events;
+          for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+            remember(outsiderSessions, id, true as const);
+          }
           // A caller that cannot name this session can still name its agent.
           const place = placeOf(target, sessionId, opts);
           outsiderPlaces.delete(sessionId);

@@ -95,8 +95,12 @@ vi.mock('../../../../session/message-dispatcher.js', () => ({
   })),
   onDispatchLifecycle: vi.fn(() => () => undefined),
 }));
+// Whether the start raised an approval card: "it may" unless a test says no card
+// showed (ADR 261018-030117; the decision itself is `session-start-card.test.ts`).
+vi.mock('../session-start-card.js', () => ({ startRaisesNoCard: vi.fn(async () => false) }));
 
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
+import { startRaisesNoCard } from '../session-start-card.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import {
@@ -1062,6 +1066,18 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
       permissionMode: 'bypassPermissions',
     });
     expect(payloadOf(named).permission).toMatchObject({ mode: 'bypassPermissions' });
+  });
+
+  it('passes Full autonomy on unnamed when the start raised no approval card', async () => {
+    vi.mocked(startRaisesNoCard).mockResolvedValueOnce(true);
+    const result = await fromChatAt('bypassPermissions')(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(savedMode()).toBe('bypassPermissions');
+    expect(startRaisesNoCard).toHaveBeenCalledWith(AGENT_HOME, 'parent-chat');
+    expect(payloadOf(result).permission).toMatchObject({
+      mode: 'bypassPermissions',
+      sameAsCaller: true,
+    });
   });
 
   it('refuses a mode above the calling chat, naming both levels, and writes nothing', async () => {

@@ -460,6 +460,7 @@ export class RoomService {
       replyTo?: string;
       attachmentIds?: readonly string[];
       callerSessionId?: string;
+      callerAgentPath?: string;
     }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
