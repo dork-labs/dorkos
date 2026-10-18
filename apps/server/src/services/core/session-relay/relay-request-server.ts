@@ -82,13 +82,15 @@ import { RelayStreamSink } from './relay-stream-sink.js';
 /**
  * What this computer serves over the relay. `interaction.approval` and
  * `interaction.question` are left out on purpose: an approval or an answer
- * from the web needs a passkey proof (spec B4).
+ * from the web needs a passkey proof (spec B4). `request.device` says this
+ * computer reads the browser a request names (`relay-devices.ts`).
  */
 export const RELAY_SERVED_FEATURES: readonly SessionRelayFeature[] = [
   'chats.list',
   'session.stream',
   'session.send',
   'session.interrupt',
+  'request.device',
 ];
 
 /** The few things the relay asks of a chat's runtime. */

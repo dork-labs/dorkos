@@ -42,6 +42,7 @@ vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
 }));
 
 import request from '@dorkos/test-utils/supertest';
+import type { SessionRelayPresence } from '@dorkos/shared/session-relay-link';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
@@ -84,6 +85,18 @@ const PIN: RelayPin = {
   paused: false,
 };
 
+const PRESENCE: SessionRelayPresence = {
+  active: true,
+  since: '2026-10-17T10:00:00.000Z',
+  devices: [
+    {
+      label: 'Safari on iPhone',
+      firstSeenAt: '2026-10-17T09:00:00.000Z',
+      lastSeenAt: '2026-10-17T10:00:05.000Z',
+    },
+  ],
+};
+
 const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
 const OWNER_KEY: RequestUser = { userId: 'user_owner', credential: 'api-key' };
 
@@ -110,6 +123,8 @@ function makeDeps(overrides: Partial<SessionRelayRouteDeps> = {}) {
           ? ('wrong' as const)
           : ('required' as const)
     ),
+    presence: () => PRESENCE,
+    devices: () => PRESENCE.devices,
     ...overrides,
   } as typeof deps;
 }
@@ -145,6 +160,7 @@ const WRITES: Array<
   ['POST /pause', (a) => a.post('/api/session-relay/pause')],
   ['POST /resume', (a) => a.post('/api/session-relay/resume').send({ password: PASSWORD })],
   ['DELETE /link', (a) => a.delete('/api/session-relay/link')],
+  ['POST /presence/end', (a) => a.post('/api/session-relay/presence/end')],
 ];
 
 beforeEach(() => {
@@ -191,6 +207,54 @@ describe('GET /api/session-relay/status', () => {
       '/api/session-relay/status'
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe('who is using this computer from the web', () => {
+  it('answers the presence and the devices seen, to another signed-in device too', async () => {
+    const presence = await request(app({ user: OWNER_COOKIE, ingress: 'own-tunnel' })).get(
+      '/api/session-relay/presence'
+    );
+    expect(presence.status).toBe(200);
+    expect(presence.body).toEqual(PRESENCE);
+    const devices = await request(app()).get('/api/session-relay/devices');
+    expect(devices.body).toEqual({ devices: PRESENCE.devices });
+  });
+
+  it('refuses an agent: the browsers using this computer are the owner’s to see', async () => {
+    for (const path of ['/api/session-relay/presence', '/api/session-relay/devices']) {
+      const res = await request(app()).get(path).set('x-dorkos-agent', 'agent-token');
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(res.body)).not.toContain('Safari on iPhone');
+    }
+  });
+
+  it('is the /api 404 with the experiment off, or on a hub', async () => {
+    deps = makeDeps({ enabled: () => false });
+    expect((await request(app()).get('/api/session-relay/presence')).status).toBe(404);
+    deps = makeDeps({ isHub: () => true });
+    expect((await request(app()).get('/api/session-relay/devices')).status).toBe(404);
+  });
+
+  it('ends a remote session now: closes the relay, pauses the link, and records it', async () => {
+    await writeRelayPin(PIN, home);
+    deps = makeDeps({ presence: () => ({ active: false, devices: [] }) });
+    const res = await request(app()).post('/api/session-relay/presence/end');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ active: false, devices: [] });
+    expect(deps.closeRelay).toHaveBeenCalledTimes(1);
+    expect(readRelayPin(home)?.paused).toBe(true);
+    // Lowering access: no password asked.
+    expect(deps.checkPassword).not.toHaveBeenCalled();
+    expect(vi.mocked(recordAudit).mock.calls.map(([input]) => input.action)).toContain(
+      'session-relay.presence.end'
+    );
+  });
+
+  it('says so when this computer is not linked', async () => {
+    const res = await request(app()).post('/api/session-relay/presence/end');
+    expect(res.status).toBe(409);
+    expect(deps.closeRelay).not.toHaveBeenCalled();
   });
 });
 

@@ -25,6 +25,9 @@ vi.mock('../ui/RemoteAccessPanel', () => ({
   RemoteAccessPanel: () => <div data-testid="beacon-panel" />,
 }));
 
+// The chat-from-the-web mark drawn beside the globe has its own tests.
+vi.mock('@/layers/features/web-access', () => ({ RemoteSessionIndicator: () => null }));
+
 import { RemoteAccessBeacon } from '../ui/RemoteAccessBeacon';
 
 const baseTunnel = {

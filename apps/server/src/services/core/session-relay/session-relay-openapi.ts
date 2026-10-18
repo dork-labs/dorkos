@@ -8,8 +8,10 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
+  SessionRelayDeviceListSchema,
   SessionRelayLevelBodySchema,
   SessionRelayLinkBodySchema,
+  SessionRelayPresenceSchema,
   SessionRelayResumeBodySchema,
   SessionRelayStatusSchema,
 } from '@dorkos/shared/session-relay-link';
@@ -24,12 +26,17 @@ const json = (schema: z.ZodType, description: string) => ({
 });
 
 const STATUS = json(SessionRelayStatusSchema, 'Where the link stands now');
+const PRESENCE = json(
+  SessionRelayPresenceSchema,
+  'Whether someone is using this computer from the web'
+);
 const OFF = json(ErrorSchema, 'On a hub, or while the `sessionRelay.enabled` experiment is off');
 const NOT_HERE = json(
   ErrorSchema,
   'Not the owner at this computer using the app: the relay, another device, an agent, an ' +
     'approval token, an API key or any other bearer'
 );
+const AGENT = json(ErrorSchema, 'A caller presenting agent identity');
 const NOT_LINKED = json(ErrorSchema, 'This computer is not linked');
 const PASSWORD = json(
   ErrorSchema,
@@ -46,7 +53,8 @@ function registerWrite(
   summary: string,
   description: string,
   extra: Record<number, ReturnType<typeof json>> = {},
-  body?: z.ZodType
+  body?: z.ZodType,
+  answer: ReturnType<typeof json> = STATUS
 ): void {
   registry.registerPath({
     method,
@@ -55,7 +63,7 @@ function registerWrite(
     summary,
     description,
     ...(body ? { request: { body: { content: { 'application/json': { schema: body } } } } } : {}),
-    responses: { 200: STATUS, 403: NOT_HERE, 404: OFF, ...extra },
+    responses: { 200: answer, 403: NOT_HERE, 404: OFF, ...extra },
   });
 }
 
@@ -75,6 +83,45 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
       'is connected now. Never the relay secret.',
     responses: { 200: STATUS, 404: OFF },
   });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/session-relay/presence',
+    tags: TAGS,
+    summary: 'Whether someone is using this computer from the web',
+    description:
+      'Active while the relay is connected and the hub has at least one of its chats open, ' +
+      'with when that began and the browsers seen since. Pushed as `session_relay_presence` ' +
+      'on `GET /api/events` whenever it changes.',
+    responses: { 200: PRESENCE, 403: AGENT, 404: OFF },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/session-relay/devices',
+    tags: TAGS,
+    summary: 'Browsers that used chat from the web here',
+    description:
+      "Every browser the hub named on a relayed request, by the hub's label, with when it was " +
+      'first and last seen. Most recent first; at most 50.',
+    responses: {
+      200: json(SessionRelayDeviceListSchema, 'The browsers seen here'),
+      403: AGENT,
+      404: OFF,
+    },
+  });
+
+  registerWrite(
+    registry,
+    'post',
+    '/presence/end',
+    'End use from the web now',
+    'Closes the live connection and pauses the link, as Pause does. Resuming needs the ' +
+      "owner's password.",
+    { 409: NOT_LINKED },
+    undefined,
+    PRESENCE
+  );
 
   registerWrite(
     registry,

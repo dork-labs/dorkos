@@ -12,6 +12,7 @@
  */
 import type { MeshCore } from '@dorkos/mesh';
 import type { Session } from '@dorkos/shared/types';
+import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import { boundaryRefusal } from '../../../lib/route-utils.js';
 import { parseResumeCursor } from '../../../lib/stream-cursor.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
@@ -43,6 +44,11 @@ export interface SessionRelayWiring {
 
 /** The name the audit log gives the owner when no trail is set up. */
 const OWNER_FALLBACK = { accountId: 'owner', kind: 'person', name: 'Owner' } as const;
+
+/** The owner as the audit log names them: every relayed action is recorded as theirs. */
+export function relayOwnerActor(): AuditActor {
+  return auditTrail()?.accounts.owner() ?? { ...OWNER_FALLBACK };
+}
 
 /**
  * The request server's dependencies, reading the wiring on every call.
@@ -162,6 +168,6 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
     recordAudit: (input) => {
       recordAudit(input);
     },
-    owner: () => auditTrail()?.accounts.owner() ?? { ...OWNER_FALLBACK },
+    owner: relayOwnerActor,
   };
 }
