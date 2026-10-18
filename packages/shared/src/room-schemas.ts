@@ -670,7 +670,7 @@ export function oneToOneDmAgentRef(room: RoomSummary): string | null {
   const agents = roster.filter((author) => author.kind === 'agent');
   const people = roster.filter((author) => author.kind === 'human');
   if (agents.length !== 1 || people.length !== 1) return null;
-  return agents[0].agentRef ?? null;
+  return agents[0]?.agentRef ?? null;
 }
 
 // === Membership ===

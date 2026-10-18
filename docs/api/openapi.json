@@ -29813,7 +29813,7 @@
           "Rooms"
         ],
         "summary": "Open an agent's Direct chat",
-        "description": "An agent's Direct chat is its standing one-to-one with the person who owns DorkOS. You plus one agent always opens the 1:1 view, so this names the session to open for one agent, made the first time anything needs it. Name the agent by its directory, or name a direct message that holds only the person and one agent. The direct message underneath keeps the pings and older messages, and is never shown as a room. Safe to call again: the same agent always gets the same chat, until its direct message gains another member.",
+        "description": "An agent's Direct chat is its standing one-to-one with the person who owns DorkOS. You plus one agent always opens the 1:1 view, so this names the chat to open for one agent, made the first time anything needs it. Name the agent by its directory, or name a direct message that holds only the person and one agent. The direct message underneath keeps the pings and older messages, and is never shown as a room. Safe to call again: the same agent always gets the same chat, until its direct message gains another member.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -29882,8 +29882,8 @@
         "tags": [
           "Rooms"
         ],
-        "summary": "The Direct chat a session is",
-        "description": "Whether this session is an agent's Direct chat, and if so the direct message underneath it, so the 1:1 view can show the messages that reached it outside the session. Owner only.",
+        "summary": "Whether a chat is an agent’s Direct chat",
+        "description": "Whether this chat is an agent's Direct chat, and if so the direct message underneath it, so the 1:1 view can show the messages that reached it from elsewhere. Owner only.",
         "parameters": [
           {
             "schema": {
@@ -29916,7 +29916,7 @@
             }
           },
           "404": {
-            "description": "This session is not a Direct chat",
+            "description": "This chat is not a Direct chat",
             "content": {
               "application/json": {
                 "schema": {
