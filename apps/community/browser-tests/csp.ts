@@ -3,7 +3,7 @@
  * (DOR-2957): the server adds it to every page however a spec serves it. This `test` fails any
  * test during which a page broke that policy, so a spec that passes proves its flow works under
  * it. Every spec imports `test` and `expect` from here, never from `@playwright/test`
- * (`src/__tests__/browser-tests-csp.test.ts` checks).
+ * (`apps/server/src/services/spaces/__tests__/browser-tests-csp.test.ts` checks).
  *
  * It watches every browser context, the default one and those a spec makes itself with
  * `browser.newContext()` or `browser.newPage()`, through two signals: the page's own

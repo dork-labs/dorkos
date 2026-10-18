@@ -850,7 +850,12 @@ test('a host moves a community in from its owner’s export and watches it throu
     await expect(chooser).toBeFocused();
     await expect.poll(shadow).not.toBe(resting);
     await chooser.setInputFiles(
-      fileURLToPath(new URL('../src/__tests__/fixtures/owner-export-v1.zip', import.meta.url))
+      fileURLToPath(
+        new URL(
+          '../../server/src/services/spaces/__tests__/fixtures/owner-export-v1.zip',
+          import.meta.url
+        )
+      )
     );
     await expect(section).toContainText('owner-export-v1.zip will be sent when the import starts.');
     await section.getByRole('button', { name: 'Start import' }).click();
