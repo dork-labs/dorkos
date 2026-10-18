@@ -7416,3 +7416,32 @@ export const KeepAwakeStatusSchema = z
 
 /** Whether DorkOS is keeping this computer awake right now, and for what. */
 export type KeepAwakeStatus = z.infer<typeof KeepAwakeStatusSchema>;
+
+// === Session stream health (a window that missed a turn) ===
+
+/**
+ * What an app window reports when the server says a turn ran on a chat it has
+ * open, and its live stream delivered none of it.
+ *
+ * - `silent-turn`: the server says a turn is running, and the window's stream
+ *   has shown no sign of it for a while.
+ * - `unrendered-turn`: a turn started and finished on the server, and the
+ *   window's stream never delivered any of it.
+ *
+ * The window reconnects its stream either way. The report is what puts the
+ * miss in the server log, where a person can find it.
+ */
+export const StreamHealthReportSchema = z
+  .object({
+    kind: z.enum(['silent-turn', 'unrendered-turn']),
+    /** How long the window waited without hearing the turn, in milliseconds. */
+    silentMs: z.number().int().nonnegative(),
+    /** The highest event sequence the window had applied. */
+    lastSeq: z.number().int().nonnegative(),
+    /** The window's stream connection state when it noticed. */
+    connectionState: z.enum(['connecting', 'connected', 'reconnecting', 'disconnected']),
+  })
+  .openapi('StreamHealthReport');
+
+/** Inferred type for {@link StreamHealthReportSchema}. */
+export type StreamHealthReport = z.infer<typeof StreamHealthReportSchema>;

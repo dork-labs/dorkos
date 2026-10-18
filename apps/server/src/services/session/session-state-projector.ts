@@ -2128,8 +2128,9 @@ export class SessionStateProjector {
    * (DOR-782).
    *
    * For a projector that has been taken OFF the registry while subscribers are
-   * still attached — today only the {@link rekeyProjector} collision, where an
-   * active turn's instance displaces a pre-existing one under the canonical id.
+   * still attached: the {@link rekeyProjector} collision, where an active
+   * turn's instance displaces a pre-existing one under the canonical id, and
+   * every {@link disposeProjector}.
    * A displaced instance can never be ingested into again (nothing can resolve
    * it), so its parked subscribers would wait on an event that cannot come:
    * their `/events` connections stay open receiving nothing but keepalives, and
@@ -2137,8 +2138,8 @@ export class SessionStateProjector {
    * and the client's normal reconnect lands on the live projector and
    * re-snapshots.
    *
-   * Not the same as {@link disposeProjector}, which only drops the registry
-   * entry. Idempotent.
+   * {@link disposeProjector} calls this and then drops the registry entry.
+   * Idempotent.
    *
    * @returns How many live subscriptions this ended (0 when there were none).
    */
@@ -2516,6 +2517,14 @@ export function streamGenerationOf(projector: SessionStateProjector | undefined)
  * Drop a session's projector (e.g. on session eviction). A later
  * {@link getOrCreateProjector} for the same id yields a fresh instance.
  *
+ * The dropped instance is {@link SessionStateProjector.terminate}d, not merely
+ * forgotten. A window still reading it would otherwise sit on an open stream
+ * that gets heartbeats and nothing else, forever: the session's next turn is
+ * fed into the fresh instance, and the window shows no sign of it until
+ * somebody refreshes. Claude Code evicts a session after thirty idle minutes,
+ * so any chat left open that long went deaf this way. Ending the stream sends
+ * the window through its normal reconnect, onto a fresh snapshot.
+ *
  * Takes either of the session's ids: a retired one disposes the projector it
  * points at, and every redirect onto that projector goes with it — a session
  * being disposed under one of its ids must not leave the other half alive.
@@ -2526,7 +2535,7 @@ export function disposeProjector(sessionId: string): void {
   const key = resolveProjectorId(sessionId);
   // Before the entry goes: an armed timer would otherwise fire on an instance
   // nothing can reach and announce a session that is gone.
-  projectors.get(key)?.cancelTimers();
+  projectors.get(key)?.terminate();
   projectors.delete(key);
   forgetProjectorRedirects(key);
   // Drop the session's DevTools capture buffer alongside its projector — the
