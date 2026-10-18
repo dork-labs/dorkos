@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(profile): the side panel shows the agent of the chat you are in (FB-60)'
+  - 'fix(profile): FB-60 passes CI: one root hook, mocks, one changelog fragment'
 ---
 
 ### Fixed
