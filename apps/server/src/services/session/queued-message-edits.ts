@@ -20,6 +20,7 @@
  *
  * @module services/session/queued-message-edits
  */
+import { isChatClientId } from './chat-messages/chat-client-id.js';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { MoveTarget } from './message-queue-store.js';
@@ -79,7 +80,14 @@ export function editQueuedMessage(
   // confirmed present. Committing the reword before checking the move would
   // answer 404 while silently changing what the message says (DOR-1178).
   let record = edit.move ? store.move(messageId, edit.move) : store.get(messageId);
-  if (record && edit.content !== undefined) record = store.updateContent(messageId, edit.content);
+  // Another chat's message is not the person's to reword (DOR-3060). Its row
+  // holds the fenced envelope the model gets, and a person only ever sees its
+  // words, so a reword would put another agent's words to the model unfenced,
+  // as if the person wrote them. It may be moved or removed; the words stay.
+  const theirs = record !== undefined && isChatClientId(record.enqueuedBy);
+  if (record && edit.content !== undefined && !theirs) {
+    record = store.updateContent(messageId, edit.content);
+  }
   if (record) emitQueueUpdate(sessionId);
   return record ? toQueuedMessage(record) : undefined;
 }
@@ -136,7 +144,7 @@ export function cancelQueuedMessage(
  * release the head of the queue on its way out.
  *
  * @param sessionId - The session whose queue to empty (request uuid or canonical)
- * @returns The removed messages, head first; empty when no store is wired or the
+ * @returns The removed messages the person wrote, head first; empty when no store is wired or the
  *   queue was already empty
  */
 export function clearQueuedMessages(sessionId: string): QueuedMessage[] {
@@ -146,5 +154,8 @@ export function clearQueuedMessages(sessionId: string): QueuedMessage[] {
   for (const row of store.list(queueKey)) cancelPendingDispatch(row.id);
   const removed = store.clear(queueKey);
   if (removed.length > 0) emitQueueUpdate(sessionId);
-  return removed.map(toQueuedMessage);
+  // Only the person's own words go back to their composer. Another chat's
+  // message is cancelled with the rest, but handing it back as a draft would let
+  // a Send put that agent's words to the model as the person's own (DOR-3060).
+  return removed.filter((row) => !isChatClientId(row.enqueuedBy)).map(toQueuedMessage);
 }
