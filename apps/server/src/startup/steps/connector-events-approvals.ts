@@ -326,7 +326,7 @@ export async function wireConnectorEventsAndApprovals(
     const { addTestControlGroup } = await import('../../routes/test-control.js');
     addTestControlGroup('/composio', refs.testComposioFixture.routes);
     const { createTestDocRouteGroup } = await import('../../routes/test-control-doc-routes.js');
-    addTestControlGroup('/doc-routes', createTestDocRouteGroup(docChannelHttp));
+    addTestControlGroup('/doc-routes', createTestDocRouteGroup(docChannelHttp, db));
   }
   // Built before the ways register: linking the DorkOS account again (seen as
   // early as boot) sends what the old link refused or never applied again.

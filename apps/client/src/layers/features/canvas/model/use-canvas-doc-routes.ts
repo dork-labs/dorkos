@@ -95,8 +95,8 @@ export function useCanvasDocRouteActions(documentId: string) {
     onSuccess: settle,
   });
   const revoke = useMutation({
-    mutationFn: (input: { routeId: string; grantId: string }) =>
-      transport.revokeCanvasDocRoute(documentId, input.routeId, input.grantId),
+    mutationFn: (input: { routeId: string }) =>
+      transport.revokeCanvasDocRoute(documentId, input.routeId),
     networkMode: 'always',
     onSuccess: settle,
   });

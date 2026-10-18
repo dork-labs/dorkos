@@ -62,9 +62,6 @@ import {
 } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
-  APPROVAL_DETAIL_MAX_LENGTH,
-  APPROVAL_REQUEST_REASON_MAX_LENGTH,
-  APPROVAL_SUMMARY_MAX_LENGTH,
   ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
@@ -74,6 +71,7 @@ import {
 } from '@dorkos/shared/approval-schemas';
 import { isFloorArea, type PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import { storableDetail, storableReason, storableSummary } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -242,6 +240,13 @@ export interface ApprovalRequestInput {
   origin?: ApprovalOrigin;
   /** Authenticated connector scope; absent for every ordinary capability. */
   connectorAuthority?: ApprovalConnectorAuthority;
+  /**
+   * Record the request without announcing it: no card, no banner, no
+   * escalation clock. Only for a request a person is answering in the same
+   * call, where a card about their own click would be noise (DOR-2665). The row,
+   * its hash and its one-use token are exactly those of an announced request.
+   */
+  quiet?: boolean;
   /**
    * The session this request came from, so a verdict decided after the
    * in-session hold gave up can still reach it (spec `approval-verdict-delivery`).
@@ -454,64 +459,6 @@ function toDecisionOutcome(outcome: ApprovalOutcome | undefined): ApprovalDecisi
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/**
- * Make a summary safe to store: strip anything token-shaped, then shorten it to
- * what a card can hold.
- *
- * Both happen on the way IN rather than at render time. The length cap is because
- * the cockpit parses stored rows against a schema that caps it, so a long sentence
- * has to become a short one here or the card would be dropped instead of shown.
- * The redaction is because this string is broadcast on the global event stream and
- * returned by `GET /api/approvals/pending`, which agents can read — so it is the
- * one place every producer of a summary passes through, including the marketplace
- * confirmation provider, which writes its own sentences.
- */
-function storableSummary(summary: string): string {
-  return clampForStorage(redactSecretsInText(summary), APPROVAL_SUMMARY_MAX_LENGTH);
-}
-
-/**
- * Make a detail safe to store: the same sweep the summary gets, against the
- * detail's own, much larger bound.
- *
- * Same two reasons, in the same order. The sweep is because this string is
- * broadcast on the global event stream and returned by
- * `GET /api/approvals/pending`, which agents can read. The cap is because the
- * cockpit parses stored rows against a schema that caps it, so an over-long
- * value has to shorten here or the whole card is dropped rather than shown —
- * and a dropped card is worse than a shortened one for exactly the reason this
- * field exists.
- *
- * @param detail - The verbatim argument the capability declared.
- * @returns The swept, capped value to store.
- */
-function storableDetail(detail: string): string {
-  return clampForStorage(redactSecretsInText(detail), APPROVAL_DETAIL_MAX_LENGTH);
-}
-
-/**
- * Make a blocked request's reason safe to store: the agent's own words, swept
- * for secrets and capped at the bound the card's schema parses.
- *
- * @param reason - The reason the agent gave.
- * @returns The swept, capped value to store.
- */
-function storableReason(reason: string): string {
-  return clampForStorage(redactSecretsInText(reason), APPROVAL_REQUEST_REASON_MAX_LENGTH);
-}
-
-/**
- * Shorten a value to what its column's schema will parse, marking the cut.
- *
- * @param value - The already-swept string.
- * @param max - The schema's bound for that field.
- * @returns The value, at most `max` characters.
- */
-function clampForStorage(value: string, max: number): string {
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
 /**
@@ -872,19 +819,21 @@ export class ApprovalService {
     };
     this.db.insert(approvals).values(row).run();
 
-    const pending = this.toCard(row);
-    broadcastApprovalPending(pending);
-    // The escalation clock starts HERE, at the write that creates the condition
-    // — the same place a parked schedule arms one, and for the same reason: an
-    // approval has no observer seam, so the hook belongs at the write. This is
-    // also what announces the arrival to the desktop shell, which has no
-    // cockpit query to derive it from (DOR-1570). Nothing is STORED at this
-    // edge: `approval.pending` is a standing kind, and standing kinds write
-    // nothing while they stand (ADR 260819-234828).
-    //
-    // The raw path rather than the card's label, because the label is display
-    // text and the escalation needs the key the agent registry joins on.
-    raiseCapabilityApproval(pending, input.requestedByPath);
+    if (!input.quiet) {
+      const pending = this.toCard(row);
+      broadcastApprovalPending(pending);
+      // The escalation clock starts HERE, at the write that creates the condition
+      // — the same place a parked schedule arms one, and for the same reason: an
+      // approval has no observer seam, so the hook belongs at the write. This is
+      // also what announces the arrival to the desktop shell, which has no
+      // cockpit query to derive it from (DOR-1570). Nothing is STORED at this
+      // edge: `approval.pending` is a standing kind, and standing kinds write
+      // nothing while they stand (ADR 260819-234828).
+      //
+      // The raw path rather than the card's label, because the label is display
+      // text and the escalation needs the key the agent registry joins on.
+      raiseCapabilityApproval(pending, input.requestedByPath);
+    }
 
     return { approvalId: row.id, token, expiresAt: row.expiresAt };
   }

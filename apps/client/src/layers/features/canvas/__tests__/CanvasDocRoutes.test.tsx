@@ -133,7 +133,7 @@ describe('CanvasDocRoutes', () => {
         reviewHash: 'b'.repeat(64),
       })
     );
-    expect(await screen.findByRole('status')).toHaveTextContent('helper is on.');
+    expect(await screen.findByRole('status')).toHaveTextContent('On: To Atlas');
     expect(within(panel).getByTestId('doc-route-state-helper')).toHaveTextContent('On');
   });
 
@@ -142,10 +142,48 @@ describe('CanvasDocRoutes', () => {
     const panel = await openPanel();
     fireEvent.click(within(panel).getByTestId('doc-route-review-button-helper'));
     await within(await within(panel).findByTestId('doc-route-review-helper')).findByText('task.*');
+    const allow = within(panel).getByTestId('doc-route-allow-helper');
+    expect(allow).toBeEnabled();
+    let arrive: () => void = () => undefined;
+    const original = vi.mocked(transport.reviewCanvasDocRoute).getMockImplementation()!;
+    vi.mocked(transport.reviewCanvasDocRoute).mockImplementationOnce(
+      (...args) => new Promise((resolve) => (arrive = () => resolve(original(...args))))
+    );
     fireEvent.click(within(panel).getByRole('radio', { name: '1 week' }));
     await waitFor(() => expect(transport.reviewCanvasDocRoute).toHaveBeenCalledTimes(2));
+    expect(within(panel).getByTestId('doc-route-allow-helper')).toBeDisabled();
+    arrive();
+    await waitFor(() => expect(within(panel).getByTestId('doc-route-allow-helper')).toBeEnabled());
     const [first, second] = vi.mocked(transport.reviewCanvasDocRoute).mock.calls;
     expect(Date.parse(second![2].expiresAt)).toBeGreaterThan(Date.parse(first![2].expiresAt));
+  });
+
+  it('reads the review again after the route changed, and allows nothing until it arrives', async () => {
+    vi.mocked(transport.approveCanvasDocRoute).mockRejectedValueOnce(
+      Object.assign(new Error('changed'), { code: 'ROUTE_CHANGED', status: 409 })
+    );
+    show([route()]);
+    const panel = await openPanel();
+    fireEvent.click(within(panel).getByTestId('doc-route-review-button-helper'));
+    await within(await within(panel).findByTestId('doc-route-review-helper')).findByText('task.*');
+    let arrive: () => void = () => undefined;
+    const original = vi.mocked(transport.reviewCanvasDocRoute).getMockImplementation()!;
+    vi.mocked(transport.reviewCanvasDocRoute).mockImplementationOnce(
+      (...args) => new Promise((resolve) => (arrive = () => resolve(original(...args))))
+    );
+    fireEvent.click(within(panel).getByTestId('doc-route-allow-helper'));
+    await waitFor(() => expect(transport.reviewCanvasDocRoute).toHaveBeenCalledTimes(2));
+    expect(within(panel).getByTestId('doc-route-allow-helper')).toBeDisabled();
+    arrive();
+    await waitFor(() => expect(within(panel).getByTestId('doc-route-allow-helper')).toBeEnabled());
+  });
+
+  it('announces what the server reports, not what the button meant', async () => {
+    vi.mocked(transport.revokeCanvasDocRoute).mockResolvedValue({ route: granted() });
+    show([granted()]);
+    const panel = await openPanel();
+    fireEvent.click(within(panel).getByTestId('doc-route-turn-off-helper'));
+    expect(await screen.findByRole('status')).toHaveTextContent('On: To Atlas');
   });
 
   it('says why an approval was refused and keeps the review open', async () => {
@@ -197,9 +235,9 @@ describe('CanvasDocRoutes', () => {
     expect(within(panel).getByText('10 turns an hour · 60 events a minute')).toBeInTheDocument();
     fireEvent.click(within(panel).getByTestId('doc-route-turn-off-helper'));
     await waitFor(() =>
-      expect(transport.revokeCanvasDocRoute).toHaveBeenCalledWith('doc-1', 'helper', 'grant-1')
+      expect(transport.revokeCanvasDocRoute).toHaveBeenCalledWith('doc-1', 'helper')
     );
-    expect(await screen.findByRole('status')).toHaveTextContent('helper is off.');
+    expect(await screen.findByRole('status')).toHaveTextContent('Turned off: To Atlas');
     expect(within(panel).getByTestId('doc-route-state-helper')).toHaveTextContent('Turned off');
   });
 

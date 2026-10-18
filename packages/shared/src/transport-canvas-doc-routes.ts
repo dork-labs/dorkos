@@ -28,10 +28,6 @@ export interface CanvasDocRouteTransport {
     routeId: string,
     request: CanvasDocRouteApproveRequest
   ): Promise<CanvasDocRouteChange>;
-  /** Turn a route's grant off. New events stop starting work. */
-  revokeCanvasDocRoute(
-    documentId: string,
-    routeId: string,
-    grantId: string
-  ): Promise<CanvasDocRouteChange>;
+  /** Turn a route off, every grant it holds. New events stop starting work. */
+  revokeCanvasDocRoute(documentId: string, routeId: string): Promise<CanvasDocRouteChange>;
 }

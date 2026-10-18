@@ -89,7 +89,7 @@ export function CanvasDocRoutes({ documentId }: { documentId: string }) {
           <div className="space-y-1">
             <h3 className="hidden text-sm font-medium md:block">Event routes</h3>
             <p className="text-muted-foreground text-xs">
-              Events start work only on routes you allow.
+              A route does nothing until it’s allowed.
             </p>
           </div>
           {!online && (

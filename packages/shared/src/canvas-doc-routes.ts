@@ -38,8 +38,14 @@ export const CanvasDocRouteDestinationSchema = z.discriminatedUnion('kind', [
       agentName: z.string().max(200).nullable(),
     })
     .strict(),
-  /** The room the document is on. */
-  z.object({ kind: z.literal('room') }).strict(),
+  /** The room the document is on, answered by this agent; null when nobody opened it. */
+  z
+    .object({
+      kind: z.literal('room'),
+      agentId: IdentifierSchema.nullable(),
+      agentName: z.string().max(200).nullable(),
+    })
+    .strict(),
 ]);
 /** A route destination, in words a person can read. */
 export type CanvasDocRouteDestination = z.infer<typeof CanvasDocRouteDestinationSchema>;
@@ -148,9 +154,9 @@ export const CanvasDocRouteApproveRequestSchema = z
 /** A person's approval of one reviewed route. */
 export type CanvasDocRouteApproveRequest = z.infer<typeof CanvasDocRouteApproveRequestSchema>;
 
-/** `POST /api/canvas/docs/:id/routes/:routeId/revoke` body. */
-export const CanvasDocRouteRevokeRequestSchema = z.object({ grantId: IdentifierSchema }).strict();
-/** A person turning one grant off. */
+/** `POST /api/canvas/docs/:id/routes/:routeId/revoke` body: empty, the route is the subject. */
+export const CanvasDocRouteRevokeRequestSchema = z.object({}).strict();
+/** A person turning a route off, every grant it holds at once. */
 export type CanvasDocRouteRevokeRequest = z.infer<typeof CanvasDocRouteRevokeRequestSchema>;
 
 /** Approve and revoke answer with the route as it now stands. */

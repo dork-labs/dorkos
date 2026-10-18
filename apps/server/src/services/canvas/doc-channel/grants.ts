@@ -221,6 +221,21 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
       );
     });
   }
+  /**
+   * At most one live grant per route, so turning a route off never leaves an
+   * older grant still admitting events (DOR-2665). A grant that no longer
+   * revalidates (suspended, expired, revoked) does not count.
+   */
+  private refuseSecondLiveGrant(
+    prepared: PreparedDocGrant,
+    actor: DocGrantActor,
+    tx: DbTransaction
+  ): void {
+    const live = this.getCurrentRoutes(prepared.request.documentId, undefined, actor, tx).some(
+      (route) => route.route.id === prepared.route.id && !!route.grantId && !route.reason
+    );
+    if (live) throw new DocRouteGrantError('ROUTE_ALREADY_GRANTED', 409);
+  }
   /** Enable opener self/log authority or request/consume an exact operator verdict atomically. */
   grant(
     request: DocRouteGrantRequest,
@@ -236,6 +251,7 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
         const existing = this.existing(prepared, tx);
         if (existing) return { kind: 'granted', grant: existing };
         if (!prepared.self && !approvalToken) {
+          this.refuseSecondLiveGrant(prepared, actor, tx);
           const detail = JSON.stringify(prepared.bindingInput);
           if (detail.length > APPROVAL_DETAIL_MAX_LENGTH)
             throw new DocRouteGrantError('APPROVAL_SUBJECT_TOO_LARGE', 422);
@@ -294,6 +310,9 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
         const finalPrepared = this.prepare(request, actor, tx);
         if (finalPrepared.inputHash !== prepared.inputHash)
           throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
+        // Inside the transaction that consumed the verdict, so a refusal here
+        // rolls the consumption back rather than spending a yes on nothing.
+        this.refuseSecondLiveGrant(prepared, actor, tx);
         const grantId = ulid();
         this.deps.store.insertGrant(
           {
@@ -329,6 +348,16 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
     for (const settlement of settlements) this.deps.approvals.publishConsumption(settlement);
     return result;
   }
+  /** The verified opener may narrow its own authority; anyone else needs the operator principal. */
+  private requireRevoker(row: DocGrantRow, actor: DocGrantActor): void {
+    const claims = actor.principal.claims;
+    if (
+      claims.kind !== 'operator' &&
+      (!(claims.kind === 'agent' || claims.kind === 'runtime') ||
+        claims.agentId !== row.openerAgentId)
+    )
+      throw new DocRouteGrantError('OPENER_REQUIRED');
+  }
   /** Explicit revoke; a later grant never implicitly retries input saved under this one. */
   revoke(documentId: string, grantId: string, actor: DocGrantActor): void {
     this.deps.store.transaction((tx) => {
@@ -336,14 +365,34 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
       const row = this.deps.store.getGrant(grantId, tx);
       if (!row || row.documentId !== documentId)
         throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
-      const claims = actor.principal.claims;
-      if (
-        claims.kind !== 'operator' &&
-        (!(claims.kind === 'agent' || claims.kind === 'runtime') ||
-          claims.agentId !== row.openerAgentId)
-      )
-        throw new DocRouteGrantError('OPENER_REQUIRED');
+      this.requireRevoker(row, actor);
       this.deps.store.revokeGrant(grantId, row.revision, this.now(), tx);
+    });
+  }
+  /**
+   * Turn a whole route off: every grant it still holds is revoked in one
+   * transaction, so no older grant keeps admitting events after it.
+   *
+   * @returns The ids of the grants this revoked.
+   */
+  revokeRoute(documentId: string, routeId: string, actor: DocGrantActor): string[] {
+    return this.deps.store.transaction((tx) => {
+      this.access(documentId, actor, tx);
+      const rows = tx
+        .select()
+        .from(canvasDocGrants)
+        .where(
+          and(
+            eq(canvasDocGrants.documentId, documentId),
+            eq(canvasDocGrants.routeId, routeId),
+            isNull(canvasDocGrants.revokedAt)
+          )
+        )
+        .all();
+      for (const row of rows) this.requireRevoker(row, actor);
+      for (const row of rows)
+        this.deps.store.revokeGrant(row.grantId, row.revision, this.now(), tx);
+      return rows.map((row) => row.grantId);
     });
   }
 }

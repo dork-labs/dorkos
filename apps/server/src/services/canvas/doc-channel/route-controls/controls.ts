@@ -4,8 +4,10 @@
  * Reads every declared route with its state, and lets a person allow or turn
  * one off. Nothing here is a second grant path: allowing runs the same
  * {@link DocChannelGrants.grant} as `approve_doc_route`, with an operator verdict
- * recorded through the shared approval service, and turning off runs the same
- * {@link DocChannelGrants.revoke}. What this module adds is the binding between
+ * recorded through the shared approval service, and turning off revokes every
+ * grant the route holds through {@link DocChannelGrants.revokeRoute}. Every write
+ * needs a {@link DocRoutePersonDecision}, which only the person bars can mint.
+ * What this module adds is the binding between
  * what a person was shown and what is granted: the review returns the grant
  * service's own `inputHash` over the exact document, route, declaration, target,
  * types, limits and expiry, and an approval is refused unless the current binding
@@ -16,7 +18,7 @@
  *
  * @module services/canvas/doc-channel/route-controls/controls
  */
-import { and, eq, isNull, inArray, agents, approvals, canvasDocGrants, type Db } from '@dorkos/db';
+import { eq, inArray, agents, canvasDocGrants, type Db } from '@dorkos/db';
 import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
 import {
   CanvasChannelDeclarationSchema,
@@ -35,16 +37,13 @@ import {
   type CanvasDocRouteState,
 } from '@dorkos/shared/canvas-doc-routes';
 import type { ApprovalService } from '../../../core/approvals/approval-service.js';
-import { hashApprovalInput } from '../../../core/approvals/approval-input-hash.js';
-import { REDACTED_SUMMARY_VALUE } from '../../../core/approvals/approval-summary.js';
 import type { DocChannelAuthorization } from '../authorization.js';
 import { DocChannelNotFoundError } from '../authorization.js';
 import type { DocChannelGrants, PreparedDocGrant } from '../grants.js';
 import { DocRouteGrantError, type DocGrantActor } from '../grant-policy.js';
 import type { DocChannelRow, DocChannelStore, DocGrantRow } from '../store.js';
-
-/** The capability whose approvals a route's grant consumes. */
-const APPROVE_CAPABILITY = 'ui.approve_doc_route';
+import { requirePersonDecision, type DocRoutePersonDecision } from './person-decision.js';
+import { APPROVE_DOC_ROUTE, findWaitingRequests } from './waiting.js';
 
 /** What the controls are composed from: the channel's own services, never copies. */
 export interface DocRouteControlsDeps {
@@ -58,10 +57,14 @@ export interface DocRouteControlsDeps {
   now?: () => Date;
 }
 
-/** Who may decide, as the HTTP layer established it. */
-export interface DocRouteDecider {
-  /** The signed-in account saying yes, when login is on. */
-  decidedByUserId?: string;
+/** A person's allow: the route as it now stands, and the approval it recorded. */
+export interface DocRouteAllowed extends CanvasDocRouteChange {
+  approvalId: string;
+}
+
+/** A person's turn off: the route as it now stands, and every grant it revoked. */
+export interface DocRouteTurnedOff extends CanvasDocRouteChange {
+  revokedGrantIds: string[];
 }
 
 function requirePerson(actor: DocGrantActor): void {
@@ -106,21 +109,21 @@ export class DocRouteControls {
     return new Map(rows.map((row) => [row.id, row.displayName || row.name]));
   }
 
+  /**
+   * Where a route's events go, named. `agentId` is the agent that will act: the
+   * opener when listing, the server-resolved target when reviewing.
+   */
   private destination(
     route: CanvasChannelRoute,
-    ownerId: string | null,
+    agentId: string | null,
     names: Map<string, string>
   ): CanvasDocRouteDestination {
+    const agentName = agentId ? (names.get(agentId) ?? null) : null;
     if (route.to === 'log') return { kind: 'log' };
-    if (route.to === 'room:self') return { kind: 'room' };
-    if (route.to === 'agent:owner')
-      return {
-        kind: 'owner',
-        agentId: ownerId,
-        agentName: ownerId ? (names.get(ownerId) ?? null) : null,
-      };
-    const agentId = route.to.slice('agent:'.length);
-    return { kind: 'agent', agentId, agentName: names.get(agentId) ?? null };
+    if (route.to === 'room:self') return { kind: 'room', agentId, agentName };
+    if (route.to === 'agent:owner') return { kind: 'owner', agentId, agentName };
+    const named = route.to.slice('agent:'.length);
+    return { kind: 'agent', agentId: named, agentName: names.get(named) ?? null };
   }
 
   /** Grant ids that currently admit events, by route; empty when authority cannot be read. */
@@ -134,55 +137,6 @@ export class DocRouteControls {
       if (!isAuthorityRefusal(error)) throw error;
     }
     return current;
-  }
-
-  /**
-   * The newest open agent request per route.
-   *
-   * Read from the approval's own server-written subject (the grant binding). The
-   * stored copy is swept for token-shaped text, which hides a 32-hex document id,
-   * so a subject whose id was hidden is matched on what survives instead: the
-   * same scope, the same opener and the identical route. This only labels a
-   * route as waiting; allowing it here never answers or spends that request.
-   */
-  private waitingRequests(
-    channel: DocChannelRow,
-    routes: CanvasChannelRoute[]
-  ): Map<string, { approvalId: string; expiresAt: string }> {
-    const now = this.now().toISOString();
-    const rows = this.deps.db
-      .select()
-      .from(approvals)
-      .where(
-        and(
-          eq(approvals.capabilityId, APPROVE_CAPABILITY),
-          eq(approvals.state, 'pending'),
-          isNull(approvals.consumedAt)
-        )
-      )
-      .all()
-      .filter((row) => row.expiresAt > now)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    const waiting = new Map<string, { approvalId: string; expiresAt: string }>();
-    for (const row of rows) {
-      let subject: Record<string, unknown> | undefined;
-      try {
-        subject = row.detail ? JSON.parse(row.detail) : undefined;
-      } catch {
-        continue; // A clamped subject names nothing reliably; it is not shown.
-      }
-      const routeId = (subject?.route as { id?: unknown } | undefined)?.id;
-      const route = routes.find((item) => item.id === routeId);
-      if (!subject || !route || waiting.has(route.id)) continue;
-      const sameDocument =
-        subject.documentId === channel.documentId ||
-        (subject.documentId === REDACTED_SUMMARY_VALUE &&
-          subject.scope === channel.scope &&
-          subject.openerAgentId === channel.openerAgentId &&
-          hashApprovalInput(subject.route) === hashApprovalInput(route));
-      if (sameDocument) waiting.set(route.id, { approvalId: row.id, expiresAt: row.expiresAt });
-    }
-    return waiting;
   }
 
   private grantView(row: DocGrantRow): NonNullable<CanvasDocRoute['grant']> {
@@ -211,7 +165,7 @@ export class DocRouteControls {
     const routes = declaration.success ? declaration.data.routes : [];
     if (!routes.length) return { documentId: channel.documentId, routes: [] };
     const current = this.currentGrants(channel.documentId, actor);
-    const waiting = this.waitingRequests(channel, routes);
+    const waiting = findWaitingRequests(this.deps.db, channel, routes, this.now());
     const grants = this.deps.db
       .select()
       .from(canvasDocGrants)
@@ -240,7 +194,7 @@ export class DocRouteControls {
           needsPerson: needsPerson(route),
           state,
           grant: shown ? this.grantView(shown) : null,
-          waiting: waiting.get(route.id) ?? null,
+          waiting: waiting.get(route.id)?.[0] ?? null,
         };
       }),
     };
@@ -279,14 +233,17 @@ export class DocRouteControls {
    * @param routeId - The declared route.
    * @param body - The expiry the person picked.
    * @param actor - The verified operator.
+   * @param decision - The person bars' proof, from `decideAsPerson`.
    */
   async review(
     documentId: string,
     routeId: string,
     body: unknown,
-    actor: DocGrantActor
+    actor: DocGrantActor,
+    decision: DocRoutePersonDecision
   ): Promise<CanvasDocRouteReview> {
     requirePerson(actor);
+    requirePersonDecision(decision);
     const { expiresAt } = CanvasDocRouteReviewRequestSchema.parse(body);
     const prepared = await this.prepare(documentId, routeId, expiresAt, actor);
     const names = this.agentNames([prepared.target.agentId, prepared.openerAgentId]);
@@ -294,7 +251,7 @@ export class DocRouteControls {
       documentId,
       routeId: prepared.route.id,
       on: prepared.route.on,
-      destination: this.destination(prepared.route, prepared.openerAgentId, names),
+      destination: this.destination(prepared.route, prepared.target.agentId, names),
       allowedTypes: prepared.allowedTypes,
       limits: prepared.limits,
       expiresAt,
@@ -306,68 +263,97 @@ export class DocRouteControls {
    * Allow a reviewed route as a person.
    *
    * Refused with `ROUTE_CHANGED` unless the current binding hashes to the reviewed
-   * one, both before the approval is raised and on the approval row itself, and
-   * the grant service consumes that verdict only against the same hash again.
+   * one. The person's yes is recorded quietly (they are the one clicking, so no
+   * card or banner is raised about it) on a ticket bound to the reviewed hash,
+   * and the grant service consumes that ticket only against the same hash again.
+   * A yes that grants nothing is spent, never left for anyone to reissue. Any
+   * agent request still waiting on this route is then answered, so its agent
+   * hears back instead of waiting on a card nobody needs to answer.
    *
    * @param documentId - The document, by id.
    * @param routeId - The declared route.
    * @param body - The reviewed expiry and the review's hash.
    * @param actor - The verified operator.
-   * @param decider - Who said yes, for the approval row.
+   * @param decision - The person bars' proof, from `decideAsPerson`.
    */
   async approve(
     documentId: string,
     routeId: string,
     body: unknown,
     actor: DocGrantActor,
-    decider: DocRouteDecider = {}
-  ): Promise<CanvasDocRouteChange> {
+    decision: DocRoutePersonDecision
+  ): Promise<DocRouteAllowed> {
     requirePerson(actor);
+    requirePersonDecision(decision);
     const { expiresAt, reviewHash } = CanvasDocRouteApproveRequestSchema.parse(body);
     const prepared = await this.prepare(documentId, routeId, expiresAt, actor);
     if (prepared.inputHash !== reviewHash) throw new DocRouteGrantError('ROUTE_CHANGED', 409);
     if (this.currentGrants(documentId, actor).has(prepared.route.id))
       throw new DocRouteGrantError('ROUTE_ALREADY_ON', 409);
-    const request = { documentId, routeId: prepared.route.id, expiresAt };
-    const first = this.deps.grants.grant(request, actor);
-    if (first.kind === 'approval_required') {
-      const { approvalId, token } = first.ticket;
-      const row = this.deps.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
-      if (!row || row.inputHash !== reviewHash) {
-        this.deps.approvals.deny(approvalId, 'The route changed before it was allowed.');
-        throw new DocRouteGrantError('ROUTE_CHANGED', 409);
-      }
-      if (this.deps.approvals.grant(approvalId, decider.decidedByUserId))
-        throw new DocRouteGrantError('APPROVAL_NOT_RECORDED', 409);
-      const second = this.deps.grants.grant(request, actor, token);
-      if (second.kind !== 'granted') throw new DocRouteGrantError('APPROVAL_NOT_RECORDED', 409);
+    const binding = { capabilityId: APPROVE_DOC_ROUTE, inputHash: reviewHash };
+    const ticket = this.deps.approvals.request({
+      ...binding,
+      summary: `Allow document events on route ${prepared.route.id}.`,
+      detail: JSON.stringify(prepared.bindingInput),
+      area: null,
+      quiet: true,
+    });
+    if (this.deps.approvals.grant(ticket.approvalId, decision.decidedByUserId)) {
+      this.deps.approvals.deny(ticket.approvalId, 'The approval could not be recorded.');
+      throw new DocRouteGrantError('APPROVAL_NOT_RECORDED', 409);
     }
-    return this.changed(documentId, prepared.route.id, actor);
+    try {
+      const result = this.deps.grants.grant(
+        { documentId, routeId: prepared.route.id, expiresAt },
+        actor,
+        ticket.token
+      );
+      if (result.kind !== 'granted' || result.grant.approvalId !== ticket.approvalId)
+        throw new DocRouteGrantError('APPROVAL_NOT_RECORDED', 409);
+    } catch (error) {
+      this.deps.approvals.consume(ticket.token, binding);
+      throw error;
+    }
+    this.answerWaiting(documentId, prepared.route.id);
+    return {
+      ...(await this.changed(documentId, prepared.route.id, actor)),
+      approvalId: ticket.approvalId,
+    };
+  }
+
+  /** Answer every agent request still waiting on a route a person just allowed. */
+  private answerWaiting(documentId: string, routeId: string): void {
+    const channel = this.deps.channels.getChannel(documentId);
+    const declaration = CanvasChannelDeclarationSchema.safeParse(channel?.declaration);
+    if (!channel || !declaration.success) return;
+    const waiting = findWaitingRequests(this.deps.db, channel, declaration.data.routes, this.now());
+    for (const request of waiting.get(routeId) ?? [])
+      this.deps.approvals.deny(request.approvalId, 'Allowed from the document.');
   }
 
   /**
-   * Turn one grant off. New events stop starting work; work already started
-   * keeps its recorded source.
+   * Turn a route off: every grant it holds is revoked together, so no older grant
+   * keeps admitting events. Work already started keeps its recorded source.
    *
    * @param documentId - The document, by id.
-   * @param routeId - The declared route the grant belongs to.
-   * @param body - The grant to turn off.
+   * @param routeId - The declared route.
+   * @param body - Empty; the route is the whole subject.
    * @param actor - The verified operator.
+   * @param decision - The person bars' proof, from `decideAsPerson`.
    */
   async revoke(
     documentId: string,
     routeId: string,
     body: unknown,
-    actor: DocGrantActor
-  ): Promise<CanvasDocRouteChange> {
+    actor: DocGrantActor,
+    decision: DocRoutePersonDecision
+  ): Promise<DocRouteTurnedOff> {
     requirePerson(actor);
-    const { grantId } = CanvasDocRouteRevokeRequestSchema.parse(body);
+    requirePersonDecision(decision);
+    CanvasDocRouteRevokeRequestSchema.parse(body);
     await this.deps.authorization.require(documentId, actor, true);
-    const row = this.deps.channels.getGrant(grantId);
-    if (!row || row.documentId !== documentId || row.routeId !== routeId)
-      throw new DocRouteGrantError('GRANT_NOT_FOUND', 404);
-    this.deps.grants.revoke(documentId, grantId, actor);
-    return this.changed(documentId, routeId, actor);
+    const revokedGrantIds = this.deps.grants.revokeRoute(documentId, routeId, actor);
+    return { ...(await this.changed(documentId, routeId, actor)), revokedGrantIds };
   }
 
   private async changed(
@@ -376,7 +362,7 @@ export class DocRouteControls {
     actor: DocGrantActor
   ): Promise<CanvasDocRouteChange> {
     const route = (await this.list(documentId, actor)).routes.find((item) => item.id === routeId);
-    if (!route) throw new DocRouteGrantError('ROUTE_UNDECLARED', 409);
+    if (!route) throw new DocRouteGrantError('ROUTE_UNDECLARED', 404);
     return { route };
   }
 }

@@ -30,6 +30,7 @@ const DECLARATION = {
       to: 'agent:owner',
       turn: { mode: 'immediate', maxBatch: 10 },
     },
+    { id: 'helper', on: 'checklist.done', to: 'agent:nobody-here', turn: { mode: 'none' } },
   ],
 };
 
@@ -53,7 +54,8 @@ async function openChecklist(page: Page, request: APIRequestContext) {
   const document = documents.find((row) => row.title === 'Launch checklist');
   if (!document) throw new Error('The checklist document is absent.');
   const declared = await request.post('/api/test/doc-routes/configure', {
-    data: { documentId: document.id, declaration: DECLARATION },
+    // The agent running this chat opened the document, so its own route can be allowed.
+    data: { documentId: document.id, declaration: DECLARATION, openerSession: sessionId },
   });
   expect(declared.ok(), await declared.text()).toBe(true);
   // The header reads routes when the document becomes active; a reload reads the declaration.
@@ -97,7 +99,6 @@ test('a person reviews, allows and turns off a document route from the canvas he
   const panel = page.getByTestId('doc-routes-panel');
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('doc-route-notes')).toHaveAttribute('data-state', 'no_grant');
-  await expect(panel.getByTestId('doc-route-owner')).toContainText('To the agent that opened this');
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
     await shot(page, `1280-${scheme}-off`);
@@ -105,10 +106,11 @@ test('a person reviews, allows and turns off a document route from the canvas he
   await page.emulateMedia({ colorScheme: 'light' });
 
   // Review shows the server's exact details before anything is allowed.
-  await panel.getByTestId('doc-route-review-button-notes').click();
-  const review = panel.getByTestId('doc-route-review-notes');
-  await expect(review).toContainText('Kept on this document');
-  await expect(review).toContainText('checklist.*');
+  await expect(panel.getByTestId('doc-route-owner')).toContainText('To E2E Test Agent');
+  await panel.getByTestId('doc-route-review-button-owner').click();
+  const review = panel.getByTestId('doc-route-review-owner');
+  await expect(review).toContainText('To E2E Test Agent');
+  await expect(review).toContainText('checklist.done');
   await expect(review).toContainText('10 turns an hour · 60 events a minute');
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
@@ -116,15 +118,15 @@ test('a person reviews, allows and turns off a document route from the canvas he
   }
   await page.emulateMedia({ colorScheme: 'light' });
   await review.getByRole('radio', { name: '1 hour' }).click();
-  await expect(review).toContainText('checklist.*');
-  const approved = page.waitForResponse((r) => r.url().endsWith('/routes/notes/approve'));
-  await panel.getByTestId('doc-route-allow-notes').click();
+  await expect(panel.getByTestId('doc-route-allow-owner')).toBeEnabled();
+  const approved = page.waitForResponse((r) => r.url().endsWith('/routes/owner/approve'));
+  await panel.getByTestId('doc-route-allow-owner').click();
   expect((await approved).ok()).toBe(true);
-  await expect(panel.getByTestId('doc-route-state-notes')).toHaveText('On');
-  await expect(panel.getByRole('status')).toHaveText('notes is on.');
+  await expect(panel.getByTestId('doc-route-state-owner')).toHaveText('On');
+  await expect(panel.getByRole('status')).toHaveText('On: To E2E Test Agent');
   // The modal panel hides the page behind it from assistive tech, so read the label itself.
   await expect(trigger).toHaveAttribute('aria-label', 'Event routes: 1 on');
-  const granted = (await routes()).find((route) => route.id === 'notes')!;
+  const granted = (await routes()).find((route) => route.id === 'owner')!;
   expect(granted).toMatchObject({ state: 'granted', grant: { approvedBy: 'person' } });
   const hours = (Date.parse(granted.grant!.expiresAt!) - Date.now()) / 3_600_000;
   expect(hours).toBeGreaterThan(0.9);
@@ -135,19 +137,22 @@ test('a person reviews, allows and turns off a document route from the canvas he
   }
   await page.emulateMedia({ colorScheme: 'light' });
 
-  // A route whose agent is not there refuses with a reason and allows nothing.
-  await panel.getByTestId('doc-route-review-button-owner').click();
-  await expect(panel.getByTestId('doc-route-review-owner').getByRole('alert')).toHaveText(
-    'The agent that opened this isn’t available.'
+  // A route to an agent that is not there refuses with a reason and allows nothing.
+  await panel.getByTestId('doc-route-review-button-helper').click();
+  await expect(panel.getByTestId('doc-route-review-helper').getByRole('alert')).toHaveText(
+    'The agent for this route isn’t available.'
   );
-  await expect(panel.getByTestId('doc-route-allow-owner')).toBeDisabled();
-  await panel.getByTestId('doc-route-review-owner').getByRole('button', { name: 'Cancel' }).click();
+  await expect(panel.getByTestId('doc-route-allow-helper')).toBeDisabled();
+  await panel
+    .getByTestId('doc-route-review-helper')
+    .getByRole('button', { name: 'Cancel' })
+    .click();
 
   // Turning it off stops it, and the server agrees.
-  await panel.getByTestId('doc-route-turn-off-notes').click();
-  await expect(panel.getByTestId('doc-route-state-notes')).toHaveText('Turned off');
-  await expect(panel.getByRole('status')).toHaveText('notes is off.');
-  expect((await routes()).find((route) => route.id === 'notes')?.state).toBe('revoked');
+  await panel.getByTestId('doc-route-turn-off-owner').click();
+  await expect(panel.getByTestId('doc-route-state-owner')).toHaveText('Turned off');
+  await expect(panel.getByRole('status')).toHaveText('Turned off: To E2E Test Agent');
+  expect((await routes()).find((route) => route.id === 'owner')?.state).toBe('revoked');
 
   // Keyboard: the panel closes on Escape and focus returns to the trigger.
   await page.keyboard.press('Escape');
@@ -164,8 +169,8 @@ test('the route controls fit a phone, in both themes', async ({ page, request })
   await trigger.click();
   const panel = page.getByTestId('doc-routes-panel');
   await expect(panel).toBeVisible();
-  await panel.getByTestId('doc-route-review-button-notes').click();
-  await expect(panel.getByTestId('doc-route-review-notes')).toContainText('checklist.*');
+  await panel.getByTestId('doc-route-review-button-owner').click();
+  await expect(panel.getByTestId('doc-route-review-owner')).toContainText('checklist.done');
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(390);
   for (const scheme of ['light', 'dark'] as const) {

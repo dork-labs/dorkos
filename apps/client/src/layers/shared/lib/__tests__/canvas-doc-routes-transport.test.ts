@@ -58,17 +58,15 @@ describe('document route controls over HTTP', () => {
     await expect(transport.reviewCanvasDocRoute('doc', 'helper', { expiresAt })).rejects.toThrow();
   });
 
-  it('sends only the reviewed expiry and hash when approving, and the grant when revoking', async () => {
+  it('sends only the reviewed expiry and hash when approving, and nothing but the route when turning off', async () => {
     const transport: Transport = new HttpTransport('/api');
     vi.mocked(fetch).mockImplementation(async () => json({ route }));
     const body = { expiresAt: '2026-10-18T15:00:00.000Z', reviewHash: 'c'.repeat(64) };
     await transport.approveCanvasDocRoute('doc', 'helper', body);
     expect(call(0)[1]).toMatchObject({ method: 'POST', body: JSON.stringify(body) });
-    await transport.revokeCanvasDocRoute('doc', 'helper', 'grant-1');
+    await transport.revokeCanvasDocRoute('doc', 'helper');
     expect(String(call(1)[0])).toContain('/routes/helper/revoke');
-    expect(call(1)[1]).toMatchObject({ body: JSON.stringify({ grantId: 'grant-1' }) });
-    await expect(transport.revokeCanvasDocRoute('doc', 'other', 'grant-1')).rejects.toThrow(
-      'another route'
-    );
+    expect(call(1)[1]).toMatchObject({ method: 'POST', body: '{}' });
+    await expect(transport.revokeCanvasDocRoute('doc', 'other')).rejects.toThrow('another route');
   });
 });

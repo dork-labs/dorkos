@@ -21,6 +21,8 @@ import {
 import {
   ROUTE_EXPIRY_CHOICES,
   formatRouteTime,
+  isRouteChanged,
+  routeChangeAnnouncement,
   routeDestinationLabel,
   routeExpiryFrom,
   routeLimitsLabel,
@@ -72,9 +74,13 @@ function RouteReview({
     approve.mutate(
       { routeId: route.id, expiresAt: details.expiresAt, reviewHash: details.reviewHash },
       {
-        onSuccess: () => {
-          onAnnounce(`${route.id} is on.`);
+        onSuccess: (change) => {
+          onAnnounce(routeChangeAnnouncement(change.route));
           onDone();
+        },
+        // Stale details: read the review again; Allow waits until it arrives.
+        onError: (error) => {
+          if (isRouteChanged(error)) void review.refetch();
         },
       }
     );
@@ -150,7 +156,7 @@ function RouteReview({
           type="button"
           size="sm"
           data-testid={`doc-route-allow-${route.id}`}
-          disabled={!details || !online || approve.isPending}
+          disabled={!details || review.isFetching || !online || approve.isPending}
           onClick={allow}
         >
           {approve.isPending ? 'Allowing…' : 'Allow route'}
@@ -175,10 +181,9 @@ export function CanvasDocRouteItem({
   const granted = route.state === 'granted' && route.grant !== null;
 
   const turnOff = () => {
-    if (!route.grant) return;
     revoke.mutate(
-      { routeId: route.id, grantId: route.grant.grantId },
-      { onSuccess: () => onAnnounce(`${route.id} is off.`) }
+      { routeId: route.id },
+      { onSuccess: (change) => onAnnounce(routeChangeAnnouncement(change.route)) }
     );
   };
 

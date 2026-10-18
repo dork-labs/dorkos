@@ -1,6 +1,7 @@
 import { createFileSaveRecoveryRoutes } from './file-saves/recovery.js';
 import { createCanvasDocRouteControlRoutes } from './canvas-doc-route-controls.js';
 import type { DocRouteControls } from '../services/canvas/doc-channel/route-controls/controls.js';
+import type { ActivityService } from '../services/activity/activity-service.js';
 import type { InstallationFileWrites } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 /** Private document event endpoints, behind the app's host, origin and session gates. */
 import type { ServerResponse } from 'node:http';
@@ -108,8 +109,12 @@ function documentId(c: Context<ApiEnv>): string {
  * Build the document event routes.
  *
  * @param source - The document channel, read per request; `undefined` answers 503.
+ * @param activity - The Activity feed the route controls record answers in.
  */
-export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<ApiEnv> {
+export function createCanvasDocEventRoutes(
+  source: DocChannelHttpSource,
+  activity?: () => Pick<ActivityService, 'emit'> | undefined
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   function dependencies(): DocChannelHttp {
@@ -226,7 +231,7 @@ export function createCanvasDocEventRoutes(source: DocChannelHttpSource): Hono<A
     '/',
     createFileSaveRecoveryRoutes(() => source()?.fileWrites)
   );
-  router.route('/', createCanvasDocRouteControlRoutes(source));
+  router.route('/', createCanvasDocRouteControlRoutes(source, activity));
   router.all('*', (c) => c.notFound());
   return router;
 }

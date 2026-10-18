@@ -51,7 +51,7 @@ export function routeDestinationLabel(destination: CanvasDocRouteDestination): s
     case 'log':
       return 'Kept on this document';
     case 'room':
-      return 'To this room';
+      return destination.agentName ? `To ${destination.agentName} in this room` : 'To this room';
     case 'owner':
       return destination.agentName
         ? `To ${destination.agentName}`
@@ -103,6 +103,20 @@ export function routeLimitsLabel(limits: CanvasDocRouteLimits): string {
   return `${turns} · ${events}`;
 }
 
+/**
+ * What a screen reader hears after a change: the route's state as the server
+ * now reports it, and where it goes. Never assumed from the button pressed.
+ */
+export function routeChangeAnnouncement(route: CanvasDocRoute): string {
+  return `${routeStateLabel(route.state)}: ${routeDestinationLabel(route.destination)}`;
+}
+
+/** Whether a refusal means the reviewed details went stale. */
+export function isRouteChanged(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && ROUTE_CHANGED_CODES.has(code);
+}
+
 /** How many routes are on, and how many wait on a person. */
 export function routesSummary(routes: readonly CanvasDocRoute[]): { on: number; waiting: number } {
   return {
@@ -112,15 +126,23 @@ export function routesSummary(routes: readonly CanvasDocRoute[]): { on: number; 
 }
 
 const CHANGED = 'This route changed. Review it again.';
+/** Refusals that mean the reviewed details are stale, so the review is read again. */
+export const ROUTE_CHANGED_CODES: ReadonlySet<string> = new Set([
+  'ROUTE_CHANGED',
+  'GRANT_BINDING_CHANGED',
+  'DECLARATION_HASH_MISMATCH',
+  'MANIFEST_CHANGED',
+]);
 const NOT_A_PERSON = 'Only a signed-in person can change routes.';
 const REFUSALS: Record<string, string> = {
   ROUTE_CHANGED: CHANGED,
   GRANT_BINDING_CHANGED: CHANGED,
   DECLARATION_HASH_MISMATCH: CHANGED,
   MANIFEST_CHANGED: CHANGED,
-  ROUTE_UNDECLARED: CHANGED,
+  ROUTE_UNDECLARED: 'This document no longer declares that route.',
   ROUTE_ALREADY_ON: 'This route is already on.',
-  GRANT_NOT_FOUND: CHANGED,
+  ROUTE_ALREADY_GRANTED: 'This route is already on.',
+  APPROVAL_NOT_RECORDED: 'Couldn’t record the approval. Nothing was allowed.',
   TARGET_UNAVAILABLE: 'The agent for this route isn’t available.',
   TARGET_IDENTITY_MISMATCH: 'The agent for this route isn’t available.',
   TARGET_SCOPE_MISMATCH: 'The agent for this route isn’t available.',

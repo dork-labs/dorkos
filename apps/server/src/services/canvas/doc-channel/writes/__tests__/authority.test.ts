@@ -174,11 +174,16 @@ it('revoked original grant cannot be rescued by a newer consumed approval, and a
     expiresAt: new Date(Date.now() + 7200000).toISOString(),
     write: h.binding,
   };
-  const pending = h.grants.grant(nextRequest, h.actor);
-  if (pending.kind !== 'approval_required') throw new Error('new exact approval required');
-  h.approvals.grant(pending.ticket.approvalId);
-  const next = h.grants.grant(nextRequest, h.actor, pending.ticket.token);
-  if (next.kind !== 'granted') throw new Error('grant');
+  // A second live grant for the route is refused at creation (DOR-2665)...
+  expect(() => h.grants.grant(nextRequest, h.actor)).toThrow('ROUTE_ALREADY_GRANTED');
+  // ...so the ambiguity defense is exercised on a row an older install could hold.
+  const stored = h.db
+    .select()
+    .from(canvasDocGrants)
+    .where(eq(canvasDocGrants.grantId, original.grantId))
+    .get()!;
+  const next = { grant: { ...stored, grantId: `${stored.grantId}-next` } };
+  h.db.insert(canvasDocGrants).values(next.grant).run();
   await expect(h.authority.prepare(h.input, h.actor)).rejects.toThrow('AMBIGUOUS');
   h.db
     .update(canvasDocGrants)

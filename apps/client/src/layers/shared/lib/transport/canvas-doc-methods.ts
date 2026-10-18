@@ -82,16 +82,12 @@ export function createCanvasDocMethods(baseUrl: string): Pick<
         routeId
       );
     },
-    async revokeCanvasDocRoute(
-      documentId: string,
-      routeId: string,
-      grantId: string
-    ): Promise<CanvasDocRouteChange> {
+    async revokeCanvasDocRoute(documentId: string, routeId: string): Promise<CanvasDocRouteChange> {
       return sameRoute(
         CanvasDocRouteChangeSchema.parse(
           await fetchJSON(baseUrl, routePath(documentId, routeId, 'revoke'), {
             method: 'POST',
-            body: JSON.stringify({ grantId }),
+            body: '{}',
           })
         ),
         routeId

@@ -25447,10 +25447,27 @@
                                     "enum": [
                                       "room"
                                     ]
+                                  },
+                                  "agentId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "agentName": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 200
                                   }
                                 },
                                 "required": [
-                                  "kind"
+                                  "kind",
+                                  "agentId",
+                                  "agentName"
                                 ],
                                 "additionalProperties": false
                               }
@@ -25874,10 +25891,27 @@
                               "enum": [
                                 "room"
                               ]
+                            },
+                            "agentId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "agentName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 200
                             }
                           },
                           "required": [
-                            "kind"
+                            "kind",
+                            "agentId",
+                            "agentName"
                           ],
                           "additionalProperties": false
                         }
@@ -26251,10 +26285,27 @@
                                   "enum": [
                                     "room"
                                   ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
                                 }
                               },
                               "required": [
-                                "kind"
+                                "kind",
+                                "agentId",
+                                "agentName"
                               ],
                               "additionalProperties": false
                             }
@@ -26573,16 +26624,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "grantId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  }
-                },
-                "required": [
-                  "grantId"
-                ],
+                "properties": {},
                 "additionalProperties": false
               }
             }
@@ -26730,10 +26772,27 @@
                                   "enum": [
                                     "room"
                                   ]
+                                },
+                                "agentId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "agentName": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200
                                 }
                               },
                               "required": [
-                                "kind"
+                                "kind",
+                                "agentId",
+                                "agentName"
                               ],
                               "additionalProperties": false
                             }
