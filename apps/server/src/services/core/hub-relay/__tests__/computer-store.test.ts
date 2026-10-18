@@ -23,6 +23,7 @@ import { logger } from '../../../../lib/logger.js';
 import {
   HUB_RELAY_MAX_COMPUTERS,
   LinkedComputerKeyMismatchError,
+  LinkedComputersUnreadableError,
   findComputerBySecret,
   readLinkedComputers,
   relaySecretHash,
@@ -264,17 +265,53 @@ describe('format 2: agent computers (DOR-2940)', () => {
     ]);
   });
 
-  it('keeps a format-1 record that happens to use the reserved id space', () => {
-    const v1 = {
+  it('drops a format-1 record in the reserved id space, and a store keeps every other link', async () => {
+    const legacy = {
       v: 1,
       computerId: 'ac:legacy',
       secretHash: relaySecretHash(secret()),
       computerKey: key(),
       linkedAt: '2026-10-01T00:00:00.000Z',
     };
+    const mac = {
+      v: 1,
+      computerId: 'mac-1',
+      secretHash: relaySecretHash(secret()),
+      computerKey: key(),
+      linkedAt: '2026-10-01T00:00:00.000Z',
+    };
     fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify([v1]));
-    expect(readLinkedComputers(home)).toHaveLength(1);
+    fs.writeFileSync(file(), JSON.stringify([legacy, mac]));
+    expect(readLinkedComputers(home).map((c) => c.computerId)).toEqual(['mac-1']);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Dropped old computer records'),
+      { dropped: 1 }
+    );
+
+    await linkComputer(
+      { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+      home
+    );
+    // Written back, read again: the file still parses, and both links survive.
+    const reread = readLinkedComputers(home).map((c) => c.computerId);
+    expect(reread).toEqual(['mac-1', 'mac-2']);
+    const stored = JSON.parse(fs.readFileSync(file(), 'utf8')) as unknown[];
+    expect(stored).toHaveLength(2);
+  });
+
+  it('never overwrites a file that does not parse: the store and the unlink refuse', async () => {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    fs.writeFileSync(file(), '[{"v": 9}]');
+    await expect(
+      linkComputer(
+        { computerId: 'mac-2', secretHash: relaySecretHash(secret()), computerKey: key() },
+        home
+      )
+    ).rejects.toBeInstanceOf(LinkedComputersUnreadableError);
+    await expect(unlinkComputer('mac-2', home)).rejects.toBeInstanceOf(
+      LinkedComputersUnreadableError
+    );
+    expect(fs.readFileSync(file(), 'utf8')).toBe('[{"v": 9}]');
   });
 
   it('stores an agent computer with its cloud id and role', async () => {

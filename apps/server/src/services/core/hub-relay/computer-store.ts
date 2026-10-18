@@ -14,8 +14,11 @@
  * One owner-only (`0600`) JSON file in an owner-only (`0700`) folder,
  * `<data folder>/hub-relay/computers.json`, written atomically. The parsed list
  * is kept in memory until this process writes the file or its modification
- * time or size changes, so a dial does not re-read it. A file that does not parse reads as no computers, so a
- * damaged file refuses every dial rather than admitting one.
+ * time or size changes, so a dial does not re-read it. A file that does not
+ * parse reads as no computers, so a damaged file refuses every dial rather
+ * than admitting one, and no write replaces it
+ * ({@link LinkedComputersUnreadableError}): a store over a damaged file would
+ * otherwise drop every other link.
  *
  * @module services/core/hub-relay/computer-store
  */
@@ -119,16 +122,19 @@ export const LinkedComputerSchema = z
 /** See {@link LinkedComputerSchema}. */
 export type LinkedComputer = z.infer<typeof LinkedComputerSchema>;
 
-/** The format-2 record a format-1 one reads as. */
-function fromV1(record: z.infer<typeof LinkedComputerV1Schema>): LinkedComputer {
+/**
+ * The format-2 record a format-1 one reads as, or `null` for one whose id is
+ * in the space now reserved for agent computers. Such a record cannot be kept:
+ * written back as format 2 it would fail {@link LinkedComputerSchema}, and the
+ * whole file with it. It is dropped on reading, with a warning, and that
+ * computer links again. No released build mints an id in that space.
+ */
+function fromV1(record: z.infer<typeof LinkedComputerV1Schema>): LinkedComputer | null {
+  if (cloudComputerIdOf(record.computerId) !== null) return null;
   return { ...record, v: 2, role: 'computer' };
 }
 
-/**
- * One record as the file may hold it: format 2, or format 1 read as format 2.
- * A v1 record is never checked against the reserved agent-computer id space,
- * since it was written before the space was reserved.
- */
+/** One record as the file may hold it: format 2, or format 1 read as format 2 (or dropped). */
 const StoredComputerSchema = z.union([
   LinkedComputerSchema,
   LinkedComputerV1Schema.transform(fromV1),
@@ -147,8 +153,15 @@ function filePath(dorkHome: string): string {
   return path.join(dorkHome, FOLDER, FILE);
 }
 
+/** What reading the file came to: the list, or a file that did not parse. */
+interface ReadResult {
+  /** False when the file is there but does not parse. */
+  ok: boolean;
+  computers: LinkedComputer[];
+}
+
 /** The parsed list per data folder, with the file stamp it was read at. */
-const cache = new Map<string, { stamp: string; computers: LinkedComputer[] }>();
+const cache = new Map<string, { stamp: string } & ReadResult>();
 
 /** Make the folder owner-only, whether it is new or already there. */
 function ensureFolder(dorkHome: string): void {
@@ -188,6 +201,11 @@ export function relaySecretHash(secret: string): string {
  * @param dorkHome - The data folder; defaults to the live one.
  */
 export function readLinkedComputers(dorkHome: string = resolveDorkHome()): LinkedComputer[] {
+  return [...readStore(dorkHome).computers];
+}
+
+/** The file as read, through the cache. A missing file is an empty, readable list. */
+function readStore(dorkHome: string): ReadResult {
   const file = filePath(dorkHome);
   let stamp: string;
   try {
@@ -195,17 +213,39 @@ export function readLinkedComputers(dorkHome: string = resolveDorkHome()): Linke
     stamp = `${stat.mtimeMs}:${stat.size}`;
   } catch {
     cache.delete(dorkHome);
-    return [];
+    return { ok: true, computers: [] };
   }
   const cached = cache.get(dorkHome);
-  if (cached?.stamp === stamp) return [...cached.computers];
-  const computers = parseFile(file);
-  cache.set(dorkHome, { stamp, computers });
-  return [...computers];
+  if (cached?.stamp === stamp) return cached;
+  const read = parseFile(file);
+  cache.set(dorkHome, { stamp, ...read });
+  return read;
 }
 
-/** Read and check the file; anything wrong reads as no computers. */
-function parseFile(file: string): LinkedComputer[] {
+/**
+ * Thrown by a write when the file is there but does not parse. Nothing is
+ * written: overwriting it would replace every link it holds with the one being
+ * stored. The file is left as it is for someone to look at.
+ */
+export class LinkedComputersUnreadableError extends Error {
+  constructor() {
+    super('The linked computers file could not be read, so nothing was written');
+    this.name = 'LinkedComputersUnreadableError';
+  }
+}
+
+/** The list a write starts from; refuses when the file does not parse. */
+function readForWrite(dorkHome: string): LinkedComputer[] {
+  const read = readStore(dorkHome);
+  if (!read.ok) {
+    logger.error('[HubRelay] The linked computers file does not parse; it was left untouched');
+    throw new LinkedComputersUnreadableError();
+  }
+  return [...read.computers];
+}
+
+/** Read and check the file; anything wrong reads as no computers, and not ok. */
+function parseFile(file: string): ReadResult {
   let json: unknown;
   try {
     json = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -213,14 +253,23 @@ function parseFile(file: string): LinkedComputer[] {
     logger.warn('[HubRelay] The linked computers could not be read, so none can connect', {
       failed: 'not JSON',
     });
-    return [];
+    return { ok: false, computers: [] };
   }
   const parsed = FileSchema.safeParse(json);
-  if (parsed.success) return parsed.data;
-  logger.warn('[HubRelay] The linked computers could not be read, so none can connect', {
-    failed: describeFailure(parsed.error),
-  });
-  return [];
+  if (!parsed.success) {
+    logger.warn('[HubRelay] The linked computers could not be read, so none can connect', {
+      failed: describeFailure(parsed.error),
+    });
+    return { ok: false, computers: [] };
+  }
+  const computers = parsed.data.filter((c): c is LinkedComputer => c !== null);
+  const dropped = parsed.data.length - computers.length;
+  if (dropped > 0) {
+    logger.warn('[HubRelay] Dropped old computer records in the agent computers` id space', {
+      dropped,
+    });
+  }
+  return { ok: true, computers };
 }
 
 /** Write the list, owner-only, and drop the cached copy. */
@@ -273,7 +322,7 @@ export async function storeLinkedComputer(
     linkedAt: new Date().toISOString(),
   });
   return withFileLock(filePath(dorkHome), async (write) => {
-    const all = readLinkedComputers(dorkHome);
+    const all = readForWrite(dorkHome);
     const existing = all.find((c) => c.computerId === record.computerId);
     if (existing && existing.computerKey !== record.computerKey) {
       throw new LinkedComputerKeyMismatchError();
@@ -303,7 +352,7 @@ export async function unlinkComputer(
   dorkHome: string = resolveDorkHome()
 ): Promise<boolean> {
   return withFileLock(filePath(dorkHome), async (write) => {
-    const all = readLinkedComputers(dorkHome);
+    const all = readForWrite(dorkHome);
     const kept = all.filter((c) => c.computerId !== computerId);
     if (kept.length === all.length) return false;
     await writeList(dorkHome, write, kept);

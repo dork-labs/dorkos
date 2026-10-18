@@ -26,6 +26,7 @@ import { liveAgentComputerLinkDeps, type AgentComputerLinkDeps } from './agent-c
 export {
   HUB_RELAY_MAX_COMPUTERS,
   LinkedComputerKeyMismatchError,
+  LinkedComputersUnreadableError,
   readLinkedComputers,
   relaySecretHash,
   type LinkComputerInput,
