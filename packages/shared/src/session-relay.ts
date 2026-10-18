@@ -76,8 +76,11 @@
  * linked Mac stays chats only.
  *
  * Frame encoding mirrors `stream-socket.ts`: one JSON object per WebSocket text
- * frame, parsed fail-soft, so a bad frame is a dropped frame and never a torn
- * down connection.
+ * frame. Decoding never throws, but a frame that does not open or decode is
+ * not skipped: once the channel is sealed, both ends close the connection on
+ * one, because skipping a sealed frame would break its sequence. So a sender
+ * checks every frame against {@link encodeRelayFrame} before it goes out, and
+ * never sends one the peer would refuse.
  *
  * @module shared/session-relay
  */
@@ -103,11 +106,22 @@ export const SESSION_RELAY_VERSIONS = { min: 1, max: 1 } as const;
 
 /**
  * Longest frame either side accepts, in UTF-16 code units (up to about three
- * times as many bytes on the wire). Larger is dropped. A socket's own byte
- * limit must sit above that, or an oversized frame closes the connection
- * instead of being dropped.
+ * times as many bytes on the wire). A longer one fails to decode, which closes
+ * the connection once the channel is sealed. A socket's own byte limit must
+ * sit above this, so the refusal is the protocol's and not the socket's.
  */
 export const SESSION_RELAY_MAX_FRAME_LENGTH = 1_048_576;
+
+/**
+ * Most UTF-8 bytes of one inner frame's JSON: what fits in a sealed frame of
+ * {@link SESSION_RELAY_MAX_FRAME_LENGTH} once it is boxed (a 16-byte tag),
+ * base64url-encoded and wrapped in the sealed frame's own JSON (64 characters
+ * of room). The sealing in `apps/server` (`RelayChannel.seal`) refuses
+ * anything larger, so this is the real gate on every inner frame, and
+ * {@link encodeRelayFrame} applies it before the sealing ever sees a frame.
+ */
+export const SESSION_RELAY_MAX_INNER_FRAME_BYTES =
+  Math.floor(((SESSION_RELAY_MAX_FRAME_LENGTH - 64) * 3) / 4) - 16;
 
 /** Longest message a relayed sender may post, in characters. */
 export const SESSION_RELAY_MAX_MESSAGE_LENGTH = 200_000;
@@ -681,7 +695,9 @@ function transcript(kind: string, input: RelayTranscriptInput, tail: string[]): 
 
 /**
  * Parse one frame, or `null` when it is too long, not JSON, or not a frame of
- * `schema`. Fails soft: a bad frame is dropped, the connection lives on.
+ * `schema`. Never throws; what a `null` means is the caller's to decide. Once
+ * the channel is sealed both ends close the connection on one, because a
+ * sealed frame cannot be skipped without breaking its sequence.
  *
  * @param raw - The raw text frame received from the socket.
  * @param schema - The schema for what this side expects next: the handshake
@@ -706,6 +722,12 @@ export function decodeRelayFrame<S extends z.ZodType>(raw: string, schema: S): z
  * the peer to read, or not serializable at all, such as nested past the
  * engine's stack). The sender answers with an error instead.
  *
+ * A `sealed` frame is measured in characters against
+ * {@link SESSION_RELAY_MAX_FRAME_LENGTH}; every other frame, which is either
+ * plain handshake JSON or about to be sealed, in UTF-8 bytes against
+ * {@link SESSION_RELAY_MAX_INNER_FRAME_BYTES}, exactly as the sealing measures
+ * it. A frame this encodes therefore always seals.
+ *
  * @param frame - The frame to encode.
  */
 export function encodeRelayFrame(
@@ -724,7 +746,10 @@ export function encodeRelayFrame(
   } catch {
     return null;
   }
-  return text.length > SESSION_RELAY_MAX_FRAME_LENGTH ? null : text;
+  if (frame.type === 'sealed') return text.length > SESSION_RELAY_MAX_FRAME_LENGTH ? null : text;
+  // Every code unit is at most three UTF-8 bytes, so most frames skip the count.
+  if (text.length * 3 <= SESSION_RELAY_MAX_INNER_FRAME_BYTES) return text;
+  return new TextEncoder().encode(text).length > SESSION_RELAY_MAX_INNER_FRAME_BYTES ? null : text;
 }
 
 // === Handshake ===

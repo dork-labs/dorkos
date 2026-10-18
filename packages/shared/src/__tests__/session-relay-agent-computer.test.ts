@@ -5,13 +5,19 @@ import {
   RelayWebFrameSchema,
   SESSION_RELAY_FEATURES,
   SESSION_RELAY_MAX_FRAME_LENGTH,
+  SESSION_RELAY_MAX_INNER_FRAME_BYTES,
   SESSION_RELAY_MAX_MESSAGE_LENGTH,
   SESSION_RELAY_VERSIONS,
   decodeRelayFrame,
   encodeRelayFrame,
 } from '../session-relay.js';
 import {
-  AGENT_COMPUTER_MAX_IDENTITY_FILE_LENGTH,
+  AGENT_COMPUTER_MAX_BODY_BYTES,
+  AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES,
+  AGENT_COMPUTER_MAX_JSON_DEPTH,
+  AGENT_COMPUTER_MAX_PACKAGES,
+  AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES,
+  AGENT_COMPUTER_MAX_TOOLS,
   AGENT_COMPUTER_MAX_IDENTITY_FILES,
   AGENT_COMPUTER_MAX_MANIFEST_BYTES,
   AGENT_COMPUTER_MAX_TOOL_INPUT_BYTES,
@@ -23,6 +29,11 @@ import {
   RELAY_CALL_FEATURES,
   RelayCallFrameSchema,
   RelayCallSchema,
+  encodeAgentComputerRequestFrame,
+  encodeRelayCallFrame,
+  encodeRelayCallResultFrame,
+  readRelayCallId,
+  relayCallRefusalFrame,
   hubFeaturesFrameFor,
   missingAgentComputerFeature,
   missingRelayCallFeature,
@@ -97,6 +108,32 @@ describe('agents.sync', () => {
     }
   );
 
+  it('counts an identity file in bytes, escapes included, not in characters', () => {
+    // A third of the cap in characters, three bytes each in UTF-8.
+    const cjk = '中'.repeat(Math.ceil(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES / 3) + 1);
+    expect(
+      AgentComputerRequestSchema.safeParse({ ...SYNC, files: [{ name: 'SOUL.md', text: cjk }] })
+        .success
+    ).toBe(false);
+    // A control character serializes to six bytes.
+    const escaped = '\u0001'.repeat(Math.ceil(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES / 6) + 1);
+    expect(
+      AgentComputerRequestSchema.safeParse({ ...SYNC, files: [{ name: 'SOUL.md', text: escaped }] })
+        .success
+    ).toBe(false);
+  });
+
+  it('refuses one file named twice, whatever its case', () => {
+    const request = {
+      ...SYNC,
+      files: [
+        { name: 'SOUL.md', text: 'a' },
+        { name: 'soul.md', text: 'b' },
+      ],
+    };
+    expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
+  });
+
   it('refuses one file named twice', () => {
     const request = {
       ...SYNC,
@@ -111,7 +148,7 @@ describe('agents.sync', () => {
   it('refuses, never cuts, an identity file or a manifest past its cap', () => {
     const longFile = {
       ...SYNC,
-      files: [{ name: 'SOUL.md', text: 'x'.repeat(AGENT_COMPUTER_MAX_IDENTITY_FILE_LENGTH + 1) }],
+      files: [{ name: 'SOUL.md', text: 'x'.repeat(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES) }],
     };
     expect(AgentComputerRequestSchema.safeParse(longFile).success).toBe(false);
     const manyFiles = {
@@ -168,6 +205,14 @@ describe('turn.start', () => {
     const { originRef: _originRef, ...bare } = TURN;
     expect(AgentComputerRequestSchema.safeParse({ ...bare, origin: 'chat' }).success).toBe(true);
   });
+
+  it.each(['room', 'task', 'beat'])(
+    'refuses a %s turn that does not say where it came from',
+    (origin) => {
+      const { originRef: _originRef, ...bare } = TURN;
+      expect(AgentComputerRequestSchema.safeParse({ ...bare, origin }).success).toBe(false);
+    }
+  );
 
   it.each([
     ['origin', 'webhook'],
@@ -389,11 +434,179 @@ describe('call frames', () => {
     expect(decodeRelayFrame(JSON.stringify(badId), AgentComputerFrameSchema)).toBeNull();
   });
 
-  it('will not encode a call the hub would drop for its size', () => {
+  it('measures an inner frame in UTF-8 bytes, the way sealing does', () => {
+    // Fewer characters than the frame limit, but more bytes than a sealed box holds.
+    const chars = Math.floor(SESSION_RELAY_MAX_INNER_FRAME_BYTES / 3) + 100;
+    expect(chars).toBeLessThan(SESSION_RELAY_MAX_FRAME_LENGTH);
+    const body = { text: '中'.repeat(chars) };
+    expect(encodeRelayFrame({ type: 'result', id: 'r1', ok: true, body })).toBeNull();
+    // What seals: a 16-byte tag, base64url, and 64 characters of sealed-frame JSON.
+    const sealedLength = Math.ceil(((SESSION_RELAY_MAX_INNER_FRAME_BYTES + 16) * 4) / 3) + 64;
+    expect(sealedLength).toBeLessThanOrEqual(SESSION_RELAY_MAX_FRAME_LENGTH);
+  });
+});
+
+/** A string of `bytes` UTF-8 bytes once serialized (quotes included), in CJK. */
+const cjkOfBytes = (bytes: number) => '中'.repeat(Math.floor((bytes - 2) / 3));
+
+/** A JSON object of about `bytes` serialized bytes, in CJK. */
+const cjkObjectOfBytes = (bytes: number) => ({ p: cjkOfBytes(bytes - 8) });
+
+describe('the largest legal frame of each kind still seals', () => {
+  /** Accepted by its schema, and so encodes within what one sealed frame carries. */
+  function expectFits(encoded: { ok: boolean }, text?: string | null) {
+    expect(encoded.ok).toBe(true);
+    if (text !== undefined) expect(text).not.toBeNull();
+  }
+
+  it('agents.sync at every field cap at once', () => {
+    const sync = {
+      op: 'agents.sync',
+      agentId: AGENT,
+      manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
+      files: Array.from({ length: AGENT_COMPUTER_MAX_IDENTITY_FILES }, (_, i) => ({
+        name: `${'F'.repeat(60)}${i}.md`,
+        text: cjkOfBytes(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES),
+      })),
+      packages: Array.from({ length: AGENT_COMPUTER_MAX_PACKAGES }, (_, i) => ({
+        name: `@${'a'.repeat(100)}/${'b'.repeat(100)}${i}`,
+        version: '1'.repeat(64),
+      })),
+    } as unknown as AgentComputerRequest;
+    expect(AgentComputerRequestSchema.safeParse(sync).success).toBe(true);
+    expectFits(encodeAgentComputerRequestFrame('r'.repeat(64), sync));
+  });
+
+  it('turn.start: the longest message fits, or is refused before it is sent', () => {
+    const wide = { ...TURN, content: '中'.repeat(SESSION_RELAY_MAX_MESSAGE_LENGTH) };
+    expectFits(encodeAgentComputerRequestFrame('r'.repeat(64), wide));
+    // Two hundred thousand control characters serialize to 1.2 MB.
+    const escaped = { ...TURN, content: '\u0001'.repeat(SESSION_RELAY_MAX_MESSAGE_LENGTH) };
+    expect(AgentComputerRequestSchema.safeParse(escaped).success).toBe(false);
+    expect(encodeAgentComputerRequestFrame('r1', escaped)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ status: 413 }),
+    });
+  });
+
+  it('tools.call: the largest input, and the largest output', () => {
     const call = {
       ...EVERY_CALL[1],
-      input: 'x'.repeat(SESSION_RELAY_MAX_FRAME_LENGTH),
+      input: cjkObjectOfBytes(AGENT_COMPUTER_MAX_TOOL_INPUT_BYTES),
     } as RelayCall;
-    expect(encodeRelayFrame({ type: 'call', id: 'c1', call })).toBeNull();
+    expectFits(encodeRelayCallFrame('c'.repeat(64), call));
+    const output = cjkOfBytes(AGENT_COMPUTER_MAX_TOOL_OUTPUT_BYTES);
+    const text = encodeRelayCallResultFrame('c'.repeat(64), 'tools.call', { ok: true, output });
+    expect(decodeRelayFrame(text, AgentComputerWebFrameSchema)).toMatchObject({ ok: true });
+  });
+
+  it('tools.list: a list that fits is legal, and one that cannot is refused, never sent', () => {
+    const tool = (i: number) => ({
+      name: `tool_${i}`,
+      description: 'd'.repeat(4_000),
+      inputSchema: cjkObjectOfBytes(AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES),
+    });
+    const perTool = 4_000 + AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES + 64;
+    const fits = Math.floor(AGENT_COMPUTER_MAX_BODY_BYTES / perTool);
+    const legal = { tools: Array.from({ length: fits }, (_, i) => tool(i)) };
+    const text = encodeRelayCallResultFrame('c1', 'tools.list', legal);
+    expect(decodeRelayFrame(text, AgentComputerWebFrameSchema)).toMatchObject({ ok: true });
+    // Every tool at its own cap, all of them: past one frame, so a refusal goes instead.
+    const all = { tools: Array.from({ length: AGENT_COMPUTER_MAX_TOOLS }, (_, i) => tool(i)) };
+    expect(parseRelayCallResult('tools.list', all)).toBeNull();
+    const refused = encodeRelayCallResultFrame('c1', 'tools.list', all);
+    expect(decodeRelayFrame(refused, AgentComputerWebFrameSchema)).toEqual(
+      relayCallRefusalFrame('c1', expect.objectContaining({ status: 413 }))
+    );
+  });
+
+  it('every body these schemas accept leaves room for its frame', () => {
+    expect(AGENT_COMPUTER_MAX_BODY_BYTES).toBeLessThan(SESSION_RELAY_MAX_INNER_FRAME_BYTES);
+    const maxEnvelope = JSON.stringify({
+      type: 'call.result',
+      id: 'c'.repeat(64),
+      ok: true,
+      body: null,
+    }).length;
+    expect(AGENT_COMPUTER_MAX_BODY_BYTES + maxEnvelope).toBeLessThanOrEqual(
+      SESSION_RELAY_MAX_INNER_FRAME_BYTES
+    );
+  });
+});
+
+describe('one bad call never drops the link', () => {
+  it('fails an oversized tool input on the computer, before anything is sent', () => {
+    const call = { ...EVERY_CALL[1], input: { pad: 'x'.repeat(300 * 1024) } } as RelayCall;
+    // It would encode: the frame is not the problem, the hub's schema is.
+    expect(encodeRelayFrame({ type: 'call', id: 'c1', call })).not.toBeNull();
+    expect(encodeRelayCallFrame('c1', call)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ status: 413, code: 'invalid' }),
+    });
+    expect(encodeRelayCallFrame('c1', EVERY_CALL[1])).toMatchObject({ ok: true });
+  });
+
+  it('refuses a malformed call as malformed, not as too large', () => {
+    const call = { ...EVERY_CALL[1], tool: '../sh' } as RelayCall;
+    expect(encodeRelayCallFrame('c1', call)).toEqual({
+      ok: false,
+      error: expect.objectContaining({ status: 400 }),
+    });
+  });
+
+  it('lets the hub answer a call it cannot decode, by its id', () => {
+    const oversized = JSON.stringify({
+      type: 'call',
+      id: 'c7',
+      call: { ...EVERY_CALL[1], input: { pad: 'x'.repeat(300 * 1024) } },
+    });
+    expect(decodeRelayFrame(oversized, AgentComputerFrameSchema)).toBeNull();
+    expect(readRelayCallId(oversized)).toBe('c7');
+    expect(readRelayCallId(JSON.stringify({ type: 'call', id: 'c8', call: { op: 'nope' } }))).toBe(
+      'c8'
+    );
+    // Anything that is not a call, or has no usable id, still closes the connection.
+    expect(readRelayCallId(JSON.stringify({ type: 'result', id: 'r1' }))).toBeNull();
+    expect(readRelayCallId(JSON.stringify({ type: 'call', id: '../c1' }))).toBeNull();
+    expect(readRelayCallId('not json')).toBeNull();
+  });
+
+  it('answers a hub-side answer of the wrong shape with a refusal for the same call', () => {
+    const text = encodeRelayCallResultFrame('c1', 'computer.status', { ok: false });
+    expect(decodeRelayFrame(text, AgentComputerWebFrameSchema)).toEqual(
+      relayCallRefusalFrame('c1', expect.objectContaining({ status: 500, code: 'internal' }))
+    );
+  });
+});
+
+describe('opaque JSON has a depth limit', () => {
+  /** An object nested `depth` levels below the top. */
+  const nested = (depth: number) => {
+    let value: Record<string, unknown> = {};
+    for (let i = 0; i < depth; i++) value = { a: value };
+    return value;
+  };
+
+  it.each([
+    ['a tool input', (v: object) => RelayCallSchema.safeParse({ ...EVERY_CALL[1], input: v })],
+    ['a manifest', (v: object) => AgentComputerRequestSchema.safeParse({ ...SYNC, manifest: v })],
+    [
+      'a tool output',
+      (v: object) => ({
+        success: parseRelayCallResult('tools.call', { ok: true, output: v }) !== null,
+      }),
+    ],
+    [
+      'an input schema',
+      (v: object) => ({
+        success:
+          parseRelayCallResult('tools.list', {
+            tools: [{ name: 't', description: '', inputSchema: v }],
+          }) !== null,
+      }),
+    ],
+  ])('takes %s at the limit and refuses one level deeper', (_label, parse) => {
+    expect(parse(nested(AGENT_COMPUTER_MAX_JSON_DEPTH)).success).toBe(true);
+    expect(parse(nested(AGENT_COMPUTER_MAX_JSON_DEPTH + 1)).success).toBe(false);
   });
 });
