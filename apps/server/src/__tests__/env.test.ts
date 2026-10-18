@@ -180,6 +180,33 @@ describe('serverEnv', () => {
     expect(second.env.DORKOS_HUB_INSTANCE_KEY).toBe('hub-key-from-the-environment');
   });
 
+  it('listens on loopback on an agent computer, whatever DORKOS_HOST says (DOR-2940)', async () => {
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_HOST', '0.0.0.0');
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', undefined as unknown as string);
+    const { env } = await import('../env.js');
+    expect(env.DORKOS_HOST).toBe('127.0.0.1');
+  });
+
+  it('keeps DORKOS_HOST as set on a person`s own computer', async () => {
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'computer');
+    vi.stubEnv('DORKOS_HOST', '0.0.0.0');
+    const { env } = await import('../env.js');
+    expect(env.DORKOS_HOST).toBe('0.0.0.0');
+  });
+
+  it('refuses to boot an agent computer with DORKOS_ALLOW_INSECURE_BIND', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubEnv('DORKOS_SERVER_ROLE', 'agent-computer');
+    vi.stubEnv('DORKOS_ALLOW_INSECURE_BIND', 'true');
+    await import('../env.js');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy.mock.calls.flat().join(' ')).toContain('DORKOS_ALLOW_INSECURE_BIND');
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
   it('rejects a malformed NANGO_BASE_URL at boot (DOR-415 nit)', async () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

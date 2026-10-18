@@ -4,7 +4,10 @@
  * when login is off. The agent question comes first, because an agent may hold
  * one of the person's API keys.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' | 'agent-computer' }));
+vi.mock('../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 import { createTestDb } from '@dorkos/test-utils/db';
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
@@ -44,6 +47,7 @@ describe('auditActorForRequest', () => {
   let ownerReads: number;
 
   beforeEach(() => {
+    role.value = 'computer';
     owner = null;
     ownerReads = 0;
     const db = createTestDb();
@@ -94,6 +98,28 @@ describe('auditActorForRequest', () => {
     expect(local).toMatchObject({ actor: { accountId: 'u1' }, credential: { kind: 'mcp-local' } });
   });
   afterEach(() => resetAuditTrail());
+
+  // DOR-2940: nobody signs in on an agent computer, so nothing there is a person.
+  it('never names the owner or a person on an agent computer', () => {
+    role.value = 'agent-computer';
+    owner = { id: 'u1', name: 'Dorian' };
+    const local = actorFor(request('/mcp'), { locals: { mcpLocalToken: true } });
+    expect(local).toMatchObject({
+      actor: { accountId: 'system', kind: 'system', name: 'Local MCP token' },
+      credential: { kind: 'mcp-local' },
+    });
+    const bare = actorFor(request('/api/health'), { locals: {} });
+    expect(bare!.actor).toMatchObject({ accountId: 'system', kind: 'system' });
+    const cookie = actorFor(request('/api/x'), {
+      locals: { user: { userId: 'u1', credential: 'cookie' } },
+    });
+    expect(cookie!.actor.kind).toBe('system');
+    const agent = actorFor(request('/api/x', { 'x-dorkos-agent': 't' }), {
+      locals: { agentIdentity: AGENT },
+    });
+    expect(agent!.actor).toMatchObject({ kind: 'agent', name: 'Scout' });
+    expect(ownerReads).toBe(0);
+  });
 
   it('names the agent a resolved token names', () => {
     const scope = actorFor(request('/api/config', { 'x-dorkos-agent': 't' }), {

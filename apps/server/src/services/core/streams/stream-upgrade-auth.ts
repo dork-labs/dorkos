@@ -108,7 +108,11 @@ export async function authorizeStreamUpgrade(
   const { headers } = req;
 
   const access = gateAccessFor(upgradeFacts(req));
-  if (access === 'refused') return { ok: false, status: 401, message: 'Unauthorized' };
+  // An agent computer's streams carry nothing an agent needs yet, and its gate
+  // admits no person (DOR-2940), so `agent` is refused here like `refused`.
+  if (access === 'refused' || access === 'agent') {
+    return { ok: false, status: 401, message: 'Unauthorized' };
+  }
   if (access === 'credential') {
     const user = await verifyRequestAuth({ headers });
     if (!user) return { ok: false, status: 401, message: 'Unauthorized' };

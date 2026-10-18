@@ -193,8 +193,12 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     noteForeignOrigin(facts, requestClass);
     const access = decideGateAccess(requestClass, readGatePosture());
     const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
-    if (!decision.allowed) return c.json(authRequiredBody(), 401);
+    if (!decision.allowed) {
+      return decision.refusal ? c.json(decision.refusal, 403) : c.json(authRequiredBody(), 401);
+    }
     if (decision.user) c.set('user', decision.user);
+    // The agent an agent computer's gate proved, so the audit actor names it.
+    if (decision.agentIdentity) c.set('agentIdentity', decision.agentIdentity);
     noteGateAdmitted(c.env.incoming, c.env.outgoing);
     await next();
   });

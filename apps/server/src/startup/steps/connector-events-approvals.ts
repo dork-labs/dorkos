@@ -58,6 +58,7 @@ import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireCoreStoresResult } from './core-stores.js';
 import type { WireRoomsResult } from './rooms.js';
 import type { ServerRefs } from '../server-refs.js';
+import { isAgentComputer } from '../../services/core/server-role/role-checks.js';
 
 /** What {@link wireConnectorEventsAndApprovals} reads from the startup steps before it. */
 export interface WireConnectorEventsAndApprovalsInput {
@@ -405,7 +406,9 @@ export async function wireConnectorEventsAndApprovals(
     }),
   });
   getCloudLinkManager().setManagedProviderSync(() => connectorBootstrapper.reloadManagedCloud());
-  await connectorBootstrapper.registerBootProviders();
+  // An agent computer holds no connection's secrets (DOR-2940): no way to an
+  // outside account registers, so nothing there reaches one.
+  if (!isAgentComputer()) await connectorBootstrapper.registerBootProviders();
   return {
     connectorEventSubscriptions,
     connectorEventInbox,

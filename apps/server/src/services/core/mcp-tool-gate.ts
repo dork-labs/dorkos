@@ -111,6 +111,7 @@ import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-sc
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { resolveApprovalSubject, type ApprovalRequestingSession } from './approvals/index.js';
+import { agentComputerActionRefusal } from './agent-computer/hub-owned.js';
 import {
   approvalNoLongerValid,
   awaitCapabilityApproval,
@@ -236,6 +237,13 @@ type GateOutcome =
  */
 async function runGate(run: GateRun): Promise<GateOutcome> {
   const { action, args, identity, interactive, origin, requestingSession } = run;
+  // What only the hub may do on an agent computer, and every action nobody there
+  // could approve, answers at once (`agent-computer/hub-owned.ts`).
+  const sealed = agentComputerActionRefusal(action);
+  if (sealed) {
+    const decision = { outcome: 'denied', payload: sealed } as const;
+    return { allowed: false, result: textResult(sealed), decision, input: args };
+  }
   // Only a tool that can raise a card advertises `approvalToken`, so only such a
   // call has one to lift off. Anything else passes its arguments through
   // untouched rather than silently losing a field that happens to share the name.
