@@ -18,11 +18,13 @@
  * - **Time.** A session that has been WARM for `SESSIONS.WARM_IDLE_MS` with no
  *   turn opened is reaped. Invisible to the person: the record, the transcript
  *   and the conversation are untouched, and the next message resumes.
- * - **Count.** At `SESSIONS.MAX_WARM_SESSIONS` a new launch reclaims the least
- *   recently used WARM process rather than being refused, because warmth is a
- *   cache and LRU is what a cache does. A host where nothing is reclaimable —
- *   every process mid-turn or parked on a person — is still refused, which is
- *   the honest answer when the ceiling is genuinely all in use.
+ * - **Count.** At the warm ceiling a new launch reclaims the least recently
+ *   used WARM process rather than being refused, because warmth is a cache and
+ *   LRU is what a cache does. A host where nothing is reclaimable — every
+ *   process mid-turn or parked on a person — WAITS for one to come free, up to
+ *   `SESSIONS.WARM_SLOT_WAIT_MS`, and is refused only when that wait runs out
+ *   (DOR-3012: seven agents woken by one room post all failed in under two
+ *   seconds, on a machine with forty gigabytes to spare).
  *
  * Both ceilings are read at acquire time (see {@link AcquirePumpOptions}) so a
  * config change takes effect on the next launch rather than on a restart.
@@ -94,6 +96,13 @@ import {
 import { WarmSlotBook } from './warm-slot-book.js';
 import { logger } from '../../../../lib/logger.js';
 
+/**
+ * How often a launch waiting for a slot checks again with nothing having woken
+ * it. A warm process whose background work ends frees a slot without changing
+ * state, so no transition announces it.
+ */
+const SLOT_RECHECK_MS = 15_000;
+
 /** Registries holding at least one pump, so shutdown can reach every process. */
 const liveRegistries = new Set<SessionPumpRegistry>();
 
@@ -102,9 +111,20 @@ export interface AcquirePumpOptions extends Omit<SessionPumpOptions, 'sessionId'
   /**
    * Ceiling on simultaneous processes, read at acquire time so a config change
    * takes effect on the next launch rather than on a restart. Task 3.8 supplies
-   * `SESSIONS.MAX_WARM_SESSIONS`.
+   * `resolveMaxWarmSessions()` (`slot-wait/warm-ceiling-size.ts`).
    */
   maxWarmSessions: number;
+  /**
+   * How long a launch may wait for a slot when the ceiling is full and nothing
+   * can be reclaimed, before it is refused. `SESSIONS.WARM_SLOT_WAIT_MS` in
+   * production.
+   */
+  slotWaitMs: number;
+  /**
+   * Called once per launch that has to wait for a slot, as the wait begins, so
+   * the turn can say it is waiting rather than look stuck.
+   */
+  onWaitingForSlot?: () => void;
   /**
    * How long this session may sit WARM with no turn open before its process is
    * given back, read at acquire time for the same reason. Task 3.8 supplies
@@ -134,6 +154,19 @@ interface PumpEntry {
 export class SessionPumpRegistry {
   private readonly entries = new Map<string, PumpEntry>();
   private readonly slots = new WarmSlotBook();
+  /** Launches waiting for a slot, each woken by anything that might free one. */
+  private readonly slotWaiters = new Set<() => void>();
+  /**
+   * Bumped by everything that might free a slot. A launch reads it before it
+   * checks, and does not sleep if it moved since: a slot freed while the launch
+   * was busy reclaiming would otherwise wake nobody, and it would sleep a whole
+   * {@link SLOT_RECHECK_MS} beside a free slot.
+   */
+  private slotChanges = 0;
+  /** Sessions whose launch is waiting for a slot right now. */
+  private readonly waitingForSlot = new Set<string>();
+  /** Sessions whose wait a Stop has ended, read once by the waiting launch. */
+  private readonly stoppedWaits = new Set<string>();
 
   /**
    * Build a registry that resolves every caller-supplied id through ONE
@@ -172,11 +205,11 @@ export class SessionPumpRegistry {
     const key = this.sessionKeyOf(sessionId);
     const existing = this.entries.get(key);
     if (existing) return existing.pump;
-    const { maxWarmSessions, warmIdleMs, ...pumpOpts } = opts;
+    const { maxWarmSessions, warmIdleMs, slotWaitMs, onWaitingForSlot, ...pumpOpts } = opts;
     const pump = new SessionPump({
       ...pumpOpts,
       sessionId: key,
-      reserveSlot: () => this.reserveSlot(key, maxWarmSessions),
+      reserveSlot: () => this.reserveSlot(key, maxWarmSessions, slotWaitMs, onWaitingForSlot),
       onStateChange: (change) => {
         // The registry's own bookkeeping runs FIRST, so a throw from the
         // caller's observer cannot cost this session its idle timer. The pump
@@ -298,6 +331,7 @@ export class SessionPumpRegistry {
     // slot and reaching WARMING cannot shrink the ceiling for good.
     this.slots.forget(sessionId);
     if (this.entries.size === 0) liveRegistries.delete(this);
+    this.wakeSlotWaiters();
   }
 
   /**
@@ -315,6 +349,10 @@ export class SessionPumpRegistry {
     // will. Either way the reservation has done its job.
     this.slots.release(sessionId);
     this.slots.touch(sessionId);
+    // Any move can free a slot for a launch that is waiting: a turn ending
+    // (RUNNING → WARM) makes a process reclaimable, and a launch that failed
+    // gives its reservation back.
+    this.wakeSlotWaiters();
     if (to === 'warm') {
       this.armIdle(entry);
       return;
@@ -417,33 +455,131 @@ export class SessionPumpRegistry {
 
   /**
    * Claim a slot for a process about to be booted, reclaiming the least recently
-   * used warm one when the ceiling is full.
+   * used warm one when the ceiling is full, and waiting for one to come free
+   * when nothing can be reclaimed.
+   *
+   * A full ceiling is a queue, not a failure (DOR-3012). Every process being
+   * mid-turn is the busiest moment a room has — one post that names seven
+   * agents — and refusing then turned each of them into "ran into a problem".
+   * The wait is woken by every state change and every drop, because those are
+   * the only things that free a slot, and it re-checks on
+   * {@link SLOT_RECHECK_MS} besides, for the one that is not a transition: a
+   * warm process finishing its background work becomes reclaimable without
+   * moving state.
    *
    * @param sessionId - The session asking, for the refusal's message
    * @param maxWarmSessions - The ceiling this launch is held to
-   * @throws PumpRefusedError When the ceiling is full and nothing can be
-   *   reclaimed, or when the asking session left while the reclaim ran
+   * @param slotWaitMs - How long to wait for a slot before refusing
+   * @param onWaitingForSlot - Told once, when the wait begins
+   * @throws PumpRefusedError When no slot came free within `slotWaitMs`, or when
+   *   the asking session left while it waited
    */
-  private async reserveSlot(sessionId: string, maxWarmSessions: number): Promise<void> {
-    if (this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
-    const reclaimed = await this.reclaimWarmSlot(sessionId);
-    // The reclaim awaited a process closing, and the asking session can have
-    // LEFT inside that window — evicted, or torn down by shutdown. This is the
-    // one grant that is not synchronous with a pump the registry still holds,
-    // and so the one that can book a slot `drop` will never give back: the
-    // reservation would outlive every pump and shrink the ceiling by one for
-    // the life of the server. Every other exit is safe because `drop` forgets.
-    if (!this.entries.has(sessionId)) {
-      throw new PumpRefusedError(
-        'process-gone',
-        `session ${sessionId} left the registry while it waited for a warm slot`
-      );
+  private async reserveSlot(
+    sessionId: string,
+    maxWarmSessions: number,
+    slotWaitMs: number,
+    onWaitingForSlot?: () => void
+  ): Promise<void> {
+    const deadline = Date.now() + slotWaitMs;
+    let waited = false;
+    try {
+      for (;;) {
+        // The session can LEAVE across any await below — evicted, or torn down by
+        // shutdown — and a slot granted to a session `drop` has already forgotten
+        // is never given back: it would shrink the ceiling by one for the life of
+        // the server. So presence is checked before every grant that follows an
+        // await, and the first grant is synchronous with the acquire.
+        if (waited && !this.entries.has(sessionId)) throw this.goneWhileWaiting(sessionId);
+        const seen = this.slotChanges;
+        if (this.stoppedWaits.delete(sessionId)) {
+          throw new PumpRefusedError(
+            'process-gone',
+            `session ${sessionId} was stopped while it waited for a warm slot`
+          );
+        }
+        if (this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
+        const reclaimed = await this.reclaimWarmSlot(sessionId);
+        if (!this.entries.has(sessionId)) throw this.goneWhileWaiting(sessionId);
+        if (reclaimed && this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
+        const left = deadline - Date.now();
+        if (left <= 0) {
+          throw new PumpRefusedError(
+            'warm-ceiling',
+            `cannot warm session ${sessionId}: ${maxWarmSessions} warm sessions already, and none came free within ${Math.round(slotWaitMs / 1000)}s`
+          );
+        }
+        if (!waited) {
+          waited = true;
+          this.waitingForSlot.add(sessionId);
+          logger.info('[SessionPumpRegistry] every warm slot is busy; waiting for one', {
+            session: sessionId,
+            ceiling: maxWarmSessions,
+            waitMs: slotWaitMs,
+          });
+          try {
+            onWaitingForSlot?.();
+          } catch (err) {
+            logger.warn('[SessionPumpRegistry] a slot-wait observer threw', {
+              session: sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+        if (this.slotChanges === seen)
+          await this.waitForSlotChange(Math.min(left, SLOT_RECHECK_MS));
+      }
+    } finally {
+      this.waitingForSlot.delete(sessionId);
+      this.stoppedWaits.delete(sessionId);
     }
-    if (reclaimed && this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
-    throw new PumpRefusedError(
-      'warm-ceiling',
-      `cannot warm session ${sessionId}: ${maxWarmSessions} warm sessions already, and no slot could be reclaimed`
+  }
+
+  /**
+   * End a launch's wait for a slot, because the person pressed Stop on the turn
+   * it was for. The launch is refused as `process-gone`, which a dispatch that
+   * knows it was stopped settles as interrupted rather than failed.
+   *
+   * @param sessionId - Session whose wait to end, in any id it answers to
+   * @returns True when the session was waiting and now is not
+   */
+  stopSlotWait(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    if (!this.waitingForSlot.has(key)) return false;
+    this.stoppedWaits.add(key);
+    this.wakeSlotWaiters();
+    return true;
+  }
+
+  /** The refusal for a session that left the registry while it waited. */
+  private goneWhileWaiting(sessionId: string): PumpRefusedError {
+    return new PumpRefusedError(
+      'process-gone',
+      `session ${sessionId} left the registry while it waited for a warm slot`
     );
+  }
+
+  /**
+   * Resolve on the next thing that might free a slot, or after `ms`.
+   *
+   * @param ms - The longest to wait before checking again anyway
+   */
+  private waitForSlotChange(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        this.slotWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      timer.unref?.();
+      this.slotWaiters.add(done);
+    });
+  }
+
+  /** Wake every launch waiting for a slot, so each checks again. */
+  private wakeSlotWaiters(): void {
+    this.slotChanges += 1;
+    for (const wake of [...this.slotWaiters]) wake();
   }
 
   /**

@@ -97,6 +97,7 @@ import {
   seedUiPanelTabs,
   seedDoeDefaultModel,
   seedLanAccess,
+  seedMaxWarmProcesses,
   raiseEngagedWindowDefaults,
 } from './v0-90-onward.js';
 
@@ -1314,4 +1315,11 @@ export const CONFIG_MIGRATIONS = {
       });
     }
   },
+  // v0.121.0 is the newest tag, so this opens 0.122.0. Frozen from merge;
+  // anything further opens `'0.123.0'`.
+  //
+  // Writes `runtimes.claudeCode.maxWarmProcesses: null` where the stored
+  // section lacks it, and touches nothing else (DOR-3012). See
+  // `seedMaxWarmProcesses`.
+  '0.122.0': seedMaxWarmProcesses,
 } as const;

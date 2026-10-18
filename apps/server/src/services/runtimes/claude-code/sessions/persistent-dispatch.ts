@@ -154,6 +154,8 @@ import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { enrichContent } from '../enrich-content.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { turnNotStarted } from '../../../session/launch/turn-not-started.js';
+import { explainRefusedDispatch, openWindowWaitingForSlot } from './slot-wait/open-turn-window.js';
+import { resolveMaxWarmSessions } from './slot-wait/warm-ceiling-size.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -184,7 +186,7 @@ import {
   type PluginReloadCacheImpact,
 } from '../messaging/plugin-reload-policy.js';
 import { streamTurnWindow } from './pump-turn-stream.js';
-import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
+import { SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
 import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
@@ -200,6 +202,11 @@ import {
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
   pump: SessionPump;
+  /**
+   * Told when this turn's launch starts waiting for a warm slot; set only while
+   * a dispatch is opening its window (`slot-wait/open-turn-window.ts`, DOR-3012).
+   */
+  onSlotWait?: () => void;
   windows: SessionTurnWindows;
   recovery: SessionCrashRecovery;
   /**
@@ -230,7 +237,7 @@ interface SessionBundle {
    * AFTER the crash seam has already cleared everything it could be re-derived
    * from (DOR-1302).
    *
-   * That reader is {@link PersistentDispatch.explainRefusedDispatch}. A Stop
+   * That reader is `explainRefusedDispatch` (`slot-wait/open-turn-window.ts`). A Stop
    * during a turn's LAUNCH kills the process before `system/init`, so the
    * dispatch that was waiting on it is refused rather than streamed — and by
    * then {@link SessionBundle.live} is cleared, `session.activeQuery` was never
@@ -606,6 +613,24 @@ export class PersistentDispatch {
   }
 
   /**
+   * End a turn's wait for a free warm slot, because Stop was pressed on it
+   * (DOR-3012). There is no process to interrupt yet, so {@link bootingQuery}
+   * finds nothing; the wait is what the Stop has to end. The turn then settles
+   * interrupted, through `explainRefusedDispatch`'s Stop branch.
+   *
+   * @param sessionId - The session a Stop is trying to reach, in any id it
+   *   answers to
+   * @returns True when a turn was waiting and has been stopped
+   */
+  stopSlotWait(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || !this.registry.stopSlotWait(key)) return false;
+    bundle.closedByStop = true;
+    return true;
+  }
+
+  /**
    * Run one message as a turn on this session's held process.
    *
    * @param args - The session, its message, and the runtime's ports. `sessionId`
@@ -868,27 +893,42 @@ export class PersistentDispatch {
     yield* deliverStatusEvents(plan);
 
     let window: TurnWindow;
-    // A turn is booting from here until its window opens — the span in which the
-    // pump is warming and `session.activeQuery` is not yet armed, so Stop reaches
-    // the turn only through `bootingQuery` (DOR-1191). Cleared once the window is
-    // open (the `running` edge has armed `activeQuery`) or the dispatch is
-    // refused, in both cases through the `finally`.
-    bundle.booting = true;
-    // Whatever ended the LAST process is this turn's business only if it happens
-    // again to this one. Cleared here rather than at the top of `dispatch`
-    // because `bundle` is not resolved until `acquire` above, and a
-    // `replaceProcess` can hand back a different one.
-    bundle.closedByStop = false;
+    // One id across a retry, so the windower correlates the same message.
+    const messageId = messageOpts?.messageId ?? randomUUID();
     try {
-      window = await bundle.recovery.dispatch(
-        [{ content: plan.enrichedContent, messageId: messageOpts?.messageId ?? randomUUID() }],
-        effectiveCwd
-      );
+      window = yield* openWindowWaitingForSlot(sessionId, (onWaiting) => {
+        // The pump can have been reaped since `acquire` above: the idle timer
+        // and another chat's slot reclaim both fire across the awaits in
+        // between, and a reaped pump refuses to launch (DOR-3012).
+        if (this.registry.peek(key) !== bundle.pump) {
+          bundle.booting = false;
+          bundle = this.acquire(key, session, opts);
+          bundle.plan = plan;
+          session.backgroundPermissionCeiling = carryCeiling(session, bundle.pump);
+        }
+        // A turn is booting from here until its window opens — the span in
+        // which the pump is warming and `session.activeQuery` is not yet armed,
+        // so Stop reaches the turn only through `bootingQuery` (DOR-1191).
+        // Cleared once the window is open or the dispatch is refused, in both
+        // cases through the `finally`.
+        bundle.booting = true;
+        // Whatever ended the LAST process is this turn's business only if it
+        // happens again to this one. Cleared here rather than at the top of
+        // `dispatch` because `bundle` is not resolved until `acquire` above,
+        // and a `replaceProcess` can hand back a different one.
+        bundle.closedByStop = false;
+        bundle.onSlotWait = onWaiting;
+        return bundle.recovery.dispatch(
+          [{ content: plan.enrichedContent, messageId }],
+          effectiveCwd
+        );
+      });
     } catch (err) {
-      yield* this.explainRefusedDispatch(sessionId, err, bundle.closedByStop);
+      yield* explainRefusedDispatch(sessionId, err, bundle.closedByStop);
       return;
     } finally {
       bundle.booting = false;
+      bundle.onSlotWait = undefined;
     }
     // Told once the window is open, so a turn the process refused never ends
     // anybody's follow of the session's later turns. A throw stays out here, and
@@ -1184,95 +1224,6 @@ export class PersistentDispatch {
   }
 
   /**
-   * Say why a dispatch never reached the process, in words a person can act on.
-   *
-   * Every one of these leaves this runtime's own queue alone: a row retires on
-   * correlated OUTPUT evidence — the `turn_start` a window mints — and none of
-   * these produced one (`session-crash-recovery.ts`). The dispatcher's queue row
-   * is NOT kept: it retired on the projector's own `turn_start`, before this
-   * dispatch was tried. So each refusal carries `turn_not_started` and a
-   * refusal kind, the turn settles `failed`, and a chat message it
-   * carried is reported not delivered rather than delivered (DOR-2994).
-   *
-   * @param sessionId - The session whose dispatch was refused
-   * @param err - What the dispatch threw
-   * @param closedByStop - Whether a DorkOS Stop is what killed the process this
-   *   dispatch was waiting on ({@link SessionBundle.closedByStop})
-   */
-  private *explainRefusedDispatch(
-    sessionId: string,
-    err: unknown,
-    closedByStop: boolean
-  ): Generator<StreamEvent> {
-    // A Stop pressed while the turn was still LAUNCHING (DOR-1302). The close
-    // kills the process before `system/init`, so the launch this dispatch was
-    // waiting on rejects and there is no window to stream — the settle the
-    // windower already wrote into that window reaches nobody. Left to fall
-    // through, this became a rethrow that `guardTurnErrors` renders as a turn
-    // error with a raw `process-gone` stack, which is the exact "your agent
-    // crashed" report for an operator action that this whole change removes.
-    //
-    // Answered as the resume path answers its own version of this: a status
-    // carrying the terminal reason the CLI never got to send, plus the terminal
-    // `done`. The projector settles that turn `interrupted`. No `error` frame,
-    // because there is no failure to report — and `stopWasRequested` is proven
-    // by the branch, not guessed (`messaging/message-sender.ts` says the same of
-    // its twin).
-    //
-    // Deliberately narrowed to `process-gone`: it is the only refusal a close
-    // produces, and a session whose LAST process a Stop killed can still meet
-    // the warm ceiling or a pending interaction on this launch, which are
-    // different facts and keep their own sentences below.
-    if (closedByStop && err instanceof PumpRefusedError && err.reason === 'process-gone') {
-      logger.debug('[persistent-dispatch] settling a stopped launch as interrupted', {
-        session: sessionId,
-      });
-      yield {
-        type: 'session_status',
-        data: { sessionId, terminalReason: 'interrupted', stopWasRequested: true },
-      };
-      yield { type: 'done', data: { sessionId } };
-      return;
-    }
-    if (err instanceof SessionCrashLoopError) {
-      // The raw error leads with the session id, which is a UUID nobody reads.
-      // The operator gets the plain sentence; the id stays in `details` and in
-      // the warning `SessionCrashRecovery` already logged.
-      yield* turnNotStarted(
-        sessionId,
-        'crash-loop',
-        `This chat's agent keeps stopping, so DorkOS did not start it again. ${
-          err.crash?.message ?? 'It ended without saying why.'
-        } Send the message again to try once more.`,
-        err.message
-      );
-      return;
-    }
-    if (err instanceof PumpRefusedError && err.reason === 'warm-ceiling') {
-      yield* turnNotStarted(
-        sessionId,
-        'warm-ceiling',
-        `Too many chats are holding an agent open right now (the limit is ${SESSIONS.MAX_WARM_SESSIONS}). Finish or close one and send this again.`,
-        err.message
-      );
-      return;
-    }
-    if (err instanceof PumpRefusedError && err.reason === 'pending-interaction') {
-      yield* turnNotStarted(
-        sessionId,
-        'pending-interaction',
-        'This chat is waiting on an answer from you, so the message was not sent yet. Answer the open request and send it again.',
-        err.message
-      );
-      return;
-    }
-    // Anything else is a genuine failure to launch or dispatch. Rethrow so
-    // `guardTurnErrors` translates it exactly as it does on the resume path —
-    // one place owns the generic translation, not two.
-    throw err;
-  }
-
-  /**
    * This session's wiring, built on first use.
    *
    * The three collaborators reference each other — the pump's observers reach
@@ -1327,8 +1278,10 @@ export class PersistentDispatch {
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(key, {
-      maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
+      maxWarmSessions: resolveMaxWarmSessions(),
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
+      slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
+      onWaitingForSlot: () => bundle.onSlotWait?.(),
       // Mirrored into a durable record so a server that goes away while the
       // work runs can wake the chat at its next boot (DOR-2065).
       onBackgroundWorkChange: (holding) => {

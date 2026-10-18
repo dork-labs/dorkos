@@ -51,6 +51,7 @@ function launchOpts(
   return {
     maxWarmSessions: CEILING,
     warmIdleMs: IDLE_MS,
+    slotWaitMs: 0,
     launch: () => {
       const query = new FakeQuery();
       queries.set(sessionId, query);

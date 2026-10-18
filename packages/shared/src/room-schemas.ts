@@ -933,10 +933,12 @@ export type RoomMoment = z.infer<typeof RoomMomentSchema>;
  * the bridge falls back to the approval sentence when it is absent.
  *
  * The names are the projector's own (`PendingInteractionDTO['type']`), so the
- * two cannot drift into meaning different things.
+ * two cannot drift into meaning different things. `slot` is the one that is
+ * not a person: every agent on the computer is busy, and the turn will start
+ * when one finishes (DOR-3012).
  */
 export const RoomWaitingKindSchema = z
-  .enum(['approval', 'question', 'elicitation'])
+  .enum(['approval', 'question', 'elicitation', 'slot'])
   .openapi('RoomWaitingKind');
 
 /** What an agent stopped to wait for. */

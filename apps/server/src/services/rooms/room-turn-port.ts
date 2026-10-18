@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/room-turn-port
  */
+import type { TurnFailure } from './turn-guards/turn-waits.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -268,6 +269,12 @@ export interface RoomTurnReply {
   text: string | null;
   /** Set when the room got no answer for a reason a member should see. */
   unanswered?: RoomTurnUnanswered;
+  /**
+   * Why a `failed` turn failed: the runtime's refusal when it never started
+   * (so the room's notice can name it), and a detail for the log either way
+   * (DOR-3012).
+   */
+  failure?: TurnFailure;
 }
 
 /** An answer that arrived after the room stopped waiting for it. */

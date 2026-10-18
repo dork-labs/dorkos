@@ -29,6 +29,7 @@
  *
  * @module server/services/rooms/notices/notice-log
  */
+import type { TurnFailure } from '../turn-guards/turn-waits.js';
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -182,6 +183,11 @@ export interface SilenceContext {
    * failure.
    */
   outOfUsageUntil?: string | null;
+  /**
+   * Why a failed turn failed (DOR-3012): the line names a refusal a person can
+   * understand, and the log records the detail on every failure.
+   */
+  failure?: TurnFailure;
 }
 
 /**
@@ -433,6 +439,9 @@ export class RoomNoticeLog {
           // a `runtime_gone` run can say WHICH program an install is missing
           // without reading the prose back out of the notice.
           ...(context.runtime !== undefined ? { runtime: context.runtime } : {}),
+          // Why a failed turn failed, on every one (DOR-3012).
+          ...(context.failure !== undefined ? { failedBecause: context.failure.detail } : {}),
+          ...(context.failure?.refusal !== undefined ? { refusal: context.failure.refusal } : {}),
         },
       });
     if (damped) {
@@ -1049,8 +1058,8 @@ const SILENCE_BODIES: Record<
   (agent: NoticeSubject, context: SilenceContext & { busyWith: BusyContext }) => RoomEntryBody
 > = {
   busy: (agent, { busyWith }) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
-  failed: (agent, { outOfUsageUntil }) =>
-    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil),
+  failed: (agent, { outOfUsageUntil, failure }) =>
+    buildTurnFailedNotice(agent.displayName, agent.authorId, outOfUsageUntil, failure?.refusal),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
   left: (agent) => buildAgentLeftNotice(agent.displayName, agent.authorId),
   unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),

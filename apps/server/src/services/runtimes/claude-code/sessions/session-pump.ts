@@ -130,6 +130,16 @@ export class SessionPump {
    */
   private turnClosedWhileOpening = false;
   /**
+   * True while {@link dispatch} is opening a turn: from its checks until the
+   * turn is RUNNING or the dispatch has failed. The pump can sit WARM inside
+   * that span — between its launch finishing and the turn opening, or while it
+   * waits on a launch somebody else started — and a reclaim that reaped it
+   * there killed the turn being opened, which then failed "cannot go from
+   * reaped to running" (DOR-3012). {@link reap} and {@link reapReclaimable}
+   * decline while it is set.
+   */
+  private opening = false;
+  /**
    * Whether this process is doing anything, and the two clocks that bound the
    * answer (`process-quiet.ts`).
    *
@@ -317,24 +327,29 @@ export class SessionPump {
     // Fresh for the turn about to open: a tombstone left by a previous close
     // must not settle this one.
     this.turnClosedWhileOpening = false;
-    if (this.currentState === 'cold' || this.currentState === 'crashed') {
-      // The first message rides the launch rather than being pushed after it:
-      // it is in the stream from construction, so there is no window in which
-      // the process is up and the message is merely "accepted".
-      await this.launch(first);
+    this.opening = true;
+    try {
+      if (this.currentState === 'cold' || this.currentState === 'crashed') {
+        // The first message rides the launch rather than being pushed after
+        // it: it is in the stream from construction, so there is no window in
+        // which the process is up and the message is merely "accepted".
+        await this.launch(first);
+        this.pushRest(rest);
+        this.openTurn();
+        return;
+      }
+      // A launch somebody else started (an explicit `warm()`) has to finish
+      // before this can push into its stream.
+      if (this.launchInFlight) await this.launchInFlight;
+      if (this.currentState !== 'warm') {
+        throw new IllegalPumpTransitionError(this.currentState, 'running');
+      }
+      this.pushOrFail(first);
       this.pushRest(rest);
       this.openTurn();
-      return;
+    } finally {
+      this.opening = false;
     }
-    // A launch somebody else started (an explicit `warm()`) has to finish
-    // before this can push into its stream.
-    if (this.launchInFlight) await this.launchInFlight;
-    if (this.currentState !== 'warm') {
-      throw new IllegalPumpTransitionError(this.currentState, 'running');
-    }
-    this.pushOrFail(first);
-    this.pushRest(rest);
-    this.openTurn();
   }
 
   /**
@@ -576,10 +591,11 @@ export class SessionPump {
       this.setState('reaped');
       return true;
     }
-    if (this.currentState !== 'warm') {
+    if (this.currentState !== 'warm' || this.opening) {
       logger.debug('[SessionPump] declined to reap a session that is not warm', {
         sessionId: this.sessionId,
         state: this.currentState,
+        opening: this.opening,
       });
       return false;
     }
@@ -637,7 +653,8 @@ export class SessionPump {
    * @returns True when the process was closed, false when the pump declined
    */
   async reapReclaimable(): Promise<boolean> {
-    if (this.currentState !== 'warm' || !this.quiet.isHoldingOnlyReclaimable()) return false;
+    if (this.currentState !== 'warm' || this.opening) return false;
+    if (!this.quiet.isHoldingOnlyReclaimable()) return false;
     this.setState('reaped');
     await this.drain();
     return true;
