@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../config.js';
-import { MIGRATIONS_DIR } from '../migrate.js';
+import { MIGRATIONS_DIR } from '../startup/space-root.js';
 import { createSpaceServer } from '../startup/space-server.js';
 
 const SRC = new URL('../', import.meta.url);

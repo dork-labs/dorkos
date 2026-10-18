@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { MIGRATIONS_DIR } from './startup/space-root.js';
 import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
 
@@ -100,9 +101,6 @@ async function readCompatibilityFloor(client: PoolClient): Promise<number | null
   );
   return row.rows[0]?.min_migration ?? null;
 }
-
-/** The folder the SQL files are read from: `migrations/` beside `src/` and `dist-server/`. */
-export const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url));
 
 /**
  * Apply versioned community SQL migrations in a single database transaction.

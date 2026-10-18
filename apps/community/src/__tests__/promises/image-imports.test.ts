@@ -4,19 +4,26 @@
  */
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FORBIDDEN_IN_SPACE_IMAGE, forbiddenReachedFrom, walkImports } from './image-imports.js';
+import {
+  FORBIDDEN_IN_SPACE_IMAGE,
+  REPO_ROOT,
+  forbiddenReachedFrom,
+  walkImports,
+} from './image-imports.js';
+import { SPACE_SRC } from '../space-paths.js';
 
 const baseline = JSON.parse(
   readFileSync(new URL('image.baseline.json', import.meta.url), 'utf8')
 ) as { commands: string[] };
 
-/** The space package, relative to the repository root. */
-const SPACE = 'apps/community';
+/** The space server's source, relative to the repository root. */
+const SPACE_SOURCE = relative(REPO_ROOT, fileURLToPath(SPACE_SRC)).replace(/\/$/u, '');
 /** Every entry the image runs: the server, then each offline command, as source files. */
 const ENTRIES = ['dist-server/main.js', ...baseline.commands].map(
-  (built) => `${SPACE}/${built.replace(/^dist-server\//u, 'src/').replace(/\.js$/u, '.ts')}`
+  (built) => `${SPACE_SOURCE}/${built.replace(/^dist-server\//u, '').replace(/\.js$/u, '.ts')}`
 );
 
 describe('the space image', () => {
@@ -28,7 +35,7 @@ describe('the space image', () => {
 
   it('walks the whole graph, through workspace packages', async () => {
     // Purpose: fails if the walk stops early, which would make the check above pass on nothing.
-    const { packages } = await walkImports(`${SPACE}/src/main.ts`);
+    const { packages } = await walkImports(`${SPACE_SOURCE}/main.ts`);
     for (const name of ['pg', 'hono', 'better-auth', '@dorkos/shared'])
       expect(packages.has(name)).toBe(true);
   });

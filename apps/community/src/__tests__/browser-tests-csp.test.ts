@@ -5,8 +5,9 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { SPACE_ROOT } from './space-paths.js';
 
-const SPECS = new URL('../../browser-tests/', import.meta.url);
+const SPECS = new URL('browser-tests/', SPACE_ROOT);
 
 describe('browser tests', () => {
   it('all take test and expect from the policy guard', () => {

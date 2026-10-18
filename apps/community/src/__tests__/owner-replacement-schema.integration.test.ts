@@ -4,9 +4,9 @@
  * key can hold `communities:ownership`, the host projection shows the open replacement, and a
  * deleted community takes its replacements with it.
  */
+import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -24,6 +24,7 @@ import {
   startTenancyHarness,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
+import { MIGRATIONS_DIR } from './space-paths.js';
 
 let h: TenancyHarness;
 let operatorCookie = '';
@@ -731,12 +732,7 @@ describe('upgrading', () => {
       );
       for (const [version, filename] of COMMUNITY_MIGRATIONS) {
         if (filename === '0022_owner_replacements.sql') break;
-        await db.query(
-          await readFile(
-            fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
-            'utf8'
-          )
-        );
+        await db.query(await readFile(join(MIGRATIONS_DIR, filename), 'utf8'));
         await db.query('INSERT INTO community_migrations(version) VALUES($1)', [version]);
       }
       const existing = (

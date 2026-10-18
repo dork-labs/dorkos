@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { communityMigrationCompatibilityId } from '../../../../../scripts/lib/community-migration-id.mjs';
 import { REPO_ROOT } from './image-imports.js';
+import { MIGRATIONS_DIR } from '../space-paths.js';
 
 const read = (path: string) => readFileSync(join(REPO_ROOT, path), 'utf8');
 const WORKFLOW = '.github/workflows/publish-community.yml';
@@ -22,10 +23,7 @@ const workflow = read(WORKFLOW);
 const cliBuild = read('packages/cli/scripts/build.ts');
 const manifestGenerator = read('scripts/generate-community-release-manifest.ts');
 /** The folder the server migrates from (`migrate.ts` reads `../migrations/`), from the root. */
-const migrations = relative(
-  REPO_ROOT,
-  fileURLToPath(new URL('../../../migrations/', import.meta.url))
-);
+const migrations = relative(REPO_ROOT, MIGRATIONS_DIR);
 
 /** A workflow value with `$SPACE_DIR` read from ci/space-server.env, when that file exists. */
 function expandSpaceDir(value: string): string {

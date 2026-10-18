@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { parseConfig } from '../config.js';
-import { MIGRATIONS_DIR } from '../migrate.js';
+import { MIGRATIONS_DIR } from '../startup/space-root.js';
 import { createSpaceServer } from '../startup/space-server.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
