@@ -379,7 +379,7 @@ export async function chatlessCallerStop(
 /**
  * Everything `session_start` decides about the level, in one call: the ceiling,
  * the grant against the target runtime's declared modes, and the rule that Full
- * autonomy is only ever granted when asked for by name. Nothing is written here; a refusal
+ * autonomy past an approval card is only ever granted when asked for by name. Nothing is written here; a refusal
  * leaves nothing behind.
  *
  * @param requested - The mode the tool was asked for, if any.
@@ -389,22 +389,28 @@ export async function chatlessCallerStop(
  *   commands stop (its own, then the runtime's, then the global one), which
  *   is its ceiling; `null` keeps {@link NO_CHAT_CEILING_MODE}. Ignored in a
  *   chat, whose own level is the ceiling.
+ * @param noApprovalCard - Whether this call ran without an approval card
+ *   (`startRaisesNoCard`): then an inherited Full autonomy is granted unnamed,
+ *   because there is no card for it to be invisible on (ADR `261018-030117`).
  */
 export async function resolveStartPermission(
   requested: string | undefined,
   chat: CallingChat | null,
   runtimeType: string,
-  callerStop: PermissionStop | null = null
+  callerStop: PermissionStop | null = null,
+  noApprovalCard = false
 ): Promise<
   { ok: true; permission: SessionStartPermission } | { ok: false; error: string; code: string }
 > {
   const ceiling = await ceilingOf(chat, { stop: callerStop, runtimeType });
   const grant = grantMode(requested, ceiling, runtimeType);
   if (!grant.ok) return grant;
-  // Full autonomy is never granted silently. An approval card shows only the
-  // arguments a call sent, so an inherited Full autonomy would be invisible to
-  // the person approving it: that level has to be asked for by name.
-  if (requested === undefined && actsWithoutAsking(grant.mode)) {
+  // Full autonomy is never granted silently past a card. An approval card shows
+  // only the arguments a call sent, so an inherited Full autonomy would be
+  // invisible to the person approving it: that level has to be asked for by
+  // name. With no card there is nobody to hide it from, and refusing only sent
+  // the agent back at a lower mode, so the chat it started ran below it.
+  if (requested === undefined && actsWithoutAsking(grant.mode) && !noApprovalCard) {
     return {
       ok: false,
       error:

@@ -21,7 +21,9 @@
  *    and stops the running turn, so it runs next.
  * 4. **The power it carries.** The turn runs no looser than the sending
  *    chat's latest turn ({@link senderCeiling}), applied by the dispatcher when
- *    the queue row launches.
+ *    the queue row launches. On Trusted, a message DorkOS vouched for as it
+ *    was sent (its chat's turn read no outsider's words) carries no bound, so
+ *    the receiver runs at its own level (ADR `261018-030117`).
  *
  * ## No loop guard
  *
@@ -34,11 +36,7 @@
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ChatMessageRow } from '@dorkos/db';
-import type {
-  TurnPermissionBound,
-  TurnPermissionCeiling,
-  TurnPermissionLevel,
-} from '@dorkos/shared/agent-runtime';
+import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
 import type {
   ChatDelivery,
@@ -49,6 +47,10 @@ import type {
 } from '@dorkos/shared/chat-messages';
 import { logError, logger } from '../../../lib/logger.js';
 import { recordAudit } from '../../audit/audit-trail.js';
+import { agentWordsKeepPower } from '../../core/turn-power/agent-words-keep-power.js';
+import { agentIsReadingOutsider } from '../../core/turn-power/live-outsider-turns.js';
+import { sessionReadOutsider } from '../../core/turn-power/turn-levels.js';
+import { parseCeiling, senderCeiling, storedCeiling } from './chat-ceiling.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -160,6 +162,15 @@ export interface ChatMessageServiceDeps {
   interruptTurn: (sessionId: string) => Promise<boolean>;
   /** The level a chat's latest turn ran at, or undefined when not known. */
   turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
+  /**
+   * Whether one of an agent's turns that read an outsider's words is running,
+   * for a sender whose own level is unknown. Live by default.
+   */
+  agentReadingOutsider?: (agentPath: string) => boolean;
+  /** Whether a chat ran a turn that read an outsider's words, ever, in this process. Live by default. */
+  sessionReadOutsider?: (sessionId: string) => boolean;
+  /** Whether vouched agents' messages keep the receiver's level (Trusted). Live by default. */
+  agentWordsKeepPower?: () => boolean;
   /** Tell a chat's windows its messaging changed. */
   emitActivity: (sessionId: string) => void;
   /** Subscribe to the dispatcher's lifecycle. */
@@ -203,14 +214,37 @@ export class ChatMessageService {
   /**
    * The ceiling a queue row a chat sent launches under: every sender's bound
    * when the row carries several, `runtime-default` for a row with no record.
+   * On Trusted a vouched sender's bound is left out, and `null` means none is
+   * left: the turn runs at the receiver's own level (ADR `261018-030117`).
    *
    * @param queueMessageId - The dispatcher's message id.
    */
-  ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling {
+  ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling | null {
     const rows = this.deps.store.listByQueueMessage(queueMessageId);
     if (rows.length === 0) return 'runtime-default';
-    const bounds = rows.map((row) => parseCeiling(row.ceilingJson));
+    const stored = rows.map((row) => parseCeiling(row.ceilingJson));
+    const keepPower = (this.deps.agentWordsKeepPower ?? agentWordsKeepPower)();
+    const bounds = stored.filter((one) => !(keepPower && one.vouched)).map((one) => one.bound);
+    if (bounds.length === 0) return null;
     return bounds.length === 1 ? bounds[0]! : bounds;
+  }
+
+  /**
+   * The ceiling a message from this chat is stored with: its level, and
+   * whether DorkOS vouches for it. Vouched when the chat ran no turn in this
+   * process that read an outsider's words, and its latest turn is unmarked;
+   * when its level is unknown, when none of its agent's turns that did is
+   * running (as `outsiderBoundOf` reads a caller).
+   */
+  private storedCeilingOf(caller: ChatCaller): string {
+    const level = this.deps.turnLevelOf(caller.sessionId);
+    // Background work a marked turn left running calls as this chat too.
+    const vouched =
+      !(this.deps.sessionReadOutsider ?? sessionReadOutsider)(caller.sessionId) &&
+      (level !== undefined
+        ? level.outsider !== true
+        : !(this.deps.agentReadingOutsider ?? agentIsReadingOutsider)(caller.agentPath));
+    return storedCeiling(senderCeiling(level), vouched);
   }
 
   /**
@@ -264,7 +298,7 @@ export class ChatMessageService {
       text(input),
       this.deps.nonce?.()
     );
-    const ceiling = senderCeiling(this.deps.turnLevelOf(caller.sessionId));
+    const ceilingJson = this.storedCeilingOf(caller);
     // A new DM chat's id is minted here, before the row, so a window already
     // watching it can match the message to its sender from the first event.
     if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
@@ -283,7 +317,7 @@ export class ChatMessageService {
       delivery,
       status: 'queued',
       queueMessageId: crypto.randomUUID(),
-      ceilingJson: JSON.stringify(ceiling),
+      ceilingJson,
       replyToId,
     });
 
@@ -599,7 +633,7 @@ export class ChatMessageService {
       delivery: 'queue',
       status: 'queued',
       queueMessageId,
-      ceilingJson: JSON.stringify(senderCeiling(this.deps.turnLevelOf(caller.sessionId))),
+      ceilingJson: this.storedCeilingOf(caller),
       replyToId: null,
     });
     return { id: row.id, content: rendered.text };
@@ -832,35 +866,7 @@ function text(input: ChatSendInput): string {
   return input.message.trim();
 }
 
-/**
- * The ceiling a message from a chat carries: the level its latest turn ran
- * at, or the receiving runtime's default when that is not known (a restart, a
- * chat this process never ran a turn on). Never looser than the sender.
- *
- * @param level - The sending chat's latest turn level, when known.
- */
-export function senderCeiling(level: TurnPermissionLevel | undefined): TurnPermissionBound {
-  return level ?? 'runtime-default';
-}
-
-/** Read a stored ceiling; anything unreadable is the runtime's default. */
-function parseCeiling(json: string): TurnPermissionBound {
-  try {
-    const value = JSON.parse(json) as unknown;
-    if (value === 'runtime-default') return value;
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      typeof (value as { asks?: unknown }).asks === 'string' &&
-      typeof (value as { reach?: unknown }).reach === 'string'
-    ) {
-      return value as TurnPermissionLevel;
-    }
-  } catch {
-    // fall through
-  }
-  return 'runtime-default';
-}
+export { senderCeiling };
 
 let current: ChatMessageService | undefined;
 

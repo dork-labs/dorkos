@@ -9,7 +9,7 @@
  * @module server/services/rooms/messages/room-posting
  */
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { postLevelFor } from '../../core/turn-power/turn-levels.js';
+import { postLevelFor, vouchesForAgent } from '../../core/turn-power/turn-levels.js';
 import {
   OUTSIDER_TURN_LIMIT,
   releaseOutsiderOutput,
@@ -111,10 +111,17 @@ export class RoomPosting {
    *   each field.
    * @param authorLevel - The level the turns this post starts are held to, for
    *   a tool post a verified session made; see {@link RoomPosting.postFromTool}.
+   * @param vouched - Whether DorkOS vouched for that tool post's author, the
+   *   same way; see {@link RoomPosting.postFromTool}.
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(roomId: string, input: RoomPostInput, authorLevel?: TurnPermissionLevel): PostedEntry {
+  post(
+    roomId: string,
+    input: RoomPostInput,
+    authorLevel?: TurnPermissionLevel,
+    vouched = false
+  ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -128,6 +135,7 @@ export class RoomPosting {
     const attachmentIds = attachments.map((file) => file.id);
     return this.writer.writePost(room, input, undefined, {
       ...(authorLevel !== undefined ? { authorLevel } : {}),
+      ...(vouched ? { vouched } : {}),
       bind: (entryId, tx) => {
         const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
         // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
@@ -222,6 +230,12 @@ export class RoomPosting {
        * and nothing at all when the caller is unknown.
        */
       callerSessionId?: string;
+      /**
+       * The posting agent's home, from the author the surface verified, never
+       * from an argument. Read only when a session cannot answer for the post
+       * (`vouchesForAgent`).
+       */
+      callerAgentPath?: string;
     }
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
@@ -279,7 +293,14 @@ export class RoomPosting {
       input.callerSessionId !== undefined
         ? postLevelFor([input.callerSessionId, turn?.sessionId])
         : undefined;
-    const { callerSessionId: _caller, ...postInput } = input;
+    // Whether DorkOS vouches for the author: on Trusted, the turns this post
+    // starts then keep their own level (ADR `261018-030117`). The same two
+    // sessions answer, and a caller with no verified session is never vouched.
+    const vouched =
+      input.callerSessionId !== undefined &&
+      input.callerAgentPath !== undefined &&
+      vouchesForAgent([input.callerSessionId, turn?.sessionId], input.callerAgentPath);
+    const { callerSessionId: _caller, callerAgentPath: _agent, ...postInput } = input;
     let entry: PostedEntry;
     try {
       entry = this.post(
@@ -306,7 +327,8 @@ export class RoomPosting {
               }
             : {}),
         },
-        authorLevel
+        authorLevel,
+        vouched
       );
     } catch (err) {
       releaseOutsiderOutput('post', countedSession);

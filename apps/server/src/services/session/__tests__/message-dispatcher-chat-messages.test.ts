@@ -231,6 +231,37 @@ describe('the level ceiling of a row another chat sent', () => {
     expect(ceilingOfCall(0)).toEqual({ has: true, value: 'runtime-default' });
   });
 
+  // ADR 261018-030117: on Trusted, a row only our vouched agents sent carries
+  // no bound (the resolver answers null), so it runs at the receiver's level.
+  it('launches a row the resolver leaves unbounded with no ceiling at all', async () => {
+    setQueuedChatCeilingResolver(() => null);
+    runtime.withScenarios([quickTurn()]);
+    await send('from another chat', CHAT_A);
+    await settle();
+    expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+
+  it('launches a later queued turn the resolver leaves unbounded with no ceiling', async () => {
+    // A message that waited behind a running turn: the turn it wakes later.
+    setQueuedChatCeilingResolver(() => null);
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('the running turn', PERSON);
+    await send('from another chat', CHAT_A);
+    first.open();
+    await settle();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2));
+    expect(ceilingOfCall(1)).toEqual({ has: false });
+  });
+
+  it('keeps a row’s own ceiling when the resolver leaves it unbounded', async () => {
+    setQueuedChatCeilingResolver(() => null);
+    runtime.withScenarios([quickTurn()]);
+    await send('from another chat', CHAT_A, { permissionCeiling: MIDDLE });
+    await settle();
+    expect(ceilingOfCall(0)).toEqual({ has: true, value: MIDDLE });
+  });
+
   it('holds a relayed row to both its own ceiling and the runtime default', async () => {
     runtime.withScenarios([quickTurn()]);
     await send('from the web', RELAY, { permissionCeiling: MIDDLE });

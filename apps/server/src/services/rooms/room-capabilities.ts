@@ -208,7 +208,7 @@ import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
 import { isOwnerRecord, type AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
-import { callerAuthor } from './service/room-caller-author.js';
+import { callerAuthor, toolPostCaller } from './service/room-caller-author.js';
 
 export { callerAuthor };
 import {
@@ -555,9 +555,9 @@ export const roomsDomain: CapabilityDomain = {
               text: input.text,
               ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
               ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-              // The session the in-session server verified, never an argument:
-              // it vouches for the level this post's turns are held to.
-              ...(context.sessionId !== undefined ? { callerSessionId: context.sessionId } : {}),
+              // The session and agent the surface verified, never an argument:
+              // they vouch for the level this post's turns are held to.
+              ...toolPostCaller(context, author),
             })
           );
         } catch (err) {

@@ -67,7 +67,7 @@ export const launching = new Set<string>();
  * senders while it waits, and a row adopted after a restart has no in-memory
  * plan to carry one. Wired at boot by the chat-message service.
  */
-export type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling;
+export type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling | null;
 
 let queuedChatCeiling: QueuedChatCeilingResolver | undefined;
 
@@ -87,7 +87,9 @@ export function setQueuedChatCeilingResolver(
  * read from who queued the row.
  *
  * - A row another chat sent adds its senders' bound; with no resolver wired it
- *   is held to the receiving runtime's default: it fails closed.
+ *   is held to the receiving runtime's default: it fails closed. A resolver's
+ *   `null` adds none: on Trusted, every sender was one of our agents DorkOS
+ *   vouched for (ADR `261018-030117`).
  * - A row the session relay sent adds the runtime's default, always. The relay
  *   passes that ceiling itself, but a row adopted after a restart has no
  *   in-memory plan to carry it, and words from the web must still ask before
@@ -99,8 +101,11 @@ export function launchCeiling(
   own: TurnPermissionCeiling | undefined
 ): TurnPermissionCeiling | undefined {
   let bound: TurnPermissionCeiling;
-  if (isChatClientId(clientId)) bound = queuedChatCeiling?.(messageId) ?? 'runtime-default';
-  else if (isRelayClientId(clientId)) bound = 'runtime-default';
+  if (isChatClientId(clientId)) {
+    const queued = queuedChatCeiling ? queuedChatCeiling(messageId) : 'runtime-default';
+    if (queued === null) return own;
+    bound = queued;
+  } else if (isRelayClientId(clientId)) bound = 'runtime-default';
   else return own;
   if (own === undefined) return bound;
   const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>

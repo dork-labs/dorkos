@@ -8,7 +8,8 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
-import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
+import { agentWordsKeepPower } from '../../core/turn-power/agent-words-keep-power.js';
+import { entryIsVouched, entryLevelOf } from '../../core/turn-power/turn-levels.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
 import { isTeammateEntry } from './space-teammates.js';
 
@@ -47,7 +48,10 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * turn ran at when it wrote the post; when that was not kept (a restart, a post
  * with no session), to the runtime's default, because the alternative is to
  * hand out the receiving conversation's level on the strength of a missing
- * record. A person on this machine and the room's own voice are not bounded.
+ * record. On Trusted, a post DorkOS vouched for as it was written (one of our
+ * agents, in a turn that read no outsider's words) is not bounded at all, so
+ * the turn runs at the receiver's own level (ADR `261018-030117`). A person on
+ * this machine and the room's own voice are not bounded.
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
@@ -66,6 +70,7 @@ export function ceilingForEntry(
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
   if (kind !== 'agent') return {};
+  if (entryIsVouched(entry.id) && agentWordsKeepPower()) return {};
   return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
 }
 
