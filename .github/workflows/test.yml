@@ -377,7 +377,20 @@ jobs:
       - name: Read where the space server lives
         run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build
+      - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/decisions build && pnpm --filter @dorkos/icons build
+      # The space server's code lives in apps/server and its package, web page
+      # and image in apps/community (server-merge step 7d). Each half's tests
+      # read the other's files, but an affected-only run picks packages by the
+      # files a change touched, so a change to one half alone would skip the
+      # other half's checks until the merge queue. This job runs on every pull
+      # request, so it checks both halves here, whatever changed.
+      - name: Check both halves of the space server
+        run: |
+          pnpm --filter @dorkos/community typecheck
+          pnpm --filter @dorkos/community test
+          cd apps/server
+          pnpm exec tsc -p tsconfig.spaces.json
+          pnpm exec vitest run src/services/spaces
       - name: Assert community HTTP paths against real Postgres
         env:
           COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community

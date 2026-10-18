@@ -404,14 +404,14 @@ export default defineConfig([
   // The space server ships alone, in its own image (server-merge step 7): its code imports only
   // itself and its image's packages, and nothing else here imports it. Tests are not checked.
   {
-    files: ['src/services/spaces/**/*.ts'],
-    ignores: ['src/services/spaces/**/__tests__/**', 'src/services/spaces/**/*.test.ts'],
+    files: ['src/services/spaces/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**/__tests__/**', 'src/services/spaces/**/*.test.{ts,tsx}'],
     plugins: { spaces },
     rules: { 'spaces/stay-inside': 'error' },
   },
   {
-    files: ['src/**/*.ts'],
-    ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.ts'],
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
     plugins: { spaces },
     rules: { 'spaces/no-reach-in': 'error' },
   },

@@ -101,7 +101,11 @@
         "$TURBO_ROOT$/scripts/lib/community-migration-id.mjs",
         "$TURBO_ROOT$/apps/community/package.json",
         "$TURBO_ROOT$/apps/community/Dockerfile",
+        "$TURBO_ROOT$/apps/community/tsconfig.json",
         "$TURBO_ROOT$/apps/community/tsconfig.build.json",
+        "$TURBO_ROOT$/.github/workflows/publish-community.yml",
+        "$TURBO_ROOT$/ci/space-server.env",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
         "$TURBO_ROOT$/apps/community/migrations/**",
         "$TURBO_ROOT$/apps/community/browser-tests/**",
         "$TURBO_ROOT$/apps/community/load/**",
@@ -173,6 +177,11 @@
     "lint": {
       "dependsOn": ["^lint"],
       "cache": true
+    },
+    "@dorkos/server#lint": {
+      "dependsOn": ["^lint"],
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/community/package.json"]
     },
     "pack": {
       "dependsOn": ["^build"],

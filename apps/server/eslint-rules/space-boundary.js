@@ -23,6 +23,9 @@ const IMAGE_PACKAGES = new Set(
   )
 );
 
+/** Subpaths of allowed packages that still reach what the image must not carry. */
+const FORBIDDEN_SUBPATHS = new Set(['@dorkos/shared/node-pty-spawn-helper']);
+
 const inside = (path) => path === SPACES || path.startsWith(SPACES + sep);
 const packageOf = (specifier) =>
   specifier
@@ -74,7 +77,7 @@ export default {
             return;
           }
           if (specifier.startsWith('node:') || BUILTINS.has(specifier)) return;
-          if (!IMAGE_PACKAGES.has(packageOf(specifier)))
+          if (FORBIDDEN_SUBPATHS.has(specifier) || !IMAGE_PACKAGES.has(packageOf(specifier)))
             context.report({ node, messageId: 'package', data: { specifier } });
         });
       },

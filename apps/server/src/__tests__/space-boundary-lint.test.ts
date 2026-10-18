@@ -29,6 +29,7 @@ describe('the space server boundary', () => {
         "import { b } from '../rooms/room-service.js';",
         "import Database from 'better-sqlite3';",
         "import { Pool } from 'pg';",
+        "import '@dorkos/shared/node-pty-spawn-helper';",
         "import { createHash } from 'node:crypto';",
         "import type { C } from '../../lib/logger.js';",
         "export { d } from '../../lib/version.js';",
@@ -39,6 +40,9 @@ describe('the space server boundary', () => {
     expect(found).toEqual([
       expect.stringMatching(/^spaces\/stay-inside: '\.\.\/rooms\/room-service\.js' is outside/u),
       expect.stringMatching(/^spaces\/stay-inside: 'better-sqlite3' is not a package/u),
+      expect.stringMatching(
+        /^spaces\/stay-inside: '@dorkos\/shared\/node-pty-spawn-helper' is not a package/u
+      ),
       expect.stringMatching(/^spaces\/stay-inside: '\.\.\/\.\.\/lib\/version\.js' is outside/u),
     ]);
   });

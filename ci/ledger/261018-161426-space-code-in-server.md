@@ -18,8 +18,14 @@ the image builds from the server package.
 
 What the pipeline sees:
 
-- The unit tests run in the `server` vitest project, so affected runs and the
-  shards pick them up from `apps/server`. The Postgres and S3 suites still run
+- The unit tests run in the `server` vitest project, so the shards pick them
+  up from `apps/server`. An affected-only run picks packages by the files a
+  change touched and ignores task inputs, so it no longer crosses between the
+  halves: a change to `apps/community` alone skips the server's space tests,
+  and a change to the space code alone skips `apps/community`'s typecheck and
+  web page tests. The always-running `community-pg` job therefore checks both
+  halves on every pull request (`Check both halves of the space server`),
+  building `@dorkos/decisions` and `@dorkos/icons` for it. The Postgres and S3 suites still run
   from `apps/community`'s configs (`dir: ../server/src/services/spaces`), so
   `community-pg` runs the same command as before.
 - `ci/space-server.env` now names `SPACE_SRC_DIR=apps/server/src/services/spaces`;
@@ -33,7 +39,7 @@ What the pipeline sees:
 - The vocabulary gate scans the web page (`SPACE_WEB_DIR`) as its own root,
   since `apps/server/src` now covers only the code.
 
-Hygiene, not an experiment: no gate timing or catch rate should move. Revert
-the cache inputs only together with the move. Revisit if `test-shard` on a
-pull request that touches only `apps/community/src/browser` stops running the
-space server's unit tests, or the reverse.
+Hygiene, not an experiment: the `community-pg` job gains a few minutes and no
+catch rate should move. Revert the cache inputs and the extra step only
+together with the move, once the image builds from the server package and one
+package holds both halves.
