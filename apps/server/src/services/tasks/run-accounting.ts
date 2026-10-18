@@ -107,7 +107,9 @@ export class RunAccounting {
    * @param maxRuntimeMs - The task's own deadline, when it has one.
    */
   addRelay(runId: string, maxRuntimeMs?: number | null): void {
-    const ttl = maxRuntimeMs ? maxRuntimeMs + RELAY_SLOT_GRACE_MS : RELAY_SLOT_DEFAULT_TTL_MS;
+    // The grace on both branches: the relay awaits a task's delivery until its
+    // deadline plus a grace (DOR-3033), and the slot must last as long.
+    const ttl = (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RELAY_SLOT_GRACE_MS;
     this.runs.set(runId, { kind: 'relay', expiresAt: Date.now() + ttl });
   }
 

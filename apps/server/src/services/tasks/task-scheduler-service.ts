@@ -287,6 +287,8 @@ export class TaskSchedulerService {
   private wasLeader = false;
   /** Backing field for {@link isStarted}. */
   private started = false;
+  /** Set by {@link stop}, so a relay retry waiting to fire stands down (DOR-3033). */
+  private stopping = false;
   /** Damps the log when a task's schedule cannot be run. See {@link RefusedScheduleLog}. */
   private readonly refusedSchedules = new RefusedScheduleLog();
   /** See {@link SchedulerDeps.beforeScheduledFire}. */
@@ -442,6 +444,7 @@ export class TaskSchedulerService {
     this.pruneTimer.unref?.();
 
     this.started = true;
+    this.stopping = false;
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
 
@@ -507,6 +510,7 @@ export class TaskSchedulerService {
     // Said first, so nothing registers a job into a scheduler that is on its way
     // down — a watcher event can land while this is still awaiting active runs.
     this.started = false;
+    this.stopping = true;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -1162,6 +1166,7 @@ export class TaskSchedulerService {
                   resolveCwd: () => Promise.resolve(placement.cwd),
                   ...(placement.agentPath !== undefined ? { forAgent: placement.agentPath } : {}),
                   onSession,
+                  isStopping: () => this.stopping,
                 },
                 task,
                 run,

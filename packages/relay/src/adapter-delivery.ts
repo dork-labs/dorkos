@@ -132,6 +132,9 @@ export interface AdapterDeliveryDeps {
   logger?: Logger;
 }
 
+/** The longest delay `setTimeout` honours; anything longer fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 /**
  * How long an awaited delivery may take before it is called failed.
  *
@@ -154,7 +157,13 @@ export function deliveryTimeoutMs(
 ): number {
   if (!isTaskDispatchSubject(subject)) return AdapterDelivery.TIMEOUT_MS;
   const untilDeadline = envelope.budget.ttl - now;
-  return Math.max(AdapterDelivery.TIMEOUT_MS, untilDeadline + AdapterDelivery.TASK_SETTLE_GRACE_MS);
+  const timeout = Math.max(
+    AdapterDelivery.TIMEOUT_MS,
+    untilDeadline + AdapterDelivery.TASK_SETTLE_GRACE_MS
+  );
+  // A timer past 2^31-1 ms fires at once in Node, which would fail a run with a
+  // very long time limit the moment it started.
+  return Math.min(timeout, MAX_TIMER_MS);
 }
 
 /**
