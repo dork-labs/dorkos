@@ -353,6 +353,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
       'mcp.apiKey',
+      // Not a secret: the rules behind each folder allow list yes, which no agent needs (DOR-3039).
+      'permissions.approvedFolderAllowRules',
       'providers',
       'runtimes.claudeCode.accounts[].onlyProjects',
       'runtimes.claudeCode.defaultAccountOnlyProjects',

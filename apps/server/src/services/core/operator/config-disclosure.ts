@@ -523,6 +523,13 @@ export const CONFIG_DISCLOSURE = {
   'permissions.sharedAtUpgrade': 'expose',
   // Machine bookkeeping: when that step ran, once per install.
   'permissions.sharedAppsAppliedAt': 'expose',
+  // Which agents' folder allow lists a person let apply, or turned down
+  // (DOR-3039). Agent ids and digests, no secrets; the rules themselves are in
+  // files the agent can already read.
+  'permissions.approvedFolderAllows': 'expose',
+  'permissions.refusedFolderAllows': 'expose',
+  // The rules behind each yes. Not secret, but nothing an agent needs to read.
+  'permissions.approvedFolderAllowRules': 'withhold',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

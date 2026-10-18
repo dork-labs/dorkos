@@ -100,6 +100,7 @@ import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
+import { folderAllowsFromSettings } from '../folder-settings/apply-folder-allows.js';
 import { toSdkEffort } from '../messaging/thinking-config.js';
 import { dorkosToolSurfaceOf } from '../mcp-tools/tool-surface.js';
 
@@ -184,6 +185,12 @@ export const PIN_DISPOSITIONS = {
    * steady state costs nothing.
    */
   additionalDirectories: 'relaunch',
+  /**
+   * The agent folder allow list the launch carries (`settings.permissions.allow`,
+   * DOR-3039), digested in order. The CLI reads allow rules at launch, so a list
+   * a person just approved, or one that stopped applying, has to relaunch.
+   */
+  folderAllows: 'relaunch',
   /**
    * The tool list each in-process (`sdk`) MCP server would give a fresh
    * launch: a digest of its tools' names and input JSON Schemas, recorded by
@@ -607,6 +614,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           : false
       ),
       additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      folderAllows: digest(JSON.stringify(folderAllowsFromSettings(options.settings))),
       toolSurface: describeToolSurfaces(options.mcpServers),
       settingsEnv: digest(
         serializeEnv(
