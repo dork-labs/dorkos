@@ -20,7 +20,10 @@
  *   computer); a connector adapter is fine, since connections are reached
  *   through the hub;
  * - a local (`stdio`) MCP server whose program is not in the computer's image
- *   ({@link CLOUD_COMPUTER_MCP_PROGRAMS}).
+ *   ({@link CLOUD_COMPUTER_MCP_PROGRAMS});
+ * - a package with a program declaration (an MCP server, an LSP server, a
+ *   monitor) that could not be read: what it runs cannot be judged, so it is
+ *   not promised to work.
  *
  * It judges only what it is told. A fact left out counts as fine, so a card
  * that knows only the package's type flags only what the type decides, and the
@@ -53,7 +56,8 @@ export const CLOUD_COMPUTER_MCP_PROGRAMS: readonly string[] = ['node', 'npx', 'p
  * Why a package does not work on a cloud agent: an agent package for another
  * runtime, a plugin that ships hooks, one that ships what only Claude Code
  * loads (monitors, LSP servers), a relay adapter, or a local MCP server whose
- * program is not in the computer's image.
+ * program is not in the computer's image, or a program declaration that
+ * could not be read.
  */
 export const CLOUD_AGENT_UNSUPPORTED_REASONS = [
   'agent-runtime',
@@ -61,6 +65,7 @@ export const CLOUD_AGENT_UNSUPPORTED_REASONS = [
   'claude-code-only',
   'relay-adapter',
   'mcp-program',
+  'unreadable-declaration',
 ] as const;
 
 /** Why a package does not work on a cloud agent; see {@link CLOUD_AGENT_UNSUPPORTED_REASONS}. */
@@ -103,6 +108,8 @@ export interface CloudAgentPackageFacts {
   readonly lspServers?: readonly unknown[];
   /** MCP servers it starts. */
   readonly mcpServers?: readonly CloudAgentMcpServerFacts[];
+  /** Program declarations (MCP, LSP, monitors) it ships that could not be read. */
+  readonly unreadableDeclarations?: readonly unknown[];
 }
 
 /** Whether a list was given and holds anything. */
@@ -128,6 +135,7 @@ export function cloudAgentSupport(pkg: CloudAgentPackageFacts): CloudAgentSuppor
   if (type === 'adapter' && pkg.adapterType !== CONNECTOR_ADAPTER_TYPE) return no('relay-adapter');
   if (some(pkg.hooks) || some(pkg.unreadableHooks)) return no('hooks');
   if (some(pkg.monitors) || some(pkg.lspServers)) return no('claude-code-only');
+  if (some(pkg.unreadableDeclarations)) return no('unreadable-declaration');
   const outsideImage = (pkg.mcpServers ?? []).some(
     (server) =>
       server.transport === 'stdio' &&

@@ -54,7 +54,7 @@ beforeEach(async () => {
       return { protocol, baseUrl: upstreamUrl, token: TOKEN, tokenId: 'it_1', expiresAt: '' };
     },
     limits: { maxBodyBytes: 1024 },
-    onTokenRefused: (tokenId) => refusedTokens.push(tokenId),
+    onTokenRefused: (tokenId, kind) => refusedTokens.push(`${tokenId}:${kind}`),
   });
 });
 
@@ -169,19 +169,39 @@ describe('the credits relay', () => {
     const res = await ask(`${grant.baseUrl}/chat/completions`, { key: grant.key, body: '{}' });
     expect(res.status).toBe(401);
     expect(await res.json()).toMatchObject({ error: { code: 'token_revoked' } });
-    expect(refusedTokens).toEqual(['it_1']);
+    expect(refusedTokens).toEqual(['it_1:token']);
   });
 
-  it('says which token the endpoint refused, and only for a refusal', async () => {
+  it('says what a refusal means for the token, from the public codes, body intact', async () => {
     const grant = relay.issue('openai-chat-completions', 'OpenCode');
-    for (const status of [200, 402, 429, 500, 403]) {
+    const cases: Array<[number, string, string | null]> = [
+      // The token is no good: drop it and mint again.
+      [401, '{"code":"expired_token","status":401,"title":"x"}', 'token'],
+      [401, '{"error":{"code":"token_revoked"}}', 'token'],
+      [401, '{}', 'token'],
+      // The account may not spend: hold.
+      [402, '{"code":"balance_exhausted","status":402,"title":"x"}', 'account'],
+      [403, '{"error":{"code":"daily_limit_reached"}}', 'account'],
+      [403, '{"code":"entitlement_required","status":403,"title":"x"}', 'account'],
+      // Busy, or nothing it can be sure of: passed through, nothing told.
+      [403, '{"error":{"code":"concurrency_exceeded"}}', null],
+      [402, '{"error":{"code":"turn_budget_exhausted"}}', null],
+      [403, '{"code":"forbidden","status":403,"title":"x"}', null],
+      [403, 'not json', null],
+      [429, '{"code":"rate_limited","status":429,"title":"x"}', null],
+      [200, '{}', null],
+    ];
+    for (const [status, body, kind] of cases) {
+      refusedTokens = [];
       answer = (res) => {
         res.writeHead(status, { 'content-type': 'application/json' });
-        res.end('{}');
+        res.end(body);
       };
-      await (await ask(`${grant.baseUrl}/chat/completions`, { key: grant.key, body: '{}' })).text();
+      const res = await ask(`${grant.baseUrl}/chat/completions`, { key: grant.key, body: '{}' });
+      expect(res.status).toBe(status);
+      expect(await res.text(), `${status} ${body}`).toBe(body);
+      expect(refusedTokens, `${status} ${body}`).toEqual(kind === null ? [] : [`it_1:${kind}`]);
     }
-    expect(refusedTokens).toEqual(['it_1', 'it_1']);
   });
 
   it('ends a request in flight when everything is stopped (an unlink)', async () => {

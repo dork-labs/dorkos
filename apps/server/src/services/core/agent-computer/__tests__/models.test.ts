@@ -19,8 +19,8 @@ const state = vi.hoisted(() => ({
   clientsFor: [] as string[],
   /** Mint request bodies, in order. */
   mints: [] as unknown[],
-  /** What the next mints answer: a token, a refusal status, or an outage. */
-  answer: 'token' as 'token' | 403 | 503,
+  /** What the next mints answer: a token, a refusal (status and code), or an outage. */
+  answer: 'token' as 'token' | { status: number; code: string } | 503,
   expiresInMs: 60 * 60_000,
   personLinkCaptured: 0,
 }));
@@ -57,14 +57,14 @@ function fakeClient(bearer: string) {
     post: async (route: string, _schema: unknown, init: { body: unknown }) => {
       if (route !== '/v1/inference/tokens') throw new Error(`unexpected POST ${route}`);
       state.mints.push(init.body);
-      if (state.answer === 403) {
+      if (state.answer === 503) throw new Error('503 Service Unavailable');
+      if (state.answer !== 'token') {
         throw new CloudApiProblemError({
-          code: 'forbidden',
+          code: state.answer.code,
           title: 'No',
-          status: 403,
+          status: state.answer.status,
         } as unknown as Problem);
       }
-      if (state.answer === 503) throw new Error('503 Service Unavailable');
       return {
         ...everyFormat,
         tokenId: `it_${state.mints.length}`,
@@ -182,7 +182,7 @@ describe('minting on an agent computer', () => {
   });
 
   it('refuses a turn when the mint is refused, and asks again only after the hold', async () => {
-    state.answer = 403;
+    state.answer = { status: 403, code: 'entitlement_required' };
     await expect(launchOpenCode()).rejects.toThrow(AGENT_COMPUTER_MODELS_REFUSAL);
     expect(state.mints).toHaveLength(1);
 
@@ -203,9 +203,41 @@ describe('minting on an agent computer', () => {
     await expect(launchOpenCode()).resolves.toMatchObject({ token: 'minted-2' });
   });
 
-  it('drops a token the endpoint refused, and holds new ones for fifteen minutes', async () => {
+  it('never holds after a mint answered with a wait (408, 409, 429, or a wait code)', async () => {
+    const waits = [
+      { status: 408, code: 'temporarily_unavailable' },
+      { status: 409, code: 'conflict' },
+      { status: 429, code: 'rate_limited' },
+      { status: 403, code: 'rate_limited' },
+    ];
+    for (const wait of waits) {
+      state.answer = wait;
+      await expect(launchOpenCode()).rejects.toThrow(AGENT_COMPUTER_MODELS_REFUSAL);
+      state.answer = 'token';
+      await expect(launchOpenCode(), `${wait.status} ${wait.code}`).resolves.toMatchObject({
+        token: `minted-${state.mints.length + 1}`,
+      });
+      __setCreditsStateForTests({ token: null, now: () => clock });
+    }
+  });
+
+  it('drops an expired or revoked token and mints a new one at once, with no hold', async () => {
     const first = await launchOpenCode();
-    noteCreditsTokenRefused(first.tokenId);
+    noteCreditsTokenRefused(first.tokenId, 'token');
+    await vi.waitFor(() => expect(heldCreditsToken()?.token).toBe('minted-2'));
+    await expect(launchOpenCode()).resolves.toMatchObject({ token: 'minted-2' });
+  });
+
+  it('ignores a refusal of a token it no longer holds', async () => {
+    const first = await launchOpenCode();
+    noteCreditsTokenRefused('it_somebody_else', 'account');
+    expect(heldCreditsToken()?.token).toBe(first.token);
+    await expect(launchOpenCode()).resolves.toMatchObject({ token: first.token });
+  });
+
+  it('drops a token the account may not spend on, and holds new ones for fifteen minutes', async () => {
+    const first = await launchOpenCode();
+    noteCreditsTokenRefused(first.tokenId, 'account');
     expect(heldCreditsToken()).toBeNull();
     await expect(launchOpenCode()).rejects.toThrow(AGENT_COMPUTER_MODELS_REFUSAL);
     expect(state.mints).toHaveLength(1);
@@ -216,7 +248,8 @@ describe('minting on an agent computer', () => {
   it('changes nothing on a person`s computer when the endpoint refuses a token', async () => {
     state.role = 'computer';
     const first = await launchOpenCode();
-    noteCreditsTokenRefused(first.tokenId);
+    noteCreditsTokenRefused(first.tokenId, 'account');
+    noteCreditsTokenRefused(first.tokenId, 'token');
     expect(heldCreditsToken()?.token).toBe(first.token);
     // A person's computer still mints under its account link.
     expect(state.personLinkCaptured).toBe(1);

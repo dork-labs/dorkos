@@ -293,9 +293,10 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
  * both sign in with a person's own account, and an agent computer holds none.
  * OpenCode always runs on DorkOS credits there, minted with the computer's own
  * key (`services/core/agent-computer/models.ts`), through the credits relay
- * started here. If the relay cannot start, every turn is refused rather than
- * run another way. No relay adapter is handed a runtime, so no chat app
- * connection starts.
+ * started here ({@link startAgentComputerRelay}). Without the relay the
+ * computer could do no work at all, so a relay that will not start fails the
+ * boot, and the server exits non-zero for Cloud to restart it. No relay
+ * adapter is handed a runtime, so no chat app connection starts.
  *
  * @param deps - See {@link RuntimeStartupDeps}.
  * @returns See {@link RegisteredRuntimes}.
@@ -305,14 +306,11 @@ async function registerAgentComputerRuntimes(
 ): Promise<RegisteredRuntimes> {
   const sessionAttachmentStore = new LocalSessionAttachmentStore(deps.dorkHome);
   setSessionAttachmentStore(sessionAttachmentStore);
-  const creditsRelay = await startCreditsRelay().catch((err: unknown) => {
-    logger.warn('[Cloud] Could not start the credits relay', logError(err));
-    return null;
-  });
+  const creditsRelay = await startAgentComputerRelay();
   openCodeServerManager.usePlanners({
     planSidecar: planOpenCodeSidecar,
     planTurn: planOpenCodeTurn,
-    relay: creditsRelay ?? undefined,
+    relay: creditsRelay,
   });
   const openCodeRuntime = new OpenCodeRuntime({
     provider: openCodeServerManager,
@@ -326,4 +324,48 @@ async function registerAgentComputerRuntimes(
   initCloudLinkManager();
   logger.info('[DorkOS] Agent computer: OpenCode is the only agent runtime on this server');
   return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay };
+}
+
+/** How many times an agent computer tries to start its credits relay. */
+export const AGENT_COMPUTER_RELAY_ATTEMPTS = 5;
+
+/** The wait before the second try; it doubles before each one after. */
+const AGENT_COMPUTER_RELAY_FIRST_WAIT_MS = 500;
+
+/** An agent computer's credits relay would not start, so it cannot do any work. */
+export class CreditsRelayUnavailableError extends Error {
+  /** Build the error. */
+  constructor() {
+    super(
+      `The credits relay did not start after ${AGENT_COMPUTER_RELAY_ATTEMPTS} tries, so this agent computer cannot reach models.`
+    );
+    this.name = 'CreditsRelayUnavailableError';
+  }
+}
+
+/**
+ * Start an agent computer's credits relay: up to
+ * {@link AGENT_COMPUTER_RELAY_ATTEMPTS} tries, waiting 0.5, 1, 2 and 4 seconds
+ * between them (a port taken for a moment, a slow loopback at boot). After
+ * the last it throws, which fails startup, and the server exits non-zero so
+ * Cloud restarts the computer: a computer that boots without its relay would
+ * look healthy and refuse every turn.
+ *
+ * @param start - Starts one relay; the real one unless a test replaces it.
+ * @param wait - Waits that many milliseconds.
+ * @throws {CreditsRelayUnavailableError} When every try failed.
+ */
+export async function startAgentComputerRelay(
+  start: () => Promise<CreditsRelay> = startCreditsRelay,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+): Promise<CreditsRelay> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await start();
+    } catch (err) {
+      logger.warn('[Cloud] Could not start the credits relay', { attempt, ...logError(err) });
+      if (attempt >= AGENT_COMPUTER_RELAY_ATTEMPTS) throw new CreditsRelayUnavailableError();
+      await wait(AGENT_COMPUTER_RELAY_FIRST_WAIT_MS * 2 ** (attempt - 1));
+    }
+  }
 }

@@ -83,6 +83,7 @@ import {
 } from './credits-credential.js';
 import { problemOf, resolveCloudIdentity, type CloudV1Context } from './v1-client.js';
 import { AGENT_COMPUTER_REFUSAL_HOLD_MS } from '../agent-computer/models.js';
+import { mintRefusalHolds, refusalCodeOf } from './credits-refusals.js';
 import { isAgentComputer } from '../server-role/role-checks.js';
 
 /** Never schedule a refresh sooner than this, so a short token cannot spin. */
@@ -151,19 +152,32 @@ function inRefusalHold(): boolean {
 }
 
 /**
- * The credits endpoint refused a token (401, 402 or 403) while a request was
- * on its way through the relay. On an agent computer, the held token is
- * dropped when it is that one, and no new one is asked for until the hold
- * ends ({@link AGENT_COMPUTER_REFUSAL_HOLD_MS}), so the turns a hub keeps
- * sending are refused at once rather than each asking again. Anywhere else a
- * person is there to retry, and nothing changes.
+ * The credits endpoint refused the token a request carried, as the relay read
+ * it (`./credits-refusals.ts`). On an agent computer, and only when that token
+ * is the one held now (an answer about an older token says nothing about this
+ * one):
+ *
+ * - `token`: the token is dropped and a new one is minted at once, with the
+ *   usual backoff if that fails. No hold: the account is fine.
+ * - `account`: the token is dropped and no new one is asked for until the
+ *   hold ends ({@link AGENT_COMPUTER_REFUSAL_HOLD_MS}), so the turns a hub
+ *   keeps sending are refused at once rather than each asking again.
+ *
+ * A `busy` answer never reaches here. Anywhere but an agent computer a person
+ * is there to retry, and nothing changes.
  *
  * @param tokenId - The id of the token the endpoint refused. Not a secret.
+ * @param kind - What the refusal means for it.
  */
-export function noteCreditsTokenRefused(tokenId: string): void {
+export function noteCreditsTokenRefused(tokenId: string, kind: 'token' | 'account'): void {
   if (!isAgentComputer()) return;
-  if (minted?.token.tokenId === tokenId) minted = null;
-  refusedAt = now();
+  if (minted === null || minted.token.tokenId !== tokenId) return;
+  minted = null;
+  if (kind === 'account') {
+    refusedAt = now();
+    return;
+  }
+  mintAndRetry();
 }
 
 /** Whether the held token is present, still current and inside its validity window. */
@@ -279,10 +293,11 @@ export async function primeCreditsInferenceWithContext(
     if (answered && context.isCurrent() && attempt === attemptGeneration) {
       mintRefusal = answered;
     }
-    // A definite no (a 4xx, never an outage) holds an agent computer's mints.
-    if (isAgentComputer() && status !== null && status >= 400 && status < 500) {
-      refusedAt = now();
-    }
+    // A definite no (a 4xx that is not a wait, never an outage) holds an
+    // agent computer's mints.
+    const code =
+      answered ?? (error instanceof CloudApiResponseError ? refusalCodeOf(error.body) : null);
+    if (isAgentComputer() && mintRefusalHolds(status, code)) refusedAt = now();
     if (
       context.isCurrent() &&
       attempt === attemptGeneration &&

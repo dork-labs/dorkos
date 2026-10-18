@@ -38,8 +38,9 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
   registerOptionalRuntime: (_name: string, _remedy: string, init: () => unknown) => init(),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({ initCloudLinkManager: vi.fn() }));
+const relay = vi.hoisted(() => ({ value: { issue: () => ({ baseUrl: '', key: '' }) } }));
 vi.mock('../../services/core/cloud/credits-relay.js', () => ({
-  startCreditsRelay: vi.fn(async () => null),
+  startCreditsRelay: vi.fn(async () => relay.value),
 }));
 vi.mock('../computers.js', () => ({ registerComputerRuntime: vi.fn(async () => undefined) }));
 vi.mock('../../services/session/attachments/index.js', () => ({
@@ -76,7 +77,13 @@ vi.mock('../../services/runtimes/opencode/index.js', () => ({
   planOpenCodeTurn: vi.fn(),
 }));
 
-const { registerRuntimes } = await import('../runtimes.js');
+const {
+  AGENT_COMPUTER_RELAY_ATTEMPTS,
+  CreditsRelayUnavailableError,
+  registerRuntimes,
+  startAgentComputerRelay,
+} = await import('../runtimes.js');
+const { openCodeServerManager } = await import('../../services/runtimes/opencode/index.js');
 
 const DEPS = { db: {} as never, dorkHome: '/tmp/dork', currentCreditsRelay: () => null };
 
@@ -86,7 +93,7 @@ beforeEach(() => {
 });
 
 describe('registering runtimes on an agent computer', () => {
-  it('registers OpenCode alone, as the default', async () => {
+  it('registers OpenCode alone, as the default, on its own credits relay', async () => {
     const result = await registerRuntimes(DEPS);
     expect(registered.types).toEqual(['opencode']);
     expect(registered.defaultType).toBe('opencode');
@@ -94,8 +101,11 @@ describe('registering runtimes on an agent computer', () => {
       claudeRuntime: null,
       doeRuntime: null,
       relayAgentRuntime: null,
-      creditsRelay: null,
+      creditsRelay: relay.value,
     });
+    expect(openCodeServerManager.usePlanners).toHaveBeenCalledWith(
+      expect.objectContaining({ relay: relay.value })
+    );
   });
 
   it('registers Claude Code and Codex on a person`s own computer', async () => {
@@ -103,5 +113,38 @@ describe('registering runtimes on an agent computer', () => {
     await registerRuntimes(DEPS);
     expect(registered.types).toEqual(expect.arrayContaining(['claude-code', 'codex', 'opencode']));
     role.value = 'agent-computer';
+  });
+});
+
+describe('starting an agent computer`s credits relay', () => {
+  it('tries again with growing waits, and returns the relay once it starts', async () => {
+    const waits: number[] = [];
+    let tries = 0;
+    const started = await startAgentComputerRelay(
+      async () => {
+        tries += 1;
+        if (tries < 3) throw new Error('EADDRINUSE');
+        return relay.value as never;
+      },
+      async (ms) => void waits.push(ms)
+    );
+    expect(started).toBe(relay.value);
+    expect(waits).toEqual([500, 1000]);
+  });
+
+  it('gives up after the last try, failing the boot so Cloud restarts the computer', async () => {
+    const waits: number[] = [];
+    let tries = 0;
+    await expect(
+      startAgentComputerRelay(
+        async () => {
+          tries += 1;
+          throw new Error('EADDRINUSE');
+        },
+        async (ms) => void waits.push(ms)
+      )
+    ).rejects.toBeInstanceOf(CreditsRelayUnavailableError);
+    expect(tries).toBe(AGENT_COMPUTER_RELAY_ATTEMPTS);
+    expect(waits).toEqual([500, 1000, 2000, 4000]);
   });
 });

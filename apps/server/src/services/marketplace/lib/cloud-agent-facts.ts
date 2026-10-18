@@ -51,7 +51,12 @@ export async function stagedCloudAgentSupport(
   manifest: Pick<MarketplacePackageManifest, 'type'> & { adapterType?: string },
   preview: Pick<
     PermissionPreview,
-    'hooks' | 'unreadableHooks' | 'monitors' | 'lspServers' | 'mcpServers'
+    | 'hooks'
+    | 'unreadableHooks'
+    | 'monitors'
+    | 'lspServers'
+    | 'mcpServers'
+    | 'unreadableDeclarations'
   >,
   chosenRuntime?: string
 ): Promise<CloudAgentSupport> {
@@ -68,5 +73,6 @@ export async function stagedCloudAgentSupport(
     monitors: preview.monitors,
     lspServers: preview.lspServers,
     mcpServers: preview.mcpServers,
+    unreadableDeclarations: preview.unreadableDeclarations,
   });
 }

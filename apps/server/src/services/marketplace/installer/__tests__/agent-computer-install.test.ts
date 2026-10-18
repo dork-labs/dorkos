@@ -176,6 +176,20 @@ describe('installing on an agent computer', () => {
     });
   });
 
+  it('refuses a package with a program declaration it could not read', async () => {
+    const unreadable = preview({
+      unreadableDeclarations: [{ path: '.mcp.json', message: 'not JSON' }] as never,
+    });
+    await expect(
+      installerFor(plugin, unreadable).install({ name: plugin.name })
+    ).rejects.toMatchObject({ reason: 'unreadable-declaration' });
+  });
+
+  it('installs an agent package that names no runtime', async () => {
+    await installerFor(agent, preview()).install({ name: agent.name });
+    expect(flows.agentFlow.install).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses an agent package whose agent.json names another runtime', async () => {
     await agentJsonNames('claude-code');
     await expect(

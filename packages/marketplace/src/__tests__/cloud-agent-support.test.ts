@@ -29,6 +29,13 @@ describe('cloudAgentSupport', () => {
     expect(reasonOf({ type: 'agent', agentRuntime: 'opencode' })).toBeNull();
     // One that names none leaves the runtime to whoever creates the agent.
     expect(reasonOf({ type: 'agent' })).toBeNull();
+    expect(reasonOf({ type: 'agent', agentRuntime: undefined, hooks: [] })).toBeNull();
+  });
+
+  it('refuses a package with a program declaration that could not be read', () => {
+    const unreadable = [{ path: '.mcp.json', message: 'not JSON' }];
+    expect(reasonOf({ unreadableDeclarations: unreadable })).toBe('unreadable-declaration');
+    expect(reasonOf({ unreadableDeclarations: [] })).toBeNull();
   });
 
   it('refuses a plugin that ships hooks, readable or not', () => {

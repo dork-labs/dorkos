@@ -38151,7 +38151,8 @@
                             "hooks",
                             "claude-code-only",
                             "relay-adapter",
-                            "mcp-program"
+                            "mcp-program",
+                            "unreadable-declaration"
                           ],
                           "description": "Which rule refused it. Present only when `supported` is false."
                         }
@@ -39272,7 +39273,8 @@
                             "hooks",
                             "claude-code-only",
                             "relay-adapter",
-                            "mcp-program"
+                            "mcp-program",
+                            "unreadable-declaration"
                           ],
                           "description": "Which rule refused it. Present only when `supported` is false."
                         }

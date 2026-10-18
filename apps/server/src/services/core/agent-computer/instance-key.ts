@@ -8,16 +8,39 @@
  * model tokens (`POST /v1/inference/tokens`), which the service caps per
  * computer and per account.
  *
- * It is kept the way `env.ts` keeps a hub's key: in a process-wide slot under
+ * It is kept the way `env.ts` keeps a hub's key (`DORKOS_HUB_INSTANCE_KEY`):
+ * in a process-wide slot, here under
  * `Symbol.for('dorkos.env.agentComputerInstanceKey')`, and removed from
- * `process.env` the moment it is read, so no child process (a terminal, an
- * agent, the OpenCode sidecar, an MCP server) inherits it. Whichever module
- * reads the environment first fills the slot and the other finds it there, so
- * this module and the linking work that reads the key in `env.ts` agree on
- * one value.
+ * `process.env` the moment this module loads, so no child process this server
+ * starts later (a terminal, an agent, the OpenCode sidecar, an MCP server)
+ * inherits it. Any other module that reads the key must read it from the
+ * same slot, or move it there the same way before deleting it.
  *
- * The key is never written down, never logged and never sent anywhere but
- * the Cloud API.
+ * It is never written down, never logged and never sent anywhere but the
+ * Cloud API.
+ *
+ * ## What deleting it does not do
+ *
+ * Removing the key from `process.env` does not remove it from the process's
+ * startup environment, which the operating system keeps. On Linux, any
+ * process running as the same user can read it from `/proc/<pid>/environ` of
+ * this server, and can read this process's memory if ptrace is allowed. An
+ * agent's shell, its tools and anything a package runs are such processes. A
+ * process holding the key can mint model tokens billed to the account and
+ * read the computer's assignment, link code included.
+ *
+ * **So the computer's image must keep agents away from it**, by at least one of:
+ *
+ * - running the DorkOS server as a different user from the one the agents,
+ *   the terminal and the OpenCode sidecar run as; or
+ * - mounting `/proc` with `hidepid=2` and restricting ptrace
+ *   (`kernel.yama.ptrace_scope` of 2 or more), so no process can see another's
+ *   environment or memory.
+ *
+ * Follow-up, not done here: have the server re-execute itself once the key is
+ * read, with the key handed over on a pipe rather than in the environment, so
+ * no startup copy exists. It changes how the computer's process starts and
+ * stops, so it belongs with the image work.
  *
  * @module services/core/agent-computer/instance-key
  */
@@ -44,6 +67,7 @@ if (fromEnvironment) {
  * This agent computer's own instance key, or `null` on any other role, or
  * when Cloud set none (or one too short to be real). Never reads the account
  * link a person's computer keeps: an agent computer pays only with its own key.
+ * See the module doc for who else on the computer can reach it.
  */
 export function agentComputerInstanceKey(): string | null {
   if (!isAgentComputer()) return null;

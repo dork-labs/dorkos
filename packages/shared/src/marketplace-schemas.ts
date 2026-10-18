@@ -191,7 +191,7 @@ export type MarketplaceCloudAgentSupport =
   | { supported: true }
   | {
       supported: false;
-      /** Which rule refused it: `agent-runtime`, `hooks`, `claude-code-only`, `relay-adapter`, `mcp-program`. */
+      /** Which rule refused it: `agent-runtime`, `hooks`, `claude-code-only`, `relay-adapter`, `mcp-program`, `unreadable-declaration`. */
       reason: string;
     };
 
