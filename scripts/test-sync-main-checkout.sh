@@ -21,6 +21,10 @@ hook=${HOOK:-$repo_root/.claude/hooks/sync-main-checkout.sh}
 tmp=$(cd "$(mktemp -d -t sync-main-checkout.XXXXXX)" && pwd -P)
 trap 'rm -rf "$tmp"' EXIT
 
+# A host can inject git config through the environment (Claude Code sets
+# GIT_CONFIG_COUNT with safe.bareRepository=explicit, which refuses the bare
+# repo below); only this file's own settings may apply.
+export GIT_CONFIG_COUNT=0
 export DORKOS_MAIN_SYNC_FETCH=0 GIT_CONFIG_NOSYSTEM=1 HOME=$tmp
 git config --global user.name t
 git config --global user.email t@t
