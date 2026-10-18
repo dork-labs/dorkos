@@ -16,6 +16,8 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 
 **Amended 2026-10-15** by [261015-125850](261015-125850-this-computer-and-other-devices.md) (this computer and other devices; operator decision in a direct chat, "Let's go with A for the slip"): the login groundwork lands before launch, so launch moves again, from late January to **early February 2027** (about February 2 to 9; a slip of about 2 weeks, range 1 to 3). The December 8 soft launch is unchanged. Nothing else in this ADR changes; the dates below are the ones decided at the time.
 
+**Amended 2026-10-18** by [261018-124422](261018-124422-one-program-before-launch.md): the three roles become one server package before launch (server-merge step 7), each role keeping its own entry and image target. Spec decision P1's "one program comes after launch" is retired; everything else stands.
+
 "Hub" is an internal word. It never appears in anything a person reads; the app says **Private** for the private space and **space** for everything else.
 
 **Amends** (each stays Accepted):
