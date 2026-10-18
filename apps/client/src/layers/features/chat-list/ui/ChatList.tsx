@@ -15,6 +15,7 @@ import type { Session } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import { SIDEBAR_ROW_ATTRIBUTE, useRovingFocus } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
+import { useDirectChatRoomIds } from '@/layers/entities/room';
 import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
 import { buildChatList, type ChatListSort } from '../model/build-chat-list';
 import { useChatListKeys } from '../model/use-chat-list-keys';
@@ -76,7 +77,13 @@ export function ChatList({
   className,
 }: ChatListProps) {
   const query = useAgentSessions(sessionsOverride ? null : agentPath);
-  const sessions = sessionsOverride ?? query.sessions;
+  // The agent's Direct chat is its row's own door, never a chat in this list (S12).
+  const directRooms = useDirectChatRoomIds();
+  const all = sessionsOverride ?? query.sessions;
+  const sessions = useMemo(
+    () => all.filter((session) => !directRooms.has(session.originRoomId ?? '')),
+    [all, directRooms]
+  );
   const signals = useChatSignals(sessions);
   const [sort, setSort] = useState<ChatListSort>('for-you');
   const [search, setSearch] = useState('');

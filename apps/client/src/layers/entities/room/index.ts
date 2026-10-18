@@ -21,7 +21,9 @@ export {
 export type { ResolveRoomSessionDeps, RoomSessionLookup } from './model/use-room-bound-session';
 export { roomBoundSessionId } from './lib/room-bound-session';
 export {
+  DIRECT_CHAT_TITLE,
   useDirectChat,
+  useDirectChatRoomIds,
   useOpenDirectChat,
   type OpenDirectChatOptions,
 } from './model/direct/use-direct-chat';

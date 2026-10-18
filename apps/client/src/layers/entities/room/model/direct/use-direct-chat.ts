@@ -13,13 +13,21 @@
  *
  * @module entities/room/model/direct/use-direct-chat
  */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { DirectChat, OpenDirectChatRequest } from '@dorkos/shared/room-schemas';
+import {
+  oneToOneDmAgentRef,
+  type DirectChat,
+  type OpenDirectChatRequest,
+} from '@dorkos/shared/room-schemas';
 import { newSessionTarget } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
+import { useRooms } from '../use-rooms';
+
+/** What an agent's Direct chat is always called. It is never renamed. */
+export const DIRECT_CHAT_TITLE = 'Direct';
 
 /** Query key for the Direct chat a session is. */
 export const directChatKey = (sessionId: string) => ['direct-chat', sessionId] as const;
@@ -86,5 +94,20 @@ export function useOpenDirectChat(): (
       }
     },
     [transport, navigate]
+  );
+}
+
+/**
+ * The rooms that are the person's one-to-one with an agent: each is an agent's
+ * Direct chat, so the session under it is never listed as a chat of its own.
+ */
+export function useDirectChatRoomIds(): ReadonlySet<string> {
+  const rooms = useRooms().data;
+  return useMemo(
+    () =>
+      new Set(
+        (rooms ?? []).filter((room) => oneToOneDmAgentRef(room) !== null).map((room) => room.id)
+      ),
+    [rooms]
   );
 }

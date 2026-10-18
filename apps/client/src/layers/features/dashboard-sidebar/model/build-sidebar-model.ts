@@ -355,6 +355,13 @@ export interface SidebarRowModel {
   /** False for every row outside Library (R3). */
   draggable: boolean;
   /** Provenance. Answers "why is this row here?" in devtools, always. */
+  /**
+   * When the conversation itself last moved, for a row whose own activity
+   * counts toward its place in Today: an agent's Direct chat, which a ping
+   * moves up (rule S12). Absent for every other row, which Today orders by what
+   * the operator did alone.
+   */
+  activityAt?: string;
   reason: string;
 }
 

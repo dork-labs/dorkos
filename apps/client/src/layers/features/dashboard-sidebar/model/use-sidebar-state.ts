@@ -34,7 +34,7 @@ import { mutedRoomIds, toSidebarModelPrefs, useSidebarPrefs } from '@/layers/ent
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useJumpBackIn } from '@/layers/entities/recents';
-import { useRooms, useThreads } from '@/layers/entities/room';
+import { useDirectChat, useRooms, useThreads } from '@/layers/entities/room';
 import {
   RECENT_SESSIONS_WINDOW,
   useAgentAttentionMap,
@@ -468,7 +468,19 @@ export function useSidebarState(options: UseSidebarStateOptions = {}): SidebarSt
     () => menuPages.map(({ id, extensionId, path, title }) => ({ id, extensionId, path, title })),
     [menuPages]
   );
-  const activeTarget = useActiveTarget(roomKindOf, addOns);
+  const routedTarget = useActiveTarget(roomKindOf, addOns);
+  // An agent's Direct chat is drawn as its DM's row (rule S12), so the chat on
+  // screen anchors that row rather than adding a second one for its session.
+  const { data: openDirectChat } = useDirectChat(
+    routedTarget?.kind === 'session' ? routedTarget.sessionId : null
+  );
+  const activeTarget = useMemo<SidebarTarget | null>(
+    () =>
+      openDirectChat
+        ? { kind: 'room', roomId: openDirectChat.roomId, roomKind: 'dm' }
+        : routedTarget,
+    [openDirectChat, routedTarget]
+  );
 
   // ── Whether Today's automated runs are unfolded (BC-19) ──
   const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);

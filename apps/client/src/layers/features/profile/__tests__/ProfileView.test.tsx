@@ -91,7 +91,16 @@ async function renderProfile(
 ) {
   const harness = buildProfileDeepLinkHarness('/');
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  const transport = createMockTransport({ getAgentByPath: vi.fn().mockResolvedValue(null) });
+  const transport = createMockTransport({
+    getAgentByPath: vi.fn().mockResolvedValue(null),
+    // Open chat is Talk: the agent's Direct chat (rule S12).
+    openDirectChat: vi.fn().mockResolvedValue({
+      sessionId: 'direct-chat',
+      sessionIds: ['direct-chat'],
+      roomId: 'dm-room',
+      agentPath: member.agent?.projectPath ?? '/agents/unknown',
+    }),
+  });
   const onPush = options.onPush ?? vi.fn();
   const onPop = vi.fn();
 
@@ -122,7 +131,7 @@ async function renderProfile(
   );
 
   await harness.ready();
-  return { onPush, onPop };
+  return { onPush, onPop, transport };
 }
 
 /** The rendered rows, as `label kind` — the same shape the row-model test reads. */
@@ -282,13 +291,18 @@ describe('the one button', () => {
     expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 
-  it('opens the agent’s own directory, and records the agent', async () => {
-    await renderProfile(MANAGED);
+  it('opens the agent’s Direct chat, and records the agent', async () => {
+    const view = await renderProfile(MANAGED);
 
     await userEvent.click(screen.getByRole('button', { name: 'Open chat' }));
 
-    // It names a directory, not a session — which conversation opens is
-    // resolved afterwards — so the agent is the only honest thing to record.
+    // Talk is the agent's one standing chat with you (rule S12). The agent is
+    // what is recorded: its chat is resolved by the server.
+    await waitFor(() =>
+      expect(view.transport.openDirectChat).toHaveBeenCalledWith({
+        agentPath: MANAGED.agent!.projectPath,
+      })
+    );
     expect(Object.keys(useInteractionStore.getState().opened)).toEqual([
       `agent:${MANAGED.agent!.projectPath}`,
     ]);

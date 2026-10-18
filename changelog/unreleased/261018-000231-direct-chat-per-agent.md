@@ -4,6 +4,7 @@ covers:
   - 'feat(chat): one Direct chat per agent: you plus one agent always opens as a chat (DOR-2997)'
   - 'fix(chat): review fixes for the Direct chat (DOR-2997)'
   - 'fix(chat): Direct chat CI fixes: route census, context-kind list, plain API words (DOR-2997)'
+  - 'fix(chat): the Direct chat is one row, called Direct, moved up by its pings (DOR-2997)'
 ---
 
 ### Changed
