@@ -7,6 +7,7 @@
  *
  * @module startup/steps/rooms
  */
+import { wireDirectChats } from '../../services/rooms/direct-chat/index.js';
 import {
   ReadCursorService,
   setReadCursorService,
@@ -268,6 +269,12 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   // inbound chat bridge acts as this author for its lifecycle writes
   // (chats-as-channels §3.5, §10.9).
   const resolveOperatorAuthorId = (): string => resolveOperatorAuthor(roomAuthors).id;
+  // Each agent's standing Direct chat with the person (rule S12, DOR-2997).
+  const directChats = wireDirectChats({
+    store: roomStore,
+    authors: roomAuthors,
+    rooms: roomService,
+  });
 
   // The REAL name a bridged group sees prefixed on an operator's post (chats-
   // as-channels §6.7, DOR-899) — never the room registry's 'You'. One reader,
@@ -558,6 +565,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     canvasDocuments,
     resolveOperatorAuthorId,
     resolveOperatorDisplayName,
+    directChats,
     roomRepoStore,
     roomWorktrees,
     roomMerges,

@@ -1663,6 +1663,45 @@ export const CreateRoomRequestSchema = z
 
 export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
 
+/**
+ * Open an agent's Direct chat (rule S12): its standing 1:1 with the person.
+ * Name the agent, or a room that is the person's two-member DM with one agent.
+ */
+export const OpenDirectChatRequestSchema = z
+  .union([
+    z.object({ agentId: z.string().min(1).describe("The agent's Mesh id.") }).strict(),
+    z
+      .object({
+        roomId: z
+          .string()
+          .min(1)
+          .describe(
+            'A direct message holding only the person and one agent. Any other room is refused with NOT_A_DIRECT_CHAT, because it opens as a room.'
+          ),
+      })
+      .strict(),
+  ])
+  .openapi('OpenDirectChatRequest');
+
+export type OpenDirectChatRequest = z.infer<typeof OpenDirectChatRequestSchema>;
+
+/** Where an agent's Direct chat lives: the session the app opens, and the log under it. */
+export const DirectChatSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('The session to open in the 1:1 view. Created the first time anything needs it.'),
+    roomId: z
+      .string()
+      .describe(
+        'The direct message underneath it, which holds the pings and older messages. Never shown as a room.'
+      ),
+    agentPath: z.string().describe("The agent's directory."),
+  })
+  .openapi('DirectChat');
+
+export type DirectChat = z.infer<typeof DirectChatSchema>;
+
 export const UpdateRoomRequestSchema = z
   .object({
     title: z.string().min(1).max(200).optional(),

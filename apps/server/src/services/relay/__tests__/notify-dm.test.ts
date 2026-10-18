@@ -16,6 +16,7 @@ import {
   type ScriptedTurnRunner,
   type RoomHarness,
 } from '../../rooms/__tests__/room-test-harness.js';
+import { DirectChats } from '../../rooms/direct-chat/direct-chats.js';
 import { deliverNotifyDm, type NotifyDmDeps, type NotifyDmOutcome } from '../notify-dm.js';
 
 const ANA_PATH = '/agents/ana';
@@ -228,5 +229,51 @@ describe('deliverNotifyDm', () => {
       expect.stringContaining('could not be delivered'),
       expect.objectContaining({ agentId: ANA_ID, agentPath: ANA_PATH })
     );
+  });
+
+  describe('the Direct chat it lands in (rule S12, DOR-2997)', () => {
+    function withDirectChats() {
+      const { harness, deps, warn } = setup();
+      const directChats = new DirectChats({
+        store: harness.store,
+        authors: harness.authors,
+        rooms: harness.service,
+        operator: () => harness.authors.getMany([harness.human]).get(harness.human)!,
+        mintSessionId: () => 'direct-ana',
+      });
+      return { harness, deps: { ...deps, directChats }, warn, directChats };
+    }
+
+    it('names the Direct chat the person reads it in, and it is the same every time', () => {
+      const { deps, directChats } = withDirectChats();
+
+      const first = deliverNotifyDm({ agentId: ANA_ID, message: 'one' }, deps);
+      const second = deliverNotifyDm({ agentId: ANA_ID, message: 'two' }, deps);
+
+      expect(first).toMatchObject({ ok: true, directChatId: 'direct-ana' });
+      expect(second).toMatchObject({ ok: true, directChatId: 'direct-ana' });
+      expect(directChats.ensureForAgent(ANA_PATH, 'Ana').sessionId).toBe('direct-ana');
+    });
+
+    it('still delivers when the Direct chat cannot be opened, and says so in the log', () => {
+      const { deps, warn } = withDirectChats();
+      const broken = {
+        ...deps,
+        directChats: {
+          ensureForRoom: () => {
+            throw new Error('database is locked');
+          },
+        },
+      };
+
+      const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'still here' }, broken);
+
+      expect(outcome).toMatchObject({ ok: true });
+      expect(outcome).not.toHaveProperty('directChatId');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Direct chat could not be opened'),
+        expect.objectContaining({ error: 'database is locked' })
+      );
+    });
   });
 });

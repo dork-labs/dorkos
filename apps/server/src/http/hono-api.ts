@@ -101,6 +101,7 @@ import { createRelayRoutes, type RelayRouteDeps } from '../routes/relay.js';
 import { relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import readCursorRoutes from '../routes/read-cursors.js';
 import roomRoutes from '../routes/rooms.js';
+import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
@@ -346,6 +347,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
   app.route('/api/rooms', roomRoutes);
+  app.route(
+    '/api/direct-chats',
+    createDirectChatRoutes(() => deps.mesh?.meshCore)
+  );
   // Spaces (rooms on another server) are an experiment, off by default
   // (DOR-2740): both groups refuse until a person turns `spaces.enabled` on,
   // except for the official space (spec `official-community-space` D5), which

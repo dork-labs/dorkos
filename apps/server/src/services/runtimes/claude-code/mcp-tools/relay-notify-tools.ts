@@ -65,6 +65,9 @@ function answerFor(outcome: RelayDeliveryOutcome | undefined, channel: string | 
         surface: 'dorkos-dm',
         roomId: outcome.roomId,
         entryId: outcome.entryId,
+        // The person reads it in your Direct chat with them (rule S12): the
+        // chat id `chat_read` takes, and the session the app opens.
+        ...(outcome.directChatId && { directChatId: outcome.directChatId }),
       });
     }
     return jsonContent({

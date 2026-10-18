@@ -90,6 +90,15 @@ export interface NotifyDmMesh {
   get(agentId: string): { name: string; displayName?: string } | undefined;
 }
 
+/**
+ * The Direct chat surface (rule S12, DOR-2997): the session the app opens for
+ * this DM, minted on first need. Narrow for the same reason as
+ * {@link NotifyDmRooms}.
+ */
+export interface NotifyDmDirectChats {
+  ensureForRoom(roomId: string): { sessionId: string } | null;
+}
+
 /** Structured logger surface (a consola instance satisfies this). */
 export interface NotifyDmLogger {
   warn: (...args: unknown[]) => void;
@@ -108,6 +117,8 @@ export interface NotifyDmDeps {
    * bootstrap, which is what gets passed here.
    */
   operatorAuthorId: () => string;
+  /** The Direct chat the DM opens as. Absent in tests that never wire it. */
+  directChats?: NotifyDmDirectChats;
   logger?: NotifyDmLogger;
 }
 
@@ -120,7 +131,7 @@ export interface NotifyDmDeps {
  * the write is a rooms problem.
  */
 export type NotifyDmOutcome =
-  | { ok: true; roomId: string; entryId: string }
+  | { ok: true; roomId: string; entryId: string; directChatId?: string }
   | { ok: false; reason: 'AGENT_NOT_RESOLVABLE' }
   | { ok: false; reason: 'DM_UNAVAILABLE'; error: string };
 
@@ -183,7 +194,8 @@ export function deliverNotifyDm(
       author.id
     );
     const entry = deps.rooms.post(room.id, { authorId: author.id, text: input.message });
-    return { ok: true, roomId: room.id, entryId: entry.id };
+    const directChatId = directChatFor(deps, room.id, log);
+    return { ok: true, roomId: room.id, entryId: entry.id, ...(directChatId && { directChatId }) };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     log.warn('[Relay] a proactive message could not be delivered to a direct message', {
@@ -194,5 +206,26 @@ export function deliverNotifyDm(
       error,
     });
     return { ok: false, reason: 'DM_UNAVAILABLE', error };
+  }
+}
+
+/**
+ * The Direct chat this DM opens as (rule S12), or `undefined`. The message has
+ * already landed by the time this runs, so a failure here is logged and the
+ * delivery still stands.
+ */
+function directChatFor(
+  deps: NotifyDmDeps,
+  roomId: string,
+  log: NotifyDmLogger
+): string | undefined {
+  try {
+    return deps.directChats?.ensureForRoom(roomId)?.sessionId;
+  } catch (err) {
+    log.warn('[Relay] a proactive message landed, but its Direct chat could not be opened', {
+      roomId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
   }
 }

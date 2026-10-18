@@ -85,7 +85,7 @@ export type RelayDeliveryOutcome =
       messageId?: string;
       deliveredTo: number;
     }
-  | { ok: true; surface: 'dorkos-dm'; roomId: string; entryId: string }
+  | { ok: true; surface: 'dorkos-dm'; roomId: string; entryId: string; directChatId?: string }
   | { ok: false; reason: 'RELAY_DISABLED' }
   | { ok: false; reason: 'BINDINGS_DISABLED' }
   | { ok: false; reason: 'NOT_OPTED_IN'; bindingId: string; adapterId: string }
@@ -222,5 +222,11 @@ export async function deliverOverRelay(
 function tryDm(notifyDm: NotifyDmDeps, request: RelayDeliveryRequest): RelayDeliveryOutcome | null {
   const outcome = deliverNotifyDm({ agentId: request.agentId, message: request.message }, notifyDm);
   if (!outcome.ok) return null;
-  return { ok: true, surface: 'dorkos-dm', roomId: outcome.roomId, entryId: outcome.entryId };
+  return {
+    ok: true,
+    surface: 'dorkos-dm',
+    roomId: outcome.roomId,
+    entryId: outcome.entryId,
+    ...(outcome.directChatId && { directChatId: outcome.directChatId }),
+  };
 }
