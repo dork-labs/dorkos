@@ -84,7 +84,9 @@ function checkSilent(current: Watch): void {
 
 /** The unrendered-turn check, run {@link SETTLE_GRACE_MS} after the turn settled. */
 function checkSettled(current: Watch): void {
-  if (watch === current) watch = null;
+  current.timer = null;
+  if (watch !== current) return;
+  watch = null;
   if (heardSince(current.sessionId, current.since)) return;
   recover(current, 'unrendered-turn');
 }
@@ -115,8 +117,7 @@ export function noteAnnouncedLifecycle(
   const current = watch;
   if (!wasRunning || current?.sessionId !== sessionId) return;
   if (current.timer) clearTimeout(current.timer);
-  current.timer = null;
-  setTimeout(() => checkSettled(current), SETTLE_GRACE_MS);
+  current.timer = setTimeout(() => checkSettled(current), SETTLE_GRACE_MS);
 }
 
 /** Stop watching. Called on a fresh watch, and by tests. */
