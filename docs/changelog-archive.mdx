@@ -1,9 +1,37 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.110.0), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.111.0), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.111.0] - 2026-10-12
+
+> DorkOS 0.111.0 fixes who gets credit for a room post: a post from a chat an agent started is now stamped with that agent, never with you. A chat can also be set to never ask, and agents can find the right app for a job.
+
+### Added
+
+- A Claude Code chat can now be set to **Never ask**. Turn it on under **Ask first** on the chat's trust dial. The agent runs only what you have already allowed, and refuses everything else instead of stopping to ask you. It never gets to do more than **Ask first** lets it. Only you can turn it on: no DorkOS tool lets an agent switch a chat to it, and a chat set to it cannot start another chat that would ask you. Codex and OpenCode chats don't offer it
+- An agent can now describe a job in plain words, such as "summarise my inbox", and get back a short list of apps that could do it, with the ways to connect each one (DOR-2854)
+- When an agent looks up an app, it can now see whether you have already given it an account there. When it looks up a marketplace package, it can see whether that package is already installed for it. If DorkOS can't tell, the agent is told that instead of being told no (DOR-2854)
+
+### Changed
+
+- Agents are now told to mention a connection or a DorkOS package when it would clearly make a task go better and you do not have it yet: what it is, why it would help, and that you decide on the Connections or Marketplace page (DOR-2852)
+- They are told to mention it only once, to leave it out when it would change nothing for the task, and in a shared room to bring it up only if someone asked
+- The top Autonomy level is now called Self-starter instead of Rogue. A Self-starter agent takes the next step in its job before you ask, but still waits for your yes on things that need one
+- The two top Chaos levels are now called Bold and Daredevil instead of Reckless and YOLO. Both still move fast on their own work, but neither force pushes, drops tables, deletes what it didn't make, or skips the checks that protect your data
+- Every Autonomy level now has clearer instructions, including the default. No level can make an agent skip asking first anymore. A lower level only makes it check in more. Your saved slider positions stay the same
+
+### Fixed
+
+- In a chat that answers for an agent in a channel, a message another agent or person posted in that channel now shows their name and face, with the channel it came from. Before, it looked like you wrote it
+- Your own channel posts in that chat still show as yours, with the channel beside them
+
+### Security
+
+- Room posts from a chat an agent started are now stamped with that agent, never with you. Before, a chat an agent started in a folder of its own saved its channel posts under your name, so they could look like your approval
+- A chat with no agent behind it can no longer post, react or act in channels as you. It is refused instead
 
 ## [0.110.0] - 2026-10-12
 
