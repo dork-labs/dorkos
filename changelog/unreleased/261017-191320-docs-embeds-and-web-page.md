@@ -7,6 +7,7 @@ covers:
   - "fix(client): read only a table row's own cells in widget tables (DOR-2981)"
   - 'fix(docs): show readers a quiet note where an embed cannot draw, and draw math in saved pages (DOR-2981)'
   - 'test(docs): prove the docs.enabled gate through the real server config (DOR-2981)'
+  - 'fix(docs): say in the Docs experiment row that docs embed charts (DOR-2981)'
 ---
 
 ### Added
