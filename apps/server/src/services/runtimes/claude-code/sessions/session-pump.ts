@@ -329,6 +329,12 @@ export class SessionPump {
     this.turnClosedWhileOpening = false;
     this.opening = true;
     try {
+      // A launch somebody else started (an explicit `warm()`, a stage) has to
+      // finish first, whatever state it left. Joining it through `launch(first)`
+      // would drop `first`: the memo returns the launch already running, which
+      // carries no message — and since a launch can now wait a long time for a
+      // warm slot, that window is no longer a few milliseconds (DOR-3012).
+      if (this.launchInFlight) await this.launchInFlight;
       if (this.currentState === 'cold' || this.currentState === 'crashed') {
         // The first message rides the launch rather than being pushed after
         // it: it is in the stream from construction, so there is no window in
@@ -338,9 +344,6 @@ export class SessionPump {
         this.openTurn();
         return;
       }
-      // A launch somebody else started (an explicit `warm()`) has to finish
-      // before this can push into its stream.
-      if (this.launchInFlight) await this.launchInFlight;
       if (this.currentState !== 'warm') {
         throw new IllegalPumpTransitionError(this.currentState, 'running');
       }
@@ -580,11 +583,13 @@ export class SessionPump {
    * now is a normal outcome. Reap through the registry, which drops the spent
    * pump; a pump reaped directly is left in `reaped`, which is terminal.
    *
+   * @param opts.quiet - Log a decline at `debug`; for the warm-slot reclaim,
+   *   which asks on every check while a launch waits
    * @returns True when the process was closed, false when the pump declined
    *   (not warm, parked on a person, or not quiet — see {@link quietness} —
    *   unless its busy spell has run past the background-work ceiling)
    */
-  async reap(): Promise<boolean> {
+  async reap(opts: { quiet?: boolean } = {}): Promise<boolean> {
     if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
     if (this.currentState === 'crashed') {
       // Nothing left to close; retiring the record is the whole of it.
@@ -599,8 +604,13 @@ export class SessionPump {
       });
       return false;
     }
+    // A launch waiting for a warm slot asks every warm process on every check,
+    // so its declines are `debug`: at `warn` one wait wrote thousands of lines
+    // (DOR-3012). The idle reaper's declines keep their level.
+    const declined = (message: string, data: Record<string, unknown>): void =>
+      opts.quiet === true ? logger.debug(message, data) : logger.warn(message, data);
     if (this.opts.hasPendingInteraction?.()) {
-      logger.warn('[SessionPump] declined to reap a session parked on a person', {
+      declined('[SessionPump] declined to reap a session parked on a person', {
         sessionId: this.sessionId,
       });
       return false;
@@ -618,7 +628,7 @@ export class SessionPump {
     const quietness = this.quiet.quietness();
     if (!quietness.quiet) {
       if (!this.quiet.isPastCeiling()) {
-        logger.warn('[SessionPump] declined to reap a session that is still working', {
+        declined('[SessionPump] declined to reap a session that is still working', {
           sessionId: this.sessionId,
           because: quietness.because,
           holding: quietness.holding,

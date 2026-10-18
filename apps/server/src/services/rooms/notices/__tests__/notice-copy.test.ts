@@ -50,10 +50,14 @@ describe('a turn waiting for a free agent slot (DOR-3012)', () => {
   // Purpose: nobody has to do anything, so the line asks nothing of the reader
   // and says what happens next.
   it('says the agent will answer when another finishes, and asks nobody for anything', () => {
-    const { text, waitingKind } = buildWaitingNotice('Ana', 'author-ana', 'slot');
-    expect(text).toBe('Ana will answer once another agent here finishes. All of them are busy.');
-    expect(waitingKind).toBe('slot');
-    expect(copy.bridgeWaitingText('Ana', 'slot')).toBe(text);
+    const body = copy.buildSlotWaitNotice('Ana', 'author-ana');
+    expect(body).toEqual({
+      text: 'Ana will answer once another agent here finishes. All of them are busy.',
+      // Busy, not awaiting approval: nobody has to act, and the room keeps
+      // showing the agent as working.
+      notice: 'agent_busy',
+      subjectAuthorId: 'author-ana',
+    });
   });
 });
 
@@ -100,8 +104,8 @@ const NOTICES: Record<NoticeBuilder, () => RoomEntryBody[]> = {
     copy.buildBusyNotice('Ana', 'author-ana', 'held-too-long'),
     copy.buildBusyNotice('Ana', 'author-ana', 'unknown'),
   ],
-  buildWaitingNotice: () =>
-    [...KINDS, 'slot' as const].map((kind) => copy.buildWaitingNotice('Ana', 'author-ana', kind)),
+  buildWaitingNotice: () => KINDS.map((kind) => copy.buildWaitingNotice('Ana', 'author-ana', kind)),
+  buildSlotWaitNotice: () => [copy.buildSlotWaitNotice('Ana', 'author-ana')],
   buildHaltedNotice: () => [copy.buildHaltedNotice(2)],
   buildAgentHaltedNotice: () =>
     (['interrupted', 'unstarted', 'idle'] as const).map((outcome) =>

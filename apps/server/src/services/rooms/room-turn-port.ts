@@ -244,8 +244,12 @@ export interface RoomTurnRequest {
 
 /** One reason a turn has stopped and can make no progress without a person. */
 export interface RoomTurnWaiting {
-  /** What sort of answer the turn is parked on; picks the room's words. */
-  kind: WaitingKind;
+  /**
+   * What sort of answer the turn is parked on; picks the room's words. `slot`
+   * is the one that is not a person: every agent on this computer is busy, and
+   * the turn starts when one finishes (DOR-3012).
+   */
+  kind: WaitingKind | 'slot';
   /**
    * The tool an approval is about, when the prompt names one. **For the log
    * only** — see `buildWaitingNotice` on why it is not in the room's copy.

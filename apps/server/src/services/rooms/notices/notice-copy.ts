@@ -244,7 +244,6 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
     `${agentName} has a question that needs answering before it can carry on. Answer it in DorkOS. It gives up if nobody does.`,
   elicitation: (agentName) =>
     `${agentName} needs something before it can carry on. Answer it in DorkOS. It gives up if nobody does.`,
-  slot: slotWaitLine,
 };
 
 /**
@@ -274,16 +273,25 @@ const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
     `${agentName} has a question for you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
   elicitation: (agentName) =>
     `${agentName} needs something from you before it can carry on. Open ${agentName}'s chat to answer. It will wait, but not forever.`,
-  slot: slotWaitLine,
 };
 
 /**
- * A turn waiting for a free agent slot rather than for a person (DOR-3012).
- * Nobody has to do anything, so it says what happens next and nothing else,
- * and it reads the same in a bridged chat as in the room.
+ * The durable `notice` for a turn waiting for a free agent slot on this
+ * computer, rather than for a person (DOR-3012).
+ *
+ * An `agent_busy` line, not an `awaiting_approval` one: nobody has to do
+ * anything, the agent is occupied rather than stopped, and the room keeps
+ * showing it as working. It says what happens next and nothing else.
+ *
+ * @param agentName - Display name of the agent that is waiting.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
  */
-function slotWaitLine(agentName: string): string {
-  return `${agentName} will answer once another agent here finishes. All of them are busy.`;
+export function buildSlotWaitNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} will answer once another agent here finishes. All of them are busy.`,
+    notice: 'agent_busy',
+    subjectAuthorId,
+  };
 }
 
 /**

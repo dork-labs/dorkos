@@ -13,6 +13,7 @@ import type { TurnWindow } from '../../session-turn-windows.js';
 import { TURN_NOT_STARTED_CODE } from '../../../../../session/launch/turn-not-started.js';
 
 const WINDOW = { id: 'w' } as unknown as TurnWindow;
+const noop = (): void => undefined;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -34,7 +35,7 @@ describe('openWindowWaitingForSlot', () => {
   // Purpose: a launch that opens at once says nothing extra.
   it('yields nothing when the window opens without waiting', async () => {
     const { events, window } = await drain(
-      openWindowWaitingForSlot('s', () => Promise.resolve(WINDOW))
+      openWindowWaitingForSlot('s', noop, () => Promise.resolve(WINDOW))
     );
     expect(events).toEqual([]);
     expect(window).toBe(WINDOW);
@@ -46,6 +47,7 @@ describe('openWindowWaitingForSlot', () => {
     let open!: (window: TurnWindow) => void;
     const gen = openWindowWaitingForSlot(
       's',
+      noop,
       (onWaiting) =>
         new Promise<TurnWindow>((resolve) => {
           open = resolve;
@@ -72,6 +74,7 @@ describe('openWindowWaitingForSlot', () => {
     let open!: (window: TurnWindow) => void;
     const gen = openWindowWaitingForSlot(
       's',
+      noop,
       (onWaiting) =>
         new Promise<TurnWindow>((resolve) => {
           open = resolve;
@@ -89,12 +92,35 @@ describe('openWindowWaitingForSlot', () => {
     expect(await last).toEqual({ done: true, value: WINDOW });
   });
 
+  // Purpose: a reader that stops listening mid-wait must end the wait, or the
+  // launch would later start a turn nobody streams.
+  it('ends the wait when the reader stops listening before the window opens', async () => {
+    const abandon = vi.fn();
+    const gen = openWindowWaitingForSlot('s', abandon, (onWaiting) => {
+      onWaiting();
+      return new Promise<TurnWindow>(() => undefined);
+    });
+    await gen.next();
+    await gen.return(WINDOW);
+    expect(abandon).toHaveBeenCalledTimes(1);
+  });
+
+  // Purpose: a window that opened, or a dispatch that failed, ends nothing.
+  it('does not abandon a wait that ended on its own', async () => {
+    const abandon = vi.fn();
+    await drain(openWindowWaitingForSlot('s', abandon, () => Promise.resolve(WINDOW)));
+    await expect(
+      drain(openWindowWaitingForSlot('s', abandon, () => Promise.reject(new Error('x'))))
+    ).rejects.toThrow('x');
+    expect(abandon).not.toHaveBeenCalled();
+  });
+
   // Purpose: "SessionPump cannot go from reaped to warming". A pump reaped
   // between acquire and dispatch is replaced and the turn goes ahead, once.
   it('tries once more when the pump was reaped under the dispatch', async () => {
     let calls = 0;
     const { window } = await drain(
-      openWindowWaitingForSlot('s', () => {
+      openWindowWaitingForSlot('s', noop, () => {
         calls += 1;
         return calls === 1
           ? Promise.reject(new IllegalPumpTransitionError('reaped', 'warming'))
@@ -110,7 +136,7 @@ describe('openWindowWaitingForSlot', () => {
     let calls = 0;
     await expect(
       drain(
-        openWindowWaitingForSlot('s', () => {
+        openWindowWaitingForSlot('s', noop, () => {
           calls += 1;
           return Promise.reject(new IllegalPumpTransitionError('reaped', 'warming'));
         })
@@ -124,7 +150,7 @@ describe('openWindowWaitingForSlot', () => {
     let calls = 0;
     await expect(
       drain(
-        openWindowWaitingForSlot('s', () => {
+        openWindowWaitingForSlot('s', noop, () => {
           calls += 1;
           return Promise.reject(new PumpRefusedError('warm-ceiling', 'full'));
         })

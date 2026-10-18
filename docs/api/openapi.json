@@ -15279,8 +15279,7 @@
         "enum": [
           "approval",
           "question",
-          "elicitation",
-          "slot"
+          "elicitation"
         ]
       },
       "MentionSpan": {

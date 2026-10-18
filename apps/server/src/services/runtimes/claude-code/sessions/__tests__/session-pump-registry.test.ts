@@ -322,7 +322,10 @@ describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
     await Promise.resolve();
     // The session record retires while its launch is still parked.
     await registry.evict('s2');
-    expect(registry.size).toBe(1);
+    // s1 left the registry the moment it was reaped (DOR-3012), but its process
+    // is still closing, so it still holds the only slot.
+    expect(registry.size).toBe(0);
+    expect(registry.liveCount()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(30_000);
     await refused;

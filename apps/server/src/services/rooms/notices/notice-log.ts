@@ -50,6 +50,7 @@ import {
   buildBusyNotice,
   buildHaltedNotice,
   buildTurnFailedNotice,
+  buildSlotWaitNotice,
   buildWaitingNotice,
   BUSY_CONTEXTS,
   type AgentHaltOutcome,
@@ -489,24 +490,36 @@ export class RoomNoticeLog {
     room: Room,
     entry: RoomEntry,
     agent: NoticeSubject,
-    waiting: { kind: WaitingKind; toolName?: string }
+    waiting: { kind: WaitingKind | 'slot'; toolName?: string }
   ): void {
-    const key = agentNoticeKey(room.id, agent.authorId);
+    // A slot wait keeps its own memory: it is not a person-wait, and a turn
+    // that waited for a slot and then stopped on an approval must still say so
+    // (DOR-3012).
+    const slot = waiting.kind === 'slot';
+    const key = agentNoticeKey(room.id, agent.authorId) + (slot ? SLOT_WAIT_SUFFIX : '');
     const damped = this.noticedWaiting.has(key);
     // Not a refusal — nothing was declined, the turn is simply parked — so it
     // keeps `info` and stays outside `logRefusal`. It carries `damped` for the
     // same reason a refusal carries `visibility`: a wait nobody was told about
     // is the forty-one minutes this notice exists to prevent.
-    logger.info('[rooms] a turn stopped to wait for a person', {
-      roomId: room.id,
-      authorId: agent.authorId,
-      kind: waiting.kind,
-      ...(waiting.toolName !== undefined ? { toolName: waiting.toolName } : {}),
-      damped,
-      entryId: entry.id,
-    });
+    logger.info(
+      slot
+        ? '[rooms] a turn is waiting for a free agent slot'
+        : '[rooms] a turn stopped to wait for a person',
+      {
+        roomId: room.id,
+        authorId: agent.authorId,
+        kind: waiting.kind,
+        ...(waiting.toolName !== undefined ? { toolName: waiting.toolName } : {}),
+        damped,
+        entryId: entry.id,
+      }
+    );
     if (damped) return;
-    const body = buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind);
+    const body =
+      waiting.kind === 'slot'
+        ? buildSlotWaitNotice(agent.displayName, agent.authorId)
+        : buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind);
     if (this.writeNotice(room, entry, agent.authorId, body)) remember(this.noticedWaiting, key);
   }
 
@@ -813,6 +826,7 @@ export class RoomNoticeLog {
    */
   turnEnded(roomId: string, authorId: string): void {
     this.noticedWaiting.delete(agentNoticeKey(roomId, authorId));
+    this.noticedWaiting.delete(agentNoticeKey(roomId, authorId) + SLOT_WAIT_SUFFIX);
   }
 
   /**
@@ -970,6 +984,9 @@ export function directlyAsked(
  * — and the next reader wrote a lookup against the space.
  */
 const NOTICE_KEY_SEPARATOR = '\u0000';
+
+/** Marks a slot wait's key in the waiting memory, apart from a person-wait's. */
+const SLOT_WAIT_SUFFIX = `${NOTICE_KEY_SEPARATOR}slot`;
 
 /**
  * The `(room, agent)` identity, for map keys only. Nothing parses it back apart.

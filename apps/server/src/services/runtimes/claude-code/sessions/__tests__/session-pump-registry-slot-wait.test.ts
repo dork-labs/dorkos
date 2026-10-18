@@ -198,4 +198,89 @@ describe('SessionPumpRegistry, when every slot is mid-turn', () => {
     expect(results).not.toContain('refused');
     expect(registry.liveCount()).toBeLessThanOrEqual(K);
   });
+
+  // Purpose: first come, first served. With one slot and two turns waiting,
+  // the one that arrived first starts first.
+  it('serves waiting launches in the order they arrived', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const busy = registry.acquire('busy', launchOpts());
+    await busy.warm();
+    await busy.dispatch([{ content: 'a', messageId: 'msg-busy' }]);
+
+    const order: string[] = [];
+    const first = registry.acquire('first', launchOpts());
+    const firstDone = first.dispatch([{ content: '1', messageId: 'msg-1' }]).then(() => {
+      order.push('first');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const second = registry.acquire('second', launchOpts());
+    const secondDone = second.dispatch([{ content: '2', messageId: 'msg-2' }]).then(() => {
+      order.push('second');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(registry.isWaitingForSlot('first')).toBe(true);
+    expect(registry.isWaitingForSlot('second')).toBe(true);
+
+    busy.endTurn();
+    await firstDone;
+    expect(order).toEqual(['first']);
+    first.endTurn();
+    await secondDone;
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  // Purpose: "cannot go from reaped to warming". A reaped pump leaves the
+  // registry the moment it is reaped, so the next dispatch builds a fresh one,
+  // while its closing process still counts against the ceiling.
+  it('forgets a reaped pump at once, and counts it until its process has closed', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const pump = registry.acquire('s1', launchOpts({ drainGraceMs: 50 }));
+    await pump.warm();
+
+    const reaping = registry.reap('s1');
+    expect(registry.peek('s1')).toBeUndefined();
+    expect(registry.liveCount()).toBe(1);
+    expect(registry.acquire('s1', launchOpts())).not.toBe(pump);
+
+    expect(await reaping).toBe(true);
+    expect(registry.liveCount()).toBe(0);
+  });
+
+  // Purpose: a turn sent while a message-less launch (a stage's warm-up) waits
+  // for a slot must ride that launch, not be dropped by it.
+  it('keeps the message of a turn that joins a launch already waiting', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const busy = registry.acquire('busy', launchOpts());
+    await busy.warm();
+    await busy.dispatch([{ content: 'a', messageId: 'msg-busy' }]);
+
+    const received: string[] = [];
+    const pump = registry.acquire(
+      'staged',
+      launchOpts({
+        launch: (input) => {
+          const query = new FakeQuery();
+          void (async () => {
+            for await (const message of input.prompt) {
+              const content = (message as { message?: { content?: unknown } }).message?.content;
+              received.push(typeof content === 'string' ? content : JSON.stringify(content));
+            }
+          })();
+          queueMicrotask(() => query.emit(initMessage()));
+          return query;
+        },
+      })
+    );
+    const warming = pump.warm();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const dispatching = pump.dispatch([{ content: 'the turn', messageId: 'msg-turn' }]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    busy.endTurn();
+    await warming;
+    await dispatching;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(pump.state).toBe('running');
+    expect(received.join(' ')).toContain('the turn');
+  });
 });

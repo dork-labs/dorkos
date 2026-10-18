@@ -17,7 +17,8 @@
  *   another chat's launch reclaiming the least recently used slot, both fire
  *   across the awaits in between. The pump then refuses with "cannot go from
  *   reaped to warming", which used to reach the room as "ran into a problem".
- *   The attempt is made again, once, on a freshly acquired pump.
+ *   The registry forgets a reaped pump at once, so the attempt is made again,
+ *   once, on a freshly acquired one.
  *
  * @module services/runtimes/claude-code/sessions/slot-wait/open-turn-window
  */
@@ -82,6 +83,8 @@ export function isSpentPump(err: unknown): boolean {
  * reaped under it.
  *
  * @param sessionId - The session the turn is for, for the log
+ * @param abandon - Ends the launch's wait for a slot, for a reader that stops
+ *   listening before the window opens: nobody would stream the turn it starts
  * @param attempt - One dispatch. Called again on a retry, so it must acquire
  *   whatever pump the registry holds NOW, and wire `onWaiting` into it.
  * @returns The opened window
@@ -89,6 +92,26 @@ export function isSpentPump(err: unknown): boolean {
  *   retry failed too
  */
 export async function* openWindowWaitingForSlot(
+  sessionId: string,
+  abandon: () => void,
+  attempt: (onWaiting: () => void) => Promise<TurnWindow>
+): AsyncGenerator<StreamEvent, TurnWindow> {
+  let settled = false;
+  try {
+    const window = yield* openOnce(sessionId, attempt);
+    settled = true;
+    return window;
+  } catch (err) {
+    settled = true;
+    throw err;
+  } finally {
+    // Neither returned nor threw: the reader called `return()` mid-wait.
+    if (!settled) abandon();
+  }
+}
+
+/** {@link openWindowWaitingForSlot} without the abandon handling. */
+async function* openOnce(
   sessionId: string,
   attempt: (onWaiting: () => void) => Promise<TurnWindow>
 ): AsyncGenerator<StreamEvent, TurnWindow> {

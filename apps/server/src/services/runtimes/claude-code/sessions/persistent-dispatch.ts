@@ -896,7 +896,8 @@ export class PersistentDispatch {
     // One id across a retry, so the windower correlates the same message.
     const messageId = messageOpts?.messageId ?? randomUUID();
     try {
-      window = yield* openWindowWaitingForSlot(sessionId, (onWaiting) => {
+      const abandon = (): boolean => this.registry.stopSlotWait(key);
+      window = yield* openWindowWaitingForSlot(sessionId, abandon, (onWaiting) => {
         // The pump can have been reaped since `acquire` above: the idle timer
         // and another chat's slot reclaim both fire across the awaits in
         // between, and a reaped pump refuses to launch (DOR-3012).
@@ -918,6 +919,9 @@ export class PersistentDispatch {
         // and a `replaceProcess` can hand back a different one.
         bundle.closedByStop = false;
         bundle.onSlotWait = onWaiting;
+        // A launch already waiting (a stage warmed this session) was told
+        // before this turn was listening, so the turn says it now.
+        if (this.registry.isWaitingForSlot(key)) onWaiting();
         return bundle.recovery.dispatch(
           [{ content: plan.enrichedContent, messageId }],
           effectiveCwd
@@ -1278,7 +1282,7 @@ export class PersistentDispatch {
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(key, {
-      maxWarmSessions: resolveMaxWarmSessions(),
+      maxWarmSessions: () => resolveMaxWarmSessions(),
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
       slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
       onWaitingForSlot: () => bundle.onSlotWait?.(),
