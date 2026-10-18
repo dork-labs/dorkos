@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import { commitmentTransportMocks } from './mock-commitments.js';
 import { roomFileTransportMocks } from './mock-room-files.js';
+import { directChatTransportMocks } from './mock-direct-chats.js';
 import { remoteCommunityTransportMocks } from './mock-remote-community.js';
 import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import { doeTransportMocks } from './doe-transport-mocks.js';
@@ -711,15 +712,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // No bindings by default: a room whose agents have never answered is the
     // shape a test gets unless it is specifically about where the work runs.
     listRoomSessions: vi.fn().mockResolvedValue({ bindings: [] }),
-    // Answers as if the emoji went ON, and hands back the shipped quick row —
-    // the shape a capsule reads without a second request.
-    toggleReaction: vi.fn().mockResolvedValue({
-      accepted: true,
-      entryId: 'entry-mock',
-      emoji: '👍',
-      reacted: true,
-      frequents: ['👍', '❤️', '🎉'],
-    }),
+    ...directChatTransportMocks(),
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),

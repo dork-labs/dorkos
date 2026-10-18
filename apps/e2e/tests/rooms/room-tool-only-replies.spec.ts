@@ -318,8 +318,14 @@ test.describe('An agent decides for itself whether to speak', () => {
     // which is what `directlyAsked` reads. That also makes this the shape §2.6's
     // reversal created: before DOR-1613 an agent could not decline in a DM at
     // all, because its text posted whatever it thought.
-    const room = await roomsApi.createDirectMessage(`Declined ${tag}`, [agent]);
+    //
+    // A silent second agent keeps it a room: a DM with only the person and one
+    // agent opens as that agent's Direct chat, never the room view (rule S12).
+    const bystanderName = `Bystander${tag}`;
+    const bystander = await roomsApi.registerAgent(bystanderName, '🪨', '#64748b');
+    const room = await roomsApi.createDirectMessage(`Declined ${tag}`, [agent, bystander]);
     const seat = await seatThatAnswers(roomsApi, room, name, 'always');
+    await seatThatAnswers(roomsApi, room, bystanderName, 'silent');
 
     await openRoom(page, basePage, roomsPage, room.id);
     await roomsApi.postEntries(room.id, [`is the build green ${tag}?`]);

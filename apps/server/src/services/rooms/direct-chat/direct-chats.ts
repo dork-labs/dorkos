@@ -39,6 +39,12 @@ export interface DirectChat {
   roomId: string;
   /** The session the app opens, which is the agent's seat in that room. */
   sessionId: string;
+  /**
+   * Every id that session has held, current first. A runtime can rename a
+   * session mid-turn, and the room's entries keep the id their turn ran under,
+   * so "did this session write it" has to ask about all of them.
+   */
+  sessionIds: string[];
   /** The agent's directory, which is its identity. */
   agentPath: string;
   /** The agent's author id in the room. */
@@ -131,6 +137,7 @@ export class DirectChats {
     return {
       roomId: binding.roomId,
       sessionId: binding.sessionId,
+      sessionIds: this.idsOf(binding.sessionId),
       agentPath: agent.naturalKey,
       agentAuthorId: agent.id,
     };
@@ -154,9 +161,9 @@ export class DirectChats {
     const entries = this.deps.store.listEntriesAfter(chat.roomId, member.lastReadSeq);
     if (entries.length === 0) return null;
     this.deps.store.setReadCursor(chat.roomId, chat.agentAuthorId, entries[entries.length - 1].seq);
+    const ownIds = new Set(chat.sessionIds);
     const unseen = entries.filter(
-      (entry) =>
-        entry.kind === 'post' && (entry.sessionId === null || entry.sessionId !== chat.sessionId)
+      (entry) => entry.kind === 'post' && (entry.sessionId === null || !ownIds.has(entry.sessionId))
     );
     if (unseen.length === 0) return null;
     const shown = unseen.slice(-DIRECT_NOTES_LIMIT);
@@ -196,6 +203,17 @@ export class DirectChats {
     const sessionId =
       this.deps.store.getRoomSession(roomId, agent.id) ??
       this.deps.store.bindRoomSession(roomId, agent.id, this.mintSessionId(), this.now());
-    return { roomId, sessionId, agentPath: agent.naturalKey, agentAuthorId: agent.id };
+    return {
+      roomId,
+      sessionId,
+      sessionIds: this.idsOf(sessionId),
+      agentPath: agent.naturalKey,
+      agentAuthorId: agent.id,
+    };
+  }
+
+  /** A session's current id, then every id it was renamed away from. */
+  private idsOf(sessionId: string): string[] {
+    return [sessionId, ...this.deps.store.sessionLedger.retiredIdsFor(sessionId)];
   }
 }

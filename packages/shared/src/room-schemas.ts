@@ -636,6 +636,43 @@ export const RoomSummarySchema = RoomSchema.extend({
 
 export type RoomSummary = z.infer<typeof RoomSummarySchema>;
 
+/** How many people a one-to-one holds: the operator, and the one agent. */
+const ONE_TO_ONE_ROSTER_SIZE = 2;
+
+/**
+ * The stable handle of the one agent a hand-made 1:1 direct message is with, or
+ * `null` when this room is not one.
+ *
+ * Three things must all be true, and each rules out a room that is genuinely a
+ * second place rather than a second door:
+ *
+ * - **It is a direct message.** A channel is a room whatever its roster.
+ * - **Its roster is one agent and the operator, and nobody else.** Two agents is
+ *   a group message — a conversation with no session behind it.
+ * - **It is not bridged.** A bridged private chat is a Telegram or Slack chat
+ *   projected in; its other end is a person somewhere else, and there is no
+ *   session that is the same conversation. It keeps its row.
+ *
+ * An agent that opened the line itself (`relay_notify_user`) is this same shape
+ * and follows the same rule, on purpose: the point is that the agent already has
+ * a row, not that the operator started it.
+ *
+ * @param room - The room to judge.
+ */
+export function oneToOneDmAgentRef(room: RoomSummary): string | null {
+  if (room.kind !== 'dm') return null;
+  // Absent and `null` both mean "not bridged" — `GET /api/rooms` resolves this
+  // field for every room it lists, and a fixture that omits it is describing an
+  // ordinary room.
+  if (room.bridge != null) return null;
+  const roster = room.participants;
+  if (roster == null || roster.length !== ONE_TO_ONE_ROSTER_SIZE) return null;
+  const agents = roster.filter((author) => author.kind === 'agent');
+  const people = roster.filter((author) => author.kind === 'human');
+  if (agents.length !== 1 || people.length !== 1) return null;
+  return agents[0].agentRef ?? null;
+}
+
 // === Membership ===
 
 /**
@@ -1669,7 +1706,11 @@ export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
  */
 export const OpenDirectChatRequestSchema = z
   .union([
-    z.object({ agentId: z.string().min(1).describe("The agent's Mesh id.") }).strict(),
+    z
+      .object({
+        agentPath: z.string().min(1).describe("The agent's directory, as Mesh registered it."),
+      })
+      .strict(),
     z
       .object({
         roomId: z
@@ -1691,6 +1732,11 @@ export const DirectChatSchema = z
     sessionId: z
       .string()
       .describe('The session to open in the 1:1 view. Created the first time anything needs it.'),
+    sessionIds: z
+      .array(z.string())
+      .describe(
+        "Every id that session has held, current first. The room's entries keep the id their turn ran under, so this is how a reader tells which of them the session already shows."
+      ),
     roomId: z
       .string()
       .describe(

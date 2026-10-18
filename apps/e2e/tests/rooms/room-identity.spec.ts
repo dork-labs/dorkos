@@ -169,23 +169,16 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     await expect(roomsPage.memberFace(heron.name)).toHaveText(heron.emoji);
   });
 
-  test('a one-to-one still wears its agent wherever it is drawn, having left the sidebar', async ({
+  test('a one-to-one opens as its agent’s Direct chat, never as a room', async ({
     page,
     basePage,
     roomsApi,
     roomsPage,
   }) => {
-    // The suppression is about WHERE a one-to-one is listed, never about what it
-    // looks like (`sidebar-simplification` D2). So the identity question stands,
-    // asked where the room is still drawn. A rule that hid the row AND broke the
-    // identity would pass a test that only checked the row was gone.
-    //
-    // **This was the room with nowhere left to draw a face, and phase R2 is what
-    // gave it one.** It has no sidebar row (suppressed here) and, since phase R1,
-    // no masthead either — so between the two phases the agent's face was drawn
-    // nowhere on this surface at all, and the only honest assertion left was the
-    // name. The room panel closes it: it reads the fleet itself, so both the
-    // room's own mark and the agent's roster row wear the emoji the agent chose.
+    // The view follows who is in the conversation (rule S12): you plus one
+    // agent is always the 1:1 view. The room has no sidebar row, and its old
+    // address — a notification, a search hit, a bookmark — opens the agent's
+    // Direct chat instead of drawing the room.
     const otter = await roomsApi.registerAgent(`E2E Solo Otter ${roomsApi.runId}`, '🦦', '#3b82f6');
     const room = await roomsApi.createDirectMessage(otter.name, [otter]);
     await openCockpit(basePage);
@@ -194,19 +187,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     await expect(roomsPage.rowIn(roomsPage.directMessages, otter.name)).toHaveCount(0);
 
     await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.roomHeading).toHaveAccessibleName(otter.name, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    await expect(roomsPage.membersChip).toHaveAccessibleName('2 members');
-
-    // **Both discs are back, one press away** (phase R2, spec §3.6). The panel
-    // reads the fleet itself, so the room's own mark and this agent's roster row
-    // wear the emoji the sidebar wears — the third and fourth places the same
-    // face has to agree, which is the whole point of this file.
-    await roomsPage.openRoomPanel();
-    await expect(roomsPage.memberFace(otter.name)).toHaveText(otter.emoji, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-    await expect(roomsPage.panelRoomMark).toHaveText(otter.emoji);
+    await expect(page).toHaveURL(/\/session\?/, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.roomHeading).toHaveCount(0);
   });
 });

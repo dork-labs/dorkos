@@ -46,6 +46,11 @@ interface SessionMessageProps {
   /** Who this message is from — the identity the gutter renders. */
   author: MessageAuthor;
   sessionId: string;
+  /**
+   * The room under this chat when it is an agent's Direct chat (rule S12). A
+   * post from that room is from this chat, so its "in <room>" mark is dropped.
+   */
+  directRoomId?: string | null;
   isNew?: boolean;
   isStreaming?: boolean;
   /**
@@ -165,6 +170,7 @@ function SessionMessageRow({
   textEffect,
   runtimeLabel,
   allowsDenyReason,
+  directRoomId,
   feedPosition,
 }: SessionMessageProps) {
   const domId = useId();
@@ -248,7 +254,7 @@ function SessionMessageRow({
                   // wrap on a narrow screen rather than truncating to nothing.
                   className: 'flex-wrap gap-y-0.5',
                 }
-              : fromRoom
+              : fromRoom && fromRoom.roomId !== directRoomId
                 ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
                 : {})}
           />

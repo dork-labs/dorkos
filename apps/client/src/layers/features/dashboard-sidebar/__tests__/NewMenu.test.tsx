@@ -66,9 +66,14 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
 });
 
 const mockStartDm = vi.fn();
+const mockOpenDirectChat = vi.fn();
 vi.mock('@/layers/entities/room', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/room')>();
-  return { ...actual, useStartDirectMessage: () => ({ mutate: mockStartDm }) };
+  return {
+    ...actual,
+    useStartDirectMessage: () => ({ mutate: mockStartDm }),
+    useOpenDirectChat: () => mockOpenDirectChat,
+  };
 });
 
 vi.mock('@/layers/features/room-management', async (importOriginal) => {
@@ -310,15 +315,15 @@ describe('NewMenu', () => {
     expect(await screen.findByTestId('dm-picker')).toBeInTheDocument();
   });
 
-  it('opens that agent’s session when the picker committed exactly one', async () => {
+  it('opens that agent’s Direct chat when the picker committed exactly one', async () => {
     renderMenu();
     await openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
     fireEvent.click(await screen.findByTestId('dm-picker-commit-one'));
 
-    // The same door the agent's own sidebar row opens — resolve-or-mint on that
-    // directory — and emphatically not a second conversation.
-    expect(mockSetDirectory).toHaveBeenCalledWith('/projects/alpha', expect.anything());
+    // The same door the agent's own sidebar row opens — its Direct chat (S12)
+    // — and emphatically not a second conversation.
+    expect(mockOpenDirectChat).toHaveBeenCalledWith({ agentPath: '/projects/alpha' });
     expect(mockStartDm).not.toHaveBeenCalled();
   });
 
@@ -328,7 +333,7 @@ describe('NewMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Group message…' }));
     fireEvent.click(await screen.findByTestId('dm-picker-commit-two'));
 
-    expect(mockSetDirectory).not.toHaveBeenCalled();
+    expect(mockOpenDirectChat).not.toHaveBeenCalled();
     expect(mockStartDm).toHaveBeenCalledWith(
       { agentPaths: ['/projects/alpha', '/projects/beta'], title: 'Alpha and Beta' },
       expect.anything()

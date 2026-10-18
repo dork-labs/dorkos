@@ -148,7 +148,7 @@ describe('POST /api/direct-chats', () => {
   });
 
   it('refuses a body that names neither an agent nor a room', async () => {
-    const res = await request(server).post('/api/direct-chats').send({ agentPath: ANA_PATH });
+    const res = await request(server).post('/api/direct-chats').send({ agentId: 'ULID_ANA' });
 
     expect(res.status).toBe(400);
   });

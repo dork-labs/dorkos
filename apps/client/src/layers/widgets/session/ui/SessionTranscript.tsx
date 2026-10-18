@@ -53,6 +53,7 @@ import {
   useEarlierMessages,
 } from '@/layers/features/chat';
 import { SessionMessage } from './SessionMessage';
+import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
@@ -156,6 +157,11 @@ interface SessionTranscriptProps {
    * chat's first line already says, for the person, why it exists.
    */
   foldFirstPrompt?: boolean;
+  /**
+   * The log under an agent's Direct chat (rule S12), read by the chat panel.
+   * Its pings are drawn where they landed. Absent for an ordinary chat.
+   */
+  directLog?: DirectChatLog;
 }
 
 /**
@@ -190,6 +196,7 @@ export function SessionTranscript({
   allowsDenyReason,
   landOnRow,
   foldFirstPrompt = false,
+  directLog,
 }: SessionTranscriptProps) {
   // Row handlers keep one identity, so a row whose message did not change can
   // skip its render: `onRetry` alone used to change on every streamed word, and
@@ -210,11 +217,18 @@ export function SessionTranscript({
   const earlier = useEarlierMessages(sessionId, windowTranscript);
   const transcript = earlier.messages;
   const { stops } = useChatActivity(sessionId);
-  const messages = useMemo(() => interleaveStopNotices(transcript, stops), [transcript, stops]);
-  // Each row's position among the messages, or -1 for a stop line.
+  // An agent's Direct chat also draws the pings that reached it from the
+  // agent's other chats, where they landed (rule S12). Like stop lines, they
+  // are not transcript messages, so none of the rules below count them.
+  const direct = useMemo(() => withDirectNotes(transcript, directLog), [transcript, directLog]);
+  const messages = useMemo(
+    () => interleaveStopNotices(direct.messages, stops),
+    [direct.messages, stops]
+  );
+  // Each row's position among the messages, or -1 for a stop line or a note.
   const transcriptIndex = useMemo(() => {
     let next = 0;
-    return messages.map((m) => (m._chatStop ? -1 : next++));
+    return messages.map((m) => (m._chatStop || m._directNote ? -1 : next++));
   }, [messages]);
   // How long the transcript was when this mount first had one — the line between
   // history and what arrived since, which decides which rows animate. Latched in
@@ -235,7 +249,11 @@ export function SessionTranscript({
       foldFirstPrompt && !earlier.canLoadEarlier
         ? messages.findIndex(
             (m) =>
-              m.role === 'user' && m.messageType === undefined && !m._stagedContext && !m._chatStop
+              m.role === 'user' &&
+              m.messageType === undefined &&
+              !m._stagedContext &&
+              !m._chatStop &&
+              !m._directNote
           )
         : -1,
     [foldFirstPrompt, earlier.canLoadEarlier, messages]
@@ -332,11 +350,12 @@ export function SessionTranscript({
       buildListRows(messages, {
         resolveAuthor,
         now,
-        lastSeenMessageId,
-        unreadFromStart,
+        // An unread ping in a Direct chat is where the reader left off.
+        lastSeenMessageId: direct.lastSeenBeforeUnread ?? lastSeenMessageId,
+        unreadFromStart: direct.unreadFromStart || unreadFromStart,
         cache: layoutCache,
       }),
-    [messages, resolveAuthor, now, lastSeenMessageId, unreadFromStart, layoutCache]
+    [messages, resolveAuthor, now, lastSeenMessageId, unreadFromStart, direct, layoutCache]
   );
 
   // One view row per layout row, kept with it, so reused layout rows hand the
@@ -415,7 +434,7 @@ export function SessionTranscript({
       // nothing has come after it. Anything following takes the offer away —
       // the next prompt, a steer, or the staged note two branches up, which is
       // a user-role message even though it draws no bubble.
-      const isFinalMessage = position === transcript.length - 1;
+      const isFinalMessage = position >= 0 && position === transcript.length - 1;
       const isLastAssistant = isFinalMessage && message.role === 'assistant';
       // Fence-based supersede (DOR-302): a widget in this message is stale only
       // when a NEWER fence-bearing message exists. Fence-less messages get
@@ -432,6 +451,7 @@ export function SessionTranscript({
           grouping={row.grouping}
           author={row.author}
           sessionId={sessionId}
+          directRoomId={directLog?.roomId}
           isNew={history !== null && earlier.messagesBefore + position >= history}
           isStreaming={isLastAssistant && isTextStreaming}
           isLatestWidgetMessage={isLatestWidgetMessage}
@@ -466,6 +486,7 @@ export function SessionTranscript({
       lastWidgetFenceIndex,
       foldedPromptIndex,
       sessionId,
+      directLog?.roomId,
       historyCount,
       isTextStreaming,
       activeToolCallId,
@@ -513,7 +534,7 @@ export function SessionTranscript({
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
       // A link to an old message waits until the pages holding it are read.
-      landingReady={isHydrated && !earlier.isSeeking}
+      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true)}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}

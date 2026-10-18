@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
 import { PageHeading } from '@/layers/shared/ui';
+import { useDirectChatRedirect } from '../model/use-direct-chat-redirect';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
 import { RoomSurface } from './RoomSurface';
@@ -68,6 +69,8 @@ function ChannelsPageBody() {
   const { id, thread, entry, community } = useSearch({ from: '/_shell/channels' });
   const navigate = useNavigate();
   const teamRoom = useTeamRoomRedirect(community ? undefined : id, thread, entry);
+  // You plus one agent opens as that agent's Direct chat, never a room (S12).
+  const direct = useDirectChatRedirect(community ? undefined : id);
   // The empty state names the way in, and the way in is not the same on a
   // phone: `MobileTabsLayout` deliberately has no sidebar and no hamburger, so
   // copy pointing at one described a control that had been removed (DOR-1755).
@@ -115,7 +118,7 @@ function ChannelsPageBody() {
   // reads as a broken link rather than a loading one. The skeleton is what
   // `RoomSurface` would be drawing at this exact moment anyway, so the handover
   // is invisible.
-  if (teamRoom === 'pending') {
+  if (teamRoom === 'pending' || direct === 'pending') {
     return (
       <div className="flex h-full flex-col" aria-busy>
         <RoomHistorySkeleton />
@@ -126,7 +129,7 @@ function ChannelsPageBody() {
   // Mid-move: the navigation is already in flight, so this room is about to stop
   // being the answer. Drawing it for those frames is the flash the redirect
   // exists to avoid.
-  if (teamRoom === 'redirecting') return null;
+  if (teamRoom === 'redirecting' || direct === 'redirecting') return null;
 
   if (id === undefined) {
     return (

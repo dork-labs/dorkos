@@ -308,6 +308,9 @@ const mockTransport = {
   // The schedule queue behind the fourth blockage. Empty unless a case parks one.
   listTasks: vi.fn(() => Promise.resolve(mockTasks())),
   listThreads: vi.fn(() => Promise.resolve(mockThreads())),
+  // An agent row's door: its Direct chat (rule S12), opened as a new chat would be.
+  openDirectChat: vi.fn(),
+  createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -1396,19 +1399,30 @@ describe('DashboardSidebar', () => {
   // ── Behaviour that had to survive the rewrite ──
 
   describe('what the rewrite had to keep', () => {
-    it('opens an agent’s most recent conversation when its row is pressed (BC-34)', async () => {
+    it('opens an agent’s Direct chat when its row is pressed (BC-34, S12)', async () => {
+      // Not its newest chat: one standing chat per agent, so the place its row
+      // leads never moves.
       mockTransport.listSessions.mockResolvedValue({
         sessions: [{ id: 's9', cwd: '/projects/alpha', title: 'Ship it' }],
+      });
+      mockTransport.openDirectChat.mockResolvedValue({
+        sessionId: 'direct-alpha',
+        sessionIds: ['direct-alpha'],
+        roomId: 'dm-alpha',
+        agentPath: '/projects/alpha',
       });
       renderWithProviders(<DashboardSidebar />);
       await screen.findByText('alpha');
       fireEvent.click(agentRowButton('alpha'));
       await waitFor(() =>
-        expect(mockNavigate).toHaveBeenCalledWith({
-          to: '/session',
-          search: { dir: undefined, session: 's9' },
-        })
+        expect(mockNavigate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: '/session',
+            search: expect.objectContaining({ session: 'direct-alpha', draft: '1' }),
+          })
+        )
       );
+      expect(mockTransport.openDirectChat).toHaveBeenCalledWith({ agentPath: '/projects/alpha' });
     });
 
     it('lights the pressed agent at once, while its chat is still being looked up (DOR-2891)', async () => {
@@ -1417,7 +1431,7 @@ describe('DashboardSidebar', () => {
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page'));
       // The server never answers: before, nothing on screen moved until it did.
-      mockTransport.listSessions.mockImplementation(() => new Promise(() => {}));
+      mockTransport.openDirectChat.mockImplementation(() => new Promise(() => {}));
       fireEvent.click(agentRowButton('beta'));
       await waitFor(() => expect(agentRowButton('beta')).toHaveAttribute('aria-current', 'page'));
       expect(agentRowButton('alpha')).not.toHaveAttribute('aria-current');

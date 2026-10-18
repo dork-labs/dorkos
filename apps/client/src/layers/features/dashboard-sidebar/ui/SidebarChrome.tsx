@@ -21,7 +21,6 @@ import { appRoutes } from '@/layers/shared/lib';
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate, useRouter, useRouterState } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -52,7 +51,6 @@ import {
   clearPendingSessionTarget,
   usePendingSessionTarget,
   notifySessionLookupFailed,
-  resolveSessionForCwd,
   useStartNewSession,
 } from '@/layers/entities/session';
 import { useProfileStore } from '@/layers/features/profile';
@@ -278,7 +276,6 @@ interface SidebarChromeProps {
 export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const navigate = useNavigate();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const transport = useTransport();
   const startNewSession = useStartNewSession();
   const { open: openProfile } = useProfileDeepLink();
@@ -388,42 +385,36 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
 
   const openAgent = useCallback(
     (agentPath: string) => {
-      // Clicking an agent resumes its most recent conversation (BC-34). The
-      // lookup goes through the shared resolver rather than this tab's cache:
-      // the roster lists every agent, but only the one this window has opened
-      // has a cached session list, so a cache read alone would send you to an
-      // empty chat for every other one (DOR-928). It is asynchronous while every
-      // row around it is not, so it guards against being overtaken — by another
-      // agent click, and by any of the app's other navigations, which it
-      // notices through the router's own location.
+      // Clicking an agent opens its Direct chat (rule S12, DOR-2997): one
+      // standing chat per agent, where its messages to you land, rather than
+      // its newest chat, which would keep moving. Its work chats stay one click
+      // away in its chat switcher. Asynchronous while every row around it is
+      // not, so it guards against being overtaken — by another agent click,
+      // and by any of the app's other navigations.
       const isStillWanted = beginSessionNavigation(() => router.state.location);
       // The row shows the click landed while the lookup is out (DOR-2891).
       const clearPending = markPendingSessionTarget(agentPath);
-      void resolveSessionForCwd({ queryClient, transport }, agentPath)
-        .then(async (resolved) => {
+      useInteractionStore.getState().recordOpened('agent', agentPath);
+      void transport
+        .openDirectChat({ agentPath })
+        .then(async (chat) => {
           if (!isStillWanted()) return;
-          if (resolved === null) {
-            notifySessionLookupFailed(agentPath);
-            return;
-          }
-          if (resolved.isNew) {
-            const target = await newSessionTarget(transport, {
-              session: resolved.sessionId,
-              dir: agentPath,
-            });
-            if (isStillWanted()) await navigate(target);
-          } else await openSession(resolved.sessionId, agentPath);
+          // A Direct chat made just now has no transcript yet, so it opens the
+          // way a new chat does; the session route drops the draft flag again
+          // for one that already exists.
+          const target = await newSessionTarget(transport, {
+            session: chat.sessionId,
+            dir: agentPath,
+          });
+          if (isStillWanted()) await navigate(target);
         })
         .catch((error: unknown) => {
-          // The resolver handles its own failures, so a throw here is a defect
-          // in this callback — otherwise an unhandled rejection and a click that
-          // died in silence.
           reportClientError(transport, error);
           if (isStillWanted()) notifySessionLookupFailed(agentPath);
         })
         .finally(clearPending);
     },
-    [navigate, openSession, queryClient, router, transport]
+    [navigate, router, transport]
   );
 
   // DorkBot, found the only way the client can: `isSystem` is the flag on the
