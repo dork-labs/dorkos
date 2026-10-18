@@ -151,7 +151,9 @@ exit 2
     const read = steps.indexOf('- name: Read where the space server lives');
     expect(read).toBeGreaterThan(-1);
     expect(read).toBeLessThan(steps.indexOf('- name: Build and push Community image'));
-    expect(steps).toContain(`run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV"`);
+    expect(steps).toContain(
+      `run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env\n`
+    );
     expect(workflow).toContain('file: ./${{ env.SPACE_DIR }}/Dockerfile');
     expect(workflow).toContain('--migrations "$SPACE_DIR/migrations"');
     const code = workflow

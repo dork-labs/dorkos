@@ -33,7 +33,7 @@ jobs:
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. This file's own name and the
       # image name stay as they are: the launcher trusts both.
       - name: Read where the space server lives
-        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV"
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
 
       - uses: pnpm/action-setup@v6
 

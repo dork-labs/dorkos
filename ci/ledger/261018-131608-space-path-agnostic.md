@@ -38,7 +38,7 @@ diff in exactly the files that gate the queue.
 `ci/space-server.env` holds three `KEY=value` lines (`SPACE_DIR`,
 `SPACE_SRC_DIR`, `SPACE_WEB_DIR`), readable as a bash `source`, as
 `$GITHUB_ENV` lines and through `scripts/lib/space-server.mjs`. Every place
-above reads it. The workflows append it to `$GITHUB_ENV` in a step with no `if:`
+above reads it for the folder. The workflows append it to `$GITHUB_ENV` in a step with no `if:`
 right after checkout (a `paths:` filter cannot read env; neither job has one,
 and no required job gained a skip). With the file naming `apps/community`,
 every job runs the same commands on the same paths as before.
@@ -50,6 +50,36 @@ runner finds the repository root by the file rather than by a fixed number of
 `..`, and passes the folder to its Dockerfile as a build argument.
 `scripts-test-scope.sh` gains the file and `publish-community.yml`, so a PR
 that edits only the file still runs the suites that read it.
+
+## What the move PR still changes by hand
+
+The file moves the folder; it does not move what is not a folder, or what lists
+files one by one. The move PR (7d) still edits:
+
+- the values in `ci/space-server.env`, and drops the today's-layout block in
+  `scripts/test-community-packaged-scope.sh`;
+- any `$SPACE_DIR/<sub>` derivation whose target does not keep its place under
+  the folder: `Dockerfile`, `migrations`, `acceptance/`, `browser-tests/`,
+  `dist-server/main.js`, `browser-report.json`, `test-results/`;
+- the package name `@dorkos/community`: `pnpm --filter` in `test.yml`
+  (`test:pg`, `test:browser`, the Playwright install), in
+  `apps/community/acceptance/Dockerfile` (build, deploy, Playwright install), and
+  `--filter=@dorkos/community...` in `apps/e2e/community-two-desktop/run.ts`;
+- `run.mjs`'s `${spaceDir}/node_modules/@playwright/test`, which assumes
+  Playwright is installed in the space server's own package;
+- the release `apps/community/Dockerfile` (its COPY layout) and both
+  `Dockerfile.dockerignore` files (`!apps/community`, `!apps/community/**`),
+  which cannot read a variable;
+- `apps/e2e/community-two-desktop/steps-*.ts`, which name source files in
+  messages and comments;
+- `packages/cli/scripts/build.ts` (copies the migrations into the CLI), plus
+  `packages/cli/scripts/test-community-deploy-package.ts`,
+  `packages/cli/scripts/community-deploy-live-tarball.ts` and its test;
+- the per-file lists that rename with the files: `scripts/vocab-gate/allowlist.json`,
+  `scripts/max-lines/baseline.json`, `packages/shared/src/__tests__/company.test.ts`,
+  `.claude/scripts/docs-coverage-map.json`, the root `vitest.config.ts` project list
+  and `pnpm-lock.yaml`;
+- prose and comments that name the folder (`test.yml`, `FLY.md`, `contributing/`).
 
 ## The bet
 

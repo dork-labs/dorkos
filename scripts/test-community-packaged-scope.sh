@@ -87,6 +87,26 @@ for path in \
   expect true "in scope: $path" "$path"
 done
 
+# Literal paths of today's layout, scored while apps/community still exists. The
+# fixtures above follow the file, so a wrong value (SPACE_DIR=apps, say) could
+# pass them while widening or emptying the scope; these pin the real one. The
+# move PR (7d) deletes apps/community, which retires this block; drop it then.
+if [ -d "$repo_root/apps/community" ]; then
+  if [ "$SPACE_DIR" = apps/community ] && [ "$SPACE_SRC_DIR" = apps/community/src ] &&
+    [ "$SPACE_WEB_DIR" = apps/community/src/browser ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL: apps/community exists, but ci/space-server.env names $SPACE_DIR, $SPACE_SRC_DIR, $SPACE_WEB_DIR" >&2
+  fi
+  for path in apps/community/src/app.ts apps/community/migrations/0001_foundation.sql; do
+    expect true "in scope (today's layout): $path" "$path"
+  done
+  for path in apps/communityx/src/app.ts apps/server/src/index.ts apps/client/src/main.tsx; do
+    expect false "out of scope (today's layout): $path" "$path"
+  done
+fi
+
 # --- the near-misses stay out ------------------------------------------------
 for path in \
   apps/client/src/layers/features/chat/ui/ChatPanel.tsx \

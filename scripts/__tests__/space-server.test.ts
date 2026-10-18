@@ -5,17 +5,18 @@
  * by `scripts/lib/space-server.mjs`. These hold the three readings together, so
  * a value one of them would read differently is refused before a job reads it.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseSpaceServerEnv, readSpaceServer } from '../lib/space-server.mjs';
 
 const root = join(import.meta.dirname, '../..');
-const envFile = join(root, 'ci/space-server.env');
-
 /** The grep both workflows run, as they run it. */
 const WORKFLOW_FILTER = `grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env`;
+/** The whole read step: the grep, then a refusal when SPACE_DIR is missing or empty. */
+const READ_STEP = `run: ${WORKFLOW_FILTER} >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env`;
 
 describe('ci/space-server.env', () => {
   it('reads the same in bash, in $GITHUB_ENV and in the TypeScript reader', () => {
@@ -46,13 +47,38 @@ describe('ci/space-server.env', () => {
     }
   });
 
-  it('is in the workflows only through the file, never as a second copy of the folder', () => {
-    const text = readFileSync(envFile, 'utf8');
-    expect(text).toMatch(/^SPACE_DIR=/m);
+  it('reaches the workflows only through the file, never as a second copy of the folder', () => {
+    const { spaceDir } = readSpaceServer(root);
     for (const workflow of ['test.yml', 'publish-community.yml']) {
       const yaml = readFileSync(join(root, '.github/workflows', workflow), 'utf8');
-      expect(yaml, workflow).toContain(WORKFLOW_FILTER);
+      expect(yaml, workflow).toContain(READ_STEP);
+      // Comments may still name the folder; nothing a job runs or reads may.
+      const code = yaml
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('#'))
+        .join('\n');
+      expect(code, workflow).not.toContain(spaceDir);
     }
+  });
+
+  it('fails the read step when SPACE_DIR is missing or empty', () => {
+    const step = READ_STEP.slice('run: '.length);
+    const run = (text: string) => {
+      const dir = mkdtempSync(join(tmpdir(), 'space-server-step-'));
+      try {
+        mkdirSync(join(dir, 'ci'));
+        writeFileSync(join(dir, 'ci/space-server.env'), text);
+        return spawnSync('bash', ['-c', step], {
+          cwd: dir,
+          env: { PATH: process.env.PATH, GITHUB_ENV: join(dir, 'github-env') },
+        }).status;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+    expect(run('SPACE_DIR=a/b\nSPACE_SRC_DIR=a/b/src\nSPACE_WEB_DIR=a/b/web\n')).toBe(0);
+    expect(run('SPACE_DIR=\nSPACE_SRC_DIR=a/b/src\n')).not.toBe(0);
+    expect(run('SPACE_SRC_DIR=a/b/src\n')).not.toBe(0);
   });
 });
 
@@ -77,6 +103,11 @@ describe('parseSpaceServerEnv', () => {
     ['a variable', good.replace('SPACE_DIR=a/b', 'SPACE_DIR=$HOME/b')],
     ['a parent segment', good.replace('SPACE_DIR=a/b', 'SPACE_DIR=a/../b')],
     ['a line that is not KEY=value', `export SPACE_DIR=a/b\n${good}`],
+    // The workflows' grep would drop each of these while bash still reads it.
+    ['an indented assignment', good.replace('SPACE_DIR=a/b', '  SPACE_DIR=a/b')],
+    ['an indented comment', `  # note\n${good}`],
+    ['a key outside SPACE_*', `OTHER_DIR=x\n${good}`],
+    ['a key with a digit', `SPACE_DIR2=x\n${good}`],
   ])('refuses %s', (_label, text) => {
     expect(() => parseSpaceServerEnv(text)).toThrow();
   });

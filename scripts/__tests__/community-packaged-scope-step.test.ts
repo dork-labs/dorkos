@@ -31,10 +31,10 @@ const STEP = 'Decide whether this change can reach the packaged proof';
 /** Where the space server lives (ci/space-server.env, DOR-3007). */
 const { spaceDir } = readSpaceServer(root);
 
-/** The `community-packaged` job's text, up to the next top-level job. */
-function jobText(): string {
-  const start = workflow.indexOf('\n  community-packaged:\n');
-  expect(start, 'test.yml has no community-packaged job').toBeGreaterThan(-1);
+/** A test.yml job's text (default `community-packaged`), up to the next top-level job. */
+function jobText(name = 'community-packaged'): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  expect(start, `test.yml has no ${name} job`).toBeGreaterThan(-1);
   const rest = workflow.slice(start + 1);
   const next = rest.slice(1).search(/\n {2}[a-z][\w-]*:\n/);
   return next === -1 ? rest : rest.slice(0, next + 1);
@@ -249,11 +249,16 @@ describe('community-packaged scope step', () => {
     expect(stepText('Build and test without public network access')).toContain(
       'run: bash "$SPACE_DIR/acceptance/run.sh"'
     );
-    const code = job
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('#'))
-      .join('\n');
-    expect(code).not.toContain('apps/community');
+    // Neither community job names the folder outside a comment: community-pg reads
+    // it the same way, for its evidence upload.
+    for (const name of ['community-packaged', 'community-pg']) {
+      const code = jobText(name)
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('#'))
+        .join('\n');
+      expect(code, name).not.toContain('apps/community');
+      expect(code, name).toContain('- name: Read where the space server lives');
+    }
   });
 
   it('checks out the base commit a pull request is diffed against', () => {

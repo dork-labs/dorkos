@@ -375,7 +375,7 @@ jobs:
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
       # filter cannot, and this job has none.
       - name: Read where the space server lives
-        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV"
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dork-labs/ui build
       - name: Assert community HTTP paths against real Postgres
@@ -466,7 +466,7 @@ jobs:
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
       # filter cannot, and this job has none.
       - name: Read where the space server lives
-        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV"
+        run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env
 
       # Decides whether the proof runs, from the one list in
       # scripts/community-packaged-scope.sh. No `if:` of its own, so this

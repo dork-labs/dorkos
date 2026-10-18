@@ -20,8 +20,14 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 /** The keys the file must define, each a repository-relative folder. */
 const KEYS = ['SPACE_DIR', 'SPACE_SRC_DIR', 'SPACE_WEB_DIR'];
 
-/** A KEY=value line; anything else that is not a comment or blank is refused. */
-const LINE = /^([A-Z][A-Z0-9_]*)=(.*)$/;
+/**
+ * A KEY=value line, starting in the first column, with a key the workflows' grep
+ * (`^SPACE_[A-Z_]*=.`) would keep. Anything else that is not a comment or blank
+ * is refused, so a line bash would read but the workflows would drop (an
+ * indented assignment, an `export`, a key outside that pattern) never reaches
+ * only some of the readers.
+ */
+const LINE = /^(SPACE_[A-Z_]*)=(.*)$/;
 
 /**
  * Parse the text of a `space-server.env` file.
@@ -37,11 +43,14 @@ const LINE = /^([A-Z][A-Z0-9_]*)=(.*)$/;
 export function parseSpaceServerEnv(text, source = 'ci/space-server.env') {
   /** @type {Record<string, string>} */
   const values = {};
-  for (const [index, raw] of text.split('\n').entries()) {
-    const line = raw.trim();
-    if (line === '' || line.startsWith('#')) continue;
+  for (const [index, line] of text.split('\n').entries()) {
+    if (line.trim() === '' || line.startsWith('#')) continue;
     const match = LINE.exec(line);
-    if (!match) throw new Error(`${source}:${index + 1}: not a KEY=value line: ${line}`);
+    if (!match) {
+      throw new Error(
+        `${source}:${index + 1}: not a SPACE_*=value line starting in the first column: ${line}`
+      );
+    }
     values[match[1]] = match[2];
   }
   for (const key of KEYS) {
