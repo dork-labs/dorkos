@@ -14,6 +14,7 @@
   var root = document.documentElement;
   var q = new URLSearchParams(location.search);
   var SHOT = q.has('shot');
+  if (SHOT) window.__studioShot = true; // no review layer or director chrome in screenshots
   var PINNED = q.has('screen'); // viewing a specific screen rather than following the newest
   // Relative to the page, so it works under a proxy prefix too.
   var BASE = location.pathname.endsWith('/')
@@ -200,7 +201,7 @@
   }
 
   // ---------- toast, hint, chip ----------
-  var toastEl, hintEl, chipEl, toastTimer;
+  var toastEl, chipEl, toastTimer;
   function toast(html, ms) {
     if (SHOT) return;
     if (!toastEl) {
@@ -214,17 +215,6 @@
     toastTimer = setTimeout(function () {
       toastEl.classList.remove('vc-show');
     }, ms || 3200);
-  }
-  function hint(text) {
-    if (!hintEl) {
-      hintEl = h('div', { class: 'vc-hint', role: 'status', 'aria-live': 'polite' });
-      document.body.appendChild(hintEl);
-    }
-    if (text) {
-      hintEl.innerHTML = text;
-      void hintEl.offsetWidth;
-      hintEl.classList.add('vc-show');
-    } else hintEl.classList.remove('vc-show');
   }
   function newScreenChip(name) {
     if (SHOT) return;
@@ -353,7 +343,8 @@
         sentInfo.labels && sentInfo.labels.length
           ? ' · <b>' + esc(sentInfo.labels.join(', ')) + '</b>'
           : '';
-      var said = sentInfo.message ? ' · “' + esc(sentInfo.message) + '”' : '';
+      var m = sentInfo.message ? sentInfo.message.replace(/\s+/g, ' ') : '';
+      var said = m ? ' · “' + esc(m.length > 140 ? m.slice(0, 139) + '…' : m) + '”' : '';
       sendText.innerHTML =
         icon('check') +
         '<span>Sent to ' +
@@ -414,7 +405,7 @@
     var saved = sendEvent({
       type: 'send',
       selection: sel,
-      pins: pins.length,
+      pins: requestCount(),
       message: text || undefined,
     });
     (D.screens || []).forEach(function (x) {
@@ -947,22 +938,19 @@
       if (to) go(to);
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && WAKE && !noteEl) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && WAKE && !(review() && review().busy)) {
       e.preventDefault();
       sendNow();
       return;
     }
     if (e.key === 'Escape') {
       if (jumpEl) return closeJump();
-      if (noteEl) return closeNote(true);
-      if (pinning) return setPinning(false);
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
     var k = e.key.toLowerCase();
     if (k === 'c') {
-      setPinning(!pinning);
-      peekBar();
+      peekBar(); // review.js toggles picking
     } else if (k === 't') {
       setTheme(currentTheme() === 'dark' ? 'light' : 'dark');
       peekBar();
@@ -976,250 +964,60 @@
   });
 
   // ---------- pins ----------
+  // review.js draws pins, the note and the pick hint: one implementation for
+  // fragments and full prototypes. The frame mounts it in the page (light DOM,
+  // so the chrome layer styles it) and hands it this page's event queue, so a
+  // pin is recorded and wakes the chat exactly as before.
   var pinning = false;
-  var pinLayer, noteEl, draft;
-  var pins = [];
-  function ensurePinLayer() {
-    if (pinLayer) return pinLayer;
-    pinLayer = h('div', { class: 'vc-pins', role: 'group', 'aria-label': 'Pinned notes' });
-    pinLayer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;';
-    document.body.appendChild(pinLayer);
-    return pinLayer;
+  function review() {
+    return window.__review || null;
   }
   function setPinning(on) {
-    pinning = on;
-    root.classList.toggle('vc-pinning', on);
-    if (!on) closeNote(true);
-    if (bar) bar.classList.toggle('vc-show', on);
-    hint(on ? 'Click anywhere to pin a note <span>· Esc to finish</span>' : null);
+    var r = review();
+    if (r) r.setPicking(on);
+  }
+  window.addEventListener('review:picking', function (e) {
+    pinning = !!e.detail;
+    if (bar) bar.classList.toggle('vc-show', pinning);
     syncBar();
-  }
-  function selectorFor(el) {
-    var parts = [];
-    while (el && el.nodeType === 1 && el !== document.body && parts.length < 6) {
-      if (el.id) {
-        parts.unshift('#' + CSS.escape(el.id));
-        break;
-      }
-      var s = el.tagName.toLowerCase();
-      var cls = [].filter
-        .call(el.classList, function (c) {
-          return c.indexOf('vc-') !== 0 && c !== 'selected';
-        })
-        .slice(0, 2);
-      if (cls.length) s += '.' + cls.map(CSS.escape).join('.');
-      var p = el.parentElement;
-      if (p) {
-        var same = [].filter.call(p.children, function (c) {
-          return c.tagName === el.tagName;
-        });
-        if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(el) + 1) + ')';
-      }
-      parts.unshift(s);
-      el = p;
-    }
-    return parts.join(' > ');
-  }
-  function docSize() {
-    return { w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight };
-  }
-  // Where a pin goes now: relative to its element if that still exists, else its page point.
-  function pinPoint(p) {
-    if (p.selector && p.rel) {
-      var el;
-      try {
-        el = document.querySelector(p.selector);
-      } catch {
-        // Best effort: nothing to do if this fails.
-      }
-      if (el) {
-        var r = el.getBoundingClientRect();
-        if (r.width && r.height)
-          return {
-            x: r.left + scrollX + p.rel.x * r.width,
-            y: r.top + scrollY + p.rel.y * r.height,
-          };
-      }
-    }
-    return { x: p.x, y: p.y };
-  }
-  function renderPins() {
-    ensurePinLayer();
-    pinLayer.querySelectorAll('.vc-pin:not([data-draft])').forEach(function (n) {
-      n.remove();
-    });
-    pins.forEach(function (p) {
-      var pt = pinPoint(p);
-      var b = h('button', {
-        class: 'vc-pin',
-        type: 'button',
-        'aria-label': 'Note ' + p.n + ': ' + (p.note || ''),
-        'data-n': p.n,
-        text: String(p.n),
-      });
-      b.style.left = pt.x + 'px';
-      b.style.top = pt.y + 'px';
-      b.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openNote(p, b);
-      });
-      pinLayer.appendChild(b);
-    });
-  }
-  function nextN() {
-    return (
-      pins.reduce(function (m, p) {
-        return Math.max(m, p.n);
-      }, 0) + 1
-    );
-  }
-  function placeNote(anchorX, anchorY) {
-    var w = 264;
-    var x = anchorX + 18;
-    if (x + w > scrollX + innerWidth - 12) x = anchorX - w - 18;
-    noteEl.style.left = Math.max(scrollX + 8, x) + 'px';
-    noteEl.style.top = Math.max(scrollY + 8, anchorY - 12) + 'px';
-  }
-  function openDraft(e) {
-    closeNote(true);
-    var target = document.elementFromPoint(e.clientX, e.clientY) || document.body;
-    var r = target.getBoundingClientRect();
-    var size = docSize();
-    var n = nextN();
-    draft = {
-      n: n,
-      x: Math.round(e.pageX),
-      y: Math.round(e.pageY),
-      xPct: +((e.pageX / size.w) * 100).toFixed(2),
-      yPct: +((e.pageY / size.h) * 100).toFixed(2),
-      selector: selectorFor(target),
-      rel:
-        r.width && r.height
-          ? {
-              x: +((e.clientX - r.left) / r.width).toFixed(4),
-              y: +((e.clientY - r.top) / r.height).toFixed(4),
-            }
-          : null,
-      target: (target.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
-      tag: target.tagName.toLowerCase(),
-      viewport: { w: innerWidth, h: innerHeight },
-    };
-    ensurePinLayer();
-    var marker = h('button', {
-      class: 'vc-pin',
-      type: 'button',
-      'data-draft': '',
-      tabindex: '-1',
-      'aria-hidden': 'true',
-      text: String(n),
-    });
-    marker.style.left = draft.x + 'px';
-    marker.style.top = draft.y + 'px';
-    pinLayer.appendChild(marker);
-    draft.marker = marker;
-
-    noteEl = h('div', { class: 'vc-note', role: 'dialog', 'aria-label': 'Note ' + n });
-    noteEl.innerHTML =
-      '<label class="vc-sr" for="vc-note-input">Note ' +
-      n +
-      '</label>' +
-      '<textarea id="vc-note-input" rows="3" placeholder="What should change here?"></textarea>' +
-      '<div class="vc-note-actions"><button type="button" data-act="cancel">Cancel</button><button type="button" class="vc-primary" data-act="save">Pin note</button></div>';
-    pinLayer.appendChild(noteEl);
-    placeNote(draft.x, draft.y);
-    var ta = noteEl.querySelector('textarea');
-    ta.focus();
-    ta.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter' && !ev.shiftKey) {
-        ev.preventDefault();
-        saveDraft();
-      }
-    });
-    noteEl.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var act = ev.target.closest('[data-act]');
-      if (!act) return;
-      if (act.dataset.act === 'save') saveDraft();
-      else closeNote(true);
-    });
-  }
-  function saveDraft() {
-    if (!draft) return;
-    var note = noteEl.querySelector('textarea').value.trim();
-    if (!note) return noteEl.querySelector('textarea').focus();
-    var p = Object.assign({}, draft, { note: note });
-    delete p.marker;
-    pins.push(p);
-    closeNote(true);
-    renderPins();
-    sendEvent(Object.assign({ type: 'pin', selection: currentSelection() }, p));
-    toast('<b>Note ' + p.n + '</b> ' + (WAKE ? 'sent to ' + esc(WHO) : 'pinned' + feedbackLine()));
-  }
-  function openNote(p, anchor) {
-    closeNote(true);
-    ensurePinLayer();
-    noteEl = h('div', { class: 'vc-note', role: 'dialog', 'aria-label': 'Note ' + p.n });
-    noteEl.innerHTML =
-      '<div class="vc-note-meta">Note ' +
-      p.n +
-      '</div><div class="vc-note-text">' +
-      esc(p.note || '') +
-      '</div>' +
-      '<div class="vc-note-actions"><button type="button" data-act="delete">Remove</button><button type="button" class="vc-primary" data-act="close">Done</button></div>';
-    pinLayer.appendChild(noteEl);
-    var pt = pinPoint(p);
-    placeNote(pt.x, pt.y);
-    noteEl.querySelector('[data-act="close"]').focus();
-    noteEl.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      var act = ev.target.closest('[data-act]');
-      if (!act) return;
-      if (act.dataset.act === 'delete') {
-        pins = pins.filter(function (x) {
-          return x.n !== p.n;
-        });
-        sendEvent({ type: 'pin-delete', n: p.n });
-        closeNote(false);
-        renderPins();
-      } else closeNote(false);
-      if (anchor && anchor.isConnected) anchor.focus();
-    });
-  }
-  function closeNote(dropDraft) {
-    if (noteEl) noteEl.remove();
-    noteEl = null;
-    if (dropDraft && draft) {
-      if (draft.marker) draft.marker.remove();
-      draft = null;
-    }
-  }
-  // In pin mode a click drops a note instead of doing whatever it would do.
-  document.addEventListener(
-    'click',
-    function (e) {
-      if (!pinning) return;
-      if (e.target.closest('.vc-bar, .vc-note, .vc-pin, .vc-chip, .vc-toast')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openDraft(e);
-    },
-    true
-  );
-  function loadPins() {
-    if (!D.screen) return;
-    fetch(api('vc/pins?screen=' + encodeURIComponent(D.screen)), { cache: 'no-store' })
-      .then(function (r) {
-        return r.json();
-      })
-      .then(function (list) {
-        pins = list || [];
-        renderPins();
-      })
-      .catch(function () {});
-  }
-  window.addEventListener('resize', function () {
-    if (pins.length) renderPins();
   });
+  window.addEventListener('review:saved', function (e) {
+    var p = e.detail || {};
+    toast(
+      '<b>Note ' +
+        p.n +
+        '</b> ' +
+        (p.kind === 'note'
+          ? 'kept as a note'
+          : WAKE
+            ? 'sent to ' + esc(WHO)
+            : 'pinned' + feedbackLine())
+    );
+  });
+  function requestCount() {
+    var r = review();
+    return r ? r.requests().length : 0;
+  }
+  window.REVIEW_CONFIG = {
+    name: D.title || D.screen,
+    screen: D.screen,
+    agent: R.label || 'the agent',
+    mount: 'light',
+    chrome: false,
+    ignore: '.vc-bar, .vc-chip, .vc-toast, .vc-send, .vc-jump',
+    // Fragments are stamped with data-src by the server; the raw file is the fallback.
+    sources: D.screen
+      ? [
+          {
+            url: api('files/' + encodeURIComponent(D.screen) + '.html'),
+            label: 'content/' + D.screen + '.html',
+          },
+        ]
+      : [],
+    post: function (ev) {
+      return sendEvent(Object.assign({ selection: currentSelection() }, ev));
+    },
+  };
 
   // ---------- live reload: WebSocket, then polling ----------
   var ws = null;
@@ -1348,6 +1146,7 @@
         // screen that is already older than the one on view.
         syncHistory();
       } else if (data.type === 'screens') syncHistory();
+      else if (data.type === 'review' && data.screen === D.screen && review()) review().refresh();
     };
     ws.onclose = function () {
       clearTimeout(guard);
@@ -2102,7 +1901,6 @@
     rememberLatest(D.latest);
     connect();
   }
-  loadPins();
   var ready = function () {
     window.__vcReady = true;
     root.setAttribute('data-vc-ready', '');

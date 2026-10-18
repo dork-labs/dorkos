@@ -152,6 +152,52 @@ function listen(handler, p) {
   });
 }
 
+// Screenshots the tests take along the way go to $VC_TEST_SHOTS (to keep them),
+// else a temp dir. Never beside the skill.
+const ART = process.env.VC_TEST_SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'vc-test-shots-'));
+fs.mkdirSync(ART, { recursive: true });
+
+// The example prototype, copied to a temp dir and built there with
+// build-proto.cjs (extra args pass through, e.g. --no-stamp), so a test run
+// never writes beside the skill. Returns the copy's directory.
+function buildExample(args = []) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vc-proto-'));
+  fs.cpSync(path.join(SKILL, 'examples/prototype'), dir, {
+    recursive: true,
+    filter: (f) => path.basename(f) !== 'index.html',
+  });
+  const r = spawnSync(
+    process.execPath,
+    [path.join(SKILL, 'scripts/build-proto.cjs'), dir, ...args],
+    { encoding: 'utf8' }
+  );
+  if (r.status !== 0) throw new Error('build-proto failed: ' + r.stderr);
+  return dir;
+}
+
+// Serves a directory no-store on a free loopback port, the way a prototype's
+// own server would: another origin than the companion's.
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.png': 'image/png',
+};
+function serveDir(root) {
+  return listen((req, res) => {
+    const f = path.join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(f)] || 'text/plain',
+      'Cache-Control': 'no-store',
+    });
+    fs.createReadStream(f).pipe(res);
+  });
+}
+
 module.exports = {
   SKILL,
   VC,
@@ -170,4 +216,7 @@ module.exports = {
   stopAll,
   listen,
   findChrome,
+  ART,
+  buildExample,
+  serveDir,
 };

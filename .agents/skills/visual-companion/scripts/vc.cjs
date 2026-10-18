@@ -9,6 +9,11 @@
 //   vc events [--all] [--peek]          new events since the last read (JSONL)
 //   vc route [status] | off | on [--via ui-action|message] [--label NAME] [--session ID]
 //   vc theme light|dark                 default theme for screens without their own
+//   vc review list [--screen S] [--all]  the notes people left (open requests by default)
+//   vc review resolve <[screen#]n> "what you did"   answer a note: a check and your line on the page
+//   vc review dismiss <[screen#]n> "why"            answer it the other way
+//   vc review open <url> --name S [--title T] [--wake]   review a prototype through the companion
+//   vc review crop [<[screen#]n>] [--screen S]           (re)take note crops into shots/notes/
 //
 // Waking: a screen shown with --wake (or <meta name="vc-wake" content="on">)
 // gets a Send bar; Send, or a submitted pin note, wakes the chat that ran
@@ -27,7 +32,9 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
+const store = require('./review-store.cjs');
 
 const SCRIPTS = __dirname;
 const ASSETS = path.join(SCRIPTS, 'assets');
@@ -69,8 +76,16 @@ function parseDuration(s) {
 }
 
 // ---------- session ----------
+// Run from inside a skill folder (`cd scripts && node vc.cjs …`), the cwd is the skill,
+// not the project: climb out of `.claude/` (or `.agents/`, where a repo keeps its
+// skills) so sessions never land inside the skill.
+const climb = (d) => {
+  const parts = d.split(path.sep);
+  const i = Math.max(parts.lastIndexOf('.claude'), parts.lastIndexOf('.agents'));
+  return i > 0 ? parts.slice(0, i).join(path.sep) : d;
+};
 const projectDir = path.resolve(
-  flags['project-dir'] || process.env.VC_PROJECT_DIR || process.cwd()
+  flags['project-dir'] || process.env.VC_PROJECT_DIR || climb(process.cwd())
 );
 const baseDir = path.join(projectDir, '.dork', 'visual-companion');
 const currentFile = path.join(baseDir, 'current');
@@ -488,8 +503,10 @@ async function main() {
     });
   }
 
-  const dir = sessionDir(false);
+  const dir = sessionDir(cmd === 'review' && pos[0] === 'open');
   if (!dir) {
+    if (cmd === 'review' && (pos[0] || 'list') === 'list')
+      out({ ok: true, count: 0, lines: [], notes: [] });
     if (cmd === 'status' || cmd === 'url')
       out({ ok: true, running: false, reason: 'no session yet; run vc show or vc start' });
     fail('no session yet; run vc show or vc start');
@@ -604,7 +621,257 @@ async function main() {
     return out({ ok: true, route, title: check.json && check.json.title });
   }
 
+  if (cmd === 'review') return review(dir);
+
   fail('unknown command: ' + cmd);
+}
+
+// ---------- review: the notes people leave, and the agent's answers ----------
+function readEvents(dir) {
+  const f = path.join(dir, 'state', 'events');
+  if (!fs.existsSync(f)) return [];
+  return fs
+    .readFileSync(f, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+// Through the server when it's up (so open pages hear it at once), else straight to the log.
+async function record(dir, ev) {
+  ev.timestamp = Date.now();
+  const r = await running(dir);
+  if (r) {
+    const ok = await new Promise((resolve) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: r.port,
+          path: '/vc/event',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 2000,
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode === 200));
+        }
+      );
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+      });
+      req.end(JSON.stringify(ev));
+    });
+    if (ok) return 'server';
+  }
+  fs.appendFileSync(path.join(dir, 'state', 'events'), JSON.stringify(ev) + '\n');
+  return 'log';
+}
+
+// "settings#2", or "2" with --screen, or "2" when only one screen has an open note 2.
+function findNote(dir, ref, all) {
+  if (ref === undefined || ref === true) fail('which note? pass <n>, <screen>#<n> or --screen S');
+  const m = String(ref).match(/^(?:(.+)#)?(\d+)$/);
+  if (!m) fail('bad note reference: ' + ref + ' (use 2 or screen#2)');
+  const screen = m[1] || flags.screen || null;
+  const n = Number(m[2]);
+  const list = store
+    .notes(readEvents(dir), screen, path.join(dir, 'shots'))
+    .filter((p) => p.n === n && (all || p.status === 'open'));
+  if (!list.length)
+    fail('no ' + (all ? '' : 'open ') + 'note ' + n + (screen ? ' on ' + screen : ''));
+  if (list.length > 1)
+    fail('note ' + n + ' is on several screens; say which', { screens: list.map((p) => p.screen) });
+  return list[0];
+}
+
+async function review(dir) {
+  const sub = pos[0] || 'list';
+  const shots = path.join(dir, 'shots');
+  if (sub === 'list') {
+    const all = store.notes(readEvents(dir), flags.screen || null, shots);
+    const list = flags.all ? all : all.filter((p) => p.kind !== 'note' && p.status === 'open');
+    return out({
+      ok: true,
+      count: list.length,
+      lines: list.map(store.line),
+      notes: list.map((p) => ({
+        screen: p.screen,
+        n: p.n,
+        note: p.note,
+        kind: p.kind,
+        intent: p.intent,
+        status: p.status,
+        reply: p.reply,
+        ref: p.ref,
+        selector: p.selector,
+        role: p.role,
+        name: p.name,
+        source: p.source,
+        state: p.state,
+        styles: p.styles,
+        rect: p.rect,
+        page: p.page,
+        crop: p.crop,
+      })),
+    });
+  }
+  if (sub === 'resolve' || sub === 'dismiss') {
+    const p = findNote(dir, pos[1], false);
+    const reply = String(pos[2] || flags.reply || '').trim();
+    if (!reply)
+      fail(
+        'say it in a line: vc review ' +
+          sub +
+          ' ' +
+          p.screen +
+          '#' +
+          p.n +
+          ' "' +
+          (sub === 'resolve' ? 'what you did' : 'why') +
+          '"'
+      );
+    const via = await record(dir, {
+      type: 'pin-resolve',
+      screen: p.screen,
+      n: p.n,
+      status: sub === 'resolve' ? 'resolved' : 'dismissed',
+      reply,
+      by: 'agent',
+    });
+    return out({
+      ok: true,
+      screen: p.screen,
+      n: p.n,
+      status: sub === 'resolve' ? 'resolved' : 'dismissed',
+      reply,
+      via,
+    });
+  }
+  if (sub === 'open') {
+    const target = pos[1];
+    if (!target) fail('usage: vc review open <url> --name S [--title T] [--wake] [--session ID]');
+    const name = flags.name ? slug(flags.name) : null;
+    if (!name) fail('--name is required (a stable key for its notes, e.g. settings-page)');
+    const r = await ensure(dir);
+    const f = path.join(dir, 'state', 'reviews.json');
+    const map = readJson(f) || {};
+    const owner = agentSession();
+    // The prototype runs on another origin, so the server takes its events only
+    // with this review's token (`vt` in the URL below). Any other local page
+    // that posts here has none, and wakes nobody. A new open mints a new one.
+    const token = crypto.randomBytes(18).toString('base64url');
+    map[name] = {
+      title: flags.title || map[name]?.title || name,
+      url: target,
+      wake: !!flags.wake,
+      session: owner || map[name]?.session || null,
+      opened: Date.now(),
+      token,
+    };
+    const tmp = f + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(map, null, 2) + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, f);
+    if (owner) {
+      const rf = path.join(dir, 'state', 'screen-routes.json');
+      const routes = readJson(rf) || {};
+      routes[name] = owner;
+      fs.writeFileSync(rf, JSON.stringify(routes, null, 2) + '\n');
+    }
+    const route = recordRoute(dir);
+    // The page (or its host) reads ?review=, ?vc= and ?vt=; the director kit
+    // loads the layer from vc, and the layer sends vt with every event.
+    const u = new URL(target, 'file:///');
+    u.searchParams.set('review', name);
+    u.searchParams.set('vc', r.info.url + '/');
+    u.searchParams.set('vt', token);
+    // Who Send reaches, by name ("Send 2 to <agent>").
+    if (route && route.label) u.searchParams.set('agent', route.label);
+    // A page that never loads the layer shows no Review pill, and nobody can pin.
+    // Say so here, not after the person has looked for a button that isn't there.
+    let pins = null;
+    if (/^https?:/.test(target)) {
+      try {
+        const html = await (await fetch(target, { signal: AbortSignal.timeout(5000) })).text();
+        pins = /review\.js|director\.js|REVIEW_CONFIG/.test(html);
+      } catch {
+        pins = null;
+      }
+    }
+    const warning =
+      pins === false
+        ? 'This page does not load the review layer, so it will show no Review pill. Add <script src="' +
+          r.info.url +
+          '/vc/review.js"></script> to it, or open it through a same-origin host page that injects it.'
+        : pins === null
+          ? 'Could not fetch the page to check it loads the review layer. Check the Review pill shows before you share the link.'
+          : undefined;
+    return out({
+      ok: true,
+      screen: name,
+      url: u.toString(),
+      pins,
+      ...(warning ? { warning } : {}),
+      vc: r.info.url + '/',
+      wake: !!flags.wake,
+      session: owner,
+      review_js: r.info.url + '/vc/review.js',
+      director_js: r.info.url + '/vc/director.js',
+    });
+  }
+  if (sub === 'crop') {
+    const r = await running(dir);
+    const list = pos[1]
+      ? [findNote(dir, pos[1], true)]
+      : store
+          .notes(readEvents(dir), flags.screen || null, shots)
+          .filter((p) => p.kind !== 'note' && p.status === 'open');
+    const own = (s) => fs.existsSync(path.join(dir, 'content', s + '.html'));
+    const jobs = list
+      .filter((p) => p.selector)
+      .map((p) => ({
+        // A fragment is cropped from the running server; a prototype from its own page.
+        url: own(p.screen)
+          ? r
+            ? 'http://127.0.0.1:' +
+              r.port +
+              '/?shot&screen=' +
+              encodeURIComponent(p.screen) +
+              '&theme=' +
+              (p.theme === 'dark' ? 'dark' : 'light')
+            : null
+          : p.page,
+        frame: own(p.screen) ? undefined : p.frame,
+        selector: p.selector,
+        state: own(p.screen) ? null : p.state,
+        viewport: p.viewport,
+        out: store.cropPath(shots, p.screen, p.n),
+        ref: p.screen + '#' + p.n,
+      }))
+      .filter((j) => j.url);
+    if (!jobs.length) return out({ ok: true, crops: [] });
+    const res = await require('./crop.cjs').crop(jobs);
+    return out({
+      ok: res.every((x) => x.ok),
+      crops: jobs.map((j, i) => ({
+        note: j.ref,
+        file: res[i].ok ? j.out : null,
+        error: res[i].error,
+      })),
+    });
+  }
+  fail(
+    'usage: vc review list | resolve <n> "summary" | dismiss <n> "why" | open <url> --name S | crop [<n>]'
+  );
 }
 
 main().catch((e) => fail(String(e && e.message ? e.message : e)));

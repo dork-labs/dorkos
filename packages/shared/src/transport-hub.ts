@@ -10,8 +10,10 @@
 import type {
   HubComputerList,
   HubLinkCode,
+  SessionRelayDeviceList,
   SessionRelayLevel,
   SessionRelayLinkBody,
+  SessionRelayPresence,
   SessionRelayStatus,
 } from './session-relay-link.js';
 
@@ -56,4 +58,10 @@ export interface SessionRelayTransport {
   resumeSessionRelay(password: string): Promise<SessionRelayStatus>;
   /** Forget the hub. Works with the network off. At this computer only. */
   unlinkSessionRelay(): Promise<SessionRelayStatus>;
+  /** Whether someone is using this computer from the web now, and from which browsers. */
+  getSessionRelayPresence(): Promise<SessionRelayPresence>;
+  /** End a remote session now: close the relay and pause the link. At this computer only. */
+  endSessionRelayPresence(): Promise<SessionRelayPresence>;
+  /** Every browser that has used chat from the web here, most recent first. */
+  listSessionRelayDevices(): Promise<SessionRelayDeviceList>;
 }

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example · Sessions · Prototype</title>
+    <style>
+      /*CSS*/
+    </style>
+    <script>
+      /*DIRECTOR*/
+    </script>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side" aria-label="Agents">
+        <div class="brand">DorkOS</div>
+        <nav class="nav" aria-label="Places">
+          <a class="nav-item" href="#" aria-current="page">Today</a>
+          <a class="nav-item" href="#">Agents</a>
+          <a class="nav-item" href="#">Tasks</a>
+        </nav>
+      </aside>
+      <main class="main" id="main">
+        <header class="top">
+          <h1 class="title">Sessions</h1>
+          <p class="sub" id="sub"></p>
+          <button class="new" id="newBtn" type="button">New session</button>
+        </header>
+        <section class="list" id="list" aria-label="Sessions"></section>
+      </main>
+      <aside class="sheet" id="sheet" aria-label="Session detail" hidden></aside>
+    </div>
+    <div class="scrim" id="scrim" hidden></div>
+    <div class="dialog" id="compose" role="dialog" aria-label="New session" hidden>
+      <h2 class="dialog-title">New session</h2>
+      <label class="field-label" for="ask">What should it do?</label>
+      <textarea id="ask" class="field" rows="3" placeholder="Draft the launch notes…"></textarea>
+      <div class="dialog-actions">
+        <button type="button" class="ghost" id="cancel">Cancel</button
+        ><button type="button" class="primary">Start</button>
+      </div>
+    </div>
+    <script>
+      /*JS*/
+    </script>
+  </body>
+</html>

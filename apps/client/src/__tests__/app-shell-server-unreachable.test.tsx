@@ -34,6 +34,13 @@ import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 
 // ── Router: the shell mounts without a RouterProvider ──
 
+// The web-access indicator rides the beacon but needs the live event feed,
+// which these tests do not provide.
+vi.mock('@/layers/features/web-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/web-access')>()),
+  RemoteSessionIndicator: () => null,
+}));
+
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>

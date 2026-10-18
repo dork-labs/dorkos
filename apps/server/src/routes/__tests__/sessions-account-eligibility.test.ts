@@ -116,6 +116,7 @@ function rulesConfig(): { get<K extends keyof UserConfig>(key: K): UserConfig[K]
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: false,
+      maxWarmProcesses: null,
     } as UserConfig['runtimes']['claudeCode'],
   };
   return {

@@ -324,21 +324,45 @@ export const SESSIONS = {
    */
   WARM_IDLE_MS: 5 * 60 * 1000,
   /**
-   * How many sessions may hold a subprocess at once (spec §4.4).
+   * The fewest sessions that may hold a subprocess at once when the ceiling is
+   * sized automatically (spec §4.4; DOR-3012).
    *
-   * This counts PROCESSES; `MAX_SESSIONS` (50) counts session RECORDS, and the
-   * two are deliberately different numbers. Fifty concurrent CLI subprocesses
-   * plus their MCP children on a laptop is not a shape to ship, so warmth stops
-   * at twelve while records stay at fifty — which keeps `ensureSession`'s throw
-   * the genuinely exceptional path it is today.
+   * The ceiling counts PROCESSES; `MAX_SESSIONS` (50) counts session RECORDS,
+   * and the two are deliberately different numbers. It is set by
+   * `runtimes.claudeCode.maxWarmProcesses`, and left unset it is sized to the
+   * machine: one process per {@link SESSIONS.WARM_SESSION_RAM_GB} of memory,
+   * never fewer than this and never more than
+   * {@link SESSIONS.MAX_WARM_SESSIONS_AUTO}. Twelve was the fixed ceiling until
+   * DOR-3012, and a machine with 48 GB filled it with 5.5 GB in use.
    *
-   * It is also **not** a refusal ceiling in the way `MAX_SESSIONS` is. Warmth is
-   * a cache, so the thirteenth warm session does not fail: the least recently
-   * used warm process is reaped to make room for it, and only a host where
-   * nothing is reclaimable — every process mid-turn or parked on a person — is
-   * refused.
+   * It is **not** a refusal ceiling in the way `MAX_SESSIONS` is. Warmth is a
+   * cache, so a launch past it reclaims the least recently used warm process,
+   * and when nothing is reclaimable — every process mid-turn or parked on a
+   * person — it waits for one to come free ({@link SESSIONS.WARM_SLOT_WAIT_MS}).
    */
-  MAX_WARM_SESSIONS: 12,
+  MIN_WARM_SESSIONS: 12,
+  /** The most an automatically sized warm ceiling allows; see {@link SESSIONS.MIN_WARM_SESSIONS}. */
+  MAX_WARM_SESSIONS_AUTO: 32,
+  /**
+   * Memory an automatically sized ceiling budgets per warm process, in GB. A
+   * busy claude-code process measured about 0.5 GB on 2026-10-18; four times
+   * that leaves room for its MCP children and for everything else on the
+   * machine.
+   */
+  WARM_SESSION_RAM_GB: 2,
+  /**
+   * How long a turn waits for a warm slot when every process is busy, before it
+   * is refused in plain words (DOR-3012).
+   *
+   * Long on purpose: a full ceiling is the busiest moment a room has, and a
+   * late answer beats a failed one. Every busy process frees its slot when its
+   * turn ends, so a wait this long means every agent sat on one turn for most
+   * of an hour. Kept under the room's default late-reply ceiling (60 min) so the
+   * room hears the reason rather than giving up first. The turn says it is
+   * waiting on a beat (`SLOT_WAIT_BEAT_MS`), which keeps the stall guard from
+   * mistaking the wait for a stalled turn.
+   */
+  WARM_SLOT_WAIT_MS: 45 * 60 * 1000,
   /**
    * How long a warm process must be CONTINUOUSLY quiet before its busy spell is
    * over (spec `warm-process-lifecycle` D1).
@@ -360,7 +384,7 @@ export const SESSIONS = {
    * The same four hours, and the same reasoning, as
    * {@link SESSIONS.INTERACTION_PARK_CEILING_MS}: a hold with no bound is a
    * resource leak with a story attached, and twelve processes pinned by helpers
-   * that will never finish fill `MAX_WARM_SESSIONS` exactly as twelve parked
+   * that will never finish fill the warm ceiling exactly as a ceiling's worth of parked
    * ones do. Deliberately a SEPARATE constant from the person-wait ceiling even
    * though both are four hours: one bounds how long DorkOS waits for a person,
    * the other how long it waits for an agent, and a future change to either

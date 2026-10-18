@@ -65,6 +65,7 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultEffort: null,
       defaultTrustStop: null,
       persistentSession: false,
+      maxWarmProcesses: null,
       ...claudeCode,
     },
   };

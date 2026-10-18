@@ -160,10 +160,12 @@ vi.mock('../../../../core/agent-identity/index.js', async () => ({
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle
 // case a steer must survive without throwing (task 4.1 finding 2). Every other
-// SESSIONS value is preserved.
+// SESSIONS value is preserved, except that a full ceiling answers at once
+// rather than waiting for a slot (DOR-3012; that wait has its own suite).
+vi.mock('../slot-wait/warm-ceiling-size.js', () => ({ resolveMaxWarmSessions: () => 1 }));
 vi.mock('../../../../../config/constants.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../config/constants.js')>();
-  return { ...actual, SESSIONS: { ...actual.SESSIONS, MAX_WARM_SESSIONS: 1 } };
+  return { ...actual, SESSIONS: { ...actual.SESSIONS, WARM_SLOT_WAIT_MS: 0 } };
 });
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -2407,7 +2409,7 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
   });
 
   it('(d) appends a stage under the canonical id onto the one warm process, instead of colliding with the ceiling (DOR-1318 shape)', async () => {
-    // MAX_WARM_SESSIONS is mocked to 1 for this whole file, so a phantom
+    // The warm ceiling is mocked to 1 for this whole file, so a phantom
     // second pump for the SAME session — one that keys by the raw id instead
     // of resolving it — has nowhere to go but to reclaim (and kill) the real
     // one to clear room for its own duplicate. That is worse than an orphan:

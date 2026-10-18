@@ -16,7 +16,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import type { Context } from 'hono';
-import type { RelayError } from '@dorkos/shared/session-relay';
+import type { RelayDevice, RelayError } from '@dorkos/shared/session-relay';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
@@ -37,6 +37,13 @@ export interface RelayedStreamOptions {
    * Opened as the stream starts and released however it ends, a throw included.
    */
   openViewer: () => () => void;
+  /** The browser that asked, named to the computer; absent before it has an id. */
+  device?: RelayDevice | undefined;
+  /**
+   * A device cookie to give a browser that has none. This response writes its
+   * own head, so the chain's `Set-Cookie` never reaches it.
+   */
+  setCookie?: string | undefined;
 }
 
 /**
@@ -71,6 +78,7 @@ function relay(
   signal: AbortSignal,
   options: RelayedStreamOptions
 ): Promise<void> {
+  if (options.setCookie) res.appendHeader('Set-Cookie', options.setCookie);
   const sink = new SseStreamSink(res);
   sink.flushHeaders();
   // Frames arrive by callback; each waits for the one before it to be
@@ -111,7 +119,8 @@ function relay(
       (error?: RelayError) => {
         if (error) write({ event: 'error', data: { code: error.code, message: error.message } });
         finish(false);
-      }
+      },
+      options.device
     );
     if (signal.aborted) onLeave();
     else signal.addEventListener('abort', onLeave, { once: true });
