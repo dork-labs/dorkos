@@ -15,7 +15,9 @@ const admin = new Pool({ connectionString: adminUrl });
 const databases: string[] = [];
 
 afterAll(async () => {
-  for (const database of databases) await admin.query(`DROP DATABASE IF EXISTS ${database}`);
+  for (const database of databases)
+    // The post checks' pool closes itself once idle; FORCE never waits on it.
+    await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
   await admin.end();
 });
 
@@ -78,5 +80,6 @@ it('migrates from the folder it is given, serves its web folder, and stops twice
     await space.stop();
   }
   await expect(space.stop()).resolves.toBeUndefined();
+  await expect(space.start()).rejects.toThrow('This space server was stopped.');
   await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
 });

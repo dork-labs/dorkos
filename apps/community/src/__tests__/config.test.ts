@@ -18,8 +18,10 @@ const valid = {
 describe('community startup config', () => {
   it('keeps bulk tenant reconciliation out of ordinary startup', async () => {
     const startup = await readFile(new URL('../startup/space-server.ts', import.meta.url), 'utf8');
+    const entry = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
 
     expect(startup).not.toContain('reconcileTenantNamespace');
+    expect(entry).not.toContain('reconcileTenantNamespace');
     // The cleanup sweep prunes the erasure journal with the host's retention (DOR-2566).
     expect(startup).toContain('pruneErasureJournal(pool, config.erasureJournalRetentionDays)');
   });

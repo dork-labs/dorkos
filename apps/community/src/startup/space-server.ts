@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { createCommunityApp } from '../app.js';
 import type { CommunityConfig } from '../config.js';
 import { createLiveHub } from '../live/app-hub.js';
+import type { LiveHub } from '../live/hub.js';
 import { oidcCallbackUrl } from '../oidc.js';
 import { migrate } from '../migrate.js';
 import { createStop } from '../shutdown.js';
@@ -67,7 +68,11 @@ export interface SpaceServer {
    * with {@link LiveUpdatesUnavailableError}, after saying why, when live updates cannot start.
    */
   start(): Promise<void>;
-  /** Stop everything `start` began. Safe to call more than once, and before `start`. */
+  /**
+   * Stop the listener, the request pool, live updates and every repeating worker. Safe to call
+   * more than once, and before `start`; a `start` after it rejects. The post checks' own small
+   * pool is left to close itself once idle, as it always has.
+   */
   stop(): Promise<void>;
 }
 
@@ -100,12 +105,21 @@ export function createSpaceServer({
     );
   let stopRunning: (() => Promise<void>) | undefined;
   let starting: Promise<void> | undefined;
+  let stopped = false;
+  // What a start that fails partway has opened, so it closes again before the failure is reported.
+  const opened: { pool?: Pool; live?: LiveHub } = {};
   return {
     start() {
-      starting ??= start();
+      if (stopped) return Promise.reject(new Error('This space server was stopped.'));
+      starting ??= start().catch(async (error: unknown) => {
+        await opened.live?.stop().catch(() => undefined);
+        await opened.pool?.end().catch(() => undefined);
+        throw error;
+      });
       return starting;
     },
     async stop() {
+      stopped = true;
       await starting?.catch(() => undefined);
       await stopRunning?.();
     },
@@ -124,6 +138,7 @@ export function createSpaceServer({
       connectionString: config.databaseUrl,
       max: config.database.poolSize + 2 * config.exports.concurrency,
     });
+    opened.pool = pool;
     // A database restart or failover drops idle connections. The pool has already discarded the
     // broken one and opens a fresh one for the next query, so log it rather than crash the server.
     pool.on('error', (error: Error & { code?: string }) => {
@@ -146,6 +161,7 @@ export function createSpaceServer({
     // Live streams wake on Postgres notices received on one direct connection. Prove at boot that a
     // notice really arrives: behind a transaction-mode pooler LISTEN succeeds and nothing comes.
     const live = createLiveHub(config);
+    opened.live = live;
     try {
       await live.start(pool);
     } catch (error) {
@@ -153,7 +169,6 @@ export function createSpaceServer({
         'Community live updates could not start. COMMUNITY_LISTEN_DATABASE_URL (or COMMUNITY_DATABASE_URL) must be a direct Postgres connection, not a transaction pooler.',
         error instanceof Error ? error.message : 'unknown'
       );
-      await pool.end();
       throw new LiveUpdatesUnavailableError();
     }
     const app = createCommunityApp({

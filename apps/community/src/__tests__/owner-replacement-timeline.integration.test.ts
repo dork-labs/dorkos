@@ -1116,6 +1116,8 @@ describe('requests are open on a host with mail', () => {
     );
     expect(startup).toContain('startOwnerReplacementTimeline({ pool, config })');
     expect(startup).not.toContain('ownerReplacementOpen');
+    const entry = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+    expect(entry).not.toContain('ownerReplacementOpen');
   });
 
   it('takes a request on a host built as createSpaceServer builds the app, and the owner gets the email', async () => {
