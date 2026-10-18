@@ -44,9 +44,9 @@ const ALLOWED: readonly RegExp[] = [
   /^packages\/test-utils\/src\/decision-model-conformance\.ts$/,
   // The DorkOS server's decision service domain (research §5g).
   /^apps\/server\/src\/services\/decisions\//,
-  // The Community app's own ladder: its decisions dir and moderation code.
-  /^apps\/community\/src\/decisions\//,
-  /^apps\/community\/src\/(.+\/)?moderation\//,
+  // The space server's own ladder: its decisions dir and moderation code.
+  /^apps\/server\/src\/services\/spaces\/decisions\//,
+  /^apps\/server\/src\/services\/spaces\/(.+\/)?moderation\//,
 ];
 
 /** An import (static, dynamic or re-export) of the decision port, its bridges or its conformance suite. */
@@ -90,7 +90,7 @@ describe('decisions only narrow', () => {
     const imp = "import { runLadder } from '@dorkos/decisions';";
     expect(violation('apps/server/src/services/core/permissions/check.ts', imp)).toBeDefined();
     expect(violation('apps/server/src/services/core/mcp-tool-gate.ts', imp)).toBeDefined();
-    expect(violation('apps/community/src/auth.ts', imp)).toBeDefined();
+    expect(violation('apps/server/src/services/spaces/auth.ts', imp)).toBeDefined();
     expect(violation('apps/server/src/services/rooms/room-service.ts', imp)).toBeDefined();
     expect(
       violation(
@@ -114,9 +114,9 @@ describe('decisions only narrow', () => {
 
   it('allows the listed consumers and ignores files that do not import the port', () => {
     const imp = "import { runLadder } from '@dorkos/decisions';";
-    expect(violation('apps/community/src/moderation/spam.ts', imp)).toBeUndefined();
-    expect(violation('apps/community/src/content/moderation/hint.ts', imp)).toBeUndefined();
-    expect(violation('apps/community/src/decisions/ladder-run.ts', imp)).toBeUndefined();
+    expect(violation('apps/server/src/services/spaces/moderation/spam.ts', imp)).toBeUndefined();
+    expect(violation('apps/server/src/services/spaces/content/moderation/hint.ts', imp)).toBeUndefined();
+    expect(violation('apps/server/src/services/spaces/decisions/ladder-run.ts', imp)).toBeUndefined();
     expect(violation('apps/server/src/services/decisions/service.ts', imp)).toBeUndefined();
     expect(violation('packages/decisions/src/ladder.ts', imp)).toBeUndefined();
     expect(
