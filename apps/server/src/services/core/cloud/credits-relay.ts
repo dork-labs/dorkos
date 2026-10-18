@@ -45,7 +45,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { Readable } from 'node:stream';
 import type { RuntimeCreditsProtocol } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
-import { resolveCreditsLaunch } from './credits-inference.js';
+import { noteCreditsTokenRefused, resolveCreditsLaunch } from './credits-inference.js';
 import { CreditsUnavailableError, type CreditsLaunch } from './credits-protocols.js';
 
 /** The formats the relay carries, and the paths each may use. */
@@ -84,7 +84,12 @@ export interface CreditsRelayOptions {
   fetchImpl?: typeof fetch;
   /** Size and time limits. */
   limits?: Partial<CreditsRelayLimits>;
+  /** Told the id of a token the endpoint refused (401, 402, 403). */
+  onTokenRefused?: (tokenId: string) => void;
 }
+
+/** The answers that mean the endpoint refused the token, not that it was briefly down. */
+const TOKEN_REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 402, 403]);
 
 /** A running relay. */
 export interface CreditsRelay {
@@ -155,6 +160,7 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer 
 export async function startCreditsRelay(options: CreditsRelayOptions = {}): Promise<CreditsRelay> {
   const limits = { ...DEFAULT_LIMITS, ...options.limits };
   const doFetch = options.fetchImpl ?? fetch;
+  const onTokenRefused = options.onTokenRefused ?? noteCreditsTokenRefused;
   const resolveLaunch =
     options.resolveLaunch ??
     ((protocol: RuntimeCreditsProtocol, runtimeLabel: string) =>
@@ -222,6 +228,9 @@ export async function startCreditsRelay(options: CreditsRelayOptions = {}): Prom
         ...(method === 'POST' ? { body: new Uint8Array(body) } : {}),
         signal: controller.signal,
       });
+      // Passed through as it is; on an agent computer it also starts the hold
+      // on new tokens (`noteCreditsTokenRefused`).
+      if (TOKEN_REFUSED_STATUSES.has(upstream.status)) onTokenRefused(launch.tokenId);
       const returned: Record<string, string> = {};
       for (const name of RETURNED_HEADERS) {
         const value = upstream.headers.get(name);

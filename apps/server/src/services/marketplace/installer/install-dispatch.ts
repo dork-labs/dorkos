@@ -26,7 +26,9 @@ import {
   sameDisclosedEffects,
 } from '../preview/disclosed-effects.js';
 import type { InstallRequest, InstallResult } from '../types.js';
-import { ConflictError, DisclosureChangedError } from './errors.js';
+import { CloudAgentUnsupportedError, ConflictError, DisclosureChangedError } from './errors.js';
+import { stagedCloudAgentSupport } from '../lib/cloud-agent-facts.js';
+import { isAgentComputer } from '../../core/server-role/role-checks.js';
 import type { InstallerDeps } from './marketplace-installer.js';
 import { recordableContentHash, recordSourceOf } from './metadata.js';
 import { assertInstallable, type PackageStager, type StagedPackage } from './staging.js';
@@ -95,6 +97,18 @@ export class InstallDispatcher {
       const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
         projectPath: req.projectPath,
       });
+
+      // An agent computer runs only what works on a cloud agent (DOR-2940):
+      // anything else is refused here, before a single file is written.
+      if (isAgentComputer()) {
+        const support = await stagedCloudAgentSupport(
+          staged.packagePath,
+          staged.manifest,
+          preview,
+          req.agentIdentity?.runtime
+        );
+        if (!support.supported) throw new CloudAgentUnsupportedError(support.reason);
+      }
 
       // The last window (DOR-647). This preview is a SECOND resolve of the
       // package: the approval bound what the first one disclosed, so a source that

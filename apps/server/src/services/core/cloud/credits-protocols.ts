@@ -19,6 +19,8 @@ import type {
   RuntimeCreditsProtocol,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { AGENT_COMPUTER_MODELS_REFUSAL } from '../agent-computer/models.js';
+import { isAgentComputer } from '../server-role/role-checks.js';
 
 /** Why a launch that chose credits cannot have them. */
 export type CreditsUnavailableReason =
@@ -113,12 +115,15 @@ export function asCreditsStopped(event: StreamEvent, runtimeLabel: string): Stre
 }
 
 /**
- * The plain sentence for a refused credits launch.
+ * The plain sentence for a refused credits launch. On an agent computer it is
+ * always {@link AGENT_COMPUTER_MODELS_REFUSAL}: nobody there has a sign-in to
+ * fall back to or a setting to change, and credits are the only way it pays.
  *
  * @param reason - Why credits are unavailable.
  * @param runtimeLabel - The runtime's display name.
  */
 function creditsRefusalSentence(reason: CreditsUnavailableReason, runtimeLabel: string): string {
+  if (isAgentComputer()) return AGENT_COMPUTER_MODELS_REFUSAL;
   switch (reason) {
     case 'off':
       return `DorkOS credits are turned off on this computer, so nothing was sent. Use your ${runtimeLabel} sign-in instead, or turn credits back on.`;

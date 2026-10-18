@@ -38138,6 +38138,29 @@
                     "contentHash": {
                       "type": "string"
                     },
+                    "cloudAgents": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "agent-runtime",
+                            "hooks",
+                            "claude-code-only",
+                            "relay-adapter",
+                            "mcp-program"
+                          ],
+                          "description": "Which rule refused it. Present only when `supported` is false."
+                        }
+                      },
+                      "required": [
+                        "supported"
+                      ],
+                      "description": "Whether the package works on a cloud agent."
+                    },
                     "readme": {
                       "type": "string"
                     }
@@ -38147,7 +38170,8 @@
                     "packagePath",
                     "preview",
                     "disclosed",
-                    "contentHash"
+                    "contentHash",
+                    "cloudAgents"
                   ]
                 }
               }
@@ -39234,6 +39258,29 @@
                     "contentHash": {
                       "type": "string",
                       "description": "The staged files, hashed: send it back as `approvedContentHash`."
+                    },
+                    "cloudAgents": {
+                      "type": "object",
+                      "properties": {
+                        "supported": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "agent-runtime",
+                            "hooks",
+                            "claude-code-only",
+                            "relay-adapter",
+                            "mcp-program"
+                          ],
+                          "description": "Which rule refused it. Present only when `supported` is false."
+                        }
+                      },
+                      "required": [
+                        "supported"
+                      ],
+                      "description": "Whether the package works on a cloud agent."
                     }
                   },
                   "required": [
@@ -39241,7 +39288,8 @@
                     "manifest",
                     "packagePath",
                     "disclosed",
-                    "contentHash"
+                    "contentHash",
+                    "cloudAgents"
                   ]
                 }
               }

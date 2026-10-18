@@ -56,6 +56,8 @@
 import type { InferenceModel } from '@dork-labs/cloud-api';
 import { CreditsUnavailableError, isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
+import { AGENT_COMPUTER_INSTANCE_KEY_NAME } from '../../core/agent-computer/instance-key.js';
+import { isAgentComputer } from '../../core/server-role/role-checks.js';
 
 /** The provider id the credits provider is registered under. */
 export const OPENCODE_CREDITS_PROVIDER_ID = 'dorkos-credits';
@@ -69,9 +71,13 @@ export const OPENCODE_LABEL = 'OpenCode';
 /** Which side the sidecar runs on. */
 export type OpenCodeSidecarMode = 'own' | 'credits';
 
-/** Whether OpenCode's recorded Runs on default is DorkOS credits. */
+/**
+ * Whether OpenCode runs on DorkOS credits: its recorded Runs on default, or
+ * always on an agent computer, where credits are the only way to pay and the
+ * choice cannot be switched (`core/agent-computer/models.ts`).
+ */
 export function openCodeRunsOnCredits(): boolean {
-  return creditsIsDefaultFor('opencode');
+  return isAgentComputer() || creditsIsDefaultFor('opencode');
 }
 
 /**
@@ -85,6 +91,9 @@ const PERSON_PROVIDER_NAMES = new Set([
   'ANTHROPIC_API_KEY',
   'OPENROUTER_API_KEY',
   'OPENAI_BASE_URL',
+  // Never in the environment by the time a sidecar boots (it is moved out at
+  // load), and never handed on even if it were: it mints this computer's tokens.
+  AGENT_COMPUTER_INSTANCE_KEY_NAME,
 ]);
 
 /**

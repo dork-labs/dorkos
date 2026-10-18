@@ -1,6 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
+import { useIsHub } from '@/layers/entities/config';
 import { Skeleton } from '@/layers/shared/ui';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
@@ -58,6 +59,7 @@ function RailGrid({
 }) {
   const { openDetail } = useMarketplaceParams();
   const requestInstall = useRequestInstall();
+  const isHub = useIsHub();
 
   return (
     <section aria-label={RAIL_LABEL} className={RAIL_SECTION}>
@@ -69,6 +71,7 @@ function RailGrid({
               pkg={pkg}
               onClick={() => openDetail(pkg.name)}
               onInstallClick={() => requestInstall(pkg)}
+              showCloudAgentSupport={isHub}
             />
           </div>
         ))}

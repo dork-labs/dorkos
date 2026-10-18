@@ -24,12 +24,15 @@ let upstreamUrl: string;
 let seen: Seen[];
 let relay: CreditsRelay;
 let refuseLaunch: boolean;
+/** The token ids the relay said the endpoint refused. */
+let refusedTokens: string[];
 /** How the fake upstream answers; a test may swap it. */
 let answer: (res: http.ServerResponse) => void;
 
 beforeEach(async () => {
   seen = [];
   refuseLaunch = false;
+  refusedTokens = [];
   answer = (res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'x-secret-upstream': 'no' });
     res.write('data: one\n\n');
@@ -51,6 +54,7 @@ beforeEach(async () => {
       return { protocol, baseUrl: upstreamUrl, token: TOKEN, tokenId: 'it_1', expiresAt: '' };
     },
     limits: { maxBodyBytes: 1024 },
+    onTokenRefused: (tokenId) => refusedTokens.push(tokenId),
   });
 });
 
@@ -165,6 +169,19 @@ describe('the credits relay', () => {
     const res = await ask(`${grant.baseUrl}/chat/completions`, { key: grant.key, body: '{}' });
     expect(res.status).toBe(401);
     expect(await res.json()).toMatchObject({ error: { code: 'token_revoked' } });
+    expect(refusedTokens).toEqual(['it_1']);
+  });
+
+  it('says which token the endpoint refused, and only for a refusal', async () => {
+    const grant = relay.issue('openai-chat-completions', 'OpenCode');
+    for (const status of [200, 402, 429, 500, 403]) {
+      answer = (res) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end('{}');
+      };
+      await (await ask(`${grant.baseUrl}/chat/completions`, { key: grant.key, body: '{}' })).text();
+    }
+    expect(refusedTokens).toEqual(['it_1', 'it_1']);
   });
 
   it('ends a request in flight when everything is stopped (an unlink)', async () => {

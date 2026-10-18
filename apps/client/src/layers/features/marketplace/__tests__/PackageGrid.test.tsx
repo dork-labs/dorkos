@@ -19,6 +19,10 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
 }));
 
+// Whether this is a hub: only a hub says what won't run on a cloud agent.
+const hub = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+
 // ---------------------------------------------------------------------------
 // URL params mock — the grid reads filters/sort and opens the drawer through
 // `useMarketplaceParams` (URL-backed). Install-confirm stays on the store.
@@ -134,9 +138,25 @@ describe('PackageGrid', () => {
     mockParams.categories = [];
     mockParams.sources = [];
     mockParams.selectedPackageName = null;
+    hub.value = false;
   });
 
   afterEach(cleanup);
+
+  it('says which packages won`t run on a cloud agent, on a hub only', () => {
+    const relay = makePackage({ name: 'slack-adapter', type: 'adapter', adapterType: 'slack' });
+    setMarketplaceState({ data: [PKG_ALPHA, relay] });
+    const { unmount } = render(<PackageGrid />);
+    expect(screen.queryByTestId('package-card-cloud-agents')).not.toBeInTheDocument();
+    unmount();
+
+    hub.value = true;
+    render(<PackageGrid />);
+    const notes = screen.getAllByTestId('package-card-cloud-agents');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent("This doesn't work on cloud agents yet.");
+    expect(screen.getByTestId('package-card-slack-adapter')).toContainElement(notes[0]!);
+  });
 
   it('shows the loading skeleton while data is loading', () => {
     setMarketplaceState({ isLoading: true });

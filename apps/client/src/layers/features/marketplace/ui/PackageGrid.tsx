@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
 import { cn } from '@/layers/shared/lib';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
+import { useIsHub } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { filterPackages } from '../lib/package-filter';
@@ -60,6 +61,8 @@ export function PackageGrid() {
   const { data, isLoading, error, refetch } = useMarketplacePackages();
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
+  // Cloud agents apply only on a hub, so only a hub says what won't run there.
+  const isHub = useIsHub();
 
   const {
     type,
@@ -165,6 +168,7 @@ export function PackageGrid() {
               devLinked={devLinkedNames.has(pkg.name)}
               onClick={() => openDetail(pkg.name)}
               onInstallClick={() => requestInstall(pkg)}
+              showCloudAgentSupport={isHub}
             />
           </motion.div>
         ))}

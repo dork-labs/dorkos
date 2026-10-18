@@ -87,6 +87,7 @@ vi.mock('@/layers/entities/mesh', () => ({
 // `dorkHome` from the server config. A fixed value keeps the assertion stable.
 vi.mock('@/layers/entities/config', () => ({
   useConfig: () => ({ data: { dorkHome: '/Users/kai/.dork' } }),
+  useIsHub: () => false,
 }));
 
 // Mock the install-with-toast wrapper directly so we can spy on `mutate`
