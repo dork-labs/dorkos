@@ -25,7 +25,7 @@ What the pipeline sees:
   and a change to the space code alone skips `apps/community`'s typecheck and
   web page tests. The always-running `community-pg` job therefore checks both
   halves on every pull request (`Check both halves of the space server`),
-  building `@dorkos/decisions` and `@dorkos/icons` for it. The Postgres and S3 suites still run
+  building `@dorkos/decisions` for it. The Postgres and S3 suites still run
   from `apps/community`'s configs (`dir: ../server/src/services/spaces`), so
   `community-pg` runs the same command as before.
 - `ci/space-server.env` now names `SPACE_SRC_DIR=apps/server/src/services/spaces`;
