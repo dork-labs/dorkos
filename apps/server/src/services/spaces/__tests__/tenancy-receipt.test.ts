@@ -17,7 +17,7 @@ import {
   readRequirements,
   repoRoot,
   runnerFor,
-} from '../../scripts/tenancy-receipt.js';
+} from '../../../../../community/scripts/tenancy-receipt.js';
 
 /**
  * Titles of `it`/`test` declarations in one file, as written in source. Only a

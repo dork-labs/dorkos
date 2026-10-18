@@ -8,8 +8,8 @@ import type {
   CommunityWireOwnerReplacementOptionsSchema,
   CommunityWireOwnerReplacementOwnerNoticeSchema,
 } from '@dorkos/shared/community-wire';
-import { formatReplacementDate } from '../../owner-replacement/dates.js';
-import { addPasswordSentence } from '../../owner-replacement/options.js';
+import { formatReplacementDate } from '../../../../server/src/services/spaces/owner-replacement/dates.js';
+import { addPasswordSentence } from '../../../../server/src/services/spaces/owner-replacement/options.js';
 
 /** One owner replacement as the host page lists it. */
 export type HostReplacement = z.infer<typeof CommunityAdminOwnerReplacementSchema>;

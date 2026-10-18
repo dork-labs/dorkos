@@ -5,20 +5,20 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { injectAxe, test, expect } from './csp.js';
 import type { AxeResults } from 'axe-core';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { createLiveHub } from '../src/live/app-hub.js';
-import type { LiveHub } from '../src/live/hub.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { formatReplacementDate } from '../src/owner-replacement/dates.js';
-import { FileSystemBlobStore } from '../src/storage/index.js';
-import { bootstrapFirstHost } from '../src/__tests__/bootstrap-test-helper.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { createLiveHub } from '../../server/src/services/spaces/live/app-hub.js';
+import type { LiveHub } from '../../server/src/services/spaces/live/hub.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { formatReplacementDate } from '../../server/src/services/spaces/owner-replacement/dates.js';
+import { FileSystemBlobStore } from '../../server/src/services/spaces/storage/index.js';
+import { bootstrapFirstHost } from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 import {
   COMPOSERS,
   MINUTE,
@@ -38,8 +38,8 @@ import {
   toWaiting,
   type Owned,
   type ReplacementHost,
-} from '../src/__tests__/owner-replacement-fixture.js';
-import { TENANCY_PASSWORD, type TenancyHarness } from '../src/__tests__/tenancy-test-harness.js';
+} from '../../server/src/services/spaces/__tests__/owner-replacement-fixture.js';
+import { TENANCY_PASSWORD, type TenancyHarness } from '../../server/src/services/spaces/__tests__/tenancy-test-harness.js';
 
 // Replacing a community owner in a real browser (specs/community-owner-replacement task 3.1,
 // DOR-2542): the host's Owner section with its form and every row state, the owner's banner

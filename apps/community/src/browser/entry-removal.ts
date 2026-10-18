@@ -1,4 +1,4 @@
-import { isTombstoneText, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
+import { isTombstoneText, REMOVED_ENTRY_TEXT } from '../../../server/src/services/spaces/content/tombstones.js';
 import type { Entry, Member } from './types.js';
 
 /** What the viewer may do to a message or file: delete their own, or remove someone else's. */

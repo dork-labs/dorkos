@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { type Page, type Route } from '@playwright/test';
-import { securityHeaders, servePage } from '../src/headers/security-headers.js';
+import { securityHeaders, servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 
 // Exercise the real built admission page with requests controlled at the browser boundary.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { removalAuthority } from '../content-removal.js';
-import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
+import { removalAuthority } from '../../../server/src/services/spaces/content-removal.js';
+import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../../../server/src/services/spaces/content/tombstones.js';
 import {
   expectedTombstone,
   isRemovedEntry,

@@ -20,31 +20,31 @@ import {
   type CommunityEntry,
   type CommunityRef,
 } from '@dorkos/shared/community-adapter';
-import { logger } from '../../../server/src/lib/logger.js';
-import { CommunityAgentEnrollmentStore } from '../../../server/src/services/communities/remote/agent-enrollment-store.js';
-import { RemoteConnectionStore } from '../../../server/src/services/communities/remote/connection-store.js';
+import { logger } from '../../../lib/logger.js';
+import { CommunityAgentEnrollmentStore } from '../../communities/remote/agent-enrollment-store.js';
+import { RemoteConnectionStore } from '../../communities/remote/connection-store.js';
 import {
   RemoteMirrorStore,
   type MirrorRoomInput,
-} from '../../../server/src/services/communities/remote/mirror-store.js';
+} from '../../communities/remote/mirror-store.js';
 import {
   RemoteCommunityAdapter,
   RemoteRedactionFeedUnsupportedError,
   remoteAuthorOf,
   remoteSequenceOf,
-} from '../../../server/src/services/communities/remote/remote-community-adapter.js';
-import { RemoteRedactionSync } from '../../../server/src/services/communities/remote/remote-redaction-sync.js';
+} from '../../communities/remote/remote-community-adapter.js';
+import { RemoteRedactionSync } from '../../communities/remote/remote-redaction-sync.js';
 import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
-} from '../../../server/src/services/communities/remote/remote-room-subscription-bridge.js';
+} from '../../communities/remote/remote-room-subscription-bridge.js';
 import {
   agentLookupFor,
   createRoomHarness,
   type RoomHarness,
-} from '../../../server/src/services/rooms/__tests__/room-test-harness.js';
-import { insertMessages } from '../../../server/src/services/search/frontier-store.js';
-import { searchMessages } from '../../../server/src/services/search/index.js';
+} from '../../rooms/__tests__/room-test-harness.js';
+import { insertMessages } from '../../search/frontier-store.js';
+import { searchMessages } from '../../search/index.js';
 import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
 import { eraseMembership } from '../erasure/erasure.js';
 import {

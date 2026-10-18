@@ -5,18 +5,18 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { type Page } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { hashSecret } from '../src/security.js';
-import { registerShortNamePages } from '../src/short-names/pages.js';
-import { sweepImports } from '../src/imports/worker.js';
-import { createBlobStore } from '../src/storage/factory.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import { hashSecret } from '../../server/src/services/spaces/security.js';
+import { registerShortNamePages } from '../../server/src/services/spaces/short-names/pages.js';
+import { sweepImports } from '../../server/src/services/spaces/imports/worker.js';
+import { createBlobStore } from '../../server/src/services/spaces/storage/factory.js';
 
 // COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
 const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =

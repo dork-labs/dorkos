@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { createDb, runMigrations } from '@dorkos/db';
-import { CommunityAgentEnrollmentStore } from '../../../server/src/services/communities/remote/agent-enrollment-store.js';
+import { CommunityAgentEnrollmentStore } from '../../communities/remote/agent-enrollment-store.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
@@ -26,13 +26,13 @@ import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { hashSecret } from '../security.js';
 import { notifyLive } from '../live/notices.js';
-import { RemoteConnectionStore } from '../../../server/src/services/communities/remote/connection-store.js';
+import { RemoteConnectionStore } from '../../communities/remote/connection-store.js';
 import {
   RemoteCommunityAdapter,
   remoteAuthorOf,
   remoteSequenceOf,
-} from '../../../server/src/services/communities/remote/remote-community-adapter.js';
-import { AgentAvailabilityReporter } from '../../../server/src/services/communities/remote/availability/agent-availability-reporter.js';
+} from '../../communities/remote/remote-community-adapter.js';
+import { AgentAvailabilityReporter } from '../../communities/remote/availability/agent-availability-reporter.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)

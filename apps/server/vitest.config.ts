@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
@@ -420,7 +420,14 @@ export default defineConfig({
     environment: 'node',
     // Vitest 4 no longer auto-excludes dist/, and `tsc` emits compiled
     // *.test.js there — scope discovery to source like every other package.
-    include: ['src/**/__tests__/**/*.test.ts'],
+    // The space server's code (server-merge step 7) keeps two tests beside their source, and
+    // its Postgres and S3 suites run from apps/community's own configs, not here.
+    include: ['src/**/__tests__/**/*.test.ts', 'src/services/spaces/**/*.test.ts'],
+    exclude: [
+      ...configDefaults.exclude,
+      'src/services/spaces/**/*.integration.test.ts',
+      'src/services/spaces/**/*.s3.test.ts',
+    ],
     // The lefthook pre-push gate sets VITEST_RETRY to absorb timing flake in
     // integration tests on a developer machine already busy with other agents.
     // It rides turbo's globalPassThroughEnv, so it never forks the cache key;

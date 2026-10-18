@@ -13,7 +13,7 @@ import {
   COMMUNITY_RELEASE_WORKFLOW,
 } from '@dorkos/shared/community-release-manifest';
 import { describe, expect, it } from 'vitest';
-import { communityMigrationCompatibilityId } from '../../../../../scripts/lib/community-migration-id.mjs';
+import { communityMigrationCompatibilityId } from '../../../../../../../scripts/lib/community-migration-id.mjs';
 import { REPO_ROOT } from './image-imports.js';
 import { MIGRATIONS_DIR } from '../space-paths.js';
 

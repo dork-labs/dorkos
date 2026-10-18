@@ -7,7 +7,7 @@ import {
   CommunityShortNameSchema,
 } from '@dorkos/shared/community-admin-wire';
 import { COMMUNITY_EMAIL_LINK_PAGES } from '@dorkos/shared/community-wire';
-import { OWNER_CLAIM_PATH } from '../browser/owner-claim.js';
+import { OWNER_CLAIM_PATH } from '../../../../../community/src/browser/owner-claim.js';
 import { SPACE_WEB_SRC } from './space-paths.js';
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
