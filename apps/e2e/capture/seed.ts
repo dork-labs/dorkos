@@ -259,6 +259,12 @@ async function seedTasks(): Promise<Map<string, string>> {
       timezone: task.timezone,
       target: 'global',
       enabled: true,
+      // Named, not left to the server: with no mode given it resolves the
+      // runtime's own default, and the test-mode runtime's ids (`always-allow`)
+      // are not modes a task file can hold, so every create was refused with
+      // "a state DorkOS cannot read". `acceptEdits` is the scheduled-run
+      // default a real runtime resolves to.
+      permissionMode: 'acceptEdits',
     });
     ids.set(task.name, schedule.id);
   }

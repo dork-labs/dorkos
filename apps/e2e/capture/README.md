@@ -260,6 +260,42 @@ never fires during the capture window. Multi-session drives rotate through a
 fixed prompt pool so repeated drives mint distinct, stable session titles.
 Nothing rendered depends on `Date.now()`.
 
+## Demo workspace (for recording videos)
+
+A seeded DorkOS that stays up until you stop it, for recording product videos
+by hand or with Playwright:
+
+```bash
+pnpm --filter @dorkos/e2e demo
+```
+
+It wipes its home, seeds it, boots, opens each flow's page once in a hidden
+browser (so the dev server is settled before you record), then prints a link
+per flow. Open `http://localhost:4543`. Press Ctrl-C to stop; the next run starts
+from the same state.
+
+It is this capture stack on its own slot: shard 20, so its home is
+`~/.dork-capture-20` and its ports are 4544 (server) and 4543 (app), clear of
+a capture run. The server also gets an empty home folder of its own
+(`isolatedHomeEnv` in `boot.ts`), so nothing from your real `~/.dork`,
+`~/.claude` or `~/.codex` reaches it, and message search indexes nothing
+outside the demo home. Agents and rooms are the capture fleet: Atlas, Scout,
+Sentinel, Forge, Lens and DorkBot, in #team.
+
+| Flow           | What is seeded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Social queue   | The real social-queue extension, copied from the `dorkos-marketing` checkout (beside the main checkout, or `DEMO_MARKETING_REPO`) and turned on. It reads a copy of the queue inside the demo home: four posts @dork_os already published, queued again from tomorrow on. Editing, killing or pausing changes only that copy. With no checkout, the flow is skipped.                                                                                                                                                                                                                                                                                                                    |
+| #team morning  | Four morning reports in #team, from Scout, Sentinel, Forge and Lens, each posted by that agent through the real posting tool under its own identity. They are posted directly, not written by heartbeat beats.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Phone approval | A chat with Forge waiting on "Publish the 0.121 release notes". Open it at phone size. Allow or Don't allow really finishes the turn. The countdown is the real 10 minutes; after that the card waits and still takes an answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Mini app       | A chat where Atlas says it built a Launch checklist, and the mini app itself, waiting under "Needs you" for a person's yes. Once approved it opens at `/x/launch-checklist`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Heartbeat      | Forge on a timed heartbeat (`wake: timed`) with five finished beats on its Heartbeat page: quiet, one that raised a question to you (held for your working hours when the demo runs outside them), quiet, one that drafted the changelog, quiet. Every beat is a real one from DorkOS's beat runner, asked for on the spot by a test-only route (a timed beat would first fire minutes after boot). The beats' turns end through the real `end_beat` tool, and what they find are two promises Forge records through the real promises tool. The beats are seconds apart, not half an hour, and Forge's own timer keeps beating while the demo is up, adding a quiet beat now and then. |
+
+What is staged, said plainly:
+
+- **The chats are scripted test-mode turns** (`demo-workspace-scenarios.ts` in the server's test-mode runtime). The cards and the stream are the real app; the agent's words are fixed.
+- **The mini app is real and really waits**, but it is not made by the agent in the chat. The demo writes its files and switches it on, the same steps DorkOS's `create_extension` tool takes. That tool cannot be called in test mode: DorkOS's MCP server refuses every call there, because it is built from the Claude Code runtime, which test mode never starts. On Trusted (the default), an agent that calls it from a DorkOS chat gets its mini app approved as it is made, so in a real install the wait shows on Careful, or when an agent wrote the files itself.
+- **The approval card shows the extension's folder**, which includes your home folder's name. Crop it if that matters.
+
 ## Files
 
 - `shots.ts` — **the shot registry** (source of truth): every shot's id, kind, frame, consumers, and target dimensions; plus the manifest snapshot projection.
@@ -268,6 +304,7 @@ Nothing rendered depends on `Date.now()`.
 - `supervisor.ts` — crash-safe supervision: the stack pidfile, stale-stack reconciliation, port-occupancy probing, and the self-healing run log.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding.
 - `record.ts` / `process.ts` / `capture.ts` / `archive.ts` — the entry points (record raws, process raws + overrides, both, freeze an archive).
+- `demo/` — the demo workspace (above): `run.ts` (the entry point), `seed.ts` (its flows), `heartbeat.ts` (the heartbeat beats), `config.ts` (their data) and `warmup.ts` (the page warm-up).
 - `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
 - `overrides.ts` — human-override discovery, validation, and application (manual media beats the automated capture).
 - `lib.ts` — shared Playwright plumbing (theme init-script, live-turn opener, raw loop recorder + head-trim marker, the `attemptShot` skip guard).

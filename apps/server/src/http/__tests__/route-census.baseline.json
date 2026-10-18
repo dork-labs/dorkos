@@ -565,6 +565,7 @@
     "POST /api/test/connectors/request",
     "POST /api/test/fake-inference/v1/chat/completions",
     "POST /api/test/finish-turn",
+    "POST /api/test/heartbeat/beat",
     "POST /api/test/interrupt-outcome",
     "POST /api/test/mcp-oauth/register",
     "POST /api/test/mcp-oauth/token",

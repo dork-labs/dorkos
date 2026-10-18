@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { baseEnv } from '../capture/boot.js';
+import { baseEnv, isolatedHomeEnv } from '../capture/boot.js';
 import { CAPTURE_HOME } from '../capture/config.js';
 import { CAPTURE_HOME_MODE, ensureCaptureHome } from '../capture/supervisor.js';
 
@@ -82,5 +82,21 @@ describe('the capture data directory is private', () => {
     ensureCaptureHome(dir);
 
     expect(fs.statSync(dir).mode & 0o077).toBe(0);
+  });
+
+  it('can give the server a home of its own, for the demo workspace', () => {
+    // Four spots in the server read another program's folder from the real
+    // home (`~/.claude`, `~/.codex`, OpenCode's data, `~/.agents/skills`), and
+    // `DORK_HOME` moves none of them. The demo points HOME and every variable
+    // those spots read first at one empty folder.
+    const env = isolatedHomeEnv('/demo/home');
+    expect(env).toEqual({
+      HOME: '/demo/home',
+      CLAUDE_CONFIG_DIR: '/demo/home/.claude',
+      CODEX_HOME: '/demo/home/.codex',
+      XDG_CONFIG_HOME: '/demo/home/.config',
+      XDG_DATA_HOME: '/demo/home/.local/share',
+      OPENCODE_DB: '/demo/home/.local/share/opencode/opencode.db',
+    });
   });
 });
