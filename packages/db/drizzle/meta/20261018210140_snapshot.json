@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0b230a55-0375-4803-ac0e-54a6f97825a8",
-  "prevId": "93c4c62a-b07b-4ff0-a354-66acf5ba28ff",
+  "id": "217ed347-86ca-4a03-8a80-d45a68fc1dc1",
+  "prevId": "1d5cf3c3-cf29-479e-a93a-c91fd5099a82",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -4298,6 +4298,13 @@
         },
         "user_agent": {
           "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "route": {
+          "name": "route",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

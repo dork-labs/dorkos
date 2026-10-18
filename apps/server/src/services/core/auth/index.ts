@@ -67,6 +67,7 @@ import { currentServerRole } from '../../../lib/server-role.js';
 import { isPersonalComputer } from '../server-role/role-checks.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 import { refuseWithoutSetupCode } from './setup-code-gate.js';
+import { stampSessionRoute } from './sessions/session-route.js';
 import { discardSetupCode } from './setup-code.js';
 
 /**
@@ -80,8 +81,11 @@ import { discardSetupCode } from './setup-code.js';
  * Keep this in step with {@link buildAuthOptions}: adding a plugin there without
  * adding it here is a type error, which is the point.
  */
-type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
+type AuthOptions = Omit<BetterAuthOptions, 'user' | 'session' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
+  session: NonNullable<BetterAuthOptions['session']> & {
+    additionalFields: { route: { type: 'string'; required: false; input: false } };
+  };
   plugins: [
     ReturnType<typeof apiKey>,
     ReturnType<typeof desktopSignInPlugin>,
@@ -213,10 +217,14 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Signed short-TTL session snapshot in a cookie so hot paths (SSE
       // reconnect, high-frequency polling) avoid a DB read per request.
       cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
-      // A sign-in on a shared or public computer (`public-computer.ts`). Set
-      // only by the server, at sign-in.
       additionalFields: {
+        // A sign-in on a shared or public computer (`public-computer.ts`). Set
+        // only by the server, at sign-in.
         publicComputer: { type: 'boolean', required: false, input: false, defaultValue: false },
+        // The route the sign-in came in on, and the only one the session
+        // works on (`./sessions/session-route.ts`). Server-only: stamped by the
+        // session-create hook below, never taken from a request.
+        route: { type: 'string', required: false, input: false },
       },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
@@ -326,7 +334,11 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       // Sign-ins and sign-outs in the audit log (spec `audit-trail` PR2):
       // Better Auth keeps sessions, not their history.
       session: {
-        create: { after: async (created) => recordSignedIn(created) },
+        create: {
+          // Every session records the route it was made on (DOR-2969).
+          before: async (data) => ({ data: stampSessionRoute(data) }),
+          after: async (created) => recordSignedIn(created),
+        },
         delete: { after: async (deleted, ctx) => recordSessionEnded(deleted, ctx?.path) },
       },
     },

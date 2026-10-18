@@ -393,9 +393,21 @@ call.
 
 ### How an agent computer boots, and where it may reach
 
-The service starts an agent computer with `DORKOS_SERVER_ROLE=agent-computer`, its own instance
-API key as `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` (16 characters or more, read once at boot and then
-dropped from the environment), and `DORKOS_CLOUD_API_URL` (an https origin with no path). Its volume is owned by root. It
+The service starts an agent computer with `DORKOS_SERVER_ROLE=agent-computer`,
+`DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE`, and `DORKOS_CLOUD_API_URL` (an https origin with no path).
+
+- **The key is a file, never an environment variable.** `DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE`
+  is the path of a file holding the computer's instance API key (16 characters or more). The
+  service mounts it at mode 0600, owned by the user the DorkOS server runs as, and passes only the
+  path. Linux keeps a process's startup environment readable by any process of the same user, so
+  the server refuses to start if `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` is set at all, or if the file
+  is readable by group or others or not owned by the server's user.
+- **Two users.** The DorkOS server runs as the key file's owner. Agents, their shells and package
+  code run as a different user that can't read the key file, signal the server or trace it. The
+  model gateway grant the server hands its own agent runtime gets the same treatment.
+- `hidepid=2` on `/proc` is optional extra hardening, not the fix.
+
+Its volume is owned by root. It
 exits with status 0 within 5 seconds of SIGINT. Its image is public and signed.
 
 It may reach the public internet, its own hub through the hub's front door, and the model gateway.

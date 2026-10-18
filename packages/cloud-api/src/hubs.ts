@@ -31,10 +31,22 @@ import { RemoteEdgeProofSchema } from './remote.js';
  * nothing else that grants anything:
  *
  * - `DORKOS_SERVER_ROLE=agent-computer`;
- * - its own instance API key, as `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` (sixteen
- *   characters or more), which the server reads once at boot and then drops
- *   from its environment, as a hub does with its own;
+ * - `DORKOS_AGENT_COMPUTER_INSTANCE_KEY_FILE`, the path of a file holding its
+ *   own instance API key (sixteen characters or more). The service mounts the
+ *   file readable and writable by its owner only, owned by the user the DorkOS
+ *   server runs as, and passes only the path. The key itself is never in the
+ *   environment: Linux keeps a process's startup environment readable by any
+ *   process of the same user, so the server refuses to start if
+ *   `DORKOS_AGENT_COMPUTER_INSTANCE_KEY` is set at all, or if the file can be
+ *   read by anyone but its owner;
  * - `DORKOS_CLOUD_API_URL`, an https origin with no path.
+ *
+ * **Two users.** The DorkOS server runs as the user that owns the key file.
+ * Agents, their shells and package code run as a different user, which can
+ * read neither the key file nor the server's process: it cannot signal the
+ * server or trace it. The model gateway grant the server hands its own agent
+ * runtime gets the same treatment. Hiding other users' processes from `/proc`
+ * is optional extra hardening on top, never the fix.
  *
  * Its volume is owned by root. It exits cleanly (status zero) within five
  * seconds of SIGINT, so a stop never has to be forced. Its image is public and signed, so

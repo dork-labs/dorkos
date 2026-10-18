@@ -43,7 +43,7 @@ const LINE = /^(SPACE_[A-Z_]*)=(.*)$/;
 export function parseSpaceServerEnv(text, source = 'ci/space-server.env') {
   /** @type {Record<string, string>} */
   const values = {};
-  for (const [index, line] of text.split('\n').entries()) {
+  for (const [index, line] of text.split(/\r?\n/u).entries()) {
     if (line.trim() === '' || line.startsWith('#')) continue;
     const match = LINE.exec(line);
     if (!match) {

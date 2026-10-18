@@ -264,6 +264,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/remote-access/withdraw',
       'POST /api/session-relay/link',
       'POST /api/session-relay/pause',
+      'POST /api/session-relay/presence/end',
       'POST /api/session-relay/resume',
       'POST /api/sign-in-landings/:id/retry',
       'POST /api/tunnel/start',

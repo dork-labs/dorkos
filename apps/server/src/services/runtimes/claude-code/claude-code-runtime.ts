@@ -1328,9 +1328,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
     // through the same interrupt→close escalation the running path uses.
     const bootingQuery = this.persistent.bootingQuery(sessionId);
-    if (bootingQuery !== undefined) {
+    if (bootingQuery !== undefined)
       return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
-    }
+    // Or a turn still waiting for a free slot, with no process at all yet
+    // (DOR-3012): ending the wait is the whole of stopping it.
+    if (this.persistent.stopSlotWait(sessionId)) return { outcome: 'acked', runtime: this.type };
     // Or a turn the AGENT started, which never armed `session.activeQuery`
     // either: nobody dispatched it, so the pump's `running` edge never fired
     // (spec `warm-process-lifecycle` D6, the Stop rule). Without this, Stop on a

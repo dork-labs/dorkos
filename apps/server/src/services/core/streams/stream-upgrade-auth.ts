@@ -107,14 +107,15 @@ export async function authorizeStreamUpgrade(
   const locals: StreamUpgradeLocals = {};
   const { headers } = req;
 
-  const access = gateAccessFor(upgradeFacts(req));
+  const facts = upgradeFacts(req);
+  const access = gateAccessFor(facts);
   // An agent computer's streams carry nothing an agent needs yet, and its gate
   // admits no person (DOR-2940), so `agent` is refused here like `refused`.
   if (access === 'refused' || access === 'agent') {
     return { ok: false, status: 401, message: 'Unauthorized' };
   }
   if (access === 'credential') {
-    const user = await verifyRequestAuth({ headers });
+    const user = await verifyRequestAuth(facts);
     if (!user) return { ok: false, status: 401, message: 'Unauthorized' };
     locals.user = user;
   }

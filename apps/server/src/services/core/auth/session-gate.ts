@@ -52,6 +52,11 @@ import { decideAgentComputerGate } from '../agent-computer/agent-gate.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { AgentComputerWriteRefusal } from '../agent-computer/agent-writes.js';
 import { RELAY_LINK_PATH } from '@dorkos/shared/session-relay-link';
+import {
+  requestSessionRoute,
+  sessionWorksOn,
+  type SessionRoute,
+} from './sessions/session-route.js';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -72,6 +77,13 @@ export interface RequestUser {
   credential: 'cookie' | 'api-key';
   /** Stable Better Auth API-key record id, present only for an API-key credential. */
   credentialId?: string;
+  /** The Better Auth session id, present only for a cookie credential. */
+  readonly sessionId?: string;
+  /**
+   * The route the session was made on, which is the route this request came
+   * in on (`./sessions/session-route.ts`). Present only for a cookie credential.
+   */
+  readonly route?: SessionRoute;
 }
 
 /**
@@ -177,27 +189,32 @@ export interface VerifyRequestAuthOptions {
  * middleware, and the WebSocket upgrade gate so there is exactly one
  * credential-verification path.
  *
- * It takes only the HEADERS rather than a framework's request, because the third
- * caller has no request: a WebSocket upgrade arrives on the HTTP server's
+ * A session cookie counts only on the route its sign-in was made on
+ * (`./sessions/session-route.ts`, DOR-2969): a cookie replayed on another route, or one
+ * from before routes were recorded anywhere but this computer, verifies as
+ * nobody, so the caller gets the ordinary `401` and signs in again there. That
+ * is why it reads the peer and the listener as well as the headers.
+ *
+ * It takes a request's facts rather than a framework's request, because the
+ * third caller has no request: a WebSocket upgrade arrives on the HTTP server's
  * `upgrade` event as a bare `IncomingMessage`, having bypassed every piece of
- * middleware including the session gate. Headers are all this ever read, so
- * narrowing the parameter is what lets the upgrade path reuse this instead of
- * growing a second, drifting copy of the credential check.
+ * middleware including the session gate. Narrowing the parameter is what lets
+ * the upgrade path reuse this instead of growing a second, drifting copy of the
+ * credential check.
  *
  * Each returning path names the credential it verified, because a caller holding
  * a per-user API key is not the same principal as a person in a browser session
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
- * @param req - Anything carrying the request's headers — a request's facts
- *   (`honoRequestFacts`), or the raw `IncomingMessage`
- *   of a WebSocket upgrade.
+ * @param req - The request's headers, TCP peer and listener: a request's facts
+ *   (`honoRequestFacts`), or `upgradeFacts` of a WebSocket upgrade.
  * @param options - See {@link VerifyRequestAuthOptions}. Omit unless the caller
  *   already knows what the request's bearer is.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
 export async function verifyRequestAuth(
-  req: Pick<RequestFacts, 'headers'>,
+  req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
   options: VerifyRequestAuthOptions = {}
 ): Promise<RequestUser | null> {
   const auth = getAuth();
@@ -216,7 +233,16 @@ export async function verifyRequestAuth(
     // A public-computer sign-in never outlives its day, whatever its expiry
     // says (`public-computer.ts`).
     if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
-      return { userId: result.user.id, credential: 'cookie' };
+      // Only on the route it was made on; anywhere else it is no session.
+      const route = requestSessionRoute(req);
+      if (route !== null && result.session && sessionWorksOn(result.session, route)) {
+        return {
+          userId: result.user.id,
+          credential: 'cookie',
+          sessionId: result.session.id,
+          route,
+        };
+      }
     }
   } catch (error) {
     logger.debug('[Auth] Session cookie verification failed', {

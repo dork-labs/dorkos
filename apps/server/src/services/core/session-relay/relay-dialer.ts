@@ -34,6 +34,7 @@ import {
   decodeRelayFrame,
   encodeRelayFrame,
   type RelayComputerFrame,
+  type RelayDevice,
   type RelayError,
   type RelayWebFrame,
 } from '@dorkos/shared/session-relay';
@@ -45,6 +46,7 @@ import {
   type RelayChannel,
 } from './channel.js';
 import type { RelayPin } from './pin-store.js';
+import type { RelayLinkState } from './relay-presence.js';
 import { RELAY_BACKLOGGED, RELAY_FRAME_TOO_LARGE } from './relay-errors.js';
 
 /** How long the hub has to answer `hello` before the dial is dropped. */
@@ -121,6 +123,10 @@ export interface RelayDialerDeps {
   connect: (url: string, headers: Record<string, string>) => RelaySocket;
   /** The clock; injectable for tests. */
   now?: () => number;
+  /** Told each time the connection opens or ends, or the hub's viewer count changes. */
+  onLinkState?: (state: RelayLinkState) => void;
+  /** Told the device each request names, before the request is served. */
+  onDevice?: (device: RelayDevice) => void;
 }
 
 type State =
@@ -136,6 +142,8 @@ export class RelayDialer {
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   /** No dial before this time, after a failure. */
   private redialAfter = 0;
+  /** Chats of this computer open on the hub, as it last reported; 0 when not connected. */
+  private viewerCount = 0;
 
   /**
    * Hold the dialer's dependencies.
@@ -175,6 +183,11 @@ export class RelayDialer {
   /** Whether a connection is open and proved. */
   get connected(): boolean {
     return this.current.state === 'open';
+  }
+
+  /** Chats of this computer open on the hub, as it last reported; 0 when not connected. */
+  get viewers(): number {
+    return this.viewerCount;
   }
 
   /** End the connection, if any. Called at shutdown and when the pin is removed. */
@@ -283,6 +296,7 @@ export class RelayDialer {
       this.startIdleTimer();
       this.heardFromHub(socket);
       logger.info('[SessionRelay] Connected to this computer’s own DorkOS in the cloud');
+      this.reportLinkState();
       return;
     }
 
@@ -306,11 +320,19 @@ export class RelayDialer {
       case 'viewers':
         if (frame.count === 0) this.startIdleTimer();
         else this.clearIdleTimer();
+        if (frame.count !== this.viewerCount) {
+          this.viewerCount = frame.count;
+          this.reportLinkState();
+        }
         return;
       case 'heartbeat':
         this.emit(socket, { type: 'heartbeat' });
         return;
       default:
+        if (frame.type === 'request' && frame.device) {
+          const device = frame.device;
+          this.tell(() => this.deps.onDevice?.(device));
+        }
         this.deps.server.handle(frame, (out) => this.emit(socket, out));
     }
   }
@@ -409,7 +431,27 @@ export class RelayDialer {
     this.clearHandshakeTimer();
     if (this.silenceTimer) clearTimeout(this.silenceTimer);
     this.silenceTimer = null;
-    if (wasOpen) this.deps.server.closeAll();
+    this.viewerCount = 0;
+    if (wasOpen) {
+      this.deps.server.closeAll();
+      this.reportLinkState();
+    }
+  }
+
+  /** Tell the presence tracker where the connection stands. */
+  private reportLinkState(): void {
+    this.tell(() =>
+      this.deps.onLinkState?.({ connected: this.connected, viewers: this.viewerCount })
+    );
+  }
+
+  /** Run a listener's callback; its throw is logged, never the connection's end. */
+  private tell(body: () => void): void {
+    try {
+      body();
+    } catch (error) {
+      logger.warn('[SessionRelay] A relay listener failed', { error: (error as Error).name });
+    }
   }
 }
 

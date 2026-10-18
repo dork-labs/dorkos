@@ -28,7 +28,7 @@
  */
 import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
 import { isRefusedAskKind } from '@dorkos/shared/run-refusals';
-import { AlwaysAllowScopeSchema } from '@dorkos/shared/schemas';
+import { AlwaysAllowScopeSchema, type ErrorCategory } from '@dorkos/shared/schemas';
 import type { AlwaysAllowScope, StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
@@ -506,9 +506,10 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         type: 'error',
         message: String(data.message ?? 'Unknown error'),
         ...(data.code !== undefined ? { code: String(data.code) } : {}),
-        ...(data.category !== undefined
-          ? { category: data.category as RawOf<'error'>['category'] }
-          : {}),
+        // Kept so a reader of the stream can tell WHY a turn never started
+        // (`turn_not_started`), and say so in plain words (DOR-3012).
+        ...(data.reason !== undefined ? { reason: String(data.reason) } : {}),
+        ...(data.category !== undefined ? { category: data.category as ErrorCategory } : {}),
         ...(data.details !== undefined ? { details: String(data.details) } : {}),
       };
       return error;
