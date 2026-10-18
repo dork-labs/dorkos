@@ -158,7 +158,7 @@ describe('in-session and external MCP surface parity', () => {
   });
 
   it('keeps the in-session-only tools off the external server', async () => {
-    // Two tools are deliberately in-session-only, and nothing external-only
+    // Four tools are deliberately in-session-only, and nothing external-only
     // exists. Pinned so neither half of that changes by accident.
     //
     // It used to be fifteen. Thirteen of them — `control_ui`, `get_ui_state` and
@@ -173,6 +173,11 @@ describe('in-session and external MCP surface parity', () => {
 
     expect([...inSession].filter((name) => !external.has(name)).sort()).toEqual([
       'binding_list_sessions',
+      // `doc_read` and `doc_write` hold a path to the turn's folder grants and
+      // resolve it against the session's own folder, so outside a turn there is
+      // nothing to hold them to (DOR-2984).
+      'doc_read',
+      'doc_write',
       'relay_notify_user',
     ]);
   });

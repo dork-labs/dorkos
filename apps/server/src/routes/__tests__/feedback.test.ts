@@ -609,7 +609,7 @@ describe('feedback route', () => {
       // production app up for one assertion costs a page of singleton mocks.
       // This reds if someone drops the rule, which is the regression.
       const source = await readFile(new URL('../../http/hono-api.ts', import.meta.url), 'utf8');
-      expect(source).toMatch(/bodyRules: \[feedbackBodyRule\b/);
+      expect(source).toMatch(/bodyRules: \[\s*feedbackBodyRule\b/);
     });
 
     it('accepts the largest schema-legal screenshot submission end to end', async () => {
