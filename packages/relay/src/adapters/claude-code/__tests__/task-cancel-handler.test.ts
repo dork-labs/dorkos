@@ -363,6 +363,32 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
     expect(result.error).toBe('Run stopped after passing its time limit');
   });
 
+  // DOR-3033: the scheduler now hands over the task's time limit as a person
+  // reads it, so a deadline stop says how long the run had.
+  it('names the time limit when the dispatch carries one', async () => {
+    await adapter.start(relay);
+    const turn = parkedTurn();
+    vi.mocked(agentManager.sendMessage).mockReturnValue(turn.stream);
+    const base = createTasksEnvelope();
+    const envelope = createTasksEnvelope({
+      budget: { ...base.budget, ttl: Date.now() + 150 },
+      payload: { ...(base.payload as Record<string, unknown>), timeLimit: '30m' },
+    });
+
+    const delivery = adapter.deliver(envelope.subject, envelope);
+    await turn.parked;
+    const result = await delivery;
+
+    expect(taskStore.updateRun).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({
+        status: 'cancelled',
+        error: 'Run stopped after passing its 30m time limit',
+      })
+    );
+    expect(result.error).toBe('Run stopped after passing its 30m time limit');
+  });
+
   it('records a run that FINISHED as completed, even when a stop lands in the same instant', async () => {
     // The stop lost, by a microtask. Reading `signal.aborted` after the fact
     // cannot tell that from a stop that won, so a run that finished its work

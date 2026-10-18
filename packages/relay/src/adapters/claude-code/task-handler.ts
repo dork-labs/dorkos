@@ -476,13 +476,12 @@ export async function handleTasksMessage(
     // Both dispatch paths now word it the same way, and the parity is a shared
     // function rather than a promise: `runTimeLimitError`
     // (`@dorkos/shared/run-time-limit`) is what this path and the direct twin
-    // (`task-scheduler-service.ts`) each call. They differ only in the DURATION
-    // they can name — the twin passes the task's own `maxRuntime`, formatted,
-    // while this path is handed an absolute deadline on the envelope and never
-    // learns the span it was cut from, so it names no number. That is a
-    // deliberate hole, not a gap to fill by reconstructing one; the module note
-    // says why a made-up duration is worse than none. `Run cancelled` is shared
-    // as the plain literal it always was.
+    // (`task-scheduler-service.ts`) each call. Both name the same span: the twin
+    // formats the task's own `maxRuntime`, and this path is handed that same
+    // label on the payload (`timeLimit`, DOR-3033), never reconstructing one
+    // from the envelope's absolute deadline — a made-up duration is worse than
+    // none. An envelope without the label names no number. `Run cancelled` is
+    // shared as the plain literal it always was.
     const stoppedByOperator = stopped && controller.signal.reason === OPERATOR_CANCEL;
 
     if (deps.taskStore) {
@@ -492,7 +491,7 @@ export async function handleTasksMessage(
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          error: stoppedByOperator ? 'Run cancelled' : runTimeLimitError(),
+          error: stoppedByOperator ? 'Run cancelled' : runTimeLimitError(payload.timeLimit),
           refusedTools,
           sessionId: persistedSessionId(),
         });
@@ -542,7 +541,7 @@ export async function handleTasksMessage(
       // The dead-letter reason for this delivery, and a person reads it in the
       // relay's own surfaces — so it is the same sentence the run row above
       // carries, not the jargon it used to abbreviate to.
-      error: stopped && !stoppedByOperator ? runTimeLimitError() : undefined,
+      error: stopped && !stoppedByOperator ? runTimeLimitError(payload.timeLimit) : undefined,
       durationMs,
     };
   } catch (err) {

@@ -13,7 +13,7 @@
  *
  * @module services/tasks/relay-dispatch
  */
-import type { RelayCore } from '@dorkos/relay';
+import type { PublishResult, RelayCore } from '@dorkos/relay';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
@@ -24,6 +24,7 @@ import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { RunAccounting } from './run-accounting.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { createTaggedLogger } from '../../lib/logger.js';
+import { formatDuration } from '../../lib/format-duration.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -42,10 +43,51 @@ export interface RelayDispatchDeps {
    * keep-awake counts that turn as this run (spec `keep-awake`).
    */
   onSession?: (sessionId: string) => void;
+  /**
+   * How long to wait before the one retry a run gets when nothing answered its
+   * dispatch at all (DOR-3033). Thirty seconds by default; tests shorten it.
+   */
+  noReceiverRetryMs?: number;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
 const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
+
+/** How long a run waits before its one retry when nothing answered (DOR-3033). */
+const NO_RECEIVER_RETRY_MS = 30_000;
+
+/**
+ * Whether a dispatch reached nothing at all: no adapter answered it and the bus
+ * refused it nowhere. The one outcome a retry can fix — an adapter that was
+ * restarting — and the one "never started" is true of.
+ *
+ * @param result - What the publish returned
+ */
+function nothingAnswered(result: PublishResult): boolean {
+  return result.adapterResult === undefined && (result.rejected?.length ?? 0) === 0;
+}
+
+/**
+ * Why a run that was handed over never started, in words a person can act on
+ * (DOR-3033). Every run used to read "nothing was available", including the
+ * ones a two-minute delivery timeout had cut off while they ran.
+ *
+ * @param trigger - What started the run
+ * @param result - What the publish returned
+ */
+function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): string {
+  if (result.adapterResult?.code === 'at_capacity') {
+    return 'Every agent slot stayed busy, so this run didn’t start.';
+  }
+  const refused = result.rejected?.[0]?.reason;
+  if (refused === 'turn_ceiling') {
+    return 'The hourly limit on agent turns was reached, so this run didn’t start.';
+  }
+  if (refused !== undefined) return `This run was refused before it started (${refused}).`;
+  const error = result.adapterResult?.error;
+  if (error) return `This run didn’t start: ${error}`;
+  return noReceiverError(trigger);
+}
 
 /**
  * What a person reads on a run that nothing was there to execute.
@@ -198,6 +240,8 @@ export async function dispatchRunViaRelay(
     ...(execution.settings.accountHint !== undefined
       ? { account: execution.settings.accountHint }
       : {}),
+    // So a run stopped at its deadline says how long it had (DOR-3033).
+    ...(task.maxRuntime ? { timeLimit: formatDuration(task.maxRuntime) } : {}),
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function
@@ -208,14 +252,28 @@ export async function dispatchRunViaRelay(
   // parse as a dispatch and dead-lettered. One live run produced 279 "could not
   // be delivered" notifications (DOR-1567). A future reader for run progress
   // needs a subject outside this prefix.
-  const result = await deps.relay.publish(taskDispatchSubject(task.id), payload, {
-    from: TASK_SCHEDULER_PRINCIPAL,
-    budget: {
-      maxHops: 3,
-      ttl: Date.now() + (task.maxRuntime || DEFAULT_DISPATCH_TTL_MS),
-      callBudgetRemaining: 5,
-    },
-  });
+  const publish = (): Promise<PublishResult> =>
+    deps.relay.publish(taskDispatchSubject(task.id), payload, {
+      from: TASK_SCHEDULER_PRINCIPAL,
+      budget: {
+        maxHops: 3,
+        ttl: Date.now() + (task.maxRuntime || DEFAULT_DISPATCH_TTL_MS),
+        callBudgetRemaining: 5,
+      },
+    });
+  let result = await publish();
+  // Nothing answered at all: the one delivery problem a retry can fix (an
+  // adapter mid-restart). Once, a little later, before the run is called failed.
+  if (result.deliveredTo === 0 && nothingAnswered(result)) {
+    const current = deps.store.getRun(run.id);
+    if (!current || !isTerminalRunStatus(current.status)) {
+      logger.warn(`no receiver for relay dispatch of run ${run.id}; trying once more`);
+      await new Promise((resolve) =>
+        setTimeout(resolve, deps.noReceiverRetryMs ?? NO_RECEIVER_RETRY_MS)
+      );
+      result = await publish();
+    }
+  }
 
   if (result.deliveredTo === 0) {
     // "Nobody was listening" and "it ran and was stopped" arrive here
@@ -234,9 +292,13 @@ export async function dispatchRunViaRelay(
       status: 'failed',
       finishedAt: new Date().toISOString(),
       durationMs: 0,
-      error: noReceiverError(run.trigger),
+      error: notStartedError(run.trigger, result),
     });
-    logger.warn(`no receiver for relay dispatch of run ${run.id}`);
+    logger.warn(`relay dispatch of run ${run.id} did not start`, {
+      rejected: result.rejected?.map((entry) => entry.reason),
+      adapterError: result.adapterResult?.error,
+      code: result.adapterResult?.code,
+    });
     // The activity-feed event for this failure rides the TaskStore run-terminal
     // hook (DOR-1573), fired by the `updateRun('failed')` above.
     return;
