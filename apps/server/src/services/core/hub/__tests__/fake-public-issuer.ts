@@ -4,7 +4,7 @@
  * checks for a public client (no secret at all, the PKCE verifier, the exact
  * redirect address, one use per code) and signs RS256 ID tokens carrying the
  * request's nonce, so Better Auth's own verification runs. Adapted from the
- * Community's (`apps/community/src/__tests__/fake-oidc-issuer.ts`).
+ * Community's (`apps/server/src/services/spaces/__tests__/fake-oidc-issuer.ts`).
  */
 import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';

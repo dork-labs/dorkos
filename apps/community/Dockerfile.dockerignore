@@ -7,6 +7,11 @@
 !apps
 !apps/community
 !apps/community/**
+!apps/server
+!apps/server/src
+!apps/server/src/services
+!apps/server/src/services/spaces
+!apps/server/src/services/spaces/**
 !packages
 !packages/shared
 !packages/shared/**

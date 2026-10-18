@@ -20,7 +20,7 @@ byte for byte, and nothing checked that they did (DOR-3006).
 Both now call `communityMigrationCompatibilityId` in
 `scripts/lib/community-migration-id.mjs`. The hash is unchanged: the same
 `.sql` files in name order, each as its name, a NUL, its bytes and a NUL. The
-space server's census (`apps/community/src/__tests__/promises/release-identity.test.ts`)
+space server's census (`apps/server/src/services/spaces/__tests__/promises/release-identity.test.ts`)
 checks the function against that scheme, and that both producers call it on
 the folder the server migrates from.
 

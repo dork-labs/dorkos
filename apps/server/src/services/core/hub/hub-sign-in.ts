@@ -7,7 +7,7 @@
  * secret, the code flow with PKCE, `state` and `nonce`, one exact redirect
  * address, and the scopes `openid email profile`. It is built on Better Auth's
  * own `genericOAuth` provider, registered at once and set up only when someone
- * signs in, the way the Community does it (`apps/community/src/oidc.ts`), and
+ * signs in, the way the Community does it (`apps/server/src/services/spaces/oidc.ts`), and
  * set up again whenever the assignment names a different client.
  *
  * Sign-in is open only while the hub serves, and only when:

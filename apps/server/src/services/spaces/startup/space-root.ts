@@ -7,7 +7,13 @@ import { fileURLToPath } from 'node:url';
  * line rather than every file that finds a folder. It holds only where this file runs from
  * source or from the space build's `dist-server/`, never from a bundle or another build.
  */
-export const SPACE_ROOT: Readonly<URL> = Object.freeze(new URL('../../', import.meta.url));
+export const SPACE_ROOT: Readonly<URL> = Object.freeze(
+  // From source this file sits in apps/server/src/services/spaces/startup/, and the package's
+  // folders are still in apps/community/; built, dist-server/ sits inside that package folder.
+  import.meta.url.endsWith('.ts')
+    ? new URL('../../../../../community/', import.meta.url)
+    : new URL('../../', import.meta.url)
+);
 
 /** The SQL migrations the server applies, in `migrations/`. */
 export const MIGRATIONS_DIR = fileURLToPath(new URL('migrations/', SPACE_ROOT));

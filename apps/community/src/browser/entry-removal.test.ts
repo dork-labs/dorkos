@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { removalAuthority } from '../content-removal.js';
+import { removalAuthority } from '../../../server/src/services/spaces/content-removal.js';
 import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '@dorkos/shared/space-page';
 import {
   expectedTombstone,

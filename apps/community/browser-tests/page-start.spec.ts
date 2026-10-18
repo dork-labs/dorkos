@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
-import { securityHeaders, servePage } from '../src/headers/security-headers.js';
+import {
+  securityHeaders,
+  servePage,
+} from '../../server/src/services/spaces/headers/security-headers.js';
 import { takeViolations, test, expect } from './csp.js';
 
 // The page's one inline script, under the page's real policy (DOR-2957): it takes a link's

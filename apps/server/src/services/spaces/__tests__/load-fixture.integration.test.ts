@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { startReaders } from '../../load/readers.js';
-import { summarizeReaders } from '../../load/report.js';
-import { loadClock } from '../../load/sse.js';
-import { runWriters } from '../../load/writer.js';
+import { startReaders } from '../../../../../community/load/readers.js';
+import { summarizeReaders } from '../../../../../community/load/report.js';
+import { loadClock } from '../../../../../community/load/sse.js';
+import { runWriters } from '../../../../../community/load/writer.js';
 import { COMMUNITY_TEST_RUNTIME_ACKNOWLEDGEMENT_PHRASE } from '../config.js';
 import { expectStatus, startTenancyHarness, type TenancyHarness } from './tenancy-test-harness.js';
 

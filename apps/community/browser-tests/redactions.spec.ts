@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { type Page } from '@playwright/test';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
 
 // Purpose (specs/community-single-item-delete task 1.3, AC-12): a message deleted in one tab is
 // replaced by its tombstone in another open tab without a reload, through the channel's

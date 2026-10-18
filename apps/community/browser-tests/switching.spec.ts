@@ -10,15 +10,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { servePage } from '../src/headers/security-headers.js';
+import { servePage } from '../../server/src/services/spaces/headers/security-headers.js';
 import { test, expect } from './csp.js';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
-import { createCommunityApp } from '../src/app.js';
-import { parseConfig } from '../src/config.js';
-import { migrate } from '../src/migrate.js';
-import { bootstrapFirstHost, responseCookies } from '../src/__tests__/bootstrap-test-helper.js';
+import { createCommunityApp } from '../../server/src/services/spaces/app.js';
+import { parseConfig } from '../../server/src/services/spaces/config.js';
+import { migrate } from '../../server/src/services/spaces/migrate.js';
+import {
+  bootstrapFirstHost,
+  responseCookies,
+} from '../../server/src/services/spaces/__tests__/bootstrap-test-helper.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)

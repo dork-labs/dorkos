@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
-import { RemoteConnectionStore } from '../../../server/src/services/communities/remote/connection-store.js';
-import { RemoteCommunityPairingService } from '../../../server/src/services/communities/remote/pairing-service.js';
+import { RemoteConnectionStore } from '../../communities/remote/connection-store.js';
+import { RemoteCommunityPairingService } from '../../communities/remote/pairing-service.js';
 import {
   bootstrapHost,
   claimAsNewAccount,
