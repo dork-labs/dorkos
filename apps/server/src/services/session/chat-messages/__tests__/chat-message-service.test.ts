@@ -32,6 +32,7 @@ import type { SessionFacts } from '../../../extensions/agent-send/agent-send-def
 import { ChatMessageStore } from '../chat-message-store.js';
 import { CHAT_LAUNCH_CAP_MESSAGE } from '../chat-queue-standing.js';
 import {
+  CHAT_MESSAGE_MAX,
   ChatMessageError,
   ChatMessageService,
   type ChatMessageServiceDeps,
@@ -503,6 +504,25 @@ describe('send — batching', () => {
     expect(queue.get('q-c')!.content).toMatch(/^from C\n\n/);
   });
 
+  // DOR-3054: hours of messages into a chat stuck in a long turn must not
+  // become one prompt that fails all at once.
+  it('starts a new row once a batch would pass its size limit', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    queue.enqueue({
+      id: 'q-c',
+      sessionId: 'chat-b',
+      content: 'x'.repeat(5 * CHAT_MESSAGE_MAX - 10),
+      clientId: 'chat:chat-c',
+    });
+
+    await service.send(ANA, { to: 'chat-b', message: 'from A, long enough to pass the limit' });
+
+    expect(dispatched).toHaveLength(1);
+    expect(queue.list('chat-b')).toHaveLength(2);
+    expect(queue.get('q-c')!.content).not.toContain('from A');
+  });
+
   // DOR-3054, the done-when: N messages sent minutes apart to a busy chat all
   // run at its next turn boundary, as one turn, in the order they were sent.
   it('delivers N messages sent minutes apart together, in send order', async () => {
@@ -618,7 +638,7 @@ describe('send — steer', () => {
     expect(dispatched).toEqual([]);
     expect(receipt.status).toBe('queued');
     expect(receipt.note).toMatch(/may do more than your chat can/);
-    expect(receipt.note).toMatch(/run as one turn/);
+    expect(receipt.note).toMatch(/waits with the other agent messages there/);
     expect(sentByAna()[0]!.queueMessageId).toBe('q-c');
   });
 

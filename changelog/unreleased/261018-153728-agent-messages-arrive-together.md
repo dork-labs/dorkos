@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): agent messages waiting for a busy chat arrive together at its next turn (DOR-3054)'
+  - 'fix(server): cap one batched agent turn at five messages worth (DOR-3054)'
 ---
 
 ### Fixed

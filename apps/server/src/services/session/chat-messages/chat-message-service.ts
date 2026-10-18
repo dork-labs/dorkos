@@ -87,6 +87,9 @@ export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js
 /** The longest message. */
 export const CHAT_MESSAGE_MAX = 20_000;
 
+/** What a steer that has to wait is told once it waits with other agent messages. */
+const BATCHED_STEER_NOTE = 'It waits with the other agent messages there; they run as one turn.';
+
 /** The longest Sent-card summary. */
 export const CHAT_SUMMARY_MAX = 80;
 
@@ -359,7 +362,7 @@ export class ChatMessageService {
     // fifth message waited out four whole turns (DOR-3054).
     if (target.sessionId !== null && busy && (delivery === 'queue' || note !== undefined)) {
       const batched = this.batchInto(target.sessionId, row, content);
-      if (batched) return note ? { ...batched, note: `${note} ${batched.note}` } : batched;
+      if (batched) return note ? { ...batched, note: `${note} ${BATCHED_STEER_NOTE}` } : batched;
     }
 
     const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
@@ -433,9 +436,9 @@ export class ChatMessageService {
    * an hour or more late, and the receiver acted on the first before it could
    * see the last that changed it. Waiting together means arriving together.
    *
-   * Only the tail: a person's message is moved in front of agent rows (person
-   * first), so the agent rows are always the end of the queue, and joining an
-   * earlier one would run this message ahead of a person's.
+   * Only the tail, so it never runs ahead of a row queued behind the one it
+   * joins (a person's message, or a hand reorder). And only up to a size
+   * limit, past which it starts a row of its own.
    */
   private batchInto(
     sessionId: string,
@@ -450,6 +453,10 @@ export class ChatMessageService {
     // Read and written in one tick: a row whose words are being read into a
     // turn right now would lose anything appended to it.
     if (isQueuedMessageLaunching(tail.id)) return null;
+    // One batched turn grows to five messages' worth at most: past it a message
+    // starts a row of its own, so hours of messages into a chat stuck in a long
+    // turn cannot become one prompt that fails all at once.
+    if (tail.content.length + content.length > 5 * CHAT_MESSAGE_MAX) return null;
     if (!queue.updateContent(tail.id, `${tail.content}\n\n${content}`)) return null;
     this.deps.store.update(row.id, { toSessionId: sessionId, queueMessageId: tail.id });
     emitQueueUpdate(sessionId);
