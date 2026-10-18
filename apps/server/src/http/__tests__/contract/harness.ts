@@ -356,3 +356,39 @@ export function contractSuite(
     });
   });
 }
+
+/**
+ * Sign the owner in at a name that is not this computer, as a browser there
+ * would, and return the cookie header it set. A sign-in works only on the
+ * route it was made on (DOR-2969), so a case about another device signs in
+ * there rather than replaying the cookie this computer got. The proxy is
+ * named as https, as a browser keeps a `Secure` cookie only over https.
+ *
+ * @param baseUrl - The composed server.
+ * @param host - The name the request arrives at.
+ * @param credentials - The owner's email and password.
+ * @returns The `cookie` header, ready to spread into a case's headers.
+ */
+export async function signInAt(
+  baseUrl: string,
+  host: string,
+  credentials: { email: string; password: string }
+): Promise<{ cookie: string }> {
+  const res = await send(
+    baseUrl,
+    'POST',
+    '/api/auth/sign-in/email',
+    {
+      host,
+      origin: `https://${host}`,
+      'x-forwarded-proto': 'https',
+      'content-type': 'application/json',
+    },
+    JSON.stringify(credentials)
+  );
+  if (res.status !== 200) {
+    throw new Error(`sign-in at ${host} answered ${res.status}: ${res.text.slice(0, 300)}`);
+  }
+  const set = res.headers['set-cookie'] ?? [];
+  return { cookie: set.map((value) => value.split(';')[0]!).join('; ') };
+}

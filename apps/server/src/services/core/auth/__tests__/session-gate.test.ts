@@ -60,6 +60,8 @@ const OWNER_EMAIL = 'owner' + '@' + DOMAIN;
 const OWNER_PASSWORD = 'correct-horse-battery-staple';
 const OWNER_NAME = 'Owner';
 const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+/** The peer and listener of a request made at this computer. */
+const AT_THIS_COMPUTER = { peerAddress: '127.0.0.1', ingress: 'direct' } as const;
 
 /** Flip the runtime `auth.enabled` flag the gate reads per request. */
 function setAuthEnabled(enabled: boolean): void {
@@ -254,7 +256,7 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
       expect(res.status).toBe(200);
       // The attached identity says WHICH credential proved it, because a few
       // writes are reserved for a person in the cockpit (DOR-501).
-      expect(res.body.user).toEqual({ userId: ownerId, credential: 'cookie' });
+      expect(res.body.user).toMatchObject({ userId: ownerId, credential: 'cookie' });
     });
 
     it('allows a gated route with a valid API key Bearer and attaches the user', async () => {
@@ -290,8 +292,15 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
     // route builds them.
     describe("on a request's facts", () => {
       it('resolves a cookie identity, and says the cookie is what proved it', async () => {
-        const req = await requestFactsFor({ headers: { cookie: cookies.join('; ') } });
-        expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
+        const req = await requestFactsFor({
+          headers: { cookie: cookies.join('; '), host: 'localhost' },
+        });
+        expect(await verifyRequestAuth(req)).toEqual({
+          userId: ownerId,
+          credential: 'cookie',
+          sessionId: expect.any(String),
+          route: 'local',
+        });
       });
 
       it('resolves a Bearer API key identity, and says it was NOT a cookie', async () => {
@@ -350,7 +359,7 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
         .map((value) => value.split(';', 1)[0]!)
         .find((value) => value.split('=', 1)[0]!.endsWith('.session_token'));
       expect(signedToken).toEqual(expect.any(String));
-      const req = { headers: { cookie: signedToken! } };
+      const req = { headers: { cookie: signedToken!, host: 'localhost' }, ...AT_THIS_COMPUTER };
       const auth = getAuth()!;
       const original = await auth.api.getSession({
         headers: new Headers({ cookie: signedToken! }),
@@ -381,7 +390,7 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
           await verifyRequestAuth(req, {
             sessionFreshness: 'server-store',
           })
-        ).toEqual({ userId: ownerId, credential: 'cookie' });
+        ).toMatchObject({ userId: ownerId, credential: 'cookie' });
         expect(observer).toHaveBeenLastCalledWith(
           expect.objectContaining({ query: { disableCookieCache: true, disableRefresh: true } })
         );
@@ -389,7 +398,10 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
         expect(afterFresh.expiresAt).toEqual(before.expiresAt);
         expect(afterFresh.updatedAt).toEqual(before.updatedAt);
         // Healthy ordinary peer proves a due original row actually can renew.
-        expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
+        expect(await verifyRequestAuth(req)).toMatchObject({
+          userId: ownerId,
+          credential: 'cookie',
+        });
         expect(observer).toHaveBeenLastCalledWith({ headers: expect.any(Headers) });
         const afterOrdinary = readOriginal();
         expect(afterOrdinary.id).toBe(before.id);
@@ -407,7 +419,10 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
         .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
       expect(signIn.status).toBe(200);
       const freshCookies = signIn.headers['set-cookie'] as unknown as string[];
-      const req = { headers: { cookie: freshCookies.join('; ') } };
+      const req = {
+        headers: { cookie: freshCookies.join('; '), host: 'localhost' },
+        ...AT_THIS_COMPUTER,
+      };
       const original = await getAuth()!.api.getSession({
         headers: new Headers({ cookie: req.headers.cookie! }),
         query: { disableCookieCache: true, disableRefresh: true },
