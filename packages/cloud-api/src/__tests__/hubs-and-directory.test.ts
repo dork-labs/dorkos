@@ -1,6 +1,7 @@
 /**
- * A person's own DorkOS in the cloud (the hub), its agent computers, the
- * viewer-open wake, the full-control entitlement, and the account directory.
+ * A person's own DorkOS in the cloud (the hub), its agent computers and how
+ * they link to it, the viewer-open wake, the hub's next wake, the
+ * full-control entitlement, and the account directory.
  *
  * The rules pinned here are the ones a later change could break quietly: a
  * pooled hub holds no keys, the owner is an account id at one issuer and never
@@ -14,7 +15,14 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+  AGENT_COMPUTER_BUSY_TTL_SECONDS,
+  AGENT_COMPUTER_LINK_CODE_TTL_SECONDS,
+  AgentComputerActivityRequestSchema,
+  AgentComputerAssignmentSchema,
+  AgentComputerLinkCodeRequestSchema,
   CloudComputerListResponseSchema,
+  CloudComputerStartReasonSchema,
+  CloudComputerStartRequestSchema,
   DirectoryReportRequestSchema,
   DirectorySchema,
   DirectorySettingsSchema,
@@ -22,6 +30,10 @@ import {
   HubAssignmentConfirmRequestSchema,
   HubAssignmentSchema,
   HubAssignmentStateSchema,
+  HUB_NEXT_WAKE_MAX_AHEAD_DAYS,
+  HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS,
+  HubNextWakeRequestSchema,
+  InferenceTokenRequestSchema,
   ONE_TIME_CREDENTIAL_META,
   RemoteCommandSchema,
   UNRECOGNISED,
@@ -185,6 +197,169 @@ describe('cloud agent computers', () => {
     expect(V1_ROUTES.computers).toBe('/v1/computers');
     expect(v1Path.computerStart('cmp_1')).toBe('/v1/computers/cmp_1/start');
     expect(v1Path.computerStop('cmp_1')).toBe('/v1/computers/cmp_1/stop');
+  });
+});
+
+describe('starting a computer', () => {
+  it('takes no body, an empty one, or a reason, so a start from an older hub still works', () => {
+    expect(CloudComputerStartRequestSchema.safeParse({}).success).toBe(true);
+    expect(CloudComputerStartRequestSchema.parse({ reason: 'turn' })).toEqual({ reason: 'turn' });
+    expect(CloudComputerStartReasonSchema.options).toEqual(['turn', 'viewer', 'beat']);
+  });
+
+  it('reads a reason added later as unrecognised rather than refusing the start', () => {
+    expect(CloudComputerStartRequestSchema.parse({ reason: 'migration' }).reason).toBe(
+      UNRECOGNISED
+    );
+    expect(CloudComputerStartRequestSchema.safeParse({ reason: 3 }).success).toBe(false);
+  });
+});
+
+describe('linking an agent computer to its hub', () => {
+  const code = fixture('hubs/computer-link-code-request.json');
+
+  it('is handed over per computer, by the hub', () => {
+    expect(v1Path.computerLinkCode('cmp_1')).toBe('/v1/computers/cmp_1/link-code');
+    expect(v1Path.computerLinkCode('a/b')).toBe('/v1/computers/a%2Fb/link-code');
+    expect(() => v1Path.computerLinkCode('..')).toThrow(TypeError);
+  });
+
+  it('takes a code shaped like the one a person`s own computer links with', () => {
+    expect(AgentComputerLinkCodeRequestSchema.parse(code)).toEqual(code);
+    for (const bad of [
+      '7K3M9QXR2B4TVW8',
+      '7K3M9QXR2B4TVW8HX',
+      '7k3m9qxr2b4tvw8h',
+      '7K3M-9QXR-2B4T-VW8H',
+      'IK3M9QXR2B4TVW8H',
+      'LK3M9QXR2B4TVW8H',
+      'OK3M9QXR2B4TVW8H',
+      'UK3M9QXR2B4TVW8H',
+    ]) {
+      expect(
+        AgentComputerLinkCodeRequestSchema.safeParse({ ...code, code: bad }).success,
+        bad
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a code without the time it stops working', () => {
+    expect(AgentComputerLinkCodeRequestSchema.safeParse({ code: code.code }).success).toBe(false);
+    expect(AGENT_COMPUTER_LINK_CODE_TTL_SECONDS).toBe(600);
+  });
+
+  it('marks the code, and only the code, as a one-time credential', () => {
+    const marked = walk(AgentComputerAssignmentSchema, 'AgentComputerAssignmentSchema')
+      .filter(({ node }) => {
+        const meta = z.globalRegistry.get(node) as Record<string, unknown> | undefined;
+        return meta?.[ONE_TIME_CREDENTIAL_META] === true;
+      })
+      .map(({ path: at }) => at);
+    expect(marked).toEqual(['AgentComputerAssignmentSchema.linkCode.code']);
+  });
+});
+
+describe('an agent computer`s assignment', () => {
+  it('reads a waiting code, and null once it was handed out', () => {
+    const waiting = AgentComputerAssignmentSchema.parse(
+      fixture('hubs/agent-computer-assignment.json')
+    );
+    expect(waiting.linkCode?.code).toHaveLength(16);
+    const linked = AgentComputerAssignmentSchema.parse(
+      fixture('hubs/agent-computer-assignment-linked.json')
+    );
+    expect(linked.linkCode).toBeNull();
+    expect(linked.pollAfterSeconds).toBeUndefined();
+  });
+
+  it('is read at the computer`s own route', () => {
+    expect(V1_ROUTES.agentComputerAssignment).toBe('/v1/agent-computers/self/assignment');
+  });
+
+  it('refuses one without its computer, hub, owner, issuer or code field', () => {
+    const full = fixture('hubs/agent-computer-assignment.json');
+    for (const field of ['computerId', 'hubOrigin', 'ownerAccountId', 'issuer', 'linkCode']) {
+      const partial = { ...full };
+      delete partial[field];
+      expect(AgentComputerAssignmentSchema.safeParse(partial).success, field).toBe(false);
+    }
+  });
+
+  it('takes a hub that is an https origin and nothing more', () => {
+    const full = fixture('hubs/agent-computer-assignment.json');
+    for (const hubOrigin of [
+      'http://hub-0001.example.invalid',
+      'https://hub-0001.example.invalid/',
+      'https://hub-0001.example.invalid/api',
+    ]) {
+      expect(
+        AgentComputerAssignmentSchema.safeParse({ ...full, hubOrigin }).success,
+        hubOrigin
+      ).toBe(false);
+    }
+  });
+
+  it('carries no key for the computer: it makes its own, and the hub pins it', () => {
+    const names = fieldNames(AgentComputerAssignmentSchema, 'AgentComputerAssignmentSchema');
+    expect(names.filter((n) => /key|secret|token|password|mail/i.test(n))).toEqual([]);
+  });
+
+  it('is asked to read again by a command that carries nothing else', () => {
+    const command = RemoteCommandSchema.parse({
+      ...fixture('remote/command-agent-computer-assignment-changed.json'),
+      linkCode: { code: '7K3M9QXR2B4TVW8H', expiresAt: '2026-11-03T12:10:00Z' },
+      hubOrigin: 'https://elsewhere.example.invalid',
+    });
+    expect(command.kind).toBe('agent_computer_assignment_changed');
+    expect(Object.keys(command).sort()).toEqual(['id', 'kind', 'leaseToken']);
+    expect(RemoteCommandSchema.options.map((option) => option.shape.kind.value)).toContain(
+      'agent_computer_assignment_changed'
+    );
+  });
+
+  it('refuses the command without a lease token to settle it with', () => {
+    expect(
+      RemoteCommandSchema.safeParse({ kind: 'agent_computer_assignment_changed', id: 'cmd_1' })
+        .success
+    ).toBe(false);
+  });
+});
+
+describe('an agent computer`s activity', () => {
+  it('says busy or not, and nothing else', () => {
+    expect(V1_ROUTES.agentComputerActivity).toBe('/v1/agent-computers/self/activity');
+    expect(AgentComputerActivityRequestSchema.parse({ busy: false, until: 'x' })).toEqual({
+      busy: false,
+    });
+    expect(AgentComputerActivityRequestSchema.safeParse({}).success).toBe(false);
+    expect(AgentComputerActivityRequestSchema.safeParse({ busy: 'yes' }).success).toBe(false);
+  });
+
+  it('publishes how long busy holds, so a crashed turn cannot keep a computer running', () => {
+    expect(AGENT_COMPUTER_BUSY_TTL_SECONDS).toBe(600);
+  });
+});
+
+describe('a hub`s next wake', () => {
+  it('takes a time or null, and nothing else', () => {
+    expect(V1_ROUTES.hubNextWake).toBe('/v1/hubs/self/next-wake');
+    expect(HubNextWakeRequestSchema.parse(fixture('hubs/next-wake-request.json')).at).toBe(
+      '2026-11-04T07:00:00Z'
+    );
+    expect(HubNextWakeRequestSchema.parse({ at: null }).at).toBeNull();
+    expect(HubNextWakeRequestSchema.safeParse({}).success).toBe(false);
+    expect(HubNextWakeRequestSchema.safeParse({ at: 'tomorrow' }).success).toBe(false);
+  });
+
+  it('publishes the wake interval and how far ahead a wake counts', () => {
+    expect(HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS).toBe(300);
+    expect(HUB_NEXT_WAKE_MAX_AHEAD_DAYS).toBe(31);
+  });
+});
+
+describe('inference on an agent computer', () => {
+  it('says whose agent id `agentRef` is on an agent computer', () => {
+    expect(InferenceTokenRequestSchema.shape.agentRef.description).toContain('on its hub');
   });
 });
 
