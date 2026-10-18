@@ -20,10 +20,16 @@ import {
   marksOfLevel,
   mergeMarks,
   NO_MARKS,
+  TURN_MARK_KINDS,
   withMarks,
+  type TurnMarks,
 } from '../turn-marks.js';
 import { markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
-import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
+import {
+  agentMarksRunning,
+  countWhileRunning,
+  resetLiveOutsiderTurns,
+} from '../live-outsider-turns.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
 import {
   initPermissionGate,
@@ -97,6 +103,42 @@ describe('reading marks', () => {
     expect(
       marksForTurn({ roomTurn: { roomId: 'r', authorId: 'a', turnId: 't', outsiderInView: true } })
     ).toEqual({ outsider: true });
+  });
+});
+
+// Every kind runs through every helper, so a kind added to TURN_MARK_KINDS (teammate, tool-read)
+// cannot be dropped by a helper that only knows the kinds that existed when it was written.
+describe.each(TURN_MARK_KINDS)('the %s mark, through every helper', (kind) => {
+  const only = { [kind]: true } as TurnMarks;
+  const levelWith = { ...LEVEL, [kind]: true } as TurnPermissionLevel;
+
+  it('is read off a level and off a ceiling holding that level', () => {
+    expect(marksOfLevel(levelWith)).toEqual(only);
+    expect(marksOfCeiling(levelWith)).toEqual(only);
+    expect(marksOfCeiling([LEVEL, levelWith])).toEqual(only);
+  });
+
+  it('survives merging, is put on a level, and counts as a mark', () => {
+    expect(mergeMarks(only, NO_MARKS)).toEqual(only);
+    expect(mergeMarks(NO_MARKS, only)).toEqual(only);
+    expect(withMarks(LEVEL, only)).toEqual(levelWith);
+    expect(hasMarks(only)).toBe(true);
+    expect(carriesAllMarks(NO_MARKS, only)).toBe(false);
+    expect(carriesAllMarks(only, only)).toBe(true);
+  });
+
+  it('is counted against its agent while a turn carrying it runs', async () => {
+    const turn = countWhileRunning(
+      { cwd: '/agents/kind-probe' },
+      only,
+      (async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      })()
+    );
+    await turn.next();
+    expect(agentMarksRunning('/agents/kind-probe')).toEqual(only);
+    await turn.return(undefined);
+    expect(agentMarksRunning('/agents/kind-probe')).toEqual({});
   });
 });
 

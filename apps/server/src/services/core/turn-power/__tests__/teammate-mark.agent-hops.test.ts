@@ -30,7 +30,7 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import {
   lastTurnLevelOf,
   noteEntryLevel,
-  outsiderBoundOf,
+  markedBoundOf,
   postLevelFor,
   recordTurnLevels,
 } from '../turn-levels.js';
@@ -197,7 +197,7 @@ describe('one mention later, the teammate mark is lost (DOR-3036)', () => {
       const bo = await teammateThenMention(runtime);
       sink.mockClear();
       // What `session_start` sends as the new chat's first-turn ceiling (`outsiderStartCeiling`).
-      const bound = outsiderBoundOf(bo, '/agents/bo');
+      const bound = markedBoundOf(bo, '/agents/bo');
       expect(bound).toBeDefined();
       const child = fresh('child');
       await run(runtime, child, { permissionCeiling: bound! });

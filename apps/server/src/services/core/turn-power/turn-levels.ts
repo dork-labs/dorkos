@@ -167,23 +167,6 @@ export function markedBoundOf(
 }
 
 /**
- * {@link markedBoundOf} for the outsider mark alone: the bound when the
- * caller's turn read an outsider's words (spec `trusted-by-default-flip`
- * §4.7), or `undefined`.
- *
- * @param sessionId - The calling session, when the surface verified one.
- * @param agentPath - The calling agent's home, from its verified identity.
- */
-export function outsiderBoundOf(
-  sessionId: string | null | undefined,
-  agentPath: string | undefined
-): TurnPermissionBound | undefined {
-  return marksOf(sessionId, agentPath).outsider === true
-    ? markedBoundOf(sessionId, agentPath)
-    : undefined;
-}
-
-/**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
  * cannot change it.

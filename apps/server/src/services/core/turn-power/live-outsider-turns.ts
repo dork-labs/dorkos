@@ -37,8 +37,8 @@ import type { TurnMarks } from './turn-marks.js';
 /** The key a turn whose agent could not be resolved is counted under. */
 const UNPLACED = '';
 
-/** Agent home (or {@link UNPLACED}) → how many outsider-marked turns are running. */
-const running = new Map<string, number>();
+/** Mark kind → agent home (or {@link UNPLACED}) → how many turns carrying it are running. */
+const running = new Map<string, Map<string, number>>();
 
 /** The home a folder belongs to, or `undefined` when none can be resolved. */
 function homeKey(dir: string | undefined, forAgent?: string): string | undefined {
@@ -49,10 +49,20 @@ function homeKey(dir: string | undefined, forAgent?: string): string | undefined
   }
 }
 
-function adjust(key: string, by: 1 | -1): void {
-  const next = (running.get(key) ?? 0) + by;
-  if (next > 0) running.set(key, next);
-  else running.delete(key);
+function adjust(kind: string, key: string, by: 1 | -1): void {
+  const counts = running.get(kind) ?? new Map<string, number>();
+  const next = (counts.get(key) ?? 0) + by;
+  if (next > 0) counts.set(key, next);
+  else counts.delete(key);
+  if (counts.size > 0) running.set(kind, counts);
+  else running.delete(kind);
+}
+
+/** The kinds a set carries: every field set to `true`, so a new kind needs no change here. */
+function kindsOf(marks: TurnMarks): string[] {
+  return Object.entries(marks)
+    .filter(([, value]) => value === true)
+    .map(([kind]) => kind);
 }
 
 /**
@@ -71,13 +81,13 @@ export function countWhileRunning(
   events: AsyncIterable<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const key = homeKey(place.cwd, place.forAgent) ?? UNPLACED;
-  const counts = marks.outsider === true;
+  const kinds = kindsOf(marks);
   return (async function* counted() {
-    if (counts) adjust(key, 1);
+    for (const kind of kinds) adjust(kind, key, 1);
     try {
       yield* events;
     } finally {
-      if (counts) adjust(key, -1);
+      for (const kind of kinds) adjust(kind, key, -1);
     }
   })();
 }
@@ -89,9 +99,12 @@ export function countWhileRunning(
  * @param agentPath - The calling agent's home, from its verified identity.
  */
 export function agentMarksRunning(agentPath: string): TurnMarks {
-  if ((running.get(UNPLACED) ?? 0) > 0) return { outsider: true };
   const key = homeKey(agentPath) ?? path.resolve(agentPath);
-  return (running.get(key) ?? 0) > 0 ? { outsider: true } : {};
+  const marks: Record<string, true> = {};
+  for (const [kind, counts] of running) {
+    if ((counts.get(UNPLACED) ?? 0) > 0 || (counts.get(key) ?? 0) > 0) marks[kind] = true;
+  }
+  return marks as TurnMarks;
 }
 
 /**

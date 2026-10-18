@@ -38,10 +38,15 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 function sourcesMatching(pattern: string): string[] {
   let out: string;
   try {
-    out = execFileSync('git', ['grep', '-lE', pattern, '--', '.', ':!**/__tests__/**'], {
-      cwd: SERVER_SRC,
-      encoding: 'utf8',
-    });
+    // `--untracked` too, so a runtime in a file nobody has added yet is counted as well.
+    out = execFileSync(
+      'git',
+      ['grep', '--untracked', '-lE', pattern, '--', '.', ':!**/__tests__/**'],
+      {
+        cwd: SERVER_SRC,
+        encoding: 'utf8',
+      }
+    );
   } catch {
     // `git grep` exits 1 when nothing matches.
     return [];
@@ -66,6 +71,44 @@ const BUILDERS = new Map<string, string>([
   ],
 ]);
 
+/**
+ * The classes a source declares as runtimes: `class X implements AgentRuntime`, with or without
+ * type parameters, a base class (`extends Base<T>`), or other interfaces beside it.
+ */
+function runtimeClassesIn(source: string): string[] {
+  const declarations = source.matchAll(
+    /class\s+(\w+)(?:\s*<[^{]*?>)?(?:\s+extends\s+[^{]*?)?\s+implements\s+([^{]+)\{/g
+  );
+  return [...declarations]
+    .filter(([, , interfaces]) =>
+      interfaces!
+        .split(',')
+        .map((name) => name.trim().replace(/<.*$/s, ''))
+        .includes('AgentRuntime')
+    )
+    .map(([, name]) => name!);
+}
+
+/**
+ * Each runtime a source builds that never reaches `register`: one built inline as the argument
+ * (`register(new X(...))`) or assigned to a name the source registers (`register(name)`, or
+ * `register(name.runtime)` for the computer bridge) passes; anything else is listed.
+ */
+function unregisteredBuilds(source: string): string[] {
+  const builds = [
+    ...source.matchAll(new RegExp(`new (?:${RUNTIME_CLASSES.join('|')})\\(`, 'g')),
+    ...source.matchAll(/createComputerRuntime\(\{/g),
+  ];
+  return builds.flatMap((build) => {
+    const before = source.slice(0, build.index);
+    if (/[rR]egistry\.register\(\s*$/.test(before)) return [];
+    const assigned = /(\w+)\s*=\s*$/.exec(before)?.[1];
+    const registers = (name: string) =>
+      new RegExp(`[rR]egistry\\.register\\(\\s*${name}(?:\\.runtime)?\\s*\\)`).test(source);
+    return assigned !== undefined && registers(assigned) ? [] : [build[0]];
+  });
+}
+
 describe('the registry is the only way to a runtime', () => {
   it('has one writer of its runtime map, and it wraps every runtime in decorateRuntime', () => {
     const source = readFileSync(path.join(SERVER_SRC, 'services/core/runtime-registry.ts'), 'utf8');
@@ -84,25 +127,21 @@ describe('the registry is the only way to a runtime', () => {
   });
 
   it('knows every runtime class there is', () => {
-    const declared = sourcesMatching('class [A-Za-z]+ (extends [A-Za-z]+ )?implements AgentRuntime')
-      .flatMap((file) =>
-        [
-          ...readFileSync(path.join(SERVER_SRC, file), 'utf8').matchAll(
-            /class ([A-Za-z]+) (?:extends [A-Za-z]+ )?implements AgentRuntime/g
-          ),
-        ].map((match) => match[1]!)
-      )
+    const declared = sourcesMatching('implements[^{]*AgentRuntime')
+      .flatMap((file) => runtimeClassesIn(readFileSync(path.join(SERVER_SRC, file), 'utf8')))
       .sort();
     expect(declared).toEqual(RUNTIME_CLASSES);
   });
 
   it('hands every runtime it builds to register, the agent computer bridge included', () => {
-    const builds = sourcesMatching(
+    const files = sourcesMatching(
       `new (${RUNTIME_CLASSES.join('|')})\\(|createComputerRuntime\\(\\{`
     ).filter((file) => !BUILDERS.has(file));
-    expect(builds).toContain('startup/computers.ts');
-    const unregistered = builds.filter(
-      (file) => !/[rR]egistry\.register\(/.test(readFileSync(path.join(SERVER_SRC, file), 'utf8'))
+    expect(files).toContain('startup/computers.ts');
+    const unregistered = files.flatMap((file) =>
+      unregisteredBuilds(readFileSync(path.join(SERVER_SRC, file), 'utf8')).map(
+        (build) => `${file}: ${build}`
+      )
     );
     expect(unregistered).toEqual([]);
   });

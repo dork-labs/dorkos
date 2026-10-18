@@ -81,7 +81,7 @@ PR A only renames where the fact is read. Every point keeps its own effect:
 | 9   | `commitments_list` and the heartbeat status capability (`capabilities/registry.ts` context), the failure wake (`session-lifecycle.ts`) | `turnStartedByOutsider`                                 | `startedByOutsider`                            |
 | 10  | Unanswered outsider in view (`outsiderInViewOf`)                                                                                       | `entryLevelOf(id).outsider`                             | `marksOfLevel(entryLevelOf(id)).outsider`      |
 
-The ceiling bound itself (`powerForTurn`, `turn-permission.ts`) does not move: marks never bound power, except the teammate's read-only bound in PR B. Minting the outsider mark (`levelForTurn`) reads `marksForTurn(opts)`. `outsiderBoundOf` stays exported, now defined through `marksOf`, because the existing agent-hops suite names it. Its origin bookkeeping (`noteTurnOrigin`, `holdTurnOriginFor`) is how the direct reading is decided and does not move. The existing outsider suites must pass unchanged.
+The ceiling bound itself (`powerForTurn`, `turn-permission.ts`) does not move: marks never bound power, except the teammate's read-only bound in PR B. Minting the outsider mark (`levelForTurn`) reads `marksForTurn(opts)`. `outsiderBoundOf` is gone; its callers read `marksOf` and `markedBoundOf`. The origin bookkeeping (`noteTurnOrigin`, `holdTurnOriginFor`) is how the direct reading is decided and does not move. The existing outsider suites pass unchanged, except that their two `outsiderBoundOf` calls now read `marksOf` and `markedBoundOf`.
 
 ## Proving the seam
 

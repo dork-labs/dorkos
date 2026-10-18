@@ -41,7 +41,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { ceilingCarriesOutsider, isNoLooserThan } from '@dorkos/shared/permission-semantics';
+import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { countWhileRunning } from './live-outsider-turns.js';
@@ -60,6 +60,19 @@ export type TurnMarks = Pick<TurnPermissionLevel, TurnMarkKind>;
 /** No marks at all. */
 export const NO_MARKS: TurnMarks = Object.freeze({});
 
+/**
+ * What words from a source DorkOS cannot vouch for carry: the outsider mark. Unknown counts as
+ * marked (a stranger, a sender with no kept level, an empty ceiling that vouches for no one).
+ */
+const UNKNOWN_SOURCE: TurnMarks = Object.freeze({ outsider: true });
+
+/** The set holding every kind `has` answers yes for, or {@link NO_MARKS}. */
+function marksWhere(has: (kind: TurnMarkKind) => boolean): TurnMarks {
+  const kinds = TURN_MARK_KINDS.filter(has);
+  if (kinds.length === 0) return NO_MARKS;
+  return Object.fromEntries(kinds.map((kind) => [kind, true])) as TurnMarks;
+}
+
 /** How many turns' places are remembered, oldest dropped first (as `turn-levels.ts`). */
 const PLACE_MEMORY = 10_000;
 
@@ -71,7 +84,7 @@ const PLACE_MEMORY = 10_000;
  * @param level - A recorded level, or `undefined`.
  */
 export function marksOfLevel(level: TurnPermissionLevel | undefined): TurnMarks {
-  return level?.outsider === true ? { outsider: true } : NO_MARKS;
+  return marksWhere((kind) => level?.[kind] === true);
 }
 
 /**
@@ -81,7 +94,14 @@ export function marksOfLevel(level: TurnPermissionLevel | undefined): TurnMarks 
  * @param ceiling - The ceiling a turn is sent with.
  */
 export function marksOfCeiling(ceiling: TurnPermissionCeiling): TurnMarks {
-  return ceilingCarriesOutsider(ceiling) ? { outsider: true } : NO_MARKS;
+  if (!Array.isArray(ceiling)) {
+    return ceiling === 'runtime-default'
+      ? UNKNOWN_SOURCE
+      : marksOfLevel(ceiling as TurnPermissionLevel);
+  }
+  const bounds = ceiling as readonly (TurnPermissionLevel | 'runtime-default')[];
+  if (bounds.length === 0) return UNKNOWN_SOURCE;
+  return bounds.map(marksOfCeiling).reduce(mergeMarks, NO_MARKS);
 }
 
 /**
@@ -106,7 +126,7 @@ export function marksForTurn(opts: MessageOpts | undefined): TurnMarks {
  * @param b - The other.
  */
 export function mergeMarks(a: TurnMarks, b: TurnMarks): TurnMarks {
-  return a.outsider === true || b.outsider === true ? { outsider: true } : NO_MARKS;
+  return marksWhere((kind) => a[kind] === true || b[kind] === true);
 }
 
 /**
@@ -155,7 +175,9 @@ export function mayJoinRunningTurn(
  * @param marks - The marks it carries.
  */
 export function withMarks(level: TurnPermissionLevel, marks: TurnMarks): TurnPermissionLevel {
-  return marks.outsider === true && level.outsider !== true ? { ...level, outsider: true } : level;
+  const adds = TURN_MARK_KINDS.filter((kind) => marks[kind] === true && level[kind] !== true);
+  if (adds.length === 0) return level;
+  return { ...level, ...Object.fromEntries(adds.map((kind) => [kind, true])) };
 }
 
 /**
@@ -195,7 +217,9 @@ export function applyTurnMarks(
   runtime: AgentRuntime,
   marksOfSession: (sessionId: string) => TurnMarks
 ): AgentRuntime {
-  /** Where each marked turn stood, so a turn its agent starts later counts against the same one. */
+  // Where each marked turn stood, so a turn its agent starts later counts against the same one.
+  // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
+  // through the runtime that sent the turn.
   const places = new Map<string, { cwd?: string; forAgent?: string }>();
   return new Proxy(runtime, {
     get(target, prop) {
