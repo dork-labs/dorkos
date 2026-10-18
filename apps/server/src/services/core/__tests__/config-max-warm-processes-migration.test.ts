@@ -1,10 +1,10 @@
 /**
- * The `'0.122.0'` key writes `runtimes.claudeCode.maxWarmProcesses: null` into a
+ * The `'0.123.0'` key writes `runtimes.claudeCode.maxWarmProcesses: null` into a
  * stored `runtimes.claudeCode` section that predates it (DOR-3012), across the
  * real `conf`/Ajv seam.
  *
  * `DORKOS_VERSION_OVERRIDE` is set before `lib/version.ts` loads, because a dev
- * tree's own version runs no `0.122.0` body. The assertions read the FILE:
+ * tree's own version runs no `0.123.0` body. The assertions read the FILE:
  * Ajv's `useDefaults` fills `null` into every read copy, so a manager read
  * passes with the body deleted (DOR-1496).
  */
@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.122.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.123.0';
 });
 
 import { ConfigManager, seedMaxWarmProcesses } from '../config-manager.js';
@@ -34,7 +34,7 @@ function seed(claudeCode: Record<string, unknown>): string {
     JSON.stringify({
       version: 1,
       runtimes: { claudeCode },
-      __internal__: { migrations: { version: '0.121.0' } },
+      __internal__: { migrations: { version: '0.122.0' } },
     })
   );
   return home;
@@ -45,7 +45,7 @@ function claudeCodeOnDisk(home: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).runtimes.claudeCode;
 }
 
-describe("the '0.122.0' warm-ceiling migration", () => {
+describe("the '0.123.0' warm-ceiling migration", () => {
   it('writes maxWarmProcesses: null beside the fields an older section kept', () => {
     const home = seed({ accounts: [], persistentSession: true });
     new ConfigManager(home);

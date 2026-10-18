@@ -1315,11 +1315,11 @@ export const CONFIG_MIGRATIONS = {
       });
     }
   },
-  // v0.121.0 is the newest tag, so this opens 0.122.0. Frozen from merge;
-  // anything further opens `'0.123.0'`.
+  // v0.122.0 is the newest release, so this opens 0.123.0. Frozen from merge;
+  // anything further opens `'0.124.0'`.
   //
   // Writes `runtimes.claudeCode.maxWarmProcesses: null` where the stored
   // section lacks it, and touches nothing else (DOR-3012). See
   // `seedMaxWarmProcesses`.
-  '0.122.0': seedMaxWarmProcesses,
+  '0.123.0': seedMaxWarmProcesses,
 } as const;
