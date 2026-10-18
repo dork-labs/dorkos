@@ -307,7 +307,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/sign-in-landings');
     // 77 -> 78: the docs in a space, for wiki links (DOR-2982).
     expect(mounts).toContain('/api/documents');
-    expect(mounts).toHaveLength(78);
+    // 78 -> 79: comments on docs, a mount of their own (DOR-2983).
+    expect(mounts).toContain('/api/documents/comments');
+    expect(mounts).toHaveLength(79);
     const byHand = [
       '/',
       '/x/fixture',
