@@ -145,6 +145,7 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import {
   isFromWifi,
   NOT_FROM_WIFI,
+  refuseStandingYesFromWifi,
   WIFI_ACTION_REFUSAL,
 } from '../services/core/auth/sessions/wifi-level.js';
 
@@ -564,6 +565,8 @@ export function createApprovalsRoutes(
       return c.json({ error: 'Validation failed', code: 'INVALID_GRANT_BODY', details }, 400);
     }
     const { answer } = parsed.data;
+    const standing = refuseStandingYesFromWifi(honoRequestFacts(c), answer === 'always');
+    if (standing) return c.json(standing, 403);
     const id = c.req.param('id');
 
     // Two Always allows for the same agent and action run one after the other:

@@ -292,7 +292,7 @@ describe('a sign-in works only on the route it was made on', () => {
           ingress === 'wifi'
             ? {
                 code: NOT_FROM_WIFI,
-                error: 'API keys are managed only on the computer DorkOS runs on.',
+                error: 'API keys are managed only at this computer.',
               }
             : {
                 code: API_KEY_NEEDS_THIS_COMPUTER,

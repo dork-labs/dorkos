@@ -88,11 +88,9 @@ describe('mutation error toast policy', () => {
       fireMutationError(
         { errorLabel: 'Couldn’t save.' },
         code,
-        'Files can be changed only on the computer DorkOS runs on.'
+        'Files can be changed only at this computer.'
       );
-      expect(toast).toHaveBeenCalledWith(
-        'Files can be changed only on the computer DorkOS runs on.'
-      );
+      expect(toast).toHaveBeenCalledWith('Files can be changed only at this computer.');
       expect(toast.error).not.toHaveBeenCalled();
     }
   );

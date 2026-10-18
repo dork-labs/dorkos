@@ -30,7 +30,10 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { MiddlewareHandler } from 'hono';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
+import {
+  NOT_FROM_WIFI,
+  WIFI_STANDING_YES_REFUSAL,
+} from '../../services/core/auth/sessions/wifi-level.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -470,7 +473,14 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     const refused = await request(server).post(`/api/approvals/${destructive.approvalId}/grant`);
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe(NOT_FROM_WIFI);
+    const always = await request(server)
+      .post(`/api/approvals/${act.approvalId}/grant`)
+      .send({ answer: 'always' });
+    expect(always.status).toBe(403);
+    expect(always.body).toEqual({ error: WIFI_STANDING_YES_REFUSAL, code: NOT_FROM_WIFI });
     const allowed = await request(server).post(`/api/approvals/${act.approvalId}/grant`);
     expect(allowed.status).toBe(200);
+    const denied = await request(server).post(`/api/approvals/${destructive.approvalId}/deny`);
+    expect(denied.status).toBe(200);
   });
 });

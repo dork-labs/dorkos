@@ -15,10 +15,8 @@ describe('awayFromTheComputerSentence', () => {
     'passes the sentence of %s',
     (code) => {
       expect(
-        awayFromTheComputerSentence(
-          refused('The terminal opens only on the computer DorkOS runs on.', code)
-        )
-      ).toBe('The terminal opens only on the computer DorkOS runs on.');
+        awayFromTheComputerSentence(refused('The terminal opens only at this computer.', code))
+      ).toBe('The terminal opens only at this computer.');
     }
   );
 

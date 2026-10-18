@@ -69,6 +69,7 @@ import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -132,6 +133,7 @@ router.get('/', async (c) => {
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
     isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    callerRoute: requestSessionRoute(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)

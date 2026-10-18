@@ -59,7 +59,30 @@ export const NOT_FROM_WIFI = 'NOT_FROM_WIFI';
  * approved. Those two checks live where the tier is known
  * (`routes/capabilities-invoke.ts`, `routes/approvals.ts`), not in the list.
  */
-export const WIFI_ACTION_REFUSAL = 'Do this in the app on the computer DorkOS runs on.';
+export const WIFI_ACTION_REFUSAL = 'Do this at this computer.';
+
+/**
+ * What a Wi-Fi sign-in reads when it answers with a standing yes: an
+ * approval's "Always allow", a tool prompt's always-allow, an extension's "next
+ * time, on its own". From Wi-Fi an answer is Allow once or Deny, never a yes
+ * that outlives the request (DOR-2969).
+ */
+export const WIFI_STANDING_YES_REFUSAL = 'Always allow is only available at this computer.';
+
+/**
+ * The refusal for a standing yes from Wi-Fi, or `undefined` when the request
+ * is not from Wi-Fi or the answer is not a standing one.
+ *
+ * @param facts - The request's TCP peer, raw headers and ingress.
+ * @param standing - Whether the answer would outlive this request.
+ */
+export function refuseStandingYesFromWifi(
+  facts: ClassifierFacts,
+  standing: boolean
+): { error: string; code: typeof NOT_FROM_WIFI } | undefined {
+  if (!standing || !isFromWifi(facts)) return undefined;
+  return { error: WIFI_STANDING_YES_REFUSAL, code: NOT_FROM_WIFI };
+}
 
 /** What kind of action a refused route is, for tests and the audit of the list. */
 export type WifiRefusedSurface =
@@ -83,7 +106,8 @@ export interface WifiRefusedRoute {
   readonly reason: string;
 }
 
-const ON_THE_COMPUTER = 'on the computer DorkOS runs on.';
+/** Where a refused action can be done instead, as every reason ends. */
+const ON_THE_COMPUTER = 'at this computer.';
 
 /** Every route a Wi-Fi sign-in is refused on. The single source of the level. */
 export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [

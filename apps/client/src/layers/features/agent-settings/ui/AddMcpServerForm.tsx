@@ -6,6 +6,7 @@ import {
   FieldCardContent,
   Input,
   Label,
+  Notice,
   Select,
   SelectContent,
   SelectItem,
@@ -278,13 +279,14 @@ export function AddMcpServerForm({
           <pre className="bg-muted text-foreground overflow-x-auto rounded-md px-3 py-2 font-mono text-xs">
             {kind === 'stdio' ? previewCommand : url.trim()}
           </pre>
-          {error && (
-            <p
-              className={errorIsCalm ? 'text-muted-foreground text-xs' : 'text-destructive text-xs'}
-            >
-              {error}
-            </p>
-          )}
+          {error &&
+            (errorIsCalm ? (
+              <Notice tone="info" role="status" className="text-xs">
+                {error}
+              </Notice>
+            ) : (
+              <p className="text-destructive text-xs">{error}</p>
+            ))}
           <div className="flex justify-end gap-2">
             <Button
               variant="ghost"
@@ -402,11 +404,14 @@ export function AddMcpServerForm({
           </>
         )}
 
-        {error && (
-          <p className={errorIsCalm ? 'text-muted-foreground text-xs' : 'text-destructive text-xs'}>
-            {error}
-          </p>
-        )}
+        {error &&
+          (errorIsCalm ? (
+            <Notice tone="info" role="status" className="text-xs">
+              {error}
+            </Notice>
+          ) : (
+            <p className="text-destructive text-xs">{error}</p>
+          ))}
         <Separator />
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={reset} className="focus-visible:ring-2">
