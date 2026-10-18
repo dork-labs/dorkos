@@ -6,6 +6,8 @@
  *
  * @module services/session/chat-messages/chat-message-wiring
  */
+import { setQueuedChatView } from '../message-queue-store.js';
+import { queuedChatViewOf } from './queued-chat-view.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -263,6 +265,9 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
   setChatMessageService(service);
   wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
+  // A person reads a row another chat sent as its senders and their words,
+  // never the fenced envelope it holds for the model (DOR-3060).
+  setQueuedChatView((row) => queuedChatViewOf((id) => deps.store.listByQueueMessage(id), row));
   const read: ChatReadDeps = {
     store: deps.store,
     mayRead: async (caller, target) => mayReadChat(deps.store, caller, target),

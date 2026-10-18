@@ -1,3 +1,4 @@
+import { renderChatMessage } from '../../session/chat-messages/chat-message-fence.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, roomEntries, rooms, messages, searchSources, eq, type Db } from '@dorkos/db';
@@ -662,6 +663,24 @@ describe('SearchIndexer over the room log', () => {
     expect(row!.body).not.toContain('\u0002');
     // Stripped, not replaced with a space — the surrounding text is untouched.
     expect(row!.body).toBe('careful with this word');
+  });
+
+  // DOR-3060: a message another chat sent is fenced for the model, and search
+  // must find and show the sender's words, never the envelope.
+  it('indexes a fenced chat message as its words, not its envelope', async () => {
+    seedRoom('room-fenced');
+    const { text } = renderChatMessage(
+      { agentName: 'Security', agentId: 'agent-sec', chatId: 'chat-sec', chatTitle: 'Review' },
+      'message',
+      'Please hold the walrus release.',
+      'c0ffee12'
+    );
+    say('room-fenced', text);
+    await new SearchIndexer(db, [roomsSource]).sweep();
+
+    const [row] = indexedMessages() as { body: string }[];
+    expect(row!.body).toBe('Please hold the walrus release.');
+    expect(row!.body).not.toContain('BEGIN CHAT');
   });
 
   it('indexes a container far past SQLite s parameter ceiling for one statement', async () => {
