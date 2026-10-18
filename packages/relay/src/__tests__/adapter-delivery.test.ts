@@ -224,6 +224,12 @@ describe('AdapterDelivery', () => {
         AdapterDelivery.TIMEOUT_MS
       );
       expect(deliveryTimeoutMs(CHANNEL_SUBJECT, envelope, now)).toBe(AdapterDelivery.TIMEOUT_MS);
+      // A very long time limit is clamped to the longest timer Node honours,
+      // rather than overflowing into one that fires at once.
+      const forever = createEnvelope({
+        budget: { ...createEnvelope().budget, ttl: now + 1000 * 3_600_000 },
+      });
+      expect(deliveryTimeoutMs('relay.system.tasks.01TASK', forever, now)).toBe(2 ** 31 - 1);
       // Only the dispatch subject itself, not a subject beneath it.
       expect(deliveryTimeoutMs('relay.system.tasks.01TASK.response', envelope, now)).toBe(
         AdapterDelivery.TIMEOUT_MS

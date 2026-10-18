@@ -369,7 +369,9 @@ export async function handleTasksMessage(
   if (isExpired(ttlRemaining)) {
     controller.abort();
   } else {
-    timeout = setTimeout(() => controller.abort(), ttlRemaining);
+    // Clamped: a delay past 2^31-1 ms fires at once in Node, which would stop a
+    // run with a very long time limit the moment it started (DOR-3033).
+    timeout = setTimeout(() => controller.abort(), Math.min(ttlRemaining, 2 ** 31 - 1));
   }
 
   // From here until the `finally` below, this run can be stopped from the

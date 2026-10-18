@@ -48,6 +48,8 @@ export interface RelayDispatchDeps {
    * dispatch at all (DOR-3033). Thirty seconds by default; tests shorten it.
    */
   noReceiverRetryMs?: number;
+  /** Whether the scheduler is shutting down, so a pending retry stands down. */
+  isStopping?: () => boolean;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -83,9 +85,17 @@ function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): st
   if (refused === 'turn_ceiling') {
     return 'The hourly limit on agent turns was reached, so this run didn’t start.';
   }
-  if (refused !== undefined) return `This run was refused before it started (${refused}).`;
-  const error = result.adapterResult?.error;
-  if (error) return `This run didn’t start: ${error}`;
+  if (refused !== undefined) return 'DorkOS was too busy to take this run, so it didn’t start.';
+  const error = result.adapterResult?.error ?? '';
+  // Raised when a run that DID start never reported how it ended; it must not
+  // read as one that never started. The raw adapter text stays in the log.
+  if (error.startsWith('adapter delivery timeout')) {
+    return 'This run went past its time limit without reporting how it ended.';
+  }
+  if (error.startsWith('No agent runtime registered')) {
+    return 'The program this task runs on isn’t running, so this run didn’t start.';
+  }
+  if (error !== '') return 'This run couldn’t start. The server log has the reason.';
   return noReceiverError(trigger);
 }
 
@@ -268,9 +278,21 @@ export async function dispatchRunViaRelay(
     const current = deps.store.getRun(run.id);
     if (!current || !isTerminalRunStatus(current.status)) {
       logger.warn(`no receiver for relay dispatch of run ${run.id}; trying once more`);
-      await new Promise((resolve) =>
-        setTimeout(resolve, deps.noReceiverRetryMs ?? NO_RECEIVER_RETRY_MS)
-      );
+      await new Promise((resolve) => {
+        setTimeout(resolve, deps.noReceiverRetryMs ?? NO_RECEIVER_RETRY_MS).unref?.();
+      });
+      // The wait is long enough for the world to move: a shutdown leaves the row
+      // for crash recovery, and a Stop or any other ending stands the retry down.
+      if (deps.isStopping?.()) {
+        deps.runs.release(run.id);
+        return;
+      }
+      const after = deps.store.getRun(run.id);
+      if (!after || isTerminalRunStatus(after.status)) {
+        deps.runs.release(run.id);
+        return;
+      }
+      deps.runs.addRelay(run.id, task.maxRuntime);
       result = await publish();
     }
   }

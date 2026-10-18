@@ -2280,6 +2280,49 @@ describe('TaskSchedulerService', () => {
       expect(run?.status).toBe('running');
     });
 
+    // DOR-3033 review: the retry waits 30 s, and a run that ended in the
+    // meantime (a Stop, a shutdown) must not be started anyway.
+    it('does not retry a run that ended while it waited', async () => {
+      mockRelay.publish.mockResolvedValue({ messageId: 'm', deliveredTo: 0 });
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const task = store.createTask(
+        taskInput({ name: 'Ended Meanwhile', prompt: 'p', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+      const pending = (service as unknown as Dispatchable).dispatch(
+        task,
+        new Date(1_700_000_000_000)
+      );
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledTimes(1));
+      const run = store.listRuns({ taskId: task.id })[0]!;
+      store.updateRun(run.id, { status: 'cancelled', error: 'Run cancelled' });
+      let settled = false;
+      void pending.finally(() => (settled = true));
+      for (let step = 0; step < 20 && !settled; step += 1) {
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      await pending;
+      vi.useRealTimers();
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+      expect(store.getRun(run.id)?.status).toBe('cancelled');
+      await service.stop();
+    });
+
+    it('words a run that never reported its ending as that, not as never started', async () => {
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'm',
+        deliveredTo: 0,
+        adapterResult: { success: false, error: 'adapter delivery timeout (3660s)' },
+      });
+      const run = await dispatchOnce('Never Reported');
+      expect(run?.error).toBe('This run went past its time limit without reporting how it ended.');
+    });
+
     // DOR-3033: a run stopped at its deadline says how long it had.
     it('carries the task’s time limit for the receiver to name', async () => {
       await dispatchOnce('Time Limit', { maxRuntime: 30 * 60_000 });
