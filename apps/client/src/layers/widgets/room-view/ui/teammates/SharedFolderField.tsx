@@ -52,7 +52,7 @@ export function SharedFolderField({
       <p className="text-muted-foreground text-xs">
         {saved === null
           ? 'Teammates’ turns read no files.'
-          : 'Teammates’ turns can read files here, never .env files, .git or .dork.'}
+          : 'Teammates’ turns can read files here, never keys, .env files or .git.'}
       </p>
       {update.isError && (
         <p role="alert" className="text-destructive text-xs">

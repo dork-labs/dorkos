@@ -418,7 +418,9 @@ export async function resolveLaunch(args: {
   const sdkOptions: Options = {
     // A teammate's turn stands in an empty folder of its own (DOR-2956), so Claude Code's own
     // environment note names no folder of the owner's; who it runs as still keys on the home.
-    cwd: teammate ? teammateTurnFolder(turnAgentPath) : effectiveCwd,
+    // Named from the session's folder, the one the transcript reader names it from
+    // (`transcriptSlugsOf`), by its realpath, so a resumed conversation is found again.
+    cwd: teammate ? teammateTurnFolder(effectiveCwd) : effectiveCwd,
     includePartialMessages: true,
     promptSuggestions: true,
     agentProgressSummaries: true,

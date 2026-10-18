@@ -9,6 +9,9 @@ import { setTeammateTurnCostSink } from '../../../core/turn-power/teammate-turn-
 import { setSharedFolderResolver } from '../../../core/turn-power/shared-folder.js';
 import { notify } from '../../../notifications/notification-service.js';
 import { logger } from '../../../../lib/logger.js';
+import { expandTilde } from '../../../../lib/boundary.js';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { resolveClaudeRootSet } from '../../../runtimes/claude-code/claude-config-dir.js';
 import type { RemoteMirrorStore } from '../mirror-store.js';
 import { getRemoteConnectionStore, getTeammateSpend, setTeammateSpendNotices } from '../state.js';
 
@@ -17,8 +20,18 @@ import { getRemoteConnectionStore, getTeammateSpend, setTeammateSpendNotices } f
  * that space's limit is reached. A turn in a room that mirrors no space counts against nothing.
  *
  * @param mirrors - The mirror store, which knows which space each local room copies.
+ * @param agentHomes - Every registered agent's home, read when a folder is shared.
  */
-export function wireTeammateSpend(mirrors: Pick<RemoteMirrorStore, 'connectionOf'>): void {
+export function wireTeammateSpend(
+  mirrors: Pick<RemoteMirrorStore, 'connectionOf'>,
+  agentHomes: () => readonly string[]
+): void {
+  // Never shareable: DorkOS's own data, every Claude account's folder and every agent's home, nor
+  // anything inside or around them; and the home folder itself, nor anything around it.
+  getTeammateSpend().useProtectedFolders(() => ({
+    inside: [resolveDorkHome(), ...safely(resolveClaudeRootSet), ...agentHomes()],
+    around: [expandTilde('~')],
+  }));
   // A room that mirrors no space shares nothing.
   setSharedFolderResolver((roomId) => {
     const connection = mirrors.connectionOf(roomId);
@@ -58,4 +71,13 @@ export function wireTeammateSpend(mirrors: Pick<RemoteMirrorStore, 'connectionOf
         });
       });
   });
+}
+
+/** A list, or none when reading it fails: Claude's folders when its settings can't be read. */
+function safely(read: () => readonly string[]): readonly string[] {
+  try {
+    return read();
+  } catch {
+    return [];
+  }
 }

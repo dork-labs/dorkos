@@ -9,11 +9,12 @@
  */
 import { setSharedFolderResolver } from '../../../../core/turn-power/shared-folder.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
-import { projectSlug } from '../../sessions/project-slug.js';
+import { projectSlug, transcriptSlugsOf } from '../../sessions/project-slug.js';
+import { teammateTurnFolderPath } from '../../../../core/turn-power/teammate-turn-folder.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
@@ -287,6 +288,8 @@ describe('the launch options every Claude Code turn is given', () => {
       const owner = await resolve({ roomId: 'room-a', authorId: 'ana', turnId: 't2' });
 
       expect(teammate.sdkOptions.cwd).toContain(path.join('dorkos-teammate-turns', ''));
+      // The folder the transcript reader looks in for this session (review 5).
+      expect(teammate.sdkOptions.cwd).toBe(teammateTurnFolderPath('/mock/project'));
       expect(teammate.sdkOptions.cwd).not.toContain('/mock/project');
       expect(owner.sdkOptions.cwd).toBe('/mock/project');
       expect(teammate.enrichedContent).not.toContain('<git_status>');
@@ -301,6 +304,49 @@ describe('the launch options every Claude Code turn is given', () => {
       ).toBe('relaunch');
     } finally {
       setSharedFolderResolver(() => null);
+    }
+  });
+
+  it('files a teammate’s turn where the transcript reader looks, however the folder is spelled (review 5)', async () => {
+    // Red when: the launch names the teammate folder from anything but the session's folder, or
+    // by a spelling the reader does not resolve the same way; a resumed conversation is then lost.
+    const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'teammate-cwd-')));
+    try {
+      const real = path.join(base, 'project');
+      mkdirSync(path.join(real, 'sub'), { recursive: true });
+      mkdirSync(path.join(base, 'elsewhere'));
+      symlinkSync(real, path.join(base, 'alias'));
+      // `project` is an agent's home; a turn dispatched as it from `elsewhere` runs as it there.
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === real,
+        listRegisteredHomes: () => [real],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      for (const spelled of [
+        real,
+        path.join(base, 'alias'),
+        path.join(real, 'sub'),
+        path.join(base, 'elsewhere'),
+      ]) {
+        const { sdkOptions } = await resolveLaunch({
+          sessionId: 's1',
+          content: 'hello',
+          session: makeSession(),
+          opts: makeOpts({ cwd: spelled }),
+          messageOpts: {
+            forAgent: real,
+            roomTurn: { roomId: 'r', authorId: 'ana', turnId: 't', teammate: true },
+          },
+          effectiveCwd: spelled,
+        });
+        expect(transcriptSlugsOf(spelled)).toContain(projectSlug(sdkOptions.cwd!));
+      }
+      const viaAlias = teammateTurnFolderPath(path.join(base, 'alias'));
+      expect(viaAlias).toBe(teammateTurnFolderPath(real));
+    } finally {
+      setAgentHomeRegistry(undefined);
+      rmSync(base, { recursive: true, force: true });
     }
   });
 

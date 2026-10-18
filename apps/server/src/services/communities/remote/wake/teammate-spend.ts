@@ -36,6 +36,7 @@ import {
   type CommunityTeammateSpend,
 } from '@dorkos/shared/community-teammates';
 import { logger } from '../../../../lib/logger.js';
+import { isAlwaysLeftOut } from '../../../core/turn-power/shared-folder.js';
 import type { RemoteConnectionStore } from '../connection-store.js';
 
 /**
@@ -125,6 +126,7 @@ export class TeammateSpend {
   private readonly file: string;
   private data: SpendFile;
   private writing: Promise<void> = Promise.resolve();
+  private protectedFolders: () => ProtectedFolders = () => ({ inside: [], around: [] });
 
   /**
    * Keep the counter beside the connections, and forget a connection's entry when it goes.
@@ -216,9 +218,24 @@ export class TeammateSpend {
   }
 
   /**
+   * Say which folders may never be shared, nor any folder inside or around them (DOR-2956). Read
+   * when a folder is set, so an agent added since counts.
+   *
+   * @param folders - What may never be shared, nor any folder inside or around it (`inside`), and
+   *   what may not be shared nor any folder around it, though folders inside it may (`around`: the
+   *   home folder, where a person's projects live).
+   */
+  useProtectedFolders(folders: () => ProtectedFolders): void {
+    this.protectedFolders = folders;
+  }
+
+  /**
    * Share a folder with teammates' turns in this space, or stop sharing (DOR-2956). Owner-only by
    * construction, like the limit. The folder must exist and be a folder; it is kept by its
-   * realpath, and the computer's root is never shared.
+   * realpath. Never shared: the computer's root, a folder with a never-shared name anywhere in its
+   * path (`.git`, `.dork`, `.ssh`, …), and any folder that is, holds, or sits inside one of
+   * {@link useProtectedFolders}: the DorkOS data folder, Claude's, the person's home folder and
+   * every agent's home.
    *
    * @param ref - The connection.
    * @param ownerKey - The connection's local owner.
@@ -240,6 +257,16 @@ export class TeammateSpend {
         throw new SharedFolderRefusedError('That’s a file, not a folder.');
       if (path.dirname(real) === real)
         throw new SharedFolderRefusedError('Choose a folder, not the whole disk.');
+      if (real.split(path.sep).some(isAlwaysLeftOut))
+        throw new SharedFolderRefusedError('That folder is never shared. Choose another.');
+      const guarded = this.protectedFolders();
+      if (
+        guarded.inside.some((folder) => overlaps(real!, folder)) ||
+        guarded.around.some((folder) => holds(real!, folder))
+      )
+        throw new SharedFolderRefusedError(
+          'That folder holds DorkOS, Claude or agent files. Choose another.'
+        );
     }
     await this.exclusive(async (data) => {
       const folders = { ...(data.sharedFolders ?? {}) };
@@ -389,4 +416,41 @@ export class TeammateSpend {
       await rm(temporary, { force: true });
     }
   }
+}
+
+/** Folders a shared folder may not be, sit inside of, or hold. */
+export interface ProtectedFolders {
+  /** Never shared, nor anything inside or around them: DorkOS's, Claude's and agents' folders. */
+  inside: readonly string[];
+  /** Never shared, nor anything around them; inside them is fine: the home folder. */
+  around: readonly string[];
+}
+
+/** A folder by its realpath when it exists, else as resolved. */
+function realOrResolved(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+/** Whether `child` is `parent` or inside it. */
+function within(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return (
+    relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
+}
+
+/** Whether a folder is `guarded`, inside it, or holds it. */
+function overlaps(real: string, guarded: string): boolean {
+  const guard = realOrResolved(guarded);
+  return within(real, guard) || within(guard, real);
+}
+
+/** Whether a folder is `guarded` or holds it. */
+function holds(real: string, guarded: string): boolean {
+  return within(realOrResolved(guarded), real);
 }

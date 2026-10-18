@@ -1,20 +1,35 @@
 /**
  * The one folder a teammate's turn may read (DOR-2956): every read decided on the file's realpath
  * inside the shared folder's, with links, `..`, case and Unicode tricks refused, and `.git`,
- * `.dork`, `.env*` and files over 1 MB never read.
+ * `.dork`, `.env*`, keys, credential files and files over 1 MB never read.
  *
  * @vitest-environment node
  */
-import { mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, rmdir, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The real file system, watched: a search must read the path a file was allowed by.
+const fsCalls = vi.hoisted(() => ({ readFile: [] as string[] }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    readFile: (async (file: string, ...rest: unknown[]) => {
+      fsCalls.readFile.push(String(file));
+      return (actual.readFile as (...args: unknown[]) => unknown)(file, ...rest);
+    }) as typeof actual.readFile,
+  };
+});
+
 import {
   isAlwaysLeftOut,
   listSharedFiles,
   searchSharedFiles,
   sharedFileVerdict,
   SHARED_FILE_MAX_BYTES,
+  SHARED_WALK_MAX_FOLDERS,
 } from '../shared-folder.js';
 
 let base: string;
@@ -39,6 +54,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  fsCalls.readFile.length = 0;
   await rm(base, { recursive: true, force: true });
 });
 
@@ -122,6 +138,48 @@ describe('reading one file', () => {
     expect(isAlwaysLeftOut('environment.md')).toBe(false);
   });
 
+  it('never reads keys or credential files, nor .claude or .ssh, whatever their case (review 2)', async () => {
+    const leftOut = [
+      '.mcp.json',
+      path.join('.claude', 'settings.json'),
+      path.join('.ssh', 'config'),
+      '.npmrc',
+      '.netrc',
+      'server.pem',
+      'tls.KEY',
+      'id_rsa',
+      'id_ed25519.pub',
+      '.NPMRC',
+      path.join('.Claude', 'x.md'),
+    ];
+    for (const file of leftOut) {
+      await mkdir(path.dirname(path.join(shared, file)), { recursive: true });
+      await writeFile(path.join(shared, file), 'the plan\n');
+    }
+    for (const file of leftOut) {
+      expect(ok(await sharedFileVerdict(shared, path.join(shared, file))), file).toBe(false);
+    }
+    expect((await listSharedFiles(shared)).files.map((file) => file.path).sort()).toEqual(
+      ['README.md', path.join('docs', 'plan.md')].sort()
+    );
+    expect(isAlwaysLeftOut('keynote.md')).toBe(false);
+    expect(isAlwaysLeftOut('valid_id.txt')).toBe(false);
+  });
+
+  it('reads nothing once the shared folder has become a link elsewhere (review 1b)', async () => {
+    await writeFile(path.join(outside, 'README.md'), 'the plan, privately\n');
+    const file = path.join(shared, 'README.md');
+    expect(ok(await sharedFileVerdict(shared, file))).toBe(true);
+    await rm(shared, { recursive: true });
+    await symlink(outside, shared);
+    expect(await sharedFileVerdict(shared, file)).toEqual({
+      ok: false,
+      reason: 'the shared folder moved; share it again',
+    });
+    expect(await listSharedFiles(shared)).toEqual({ files: [], truncated: false });
+    expect((await searchSharedFiles(shared, 'the plan')).matches).toEqual([]);
+  });
+
   it('never reads a file over 1 MB', async () => {
     const big = path.join(shared, 'big.log');
     await writeFile(big, Buffer.alloc(SHARED_FILE_MAX_BYTES + 1, 97));
@@ -158,4 +216,35 @@ describe('listing and searching', () => {
     );
     expect(matches.find((match) => match.path === 'README.md')).toMatchObject({ line: 2 });
   });
+
+  it('skips a binary file (review 4)', async () => {
+    await writeFile(path.join(shared, 'image.bin'), 'the plan\0\x01\x02');
+    const { matches } = await searchSharedFiles(shared, 'the plan');
+    expect(matches.map((match) => match.path)).not.toContain('image.bin');
+  });
+
+  it('reads the file a link was allowed by, never the link (review 4)', async () => {
+    await symlink(path.join(shared, 'docs', 'plan.md'), path.join(shared, 'plan-link.md'));
+    const { matches } = await searchSharedFiles(shared, 'shared');
+    expect(matches.map((match) => match.path)).toContain('plan-link.md');
+    expect(fsCalls.readFile).toContain(path.join(shared, 'docs', 'plan.md'));
+    expect(fsCalls.readFile).not.toContain(path.join(shared, 'plan-link.md'));
+  });
+
+  it('stops after opening so many folders, and says so (review 3)', async () => {
+    // One more folder than a walk opens (the folder itself, docs, many and these), none of them
+    // holding anything a turn may read.
+    const many = path.join(shared, 'many');
+    await mkdir(many);
+    await Promise.all(
+      Array.from({ length: SHARED_WALK_MAX_FOLDERS - 2 }, (_, index) =>
+        mkdir(path.join(many, `d${index}`))
+      )
+    );
+    expect((await listSharedFiles(shared)).truncated).toBe(true);
+    expect((await searchSharedFiles(shared, 'the plan')).truncated).toBe(true);
+    // At exactly the cap, nothing is cut short.
+    await rmdir(path.join(many, 'd0'));
+    expect((await searchSharedFiles(shared, 'the plan')).truncated).toBe(false);
+  }, 30_000);
 });

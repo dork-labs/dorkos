@@ -5,8 +5,8 @@ covers:
 
 ### Added
 
-- The **Teammates** section of a space's agent panel now has a **Shared folder**. When a teammate in that space wakes one of your agents, the agent can read the files in that folder: list them, search them and open them. It can't read anything else on your computer. Nothing is shared until you pick a folder.
-- Some files are never read, even inside the shared folder: `.env` files, the `.git` and `.dork` folders, and any file over 1 MB. A shortcut that points outside the folder isn't followed.
+- The **Teammates** section of a space's agent panel now has a **Shared folder**. When a teammate in that space wakes one of your agents, the agent can list, search and open the files in that folder. Its requests to read other files are refused. Nothing is shared until you pick a folder. A folder that holds DorkOS's data, Claude's settings, an agent, or your whole home folder can't be shared.
+- Some files are never read, even inside the shared folder: `.env` files, keys and other credential files (such as `.pem`, `.key`, `id_*`, `.npmrc`, `.netrc` and `.mcp.json`), the `.git`, `.dork`, `.claude` and `.ssh` folders, and any file over 1 MB. A shortcut that points outside the folder isn't followed. If the shared folder is later replaced by a shortcut, nothing in it is read until you share it again.
 - Each agent can have public notes: write them in its `.dork/PUBLIC.md`, and a teammate's turn is shown them. Your agent's own memory is still never shown to a teammate.
 
 ### Changed

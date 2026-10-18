@@ -136,7 +136,7 @@ describe('the Teammates block', () => {
     mount({ sharedFolder: '/Users/ada/code/acme' });
     expect(await screen.findByLabelText('Shared folder')).toHaveValue('/Users/ada/code/acme');
     expect(
-      screen.getByText('Teammates’ turns can read files here, never .env files, .git or .dork.')
+      screen.getByText('Teammates’ turns can read files here, never keys, .env files or .git.')
     ).toBeInTheDocument();
   });
 });

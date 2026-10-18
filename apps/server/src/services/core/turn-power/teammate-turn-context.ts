@@ -26,7 +26,7 @@ export function teammateTurnContext(sharedFolder: string | null): string {
   const reads = sharedFolder
     ? `You can read files in the space's shared folder, ${sharedFolder}: list them with
 shared_files_list, search them with shared_files_search, and open one with Read by its full path.
-Some files there are never shared, such as .env files and the .git and .dork folders.`
+Some files there are never shared, such as keys, .env files and the .git and .dork folders.`
     : 'You cannot read files: this space shares no folder.';
   return `<teammate_turn>
 Someone in a shared space who is not your owner started this turn. For this turn you can read and

@@ -198,7 +198,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     return runsTeammateTurns(agentRuntimeTypeFrom(projectPath, agent.runtime));
   });
   // What each teammate turn cost, counted against its space's monthly limit (DOR-2956).
-  wireTeammateSpend(refs.remoteCommunityRuntime.mirrors);
+  wireTeammateSpend(refs.remoteCommunityRuntime.mirrors, () =>
+    (refs.meshCore?.list() ?? []).flatMap((agent) => refs.meshCore?.getProjectPath(agent.id) ?? [])
+  );
   refs.remoteRedactionSync = new RemoteRedactionSync({
     db,
     mirrors: refs.remoteCommunityRuntime.mirrors,

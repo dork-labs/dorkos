@@ -1,7 +1,7 @@
 /**
  * Where Claude Code stands for a turn a teammate in a shared space started (DOR-2956): an empty
  * folder of its own, one per agent, under the system's temporary folder, instead of the agent's
- * home.
+ * home. On macOS and Linux that path names no person; on Windows it is under the person's profile.
  *
  * Claude Code tells the model where it stands in an environment note it writes itself, and reads
  * without asking inside that folder. Standing at the agent's home would name the owner's folder to
@@ -23,7 +23,8 @@ import path from 'node:path';
 
 /**
  * The empty folder one agent's teammate turns stand in, made when missing. Under the system's
- * temporary folder, which on macOS names no person (`/var/folders/…`).
+ * temporary folder, which names no person on macOS (`/var/folders/…`) and Linux (`/tmp`); on
+ * Windows it sits under the person's own profile folder.
  *
  * @param agentHome - The agent's home, or `undefined` for a turn that resolved no agent.
  */

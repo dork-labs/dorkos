@@ -3,10 +3,12 @@
  * space's shared project, which its owner picks, none by default.
  *
  * Every read is decided on the file's realpath: whatever path the turn names, symlinks and `..`
- * are resolved first, and the file must sit inside the realpath of the shared folder. Never read,
- * at any depth: `.git/` (the history and the hooks), `.dork/` (an agent's own files) and `.env*`
- * (secrets), compared without regard to case or Unicode form, so `.ENV` on a case-insensitive
- * disk is refused too; nor a file over {@link SHARED_FILE_MAX_BYTES}.
+ * are resolved first, and the file must sit inside the realpath of the shared folder, which must
+ * still be the realpath it was shared by. Never read, at any depth: the names
+ * {@link isAlwaysLeftOut} lists (`.git/`, `.dork/`, `.claude/`, `.ssh/`, `.env*`, keys and
+ * credential files), compared without regard to case or Unicode form, so `.ENV` on a
+ * case-insensitive disk is refused too; nor a file over {@link SHARED_FILE_MAX_BYTES}. Where a
+ * folder may be shared at all is decided when it is chosen (`teammate-spend.ts`).
  *
  * Listing and searching walk the folder on the server and check each entry the same way. A
  * symlink is followed only to a file inside the folder; a symlinked folder is never entered, so a
@@ -55,6 +57,9 @@ export const SHARED_FILE_MAX_BYTES = 1_000_000;
 /** The most entries a listing returns, and files a search looks through. */
 export const SHARED_LIST_MAX_ENTRIES = 500;
 
+/** The most folders one listing or search opens, so a vast tree of left-out files stays quick. */
+export const SHARED_WALK_MAX_FOLDERS = 5000;
+
 /** The most matching lines a search returns. */
 export const SHARED_SEARCH_MAX_MATCHES = 50;
 
@@ -67,14 +72,33 @@ function folded(name: string): string {
   return name.normalize('NFC').toLowerCase();
 }
 
+/** Folder and file names never read, at any depth, compared case-folded. */
+const NEVER_SHARED_NAMES: ReadonlySet<string> = new Set([
+  '.git',
+  '.dork',
+  '.claude',
+  '.ssh',
+  '.mcp.json',
+  '.npmrc',
+  '.netrc',
+]);
+
 /**
- * Whether a path segment is never read: `.git`, `.dork`, or anything starting `.env`.
+ * Whether a path segment is never read: `.git`, `.dork`, `.claude` and `.ssh` (whole folders),
+ * `.mcp.json`, `.npmrc` and `.netrc` (credentials), anything starting `.env` or `id_` (SSH keys),
+ * and anything ending `.pem` or `.key`. Case-folded, so a case-insensitive disk's `.ENV` is too.
  *
  * @param name - One file or folder name.
  */
 export function isAlwaysLeftOut(name: string): boolean {
   const lower = folded(name);
-  return lower === '.git' || lower === '.dork' || lower.startsWith('.env');
+  return (
+    NEVER_SHARED_NAMES.has(lower) ||
+    lower.startsWith('.env') ||
+    lower.startsWith('id_') ||
+    lower.endsWith('.pem') ||
+    lower.endsWith('.key')
+  );
 }
 
 /** The relative path of `real` inside `realRoot`, or `null` when it is not inside it. */
@@ -105,6 +129,9 @@ export async function sharedFileVerdict(
   } catch {
     return { ok: false, reason: 'no such file in the shared folder' };
   }
+  // Kept by its realpath when shared; a folder that has since become a link leads elsewhere.
+  if (realRoot !== sharedFolder)
+    return { ok: false, reason: 'the shared folder moved; share it again' };
   const relative = inside(realRoot, real);
   if (relative === null) return { ok: false, reason: 'the file is outside the shared folder' };
   if (relative.split(path.sep).some(isAlwaysLeftOut))
@@ -150,6 +177,8 @@ async function walkSharedFiles(
   under?: string
 ): Promise<{ files: CheckedFile[]; truncated: boolean }> {
   const realRoot = await realpath(sharedFolder);
+  // As the verdict does: a shared folder that has since become a link lists nothing.
+  if (realRoot !== sharedFolder) return { files: [], truncated: false };
   let start = realRoot;
   if (under) {
     const relative = under.split(/[\\/]/).filter(Boolean);
@@ -167,7 +196,10 @@ async function walkSharedFiles(
   }
   const files: CheckedFile[] = [];
   const queue = [start];
+  let opened = 0;
   while (queue.length > 0) {
+    if (opened === SHARED_WALK_MAX_FOLDERS) return { files, truncated: true };
+    opened += 1;
     const dir = queue.shift()!;
     let names: string[];
     try {
@@ -222,7 +254,7 @@ export async function searchSharedFiles(
   under?: string
 ): Promise<{ matches: SharedSearchMatch[]; truncated: boolean }> {
   const needle = query.toLowerCase();
-  const { files } = await walkSharedFiles(sharedFolder, under);
+  const { files, truncated } = await walkSharedFiles(sharedFolder, under);
   const matches: SharedSearchMatch[] = [];
   for (const file of files) {
     // The resolved path the file was allowed by, never the one listed.
@@ -235,5 +267,6 @@ export async function searchSharedFiles(
       matches.push({ path: file.path, line: index + 1, text: lines[index]!.slice(0, 200) });
     }
   }
-  return { matches, truncated: false };
+  // Truncated too when the walk stopped early: some files were never looked through.
+  return { matches, truncated };
 }

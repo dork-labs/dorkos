@@ -5,7 +5,16 @@
  *
  * @vitest-environment node
  */
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -285,6 +294,67 @@ describe('the shared folder (DOR-2956)', () => {
     await expect(counter.setSharedFolder(REF, 'someone-else', directory)).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
     );
+    expect(counter.sharedFolder(REF, OWNER)).toBeNull();
+  });
+
+  it('refuses DorkOS’s, Claude’s and agents’ folders, the home folder, and anything around them (review 1a)', async () => {
+    // Named as the server names them, not by realpath: the guard resolves both sides.
+    const home = join(directory, 'home');
+    const dorkData = join(directory, 'dork-data');
+    const claude = join(directory, 'claude-config');
+    const agent = join(home, 'agents', 'bot');
+    const project = join(home, 'code', 'acme');
+    for (const dir of [dorkData, claude, join(agent, 'src'), project]) {
+      await mkdir(join(dir, 'deep'), { recursive: true });
+    }
+    await symlink(agent, join(home, 'code', 'bot-link'));
+    const counter = spend();
+    counter.useProtectedFolders(() => ({ inside: [dorkData, claude, agent], around: [home] }));
+    for (const bad of [
+      dorkData,
+      join(dorkData, 'deep'),
+      claude,
+      agent,
+      join(agent, 'src'),
+      join(home, 'agents'), // holds an agent
+      join(home, 'code', 'bot-link'), // an agent, by a link
+      home,
+      directory, // holds the home folder
+    ]) {
+      await expect(counter.setSharedFolder(REF, OWNER, bad), bad).rejects.toThrow(
+        'That folder holds DorkOS, Claude or agent files. Choose another.'
+      );
+    }
+    expect(counter.sharedFolder(REF, OWNER)).toBeNull();
+    // A project inside the home folder is what sharing is for.
+    await counter.setSharedFolder(REF, OWNER, project);
+    expect(counter.sharedFolder(REF, OWNER)).toBe(await realpath(project));
+    // The home folder on its own: never it nor around it, whatever else is guarded.
+    counter.useProtectedFolders(() => ({ inside: [], around: [home] }));
+    for (const bad of [home, directory]) {
+      await expect(counter.setSharedFolder(REF, OWNER, bad), bad).rejects.toBeInstanceOf(
+        SharedFolderRefusedError
+      );
+    }
+  });
+
+  it('refuses a folder with a never-shared name anywhere in its path, by its realpath (review 1a)', async () => {
+    const counter = spend();
+    const project = join(directory, 'acme');
+    for (const dir of ['.git/hooks', '.SSH', 'notes.d/.Claude/x']) {
+      await mkdir(join(project, dir), { recursive: true });
+    }
+    await symlink(join(project, '.git'), join(directory, 'innocent'));
+    for (const bad of [
+      join(project, '.git', 'hooks'),
+      join(project, '.SSH'),
+      join(project, 'notes.d', '.Claude', 'x'),
+      join(directory, 'innocent'),
+    ]) {
+      await expect(counter.setSharedFolder(REF, OWNER, bad), bad).rejects.toThrow(
+        'That folder is never shared. Choose another.'
+      );
+    }
     expect(counter.sharedFolder(REF, OWNER)).toBeNull();
   });
 });
