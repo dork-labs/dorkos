@@ -1,7 +1,7 @@
 {
   "id": "01KJXYKJYW4N8QGQ5W4GB6YM9J",
   "name": "DorkOS",
-  "displayName": "DorkOS",
+  "displayName": "DorkOS Code",
   "description": "Builds the DorkOS app (this repo): runs the build lanes, keeps CI and the merge queue moving, cuts releases once the PM approves them, and keeps Linear honest. Answers to @dorkos-pm and Dorian.",
   "runtime": "claude-code",
   "capabilities": [],
