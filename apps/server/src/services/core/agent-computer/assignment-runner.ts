@@ -1,21 +1,32 @@
 /**
  * Keeps a cloud agent computer linked to its hub (DOR-2940): reads its
- * assignment at boot, then again every `pollAfterSeconds` and at once when
- * Cloud sends `agent_computer_assignment_changed`, and owns the relay
- * connection the computer dials its hub over.
+ * assignment at boot and then on a beat, and owns the relay connection the
+ * computer dials its hub over.
+ *
+ * **Polling is the only way a change reaches it today.** Cloud's
+ * `agent_computer_assignment_changed` and `viewer_open` commands arrive on the
+ * managed command stream, which runs only on a computer linked to a person's
+ * DorkOS account, never on an agent computer. {@link readNow} and the
+ * dispatcher's wiring to it are ready for that stream; opening it with this
+ * computer's own key is a follow-up. Until then the beat is held under the
+ * code's ten-minute life while it matters (see below), so a code is read and
+ * redeemed well before it expires.
  *
  * - **The key.** Cloud boots the computer with its own instance key in
  *   `DORKOS_AGENT_COMPUTER_INSTANCE_KEY`, which `env.ts` reads once and
  *   removes from `process.env` before anything else starts, so no agent,
  *   terminal or MCP server this computer runs inherits it. It is presented to
  *   Cloud by this runner alone.
- * - **The beat.** Cloud's `pollAfterSeconds`, held between
- *   {@link AGENT_COMPUTER_MIN_POLL_MS} and {@link AGENT_COMPUTER_MAX_POLL_MS}
- *   so a bad value can neither spin nor stall it; without one, a minute while
- *   waiting for a code and five once linked. A failed read retries after
- *   {@link AGENT_COMPUTER_RETRY_MS}. A refusal stops the beat for good. Reads
- *   never overlap: one asked for while another runs follows it at once. The
- *   timer never holds the process open.
+ * - **The beat.** Cloud's `pollAfterSeconds`, held at least
+ *   {@link AGENT_COMPUTER_MIN_POLL_MS} so a bad value cannot spin it. While
+ *   not linked it is at most {@link AGENT_COMPUTER_UNLINKED_MAX_POLL_MS}, so a
+ *   code Cloud is holding is read in time; once linked, at most
+ *   {@link AGENT_COMPUTER_MAX_POLL_MS} (five minutes when Cloud names none).
+ *   A failed read or redeem backs off from {@link AGENT_COMPUTER_MIN_POLL_MS},
+ *   doubling up to {@link AGENT_COMPUTER_UNLINKED_MAX_POLL_MS}, so a code kept
+ *   after a lost answer is tried again several times before it expires. A
+ *   refusal stops the beat for good. Reads never overlap: one asked for while
+ *   another runs follows it at once. The timer never holds the process open.
  * - **The connection.** The same relay dialer a person's computer uses, with
  *   two differences that belong to this role: it needs no owner account (the
  *   hub is this computer's only controller, and nobody signs in here), and it
@@ -43,7 +54,7 @@ import {
   type RelayRequestServer,
   type RelaySocket,
 } from '../session-relay/relay-dialer.js';
-import { redeemAtHub } from '../session-relay/relay-link.js';
+import { checkPublicHost, redeemAtHub } from '../session-relay/relay-link.js';
 import {
   RELAY_SERVED_FEATURES,
   SessionRelayRequestServer,
@@ -61,14 +72,14 @@ export const AGENT_COMPUTER_MIN_POLL_MS = 5_000;
 /** The longest wait between reads. */
 export const AGENT_COMPUTER_MAX_POLL_MS = 60 * 60_000;
 
-/** The wait while no code has come yet, when Cloud names none. */
-export const AGENT_COMPUTER_WAITING_POLL_MS = 60_000;
+/**
+ * The longest wait while not linked, or after a failed read or redeem: well
+ * under a code's ten-minute life, since no command can say one is waiting.
+ */
+export const AGENT_COMPUTER_UNLINKED_MAX_POLL_MS = 60_000;
 
 /** The wait once linked, when Cloud names none. */
 export const AGENT_COMPUTER_LINKED_POLL_MS = 5 * 60_000;
-
-/** The wait after a failed read or redeem. */
-export const AGENT_COMPUTER_RETRY_MS = 30_000;
 
 /**
  * The relay features an agent computer advertises to its hub. Today they are
@@ -81,18 +92,35 @@ export const AGENT_COMPUTER_RELAY_FEATURES: readonly string[] = RELAY_SERVED_FEA
  * How long to wait after one read, or `null` to stop.
  *
  * @param outcome - What the read came to.
+ * @param failuresInARow - Failed reads before this one, for the backoff.
  */
-export function nextAgentComputerPollMs(outcome: AgentComputerSyncOutcome): number | null {
+export function nextAgentComputerPollMs(
+  outcome: AgentComputerSyncOutcome,
+  failuresInARow = 0
+): number | null {
   switch (outcome.kind) {
     case 'refused':
       return null;
     case 'failed':
-      return AGENT_COMPUTER_RETRY_MS;
-    case 'waiting':
+      return Math.min(
+        AGENT_COMPUTER_UNLINKED_MAX_POLL_MS,
+        AGENT_COMPUTER_MIN_POLL_MS * 2 ** Math.min(failuresInARow, 10)
+      );
+    case 'waiting': {
+      const asked =
+        outcome.pollAfterSeconds === null
+          ? AGENT_COMPUTER_UNLINKED_MAX_POLL_MS
+          : outcome.pollAfterSeconds * 1_000;
+      return Math.min(
+        AGENT_COMPUTER_UNLINKED_MAX_POLL_MS,
+        Math.max(AGENT_COMPUTER_MIN_POLL_MS, asked)
+      );
+    }
     case 'linked': {
-      const fallback =
-        outcome.kind === 'waiting' ? AGENT_COMPUTER_WAITING_POLL_MS : AGENT_COMPUTER_LINKED_POLL_MS;
-      const asked = outcome.pollAfterSeconds === null ? fallback : outcome.pollAfterSeconds * 1_000;
+      const asked =
+        outcome.pollAfterSeconds === null
+          ? AGENT_COMPUTER_LINKED_POLL_MS
+          : outcome.pollAfterSeconds * 1_000;
       return Math.min(AGENT_COMPUTER_MAX_POLL_MS, Math.max(AGENT_COMPUTER_MIN_POLL_MS, asked));
     }
   }
@@ -104,6 +132,7 @@ export class AgentComputerAssignmentRunner {
   private running = false;
   private again = false;
   private stopped = false;
+  private failuresInARow = 0;
 
   /**
    * Hold the sync it runs.
@@ -118,8 +147,9 @@ export class AgentComputerAssignmentRunner {
   }
 
   /**
-   * Read again now: Cloud's `agent_computer_assignment_changed` command. A
-   * read already running is followed by another at once.
+   * Read again now: Cloud's `agent_computer_assignment_changed` command, once
+   * a command stream reaches agent computers (see the module doc). A read
+   * already running is followed by another at once.
    *
    * @returns The command's outcome: `applied`, or `ignored` once stopped.
    */
@@ -151,7 +181,8 @@ export class AgentComputerAssignmentRunner {
       outcome = { kind: 'failed' };
     }
     this.running = false;
-    const wait = nextAgentComputerPollMs(outcome);
+    const wait = nextAgentComputerPollMs(outcome, this.failuresInARow);
+    this.failuresInARow = outcome.kind === 'failed' ? this.failuresInARow + 1 : 0;
     if (wait === null) {
       this.stop();
       return;
@@ -228,6 +259,7 @@ export function liveAgentComputerSyncDeps(instanceKey: string): AgentComputerSyn
     readPin: () => readRelayPin(),
     writePin: (pin) => writeRelayPin(pin),
     redeem: (input) => redeemAtHub(input),
+    checkHost: (origin) => checkPublicHost(origin),
     dialer: agentComputerDialer(),
   };
 }
@@ -257,7 +289,9 @@ export function startAgentComputerLink(deps?: AgentComputerSyncDeps): void {
 
 /**
  * Cloud said this computer's assignment changed: read it now. `ignored` when
- * the link was never started (any other role) or has stopped.
+ * the link was never started (any other role) or has stopped. Wired into the
+ * command dispatcher on this role, though no command stream reaches an agent
+ * computer yet (see the module doc).
  */
 export function agentComputerAssignmentChanged(): RemoteCommandOutcome {
   return runner?.readNow() ?? 'ignored';

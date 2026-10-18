@@ -13,9 +13,14 @@
  * - **Linked:** keep dialing the pinned hub. A new code means the hub wants
  *   this computer to link again (it unlinked it after a second redeem, say),
  *   so it is redeemed with the same key, and the hub must answer with the key
- *   pinned. A new `hubOrigin` is followed (the pin's origin changes, the
- *   connection is redialed), but the pinned key never changes: the relay
- *   handshake refuses a hub at the new origin that signs with another key.
+ *   pinned. A new `hubOrigin` is followed only once it checks out as a public
+ *   https origin and a handshake there proves the pinned key; the pin keeps
+ *   the old origin until then.
+ * - **A code is kept until it links or expires.** Cloud hands each code out
+ *   once, so a redeem that failed or lost its answer is tried again on the
+ *   next reads (the runner backs off, at most a minute apart) until the code's
+ *   `expiresAt`. A retry with the same key after a lost answer is one the hub
+ *   accepts (`agent-computer-link.ts`).
  * - **Never linked and no code:** wait for the next read.
  *
  * **Refusals stop this computer working, for the life of the process:** an
@@ -37,7 +42,10 @@ import {
   type AgentComputerAssignment,
   type RemoteCommandOutcome,
 } from '@dork-labs/cloud-api';
-import { agentComputerRelayId } from '@dorkos/shared/session-relay-link';
+import {
+  agentComputerRelayId,
+  type SessionRelayLinkRefusal,
+} from '@dorkos/shared/session-relay-link';
 import { logger } from '../../../lib/logger.js';
 import type { RelayPin, RelayPinInput } from '../session-relay/pin-store.js';
 import type { RedeemAtHubInput, RedeemAtHubResult } from '../session-relay/relay-link.js';
@@ -75,11 +83,28 @@ export interface AgentComputerSyncDeps {
   writePin: (pin: RelayPinInput) => Promise<void>;
   /** Redeem a code at a hub and check its signed answer (`redeemAtHub`). */
   redeem: (input: RedeemAtHubInput) => Promise<RedeemAtHubResult>;
+  /** Whether an origin is a public https one (`checkPublicHost`). */
+  checkHost: (origin: string) => Promise<'ok' | 'not-public' | 'hub-unreachable'>;
   /** This computer's relay connection to its hub. */
-  dialer: { dialNow(): RemoteCommandOutcome; close(): void };
-  /** The clock, for `pinnedAt`. */
+  dialer: {
+    dialNow(): RemoteCommandOutcome;
+    dialAt(hubOrigin: string, onProved: () => void): RemoteCommandOutcome;
+    close(): void;
+  };
+  /** The clock, for `pinnedAt` and a code's expiry. */
   now?: () => Date;
 }
+
+/**
+ * Redeem failures after which the code is dropped rather than tried again:
+ * the hub reset the link and mints a new code (`already-linked`), or the
+ * origin is not one this computer sends a code to.
+ */
+const FINAL_REDEEM_FAILURES: ReadonlySet<SessionRelayLinkRefusal> = new Set([
+  'already-linked',
+  'not-public',
+  'bad-code',
+]);
 
 /** The owner an assignment names. */
 interface Owner {
@@ -92,6 +117,8 @@ export class AgentComputerAssignmentSync {
   private refusal: AgentComputerRefusal | null = null;
   /** The owner the first read named, held until a pin records it. */
   private seenOwner: Owner | null = null;
+  /** The last code Cloud handed over, kept until it links or expires. */
+  private pending: { code: string; expiresAt: number } | null = null;
 
   /**
    * Hold the sync's dependencies.
@@ -145,43 +172,89 @@ export class AgentComputerAssignmentSync {
     if (pin && pin.computerId !== relayId) return this.refuse('different-computer');
     this.seenOwner = owner;
     const pollAfterSeconds = assignment.pollAfterSeconds ?? null;
+    // Cloud hands each code out once: keep it until it links or expires, so
+    // a redeem whose answer was lost is tried again rather than stranded.
+    if (assignment.linkCode) {
+      this.pending = {
+        code: assignment.linkCode.code,
+        expiresAt: Date.parse(assignment.linkCode.expiresAt),
+      };
+    }
+    if (this.pending && !(this.pending.expiresAt > this.nowMs())) this.pending = null;
 
     if (!pin) {
-      if (!assignment.linkCode) return { kind: 'waiting', pollAfterSeconds };
-      const linked = await this.link(assignment, relayId, owner, null);
+      if (!this.pending) return { kind: 'waiting', pollAfterSeconds };
+      const linked = await this.link(assignment.hubOrigin, relayId, owner, null);
       if (linked !== 'linked') return linked;
       this.deps.dialer.dialNow();
       return { kind: 'linked', pollAfterSeconds };
     }
 
-    // A relink writes the assignment's origin with the new secret; a relink
-    // that did not happen still follows the origin below.
-    const relinked = assignment.linkCode ? await this.link(assignment, relayId, owner, pin) : null;
+    // A relink writes the assignment's origin with the new secret.
+    const relinked = this.pending
+      ? await this.link(assignment.hubOrigin, relayId, owner, pin)
+      : null;
     if (relinked !== null && relinked !== 'linked' && relinked.kind === 'refused') return relinked;
     if (relinked !== 'linked' && assignment.hubOrigin !== pin.hubOrigin) {
-      // Cloud moved the hub's front door. Follow it with the pinned key: the
-      // handshake at the new origin must be signed by that same key.
-      await this.deps.writePin({ ...pin, hubOrigin: assignment.hubOrigin });
-      this.deps.dialer.close();
-      logger.info('[AgentComputer] The hub moved; dialing it at its new address');
+      await this.followMovedHub(pin, assignment.hubOrigin);
+    } else {
+      this.deps.dialer.dialNow();
     }
-    this.deps.dialer.dialNow();
+    // A relink still owed is retried soon, while its code lives.
+    if (relinked !== null && relinked !== 'linked') return relinked;
     return { kind: 'linked', pollAfterSeconds };
   }
 
   /**
-   * Redeem the assignment's code and pin the hub. With a pin already, the
-   * hub must answer with the pinned key, and the new secret replaces the old.
+   * Cloud moved the hub's front door. The new origin must be a public https
+   * one before anything is sent there, and it is saved only once a handshake
+   * there has proved the pinned key ({@link AgentComputerSyncDeps.dialer}
+   * `dialAt`); until then the pin keeps the old origin. A hub at the new
+   * origin that signs with another key is refused by the handshake, and the
+   * next read tries again.
+   */
+  private async followMovedHub(pin: RelayPin, hubOrigin: string): Promise<void> {
+    const reach = await this.deps.checkHost(hubOrigin);
+    if (reach !== 'ok') {
+      logger.warn('[AgentComputer] The hub`s new address is not a public one; keeping the old', {
+        reach,
+      });
+      this.deps.dialer.dialNow();
+      return;
+    }
+    this.deps.dialer.close();
+    this.deps.dialer.dialAt(hubOrigin, () => {
+      const current = this.deps.readPin();
+      // Only the pin this dial was made from: never one replaced meanwhile.
+      if (!current || current.hubKey !== pin.hubKey || current.relaySecret !== pin.relaySecret) {
+        return;
+      }
+      void this.deps.writePin({ ...current, hubOrigin }).then(
+        () => logger.info('[AgentComputer] The hub moved; its new address is saved'),
+        (error: unknown) =>
+          logger.warn('[AgentComputer] Could not save the hub`s new address', {
+            error: error instanceof Error ? error.name : 'unknown',
+          })
+      );
+    });
+  }
+
+  /**
+   * Redeem the code waiting and pin the hub. With a pin already, the hub must
+   * answer with the pinned key, and the new secret replaces the old. A redeem
+   * that failed keeps the code for the next try, unless the failure says the
+   * code can never work: the hub reset the link (it mints a new code), or the
+   * origin is not one this computer will send it to.
    */
   private async link(
-    assignment: AgentComputerAssignment,
+    hubOrigin: string,
     relayId: string,
     owner: Owner,
     pin: RelayPin | null
   ): Promise<'linked' | AgentComputerSyncOutcome> {
     const redeemed = await this.deps.redeem({
-      origin: assignment.hubOrigin,
-      code: assignment.linkCode!.code,
+      origin: hubOrigin,
+      code: this.pending!.code,
       computerId: relayId,
       computerName: pin?.computerName ?? AGENT_COMPUTER_LINK_NAME,
     });
@@ -189,8 +262,10 @@ export class AgentComputerAssignmentSync {
       logger.warn('[AgentComputer] The hub did not take this computer`s link code', {
         reason: redeemed.reason,
       });
+      if (FINAL_REDEEM_FAILURES.has(redeemed.reason)) this.pending = null;
       return { kind: 'failed' };
     }
+    this.pending = null;
     const { answer, relaySecret } = redeemed;
     if (answer.ownerAccountId !== owner.ownerAccountId || answer.issuer !== owner.issuer) {
       return this.refuse('hub-names-different-owner');
@@ -199,10 +274,10 @@ export class AgentComputerAssignmentSync {
     await this.deps.writePin({
       v: 2,
       computerId: relayId,
-      hubOrigin: assignment.hubOrigin,
+      hubOrigin,
       hubKey: answer.hubKey,
       relaySecret,
-      pinnedAt: pin?.pinnedAt ?? (this.deps.now ?? (() => new Date()))().toISOString(),
+      pinnedAt: pin?.pinnedAt ?? new Date(this.nowMs()).toISOString(),
       computerName: pin?.computerName ?? AGENT_COMPUTER_LINK_NAME,
       level: 'chat',
       paused: false,
@@ -213,6 +288,10 @@ export class AgentComputerAssignmentSync {
     if (pin) this.deps.dialer.close();
     logger.info('[AgentComputer] Linked to the hub');
     return 'linked';
+  }
+
+  private nowMs(): number {
+    return (this.deps.now?.() ?? new Date()).getTime();
   }
 
   /**

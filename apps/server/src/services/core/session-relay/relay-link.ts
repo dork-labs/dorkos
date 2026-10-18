@@ -195,12 +195,18 @@ async function lookupAll(host: string): Promise<Array<{ address: string }>> {
 /**
  * Whether a hub's host is on the internet: not a local name, and every
  * address it resolves to public. A name that does not resolve is unreachable.
+ * An origin that is not https is not public either.
+ *
+ * @param origin - The hub's bare origin.
+ * @param lookup - Resolve a host to every address; the system resolver by default.
  */
-async function checkPublicHost(
+export async function checkPublicHost(
   origin: string,
-  lookup: (host: string) => Promise<Array<{ address: string }>>
+  lookup: (host: string) => Promise<Array<{ address: string }>> = lookupAll
 ): Promise<'ok' | 'not-public' | 'hub-unreachable'> {
-  const host = new URL(origin).hostname;
+  const url = new URL(origin);
+  if (url.protocol !== 'https:') return 'not-public';
+  const host = url.hostname;
   if (isLocalHostName(host)) return 'not-public';
   let addresses: Array<{ address: string }>;
   try {

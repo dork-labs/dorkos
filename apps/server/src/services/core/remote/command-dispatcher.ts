@@ -109,7 +109,10 @@ export interface CommandDispatcherDeps {
   /**
    * Read an agent computer's assignment again now, for
    * `agent_computer_assignment_changed` (DOR-2940). Given only on an agent
-   * computer; absent, the command is acknowledged `ignored`.
+   * computer; absent, the command is acknowledged `ignored`. Ready, not yet
+   * reached: this stream runs only on a computer linked to a person's
+   * account, so no command arrives on an agent computer until a stream opened
+   * with its own key does (a follow-up). It polls meanwhile.
    */
   agentComputerAssignmentChanged?: () => RemoteCommandOutcome;
 }

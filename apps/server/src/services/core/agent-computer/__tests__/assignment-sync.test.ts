@@ -28,11 +28,24 @@ let cloud: FakeAgentComputerCloud;
 let pin: RelayPin | null;
 let answer: RedeemAtHubResult;
 const redeem = vi.fn(async (_input: RedeemAtHubInput) => answer);
-const dialer = { dialNow: vi.fn(() => 'applied' as const), close: vi.fn() };
+const proved: Array<() => void> = [];
+const dialer = {
+  dialNow: vi.fn(() => 'applied' as const),
+  dialAt: vi.fn((_origin: string, onProved: () => void) => {
+    proved.push(onProved);
+    return 'applied' as const;
+  }),
+  close: vi.fn(),
+};
+const checkHost = vi.fn(async (_origin: string) => 'ok' as 'ok' | 'not-public' | 'hub-unreachable');
+let clockNow = new Date('2026-10-18T12:00:00.000Z');
 let sync: AgentComputerAssignmentSync;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  proved.length = 0;
+  clockNow = new Date('2026-10-18T12:00:00.000Z');
+  checkHost.mockResolvedValue('ok');
   cloud = fakeAgentComputerCloud({ computerId: 'cmp_1', hubOrigin: HUB, ...OWNER });
   pin = null;
   answer = {
@@ -47,8 +60,9 @@ beforeEach(() => {
       pin = { level: 'chat', paused: false, ...next } as RelayPin;
     },
     redeem,
+    checkHost,
     dialer,
-    now: () => new Date('2026-10-18T12:00:00.000Z'),
+    now: () => clockNow,
   });
 });
 
@@ -107,24 +121,94 @@ describe('linking', () => {
       readPin: () => null,
       writePin: async () => undefined,
       redeem,
+      checkHost,
       dialer,
     });
     expect(await odd.sync()).toEqual({ kind: 'failed' });
   });
 });
 
+describe('a code kept until it links or expires', () => {
+  it('tries the same code again after a failed redeem, though Cloud hands it out once', async () => {
+    await handCode();
+    answer = { ok: false, reason: 'hub-unreachable' };
+    expect(await sync.sync()).toEqual({ kind: 'failed' });
+    const good: RedeemAtHubResult = {
+      ok: true,
+      answer: { v: 1, hubKey: HUB_KEY, ...OWNER, signature: 's'.repeat(86) },
+      relaySecret: 'r'.repeat(43),
+    };
+    answer = good;
+    // Cloud's next read carries no code; the kept one is redeemed.
+    expect(await sync.sync()).toMatchObject({ kind: 'linked' });
+    expect(redeem).toHaveBeenCalledTimes(2);
+    expect(redeem.mock.calls[1]![0].code).toBe(CODE.code);
+    expect(pin).not.toBeNull();
+    // Linked: the code is spent and gone.
+    await sync.sync();
+    expect(redeem).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops trying a code once it has expired', async () => {
+    await handCode();
+    answer = { ok: false, reason: 'hub-unreachable' };
+    await sync.sync();
+    clockNow = new Date(Date.parse(CODE.expiresAt) + 1);
+    expect(await sync.sync()).toMatchObject({ kind: 'waiting' });
+    expect(redeem).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a code the hub reset, waiting for the new one', async () => {
+    await handCode();
+    answer = { ok: false, reason: 'already-linked' };
+    await sync.sync();
+    expect(await sync.sync()).toMatchObject({ kind: 'waiting' });
+    expect(redeem).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a moved hub', () => {
-  it('follows a new origin with the pinned key, redialing', async () => {
+  it('saves a new origin only once a handshake there proves the pinned key', async () => {
     await handCode();
     await sync.sync();
     cloud.set({ hubOrigin: 'https://moved.example.invalid' });
-    dialer.dialNow.mockClear();
+    vi.clearAllMocks();
     expect(await sync.sync()).toMatchObject({ kind: 'linked' });
-    expect(pin).toMatchObject({ hubOrigin: 'https://moved.example.invalid', hubKey: HUB_KEY });
-    expect(dialer.close).toHaveBeenCalledTimes(1);
-    expect(dialer.dialNow).toHaveBeenCalledTimes(1);
+    expect(checkHost).toHaveBeenCalledWith('https://moved.example.invalid');
+    expect(dialer.dialAt).toHaveBeenCalledWith(
+      'https://moved.example.invalid',
+      expect.any(Function)
+    );
+    // Not proved yet: the pin keeps the old origin.
+    expect(pin).toMatchObject({ hubOrigin: HUB, hubKey: HUB_KEY });
+    proved.at(-1)!();
+    await vi.waitFor(() => expect(pin?.hubOrigin).toBe('https://moved.example.invalid'));
+    expect(pin?.hubKey).toBe(HUB_KEY);
     // No new code: the key stays the one pinned at link time.
-    expect(redeem).toHaveBeenCalledTimes(1);
+    expect(redeem).not.toHaveBeenCalled();
+  });
+
+  it('keeps the old origin while a handshake at the new one never proves', async () => {
+    await handCode();
+    await sync.sync();
+    cloud.set({ hubOrigin: 'https://moved.example.invalid' });
+    await sync.sync();
+    await sync.sync();
+    expect(dialer.dialAt).toHaveBeenCalledTimes(2);
+    expect(pin?.hubOrigin).toBe(HUB);
+  });
+
+  it('sends nothing to a new origin that is not a public one', async () => {
+    await handCode();
+    await sync.sync();
+    cloud.set({ hubOrigin: 'https://moved.example.invalid' });
+    checkHost.mockResolvedValue('not-public');
+    vi.clearAllMocks();
+    expect(await sync.sync()).toMatchObject({ kind: 'linked' });
+    expect(dialer.dialAt).not.toHaveBeenCalled();
+    // It keeps dialing the hub where it was proved.
+    expect(dialer.dialNow).toHaveBeenCalledTimes(1);
+    expect(pin?.hubOrigin).toBe(HUB);
   });
 
   it('relinks at the new origin when a new code comes with it', async () => {

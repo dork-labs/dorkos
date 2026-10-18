@@ -486,7 +486,10 @@ export const managedRemoteCommands: ManagedCommandService = new ManagedCommandSe
       onSettled,
       onOpened,
       // An agent computer dials its hub on its own dialer, and reads its
-      // assignment again on Cloud's word; no other role is given either.
+      // assignment again on Cloud's word; no other role is given either. This
+      // service never starts on an agent computer today (it has no account
+      // link), so the wiring waits for a stream opened with the computer's own
+      // key, a follow-up; the computer polls meanwhile.
       ...(isAgentComputer()
         ? { relayDialer: agentComputerDialer(), agentComputerAssignmentChanged }
         : { relayDialer: sessionRelayDialer() }),

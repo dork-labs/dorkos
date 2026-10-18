@@ -101,16 +101,29 @@ const server = listeningServer(
   )
 );
 
+/** Answers the next redeem reaches the hub with, then loses on the way back. */
+let loseNextAnswer = false;
+
 /** The computer's `fetch`, aimed at the in-process hub instead of the network. */
 const toHub: typeof fetch = async (input, init) => {
   const { port } = server.address() as AddressInfo;
   const url = new URL(String(input));
-  return fetch(`http://127.0.0.1:${port}${url.pathname}`, init);
+  const response = await fetch(`http://127.0.0.1:${port}${url.pathname}`, init);
+  if (loseNextAnswer) {
+    loseNextAnswer = false;
+    await response.body?.cancel();
+    throw new DOMException('The answer never came back', 'TimeoutError');
+  }
+  return response;
 };
 
 /** The computer's side, with a dialer that only counts. */
 function computer(home = computerHome) {
-  const dialer = { dialNow: vi.fn(() => 'applied' as const), close: vi.fn() };
+  const dialer = {
+    dialNow: vi.fn(() => 'applied' as const),
+    dialAt: vi.fn(() => 'applied' as const),
+    close: vi.fn(),
+  };
   const sync = new AgentComputerAssignmentSync({
     readAssignment: () => cloud.readAssignment(),
     readPin: () => readRelayPin(home),
@@ -121,6 +134,7 @@ function computer(home = computerHome) {
         fetch: toHub,
         lookup: async () => [{ address: '203.0.113.7' }],
       }),
+    checkHost: async () => 'ok',
     dialer,
   });
   return { sync, dialer };
@@ -181,6 +195,26 @@ describe('linking end to end', () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'hub.relay.computer.link', outcome: 'ok' })
     );
+  });
+
+  it('gets back to linked when the hub took the redeem but its answer was lost', async () => {
+    await mintAgentComputerLinkCode(CLOUD_ID, hubDeps);
+    const { sync } = computer();
+    loseNextAnswer = true;
+    expect(await sync.sync()).toEqual({ kind: 'failed' });
+    // The hub linked it; the computer never heard. Cloud has no code to hand out again.
+    expect(readLinkedComputers(hubHome)).toHaveLength(1);
+    expect(cloud.peekCode()).toBeNull();
+    // The kept code, retried with the same key, links it again.
+    expect(await sync.sync()).toMatchObject({ kind: 'linked' });
+    const pin = readRelayPin(computerHome)!;
+    expect(readLinkedComputers(hubHome)).toEqual([
+      expect.objectContaining({
+        computerKey: computerPublicKey(computerHome),
+        secretHash: relaySecretHash(pin.relaySecret),
+      }),
+    ]);
+    expect(cloud.handed).toBe(1);
   });
 
   it('survives the hub sleeping between minting and the redeem', async () => {
