@@ -35,6 +35,8 @@ export interface PanelView extends RightPanelContribution {
   watchers?: AuthorRef[];
   unread?: boolean;
   pinned?: boolean;
+  /** Cannot be closed: the chat's own agent profile in a 1:1 chat (FB-60). */
+  permanent?: boolean;
 }
 
 /** Relevant defaults and concrete resource tabs, preserving the existing route and placement gates. */
@@ -135,7 +137,12 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
       : [closedKey(id)];
   const isDocument = (id: string) =>
     allViews.find((view) => view.id === id)?.resource === 'document';
+  // In a 1:1 chat the profile is the agent you are talking to. It is the
+  // panel's answer to "who is this", so it stays, and a close saved somewhere
+  // else does not hide it here (FB-60).
+  const isPermanent = (id: string) => id === 'profile' && pathname === '/session';
   const viewClosed = (id: string) =>
+    !isPermanent(id) &&
     closedKeys(id).some((closedId) =>
       isDocument(id) || isBrowser(id)
         ? ownerClosures.has(closedId)
@@ -210,7 +217,12 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
         activate: (source) => terminal.activate(tab.id, source),
       }));
     return [
-      { ...contribution, category, ...(category === 'browser' ? { title: 'Page previews' } : {}) },
+      {
+        ...contribution,
+        category,
+        ...(category === 'browser' ? { title: 'Page previews' } : {}),
+        ...(isPermanent(category) ? { permanent: true } : {}),
+      },
     ];
   });
   // A stream may publish the server row before POST identifies it. Defer only possible
@@ -289,6 +301,7 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
     setCategory(view.category);
   };
   const closeView = (id: string) => {
+    if (isPermanent(id)) return;
     const closingPending = sessionDocuments?.find(
       (doc) => doc.id.startsWith('pending:') && `resource/${doc.id}` === id
     );

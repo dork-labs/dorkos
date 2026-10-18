@@ -113,6 +113,7 @@ import {
 import {
   useLegacyProfileLinkRedirect,
   useProfileDockDeepLink,
+  useScopeProfilePickToChat,
   useProfileShortcut,
 } from '@/layers/features/profile';
 
@@ -280,6 +281,8 @@ export function AppShell() {
   // has to work when the profile is not already what you are looking at.
   useLegacyProfileLinkRedirect();
   useProfileDockDeepLink();
+  // A profile opened elsewhere never follows you into a chat (FB-60).
+  useScopeProfilePickToChat();
   useRightPanelPersistence();
   // In-window tabs (DOR-540): location sync, the tab keys, Recently closed and
   // restored-tab tidying. All no-op outside the desktop shell (DOR-568).

@@ -21,12 +21,14 @@ export { ProfileSheetContainer, type ProfileSheetContainerProps } from './ui/Pro
 // registration and the playground; everything else opens the panel through
 // `openProfileDocked` instead of rendering it.
 export { ProfileDock } from './ui/ProfileDock';
+export { ProfileTabIcon } from './ui/ProfileTabIcon';
 export { PROFILE_PANEL_ID, useProfileStore } from './model/profile-store';
 export { useProfileShortcut } from './model/use-profile-shortcut';
 export {
   useProfileDockDeepLink,
   useLegacyProfileLinkRedirect,
 } from './model/use-profile-dock-deep-link';
+export { useScopeProfilePickToChat } from './model/use-docked-agent';
 export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
 // `AccountMenuRows` is deliberately NOT on the barrel: the two surfaces that
 // draw it — the disc's own menu and the sidebar footer's `⋯` fold — both reach
