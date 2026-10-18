@@ -13,10 +13,16 @@
  *   person a chat bridge brought in cannot be added to any other room.
  * - **It says so.** It is registered as "Private", not as a machine.
  *
- * Pairing only by the owner's own computers is pinned beside its routes: a link
- * code is minted only from the owner's own browser sign-in
- * (`routes/__tests__/hub-computers-gate.test.ts`), and a computer redeems it
- * once (`routes/__tests__/hub-link.test.ts`).
+ * Pairing only by the owner's own computers is pinned beside its routes. The
+ * proof of ownership is the code itself: it is minted only from the owner's own
+ * browser sign-in (`routes/__tests__/hub-computers-gate.test.ts`), shown only to
+ * them, short-lived, and redeemed once (`routes/__tests__/hub-link.test.ts`).
+ * Nothing else says whose computer redeems it, so a person who hands their code
+ * to someone else has linked that someone's computer.
+ *
+ * The route census check below cannot see inside the catch-all mounts
+ * (`ALL /api/auth/*`, `ALL /api/admin/*`, `ALL /api/community-connections/*`);
+ * sign-up through the first is the account check above.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -81,7 +87,9 @@ describe('the private space on a hub', () => {
   });
 
   it('keeps a person from a chat bridge out of every other room', () => {
-    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana' } }),
+    });
     const stranger = harness.authors.resolveExternal({
       platformType: 'telegram',
       instanceId: 'bot',
@@ -102,6 +110,19 @@ describe('the private space on a hub', () => {
       )
     ).toThrow(expect.objectContaining({ code: 'PRIVATE_SPACE' }));
     expect(harness.service.listRooms(harness.human).map((r) => r.title)).not.toContain('Side chat');
+
+    // Their own bridged chat is still theirs to come back to.
+    const bridged = harness.service.createBridgedRoom({
+      adapterId: 'bot',
+      chatId: '555',
+      bindingId: 'binding-ana',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'Ops',
+      agentPath: '/agents/ana',
+      operatorAuthorId: harness.human,
+    });
+    harness.service.addMember(bridged.id, harness.human, { authorId: stranger.id });
 
     // On a person's own computer, who they bring in is theirs to decide.
     role.value = 'computer';

@@ -328,15 +328,15 @@ export class RoomAuthority {
   /**
    * Refuse adding a person other than the owner to a room on a hub (spec A6,
    * `PRIVATE_SPACE`). A hub's one space is private: the owner and the owner's
-   * agents. A person a chat bridge brought in stays in that bridged chat
-   * (`RoomRoster`'s external join, which this does not gate).
+   * agents. A person a chat bridge brought in stays in that bridged chat: the
+   * external join, and adding them back to it, are left open by the callers.
    *
    * @param candidate - Who would join.
    */
   requirePrivateSpaceMember(candidate: Pick<AuthorRecord, 'id' | 'kind'>): void {
     if (currentServerRole() !== 'hub' || candidate.kind !== 'human') return;
     if (this.isOwnerAuthor(candidate.id)) return;
-    throw new RoomError('PRIVATE_SPACE', 'Only you and your agents can be added here');
+    throw new RoomError('PRIVATE_SPACE', 'Only the owner and their agents can be in rooms here');
   }
 
   /**

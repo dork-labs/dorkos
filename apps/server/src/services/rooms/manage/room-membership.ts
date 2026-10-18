@@ -157,7 +157,8 @@ export class RoomMembership {
     if (candidate.kind === 'agent' && room.kind === 'dm') {
       priorTitleNames = dmTitleNames(this.roster.list(roomId));
     }
-    this.authority.requirePrivateSpaceMember(candidate);
+    // A bridged chat's own people may come back to it; nowhere else.
+    if (!this.bridges.findBridgeByRoom(roomId)) this.authority.requirePrivateSpaceMember(candidate);
     try {
       this.requireJoinAllowed(room, candidate);
     } catch (err) {

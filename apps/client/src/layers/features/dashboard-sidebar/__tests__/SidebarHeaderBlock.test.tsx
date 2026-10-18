@@ -488,6 +488,7 @@ describe('SidebarHeaderBlock', () => {
     // the footer menu deliberately does not repeat these rows, so a phone that
     // lost them here would have no way to reach them at all.
     renderMobileSwitcher();
+    await configAnswered();
     // The phone trigger is an icon to fit the top bar at 390px, so its name
     // has to live in its accessible name rather than on screen.
     expect(screen.getByTestId('sidebar-header-block')).toHaveAccessibleName(/Dorian’s team menu/);
@@ -536,9 +537,9 @@ describe('SidebarHeaderBlock', () => {
     expect(search).not.toBeInTheDocument();
   });
 
-  it('is a button named after the operator, with the New button and the ⌘K pill beside it', () => {
+  it('is a button named after the operator, with the New button and the ⌘K pill beside it', async () => {
     renderBlock();
-    const block = screen.getByRole('button', { name: /Dorian’s team/ });
+    const block = await screen.findByRole('button', { name: /Dorian’s team/ });
     expect(block.tagName).toBe('BUTTON');
     expect(block).toHaveTextContent('Dorian’s team');
     expect(screen.getByTestId('new-menu')).toBeInTheDocument();
@@ -547,6 +548,7 @@ describe('SidebarHeaderBlock', () => {
 
   it('says "workspace" nowhere — not in the block, not in its menu', async () => {
     renderBlock();
+    await configAnswered();
     // Observable first: the block IS rendered and DOES carry an accessible
     // name, so the absence below is about the wording and not about an empty
     // document.
@@ -658,6 +660,17 @@ describe('SidebarHeaderBlock', () => {
     expect(own!.textContent).toContain('Private');
     expect(own!.textContent).toContain('Just you and your agents');
     expect(own!.textContent).not.toContain('team');
+    // The desktop trigger carries the lock and the line too.
+    const trigger = screen.getByTestId('sidebar-header-block');
+    expect(trigger).toHaveAttribute('title', 'Just you and your agents');
+    expect(trigger.querySelector('svg.lucide-lock')).not.toBeNull();
+  });
+
+  it('waits for the server before naming itself, so a hub never flashes a team name', () => {
+    mockGetConfig.mockReturnValueOnce(new Promise(() => {}));
+    renderBlock();
+    expect(screen.getByTestId('sidebar-team-name-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText('Dorian’s team')).toBeNull();
   });
 
   it('reauthorizes the remembered destination before committing a Community route', async () => {
@@ -1313,15 +1326,15 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
     );
   });
 
-  it('paints the name the moment the roster answers', () => {
+  it('paints the name the moment the roster and the server answer', async () => {
     mockRosterPending = false;
     renderBlock();
 
+    expect(await screen.findByText('Dorian’s team')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
-    expect(screen.getByText('Dorian’s team')).toBeInTheDocument();
   });
 
-  it('still says "Your team" for an install that genuinely has no name', () => {
+  it('still says "Your team" for an install that genuinely has no name', async () => {
     // The counter-proof: the placeholder is about the QUERY, not about the
     // answer. A roster that has answered with nobody gets the honest fallback,
     // not bones forever.
@@ -1329,8 +1342,8 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
     mockSelf = null;
     renderBlock();
 
+    expect(await screen.findByText('Your team')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
-    expect(screen.getByText('Your team')).toBeInTheDocument();
   });
 });
 
@@ -1689,6 +1702,16 @@ describe('the context switcher’s lifecycle actions', () => {
       mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true, agentsNotRemoved: [] })
     );
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('on a hub, still offers other spaces the team name, never "Private"', async () => {
+    mockConfig = { ...mockConfig, serverRole: 'hub' } as typeof mockConfig;
+    renderMobileSwitcher();
+    await configAnswered();
+    fireEvent.click(screen.getByTestId('sidebar-header-block'));
+    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
+    fireEvent.click(add.getByRole('menuitem', { name: /Join a space…/ }));
+    expect(await screen.findByLabelText('Name for this installation')).toHaveValue('Dorian’s team');
   });
 
   it('connects a space in place and sends running your own server to the guide', async () => {
