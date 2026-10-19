@@ -1,7 +1,18 @@
 /** Historical save evidence never claims the current draft or an agent delivery was saved. */
-import { Button, Notice } from '@/layers/shared/ui';
+import type { ReactNode } from 'react';
+import { Ellipsis } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/layers/shared/ui';
 import type { useFileSaveRecovery } from '../../model/file-save/use-file-save-recovery';
+
+type Recovery = ReturnType<typeof useFileSaveRecovery>;
+
 /**
  * The one sentence a failed check leaves, with "Check again" beside it. A 404
  * (`refused`) is the server saying this file is never saved from here; anything
@@ -12,111 +23,115 @@ const FAILED_CHECK = {
   refused: 'This file can’t be edited from this canvas.',
 } as const;
 
-/**
- * Below the editor's floating refresh and edit buttons (`size-9`, `size-11`
- * under `md`, at `mt-2`), so they never sit on top of this text.
- */
-const FRAME = 'mx-2 mt-14 md:mt-12';
+/** Whether the person has something to read or act on; a healthy file shows nothing. */
+function needsAttention(recovery: Recovery): boolean {
+  if (!recovery.supported) return false;
+  if (
+    recovery.phase === 'unavailable' ||
+    recovery.phase === 'refused' ||
+    recovery.phase === 'local_uncertain'
+  )
+    return true;
+  return (
+    recovery.discovery?.admission === 'blocked' ||
+    recovery.discovery?.entries.some((entry) => entry.state === 'review') === true ||
+    recovery.historical?.state === 'receipt'
+  );
+}
 
-/** Show bounded original-save evidence and explicit proof-only recovery controls. */
-export function FileSaveRecoveryPanel({
+/** The notice text and its one action, for a file that {@link needsAttention}. */
+function NoticeBody({
   recovery,
   editing,
   loadCurrent,
 }: {
-  recovery: ReturnType<typeof useFileSaveRecovery>;
+  recovery: Recovery;
   editing: boolean;
   loadCurrent: () => void;
 }) {
-  if (!recovery.supported) return null;
   if (recovery.phase === 'unavailable' || recovery.phase === 'refused') {
     return (
-      <Notice
-        role="region"
-        aria-label="Previous file saves"
-        className={cn(FRAME, 'flex flex-wrap items-center gap-x-3 gap-y-1')}
-      >
-        <p role="alert" className="min-w-0 flex-1 basis-48">
+      // Inline, not flex: a flex row would sit beside the floated buttons instead
+      // of wrapping under them.
+      <div>
+        <p role="alert" className="mr-3 inline">
           {FAILED_CHECK[recovery.phase]}
         </p>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="shrink-0"
+          className="my-0.5 align-middle"
           disabled={recovery.busy || editing}
           onClick={() => void recovery.refresh()}
         >
           Check again
         </Button>
-      </Notice>
+      </div>
     );
   }
+  if (recovery.phase === 'local_uncertain')
+    return (
+      <p role="alert">Use Retry original save. Checking previous saves won’t confirm this save.</p>
+    );
+  const discovery = recovery.discovery;
   return (
-    <Notice
-      role="region"
-      aria-label="Previous file saves"
-      className={cn(FRAME, 'flex flex-wrap items-start gap-x-3 gap-y-2')}
-    >
-      <div className="min-w-0 flex-1 basis-56 space-y-1">
-        {recovery.phase === 'pending' && <p role="status">Checking previous saves…</p>}
-        {recovery.phase === 'local_uncertain' && (
-          <p role="alert">
-            Use Retry original save. Checking previous saves won’t confirm this save.
-          </p>
-        )}
-        {recovery.discovery?.admission === 'blocked' && (
-          <p role="alert">
-            An unresolved original save blocks this file. This list may not include the blocking
-            operation.
-          </p>
-        )}
-        {recovery.discovery && (
-          <>
-            {!recovery.discovery.entries.length && <p>No matching recent saves.</p>}
-            {recovery.discovery.hasMore && (
-              <p>Only the latest 25 matching saves are shown. Older evidence is omitted.</p>
-            )}
-            <ul>
-              {recovery.discovery.entries.map((entry) => (
-                <li key={entry.eventId}>
-                  <span>
-                    {entry.eventId}:{' '}
-                    {entry.state === 'receipt'
-                      ? 'Historical save recorded'
-                      : entry.state === 'review'
-                        ? 'Original save needs review'
-                        : entry.state === 'no_op'
-                          ? 'Original save made no change'
-                          : 'Original save failed before replacement'}
-                  </span>
-                  {entry.state === 'review' &&
-                    (entry.reason === 'prepared_without_replacement' ? (
-                      <p>This save needs manual review. These controls won’t write the file.</p>
-                    ) : (
-                      <>
-                        <p>
-                          The original saved replacement must be proven before its receipt can be
-                          settled.
-                        </p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          disabled={recovery.busy || editing}
-                          onClick={() => void recovery.recover(entry.eventId)}
-                        >
-                          Recover original receipt
-                        </Button>
-                      </>
-                    ))}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        {recovery.historical?.state === 'receipt' && (
-          <div role="status">
+    <div className="space-y-1">
+      {discovery?.admission === 'blocked' && (
+        <p role="alert">
+          An unresolved original save blocks this file. This list may not include the blocking
+          operation.
+        </p>
+      )}
+      {discovery?.hasMore && (
+        <p>Only the latest 25 matching saves are shown. Older evidence is omitted.</p>
+      )}
+      {discovery && discovery.entries.length > 0 && (
+        <>
+          <ul>
+            {discovery.entries.map((entry) => (
+              <li key={entry.eventId}>
+                <span>
+                  {entry.eventId}:{' '}
+                  {entry.state === 'receipt'
+                    ? 'Historical save recorded'
+                    : entry.state === 'review'
+                      ? 'Original save needs review'
+                      : entry.state === 'no_op'
+                        ? 'Original save made no change'
+                        : 'Original save failed before replacement'}
+                </span>
+                {entry.state === 'review' &&
+                  (entry.reason === 'prepared_without_replacement' ? (
+                    <p>This save needs manual review. These controls won’t write the file.</p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <p>
+                        The original saved replacement must be proven before its receipt can be
+                        settled.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={recovery.busy || editing}
+                        onClick={() => void recovery.recover(entry.eventId)}
+                      >
+                        Recover original receipt
+                      </Button>
+                    </div>
+                  ))}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {discovery?.admission === 'blocked' && discovery.entries.length === 0 && (
+        <p>No matching recent saves.</p>
+      )}
+      {recovery.historical?.state === 'receipt' && (
+        <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div>
             <p>Previous save confirmed. Your current draft may differ.</p>
             <p>
               {recovery.historical.currentFileMatch === 'different'
@@ -126,31 +141,107 @@ export function FileSaveRecoveryPanel({
                   : 'The current file was not checked.'}
             </p>
           </div>
-        )}
-        <p className="text-muted-foreground">
-          These controls don’t resend drafts or confirm agent delivery. Use Load current file.
-        </p>
-      </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={editing || recovery.editBlocked || recovery.busy}
+            onClick={loadCurrent}
+          >
+            Load current file
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The quiet way to the proof-only controls on a healthy file: re-check previous
+ * saves, or load the current file through the same serialized lane.
+ */
+export function FileSaveMoreMenu({
+  recovery,
+  editing,
+  loadCurrent,
+}: {
+  recovery: Recovery;
+  editing: boolean;
+  loadCurrent: () => void;
+}) {
+  if (!recovery.supported || editing) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          size="sm"
           variant="ghost"
-          disabled={recovery.busy || editing}
-          onClick={() => void recovery.refresh()}
+          size="icon-md"
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="More file actions"
         >
-          Check previous saves
+          <Ellipsis className="size-4" />
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          disabled={editing || recovery.editBlocked || recovery.busy}
-          onClick={loadCurrent}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={recovery.busy} onSelect={() => void recovery.refresh()}>
+          Check previous saves
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={recovery.editBlocked || recovery.busy}
+          onSelect={() => loadCurrent()}
         >
           Load current file
-        </Button>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * The editor's top row: the file's own buttons on the right and, when the file
+ * needs the person, what needs them on the left, in one tinted block.
+ *
+ * A healthy file shows only the buttons. With a notice the buttons float right
+ * and the sentence wraps under them, so a narrow panel never gives the text a
+ * row of its own. The buttons are the row's first child either way, so a notice
+ * arriving or leaving never remounts them or drops their focus.
+ */
+export function FileSaveTopBar({
+  recovery,
+  editing,
+  loadCurrent,
+  toolbar,
+}: {
+  recovery: Recovery;
+  editing: boolean;
+  loadCurrent: () => void;
+  toolbar: ReactNode;
+}) {
+  const notice = needsAttention(recovery);
+  return (
+    <>
+      {recovery.supported && recovery.phase === 'pending' && (
+        <p role="status" className="sr-only">
+          Checking previous saves…
+        </p>
+      )}
+      <div
+        {...(notice ? { role: 'region', 'aria-label': 'Previous file saves' } : {})}
+        className={cn(
+          'shrink-0',
+          notice
+            ? 'bg-muted text-foreground mx-2 mt-2 flow-root rounded-md py-1 pr-1 pl-3 text-sm'
+            : 'flex justify-end px-2 pt-1'
+        )}
+      >
+        <div className={cn('flex items-center gap-1', notice && 'float-right ml-2')}>{toolbar}</div>
+        {notice && (
+          <div className="py-1.5">
+            <NoticeBody recovery={recovery} editing={editing} loadCurrent={loadCurrent} />
+          </div>
+        )}
       </div>
-    </Notice>
+    </>
   );
 }

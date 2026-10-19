@@ -7,6 +7,8 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import * as preparedReaders from '../../readers/prepared-readers.js';
+import * as fileRouteGuards from '../../../../../lib/file-route-guards.js';
 import { eq, sql, canvasDocuments, sessionMetadata } from '@dorkos/db';
 import { CanvasDocIncarnationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { FileDocumentSaveReceiptSchema } from '@dorkos/shared/schemas';
@@ -25,16 +27,44 @@ import { initConfigManager } from '../../../../core/config-manager.js';
 import { setCanvasService } from '../../../index.js';
 import { setRoomService } from '../../../../rooms/index.js';
 import { DocChannelNotFoundError } from '../../authorization.js';
+import { DocRouteGrantError } from '../../grant-policy.js';
+import { readDocSourceDescriptor } from '../../doc-source-policy.js';
 import { authorityFixture } from './authority-fixtures.js';
 import {
   discoverOriginalDocumentFileSaves,
   saveOriginalDocumentFile,
 } from '../installation-file-writes.js';
 
+// Pass-through by default; a test flips one to inject a real fault at the exact
+// place the save path decides between "not available" and a server fault.
+const faults = vi.hoisted(() => ({ sessionRead: false, resolveFile: false }));
+vi.mock('../../readers/prepared-readers.js', async (original) => {
+  const actual = await original<typeof preparedReaders>();
+  return {
+    ...actual,
+    readPreparedSourceSession: (...args: Parameters<typeof actual.readPreparedSourceSession>) => {
+      if (faults.sessionRead) throw new Error('database disk image is malformed');
+      return actual.readPreparedSourceSession(...args);
+    },
+  };
+});
+vi.mock('../../../../../lib/file-route-guards.js', async (original) => {
+  const actual = await original<typeof fileRouteGuards>();
+  return {
+    ...actual,
+    resolveWithinCwd: async (...args: Parameters<typeof actual.resolveWithinCwd>) => {
+      if (faults.resolveFile) throw Object.assign(new Error('i/o error'), { code: 'EIO' });
+      return actual.resolveWithinCwd(...args);
+    },
+  };
+});
+
 const docs = swappableServer();
 const files = swappableServer();
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
+  faults.sessionRead = false;
+  faults.resolveFile = false;
   vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
 });
@@ -238,4 +268,48 @@ it('an agent-bound chat keeps its rule: a recorded folder other than the agent d
   // With the folder equal to the agent directory, the same chat saves as before.
   const same = await openInChat(h, h.dir, 'agent-notes.md');
   await request(docs.server).get(same.endpoint).expect(200);
+});
+
+it('route grants and checkbox writes keep the agent-only rule for a chat with no agent', async () => {
+  const h = await setup(null);
+  const doc = await openInChat(h, h.dir);
+  // The save path admits it…
+  await request(docs.server).get(doc.endpoint).expect(200);
+  // …but the general reader route grants and checkbox writes use still refuses it.
+  expect(() =>
+    readDocSourceDescriptor(
+      { db: h.db, documents: h.rooms.canvasDocuments, roomRepos: h.roomRepos },
+      doc.documentId
+    )
+  ).toThrow(expect.objectContaining({ code: 'LOCAL_SOURCE_UNAVAILABLE' }));
+  expect(() =>
+    readDocSourceDescriptor(
+      { db: h.db, documents: h.rooms.canvasDocuments, roomRepos: h.roomRepos },
+      doc.documentId
+    )
+  ).toThrow(DocRouteGrantError);
+});
+
+it('a fault reading the session stays a server fault, not "not available"', async () => {
+  const h = await setup(null);
+  const doc = await openInChat(h, h.dir);
+  faults.sessionRead = true;
+  await request(docs.server).get(doc.endpoint).expect(503);
+});
+
+it('a fault resolving the file stays a server fault, not "not available"', async () => {
+  const h = await setup(null);
+  const doc = await openInChat(h, h.dir);
+  faults.resolveFile = true;
+  await request(docs.server).get(doc.endpoint).expect(503);
+});
+
+it('a recorded folder that no longer exists answers 404, not a fault worth retrying', async () => {
+  const h = await setup(null);
+  const recorded = join(h.dir, 'gone-later');
+  await fs.mkdir(recorded);
+  const doc = await openInChat(h, recorded, 'notes.md', recorded);
+  await request(docs.server).get(doc.endpoint).expect(200);
+  await fs.rm(recorded, { recursive: true });
+  await request(docs.server).get(doc.endpoint).expect(404);
 });

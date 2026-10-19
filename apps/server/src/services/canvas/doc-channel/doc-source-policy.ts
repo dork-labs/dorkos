@@ -112,6 +112,13 @@ function readSourceDescriptor(
       // its root is the folder the server recorded when the session opened the
       // document. The row is reread on every check: binding the session to an
       // agent later moves the root to that agent and refuses a stale capture.
+      //
+      // Descriptors compare as strings, never resolved paths: this reader makes
+      // no filesystem calls because it runs inside SQLite transactions. So if
+      // the chat later gets an agent whose path spells the same folder another
+      // way (`/tmp/x` against a recorded `/private/tmp/x`), save evidence
+      // recorded before the binding no longer matches and its recovery answers
+      // "not available". That is fail-closed by design; a new save works.
       result.rootCandidate = physical.resolvedCwd;
       result.matchRoot = physical.resolvedCwd;
     } else {

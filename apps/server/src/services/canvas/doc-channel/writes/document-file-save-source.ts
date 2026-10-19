@@ -74,6 +74,22 @@ export function captureDocumentSaveOperator(
 }
 
 /**
+ * Resolve a document's root folder. A folder that is gone (deleted or moved
+ * since the document was opened) leaves a document this lane will never save,
+ * so it is "not available" rather than a fault worth retrying.
+ */
+async function realRoot(folder: string): Promise<string> {
+  try {
+    return await fs.realpath(folder);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR')
+      throw new DocChannelNotFoundError({ cause: error });
+    throw error;
+  }
+}
+
+/**
  * Derive a current source from the installed operator and registered session, never a caller path.
  *
  * The root is the session's agent directory, or for a chat with no agent the
@@ -99,11 +115,8 @@ export async function resolveCurrentDocumentSaveSource(
     !source.matchRoot
   )
     throw new DocChannelNotFoundError();
-  const root = await fs.realpath(source.rootCandidate);
-  if (
-    (await fs.realpath(source.resolvedCwd)) !== root ||
-    (await fs.realpath(source.matchRoot)) !== root
-  )
+  const root = await realRoot(source.rootCandidate);
+  if ((await realRoot(source.resolvedCwd)) !== root || (await realRoot(source.matchRoot)) !== root)
     throw new DocChannelNotFoundError();
   // The document's own file must stay inside its root and the boundary. A file
   // that does not is a document this lane will not save, not a server fault.

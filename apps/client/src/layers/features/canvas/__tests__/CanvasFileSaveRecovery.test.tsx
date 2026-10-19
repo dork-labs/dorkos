@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Suspense } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -112,6 +112,20 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+/** Open the editor's ··· menu (Radix needs the whole pointer sequence in jsdom). */
+async function openMoreMenu() {
+  const trigger = screen.getByRole('button', { name: 'More file actions' });
+  await act(async () => {
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(trigger);
+    fireEvent.click(trigger);
+  });
+  return screen.findByRole('menuitem', { name: 'Load current file' });
+}
+/** Choose "Load current file" from the ··· menu, where a healthy file keeps it. */
+async function loadCurrentFromMenu() {
+  fireEvent.click(await openMoreMenu());
+}
 beforeEach(() => {
   currentTransport = transport;
   port.discover.mockReset().mockResolvedValue(clear());
@@ -185,7 +199,9 @@ it('cold nonempty saved replay qualifies its current owner before original recei
   const edit = await screen.findByRole('button', { name: 'Edit file' });
   await waitFor(() => expect(edit).toHaveAttribute('data-document-save-observation', 'ready'));
   await waitFor(() => expect(port.discover).toHaveBeenCalledExactlyOnceWith('doc-1'));
-  expect(screen.getByRole('region', { name: 'Previous file saves' })).toBeInTheDocument();
+  // A check in progress is announced, not drawn: a healthy file shows nothing above it.
+  expect(screen.getByRole('status', { name: '' })).toHaveTextContent('Checking previous saves…');
+  expect(screen.queryByRole('region', { name: 'Previous file saves' })).toBeNull();
   expect(edit).toBeDisabled();
   await act(async () => held.resolve(clear()));
   await waitFor(() => expect(edit).toBeEnabled());
@@ -284,10 +300,30 @@ it('a failed check is one sentence with Check again beside it, which asks the se
   const banner = await screen.findByRole('region', { name: 'Previous file saves' });
   await screen.findByText('Couldn’t check previous saves, so editing is off.');
   expect(banner.querySelectorAll('p')).toHaveLength(1);
-  expect(screen.queryByRole('button', { name: 'Load current file' })).toBeNull();
+  expect(within(banner).queryByRole('button', { name: 'Load current file' })).toBeNull();
+  // The file's own buttons share the notice's row, and the off pencil says why.
+  const edit = within(banner).getByRole('button', { name: 'Edit file' });
+  expect(edit).toBeDisabled();
+  fireEvent.pointerMove(edit.parentElement!, { pointerType: 'mouse' });
+  expect(await screen.findByRole('tooltip', {}, { timeout: 3000 })).toHaveTextContent(
+    'Editing is off'
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   expect(port.discover).toHaveBeenCalledTimes(2);
+});
+it('a 404 from receipt recovery is not read as a permanent refusal', async () => {
+  // The server also answers 404 for a stale incarnation or a changed source; only
+  // a fresh discovery may say the file can't be edited here.
+  port.discover.mockResolvedValue(review());
+  port.recover.mockRejectedValue(
+    Object.assign(new Error('The document save evidence is not available.'), { status: 404 })
+  );
+  view();
+  fireEvent.click(await screen.findByRole('button', { name: 'Recover original receipt' }));
+  await screen.findByText('Couldn’t check previous saves, so editing is off.');
+  expect(screen.queryByText('This file can’t be edited from this canvas.')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
 });
 it('a failed explicit proof-only action stays blocked without replaying file content', async () => {
   port.discover.mockResolvedValue(review());
@@ -303,14 +339,17 @@ it('a failed explicit proof-only action stays blocked without replaying file con
 it('historical receipt never replaces the current file until explicit fresh load', async () => {
   port.discover.mockResolvedValue({ ...clear(), entries: [receipt().entry] });
   view();
-  await screen.findByText('Historical save recorded', { exact: false });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
+  // A healthy file is just the file: settled history needs nothing from the person.
+  expect(screen.queryByRole('region', { name: 'Previous file saves' })).toBeNull();
+  expect(screen.queryByText('Historical save recorded', { exact: false })).toBeNull();
   expect(screen.getByLabelText('draft')).toHaveValue('base');
   vi.mocked(transport.readFileContent).mockResolvedValue({
     content: 'current later bytes',
     hash: 'c'.repeat(64),
     encoding: 'utf-8',
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await waitFor(() => expect(screen.getByLabelText('draft')).toHaveValue('current later bytes'));
   expect(transport.writeFile).not.toHaveBeenCalled();
 });
@@ -322,7 +361,7 @@ it('inspection failure keeps visible editing blocked instead of adopting malform
     hash: '',
     encoding: 'utf-8',
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await screen.findByText('Couldn’t check previous saves, so editing is off.');
   expect(screen.getByLabelText('draft')).toHaveValue('base');
   expect(screen.getByRole('button', { name: 'Edit file' })).toBeDisabled();
@@ -397,8 +436,8 @@ it('a newer local draft and selection are untouched by the recovery panel while 
   fireEvent.change(input, { target: { value: 'newer local draft' } });
   input.focus();
   input.setSelectionRange(3, 7);
-  expect(screen.getByRole('button', { name: 'Load current file' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  // The ··· menu and its Load current file are not offered while editing.
+  expect(screen.queryByRole('button', { name: 'More file actions' })).toBeNull();
   expect(input).toHaveValue('newer local draft');
   expect(input.selectionStart).toBe(3);
   expect(input.selectionEnd).toBe(7);
@@ -407,7 +446,15 @@ it('a newer local draft and selection are untouched by the recovery panel while 
 });
 
 it('an admitted fresh read cannot replace a draft entered before the pending render commits', async () => {
+  // The ··· menu commits its choice before another click can land (Radix flushes
+  // item selection), so the one place both clicks can share a batch is the
+  // confirmed-receipt notice, whose Load current file sits beside an enabled Edit.
+  port.discover.mockResolvedValue(review());
   view();
+  await screen.findByRole('button', { name: 'Recover original receipt' });
+  port.discover.mockResolvedValue({ ...clear(), entries: [receipt().entry] });
+  fireEvent.click(screen.getByRole('button', { name: 'Recover original receipt' }));
+  await screen.findByText('Previous save confirmed.', { exact: false });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   const held = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
   vi.mocked(transport.readFileContent).mockReturnValue(held.promise);
@@ -444,7 +491,7 @@ it('a fresh-file read admitted by a disposed editor cannot alter a replacement v
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   const held = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
   vi.mocked(transport.readFileContent).mockReturnValueOnce(held.promise);
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(2));
   mounted.unmount();
   query.clear();
@@ -473,7 +520,7 @@ it('a hidden old read stays held while reopened hash-changing Load settles disco
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   const oldRead = deferred<{ content: string; hash: string; encoding: 'utf-8' }>();
   vi.mocked(transport.readFileContent).mockReturnValueOnce(oldRead.promise);
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(2));
   // Hide/unmount the real editor but retain the same query client and stale cached hash.
   mounted.rerender(<QueryClientProvider client={query}>{null}</QueryClientProvider>);
@@ -489,7 +536,7 @@ it('a hidden old read stays held while reopened hash-changing Load settles disco
   );
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   expect(screen.getByLabelText('draft')).toHaveValue('base');
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await waitFor(() => expect(screen.getByLabelText('draft')).toHaveValue('fresh reopened bytes'));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Edit file' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
@@ -551,7 +598,7 @@ it('a Suspense-hidden retained presenter rediscovers before its old current-file
   const editorButton = screen.getByRole('button', { name: 'Edit file' });
   const discoveries = port.discover.mock.calls.length;
   vi.mocked(transport.readFileContent).mockReturnValueOnce(oldRead.promise);
-  fireEvent.click(screen.getByRole('button', { name: 'Load current file' }));
+  await loadCurrentFromMenu();
   await waitFor(() => expect(transport.readFileContent).toHaveBeenCalledTimes(2));
   hidden = true;
   rendered.rerender(tree());
