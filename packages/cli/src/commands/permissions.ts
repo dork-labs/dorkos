@@ -27,6 +27,7 @@ import {
   PERMISSION_STATES,
   PermissionStopSchema,
   countAgentsFollowing,
+  chatModeWord,
   describeAffectedAgents,
   type AgentPermissionsResponse,
   type PermissionAreaId,
@@ -496,6 +497,7 @@ function defaultKeyOf(
  * is the state Ask for an area and the stop Ask first for Files & commands.
  */
 function valueText(value: string | null, key: PermissionUndoSkip['change']['key']): string {
+  if (key.kind === 'chat') return chatModeWord(value);
   if (value === null) return 'not set';
   const labels: Record<string, string> =
     key.kind === 'files' ? STOP_LABEL : key.kind === 'preset' ? PRESET_LABEL : STATE_LABEL;
@@ -513,12 +515,16 @@ function skipRow(skip: PermissionUndoSkip): string[] {
         ? change.key.action
         : change.key.kind === 'files'
           ? `files${change.key.runtime ? ` (${change.key.runtime})` : ''}`
-          : 'preset';
+          : change.key.kind === 'chat'
+            ? `chat ${change.key.sessionId.slice(0, 8)}`
+            : 'preset';
   const why =
     skip.reason === 'changed-since'
       ? `changed since: now ${valueText(skip.current, change.key)}`
       : skip.reason === 'floor'
-        ? 'would set something that always asks to Allowed'
+        ? change.key.kind === 'chat'
+          ? 'would loosen the chat'
+          : 'would set something that always asks to Allowed'
         : 'no longer exists';
   return [who, what, valueText(change.before, change.key), why];
 }

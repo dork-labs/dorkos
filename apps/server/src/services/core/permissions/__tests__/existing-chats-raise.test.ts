@@ -9,7 +9,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import { resolveStopMode, type DeclaredModes } from '@dorkos/shared/permission-semantics';
+import {
+  isNoLooserThan,
+  levelOfMode,
+  resolveStopMode,
+  type DeclaredModes,
+} from '@dorkos/shared/permission-semantics';
 import type { AgentPermissions, PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -55,6 +60,8 @@ function setup(
     seeded?: boolean;
     defaultStop?: PermissionStop | null;
     agentStops?: Record<string, PermissionStop>;
+    /** Chats whose write throws. */
+    failing?: string[];
   } = {}
 ) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chats-raise-'));
@@ -64,8 +71,14 @@ function setup(
   const port: ChatModePort = {
     modeOf: (id) => (modes.has(id) ? modes.get(id)! : 'gone'),
     setMode: async (id, mode) => {
+      if (opts.failing?.includes(id)) throw new Error('runtime not registered');
       writes.push([id, mode]);
       modes.set(id, mode ?? MODES.default!);
+    },
+    isLooser: async (_id, candidate, than) => {
+      const a = levelOfMode(MODES, candidate ?? MODES.default);
+      const b = levelOfMode(MODES, than ?? MODES.default);
+      return !a || !b || !isNoLooserThan(b, a);
     },
   };
   setChatModePort(port);
@@ -83,6 +96,8 @@ function setup(
     modes: (runtime) => (runtime === 'claude-code' ? MODES : undefined),
     port,
     activity: world.activity,
+    priorRaise: async () =>
+      world.events.some((e) => (e.metadata as { note?: unknown } | null)?.note === EXISTING_CHATS_NOTE),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
   return { dir, world, modes, writes, deps };
@@ -151,6 +166,8 @@ describe('raiseExistingChats', () => {
       [
         chat('already-full', { permissionMode: FULL }),
         chat('plan', { permissionMode: 'plan' }),
+        chat('never-ask', { permissionMode: 'dontAsk' }),
+        chat('other-computer', { runtime: 'computer-local' }),
         chat('cloud', { agentPath: '/work/dorkos-cloud' }),
         chat('no-agent', { agentPath: '/somewhere/else' }),
         chat('no-runtime', { runtime: null }),
@@ -229,21 +246,44 @@ describe('raiseExistingChats', () => {
     expect(meta.changes.map((c) => [c.key, c.before, c.after])).toEqual([
       [{ kind: 'chat', sessionId: 'one' }, 'default', FULL],
       [{ kind: 'chat', sessionId: 'two' }, ACT, FULL],
-      [{ kind: 'chat', sessionId: 'three' }, null, FULL],
+      [{ kind: 'chat', sessionId: 'three' }, MODES.default, FULL],
       [{ kind: 'chat', sessionId: 'other' }, 'default', FULL],
     ]);
     expect(meta.changes[3]!.target).toMatchObject({ kind: 'agent', agentId: 'a-other' });
   });
 
-  it('puts every chat back when the history event cannot be written', async () => {
+  it('changes no chat when the history event cannot be written', async () => {
     const t = setup([chat('one'), chat('two')]);
     cleanup.push(t.dir);
     t.deps.activity = { emit: async () => Promise.reject(new Error('disk full')) };
 
     expect(await raiseExistingChats(t.deps)).toBeNull();
-    expect(t.modes.get('one')).toBe('default');
-    expect(t.modes.get('two')).toBe('default');
+    expect(t.writes).toEqual([]);
     expect(fs.existsSync(t.deps.doneFile)).toBe(false);
+  });
+
+  it('changes no chat when the done file cannot be written, and the history line still marks it done', async () => {
+    const t = setup([chat('one')]);
+    cleanup.push(t.dir);
+    // A directory where the done file's folder should be: the write fails.
+    fs.writeFileSync(path.join(t.dir, 'permissions'), 'not a folder');
+
+    expect(await raiseExistingChats(t.deps)).toBeNull();
+    expect(t.writes).toEqual([]);
+    expect(t.world.events).toHaveLength(1);
+
+    // The next start sees the history line and runs nothing.
+    expect(await raiseExistingChats(t.deps)).toBeNull();
+    expect(t.writes).toEqual([]);
+  });
+
+  it('keeps going when one chat cannot be written; that chat keeps its mode', async () => {
+    const t = setup([chat('one'), chat('broken'), chat('three')], { failing: ['broken'] });
+    cleanup.push(t.dir);
+
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 2 });
+    expect(t.modes.get('broken')).toBe('default');
+    expect(t.modes.get('three')).toBe(FULL);
   });
 });
 
@@ -267,6 +307,7 @@ describe('Undo of the raise', () => {
     expect(t.modes.get('two')).toBe(ACT);
     // No stored mode ran at the runtime's own default; that is what it gets back.
     expect(t.modes.get('three')).toBe(MODES.default);
+    expect(t.writes.slice(-4).map(([, m]) => m)).not.toContain(null);
     expect(t.modes.get('other')).toBe('default');
     expect(result.skipped).toEqual([]);
     expect(result.changes).toHaveLength(4);
@@ -288,5 +329,41 @@ describe('Undo of the raise', () => {
     expect(result.skipped).toEqual([
       expect.objectContaining({ current: 'acceptEdits', reason: 'changed-since' }),
     ]);
+  });
+
+  it('never raises a chat: the Undo of the Undo is refused per chat', async () => {
+    const t = setup([chat('one')]);
+    cleanup.push(t.dir);
+    await raiseExistingChats(t.deps);
+    await t.world.service.undo(t.world.events[0]!.id, {}, LOCAL);
+    expect(t.modes.get('one')).toBe('default');
+
+    const again = await t.world.service.undo(t.world.events[1]!.id, { force: true }, LOCAL);
+
+    expect(t.modes.get('one')).toBe('default');
+    expect(again.changes).toEqual([]);
+    expect(again.skipped).toEqual([expect.objectContaining({ reason: 'floor' })]);
+  });
+
+  it('reports a chat it cannot write as skipped and sets the rest back', async () => {
+    const t = setup([chat('one'), chat('broken'), chat('three')]);
+    cleanup.push(t.dir);
+    await raiseExistingChats(t.deps);
+    const port = t.deps.port;
+    setChatModePort({
+      ...port,
+      setMode: async (id, mode) => {
+        if (id === 'broken') throw new Error('runtime not registered');
+        return port.setMode(id, mode);
+      },
+    });
+
+    const result = await t.world.service.undo(t.world.events[0]!.id, {}, LOCAL);
+
+    expect(t.modes.get('one')).toBe('default');
+    expect(t.modes.get('three')).toBe('default');
+    expect(t.modes.get('broken')).toBe(FULL);
+    expect(result.skipped).toEqual([expect.objectContaining({ reason: 'gone' })]);
+    expect(t.world.events).toHaveLength(2);
   });
 });

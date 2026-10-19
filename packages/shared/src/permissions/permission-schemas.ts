@@ -348,7 +348,7 @@ const CHAT_MODE_WORD: Record<string, string> = {
   plan: 'Plan',
   acceptEdits: 'Act',
   auto: 'Auto',
-  dontAsk: 'Full autonomy',
+  dontAsk: 'Never ask',
   bypassPermissions: 'Full autonomy',
 };
 

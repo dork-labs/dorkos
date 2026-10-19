@@ -422,7 +422,9 @@ export async function undoPermissionChange(
     if (JSON.stringify(compact(was) ?? null) === JSON.stringify(compact(next) ?? null)) continue;
     await deps.agents.writePermissions(id, compact(next));
   }
-  changes.push(...(await setChatsBack(chatsBack)));
+  const chats = await setChatsBack(chatsBack);
+  changes.push(...chats.made);
+  skipped.push(...chats.skipped);
 
   await ctx.record({
     changes,

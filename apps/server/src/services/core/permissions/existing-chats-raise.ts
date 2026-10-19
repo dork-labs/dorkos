@@ -17,29 +17,49 @@
  *   message, an agent's launch, a beat that read a marked post, a room) or was
  *   started from outside the app (a relay, Telegram, a bridged or space room, a
  *   connector, an extension), so its launching turn counts as unknown and the
- *   chat is left alone. So is a chat with no recorded origin.
+ *   chat is left alone. So is a chat with no recorded origin, and a chat on
+ *   another computer (`computer-local`), which this one cannot vouch for.
+ *
+ *   Known gap: `interactive` is also what an HTTP turn records when its caller
+ *   leaves out `X-DorkOS-Agent` (`httpTurnOrigin`), and it does not say whether
+ *   the request came over Wi-Fi or the tunnel. So a chat an agent opened over
+ *   HTTP without naming itself can be raised. Every TURN in it is still held to
+ *   its own ceiling (a marked turn never runs above the runtime default), so the
+ *   raise lends no stranger power; it only stops the routine prompts.
  * - **It belongs to a registered agent**, other than the agents kept as they are
  *   ({@link KEPT_AS_THEY_ARE}).
  * - **Its agent's level is looser than the chat's mode.** The level is what a
  *   person set for the agent (the person-set floor), else the configured
  *   default, held to the agent's own settings when those are stricter. The
  *   agent's own file can only lower it, never raise it. A chat is never
- *   lowered, and a chat in Plan mode is a person's choice and stays.
+ *   lowered, and a chat in Plan, or in any mode at Ask other than the
+ *   runtime's default (Claude Code's Never ask), is a person's choice and stays.
  *
  * Schedules are untouched: their mode lives on the schedule, not the chat.
  *
  * ## Once
  *
- * A done file in DorkOS's own data directory, written after the history event,
- * so a later boot never raises a chat a person has lowered again. Nothing runs,
- * and nothing is marked done, while the person-set record is unseeded or broken:
- * its floors cannot be trusted yet, so the next boot tries again.
+ * The history event is written first, then a done file in DorkOS's own data
+ * directory, and only then is any chat changed. Either one marks the raise as
+ * done, so a later boot never raises a chat a person has lowered again, and no
+ * chat is ever raised without a history line to undo it from. A chat whose
+ * write then fails keeps its mode, and its Undo finds it already back. Nothing
+ * runs while the person-set record is unseeded or broken: its floors cannot be
+ * trusted yet, so the next boot tries again.
  *
  * ## Through the settings path
  *
  * Each chat is written through the same session-settings write a person's mode
  * change makes (`ChatModePort.setMode`), and the history event lands in the
- * Activity feed and the audit log like any permission change.
+ * Activity feed, which the audit log copies (`audit/activity-tee.ts`), like any
+ * permission change.
+ *
+ * ## Undo
+ *
+ * An Undo only ever lowers a chat: setting one back to a looser mode (the Undo
+ * of an Undo) is refused per chat, since the agent's level may have dropped
+ * since. A chat that cannot be written is reported as skipped, never a reason
+ * to fail the rest.
  *
  * @module services/core/permissions/existing-chats-raise
  */
@@ -54,7 +74,11 @@ import {
   resolveStopMode,
   type DeclaredModes,
 } from '@dorkos/shared/permission-semantics';
-import type { AgentPermissions, PermissionChange } from '@dorkos/shared/permissions';
+import type {
+  AgentPermissions,
+  PermissionChange,
+  PermissionUndoSkip,
+} from '@dorkos/shared/permissions';
 import type { Logger } from '@dorkos/shared/logger';
 
 import type { ActivityService } from '../../activity/activity-service.js';
@@ -72,6 +96,9 @@ export const KEPT_AS_THEY_ARE: ReadonlySet<string> = new Set(['dorkos-cloud', 'd
 
 /** A chat mode a person chose on purpose and the raise never moves. */
 const PLAN_MODE_ID = 'plan';
+
+/** Chats on another computer, which this one cannot vouch for. */
+const COMPUTER_LOCAL_RUNTIME = 'computer-local';
 
 /** The note the history shows beside the raise. */
 export const EXISTING_CHATS_NOTE =
@@ -96,6 +123,8 @@ export interface ChatModePort {
    * runtime's own default mode, which is what a chat with no stored mode runs at.
    */
   setMode: (sessionId: string, mode: string | null) => Promise<void>;
+  /** Whether `candidate` is a looser mode than `than` on the chat's runtime. Unknown is looser. */
+  isLooser: (sessionId: string, candidate: string | null, than: string | null) => Promise<boolean>;
 }
 
 let chatModePort: ChatModePort | null = null;
@@ -121,25 +150,39 @@ export function chatModeNow(sessionId: string): string | null | 'gone' {
 
 /**
  * Set chats back to the mode each change recorded as `before`, for an Undo.
- * Each chat is written on its own; one that fails is logged by the caller's
- * catch and left out of what the Undo records.
+ * Only ever lowers: a chat the Undo would loosen is left as it is (`floor`),
+ * since its agent's level may have dropped since. Each chat is written on its
+ * own; one that is gone or cannot be written is reported, never thrown.
  *
  * @param changes - The `chat` changes to set back, already checked by the Undo.
- * @returns The changes the Undo made, current → restored.
+ * @returns The changes the Undo made (current → restored), and the ones it left.
  */
-export async function setChatsBack(
-  changes: readonly PermissionChange[]
-): Promise<PermissionChange[]> {
+export async function setChatsBack(changes: readonly PermissionChange[]): Promise<{
+  made: PermissionChange[];
+  skipped: PermissionUndoSkip[];
+}> {
   const made: PermissionChange[] = [];
-  if (!chatModePort) return made;
+  const skipped: PermissionUndoSkip[] = [];
   for (const change of changes) {
     if (change.key.kind !== 'chat') continue;
-    const current = chatModePort.modeOf(change.key.sessionId);
-    if (current === 'gone') continue;
-    await chatModePort.setMode(change.key.sessionId, change.before);
-    made.push({ ...change, before: current, after: change.before });
+    const sessionId = change.key.sessionId;
+    try {
+      const current = chatModePort ? chatModePort.modeOf(sessionId) : 'gone';
+      if (!chatModePort || current === 'gone') {
+        skipped.push({ change, current: null, reason: 'gone' });
+        continue;
+      }
+      if (await chatModePort.isLooser(sessionId, change.before, current)) {
+        skipped.push({ change, current, reason: 'floor' });
+        continue;
+      }
+      await chatModePort.setMode(sessionId, change.before);
+      made.push({ ...change, before: current, after: change.before });
+    } catch {
+      skipped.push({ change, current: null, reason: 'gone' });
+    }
   }
-  return made;
+  return { made, skipped };
 }
 
 /** Everything the raise reads and writes through. */
@@ -162,6 +205,8 @@ export interface ExistingChatsRaiseDeps {
   port: ChatModePort;
   /** The Activity writer. */
   activity: Pick<ActivityService, 'emit'>;
+  /** Whether the history already holds this raise: done, even without the done file. */
+  priorRaise: () => Promise<boolean>;
   /** Where the outcome and any failure are reported. */
   logger: Pick<Logger, 'info' | 'warn' | 'error'>;
 }
@@ -196,6 +241,17 @@ async function agentLevel(
 }
 
 /**
+ * Whether a chat's mode is one a person picks on purpose rather than lands on:
+ * Plan, or a mode at the Ask stop other than the runtime's default (Claude
+ * Code's Never ask, which refuses what is not allowed instead of asking).
+ */
+function isChosenMode(declared: DeclaredModes, modeId: string): boolean {
+  if (modeId === PLAN_MODE_ID) return true;
+  const mode = declared.values.find((m) => m.id === modeId);
+  return mode !== undefined && mode.stop === 'ask' && modeId !== declared.default;
+}
+
+/**
  * The mode one chat is raised to, or `null` when it stays as it is.
  *
  * @param deps - The raise's dependencies.
@@ -206,21 +262,23 @@ async function raisedModeFor(
   deps: ExistingChatsRaiseDeps,
   row: ExistingChatRow,
   agents: ReadonlyMap<string, PermissionAgentRef>
-): Promise<{ agent: PermissionAgentRef; mode: string } | null> {
+): Promise<{ agent: PermissionAgentRef; mode: string; before: string } | null> {
   if (row.launchOrigin !== RAISED_LAUNCH_ORIGIN || !row.runtime || !row.agentPath) return null;
-  if (row.permissionMode === PLAN_MODE_ID) return null;
+  if (row.runtime === COMPUTER_LOCAL_RUNTIME) return null;
   const agent = agents.get(row.agentPath);
   if (!agent || isKept(agent)) return null;
   const declared = deps.modes(row.runtime);
   if (!declared) return null;
+  const before = row.permissionMode ?? declared.default;
+  if (!before || isChosenMode(declared, before)) return null;
   const stop = await agentLevel(deps, agent, row.runtime);
   const mode = resolveStopMode(stop, declared.values);
   const target = levelOfMode(declared, mode);
-  const current = levelOfMode(declared, row.permissionMode ?? declared.default);
+  const current = levelOfMode(declared, before);
   if (!mode || !target || !current) return null;
   // Only ever up: a target no looser than what the chat has leaves it alone.
   if (isNoLooserThan(current, target)) return null;
-  return { agent, mode };
+  return { agent, mode, before };
 }
 
 /** Whether the raise already ran on this install. */
@@ -246,7 +304,7 @@ function markDone(doneFile: string, raised: number): void {
 export async function raiseExistingChats(
   deps: ExistingChatsRaiseDeps
 ): Promise<ExistingChatsRaiseResult | null> {
-  if (isDone(deps.doneFile)) return null;
+  if (isDone(deps.doneFile) || (await deps.priorRaise())) return null;
   if (!deps.personSet.isSeeded()) {
     deps.logger.warn(
       '[Permissions] Existing chats were not raised: what a person set for each agent is not readable yet. Trying again next start.'
@@ -259,7 +317,6 @@ export async function raiseExistingChats(
     try {
       const raise = await raisedModeFor(deps, row, agents);
       if (!raise) continue;
-      await deps.port.setMode(row.sessionId, raise.mode);
       changes.push({
         target: {
           kind: 'agent',
@@ -268,16 +325,19 @@ export async function raiseExistingChats(
           agentName: raise.agent.displayName || raise.agent.name,
         },
         key: { kind: 'chat', sessionId: row.sessionId },
-        before: row.permissionMode,
+        before: raise.before,
         after: raise.mode,
       });
     } catch (err) {
-      deps.logger.warn('[Permissions] could not raise one existing chat; it keeps its mode', {
+      deps.logger.warn('[Permissions] could not read one existing chat; it keeps its mode', {
         sessionId: row.sessionId,
         err: err instanceof Error ? err.message : String(err),
       });
     }
   }
+  // History first, then the done file, then the chats: no chat is raised
+  // without a line to undo it from, and a failed done file still leaves the
+  // line that marks the raise as done.
   try {
     await recordPermissionChange(deps.activity, {
       changes,
@@ -285,26 +345,28 @@ export async function raiseExistingChats(
       writer: UPGRADE_WRITER,
       note: EXISTING_CHATS_NOTE,
     });
+    markDone(deps.doneFile, changes.length);
   } catch (err) {
-    // A raise with no history line could not be undone, so it is put back and
-    // tried again next start.
-    deps.logger.error(
-      '[Permissions] could not record the raise of existing chats; setting them back',
-      {
-        err: err instanceof Error ? err.message : String(err),
-      }
-    );
-    for (const change of changes) {
-      if (change.key.kind !== 'chat') continue;
-      await deps.port.setMode(change.key.sessionId, change.before).catch(() => undefined);
-    }
+    deps.logger.error('[Permissions] could not record the raise of existing chats; none changed', {
+      err: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
-  markDone(deps.doneFile, changes.length);
-  if (changes.length > 0) {
-    deps.logger.info('[Permissions] raised existing chats to their agent’s level', {
-      raised: changes.length,
-    });
+  let raised = 0;
+  for (const change of changes) {
+    if (change.key.kind !== 'chat' || change.after === null) continue;
+    try {
+      await deps.port.setMode(change.key.sessionId, change.after);
+      raised += 1;
+    } catch (err) {
+      deps.logger.warn('[Permissions] could not raise one existing chat; it keeps its mode', {
+        sessionId: change.key.sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
-  return { raised: changes.length };
+  if (raised > 0) {
+    deps.logger.info('[Permissions] raised existing chats to their agent’s level', { raised });
+  }
+  return { raised };
 }

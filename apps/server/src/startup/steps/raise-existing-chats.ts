@@ -10,11 +10,14 @@ import path from 'node:path';
 import { sessionMetadata, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import { isNoLooserThan, levelOfMode } from '@dorkos/shared/permission-semantics';
+import { PERMISSION_CHANGED_EVENT } from '@dorkos/shared/permissions';
 
 import { logger } from '../../lib/logger.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { permissionGateSources } from '../../services/core/capabilities/permission-enforcement.js';
 import {
+  EXISTING_CHATS_NOTE,
   raiseExistingChats,
   setChatModePort,
   type ChatModePort,
@@ -30,7 +33,7 @@ export interface RaiseExistingChatsInput {
   db: Db;
   dorkHome: string;
   personSet: PersonSetPermissions;
-  activity: Pick<ActivityService, 'emit'>;
+  activity: Pick<ActivityService, 'emit' | 'list'>;
   mesh: () => ServerRefs['meshCore'];
 }
 
@@ -42,6 +45,34 @@ function agentsOf(mesh: ServerRefs['meshCore']): PermissionAgentRef[] {
     ...(a.displayName ? { displayName: a.displayName } : {}),
     projectPath: a.projectPath,
   }));
+}
+
+/** How far back the history is searched for an earlier raise. */
+const PRIOR_RAISE_DEPTH = 2_000;
+
+/**
+ * Whether the permission history already holds the raise of existing chats:
+ * the second half of the done flag, for an install whose done file was lost.
+ *
+ * @param activity - The Activity reader.
+ */
+async function historyHoldsRaise(activity: Pick<ActivityService, 'list'>): Promise<boolean> {
+  let cursor: string | undefined;
+  for (let seen = 0; seen < PRIOR_RAISE_DEPTH; ) {
+    const page = await activity.list({
+      limit: 100,
+      categories: 'permissions',
+      ...(cursor ? { before: cursor } : {}),
+    });
+    for (const row of page.items) {
+      const note = (row.metadata as { note?: unknown } | null)?.note;
+      if (row.eventType === PERMISSION_CHANGED_EVENT && note === EXISTING_CHATS_NOTE) return true;
+      cursor = row.occurredAt;
+    }
+    seen += page.items.length;
+    if (page.nextCursor === null || page.items.length === 0) return false;
+  }
+  return false;
 }
 
 /**
@@ -68,12 +99,24 @@ export function sessionSettingsChatModePort(db: Db): ChatModePort {
       const next = mode ?? runtime.getCapabilities().permissionModes?.default;
       if (!next) throw new Error(`no mode to set for ${runtime.type}`);
       const internal = runtime.getInternalSessionId(sessionId) ?? sessionId;
-      if (runtime.hasSession(internal)) {
+      const live = async () => {
         const updated = await runtime.updateSession(internal, { permissionMode: next });
         if (!updated.updated) throw new Error('the session was not found');
-        return;
-      }
+      };
+      if (runtime.hasSession(internal)) return live();
       await runtimeRegistry.saveSessionSettings(sessionId, { permissionMode: next });
+      // A turn may have loaded the chat between the check and the write; it
+      // read the old mode, so it is told the new one the way a person's change is.
+      if (runtime.hasSession(internal)) await live();
+    },
+    isLooser: async (sessionId, candidate, than) => {
+      const runtime = await runtimeRegistry.resolveForSession(sessionId);
+      const declared = runtime.getCapabilities().permissionModes;
+      if (!declared) return true;
+      const a = levelOfMode(declared, candidate ?? declared.default);
+      const b = levelOfMode(declared, than ?? declared.default);
+      if (!a || !b) return true;
+      return !isNoLooserThan(b, a);
     },
   };
 }
@@ -117,6 +160,7 @@ export async function raiseExistingChatsOnBoot(input: RaiseExistingChatsInput): 
           : undefined,
       port,
       activity: input.activity,
+      priorRaise: () => historyHoldsRaise(input.activity),
       logger,
     });
   } catch (err) {
