@@ -55,6 +55,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { errorBody } from '../lib/route-utils.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { currentServerRole } from '../lib/server-role.js';
+import { describeUserAgent } from '../lib/http/user-agent.js';
 import { currentAuditActor } from '../services/audit/audit-context.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { AUTH_COOKIES_SECURE } from '../services/core/auth/cookie-security.js';
@@ -64,7 +65,6 @@ import {
   computerConnection,
   hubComputerWaker,
   hubViewers,
-  describeUserAgent,
   mintBrowserDeviceId,
   readLinkedComputers,
   type HubComputerConnection,

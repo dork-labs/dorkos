@@ -26,7 +26,7 @@ function listWith(canSignOutOthers: boolean): SignedInDeviceList {
         createdAt: NOW,
         lastSeenAt: NOW,
         current: true,
-        userAgentLabel: 'DorkOS app on Mac',
+        name: 'Chrome on Mac',
       },
       {
         id: 'phone',
@@ -34,7 +34,7 @@ function listWith(canSignOutOthers: boolean): SignedInDeviceList {
         createdAt: NOW,
         lastSeenAt: NOW,
         current: false,
-        userAgentLabel: 'Safari on iPhone',
+        name: 'Safari on iPhone',
       },
     ],
   };
@@ -60,20 +60,20 @@ function setup(list: SignedInDeviceList) {
 afterEach(() => cleanup());
 
 describe('SignedInDevicesSection', () => {
-  it('lists each device by how it connects, marking this one', async () => {
+  it('names each device by its browser, marking this one', async () => {
     setup(listWith(true));
-    expect(await screen.findByText('This computer · DorkOS app on Mac')).toBeInTheDocument();
-    expect(screen.getByText('Wi-Fi · Safari on iPhone')).toBeInTheDocument();
+    expect(await screen.findByText('Chrome on Mac')).toBeInTheDocument();
+    expect(screen.getByText('Safari on iPhone')).toBeInTheDocument();
+    expect(screen.queryByText(/This computer/)).not.toBeInTheDocument();
     expect(screen.getByText('This device')).toBeInTheDocument();
-    expect(screen.getAllByText('Last active just now')).toHaveLength(2);
+    expect(screen.getByText('Last active just now')).toBeInTheDocument();
+    expect(screen.getByText('Wi-Fi · Last active just now')).toBeInTheDocument();
   });
 
   it('at this computer, signs out another device and everywhere else', async () => {
     const user = userEvent.setup();
     const { transport } = setup(listWith(true));
-    await user.click(
-      await screen.findByRole('button', { name: 'Sign out Wi-Fi · Safari on iPhone' })
-    );
+    await user.click(await screen.findByRole('button', { name: 'Sign out Safari on iPhone' }));
     await waitFor(() => expect(transport.signOutDevice).toHaveBeenCalledWith('phone'));
 
     await user.click(screen.getByRole('button', { name: 'Sign out everywhere else' }));
@@ -88,25 +88,27 @@ describe('SignedInDevicesSection', () => {
     vi.mocked(transport.signOutDevice).mockRejectedValue(
       Object.assign(new Error('That sign-in has already ended.'), { status: 404 })
     );
-    await screen.findByText('Wi-Fi · Safari on iPhone');
+    await screen.findByText('Safari on iPhone');
     expect(transport.listSignedInDevices).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: 'Sign out Wi-Fi · Safari on iPhone' }));
+    await user.click(screen.getByRole('button', { name: 'Sign out Safari on iPhone' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('That list was out of date.');
     await waitFor(() => expect(transport.listSignedInDevices).toHaveBeenCalledTimes(2));
   });
 
-  it('signs this device out through the sign-in itself, never by id', async () => {
-    const user = userEvent.setup();
-    const { transport, client } = setup(listWith(false));
-    await user.click(await screen.findByRole('button', { name: 'Sign out this device' }));
-    await waitFor(() => expect(client.signOut).toHaveBeenCalledOnce());
-    expect(transport.signOutDevice).not.toHaveBeenCalled();
+  it('offers no Sign out on this device’s row, here or elsewhere', async () => {
+    for (const canSignOutOthers of [true, false]) {
+      setup(listWith(canSignOutOthers));
+      const name = await screen.findByText('Chrome on Mac');
+      const row = name.closest('div.rounded-md') as HTMLElement;
+      expect(within(row).queryByRole('button')).not.toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it('elsewhere, offers no way to sign out other devices and says where', async () => {
     setup(listWith(false));
-    await screen.findByText('Wi-Fi · Safari on iPhone');
-    expect(screen.queryByRole('button', { name: /Sign out Wi-Fi/ })).not.toBeInTheDocument();
+    await screen.findByText('Safari on iPhone');
+    expect(screen.queryByRole('button', { name: /Sign out Safari/ })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Sign out everywhere else' })
     ).not.toBeInTheDocument();
