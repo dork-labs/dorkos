@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): a queued message from another agent shows its words, not our model wrapper (DOR-3060)'
   - "fix(server): another agent's queued message is never reworded or handed back as your draft (DOR-3060)"
+  - "fix(client): Stop and the arrow keys treat another agent's queued message as theirs, not yours (DOR-3060)"
 ---
 
 ### Fixed
