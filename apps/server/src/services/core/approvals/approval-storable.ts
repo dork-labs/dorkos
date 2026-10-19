@@ -109,3 +109,19 @@ export function storableServiceAction(action: ApprovalServiceAction): string | n
   const parsed = ApprovalServiceActionSchema.safeParse(swept);
   return parsed.success ? JSON.stringify(parsed.data) : null;
 }
+
+/** The one capability a person's own, card-free yes may record (DOR-2665). */
+export const OWN_ANSWER_CAPABILITY = 'ui.approve_doc_route';
+
+/**
+ * Pass through a person's own answer only for {@link OWN_ANSWER_CAPABILITY}, so a
+ * second caller can't use `recordOwnAnswer` to mint a quiet yes for anything else.
+ *
+ * @param input - The approval request being recorded as already granted.
+ * @returns The same input, unchanged.
+ */
+export function ownAnswerInput<T extends { capabilityId: string }>(input: T): T {
+  if (input.capabilityId !== OWN_ANSWER_CAPABILITY)
+    throw new Error(`Only ${OWN_ANSWER_CAPABILITY} records a person's own answer.`);
+  return input;
+}

@@ -242,6 +242,15 @@ export function createCanvasDocRouteControlRoutes(
 
   router.post('/:id/routes/:routeId/approve', async (c) => {
     c.header('Cache-Control', 'no-store');
+    // Allowing a route gives an agent a standing event route, and from Wi-Fi a
+    // person's yes is never a standing one (DOR-2969). Review and turning off
+    // stay open there: one changes nothing, the other only narrows.
+    if (honoRequestFacts(c).ingress === 'wifi') {
+      return c.json(
+        { error: 'Allow document routes at this computer.', code: 'NOT_FROM_WIFI' },
+        403
+      );
+    }
     const person = personOrRefuse(c);
     if (person instanceof Response) return person;
     try {

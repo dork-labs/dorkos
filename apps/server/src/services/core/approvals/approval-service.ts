@@ -76,6 +76,7 @@ import {
   storableReason,
   storableServiceAction,
   storableSummary,
+  ownAnswerInput,
 } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
@@ -753,18 +754,18 @@ export class ApprovalService {
    * row, its input hash and its one-use token are otherwise exactly those of
    * {@link ApprovalService.request}, so the yes is consumed the same way.
    *
-   * @param input - What is being allowed.
+   * @param input - What is being allowed: only a document route, so no other
+   *   capability can mint a card-free yes (the gate-bypass scan pins the callers).
    * @param decidedByUserId - The signed-in account saying yes, when login is on.
    * @returns The approval id and the one-time token to spend it with.
    */
-  recordOwnAnswer(input: ApprovalRequestInput, decidedByUserId?: string): ApprovalTicket {
-    const { row, token } = this.newRow(input);
-    const decided = {
-      ...row,
-      state: 'granted' as const,
-      decidedAt: new Date().toISOString(),
-      decidedByUserId: decidedByUserId ?? null,
-    };
+  recordOwnAnswer(
+    input: ApprovalRequestInput,
+    decidedByUserId: string | null = null
+  ): ApprovalTicket {
+    const { row, token } = this.newRow(ownAnswerInput(input));
+    const decidedAt = new Date().toISOString();
+    const decided = { ...row, state: 'granted' as const, decidedAt, decidedByUserId };
     this.db.insert(approvals).values(decided).run();
     return { approvalId: decided.id, token, expiresAt: decided.expiresAt };
   }

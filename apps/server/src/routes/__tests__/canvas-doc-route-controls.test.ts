@@ -38,6 +38,7 @@ import { createServerPrincipal } from '../../services/connectors/principal/serve
 import { env } from '../../env.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { DocRouteGrantError } from '../../services/canvas/doc-channel/grant-policy.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -136,7 +137,12 @@ beforeAll(async () => {
   runMigrations(db);
   initAuth(db, dir);
   configManager.set('auth', { enabled: false });
-  fixture.mount(composedListener(new MainRequestAdmission(), deps));
+  const listener = composedListener(new MainRequestAdmission(), deps);
+  // A test-only header stands in for the Wi-Fi listener's own ingress mark.
+  fixture.mount((req, res) => {
+    if (req.headers['x-test-ingress'] === 'wifi') markIngress(req, 'wifi');
+    return listener(req, res);
+  });
   const account = { email: 'owner@dork.test', password: 'correct-horse-battery-staple' };
   expect(
     (
@@ -334,6 +340,43 @@ describe('document route controls over the mounted app', () => {
       (await request(server).post(`${endpoint()}/routes/helper/review`).send({ expiresAt: 'soon' }))
         .status
     ).toBe(400);
+  });
+
+  it('refuses allowing a route from Wi-Fi, but still reviews and turns off there', async () => {
+    declare();
+    // A real Wi-Fi sign-in: the session it mints is held to the Wi-Fi level.
+    const signIn = await request(server)
+      .post('/api/auth/sign-in/email')
+      .set('Origin', origin)
+      .set('x-test-ingress', 'wifi')
+      .send({ email: 'owner@dork.test', password: 'correct-horse-battery-staple' });
+    expect(signIn.status).toBe(200);
+    const wifi = signIn.headers['set-cookie'] as unknown as string[];
+    const reviewed = await request(server)
+      .post(`${endpoint()}/routes/helper/review`)
+      .set('x-test-ingress', 'wifi')
+      .set('Cookie', wifi)
+      .send({ expiresAt: hour() });
+    expect(reviewed.status).toBe(200);
+    const approvalsBefore = db.select().from(approvalRows).all().length;
+    const refused = await request(server)
+      .post(`${endpoint()}/routes/helper/approve`)
+      .set('x-test-ingress', 'wifi')
+      .set('Cookie', wifi)
+      .send({ expiresAt: reviewed.body.expiresAt, reviewHash: reviewed.body.reviewHash });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('NOT_FROM_WIFI');
+    expect(grantRows()).toHaveLength(0);
+    expect(db.select().from(approvalRows).all()).toHaveLength(approvalsBefore);
+    await allow('helper');
+    const off = await request(server)
+      .post(`${endpoint()}/routes/helper/revoke`)
+      .set('x-test-ingress', 'wifi')
+      .set('Cookie', wifi)
+      .send({});
+    expect(off.status).toBe(200);
+    expect(grantRows().every((row) => row.revokedAt !== null)).toBe(true);
+    expect(await stateOf('helper')).not.toBe('granted');
   });
 
   it('refuses an agent caller at every write and every read, verified or not', async () => {
