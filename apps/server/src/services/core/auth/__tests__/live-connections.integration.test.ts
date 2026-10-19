@@ -34,7 +34,7 @@ vi.mock('../../../audit/audit-trail.js', async (importOriginal) => ({
 import { getAuth, initAuth, verifyRequestAuth } from '../index.js';
 import { inRestartWindow } from '../sessions/live-connections.js';
 import { sweepLiveConnections } from '../sessions/live-connections.js';
-import { liveSessionIds } from '../sessions/signed-in-devices.js';
+import { endSetupSignIns, liveSessionIds } from '../sessions/signed-in-devices.js';
 import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
@@ -316,24 +316,35 @@ describe('signing out ends what that sign-in had open', () => {
     expect(fromPhone.body.canSignOutOthers).toBe(false);
   });
 
-  it('names each sign-in by its browser, and leaves out only the sign-up one', async () => {
+  it('names each sign-in by its browser, and ends only the sign-up one at start', async () => {
     // As on an install set up a minute ago: the account and its sign-up sign-in.
     const setUp = new Date(Date.now() - 60_000);
     db.update(user).set({ createdAt: setUp }).where(eq(user.id, ownerId)).run();
     db.update(session).set({ createdAt: setUp }).where(eq(session.userAgent, '')).run();
     const here = await signInVia('direct');
     await signInVia('wifi');
-    // A sign-in made later with no browser (a script with the password) is listed.
+    // A sign-in made later with no browser (a script with the password) stays.
     await signInVia('direct', false);
+    const noBrowser = () =>
+      db
+        .select()
+        .from(session)
+        .where(eq(session.userId, ownerId))
+        .all()
+        .filter((row) => !row.userAgent);
+    expect(noBrowser()).toHaveLength(2);
+
+    // What the server does as it starts: the one `beforeAll`'s sign-up made goes.
+    expect(await endSetupSignIns(getAuth()!, ownerId)).toBe(1);
+    expect(noBrowser()).toHaveLength(1);
+
     const rows = db.select().from(session).where(eq(session.userId, ownerId)).all();
     const res = await devices('get', '/sessions', 'direct', here);
     const names: string[] = res.body.sessions.map((s: { name: string }) => s.name);
     expect(names[0]).toBe('Chrome on Mac');
     expect(names).toContain('Safari on iPhone');
     expect(names.filter((name) => name === 'A web browser')).toHaveLength(1);
-    // The one the sign-up in `beforeAll` made, with no browser, is the one left out.
-    expect(rows.filter((row) => !row.userAgent)).toHaveLength(2);
-    expect(names).toHaveLength(rows.length - 1);
+    expect(names).toHaveLength(rows.length);
   });
 
   it('signs out another device only from this computer, and your own from anywhere', async () => {
