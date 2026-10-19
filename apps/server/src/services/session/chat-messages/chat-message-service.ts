@@ -13,7 +13,9 @@
  *    starts finds both.
  * 3. **How it arrives.** Queue by default (the dispatcher holds it while the
  *    receiver is busy; an idle receiver starts at once). Agent messages that
- *    wait together are appended into one queue row, so they run as one turn.
+ *    wait together are appended into one queue row, so they run as one turn
+ *    at the receiver's next turn boundary, in the order they were sent,
+ *    however long apart they were sent (DOR-3054).
  *    `steer` joins the running turn only when the receiver's turn runs no
  *    looser than the sender, because a steer cannot be held to a ceiling the
  *    running turn already passed; otherwise it waits in the queue and the
@@ -82,11 +84,11 @@ import { assertChatSendable, resolveChatTarget, sameChat, type ChatTarget } from
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
 
-/** Agent messages enqueued this close to the waiting one they follow are batched into it. */
-export const CHAT_BATCH_WINDOW_MS = 2 * 60_000;
-
 /** The longest message. */
 export const CHAT_MESSAGE_MAX = 20_000;
+
+/** What a steer that has to wait is told once it waits with other agent messages. */
+const BATCHED_STEER_NOTE = 'It waits with the other agent messages there; they run as one turn.';
 
 /** The longest Sent-card summary. */
 export const CHAT_SUMMARY_MAX = 80;
@@ -329,12 +331,6 @@ export class ChatMessageService {
     const busy =
       target.sessionId !== null && (await this.deps.isBusy(target.sessionId).catch(() => false));
 
-    // Batching: agent messages that wait together run as one turn.
-    if (delivery === 'queue' && target.sessionId !== null && busy) {
-      const batched = this.batchInto(target.sessionId, row, content);
-      if (batched) return batched;
-    }
-
     let note: string | undefined;
     if (delivery === 'steer' && target.sessionId !== null && busy) {
       // Only into a turn that runs no looser than the sender: a running turn
@@ -358,6 +354,15 @@ export class ChatMessageService {
         note =
           'That chat can’t take a message mid-turn right now, so it waits for the turn to end.';
       }
+    }
+
+    // Batching: agent messages that wait together run as one turn, and a steer
+    // that has to wait (`note` says why) waits with them rather than behind
+    // them. One row per message used to mean one turn per message, so the
+    // fifth message waited out four whole turns (DOR-3054).
+    if (target.sessionId !== null && busy && (delivery === 'queue' || note !== undefined)) {
+      const batched = this.batchInto(target.sessionId, row, content);
+      if (batched) return note ? { ...batched, note: `${note} ${BATCHED_STEER_NOTE}` } : batched;
     }
 
     const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
@@ -423,7 +428,17 @@ export class ChatMessageService {
 
   /**
    * Append a message to the agent-sent row waiting at the tail of a chat's
-   * queue, when there is one young enough, so they run as one turn.
+   * queue, so they run as one turn.
+   *
+   * However long that row has waited (DOR-3054). There used to be a two-minute
+   * window, and messages sent a few minutes apart to a chat in a long turn each
+   * got a row of their own; each row is a turn, so they arrived one per turn,
+   * an hour or more late, and the receiver acted on the first before it could
+   * see the last that changed it. Waiting together means arriving together.
+   *
+   * Only the tail, so it never runs ahead of a row queued behind the one it
+   * joins (a person's message, or a hand reorder). And only up to a size
+   * limit, past which it starts a row of its own.
    */
   private batchInto(
     sessionId: string,
@@ -435,10 +450,13 @@ export class ChatMessageService {
     const rows = queue.list(queueKeyOf(sessionId));
     const tail = rows.at(-1);
     if (!tail || !isChatClientId(tail.enqueuedBy) || tail.disposition !== 'queue') return null;
-    if (this.now() - tail.enqueuedAt > CHAT_BATCH_WINDOW_MS) return null;
     // Read and written in one tick: a row whose words are being read into a
     // turn right now would lose anything appended to it.
     if (isQueuedMessageLaunching(tail.id)) return null;
+    // One batched turn grows to five messages' worth at most: past it a message
+    // starts a row of its own, so hours of messages into a chat stuck in a long
+    // turn cannot become one prompt that fails all at once.
+    if (tail.content.length + content.length > 5 * CHAT_MESSAGE_MAX) return null;
     if (!queue.updateContent(tail.id, `${tail.content}\n\n${content}`)) return null;
     this.deps.store.update(row.id, { toSessionId: sessionId, queueMessageId: tail.id });
     emitQueueUpdate(sessionId);
