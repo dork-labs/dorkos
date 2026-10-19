@@ -99,9 +99,16 @@ function pageFrame(frame: CanvasChannelFrame): CanvasDocPageFrame {
   return { type: frame.type, docSeq: frame.docSeq, event: frame.event };
 }
 
-/** `source` with the boot nonce added to its fragment, keeping any fragment it has. */
+/**
+ * `source` with the boot nonce added to its query, keeping any query and
+ * fragment it has. The query, never the fragment: a redirect carries a
+ * request's fragment forward to its target, but replaces its query.
+ */
 function withBoot(source: string, boot: string): string {
-  return `${source}${source.includes('#') ? '&' : '#'}${CANVAS_DOC_BOOT_PARAM}=${boot}`;
+  const at = source.indexOf('#');
+  const base = at < 0 ? source : source.slice(0, at);
+  const fragment = at < 0 ? '' : source.slice(at);
+  return `${base}${base.includes('?') ? '&' : '?'}${CANVAS_DOC_BOOT_PARAM}=${boot}${fragment}`;
 }
 
 const HANDSHAKE_SCHEDULER = {

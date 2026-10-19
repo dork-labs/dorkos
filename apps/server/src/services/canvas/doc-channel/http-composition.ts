@@ -270,6 +270,10 @@ export function createDocChannelHttpComposition(deps: {
           binding?: { origin?: Pick<ServerPrincipalClaims, 'kind' | 'owner'> };
         }
       ).binding?.origin;
+      // A grant an agent made for itself records its runtime proof, which names
+      // this installation, so it stays current after an owner account is
+      // created, as does that agent's live access. "Authority from before the
+      // account does not carry over" applies to operator grants only.
       if (!sameOwner(origin)) throw new DocChannelNotFoundError();
       const identity = deps.documents.lookupIdentity(grant.documentId);
       const channel = channels.getChannel(grant.documentId, tx);

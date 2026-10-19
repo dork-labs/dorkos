@@ -23,13 +23,19 @@ const OFFLINE = 'Page is offline. Reload to reconnect.';
 
 /**
  * An outside page that does everything a hostile one could: answers any
- * challenge (with no nonce and with a guessed one), uses any port it is
- * handed, and records every Doc message it was sent.
+ * challenge with no nonce, a guessed one, and ANY boot nonce it can find in its
+ * own URL (query or fragment, which is where a redirect would carry one), uses
+ * any port it is handed, and records every Doc message it was sent.
  */
 const ECHO_PAGE = `<!doctype html><html><head><title>Outside</title></head><body>
 <h1>Outside page</h1>
 <script>
 const seen = [];
+const bootIn = (part) => {
+  const found = /(?:^|[?#&])dorkos-boot=([^&#]*)/.exec(part);
+  return found ? decodeURIComponent(found[1]) : null;
+};
+const boots = [bootIn(location.search), bootIn(location.hash)].filter(Boolean);
 addEventListener('message', (event) => {
   const data = event.data;
   if (!data || data.protocol !== 'dorkos-doc') return;
@@ -37,6 +43,7 @@ addEventListener('message', (event) => {
   if (data.kind === 'challenge') {
     parent.postMessage({ ...data, kind: 'ack' }, '*');
     parent.postMessage({ ...data, kind: 'ack', boot: 'guessed-boot-nonce' }, '*');
+    for (const boot of boots) parent.postMessage({ ...data, kind: 'ack', boot }, '*');
   }
   if (data.kind === 'connect' && event.ports[0]) {
     const id = '00000000-0000-4000-8000-0000000000ee';
@@ -47,6 +54,7 @@ addEventListener('message', (event) => {
 });
 window.__echo = {
   seen,
+  boots,
   // Ordered after anything the host already posted here: same sender, same target.
   barrier(marker) {
     return new Promise((resolve) => {
@@ -63,7 +71,7 @@ window.__echo = {
 </script></body></html>`;
 
 type EchoWindow = Window & {
-  __echo: { seen: string[]; barrier(marker: string): Promise<string[]> };
+  __echo: { seen: string[]; boots: string[]; barrier(marker: string): Promise<string[]> };
 };
 
 /** Another site on its own port: `/echo` (any method) and `/redirect` to it. */
@@ -203,9 +211,15 @@ export function registerDocFrameOutsideBrowserTests() {
             .toContain('challenge');
           const seen = await outsideSaw(frame);
           expect(redirected).toBe(true);
-          // It answered with no nonce and a guessed one: neither earns a port.
-          expect(seen).not.toContain('connect');
+          // A redirect's `Location` replaces the query the nonce rides in, so
+          // the target never holds it (a fragment would have been carried
+          // forward). It answered with none, a guessed one, and whatever its
+          // URL held: nothing earned a port, and nothing was sent.
+          expect(seen).toEqual(['challenge']);
           expect(events.counter.posted).toBe(0);
+          expect(
+            await frame.evaluate(() => (window as unknown as EchoWindow).__echo.boots)
+          ).toEqual([]);
         });
       } finally {
         events.stop();

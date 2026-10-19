@@ -70,6 +70,7 @@ function Host({
   frameKey = 0,
   bridgeEligibility = 'served-document',
   previewOrigin = null,
+  source = '/served/frame.html',
 }: {
   documentId?: string;
   nonce?: number;
@@ -77,6 +78,7 @@ function Host({
   frameKey?: number;
   bridgeEligibility?: DocFrameChannelParams['bridgeEligibility'];
   previewOrigin?: string | null;
+  source?: string;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const channel = useDocFrameChannel({
@@ -84,7 +86,7 @@ function Host({
     documentId,
     logicalUrl: 'frame.html',
     reloadNonce: nonce,
-    resolvedSource: '/served/frame.html',
+    resolvedSource: source,
     bridgeEligibility,
     previewOrigin,
   });
@@ -107,7 +109,7 @@ const tree = (node: React.ReactNode) => (
 const frame = () => screen.getByTitle('page') as HTMLIFrameElement;
 /** The boot nonce the host put on this frame's `src`. */
 const bootOf = (element: HTMLIFrameElement) =>
-  /#dorkos-boot=([0-9a-f-]{36})$/.exec(element.getAttribute('src') ?? '')?.[1];
+  /[?&]dorkos-boot=([0-9a-f-]{36})(?:[&#]|$)/.exec(element.getAttribute('src') ?? '')?.[1];
 const started = () =>
   vi.mocked(DocFrameHandshake.prototype.start).mock.contexts as DocFrameHandshake[];
 /** The page answers the newest challenge, as the injected SDK would. */
@@ -165,7 +167,7 @@ it('offers a port only after the frame itself reports a load, bound to the opaqu
   await act(async () => {});
   expect(observe).not.toHaveBeenCalled();
   // The navigation itself carries the nonce the page must answer with.
-  expect(frame().getAttribute('src')).toMatch(/^\/served\/frame\.html#dorkos-boot=[0-9a-f-]{36}$/);
+  expect(frame().getAttribute('src')).toMatch(/^\/served\/frame\.html\?dorkos-boot=[0-9a-f-]{36}$/);
   fireEvent.load(frame());
   await waitFor(() => expect(started()).toHaveLength(1));
   const captured = observe.mock.calls[0][0];
@@ -177,6 +179,14 @@ it('offers a port only after the frame itself reports a load, bound to the opaqu
     eligibility: 'served-document',
     exactOrigin: 'null',
   });
+});
+
+it('puts the nonce in the query, keeping the source’s own query and fragment', () => {
+  // The query, because a redirect replaces it; it would carry a fragment forward.
+  render(tree(<Host source="/served/frame.html?view=2#top" />));
+  expect(frame().getAttribute('src')).toMatch(
+    /^\/served\/frame\.html\?view=2&dorkos-boot=[0-9a-f-]{36}#top$/
+  );
 });
 
 it('binds a preview page to the exact origin DorkOS minted for it, with no nonce on its source', async () => {

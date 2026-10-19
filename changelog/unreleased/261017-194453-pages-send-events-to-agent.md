@@ -2,6 +2,7 @@
 covers:
   - 'feat(canvas): pages in the canvas browser can send events to their agent (DOR-2665)'
   - 'fix(canvas): only the page DorkOS opened can connect a served frame (DOR-2665)'
+  - 'fix(canvas): the boot nonce rides the query, so a redirect never carries it (DOR-2665)'
 ---
 
 ### Added

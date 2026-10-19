@@ -144,6 +144,16 @@ export class DocFrameHandshake {
       if (!current()) return refuse();
       this.port.start();
       if (!current()) return refuse();
+      // A served document's origin is opaque (`null`), and `postMessage` has
+      // no way to name an opaque origin: `'*'` is the only target that reaches
+      // it, and nothing can pin delivery to "the document that acked". So if
+      // the frame navigates between the ack and this post, the port (and the
+      // correlation it rides with) lands in whatever document is there now,
+      // which could use it until that document's own load event retires this
+      // binding and closes the port. The window is the one message hop between
+      // the booted page's ack and this synchronous reply, and only a page that
+      // navigates itself at that instant opens it. A preview names its exact
+      // minted origin instead, so its port can only ever reach that origin.
       this.bound.binding.observation.frame!.postMessage(
         { ...this.challenge, kind: 'connect' },
         this.bound.binding.observation.exactOrigin === 'null'

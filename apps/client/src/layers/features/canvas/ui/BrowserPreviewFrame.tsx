@@ -115,8 +115,8 @@ export function BrowserBody({
       // reload of the SAME src still bumps the nonce. Remounting is also what
       // resets "has it loaded yet" and "is it past its deadline" — a page's
       // loading state belongs to that page and nothing else. Keyed on the
-      // source the frame really gets: a new boot nonce changes only the
-      // fragment, which would otherwise navigate within the old document.
+      // source the frame really gets, boot nonce included, so a new nonce is
+      // always a fresh element and a fresh document.
       key={`${frameSource}:${reloadNonce}`}
       src={frameSource}
       sandbox={resolved.sandbox}

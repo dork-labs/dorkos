@@ -26,12 +26,14 @@ const correlation = {
   generation: CanvasDocIncarnationSchema.shape.generation,
 };
 /**
- * The fragment parameter a host puts on a served document's frame `src`.
+ * The query parameter a host puts on a served document's frame `src`.
  *
- * Its value is a one-navigation boot nonce. The injected shim reads and removes
- * it before any page script runs, then answers each challenge with it, so only
- * the document DorkOS itself navigated the frame to can prove it is that
- * document — a page reached by a link, a form, a redirect or `location` cannot.
+ * Its value is a one-navigation boot nonce. The injected shim reads it before
+ * any page script runs, takes it out of the URL, and answers each challenge
+ * with it, so only the document DorkOS itself navigated the frame to can prove
+ * it is that document. It rides the QUERY, not the fragment, on purpose: a
+ * redirect's `Location` replaces the query but carries a request's fragment
+ * forward (Fetch), so a redirect target never receives it.
  */
 export const CANVAS_DOC_BOOT_PARAM = 'dorkos-boot';
 /** Strict window handshake; ports belong only to the connect transfer, never its payload. */

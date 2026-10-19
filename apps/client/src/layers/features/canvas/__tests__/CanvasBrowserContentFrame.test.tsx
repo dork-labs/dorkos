@@ -75,8 +75,8 @@ function acknowledge() {
     window.dispatchEvent(new MessageEvent('message', { data: 'ack' }));
   });
 }
-/** The served source with a boot nonce on its fragment, as the frame is given it. */
-const BOOTED = /^\/api\/workbench\/serve\/unit-token\/preview\.html#dorkos-boot=[0-9a-f-]{36}$/;
+/** The served source with a boot nonce in its query, as the frame is given it. */
+const BOOTED = /^\/api\/workbench\/serve\/unit-token\/preview\.html\?dorkos-boot=[0-9a-f-]{36}$/;
 async function servedFrame() {
   render(
     <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />

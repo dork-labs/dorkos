@@ -16,7 +16,7 @@
  * @module http/__tests__/contract/doc-channel-login-on.contract
  */
 import { randomUUID } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -46,6 +46,23 @@ const OWNER = {
 
 /** The preview document is titled by its loopback host. */
 const PREVIEW_TITLE = /^(?:127\.0\.0\.1|localhost)\b/;
+
+/** POST with exactly these headers (fetch will not let a caller set `Host`). */
+function rawStatus(
+  baseUrl: string,
+  path: string,
+  body: string,
+  headers: Record<string, string>
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(new URL(path, baseUrl), { method: 'POST', headers }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
 
 /** Poll `read` until `done` holds, or fail with the last value seen. */
 async function until<T>(read: () => Promise<T>, done: (value: T) => boolean, ms = 60_000) {
@@ -177,6 +194,25 @@ describe('contract: a preview page’s companion event wakes its agent with logi
       body: JSON.stringify(event),
     });
     expect(anonymous.status).toBe(401);
+    // The owner's own cookie from a foreign Origin is refused by the real
+    // chain's CORS check, and sent to a foreign Host name it is refused too:
+    // with login on the host guard stands aside by design and the session gate
+    // turns it away. Both are refused before any route runs; had either been
+    // accepted, the POST below would answer 200, a duplicate, not 201.
+    const foreignOrigin = await call('POST', path, event, {
+      ...generation,
+      origin: 'https://attacker.test',
+    });
+    expect(foreignOrigin.status).toBeGreaterThanOrEqual(400);
+    expect(
+      await rawStatus(server!.baseUrl, path, JSON.stringify(event), {
+        host: 'attacker.test',
+        cookie,
+        origin,
+        'content-type': 'application/json',
+        ...generation,
+      })
+    ).toBe(401);
 
     const posted = await call('POST', path, event, generation);
     expect(posted.status).toBe(201);

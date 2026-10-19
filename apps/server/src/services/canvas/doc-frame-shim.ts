@@ -2,17 +2,20 @@
 import { CANVAS_DOC_BOOT_PARAM } from '@dorkos/shared/canvas-doc-frame-wire';
 
 /**
- * The shim runs before any page script (it is the first thing in `<head>`), so
- * it is the only code that ever sees the host's boot nonce: it takes the
- * parameter out of the fragment with `replaceState` (no new history entry, no
- * `hashchange`) and keeps it in this closure. A reload or any later document in
- * the frame therefore boots without one, and cannot connect.
+ * The shim runs before any page script (it is the first thing in `<head>`). It
+ * takes the host's boot nonce out of the query with `replaceState` (no new
+ * history entry, nothing sent) and keeps it in this closure, so `location` no
+ * longer shows it to page scripts, and a reload or any later document in the
+ * frame boots without one and cannot connect. The page's own scripts can still
+ * read the original URL elsewhere (the navigation timing entry's `name`); that
+ * only hands the nonce to the document it already belongs to. If the URL cannot
+ * be rewritten, the nonce is dropped rather than left readable.
  */
 export const DOC_FRAME_SHIM_SCRIPT = String.raw`(()=>{
 'use strict';
 if(window.parent===window)return;
 let boot=null;
-try{const prefix=${JSON.stringify(`${CANVAS_DOC_BOOT_PARAM}=`)},hash=location.hash.slice(1);if(hash){const parts=hash.split('&'),kept=parts.filter(part=>!part.startsWith(prefix));const found=parts.find(part=>part.startsWith(prefix));if(found){const value=found.slice(prefix.length);if(value&&value.length<=128)boot=value;history.replaceState(history.state,'',location.href.split('#')[0]+(kept.length?'#'+kept.join('&'):''));}}}catch{}
+try{const prefix=${JSON.stringify(`${CANVAS_DOC_BOOT_PARAM}=`)},search=location.search.slice(1);if(search){const parts=search.split('&'),kept=parts.filter(part=>!part.startsWith(prefix));const found=parts.find(part=>part.startsWith(prefix));if(found){const value=found.slice(prefix.length);boot=value&&value.length<=128?value:null;history.replaceState(history.state,'',location.pathname+(kept.length?'?'+kept.join('&'):'')+location.hash);}}}catch{boot=null;}
 const parent=window.parent, observers=new Map(), pending=new Map();
 let hostOrigin=null,helloTimer=null,pageRetired=false,handshakeToken={};
 let port=null, binding=null, status='connecting', state=null, stateRev=-1, highest=-1, tries=0, queuedBytes=0;
