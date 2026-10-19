@@ -99,7 +99,8 @@ describe('chatLaunchMarks', () => {
     chat('own-sender', 'interactive');
     chat('tg-sender', 'relay-binding');
     opener('unknown', 'own-sender', 'runtime-default');
-    opener('sentinel', 'own-sender', 'unknown-own-sender');
+    opener('list', 'own-sender', [LEVEL, 'runtime-default']);
+    opener('marked-list', 'own-sender', [{ ...LEVEL, outsider: true }, 'runtime-default']);
     opener('level', 'own-sender', LEVEL);
     opener('outsider', 'own-sender', { ...LEVEL, outsider: true });
     opener('teammate', 'own-sender', { ...LEVEL, teammate: [{ roomId: 'r', authorId: 'a' }] });
@@ -107,7 +108,8 @@ describe('chatLaunchMarks', () => {
     const marked = chatLaunchMarks(db);
 
     expect(marked('unknown', 'chat-message')).toBe(false);
-    expect(marked('sentinel', 'chat-message')).toBe(false);
+    expect(marked('list', 'chat-message')).toBe(false);
+    expect(marked('marked-list', 'chat-message')).toBe(true);
     expect(marked('level', 'chat-message')).toBe(false);
     expect(marked('no-opener', 'chat-message')).toBe(false);
     expect(marked('outsider', 'chat-message')).toBe(true);

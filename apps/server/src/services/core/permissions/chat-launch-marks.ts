@@ -1,8 +1,9 @@
 /**
  * Whether what launched a chat was marked or came from outside, read from what
  * the database keeps (DOR-3106/3107). A chat's own turn marks do not outlive a
- * restart, so this is the durable reading, shared by the one-time raise of
- * existing chats and by a new chat a message opens, so the two cannot disagree.
+ * restart, so this is the durable reading the one-time raise of existing chats
+ * goes by. (A NEW chat a message opens is decided by the sender's bound at send
+ * time, `senderBound` in `chat-message-ceiling.ts`, DOR-3107.)
  *
  * Unknown is not marked (Dorian 2026-10-19 15:07, Security 15:10): only a mark
  * that was kept, or a source that is outside, counts.

@@ -29,7 +29,6 @@ import {
 } from '../existing-chats-raise.js';
 import { personWriter } from '../permission-history.js';
 import { marksForTurn, withMarks } from '../../turn-power/turn-marks.js';
-import { storedSenderBound } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes as DeclaredModes;
@@ -411,7 +410,15 @@ describe('openingMessageMarked', () => {
       { asks: 'always', reach: 'everything' },
       marksForTurn({ permissionCeiling: 'runtime-default' })
     );
-    expect(openingMessageMarked(JSON.stringify(storedSenderBound(held, true)))).toBe(true);
+    expect(openingMessageMarked(JSON.stringify(held))).toBe(true);
+  });
+
+  it('reads a list of bounds as marked when any of them carries a mark', () => {
+    const level = { asks: 'never', reach: 'full' };
+    expect(
+      openingMessageMarked(JSON.stringify([{ ...level, outsider: true }, 'runtime-default']))
+    ).toBe(true);
+    expect(openingMessageMarked(JSON.stringify([level, 'runtime-default']))).toBe(false);
   });
 
   it('reads the runtime default, an unmarked level, no message or junk as not marked', () => {

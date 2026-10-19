@@ -206,25 +206,34 @@ export async function setChatsBack(changes: readonly PermissionChange[]): Promis
 }
 
 /**
- * Whether a chat message's stored sender level carries a mark: an outsider's
- * words or a teammate's chain. A sender whose turn was held to the runtime's
- * default (a Wi-Fi sign-in's, DOR-3037) stores its level with the outsider
- * mark, so it reads as marked here. The bare runtime default (what rows from
- * before the unknown-sender value stored for any unknown sender), a level with
- * no marks, an unreadable value or no message at all is unknown or unmarked,
- * and raises.
+ * Whether a chat message's stored sender bound carries a mark: an outsider's
+ * words or a teammate's chain, on the level itself or on any of the bounds a
+ * list holds (`[level, cap]`, the shape #3107 stores for a marked sender). The
+ * runtime default alone, a level with no marks, an unreadable value or no
+ * message at all is unknown or unmarked, and raises.
+ *
+ * Deliberately not `isMarkedBound` (`chat-message-ceiling.ts`), which reads the
+ * runtime default as marked: every row this raise reads was written before the
+ * build that ships it, when a sender whose level was unknown stored exactly
+ * that, and unknown means raise. The raise runs once, at that build's first
+ * start, before it writes a row of its own.
  *
  * @param ceilingJson - The opening message's `ceiling_json`, or `undefined` for none.
  */
 export function openingMessageMarked(ceilingJson: string | undefined): boolean {
   if (ceilingJson === undefined) return false;
+  let value: unknown;
   try {
-    const value = JSON.parse(ceilingJson) as { outsider?: unknown; teammate?: unknown } | null;
-    if (value === null || typeof value !== 'object') return false;
-    return value.outsider === true || Array.isArray(value.teammate);
+    value = JSON.parse(ceilingJson);
   } catch {
     return false;
   }
+  const bounds = Array.isArray(value) ? value : [value];
+  return bounds.some((bound) => {
+    if (bound === null || typeof bound !== 'object' || Array.isArray(bound)) return false;
+    const marks = bound as { outsider?: unknown; teammate?: unknown };
+    return marks.outsider === true || Array.isArray(marks.teammate);
+  });
 }
 
 /** Everything the raise reads and writes through. */
