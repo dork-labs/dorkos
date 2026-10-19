@@ -14,11 +14,12 @@
  * - a message starts its turn as `session-relay`, held to
  *   `RELAY_TURN_CEILING` (`relay-send.ts`), so it asks before anything that
  *   needs a person, whatever the chat's own level (spec B2, option 2);
- * - an approval, and an answer to a question, are refused until they can carry
- *   a passkey proof (spec B4): an answer puts words into a turn a person
- *   started at full power. So neither `interaction.approval` nor
- *   `interaction.question` is advertised, and nothing here approves a tool or
- *   answers a question;
+ * - an approval or a denial is acted on only with a passkey proof that passes
+ *   every check (`relay-approvals.ts`, spec B4b), and `interaction.approval`
+ *   is advertised only while a passkey is pinned. An answer to a question is
+ *   refused until it can carry a proof of its own (B4e): it puts words into a
+ *   turn a person started at full power, so `interaction.question` is not
+ *   advertised and nothing here answers one;
  * - nothing a request carries names a folder, a runtime, an account or a
  *   permission: a new chat's folder comes from Mesh, never from the request;
  * - every request, stream and the connection's end is written to the audit
@@ -32,7 +33,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
-import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import type { InterruptReceipt, QueuedMessage } from '@dorkos/shared/schemas';
 import {
   RelayRequestSchema,
@@ -46,7 +46,6 @@ import {
 } from '@dorkos/shared/session-relay';
 import { BoundaryError } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
-import type { RecordAuditInput } from '../../audit/audit-trail.js';
 import type {
   DispatchSessionMessageOpts,
   DispatchSessionMessageResult,
@@ -61,9 +60,10 @@ import {
   type RelayAgent,
   type RelaySessionFacts,
 } from './relay-serves.js';
+import { newApprovalChallengeBook, type ApprovalChallengeBook } from './approval-challenges.js';
+import { challengeApproval, respondApproval, type RelayApprovalDeps } from './relay-approvals.js';
 import {
   RELAY_ANSWER_REFUSED,
-  RELAY_APPROVAL_REFUSED,
   RELAY_INTERNAL,
   RELAY_INVALID,
   RELAY_NO_AGENT,
@@ -80,10 +80,11 @@ import { RELAY_TURN_CEILING, relayedMessage } from './relay-send.js';
 import { RelayStreamSink } from './relay-stream-sink.js';
 
 /**
- * What this computer serves over the relay. `interaction.approval` and
- * `interaction.question` are left out on purpose: an approval or an answer
- * from the web needs a passkey proof (spec B4). `request.device` says this
- * computer reads the browser a request names (`relay-devices.ts`).
+ * What this computer always serves over the relay. `interaction.approval` is
+ * added only while an approvals passkey is pinned
+ * ({@link SessionRelayRequestServer.features}); `interaction.question` is left
+ * out until an answer can carry a passkey proof (spec B4e). `request.device`
+ * says this computer reads the browser a request names (`relay-devices.ts`).
  */
 export const RELAY_SERVED_FEATURES: readonly SessionRelayFeature[] = [
   'chats.list',
@@ -101,8 +102,8 @@ export interface RelayRuntime {
   interruptQuery(sessionId: string): Promise<InterruptReceipt>;
 }
 
-/** Everything the request server reads and calls. */
-export interface RelayRequestServerDeps {
+/** Everything the request server reads and calls; the approval deps are in {@link RelayApprovalDeps}. */
+export interface RelayRequestServerDeps extends RelayApprovalDeps {
   /** Every registered agent, read fresh for each request. */
   agents: () => readonly RelayAgent[];
   /**
@@ -132,10 +133,6 @@ export interface RelayRequestServerDeps {
   resolveRuntime: (sessionId: string) => Promise<RelayRuntime>;
   /** Empty a chat's queue, returning what was waiting. */
   clearQueuedMessages: (sessionId: string) => QueuedMessage[];
-  /** Write one audit entry. */
-  recordAudit: (input: RecordAuditInput) => void;
-  /** The owner of this computer, as the audit log names them. */
-  owner: () => AuditActor;
   /** Mints the per-connection client id; injectable for tests. */
   mintClientId?: () => string;
 }
@@ -152,6 +149,8 @@ interface Connection {
   clientId: string;
   inflight: number;
   streams: Map<string, StreamSlot>;
+  /** The approval challenges issued on this connection; they end with it. */
+  approvals: ApprovalChallengeBook;
 }
 
 /**
@@ -176,9 +175,15 @@ export class SessionRelayRequestServer implements RelayRequestServer {
     this.conn = this.freshConnection();
   }
 
-  /** {@inheritDoc RelayRequestServer.features} */
+  /**
+   * {@inheritDoc RelayRequestServer.features}
+   *
+   * `interaction.approval` joins while a passkey is pinned and readable.
+   */
   features(): readonly string[] {
-    return RELAY_SERVED_FEATURES;
+    return this.deps.approvalKeys()
+      ? [...RELAY_SERVED_FEATURES, 'interaction.approval']
+      : RELAY_SERVED_FEATURES;
   }
 
   /** {@inheritDoc RelayRequestServer.handle} */
@@ -225,7 +230,12 @@ export class SessionRelayRequestServer implements RelayRequestServer {
 
   private freshConnection(): Connection {
     const mint = this.deps.mintClientId ?? (() => relayClientId(randomUUID()));
-    return { clientId: mint(), inflight: 0, streams: new Map() };
+    return {
+      clientId: mint(),
+      inflight: 0,
+      streams: new Map(),
+      approvals: newApprovalChallengeBook(),
+    };
   }
 
   /** Check the limits, then run the request with exactly one answer. */
@@ -309,12 +319,8 @@ export class SessionRelayRequestServer implements RelayRequestServer {
         case 'session.interrupt':
           return await this.interrupt(request.sessionId, answer, refuse);
         case 'interaction.challenge':
-          this.refuseApproval(request.sessionId, refuse);
-          return;
         case 'interaction.respond':
-          if (request.answer.kind === 'answer') this.refuseAnswer(request.sessionId, refuse);
-          else this.refuseApproval(request.sessionId, refuse);
-          return;
+          return await this.approval(conn, request, answer, refuse);
       }
     } catch (error) {
       logger.warn('[SessionRelay] A relayed request failed', {
@@ -560,19 +566,38 @@ export class SessionRelayRequestServer implements RelayRequestServer {
     answer({ receipt, cancelledQueued });
   }
 
-  /** An approval, or a challenge for one: refused until B4's passkey proof. */
-  private refuseApproval(sessionId: string, refuse: (error: RelayError) => void): void {
-    this.audit({
-      action: 'relay.interaction.approval',
-      operation: 'execute',
-      outcome: 'refused',
-      sessionId,
-      summary: 'Refused an approval from the web',
-    });
-    refuse(RELAY_APPROVAL_REFUSED);
+  /** An approval challenge or a signed answer; a question answer is refused (B4e). */
+  private async approval(
+    conn: Connection,
+    request: Extract<RelayRequest, { op: 'interaction.challenge' | 'interaction.respond' }>,
+    answer: (body: unknown) => void,
+    refuse: (error: RelayError) => void
+  ): Promise<void> {
+    const { sessionId } = request;
+    if (request.op === 'interaction.respond' && request.answer.kind === 'answer') {
+      this.refuseAnswer(sessionId, refuse);
+      return;
+    }
+    if (!(await this.relayServesSession(sessionId))) {
+      this.audit({
+        action: `relay.${request.op}`,
+        operation: 'execute',
+        outcome: 'refused',
+        sessionId,
+        summary: 'Refused an approval from the web',
+      });
+      refuse(RELAY_NOT_FOUND);
+      return;
+    }
+    if (request.op === 'interaction.challenge') {
+      challengeApproval(this.deps, conn.approvals, request, answer, refuse);
+      return;
+    }
+    if (request.answer.kind === 'answer') return; // Refused above; this narrows the type.
+    await respondApproval(this.deps, conn.approvals, sessionId, request.answer, answer, refuse);
   }
 
-  /** An answer to a question: refused until B4's passkey proof, as an approval is. */
+  /** An answer to a question: refused until it can carry a passkey proof (B4e). */
   private refuseAnswer(sessionId: string, refuse: (error: RelayError) => void): void {
     this.audit({
       action: 'relay.interaction.respond',

@@ -2,7 +2,7 @@
  * @vitest-environment node
  *
  * The relayed caller's adapter: which chats the session relay serves, what a
- * relayed send may carry, that approvals and answers are refused, the per-connection
+ * relayed send may carry, that approvals without a passkey and answers are refused, the per-connection
  * limits, the stream's framing and teardown, and the audit entry for each op.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -125,6 +125,12 @@ function harness(
     },
     owner: () => ({ accountId: 'acct-owner', kind: 'person', name: 'Dorian' }),
     mintClientId: () => 'relay:test',
+    approvalKeys: () => null,
+    approvalPin: () => null,
+    pendingApproval: () => null,
+    raisesPermissions: () => false,
+    approveTool: vi.fn(async () => true),
+    bumpSignCount: vi.fn(async () => undefined),
     ...opts.deps,
   };
   const server = new SessionRelayRequestServer(deps);
@@ -153,7 +159,7 @@ function harness(
 }
 
 describe('SessionRelayRequestServer', () => {
-  it('advertises everything but approvals and answers', () => {
+  it('with no passkey pinned, advertises everything but approvals and answers', () => {
     expect(harness().server.features()).toEqual(RELAY_SERVED_FEATURES);
     expect(RELAY_SERVED_FEATURES).not.toContain('interaction.approval');
     expect(RELAY_SERVED_FEATURES).not.toContain('interaction.question');
@@ -530,7 +536,7 @@ describe('SessionRelayRequestServer', () => {
       });
     });
 
-    it('refuses every approval and challenge, and never approves a tool', async () => {
+    it('with no passkey pinned, refuses every approval and challenge, and never approves a tool', async () => {
       const h = harness();
       const proof = {
         challengeId: 'c1',
@@ -564,12 +570,13 @@ describe('SessionRelayRequestServer', () => {
           error: {
             status: 403,
             code: 'refused',
-            message: 'Approvals from the web need a newer version of this computer.',
+            message: 'Add a passkey at this computer to approve from the web.',
           },
         });
       }
-      expect(h.runtime.approveTool).not.toHaveBeenCalled();
-      expect(h.audits.filter((a) => a.action === 'relay.interaction.approval')).toHaveLength(3);
+      expect(h.deps.approveTool).not.toHaveBeenCalled();
+      expect(h.audits.filter((a) => a.action === 'relay.interaction.approval')).toHaveLength(2);
+      expect(h.audits.filter((a) => a.action === 'relay.interaction.challenge')).toHaveLength(1);
     });
   });
 

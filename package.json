@@ -126,7 +126,8 @@
       "qs": "^6.15.2",
       "body-parser": "^2.3.0",
       "@babel/core": "^7.29.6",
-      "jose": "^6.2.10"
+      "jose": "^6.2.10",
+      "@simplewebauthn/server>@peculiar/asn1-schema": "2.11.0"
     },
     "onlyBuiltDependencies": [
       "@posthog/cli",

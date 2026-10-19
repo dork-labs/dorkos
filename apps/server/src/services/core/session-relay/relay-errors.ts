@@ -61,20 +61,64 @@ export const RELAY_TOO_MANY_NEW_CHATS: RelayError = {
   message: 'Too many new chats are running. Try again when one finishes.',
 };
 
-/** An approval, or a challenge for one: these wait for the passkey proof (spec B4). */
-export const RELAY_APPROVAL_REFUSED: RelayError = {
+/** No approvals passkey is pinned here, or its file cannot be read. */
+export const RELAY_APPROVAL_NO_PASSKEY: RelayError = {
   status: 403,
   code: 'refused',
-  message: 'Approvals from the web need a newer version of this computer.',
+  message: 'Add a passkey at this computer to approve from the web.',
+};
+
+/**
+ * The approval would not fit in a statement the approve page can show and
+ * sign: too large, nested too deep, or text with no exact form.
+ */
+export const RELAY_APPROVAL_TOO_LARGE: RelayError = {
+  ...RELAY_APPROVAL_NO_PASSKEY,
+  message: 'Too large to approve from the web. Approve it at the computer.',
+};
+
+/**
+ * Granting it could raise what agents may do, so it is decided at this
+ * computer only (Security Must 4), whatever proof comes with it. The same
+ * sentence a Wi-Fi sign-in reads for the same refusal (DOR-3037).
+ */
+export const RELAY_APPROVAL_AT_COMPUTER: RelayError = {
+  ...RELAY_APPROVAL_NO_PASSKEY,
+  message: 'Do this at this computer.',
+};
+
+/** The chat is no longer waiting on that tool call. */
+export const RELAY_APPROVAL_NOT_PENDING: RelayError = {
+  ...RELAY_NOT_FOUND,
+  message: 'That approval is no longer waiting.',
+};
+
+/** No live challenge for that proof: never issued, used already, or expired. */
+export const RELAY_APPROVAL_EXPIRED: RelayError = {
+  ...RELAY_APPROVAL_NO_PASSKEY,
+  message: 'That approval request expired. Try again.',
+};
+
+/** A proof that did not pass every check. Says nothing about which one. */
+export const RELAY_APPROVAL_PROOF_FAILED: RelayError = {
+  ...RELAY_APPROVAL_NO_PASSKEY,
+  message: 'The passkey check did not pass. Try again.',
+};
+
+/** Too many approvals waiting on a passkey on this connection. */
+export const RELAY_TOO_MANY_APPROVALS: RelayError = {
+  ...RELAY_RATE_LIMITED,
+  message: 'Too many approvals are waiting. Finish one first.',
 };
 
 /**
  * A relayed answer to a question the chat is waiting on: it would put words
- * into a turn a person started at full power, so it waits for the passkey
- * proof (spec B4), as an approval does.
+ * into a turn a person started at full power, so it waits for a passkey proof
+ * of its own (spec B4e).
  */
 export const RELAY_ANSWER_REFUSED: RelayError = {
-  ...RELAY_APPROVAL_REFUSED,
+  status: 403,
+  code: 'refused',
   message: 'Answers from the web need a newer version of this computer.',
 };
 

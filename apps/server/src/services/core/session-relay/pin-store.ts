@@ -35,6 +35,7 @@ import {
 } from '@dorkos/shared/session-relay-link';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
+import { approvalKeysPath } from './approval-key-store.js';
 import { pinnableKey, signingKeyFromPem } from './channel.js';
 
 /** The folder the relay's files live in, inside the data folder. */
@@ -186,7 +187,9 @@ export async function updateRelayPin(
 
 /**
  * Forget the pin: the relay is off from this moment, whether or not the
- * network is up. The computer key stays, so linking again keeps its identity.
+ * network is up. The approvals passkeys go with it, so a hub linked later
+ * never inherits them. The computer key stays, so linking again keeps its
+ * identity.
  * The caller passes the live dialer's close (`closeSessionRelay`), so an open
  * connection ends at once as well; the dialer also rechecks the pin on every
  * viewer report.
@@ -199,6 +202,7 @@ export function clearRelayPin(
   onCleared: () => void = () => undefined
 ): void {
   fs.rmSync(path.join(folder(dorkHome), PIN_FILE), { force: true });
+  fs.rmSync(approvalKeysPath(dorkHome), { force: true });
   // An open connection ends now too, not only the next dial.
   onCleared();
 }
