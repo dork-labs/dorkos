@@ -15,15 +15,31 @@ const { spawn } = require('child_process');
 const SERVER = path.join(__dirname, '..', 'scripts', 'server.cjs');
 
 const running = [];
-test.after(() => {
+// Stop every server and wait for it to exit before removing its folder: it
+// writes state/ as it shuts down, and a server left running would hold the
+// test runner open.
+test.after(async () => {
+  await Promise.all(
+    running.map(
+      (s) =>
+        new Promise((resolve) => {
+          if (s.child.exitCode !== null || s.child.signalCode !== null) return resolve();
+          s.child.once('exit', resolve);
+          s.child.kill();
+        })
+    )
+  );
   for (const s of running) {
-    s.child.kill();
-    fs.rmSync(s.dir, { recursive: true, force: true });
+    try {
+      fs.rmSync(s.dir, { recursive: true, force: true, maxRetries: 5 });
+    } catch {
+      // A temp folder left behind is not worth failing the run.
+    }
   }
 });
 
-// Start a server on `host`, port 0; resolves { port } or { error } (stderr).
-function start(host) {
+// Start a server on `host`, port 0; resolves { port, info } or { error } (stderr).
+function start(host, extra = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vc-host-'));
   const child = spawn(process.execPath, [SERVER], {
     env: {
@@ -32,6 +48,8 @@ function start(host) {
       BRAINSTORM_HOST: host,
       BRAINSTORM_PORT: '0',
       BRAINSTORM_SHOTS: '0',
+      BRAINSTORM_IDLE_MS: '60000',
+      ...extra,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -43,11 +61,11 @@ function start(host) {
     child.stdout.on('data', (c) => {
       out += c;
       const line = out.split('\n').find((l) => l.includes('"server-started"'));
-      if (line) resolve({ ...s, port: JSON.parse(line).port });
+      if (line) resolve({ ...s, info: JSON.parse(line), port: JSON.parse(line).port });
     });
     child.stderr.on('data', (c) => (err += c));
     child.on('exit', () => resolve({ ...s, error: err || out }));
-    setTimeout(() => resolve({ ...s, error: 'timed out: ' + err }), 5000);
+    setTimeout(() => resolve({ ...s, error: 'timed out: ' + err }), 5000).unref();
   });
 }
 
@@ -58,7 +76,7 @@ function raw(port, request) {
     let data = '';
     socket.on('data', (c) => {
       data += c;
-      if (data.startsWith('HTTP/1.1 101')) socket.end();
+      if (data.startsWith('HTTP/1.1 101')) socket.destroy();
     });
     socket.on('end', () => resolve(data));
     socket.on('close', () => resolve(data));
@@ -183,4 +201,71 @@ test('a websocket message of null, a number or an array does not crash it', asyn
   });
   assert.strictEqual(s.child.exitCode, null, 'the server is still running');
   assert.match(await get(s.port, `localhost:${s.port}`), /^HTTP\/1\.1 200/);
+});
+
+test('a malformed path costs one 400 or 404, never the server', async () => {
+  const s = await start('127.0.0.1');
+  assert.ok(s.port > 0, s.error);
+  const host = `localhost:${s.port}`;
+  for (const p of ['/files/%E0', '/vc/shot/%E0.png', '//']) {
+    const r = await get(s.port, host, p);
+    assert.match(r, /^HTTP\/1\.1 (400|404)/, p);
+  }
+  assert.strictEqual(s.child.exitCode, null, 'the server is still running');
+  assert.match(await get(s.port, host), /^HTTP\/1\.1 200/);
+});
+
+test('a websocket frame claiming a huge length is refused, not buffered', async () => {
+  const s = await start('127.0.0.1');
+  assert.ok(s.port > 0, s.error);
+  const closed = await new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port: s.port }, () =>
+      socket.write(
+        `GET / HTTP/1.1\r\nHost: localhost:${s.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          `Sec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}\r\nSec-WebSocket-Version: 13\r\n\r\n`
+      )
+    );
+    let sent = false;
+    socket.on('data', () => {
+      if (sent) return;
+      sent = true;
+      // FIN+TEXT, masked, 64-bit length of 2^40, then a mask and a few bytes.
+      const head = Buffer.from([0x81, 0x80 | 127, 0, 0, 1, 0, 0, 0, 0, 0]);
+      socket.write(Buffer.concat([head, crypto.randomBytes(4), Buffer.alloc(16)]));
+    });
+    socket.on('close', () => resolve(true));
+    socket.on('error', () => resolve(true));
+    setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 3000).unref();
+  });
+  assert.ok(closed, 'the server closed the socket');
+  assert.strictEqual(s.child.exitCode, null, 'the server is still running');
+});
+
+test('prints a URL that loads: [::1] in brackets, no other names', async () => {
+  const s = await start('::1');
+  if (/EADDRNOTAVAIL|EAFNOSUPPORT/.test(s.error || '')) return;
+  assert.strictEqual(s.info.url, `http://[::1]:${s.port}`);
+  const bad = await start('127.0.0.1', { BRAINSTORM_URL_HOST: 'my-laptop.local' });
+  assert.strictEqual(bad.port, undefined);
+  assert.match(bad.error, /answers only to localhost/);
+});
+
+test('reads only what other local pages need: screens stay private', async () => {
+  const s = await start('127.0.0.1');
+  assert.ok(s.port > 0, s.error);
+  const read = (p) =>
+    raw(
+      s.port,
+      `GET ${p} HTTP/1.1\r\nHost: localhost:${s.port}\r\nOrigin: http://localhost:5173\r\nConnection: close\r\n\r\n`
+    );
+  assert.match(
+    await read('/vc/pins?screen=x'),
+    /Access-Control-Allow-Origin: http:\/\/localhost:5173/i
+  );
+  for (const p of ['/vc/state', '/vc/health', '/']) {
+    assert.doesNotMatch(await read(p), /Access-Control-Allow-Origin/i, p);
+  }
 });

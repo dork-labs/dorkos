@@ -59,6 +59,8 @@ function encodeFrame(opcode, payload) {
   return Buffer.concat([header, payload]);
 }
 
+const MAX_FRAME = 1024 * 1024;
+
 function decodeFrame(buffer) {
   if (buffer.length < 2) return null;
 
@@ -79,6 +81,8 @@ function decodeFrame(buffer) {
     payloadLen = Number(buffer.readBigUInt64BE(2));
     offset = 10;
   }
+  // Pages send small JSON events; a frame claiming more is refused, not buffered.
+  if (payloadLen > MAX_FRAME) throw new Error('frame too large');
 
   const maskOffset = offset;
   const dataOffset = offset + 4;
@@ -98,7 +102,22 @@ function decodeFrame(buffer) {
 
 const PORT = Number(process.env.BRAINSTORM_PORT || 49152 + Math.floor(Math.random() * 16383));
 const HOST = process.env.BRAINSTORM_HOST || '127.0.0.1';
-const URL_HOST = process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST);
+// The host printed in URLs: a name this server answers to (see hostOk), with
+// ::1 in brackets so the URL parses.
+const URL_HOST = (() => {
+  const h = (process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST))
+    .toLowerCase()
+    .replace(/^\[?::1\]?$/, '[::1]');
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(h)) {
+    console.error(
+      JSON.stringify({
+        error: `the visual companion answers only to localhost, 127.0.0.1 or [::1], so a URL naming ${h} could not load`,
+      })
+    );
+    process.exit(2);
+  }
+  return h;
+})();
 const SESSION_DIR = process.env.BRAINSTORM_DIR || '/tmp/brainstorm';
 const CONTENT_DIR = path.join(SESSION_DIR, 'content');
 const STATE_DIR = path.join(SESSION_DIR, 'state');
@@ -932,7 +951,9 @@ function crossOrigin(req) {
 // The names this server answers to. A web page can point its own domain at
 // 127.0.0.1 (DNS rebinding) and then reach this port as if it were same-origin,
 // but its requests still name that domain in Host, so any other Host is refused.
-// DorkOS's preview proxy sends Host: localhost:<this port>. Names compare
+// DorkOS's preview proxy sends Host: localhost:<this port> (dorkos
+// apps/server/src/services/workbench-serve/preview-listener.ts; its test pins
+// it). Names compare
 // case-insensitively and without a trailing dot (`localhost.` is localhost).
 const HOST_NAMES = ['localhost', '127.0.0.1', '[::1]'];
 let boundPort = PORT;
@@ -989,9 +1010,41 @@ function readBody(req, cb) {
   req.on('end', () => cb(data));
 }
 
+// A path segment decoded, or null when it is not valid percent-encoding.
+function safeDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null;
+  }
+}
+
+// Routes a page on another local port may read (CORS). Everything else, the
+// screens' HTML included, stays readable only by the companion's own pages.
+const CORS_ROUTES = new Set([
+  'vc/event',
+  'vc/pins',
+  'vc/review',
+  'vc/review-status',
+  'vc/review.js',
+  'vc/director.js',
+]);
+
+// Any page can make the browser send a GET here (an <img>, say), so a request
+// that throws must cost one 400, never the server.
+function handleRequest(req, res) {
+  try {
+    routeRequest(req, res);
+  } catch (e) {
+    console.error('Request failed:', e.message);
+    if (!res.headersSent) send(res, 400, { ok: false, error: 'bad-request' });
+    else res.destroy();
+  }
+}
+
 // The page may be served under a proxy prefix (/…/preview/abc/), so every
 // route is matched on the path's tail and the page uses relative URLs.
-function handleRequest(req, res) {
+function routeRequest(req, res) {
   if (!hostOk(req)) return send(res, 421, WRONG_HOST);
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
@@ -1002,10 +1055,12 @@ function handleRequest(req, res) {
     tail === 'vc/health' ||
     tail === 'vc/review-status' ||
     (tail === 'vc/pins' && url.searchParams.has('poll'));
-  if (!passive) touchActivity();
-  const corsOrigin = (res.corsOrigin = LOCAL_ORIGIN.test(req.headers.origin || '')
-    ? req.headers.origin
-    : null);
+  // A website's request (an <img> on any page) is not someone using the companion.
+  if (!passive && req.headers['sec-fetch-site'] !== 'cross-site') touchActivity();
+  const corsOrigin = (res.corsOrigin =
+    CORS_ROUTES.has(tail) && LOCAL_ORIGIN.test(req.headers.origin || '')
+      ? req.headers.origin
+      : null);
   if (req.method === 'OPTIONS') {
     res.writeHead(
       204,
@@ -1056,7 +1111,8 @@ function handleRequest(req, res) {
     return;
   }
   if (req.method === 'GET' && tail.startsWith('vc/shot/')) {
-    const f = path.join(SHOTS_DIR, path.basename(decodeURIComponent(tail.slice(8))));
+    const name = safeDecode(tail.slice(8));
+    const f = name === null ? '' : path.join(SHOTS_DIR, path.basename(name));
     if (!f.endsWith('.png') || !fs.existsSync(f)) return send(res, 404, 'Not found', 'text/plain');
     res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
     return fs.createReadStream(f).pipe(res);
@@ -1090,7 +1146,9 @@ function handleRequest(req, res) {
     });
   }
   if (req.method === 'GET' && tail.startsWith('files/')) {
-    const filePath = path.join(CONTENT_DIR, path.basename(decodeURIComponent(tail.slice(6))));
+    const name = safeDecode(tail.slice(6));
+    if (name === null) return send(res, 404, 'Not found', 'text/plain');
+    const filePath = path.join(CONTENT_DIR, path.basename(name));
     if (!fs.existsSync(filePath)) return send(res, 404, 'Not found', 'text/plain');
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
@@ -1147,6 +1205,11 @@ function handleUpgrade(req, socket) {
 
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
+    if (buffer.length > 2 * MAX_FRAME) {
+      socket.destroy();
+      clients.delete(socket);
+      return;
+    }
     while (buffer.length > 0) {
       let result;
       try {
