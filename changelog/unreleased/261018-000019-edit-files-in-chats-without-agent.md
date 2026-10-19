@@ -3,6 +3,7 @@ covers:
   - 'fix(canvas): files opened in a chat with no agent can be edited again (DOR-2665)'
   - 'fix(canvas): the file-save notice is one sentence and clears the editor buttons (DOR-2999)'
   - 'fix(canvas): a healthy file shows only the file, with review fixes for chats with no agent (DOR-2999)'
+  - "fix(canvas): Check again sits with the file's buttons, not mid-sentence (DOR-2999)"
 ---
 
 ### Fixed
