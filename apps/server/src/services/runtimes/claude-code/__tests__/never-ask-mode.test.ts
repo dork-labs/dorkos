@@ -175,7 +175,6 @@ describe('the tool gate under Never ask (resolveModeDecision, createCanUseTool)'
     ['Write', { file_path: '/tmp/x', content: 'x' }],
     ['Read', { file_path: '/etc/hosts' }],
     ['WebFetch', { url: 'https://example.com' }],
-    ['mcp__dorkos__mesh_list', {}],
     ['mcp__other__anything', {}],
     ['AskUserQuestion', { questions: [] }],
   ])('denies %s at once, and raises no card or question', async (tool, input) => {
@@ -191,6 +190,26 @@ describe('the tool gate under Never ask (resolveModeDecision, createCanUseTool)'
       expect(s.eventQueue).toEqual([]);
       expect(s.pendingInteractions.size).toBe(0);
     }
+  });
+
+  it("still lets DorkOS's own safe-listed tools through, which never ask in any mode (DOR-3042)", async () => {
+    // A Never ask run reads and posts to its own room; refusing these would
+    // refuse what never asks. A foreign server wearing the name is not served
+    // by DorkOS and is refused like any other tool.
+    for (const tool of ['mcp__dorkos__mesh_list', 'mcp__dorkos__read_room_history']) {
+      const s = session(NEVER_ASK_MODE_ID);
+      const result = await createCanUseTool(s, log, undefined, identity)(tool, {}, context('t'));
+      expect(result).toEqual({ behavior: 'allow', updatedInput: {} });
+      expect(s.eventQueue).toEqual([]);
+    }
+    const s = session(NEVER_ASK_MODE_ID);
+    const foreign = await createCanUseTool(
+      s,
+      log,
+      undefined,
+      identity
+    )('mcp__dorkos__mesh_list', {}, { ...context('t'), mcpServer: { source: 'stdio' } } as never);
+    expect(foreign).toEqual({ behavior: 'deny', message: NEVER_ASK_DENIAL });
   });
 
   it('records the refusal as denied in the transcript', () => {
