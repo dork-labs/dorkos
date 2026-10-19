@@ -273,6 +273,8 @@ A sender's own entry carries one quiet status, read from the per-turn delivery r
 
 ## 9. Email (designed here, not built)
 
+> **Mail provider under review (2026-10-19).** Using one provider for both inbound and outbound is proposed, pending a spike due Oct 23. Don't build against this section until a decision is logged.
+
 Email is a bridge onto a conversation, the same shape as Telegram and Slack after step 1. Nothing here is built by this spec; it fixes the shape so the conversation model does not have to change when email arrives. Background: `research/20261006_email-phone-first-class.md` (§4 and the `ContactProvider` port).
 
 - **One port, `EmailProvider`**, with the research's verbs: provision an address, send, receive (a cursor, so a closed lid loses nothing), release. Receive is required; live push is optional.
