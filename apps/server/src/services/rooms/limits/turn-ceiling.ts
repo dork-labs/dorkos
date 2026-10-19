@@ -189,7 +189,9 @@ export function ceilingForEntries(
  * unlike one the turn answers, which the runtime-default bound marks. Counting
  * it would hold the owner's own memory edits in every room after a restart or
  * beside a Codex agent, for a line nobody can show came from outside. A
- * person's line from this machine and the room's own notices never count.
+ * person's line from this machine and the room's own notices never count,
+ * except a person's line a mini app posted for them, which keeps the outsider
+ * mark on its row (DOR-3017).
  *
  * @param context - The room context the turn is about to be shown.
  * @param roomId - The room, to read a post's kept marks once its level is gone (DOR-3036).
@@ -201,7 +203,9 @@ export function outsiderInViewOf(
   const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
   const outsider = shown.some((entry) => {
     if (entry.authorOrigin === 'external' || entryHeldToDefault(entry.id, roomId)) return true;
-    if (entry.authorIsPerson || entry.kind !== 'post') return false;
+    if (entry.kind !== 'post') return false;
+    // A person's own line carries no marks and never counts; one a mini app
+    // posted for them carries the outsider mark (DOR-3017) and does.
     return entryMarksOf(entry.id, roomId)?.outsider === true;
   });
   return outsider ? { outsiderInView: true } : {};

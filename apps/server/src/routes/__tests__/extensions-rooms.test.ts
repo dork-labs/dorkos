@@ -65,6 +65,9 @@ import { AccountIds } from '../../services/audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { RoomTurnRequest } from '../../services/rooms/room-turn-port.js';
+import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
+import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
+import { ceilingForEntry, outsiderInViewOf } from '../../services/rooms/limits/turn-ceiling.js';
 
 const target = swappableServer();
 const server = target.server;
@@ -136,6 +139,7 @@ beforeEach(async () => {
   service = subsystem.service;
   setRoomService(service);
   setReadCursorService(new ReadCursorService(new ReadCursorStore(db)));
+  setEntryMarksStore(createEntryMarksStore(db));
   initAuditTrail({
     log: new AuditLog(db),
     accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
@@ -195,6 +199,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   resetAuditTrail();
+  setEntryMarksStore(null);
 });
 
 describe('reading a thread', () => {
@@ -330,6 +335,45 @@ describe('replying as the person', () => {
     const woken = turns.find((t) => t.prompt.includes('sent from the mini app'));
     expect(woken).toBeDefined();
     expect(woken!.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('keeps the outsider mark on the reply’s row, so it outlives a restart', async () => {
+    const res = await request(server).post(`${base()}/replies`).set(APP).send({ text: 'kept' });
+    expect(res.status).toBe(201);
+    expect(createEntryMarksStore(db).read(roomId, res.body.id)).toMatchObject({ outsider: true });
+  });
+
+  it('after a restart, a person post whose row carries the mark still wakes agents capped', () => {
+    // No level kept in this process: only the row says what the post carried.
+    const typed = service.post(roomId, { authorId: personId, text: 'from before a restart' });
+    const unmarked = ceilingForEntry(service.authorRegistry, typed, false, roomId);
+    expect(unmarked).toEqual({});
+    createEntryMarksStore(db).write(roomId, typed.id, { outsider: true });
+    expect(ceilingForEntry(service.authorRegistry, typed, false, roomId)).toEqual({
+      permissionCeiling: 'runtime-default',
+    });
+  });
+
+  it('marks a later turn that has the reply in view, and not one with only typed lines', async () => {
+    const res = await request(server).post(`${base()}/replies`).set(APP).send({ text: 'in view' });
+    const reply = {
+      id: res.body.id as string,
+      kind: 'post',
+      authorIsPerson: true,
+      authorOrigin: 'local',
+    };
+    const typed = service.post(roomId, { authorId: personId, text: 'typed line' });
+    const typedLine = { id: typed.id, kind: 'post', authorIsPerson: true, authorOrigin: 'local' };
+
+    expect(
+      outsiderInViewOf(
+        { pending: [typedLine], gathered: [reply], channelTail: [] } as never,
+        roomId
+      )
+    ).toEqual({ outsiderInView: true });
+    expect(
+      outsiderInViewOf({ pending: [typedLine], gathered: [], channelTail: [] } as never, roomId)
+    ).toEqual({});
   });
 
   it('never lets the body name an author', async () => {
