@@ -13,6 +13,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.124.0] - 2026-10-19
+
+> DorkOS 0.124.0 stops your own agents from asking you about routine work, adds a list of your signed-in devices, and fixes the side panel showing the wrong agent.
+
+### Added
+
+- A space's agent panel now has a **Teammates** section. In it you choose who can wake your agents there: anyone in the space, or only you.
+- You can also set a monthly limit, in dollars, on what turns started by teammates may cost you in that space. The smallest limit is one cent, and there is no limit until you set one. Once teammates' turns reach it, their messages stay in the space but wake none of your agents until the next month. A turn that is already running when the limit is reached finishes, so the total can go a little past it. You get one notice when that happens. Your own messages always work.
+- If the saved limits can't be read, DorkOS sets the file aside, starts with no limits, and tells you once so you can set them again.
+- The section shows what teammates' turns cost this month. If a turn didn't report its cost, it is counted at a fixed estimate, and the total is marked approximate.
+- Settings → Login & security now lists your signed-in devices: how each one connects, when it was last used, and which one you're on. Sign out this device from anywhere. Other devices, and "Sign out everywhere else", can be signed out only from the computer DorkOS runs on. (DOR-2969)
+
+### Changed
+
+- A message an app sends to your agent is now treated like a message from outside your team: the agent asks you before anything risky.
+- Each signed-in device is now named by its browser, like "Chrome on Mac" or "Safari on iPhone". The device you're using is marked "This device" and is signed out with the Sign out button at the top, not from the list. (DOR-3099)
+- Your existing chats with your own agents stop asking for approval on routine work. Each one moves up to its agent's level once, never above it. Chats that came from outside, like Telegram or a connected app, chats started from a turn that read outside content, and chats opened while a device was signed in over Wi-Fi keep asking. You can undo it in one step from the permission history.
+- A chat an agent starts from a turn that read outside content now stays limited for good, not only for its first reply.
+
+### Fixed
+
+- Messages one agent sends to another agent's busy chat now arrive together, in the order they were sent, as soon as its current turn ends. Before, messages sent a few minutes apart each waited for a turn of their own, so the last one could arrive hours late, after the agent had already acted on an older one.
+- When your agent starts a helper in the background and finishes its reply, the helper now stays in the strip above the message box until it's actually done. Before, it disappeared a few seconds after the reply ended, even though it was still working, and only came back when you sent another message.
+- When a teammate in a shared space starts work, their limits now follow it all the way. If your agent mentions another agent, messages another chat, starts a new one, or picks the work up later on its own, that work stays limited the same way and counts toward the space's monthly limit. This holds after a restart too. It also stops once that limit is reached.
+- A schedule an agent creates or changes after reading words from outside your team, or while doing work a teammate started, now waits for you to approve it, even on Trusted. The approval card says why and who started it.
+- Show the agent you're chatting with in the side panel's Profile tab, never one you opened earlier somewhere else. The tab now wears that agent's avatar, follows you when you switch chats, rooms or tabs, and can't be closed in a one-on-one chat. (FB-60)
+- An agent can no longer give itself more power by editing its own settings file. DorkOS now keeps a copy of what you set for each agent in its own data folder, which agents can't reach. The agent's file can make it more careful, never less.
+- On upgrade, each agent starts at the stricter of its settings file and the last level a person set for it. An agent that raised its own level before the upgrade goes back to yours.
+- A chat an agent opens while answering a message from someone outside your team, such as a Telegram message, no longer starts at that agent's own level. Neither does one whose sender DorkOS can't place, for example after a restart.
+- An agent that changes a permission, its own or another agent's, now always asks you first unless the change can only make things stricter. The card no longer offers Always allow for it.
+- A schedule keeps its own saved level. Raising an agent to Full autonomy no longer raises the schedules that run for it, or new ones made for it.
+- Turning on a password with `dorkos auth enable` no longer leaves behind a sign-in no device uses, and one left over from an earlier setup no longer shows up as an extra device. (DOR-3097)
+- When an agent in a room is waiting for your approval, new mentions of it now wait until you answer, then get their reply. Before, each one failed with "ran into a problem", once per mention, for up to four hours.
+- The room's note about the waiting approval now says where to answer it (the agent's chat or Needs you), and that new messages wait with it.
+- If DorkOS can't send you a phone message about a waiting approval, for example because your Telegram connection is disconnected or isn't allowed to start conversations, the server log now says so instead of staying silent.
+- Your own agents stop asking about routine work when one of them wakes another, in a room or by messaging another chat. Before, one agent's turn at Default, or a restart, made every agent after it ask too.
+- What still asks: anything that follows words from outside your team (a Telegram message, a guest, an email an agent read), a tool DorkOS can't verify posting as your agent, and any agent you set below Full autonomy, which stays at the level you set.
+- A chat that read outside words stays careful for what it passes on, even after you type in it yourself.
+
+### Security
+
+- Signing out now really ends access. Chats, live updates and terminals that device had open close right away, instead of running until they reconnected. After `dorkos auth reset-password`, a running DorkOS closes them within a minute. (DOR-2969)
+- A phone or laptop signed in over Wi-Fi can chat, read, and answer approvals, but it can't open the terminal, edit files directly, see or make API keys, install packages or extensions, reset DorkOS, change a spending limit, or sign out your other devices. When an agent asks, it can Allow once or Deny, but never Always allow, and it can't allow a destructive action. It can still ask your agents to do anything they can do. Those stay on the computer DorkOS runs on, and the app says so plainly when you try. (DOR-2969)
+- Changing how DorkOS is reached now happens only in the app on the computer it runs on, by its owner: remote access, Wi-Fi access, the password setting, accounts and keys, and which code DorkOS runs. API keys and agents can't change these either. (DOR-2969)
+- An agent can't edit the file that holds the permission levels you set for agents, or the files that say which connections and keys this computer trusts for reaching it from anywhere. Its file editing tools are refused there at every permission level. (DOR-2969)
+
 ## [0.123.0] - 2026-10-18
 
 > DorkOS 0.123.0 lets a busy agent wait its turn instead of failing, makes a sign-in work only the way you made it, and makes the tab you're on easier to see.
@@ -292,51 +338,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - If you see the "Agents now work without asking" note, **Got it** keeps your agents working the new way; **Keep asking me** switches you to Careful and keeps anything you set to Blocked, so your agents keep asking first. Either answer, the note shows once and does not come back (DOR-2739)
 
-## [0.114.1] - 2026-10-14
+Older releases (v0.1.0 – v0.114.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.114.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.114.1.md).
 
-> DorkOS 0.114.1 keeps the app quick and light while your agents work. Chats open and switch without waiting, coming back to the tab is quiet, and DorkOS does far less busywork in the background.
-
-### Added
-
-- If you turn on feature-usage data, DorkOS now also says when you finish or skip setup, and once a day that it is running. Both are off until you turn that channel on, like every other event, and stop the moment you turn it off.
-- An install command copied from dorkos.ai can now end with a short install tag, like `--ref=k3j4mnb8x2qa.hn`. It is a random code made for that one copy, plus the campaign tag of the link you came from. DorkOS keeps it on your computer and sends it only with the "finished setup" event, only when feature-usage data is on. The tag is only a label on two events; it never links the app to a website visitor or an account. The website adds a tag only for visitors who allow analytics cookies and do not send Do Not Track or Global Privacy Control. The privacy and telemetry pages say exactly what it holds.
-
-### Changed
-
-- Opening a chat you have already seen in the sidebar now shows it straight away, instead of waiting for the server to answer first. DorkOS still checks with the server in the background, and tells you if the chat is gone.
-- When you click an agent, its row lights up at once, even while DorkOS is still finding out which chat to open. After your computer wakes from sleep, clicking an agent no longer waits for a fresh list either.
-- Switching back to the DorkOS tab no longer asks the server again for every list and badge on screen, so coming back is quiet and fast. Live updates keep most of them current. If the tab was hidden for more than half a minute, DorkOS catches up once when you return. Things that change outside DorkOS, like your files, still refresh when you come back.
-- DorkOS asks the server far less often while you just look at the screen. The relay activity list, agent health and your community spaces follow live updates instead of re-asking every few seconds. Most changes show right away. A few can take up to a minute, like a chat app quietly losing its connection.
-- Going back to a chat you opened recently no longer downloads its whole history again; it shows what the app already has. When the agent finishes a reply, DorkOS fetches only that last exchange instead of the entire chat, so long chats stay quick turn after turn.
-- A long chat stays smooth while the agent is replying. Before, every new word redrew every message on screen and rebuilt the whole history. Now only the reply being written redraws, and the history is prepared once.
-- Replies stream more smoothly in very long chats. Each new word used to rearrange every message in the chat; now only the newest messages are rearranged, about 15 times less work in a 3,000-message chat.
-
-### Fixed
-
-- Long chats open fast. DorkOS used to read a chat's whole history from disk every time you opened it, and after every reply. A very long chat could freeze the whole app for a moment each time and use hundreds of megabytes of memory. Now DorkOS remembers what it already read and only reads what is new (DOR-2889)
-- DorkOS uses less memory the longer it runs. Every Codex, OpenCode or Doe chat you opened stayed in memory until DorkOS restarted. Now a chat nobody has used for 10 to 20 minutes lets go of that memory, and comes back as normal when you open it again. Each chat's replay buffer is also half the size it was (DOR-2897)
-- DorkOS answers a little faster everywhere. It used to read and check your whole settings file from disk every time it looked up a setting, several times for every request. Now it keeps the last copy in memory and reads the file again only when it changed, including when you edit it by hand or with `dorkos config set` (DOR-2898)
-- DorkOS does less busywork in the background. Every five minutes it checked all your scheduled tasks against their files, and rewrote every one of them and reset its timer, even when nothing had changed. Now it only touches a task whose file changed, or whose timer had gone missing (DOR-2899)
-- DorkOS no longer rewrites its agent list and message rules every five minutes for nothing. Its regular check of your agents rewrote each agent's record and saved the message rules file about 30 times in a row, even when nothing had changed. Each save also made DorkOS reload that file. Now it writes only when something actually changed (DOR-2900)
-- DorkOS's log files stay a sensible size while it runs. A log file used to be split by size and day only when DorkOS started, so a server that stayed up wrote one file without limit; one reached 53 MB. DorkOS now keeps the last 14 days of logs, up to 200 MB in all, and each log line is about eight times cheaper to write (DOR-2902)
-- DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
-- When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
-- Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)
-- On macOS, DorkOS no longer keeps a file open for every chat on your computer just to notice when one changes. It held hundreds open at once, which could run into the system's limit on open files. Now it watches the folders instead, and checks once a minute for any change it missed (DOR-2907)
-- Stop the experimental Agent computer when you quit the desktop app, keeping its saved files.
-
-save also made DorkOS reload that file. Now it writes only when something actually changed (DOR-2900)
-
-- DorkOS's log files stay a sensible size while it runs. A log file used to be split by size and day only when DorkOS started, so a server that stayed up wrote one file without limit; one reached 53 MB. DorkOS now keeps the last 14 days of logs, up to 200 MB in all, and each log line is about eight times cheaper to write (DOR-2902)
-- DorkOS no longer pauses for a moment once a day while it saves its daily backup of your data. It now copies the database a little at a time and keeps answering in between (DOR-2906)
-- When DorkOS Cloud is down or doesn't recognize your computer, DorkOS now waits longer between tries, up to 5 minutes for new events and 30 minutes for credits, instead of asking every 30 or 60 seconds for hours and filling the log with the same warning. It goes back to asking often as soon as a try works or you link again (DOR-2903)
-- Building the message search index is lighter on DorkOS. It no longer lists the thousands of helper-agent transcripts it never indexes, and it saves a very long chat to the index a piece at a time instead of all at once. If DorkOS stops partway through a long chat, it carries on from where it got to (DOR-2904)
-- On macOS, DorkOS no longer keeps a file open for every chat on your computer just to notice when one changes. It held hundreds open at once, which could run into the system's limit on open files. Now it watches the folders instead, and checks once a minute for any change it missed (DOR-2907)
-- Stop the experimental Agent computer when you quit the desktop app, keeping its saved files.
-
-Older releases (v0.1.0 – v0.114.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.114.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.114.0.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.123.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.124.0...HEAD
+[0.124.0]: https://github.com/dork-labs/dorkos/compare/v0.123.0...v0.124.0
 [0.123.0]: https://github.com/dork-labs/dorkos/compare/v0.122.0...v0.123.0
 [0.122.0]: https://github.com/dork-labs/dorkos/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/dork-labs/dorkos/compare/v0.120.0...v0.121.0
@@ -346,4 +351,3 @@ Older releases (v0.1.0 – v0.114.0) are archived in [changelog/archive/CHANGELO
 [0.117.0]: https://github.com/dork-labs/dorkos/compare/v0.116.0...v0.117.0
 [0.116.0]: https://github.com/dork-labs/dorkos/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/dork-labs/dorkos/compare/v0.114.1...v0.115.0
-[0.114.1]: https://github.com/dork-labs/dorkos/compare/v0.114.0...v0.114.1
