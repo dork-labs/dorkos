@@ -692,6 +692,14 @@ export const roomEntries = sqliteTable(
      */
     dispatchId: text('dispatch_id'),
 
+    /**
+     * The turn marks the post was written under (DOR-3036, `specs/turn-marks`): JSON
+     * `{ outsider?: true, teammate?: [{ roomId, authorId }] }`, `{}` for a known unmarked turn, and
+     * NULL when nobody knows (an unverified caller, a row from before this column). Kept so a
+     * restart does not read a teammate-marked agent post as merely an outsider's. Off the wire.
+     */
+    turnMarks: text('turn_marks'),
+
     /** The entry this one answers, in this same room. Null for a top-level entry. */
     parentEntryId: text('parent_entry_id'),
 

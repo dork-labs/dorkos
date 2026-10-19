@@ -28,6 +28,8 @@ import {
 } from '../gatherers/index.js';
 import { standingKey, triageByRules } from '../triage-rules.js';
 import { AuditLog } from '../../audit/audit-log.js';
+import { eq } from 'drizzle-orm';
+import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 
 const NOW = new Date('2026-10-12T10:00:00Z');
 const SINCE = '2026-10-12T09:00:00.000Z';
@@ -129,6 +131,34 @@ describe('addressed', () => {
     expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
     post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
     expect(await createAddressedGatherer(db)(ctx())).toHaveLength(1);
+  });
+
+  // DOR-3036: a beat that reads a marked post carries its marks.
+  it('carries the marks another agent’s post was written under, from memory or its row', async () => {
+    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
+    const inMemory = post('r-general', 'a-otto', '2026-10-12T09:10:00Z', ['a-juno']);
+    noteEntryLevel(inMemory, {
+      asks: 'always',
+      reach: 'read',
+      outsider: true,
+      teammate: [{ roomId: 'space', authorId: 'priya' }],
+    });
+    const onRow = post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
+    db.update(roomEntries)
+      .set({ turnMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(roomEntries.id, onRow))
+      .run();
+    const plain = post('r-general', 'h-dorian', '2026-10-12T09:12:00Z', ['a-juno']);
+
+    const byKey = new Map(
+      (await createAddressedGatherer(db)(ctx())).map((change) => [change.key, change.marks])
+    );
+    expect(byKey.get(`room-entry:${inMemory}`)).toEqual({
+      outsider: true,
+      teammate: [{ roomId: 'space', authorId: 'priya' }],
+    });
+    expect(byKey.get(`room-entry:${onRow}`)).toEqual({ outsider: true });
+    expect(byKey.get(`room-entry:${plain}`)).toBeUndefined();
   });
 
   it('keeps the newest messages on a busy day', async () => {

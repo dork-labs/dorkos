@@ -36,7 +36,16 @@ import {
 import type { RemoteWakeGate } from '../wake/wake-policy.js';
 
 /** A teammate's turn: a stranger's ceiling and read access, both at once (DOR-2955). */
-const TEAMMATE_CEILING = ['runtime-default', READ_ONLY_LEVEL];
+/** A teammate's ceiling: the runtime default and read access, which carries their mark (DOR-3036). */
+const TEAMMATE_CEILING = [
+  'runtime-default',
+  {
+    ...READ_ONLY_LEVEL,
+    teammate: [
+      expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) }),
+    ],
+  },
+];
 
 const REF = 'remote_space' as CommunityRef;
 const OWNER_MEMBER = 'remote-owner-member';

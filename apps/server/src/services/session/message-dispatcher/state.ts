@@ -16,6 +16,7 @@ import type {
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { isRelayClientId } from '../../core/session-relay/relay-client-id.js';
+import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,
@@ -92,6 +93,8 @@ export function setQueuedChatCeilingResolver(
  *   passes that ceiling itself, but a row adopted after a restart has no
  *   in-memory plan to carry it, and words from the web must still ask before
  *   anything that needs a person (spec `everything-is-a-space` B2, option 2).
+ * - A row an extension sent adds the runtime's default too, for the same
+ *   reason: an app's code is not the owner's words (DOR-3036).
  */
 export function launchCeiling(
   clientId: string,
@@ -100,7 +103,7 @@ export function launchCeiling(
 ): TurnPermissionCeiling | undefined {
   let bound: TurnPermissionCeiling;
   if (isChatClientId(clientId)) bound = queuedChatCeiling?.(messageId) ?? 'runtime-default';
-  else if (isRelayClientId(clientId)) bound = 'runtime-default';
+  else if (isRelayClientId(clientId) || isExtensionClientId(clientId)) bound = 'runtime-default';
   else return own;
   if (own === undefined) return bound;
   const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>

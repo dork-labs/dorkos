@@ -34,12 +34,14 @@ import type {
   AgentRuntime,
   MessageOpts,
   TurnPermissionBound,
+  TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { agentMarksRunning } from './live-outsider-turns.js';
 import {
+  agentMarksRunning,
   applyTurnMarks,
+  ceilingCarrying,
   hasMarks,
   marksForTurn,
   marksOfLevel,
@@ -152,8 +154,8 @@ export function marksOf(
  *
  * Its own level when this process recorded the caller's turn, which bounds no
  * tighter than the turn already ran; otherwise, while one of its agent's
- * marked turns runs, the runtime default, the bound a stranger's own message
- * carries.
+ * marked turns runs, a ceiling carrying those marks (`ceilingCarrying`): the
+ * runtime default, and a read-only level holding every teammate origin.
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -161,21 +163,77 @@ export function marksOf(
 export function markedBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
-): TurnPermissionBound | undefined {
-  if (!hasMarks(marksOf(sessionId, agentPath))) return undefined;
-  return (sessionId ? turnLevels.get(sessionId) : undefined) ?? 'runtime-default';
+): TurnPermissionCeiling | undefined {
+  const marks = marksOf(sessionId, agentPath);
+  if (!hasMarks(marks)) return undefined;
+  return (sessionId ? turnLevels.get(sessionId) : undefined) ?? ceilingCarrying(marks);
+}
+
+/**
+ * Where a post's marks are kept across a restart (DOR-3036): the `room_entries.turn_marks`
+ * column, set at startup by the rooms layer, which owns the table. `read` answers `null` for a
+ * post whose author's level was never known (an unverified caller, a row from before the column),
+ * so a reader can tell "unmarked" from "nobody knows".
+ */
+export interface EntryMarksStore {
+  /** Keep the marks a post was written under. */
+  write(roomId: string, entryId: string, marks: TurnMarks): void;
+  /** The marks a post was written under; `null` when unknown, `undefined` when there is no row. */
+  read(roomId: string, entryId: string): TurnMarks | null | undefined;
+}
+
+let entryMarksStore: EntryMarksStore | null = null;
+
+/**
+ * Set where post marks are kept, or `null` to keep them in memory only (tests).
+ *
+ * @param next - The store over `room_entries.turn_marks`.
+ */
+export function setEntryMarksStore(next: EntryMarksStore | null): void {
+  entryMarksStore = next;
 }
 
 /**
  * Keep a level with a room post. Called as the post is written, before
  * anything it triggers is dispatched, so a later turn of the same author
- * cannot change it.
+ * cannot change it. Its marks are also kept on the row, so a restart does not
+ * read a teammate-marked post as merely an outsider's.
  *
  * @param entryId - The post's id.
  * @param level - The level from {@link postLevelFor}; `undefined` keeps nothing.
+ * @param roomId - The post's room, to keep its marks on its row; absent keeps them in memory only.
  */
-export function noteEntryLevel(entryId: string, level: TurnPermissionLevel | undefined): void {
-  if (level !== undefined) remember(entryLevels, entryId, level);
+export function noteEntryLevel(
+  entryId: string,
+  level: TurnPermissionLevel | undefined,
+  roomId?: string
+): void {
+  if (level === undefined) return;
+  remember(entryLevels, entryId, level);
+  try {
+    if (roomId) entryMarksStore?.write(roomId, entryId, marksOfLevel(level));
+  } catch {
+    // The level is kept in memory; a failed write leaves the row unknown, which readers treat
+    // as marked in a space room and as the runtime default everywhere else.
+  }
+}
+
+/**
+ * The marks a room post was written under: from its kept level, else from its row. `null` when
+ * nobody knows (no level was kept and the row records none), `undefined` when the post is not
+ * stored here at all.
+ *
+ * @param entryId - The post's id.
+ * @param roomId - The post's room, to read its row; absent reads the kept level only.
+ */
+export function entryMarksOf(entryId: string, roomId?: string): TurnMarks | null | undefined {
+  const level = entryLevels.get(entryId);
+  if (level !== undefined) return marksOfLevel(level);
+  try {
+    return entryMarksStore && roomId ? entryMarksStore.read(roomId, entryId) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -271,8 +329,18 @@ export function recordTurnLevels(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
-  return applyTurnMarks(recordLevels(runtime, storedModeOf), (sessionId) =>
-    marksOfLevel(turnLevels.get(sessionId))
+  return applyTurnMarks(
+    recordLevels(runtime, storedModeOf),
+    (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+    (sessionId, opts) => {
+      let stored: string | null | undefined;
+      try {
+        stored = storedModeOf(sessionId);
+      } catch {
+        stored = undefined;
+      }
+      remember(turnLevels, sessionId, levelForTurn(runtime, stored, opts));
+    }
   );
 }
 
@@ -283,10 +351,21 @@ function recordLevels(
 ): AgentRuntime {
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
+      // A command intent is a turn too (`CommandIntentOpts` extends `MessageOpts`), recorded alike.
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
         return (
           sessionId: string,
-          content: string,
+          content: unknown,
           opts?: MessageOpts
         ): AsyncGenerator<StreamEvent> => {
           let stored: string | null | undefined;
@@ -306,7 +385,7 @@ function recordLevels(
           while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
           }
-          return target.sendMessage(sessionId, content, opts);
+          return start(sessionId, content, opts);
         };
       }
       const value = Reflect.get(target, prop, target);

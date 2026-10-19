@@ -231,6 +231,10 @@ export class StartWorkService {
         meshCore: undefined,
         // A chat minted here is in no room.
         roomSessionPlace: undefined,
+        // An extension's prompt is not the owner's words, and the route cannot tell
+        // a click from page code: the chat carries the outsider mark and runs no
+        // looser than the runtime default (DOR-3036, `specs/turn-marks`).
+        permissionCeiling: 'runtime-default',
         countsTowardLaunchCap: true,
         onSettled: () => {
           settled = true;

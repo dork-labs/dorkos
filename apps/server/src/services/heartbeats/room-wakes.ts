@@ -21,6 +21,7 @@
  *   refusal run in;
  * - a post the outbox made, by id: the backstop for a beat post that lands
  *   while the same agent holds a room turn there, and so borrows its session;
+ * - a post written under a turn mark (DOR-3036): a stranger's words or a teammate's chain;
  * - a depth refusal for a post that is its own cascade root: an agent posting
  *   outside a turn is stamped at the depth ceiling, so that refusal is not a
  *   back-and-forth anybody is waiting on.
@@ -31,6 +32,8 @@ import type { AuthorRegistry } from '../rooms/author-registry.js';
 import type { TriggerReason } from '../rooms/addressing.js';
 import { isEntryAuthorExternal } from '../rooms/limits/turn-ceiling.js';
 import { isBeatRoomPost, wakeAgentAt } from './event-wakes.js';
+import { entryMarksOf } from '../core/turn-power/turn-levels.js';
+import { hasMarks } from '../core/turn-power/turn-marks.js';
 
 /** Room trigger reasons a refused turn wakes a beat for: somebody is waiting. */
 const WAKING_REASONS: ReadonlySet<TriggerReason> = new Set<TriggerReason>([
@@ -50,6 +53,8 @@ export interface RefusedEntry {
   cascadeRoot: string;
   /** The chat that produced it, when one did. */
   sessionId?: string | null;
+  /** Its room, to read the marks it was written under. */
+  roomId?: string;
 }
 
 /**
@@ -75,6 +80,10 @@ export function shouldWakeForRefusal(
   const author = authors.getMany([entry.authorId]).get(entry.authorId);
   // An agent's post with no chat behind it is nobody's turn to answer for.
   if (author?.kind === 'agent' && !entry.sessionId) return false;
+  // A post a stranger's words or a teammate's chain wrote never wakes a beat (DOR-3036): the beat
+  // would read it as the agent's own work, unmarked. Fails closed.
+  const marks = entryMarksOf(entry.id, entry.roomId);
+  if (marks && hasMarks(marks)) return false;
   return !isEntryAuthorExternal(authors, entry.authorId);
 }
 

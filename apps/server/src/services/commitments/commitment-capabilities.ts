@@ -54,6 +54,7 @@ import {
   type CommitmentActor,
   type CommitmentService,
 } from './commitment-service.js';
+import { marksOf } from '../core/turn-power/turn-levels.js';
 
 /** The MCP tool names, exported so prose that names them reads them from here. */
 export const COMMITMENT_ADD_TOOL = 'commitment_add';
@@ -244,6 +245,8 @@ export const commitmentsDomain: CapabilityDomain = {
           ...(input.dueAt ? { dueAt: input.dueAt } : {}),
           ...(context.sessionId ? { sourceSessionId: context.sessionId } : {}),
           ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
+          // The marks of the calling turn, from its own record (DOR-3036).
+          originMarks: marksOf(context.sessionId, context.identity?.agentPath),
         });
         return { ok: true as const, commitment };
       },

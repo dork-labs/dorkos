@@ -73,8 +73,13 @@ describe('in a space’s local copy', () => {
     expect(isTeammateEntry(registry, { id: 'tg-3', authorId: telegram }, true)).toBe(true);
     expect(isTeammateEntry(registry, { id: 'space-4', authorId: member }, true)).toBe(true);
     expect(
-      ceilingForEntries(registry, [{ id: 'gone-3', authorId: 'no-such-author' }], true)
-    ).toEqual({ permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] });
+      ceilingForEntries(registry, [{ id: 'gone-3', authorId: 'no-such-author' }], true, 'space-r')
+    ).toEqual({
+      permissionCeiling: [
+        'runtime-default',
+        { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'space-r', authorId: 'no-such-author' }] },
+      ],
+    });
   });
 
   it('keeps a person or an agent on this machine, and a vouched post, out of it', () => {
@@ -88,8 +93,12 @@ describe('in a space’s local copy', () => {
 describe('a teammate’s ceiling', () => {
   it('is a stranger’s and read access, both at once', () => {
     const { registry, member, telegram } = authors();
-    expect(ceilingForEntries(registry, [{ id: 'space-3', authorId: member }])).toEqual({
-      permissionCeiling: ['runtime-default', READ_ONLY_LEVEL],
+    // The read-access bound carries the teammate's mark: the room they wrote in and who they are.
+    expect(ceilingForEntries(registry, [{ id: 'space-3', authorId: member }], false, 'r')).toEqual({
+      permissionCeiling: [
+        'runtime-default',
+        { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'r', authorId: member }] },
+      ],
     });
     // A stranger from a bridged chat keeps exactly what it had.
     expect(ceilingForEntries(registry, [{ id: 'tg-2', authorId: telegram }])).toEqual({

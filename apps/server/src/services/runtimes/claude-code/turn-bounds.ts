@@ -35,10 +35,13 @@ export function assignTurnBounds(
   } else {
     delete session.turnPermissionCeiling;
   }
-  // And the room a teammate's turn is fenced to (DOR-2955). Cleared the same
+  // And the room a teammate's turn is fenced to (DOR-2955), or no room for a
+  // turn a teammate's mark reached one hop on (DOR-3036). Cleared the same
   // way, so the owner's next turn in this conversation reaches what it did.
   if (opts?.roomTurn?.teammate === true) {
     session.teammateTier = { roomId: opts.roomTurn.roomId };
+  } else if (opts?.teammate === true) {
+    session.teammateTier = { roomId: null };
   } else {
     delete session.teammateTier;
   }

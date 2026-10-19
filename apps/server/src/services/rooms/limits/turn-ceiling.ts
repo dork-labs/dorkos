@@ -8,10 +8,10 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
-import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
-import { marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import { entryLevelOf, entryMarksOf } from '../../core/turn-power/turn-levels.js';
+import { ceilingCarrying } from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
-import { isTeammateEntry } from './space-teammates.js';
+import { isTeammateEntry, isUnknownSpaceAgentPost } from './space-teammates.js';
 
 /**
  * Whether the author of a triggering entry is somebody OUTSIDE this machine.
@@ -44,7 +44,9 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * receiving runtime's default. A teammate's (a space member who is not the
  * owner, DOR-2955) is held to that AND to read access: both bounds hold at once,
  * so the turn still counts as a stranger's everywhere `'runtime-default'` is
- * read for that. Another agent's post is held to the level its
+ * read for that. The read-access bound carries the teammate's mark (DOR-3036):
+ * the space room they wrote in and who they are, so everything the turn sends
+ * on carries it too. Another agent's post is held to the level its
  * turn ran at when it wrote the post; when that was not kept (a restart, a post
  * with no session), to the runtime's default, because the alternative is to
  * hand out the receiving conversation's level on the strength of a missing
@@ -53,21 +55,32 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
  * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
+ * @param roomId - The local room the turn answers in, which a teammate's mark names.
  */
 export function ceilingForEntry(
   authors: AuthorRegistry,
   entry: Pick<RoomEntry, 'id' | 'authorId'>,
-  inSpaceRoom = false
+  inSpaceRoom = false,
+  roomId = ''
 ): { permissionCeiling?: TurnPermissionCeiling } {
   if (isTeammateEntry(authors, entry, inSpaceRoom)) {
-    return { permissionCeiling: ['runtime-default', READ_ONLY_LEVEL] };
+    const origin = { roomId, authorId: entry.authorId };
+    return { permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [origin] }] };
   }
   if (isEntryAuthorExternal(authors, entry.authorId)) {
     return { permissionCeiling: 'runtime-default' };
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
   if (kind !== 'agent') return {};
-  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
+  const level = entryLevelOf(entry.id);
+  if (level !== undefined) return { permissionCeiling: level };
+  // The level is gone (a restart) or was never kept: the post's row still says what it carried.
+  if (isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId || undefined)) {
+    const origin = { roomId, authorId: entry.authorId };
+    return { permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [origin] }] };
+  }
+  const kept = entryMarksOf(entry.id, roomId || undefined);
+  return { permissionCeiling: (kept && ceilingCarrying(kept)) || 'runtime-default' };
 }
 
 /**
@@ -78,14 +91,16 @@ export function ceilingForEntry(
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
  * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
+ * @param roomId - The local room the turn answers in, which a teammate's mark names.
  */
 export function ceilingForEntries(
   authors: AuthorRegistry,
   entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
-  inSpaceRoom = false
+  inSpaceRoom = false,
+  roomId = ''
 ): { permissionCeiling?: TurnPermissionCeiling } {
   const bounds = entries.flatMap((entry): TurnPermissionBound[] => {
-    const one = ceilingForEntry(authors, entry, inSpaceRoom).permissionCeiling;
+    const one = ceilingForEntry(authors, entry, inSpaceRoom, roomId).permissionCeiling;
     if (one === undefined) return [];
     return Array.isArray(one) ? [...one] : [one as TurnPermissionBound];
   });
@@ -117,15 +132,17 @@ export function ceilingForEntries(
  * person's line from this machine and the room's own notices never count.
  *
  * @param context - The room context the turn is about to be shown.
+ * @param roomId - The room, to read a post's kept marks once its level is gone (DOR-3036).
  */
 export function outsiderInViewOf(
-  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>
+  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>,
+  roomId?: string
 ): { outsiderInView?: true } {
   const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
   const outsider = shown.some((entry) => {
     if (entry.authorOrigin === 'external') return true;
     if (entry.authorIsPerson || entry.kind !== 'post') return false;
-    return marksOfLevel(entryLevelOf(entry.id)).outsider === true;
+    return entryMarksOf(entry.id, roomId)?.outsider === true;
   });
   return outsider ? { outsiderInView: true } : {};
 }

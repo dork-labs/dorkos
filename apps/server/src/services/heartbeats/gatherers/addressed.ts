@@ -18,6 +18,8 @@ import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm';
 import { authors, roomEntries, roomMembers, rooms, type Db } from '@dorkos/db';
 import { isExternalNaturalKey } from '../../rooms/author-registry.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
+import { entryMarksOf } from '../../core/turn-power/turn-levels.js';
+import { hasMarks, parseStoredMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /** How far back a first beat looks, with no last beat to measure from. */
 const FIRST_BEAT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -53,6 +55,7 @@ interface ReadEntry {
   seq: number;
   authorId: string;
   mentions: string;
+  turnMarks: string | null;
   createdAt: string;
   authorKind: string;
   naturalKey: string;
@@ -98,6 +101,7 @@ function recentPosts(db: Db, roomIds: string[], since: string): ReadEntry[] {
       seq: roomEntries.seq,
       authorId: roomEntries.authorId,
       mentions: roomEntries.mentions,
+      turnMarks: roomEntries.turnMarks,
       createdAt: roomEntries.createdAt,
       authorKind: authors.kind,
       naturalKey: authors.naturalKey,
@@ -159,7 +163,20 @@ function changeFor(entry: ReadEntry, seat: Seat): Change {
     at: entry.createdAt,
     ref: { kind: 'room-entry', id: entry.id },
     signal: 'unanswered',
+    ...marksField(entry),
   };
+}
+
+/**
+ * The marks a post was written under, as the change carries them (DOR-3036): from its kept level,
+ * else from its row. A beat reading a marked post is a marked turn.
+ *
+ * @param entry - The entry.
+ */
+function marksField(entry: ReadEntry): { marks?: TurnMarks } {
+  const marks =
+    entryMarksOf(entry.id) ?? (entry.turnMarks ? parseStoredMarks(entry.turnMarks) : null);
+  return marks && hasMarks(marks) ? { marks } : {};
 }
 
 /**
