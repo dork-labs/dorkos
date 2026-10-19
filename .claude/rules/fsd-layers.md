@@ -6,6 +6,8 @@ paths: apps/client/src/layers/**/*.ts, apps/client/src/layers/**/*.tsx
 
 These rules apply to all code within the FSD layer hierarchy in `apps/client/src/layers/`.
 
+`apps/client/src/space/` is outside it: the space's own website, a separate site with its own build (`vite.space.config.ts`), moved there whole by server-merge step 7e. It and the app never import each other (`apps/client/eslint.config.js`).
+
 ## Layer Dependency Rules
 
 The FSD hierarchy enforces strict unidirectional imports:

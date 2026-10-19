@@ -13,7 +13,7 @@ import { clearLine, confirmBannerHidden } from '../links.js';
 import { ResetPassword } from '../ResetPassword.js';
 import { LinkWithPassword } from '../../sign-up/LinkWithPassword.js';
 import { captureLinkSecret } from '../../page-start/read-link-secret.js';
-import { LINK_SECRET_SCRIPT } from '../../../../../server/src/services/spaces/headers/link-secret-script.js';
+import { LINK_SECRET_SCRIPT } from '@dorkos/shared/space-page';
 
 const TOKEN = 'T'.repeat(43);
 const PEEK = 'POST /api/v1/email-links/peek';

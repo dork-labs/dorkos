@@ -107,7 +107,7 @@
         "packages/ui/",
         "apps/design-system/",
         "apps/client/src/layers/shared/ui/",
-        "apps/community/src/browser/components/Admission"
+        "apps/client/src/space/components/Admission"
       ]
     },
     {
@@ -815,7 +815,7 @@
       "description": "Step-by-step `dorkos community deploy` walkthrough: plan, consent, stops and resume, owner setup, first invite, connecting DorkOS, removal",
       "patterns": [
         "packages/cli/src/commands/community-deploy/",
-        "apps/community/src/browser/components/(Admission|Manage)"
+        "apps/client/src/space/components/(Admission|Manage)"
       ]
     },
     {

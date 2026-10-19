@@ -722,9 +722,15 @@ test('the emailed link keeps ownership only when the owner presses the button', 
     // Opening the page only checked the link; nothing changed.
     expect(page.url()).toBe(`${baseUrl}/keep-ownership`);
     expect((await replacementRow(host, replacementId)).state).toBe('waiting');
-    expect(await page.evaluate(() => typeof window.__readDorkosOwnerReplacementFragment)).toBe(
-      'undefined'
-    );
+    // The page's own type for this hook lives with its source in apps/client; this spec only
+    // checks that the hook is gone.
+    expect(
+      await page.evaluate(
+        () =>
+          typeof (window as { __readDorkosOwnerReplacementFragment?: unknown })
+            .__readDorkosOwnerReplacementFragment
+      )
+    ).toBe('undefined');
     await audit(page, 'keep-ownership-ready', page.getByRole('button', { name: 'Keep ownership' }));
 
     await page.getByRole('button', { name: 'Keep ownership' }).click();

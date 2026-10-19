@@ -171,7 +171,7 @@ Scope: the public origin is deployment configuration (`COMMUNITY_PUBLIC_URL`), n
 - `apps/server/src/services/spaces/__tests__/migrate.integration.test.ts` — serves a populated version-four community through the current HTTP contract after upgrade
 - `apps/server/src/services/spaces/__tests__/foundation.integration.test.ts` — uses canonical tenant routes and fails closed when the singleton alias is ambiguous
 - `apps/server/src/services/communities/remote/__tests__/pairing-service.test.ts` — requires a canonical tenant link when singleton discovery is ambiguous
-- `apps/community/src/browser/api.test.ts` — keeps the singleton compatibility API at the host root
+- `apps/client/src/space/api.test.ts` — keeps the singleton compatibility API at the host root
 
 ### U4
 

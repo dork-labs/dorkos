@@ -35,6 +35,9 @@
  * it counts as one word. Only `apps/client/src` is scanned: the server's
  * `message:`/`description:` properties include OpenAPI and schema text no
  * person reads in the app, and counting those would bury the real offenders.
+ * `apps/client/src/space/` is skipped too: it is the space's own website, a
+ * separate site with its own pages and wording, built by its own Vite config
+ * (server-merge step 7e), not copy the app renders.
  *
  * THE KNOWN GAP is the vocab gate's own: a string handed to an ordinary helper
  * (`plural(n, '…', '…')`) or returned from a function is not in a copy
@@ -58,6 +61,9 @@ import { collectFiles, isCopySink } from './check-vocab-gate.ts';
 
 /** Workspaces whose copy this script measures. See the module doc for why only the client. */
 const DEFAULT_SCAN_ROOTS = ['apps/client/src'];
+
+/** The space's own website, a separate site whose copy this check does not measure. */
+const SPACE_SITE = 'apps/client/src/space/';
 
 /** Fewest words that make a block an error: "16+ never". */
 export const ERROR_AT = 16;
@@ -391,6 +397,7 @@ export function runCopyLength(
   for (const file of collectFiles(scanRoots, repoRoot)) {
     if (/\.(test|spec|stories)\.tsx?$/.test(file)) continue;
     const relPath = toPosixRelative(repoRoot, file);
+    if (relPath.startsWith(SPACE_SITE)) continue;
     blocks.push(...measureSource(relPath, readFileSync(file, 'utf8')));
   }
   return blocks;

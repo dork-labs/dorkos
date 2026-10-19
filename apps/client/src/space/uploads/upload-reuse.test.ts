@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { UPLOAD_REUSE_MS, createUploadReuse } from './upload-reuse.js';
 

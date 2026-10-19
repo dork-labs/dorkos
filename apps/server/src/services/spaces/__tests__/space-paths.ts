@@ -11,8 +11,11 @@ export { MIGRATIONS_DIR, SPACE_ROOT, WEB_DIR } from '../startup/space-root.js';
 /** The server's source folder. */
 export const SPACE_SRC = new URL('../', import.meta.url);
 
-/** The source of the space's web page, which `vite build` turns into `dist/`. */
-export const SPACE_WEB_SRC = new URL('src/browser/', SPACE_ROOT);
+/**
+ * The source of the space's web page in `apps/client` (server-merge step 7e), which
+ * `apps/client/vite.space.config.ts` builds into `dist/`.
+ */
+export const SPACE_WEB_SRC = new URL('../client/src/space/', SPACE_ROOT);
 
 /** The repository root. */
 export const REPO_ROOT = new URL('../../', SPACE_ROOT);

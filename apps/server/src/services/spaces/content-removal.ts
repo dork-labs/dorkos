@@ -479,43 +479,4 @@ async function removeBoundAttachment(
   return { entryId: entry.id, entryTombstoned: tombstone, blobKeys };
 }
 
-/** The acting principal, as the rank rule sees it. */
-export interface RemovalActor {
-  kind: 'human' | 'agent';
-  /** The member id, or the agent id for an agent credential. */
-  id: string;
-  /** The member's current role; for an agent, its owner's (unused by the rule). */
-  role: 'owner' | 'admin' | 'member';
-}
-
-/** The content being removed, ranked by its human. */
-export interface RemovalTarget {
-  /** The authoring or uploading agent, when an agent made it. */
-  agentId: string | null;
-  /** The member the content counts as: its author, or its author agent's owner. */
-  humanId: string;
-  /** That member's role now. */
-  humanRole: 'owner' | 'admin' | 'member';
-  /** Whether that member is still an active member. */
-  humanActive: boolean;
-}
-
-/**
- * Decide whether an actor may remove a message or file, and as whom.
- *
- * Content is ranked by its human: an agent's content counts as its owner's. An agent credential
- * may remove only what it made; a member what they or their agents made; an admin also anything
- * whose human is neither the owner nor an active admin; the owner anything.
- *
- * @returns `author` when the actor removes their own (or their agent's) content, `moderator`
- *   when an owner or admin removes someone else's, or `null` when refused.
- */
-export function removalAuthority(actor: RemovalActor, target: RemovalTarget): RemovedBy | null {
-  if (actor.kind === 'agent') return target.agentId === actor.id ? 'author' : null;
-  if (target.humanId === actor.id) return 'author';
-  if (actor.role === 'owner') return 'moderator';
-  const protectedHuman =
-    target.humanRole === 'owner' || (target.humanRole === 'admin' && target.humanActive);
-  if (actor.role === 'admin' && !protectedHuman) return 'moderator';
-  return null;
-}
+export { removalAuthority, type RemovalActor, type RemovalTarget } from '@dorkos/shared/space-page';
