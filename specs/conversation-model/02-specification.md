@@ -156,7 +156,7 @@ The plan of record (navigation fix, 2026-10-18, PM-approved). A person talks in 
 - **Who answers.** An agent set to mention-only still answers every message in its own DM, with no @ needed.
 - **One agent, two seats.** The agent in #design and the agent in your DM are two seats with two sessions, one per (room, agent). A quoted reference ("From #design") is how one learns about the other. It's explicit, so it's never a leak.
 - **A session behind a channel seat is not the channel.** A person who types in that session runs a plain session turn (no `roomTurn`), so the reply stays in the session. It reaches the channel only if the agent posts there. The session view says so in one line; a reply never goes missing silently.
-- **Agent-to-agent DMs** (step 2, DOR-3048) are filtered out by membership: they never appear in the owner's DM list or unread counts.
+- **Agent-to-agent DMs** (step 2) are filtered out by membership: they never appear in the owner's DM list or unread counts. DOR-3048 carries this as an acceptance test.
 
 ## 4. Outside senders
 
