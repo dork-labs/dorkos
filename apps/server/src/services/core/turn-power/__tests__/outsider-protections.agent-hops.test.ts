@@ -42,7 +42,8 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import {
   lastTurnLevelOf,
   noteEntryLevel,
-  outsiderBoundOf,
+  markedBoundOf,
+  marksOf,
   postLevelFor,
   recordTurnLevels,
 } from '../turn-levels.js';
@@ -200,7 +201,8 @@ describe("a stranger's words, one agent hop later", () => {
     const { runtime, sent } = seam({ child: 'bypassPermissions' });
     const ana = fresh('ana');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
-    const bound = outsiderBoundOf(ana, '/agents/ana');
+    expect(marksOf(ana, '/agents/ana')).toEqual({ outsider: true });
+    const bound = markedBoundOf(ana, '/agents/ana');
     expect(bound).toMatchObject({ outsider: true });
     const child = fresh('child');
     await run(runtime, child, { permissionCeiling: bound! });
@@ -225,7 +227,8 @@ describe("a stranger's words, one agent hop later", () => {
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions' });
     const bo = fresh('bo');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'owner' }));
-    expect(outsiderBoundOf(ana, '/agents/ana')).toBeUndefined();
+    expect(marksOf(ana, '/agents/ana')).toEqual({});
+    expect(markedBoundOf(ana, '/agents/ana')).toBeUndefined();
     const post = fresh('post');
     noteEntryLevel(post, postLevelFor([ana]));
     await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));

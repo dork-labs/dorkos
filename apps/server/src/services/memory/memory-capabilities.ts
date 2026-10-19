@@ -35,7 +35,7 @@ import { defineCapability, type CapabilityDeps } from '../core/capabilities/inde
 import type { CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import { getMemoryProvider } from './index.js';
-import { outsiderBoundOf } from '../core/turn-power/turn-levels.js';
+import { marksOf } from '../core/turn-power/turn-levels.js';
 import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
 
 // The tool names live in a leaf module so the tool lists can import them
@@ -147,7 +147,7 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
  * @param context - The invocation: its verified session and identity.
  */
 function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
-  return outsiderBoundOf(context.sessionId, context.identity?.agentPath) !== undefined;
+  return marksOf(context.sessionId, context.identity?.agentPath).outsider === true;
 }
 
 /**

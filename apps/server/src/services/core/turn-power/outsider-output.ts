@@ -14,7 +14,8 @@
  *
  * ## Which turns
  *
- * Decided by who STARTED the turn ({@link turnStartedByOutsider}), never by the
+ * Decided by who STARTED the turn ({@link startedByOutsider}, the direct reading
+ * of the outsider mark), never by the
  * model and never by the broader "read an outsider's words" mark: that mark
  * also lands on our own agents' turns (a post whose level was not kept, a room
  * where somebody outside posted earlier), and counting those would put back
@@ -40,7 +41,7 @@
  * @module services/core/turn-power/outsider-output
  */
 import { turnSerialOf } from './turn-levels.js';
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { startedByOutsider } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
 /** What a turn sends out, counted separately. */
@@ -57,7 +58,7 @@ const counts = new Map<string, Record<OutsiderOutputKind, number>>();
 
 /** The turn a stranger started on this conversation, as a key, or `undefined` for any other turn. */
 function strangerTurnKeyOf(sessionId: string | null | undefined): string | undefined {
-  if (!sessionId || !turnStartedByOutsider(sessionId)) return undefined;
+  if (!sessionId || !startedByOutsider(sessionId)) return undefined;
   const primary = primaryOf(sessionId);
   const serial = Math.max(turnSerialOf(primary) ?? 0, turnSerialOf(sessionId) ?? 0);
   return `${primary}#${serial}`;

@@ -80,7 +80,7 @@ import {
   type ResolvedPermission,
 } from '@dorkos/shared/permissions';
 
-import { outsiderBoundOf } from '../turn-power/turn-levels.js';
+import { marksOf } from '../turn-power/turn-levels.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
 import { logger } from '../../../lib/logger.js';
@@ -309,7 +309,7 @@ export async function resolveCallPermission(request: {
   const { action, identity } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn = outsiderBoundOf(request.sessionId, identity?.agentPath) !== undefined;
+  const strangerTurn = marksOf(request.sessionId, identity?.agentPath).outsider === true;
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
