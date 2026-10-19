@@ -8,8 +8,11 @@
  * Refused before any proof, whatever it would say:
  *
  * - no approvals passkey is pinned here, or its file cannot be read;
- * - granting the card could raise what agents may do (Security Must 4), which
- *   is decided at this computer only;
+ * - the card is not one the web may answer (`relay-approvable.ts`, Security
+ *   Must 4): anything but a short list of one-shot tools, a file tool aimed at
+ *   a settings folder, or a card whose input is a placeholder;
+ * - a denial that carries a reason: the reason is unsigned words that would
+ *   reach the agent, so a reason is added at the computer;
  * - the card would not fit in a statement the approve page can show whole.
  *
  * The audit log gets the decision, the input's hash and the passkey's label,
@@ -39,6 +42,7 @@ import {
   RELAY_APPROVAL_NO_PASSKEY,
   RELAY_APPROVAL_PROOF_FAILED,
   RELAY_APPROVAL_TOO_LARGE,
+  RELAY_DENY_REASON_AT_COMPUTER,
   RELAY_TOO_MANY_APPROVALS,
 } from './relay-errors.js';
 
@@ -50,8 +54,11 @@ export interface RelayApprovalDeps extends RelayAuditDeps {
   approvalPin: () => ApprovalPinFacts | null;
   /** The tool approval a chat is waiting on, or `null` when it is not waiting on that call. */
   pendingApproval: (sessionId: string, toolCallId: string) => PendingApprovalCard | null;
-  /** Whether granting this card could raise what agents may do (Security Must 4). */
-  raisesPermissions: (card: PendingApprovalCard) => boolean;
+  /**
+   * Whether the web may answer this card at all (Security Must 4), judged
+   * with the chat's folder; see `relayApprovableCard`.
+   */
+  approvableCard: (card: PendingApprovalCard, cwd: string | null) => boolean;
   /** Answer the tool call, once. Never passed `alwaysAllow`. */
   approveTool: (
     sessionId: string,
@@ -59,22 +66,14 @@ export interface RelayApprovalDeps extends RelayAuditDeps {
     approved: boolean,
     options: ToolDecisionOptions
   ) => Promise<boolean>;
-  /** Record the sign counter a passing proof carried. */
-  bumpSignCount: (credentialId: string, signCount: number) => Promise<void>;
+  /**
+   * Record the sign counter a passing proof carried, as a compare-and-set:
+   * true only while the key is still pinned with the counter the proof was
+   * checked against. See `bumpSignCount` in `approval-key-store.ts`.
+   */
+  bumpSignCount: (credentialId: string, expected: number, signCount: number) => Promise<boolean>;
   /** The current time; injectable for tests. */
   now?: () => Date;
-}
-
-/**
- * Whether a tool call, once allowed, could raise what agents may do, judged
- * from the card alone: DorkOS's own tools (permissions, boundaries, settings,
- * servers, installs) and leaving plan mode. Deliberately broad, since a card
- * refused here is still answered at the computer.
- *
- * @param card - The pending tool approval.
- */
-export function relayCardRaisesPermissions(card: PendingApprovalCard): boolean {
-  return card.toolName.startsWith('mcp__dorkos__') || card.toolName === 'ExitPlanMode';
 }
 
 type ChallengeRequest = Extract<RelayRequest, { op: 'interaction.challenge' }>;
@@ -93,6 +92,7 @@ function refusalFor(failure: ApprovalProofFailure): RelayError {
  *
  * @param deps - See {@link RelayApprovalDeps}.
  * @param book - The connection's live challenges.
+ * @param cwd - The chat's folder, which a file tool's target resolves against.
  * @param request - The `interaction.challenge` request.
  * @param answer - Answers with the result body.
  * @param refuse - Answers with a refusal.
@@ -100,6 +100,7 @@ function refusalFor(failure: ApprovalProofFailure): RelayError {
 export function challengeApproval(
   deps: RelayApprovalDeps,
   book: ApprovalChallengeBook,
+  cwd: string | null,
   request: ChallengeRequest,
   answer: (body: unknown) => void,
   refuse: (error: RelayError) => void
@@ -121,7 +122,7 @@ export function challengeApproval(
   if (!keys || !pin) return refused(RELAY_APPROVAL_NO_PASSKEY, 'no-passkey');
   const pending = deps.pendingApproval(sessionId, toolCallId);
   if (!pending) return refused(RELAY_APPROVAL_NOT_PENDING, 'not-pending');
-  if (deps.raisesPermissions(pending)) return refused(RELAY_APPROVAL_AT_COMPUTER, 'raises');
+  if (!deps.approvableCard(pending, cwd)) return refused(RELAY_APPROVAL_AT_COMPUTER, 'at-computer');
   const issued = issueApprovalChallenge(book, {
     pin,
     keys,
@@ -156,6 +157,7 @@ export function challengeApproval(
  *
  * @param deps - See {@link RelayApprovalDeps}.
  * @param book - The connection's live challenges.
+ * @param cwd - The chat's folder, which a file tool's target resolves against.
  * @param sessionId - The chat.
  * @param decided - The approve or deny answer, with its proof.
  * @param answer - Answers with the result body.
@@ -164,6 +166,7 @@ export function challengeApproval(
 export async function respondApproval(
   deps: RelayApprovalDeps,
   book: ApprovalChallengeBook,
+  cwd: string | null,
   sessionId: string,
   decided: ApprovalAnswer,
   answer: (body: unknown) => void,
@@ -188,12 +191,19 @@ export async function respondApproval(
     });
     refuse(error);
   };
+  // A reason is unsigned words that would reach the agent: never taken from the web.
+  if (decided.kind === 'deny' && decided.reason?.trim()) {
+    return refused(RELAY_DENY_REASON_AT_COMPUTER, 'deny-reason');
+  }
   const keys = deps.approvalKeys();
   if (!keys) return refused(RELAY_APPROVAL_NO_PASSKEY, 'no-passkey');
   const pendingNow = (): PendingApprovalCard | null => deps.pendingApproval(sessionId, toolCallId);
-  const card = pendingNow();
-  // No proof makes a card that raises permissions allowed, whenever it is checked.
-  if (card && deps.raisesPermissions(card)) return refused(RELAY_APPROVAL_AT_COMPUTER, 'raises');
+  // No proof makes a card the web may not answer allowed, whenever it is checked.
+  const approvable = (): boolean => {
+    const card = pendingNow();
+    return card === null || deps.approvableCard(card, cwd);
+  };
+  if (!approvable()) return refused(RELAY_APPROVAL_AT_COMPUTER, 'at-computer');
 
   const verdict = await verifyApprovalProof({
     issued,
@@ -205,14 +215,19 @@ export async function respondApproval(
   });
   const label = keys.keys.find((key) => key.credentialId === proof.credentialId)?.label;
   if (!verdict.ok) return refused(refusalFor(verdict.failure), verdict.failure, label);
+  if (!approvable()) return refused(RELAY_APPROVAL_AT_COMPUTER, 'at-computer', label);
 
-  // Fail closed: a counter that cannot be recorded leaves the tool call unanswered.
-  await deps.bumpSignCount(verdict.key.credentialId, verdict.signCount);
+  // Fail closed: unless the counter is recorded against the key exactly as it was
+  // checked (still pinned, not moved by another proof), the tool call is not answered.
+  const recorded = await deps.bumpSignCount(
+    verdict.key.credentialId,
+    verdict.key.signCount,
+    verdict.signCount
+  );
+  if (!recorded) return refused(RELAY_APPROVAL_PROOF_FAILED, 'key-changed', label);
   const owner = deps.owner().name.trim();
-  const reason = decided.kind === 'deny' ? decided.reason?.trim() : undefined;
   const ok = await deps.approveTool(sessionId, toolCallId, decision === 'approve', {
     ...(owner ? { answeredBy: owner } : {}),
-    ...(reason ? { denyReason: reason } : {}),
   });
   recordRelayAudit(deps, {
     action: 'relay.interaction.approval',

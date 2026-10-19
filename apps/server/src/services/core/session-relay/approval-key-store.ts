@@ -248,24 +248,39 @@ export async function removeApprovalKey(
 }
 
 /**
- * Record the sign counter a passing proof carried. Only ever raised, so two
- * proofs settling out of order can never lower it.
+ * Record the sign counter a passing proof carried, as a compare-and-set inside
+ * the store's lock: it succeeds only while the key is still pinned and its
+ * stored counter is still the one the proof was checked against. So a key
+ * removed mid-check, or a second proof checked against the same counter,
+ * never succeeds. A passkey that keeps no counter (stored 0, proof 0) records
+ * nothing and succeeds; a counter that went backwards never does.
  *
  * @param credentialId - The key that signed.
+ * @param expected - The stored counter the proof was checked against.
  * @param signCount - The counter its proof carried.
  * @param dorkHome - The data folder; defaults to the live one.
+ * @returns Whether the proof may be acted on.
  */
 export async function bumpSignCount(
   credentialId: string,
+  expected: number,
   signCount: number,
   dorkHome: string = resolveDorkHome()
-): Promise<void> {
+): Promise<boolean> {
+  let recorded = false;
   await changeKeys(dorkHome, (current) => {
     const key = current?.keys.find((pinned) => pinned.credentialId === credentialId);
-    if (!current || !key || signCount <= key.signCount) return undefined;
+    if (!current || !key || key.signCount !== expected) return undefined;
+    if (key.signCount === 0 && signCount === 0) {
+      recorded = true;
+      return undefined;
+    }
+    if (signCount <= key.signCount) return undefined;
+    recorded = true;
     return {
       ...current,
       keys: current.keys.map((pinned) => (pinned === key ? { ...pinned, signCount } : pinned)),
     };
   });
+  return recorded;
 }

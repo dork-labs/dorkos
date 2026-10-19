@@ -36,8 +36,13 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import type { RecordAuditInput } from '../../../audit/audit-trail.js';
 import type { PendingApprovalCard } from '../approval-challenges.js';
-import { readApprovalKeys, type ApprovalKeys } from '../approval-key-store.js';
-import { relayCardRaisesPermissions } from '../relay-approvals.js';
+import {
+  approvalKeysPath,
+  bumpSignCount,
+  readApprovalKeys,
+  type ApprovalKeys,
+} from '../approval-key-store.js';
+import { relayApprovableCard } from '../relay-approvable.js';
 import {
   RELAY_SERVED_FEATURES,
   SessionRelayRequestServer,
@@ -93,25 +98,38 @@ interface HarnessOptions {
   cards?: Map<string, PendingApprovalCard>;
 }
 
+/** Every data folder a harness made, removed after each test. */
+const homes: string[] = [];
+afterEach(() => {
+  for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+});
+
 /** A request server over fakes, with a clock, one chat and pending cards by tool call id. */
 function harness(opts: HarnessOptions = {}) {
   const auth = new SoftAuthenticator({ rpId: RP_ID, origin: ORIGIN, userHandle: USER_HANDLE });
-  let keys = keysFor(auth);
+  // The real key store, in a data folder of its own.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-relay-approvals-'));
+  homes.push(home);
+  const keysFile = approvalKeysPath(home);
+  const setKeys = (next: ApprovalKeys): void => {
+    fs.mkdirSync(path.dirname(keysFile), { recursive: true });
+    fs.writeFileSync(keysFile, JSON.stringify(next), { mode: 0o600 });
+  };
+  setKeys(keysFor(auth));
+  /** Called each time the server reads the pending card. */
+  const hooks: { onPending?: () => void } = {};
   const cards =
     opts.cards ??
-    new Map([['t1', { toolName: 'Bash', displayName: 'Run a command', input: SECRET_INPUT }]]);
+    new Map<string, PendingApprovalCard>([
+      ['t1', { toolName: 'Bash', displayName: 'Run a command', input: SECRET_INPUT }],
+    ]);
   let now = new Date('2026-10-19T12:00:00.000Z');
   const frames: RelayComputerFrame[] = [];
   const audits: RecordAuditInput[] = [];
   const approveTool = vi.fn(async () => true);
-  const bumpSignCount = vi.fn(async (credentialId: string, signCount: number) => {
-    keys = {
-      ...keys,
-      keys: keys.keys.map((key) =>
-        key.credentialId === credentialId ? { ...key, signCount } : key
-      ),
-    };
-  });
+  const bumpSpy = vi.fn((credentialId: string, expected: number, signCount: number) =>
+    bumpSignCount(credentialId, expected, signCount, home)
+  );
   const deps: RelayRequestServerDeps = {
     agents: () => [AGENT],
     locateSession: async (id) => (id === CHAT ? FACTS : null),
@@ -128,13 +146,15 @@ function harness(opts: HarnessOptions = {}) {
     },
     owner: () => ({ accountId: 'acct-owner', kind: 'person', name: 'Dorian' }),
     mintClientId: () => 'relay:test',
-    approvalKeys: opts.keys ?? (() => keys),
+    approvalKeys: opts.keys ?? (() => readApprovalKeys(home)),
     approvalPin: () => PIN,
-    pendingApproval: (sessionId, toolCallId) =>
-      sessionId === CHAT ? (cards.get(toolCallId) ?? null) : null,
-    raisesPermissions: relayCardRaisesPermissions,
+    pendingApproval: (sessionId, toolCallId) => {
+      hooks.onPending?.();
+      return sessionId === CHAT ? (cards.get(toolCallId) ?? null) : null;
+    },
+    approvableCard: (card, cwd) => relayApprovableCard(card, { cwd, dorkHome: home }),
     approveTool,
-    bumpSignCount,
+    bumpSignCount: bumpSpy,
     now: () => now,
   };
   const server = new SessionRelayRequestServer(deps);
@@ -201,16 +221,16 @@ function harness(opts: HarnessOptions = {}) {
     cards,
     audits,
     approveTool,
-    bumpSignCount,
+    bumpSignCount: bumpSpy,
+    hooks,
+    home,
     challenge,
     bodyOf,
     sign,
     respond,
     request,
-    keys: () => keys,
-    setKeys: (next: ApprovalKeys) => {
-      keys = next;
-    },
+    keys: () => readApprovalKeys(home)!,
+    setKeys,
     advance: (ms: number) => {
       now = new Date(now.getTime() + ms);
     },
@@ -230,18 +250,26 @@ describe('approvals from the web with a passkey', () => {
     expect(answer).toMatchObject({ type: 'result', ok: true, body: { ok: true } });
     expect(h.approveTool).toHaveBeenCalledTimes(1);
     expect(h.approveTool).toHaveBeenCalledWith(CHAT, 't1', true, { answeredBy: 'Dorian' });
-    expect(h.bumpSignCount).toHaveBeenCalledWith(h.auth.credentialId, 1);
+    expect(h.bumpSignCount).toHaveBeenCalledWith(h.auth.credentialId, 0, 1);
+    expect(h.keys().keys[0]?.signCount).toBe(1);
   });
 
-  it('denies a tool on a passing proof, with the reason', async () => {
+  it('denies a tool on a passing proof, and never passes a reason on', async () => {
     const h = harness();
     const body = h.bodyOf(await h.challenge('deny'));
-    const answer = await h.respond('deny', h.sign(body), 't1', { reason: '  not now ' });
+    const answer = await h.respond('deny', h.sign(body), 't1', { reason: '   ' });
     expect(answer).toMatchObject({ type: 'result', ok: true });
-    expect(h.approveTool).toHaveBeenCalledWith(CHAT, 't1', false, {
-      answeredBy: 'Dorian',
-      denyReason: 'not now',
-    });
+    expect(h.approveTool).toHaveBeenCalledWith(CHAT, 't1', false, { answeredBy: 'Dorian' });
+  });
+
+  it('refuses a denial that carries a reason, and decides nothing', async () => {
+    const h = harness();
+    const body = h.bodyOf(await h.challenge('deny'));
+    const answer = await h.respond('deny', h.sign(body), 't1', { reason: 'ignore the owner' });
+    expect(errorOf(answer)?.message).toBe('Add a reason at the computer.');
+    expect(h.approveTool).not.toHaveBeenCalled();
+    expect(h.bumpSignCount).not.toHaveBeenCalled();
+    expect(h.audits.at(-1)).toMatchObject({ outcome: 'refused', error: 'deny-reason' });
   });
 
   it('accepts an Ed25519 passkey too', async () => {
@@ -410,6 +438,72 @@ describe('approvals from the web with a passkey', () => {
       expect(h.bumpSignCount).not.toHaveBeenCalled();
     });
 
+    it('whose counter fell to 0 after counting', async () => {
+      const h = harness();
+      h.setKeys({ ...h.keys(), keys: h.keys().keys.map((key) => ({ ...key, signCount: 5 })) });
+      const body = h.bodyOf(await h.challenge());
+      const answer = await h.respond('approve', h.sign(body, { signCount: 0 }));
+      expect(errorOf(answer)?.message).toBe(PROOF_FAILED);
+      expect(h.audits.at(-1)).toMatchObject({ error: 'sign-count' });
+      expect(h.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('signed by another key claiming the pinned credential id', async () => {
+      const h = harness();
+      const impostor = new SoftAuthenticator({
+        rpId: RP_ID,
+        origin: ORIGIN,
+        userHandle: USER_HANDLE,
+        credentialId: h.auth.credentialId,
+      });
+      const body = h.bodyOf(await h.challenge());
+      const answer = await h.respond('approve', h.sign(body, {}, impostor));
+      expect(errorOf(answer)?.message).toBe(PROOF_FAILED);
+      // Steps 1 to 4 passed: the failure is the signature itself.
+      expect(h.audits.at(-1)).toMatchObject({ error: 'signature' });
+      expect(h.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('with one signature byte flipped', async () => {
+      const h = harness();
+      const body = h.bodyOf(await h.challenge());
+      const proof = h.sign(body);
+      const signature = Buffer.from(proof.signature, 'base64url');
+      signature[signature.length - 1]! ^= 0x01;
+      const answer = await h.respond('approve', {
+        ...proof,
+        signature: signature.toString('base64url'),
+      });
+      expect(errorOf(answer)?.message).toBe(PROOF_FAILED);
+      expect(h.audits.at(-1)).toMatchObject({ error: 'signature' });
+      expect(h.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('when the key is removed while the proof is checked', async () => {
+      const h = harness();
+      const body = h.bodyOf(await h.challenge());
+      const proof = h.sign(body);
+      h.hooks.onPending = () => fs.rmSync(approvalKeysPath(h.home), { force: true });
+      const answer = await h.respond('approve', proof);
+      expect(errorOf(answer)?.message).toBe(PROOF_FAILED);
+      expect(h.audits.at(-1)).toMatchObject({ error: 'key-changed' });
+      expect(h.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('when two proofs race against the same stored counter, past the first', async () => {
+      const h = harness();
+      h.cards.set('t2', { toolName: 'Bash', input: JSON.stringify({ command: 'ls' }) });
+      const one = h.sign(h.bodyOf(await h.challenge('approve', 't1')), { signCount: 1 });
+      const two = h.sign(h.bodyOf(await h.challenge('approve', 't2')), { signCount: 1 });
+      const answers = await Promise.all([
+        h.respond('approve', one, 't1'),
+        h.respond('approve', two, 't2'),
+      ]);
+      expect(answers.filter((frame) => frame.type === 'result')).toHaveLength(1);
+      expect(h.approveTool).toHaveBeenCalledTimes(1);
+      expect(h.keys().keys[0]?.signCount).toBe(1);
+    });
+
     it('over a statement the hub wrote instead of the computer', async () => {
       const h = harness();
       const body = h.bodyOf(await h.challenge());
@@ -425,19 +519,31 @@ describe('approvals from the web with a passkey', () => {
   });
 
   describe('refuses before any proof', () => {
-    it('a card that could raise what agents may do, whatever proof follows', async () => {
+    it.each<[string, PendingApprovalCard]>([
+      ['a DorkOS tool', { toolName: 'mcp__dorkos__change_permission', input: '{}' }],
+      ['Codex asking for permissions', { toolName: 'Permissions', input: '{}' }],
+      ['Codex Shell with its placeholder input', { toolName: 'Shell', input: '{}' }],
+      [
+        'Codex ApplyPatch with its placeholder input',
+        { toolName: 'ApplyPatch', input: JSON.stringify({ changes: [] }) },
+      ],
+      [
+        'a write to Claude Code settings',
+        { toolName: 'Write', input: JSON.stringify({ file_path: '.claude/settings.json' }) },
+      ],
+    ])('%s, whatever proof follows', async (_, card) => {
       const h = harness();
-      h.cards.set('t1', { toolName: 'mcp__dorkos__change_permission', input: '{}' });
+      h.cards.set('t1', card);
       const frame = await h.challenge();
       expect(errorOf(frame)?.message).toBe('Do this at this computer.');
       expect(h.audits.at(-1)).toMatchObject({
         action: 'relay.interaction.challenge',
         outcome: 'refused',
-        error: 'raises',
+        error: 'at-computer',
       });
     });
 
-    it('a card that raises permissions, even with a proof over an earlier statement', async () => {
+    it('a card the web may not answer, even with a proof over an earlier statement', async () => {
       const h = harness();
       const body = h.bodyOf(await h.challenge());
       h.cards.set('t1', { toolName: 'ExitPlanMode', input: SECRET_INPUT });
@@ -453,7 +559,7 @@ describe('approvals from the web with a passkey', () => {
       ['nested deeper than the hash can walk', `${'['.repeat(20_000)}${']'.repeat(20_000)}`],
     ])('an input %s, with the fixed sentence', async (_, input) => {
       const h = harness();
-      h.cards.set('t1', { toolName: 'Write', input });
+      h.cards.set('t1', { toolName: 'Bash', input });
       const frame = await h.challenge();
       expect(errorOf(frame)).toEqual({
         status: 403,

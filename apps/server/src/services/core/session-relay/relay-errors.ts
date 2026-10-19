@@ -78,8 +78,8 @@ export const RELAY_APPROVAL_TOO_LARGE: RelayError = {
 };
 
 /**
- * Granting it could raise what agents may do, so it is decided at this
- * computer only (Security Must 4), whatever proof comes with it. The same
+ * A card the web may not answer (`relay-approvable.ts`, Security Must 4): it
+ * is decided at this computer only, whatever proof comes with it. The same
  * sentence a Wi-Fi sign-in reads for the same refusal (DOR-3037).
  */
 export const RELAY_APPROVAL_AT_COMPUTER: RelayError = {
@@ -103,6 +103,15 @@ export const RELAY_APPROVAL_EXPIRED: RelayError = {
 export const RELAY_APPROVAL_PROOF_FAILED: RelayError = {
   ...RELAY_APPROVAL_NO_PASSKEY,
   message: 'The passkey check did not pass. Try again.',
+};
+
+/**
+ * A denial from the web that carries a reason. The reason is not signed, and
+ * it would reach the agent as the owner's words, so it is added at the computer.
+ */
+export const RELAY_DENY_REASON_AT_COMPUTER: RelayError = {
+  ...RELAY_APPROVAL_NO_PASSKEY,
+  message: 'Add a reason at the computer.',
 };
 
 /** Too many approvals waiting on a passkey on this connection. */

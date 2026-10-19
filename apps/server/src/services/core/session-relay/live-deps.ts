@@ -13,6 +13,7 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Session } from '@dorkos/shared/types';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
+import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { boundaryRefusal } from '../../../lib/route-utils.js';
 import { parseResumeCursor } from '../../../lib/stream-cursor.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
@@ -33,7 +34,7 @@ import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js
 import type { PendingApprovalCard } from './approval-challenges.js';
 import { bumpSignCount, readApprovalKeys } from './approval-key-store.js';
 import { readRelayPin } from './pin-store.js';
-import { relayCardRaisesPermissions } from './relay-approvals.js';
+import { relayApprovableCard } from './relay-approvable.js';
 import type { RelayRequestServerDeps } from './relay-request-server.js';
 import type { RelayAgent, RelaySessionFacts } from './relay-serves.js';
 
@@ -191,9 +192,10 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
         toolName: card.toolName,
         input: card.input,
         ...(card.displayName !== undefined ? { displayName: card.displayName } : {}),
+        ...(card.blockedPath !== undefined ? { blockedPath: card.blockedPath } : {}),
       };
     },
-    raisesPermissions: relayCardRaisesPermissions,
+    approvableCard: (card, cwd) => relayApprovableCard(card, { cwd, dorkHome: resolveDorkHome() }),
     approveTool: async (sessionId, toolCallId, approved, options) =>
       (await runtimeRegistry.resolveForSession(sessionId)).approveTool(
         sessionId,
@@ -201,6 +203,7 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
         approved,
         options
       ),
-    bumpSignCount: (credentialId, signCount) => bumpSignCount(credentialId, signCount),
+    bumpSignCount: (credentialId, expected, signCount) =>
+      bumpSignCount(credentialId, expected, signCount),
   };
 }

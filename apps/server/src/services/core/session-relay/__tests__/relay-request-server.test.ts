@@ -128,9 +128,9 @@ function harness(
     approvalKeys: () => null,
     approvalPin: () => null,
     pendingApproval: () => null,
-    raisesPermissions: () => false,
+    approvableCard: () => true,
     approveTool: vi.fn(async () => true),
-    bumpSignCount: vi.fn(async () => undefined),
+    bumpSignCount: vi.fn(async () => true),
     ...opts.deps,
   };
   const server = new SessionRelayRequestServer(deps);

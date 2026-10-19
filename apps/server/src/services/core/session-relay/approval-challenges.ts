@@ -47,6 +47,8 @@ export interface PendingApprovalCard {
   displayName?: string;
   /** The tool input as the card holds it: JSON text, or raw text that is not JSON. */
   input: string;
+  /** A path the tool asks for beyond the call itself (Codex's write root), when it names one. */
+  blockedPath?: string;
 }
 
 /** What the relay's computer pin contributes to a statement. */

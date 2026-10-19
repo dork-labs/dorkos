@@ -130,14 +130,30 @@ describe('the approval key store', () => {
     expect(readApprovalKeys(home)).toBeNull();
   });
 
-  it('only ever raises a key’s sign counter', async () => {
+  it('records a counter only as a compare-and-set against the checked one', async () => {
     const pinned = key();
     await addApprovalKey(PARTY, pinned, audit(), home);
-    await bumpSignCount(pinned.credentialId, 7, home);
-    await bumpSignCount(pinned.credentialId, 3, home);
+    expect(await bumpSignCount(pinned.credentialId, 0, 7, home)).toBe(true);
     expect(readApprovalKeys(home)?.keys[0]?.signCount).toBe(7);
-    await Promise.all([8, 12, 9].map((count) => bumpSignCount(pinned.credentialId, count, home)));
-    expect(readApprovalKeys(home)?.keys[0]?.signCount).toBe(12);
+    // Checked against a stale counter, or going backwards: refused, nothing written.
+    expect(await bumpSignCount(pinned.credentialId, 0, 9, home)).toBe(false);
+    expect(await bumpSignCount(pinned.credentialId, 7, 7, home)).toBe(false);
+    expect(await bumpSignCount(pinned.credentialId, 7, 0, home)).toBe(false);
+    expect(readApprovalKeys(home)?.keys[0]?.signCount).toBe(7);
+    // Two proofs checked against the same counter: one wins.
+    const raced = await Promise.all(
+      [8, 12].map((n) => bumpSignCount(pinned.credentialId, 7, n, home))
+    );
+    expect(raced.filter(Boolean)).toHaveLength(1);
+    // A key that is gone never succeeds.
+    expect(await bumpSignCount('gone', 0, 1, home)).toBe(false);
+  });
+
+  it('lets a passkey that keeps no counter through without writing', async () => {
+    const pinned = key();
+    await addApprovalKey(PARTY, pinned, audit(), home);
+    expect(await bumpSignCount(pinned.credentialId, 0, 0, home)).toBe(true);
+    expect(readApprovalKeys(home)?.keys[0]?.signCount).toBe(0);
   });
 
   it.each([
@@ -152,7 +168,7 @@ describe('the approval key store', () => {
     fs.writeFileSync(approvalKeysPath(home), text);
     expect(readApprovalKeys(home)).toBeNull();
     expect(logger.warn).toHaveBeenCalled();
-    await bumpSignCount('anything', 5, home);
+    expect(await bumpSignCount('anything', 0, 5, home)).toBe(false);
     await removeApprovalKey('anything', audit(), home);
     expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe(text);
   });

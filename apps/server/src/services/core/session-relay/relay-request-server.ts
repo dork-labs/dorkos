@@ -578,7 +578,8 @@ export class SessionRelayRequestServer implements RelayRequestServer {
       this.refuseAnswer(sessionId, refuse);
       return;
     }
-    if (!(await this.relayServesSession(sessionId))) {
+    const facts = await this.relayServesSession(sessionId);
+    if (!facts) {
       this.audit({
         action: `relay.${request.op}`,
         operation: 'execute',
@@ -590,11 +591,19 @@ export class SessionRelayRequestServer implements RelayRequestServer {
       return;
     }
     if (request.op === 'interaction.challenge') {
-      challengeApproval(this.deps, conn.approvals, request, answer, refuse);
+      challengeApproval(this.deps, conn.approvals, facts.cwd, request, answer, refuse);
       return;
     }
     if (request.answer.kind === 'answer') return; // Refused above; this narrows the type.
-    await respondApproval(this.deps, conn.approvals, sessionId, request.answer, answer, refuse);
+    await respondApproval(
+      this.deps,
+      conn.approvals,
+      facts.cwd,
+      sessionId,
+      request.answer,
+      answer,
+      refuse
+    );
   }
 
   /** An answer to a question: refused until it can carry a passkey proof (B4e). */
