@@ -644,7 +644,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
         details: {
           formErrors: [],
           fieldErrors: {
-            kind: ['Invalid option: expected one of "room"|"session"|"inbox"'],
+            kind: ['Invalid option: expected one of "room"|"session"|"inbox"|"room-thread"'],
           },
         },
       },
