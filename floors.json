@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-10-12T12:58:06.765Z",
+ "updated_at": "2026-10-19T10:39:25.357Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -21,6 +21,10 @@
     },
     {
      "week": "2026-W41",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W42",
      "status": "breach"
     }
    ],
@@ -46,6 +50,10 @@
     {
      "week": "2026-W41",
      "status": "breach"
+    },
+    {
+     "week": "2026-W42",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -70,6 +78,10 @@
     {
      "week": "2026-W41",
      "status": "ok"
+    },
+    {
+     "week": "2026-W42",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -100,6 +112,10 @@
     {
      "week": "2026-W41",
      "status": "unmeasured"
+    },
+    {
+     "week": "2026-W42",
+     "status": "unmeasured"
     }
    ],
    "moved": []
@@ -123,6 +139,10 @@
     },
     {
      "week": "2026-W41",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W42",
      "status": "breach"
     }
    ],
@@ -148,6 +168,10 @@
     {
      "week": "2026-W41",
      "status": "ok"
+    },
+    {
+     "week": "2026-W42",
+     "status": "met"
     }
    ],
    "moved": [
@@ -180,13 +204,17 @@
     {
      "week": "2026-W41",
      "status": "insufficient"
+    },
+    {
+     "week": "2026-W42",
+     "status": "insufficient"
     }
    ],
    "moved": []
   },
   "pr-feedback": {
    "floor": {
-    "p90": 40
+    "p90": 26
    },
    "weeks": [
     {
@@ -204,9 +232,21 @@
     {
      "week": "2026-W41",
      "status": "ok"
+    },
+    {
+     "week": "2026-W42",
+     "status": "ok"
     }
    ],
-   "moved": []
+   "moved": [
+    {
+     "week": "2026-W42",
+     "stat": "p90",
+     "from": 40,
+     "to": 26,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    }
+   ]
   },
   "queue-build": {
    "floor": {
@@ -228,6 +268,10 @@
     {
      "week": "2026-W41",
      "status": "ok"
+    },
+    {
+     "week": "2026-W42",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -251,6 +295,10 @@
     },
     {
      "week": "2026-W41",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W42",
      "status": "breach"
     }
    ],
@@ -276,14 +324,18 @@
     {
      "week": "2026-W41",
      "status": "ok"
+    },
+    {
+     "week": "2026-W42",
+     "status": "ok"
     }
    ],
    "moved": []
   },
   "local-push": {
    "floor": {
-    "p90": 600,
-    "killed_share": 0.15
+    "p90": 360,
+    "killed_share": 0.075
    },
    "weeks": [
     {
@@ -301,9 +353,28 @@
     {
      "week": "2026-W41",
      "status": "met"
+    },
+    {
+     "week": "2026-W42",
+     "status": "met"
     }
    ],
-   "moved": []
+   "moved": [
+    {
+     "week": "2026-W42",
+     "stat": "p90",
+     "from": 600,
+     "to": 360,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    },
+    {
+     "week": "2026-W42",
+     "stat": "killed_share",
+     "from": 0.15,
+     "to": 0.075,
+     "why": "4 consecutive weeks met or ok: tightened halfway to the objective"
+    }
+   ]
   }
  }
 }
