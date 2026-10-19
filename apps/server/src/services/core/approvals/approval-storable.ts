@@ -11,6 +11,8 @@ import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
+  ApprovalServiceActionSchema,
+  type ApprovalServiceAction,
 } from '@dorkos/shared/approval-schemas';
 import { redactSecretsInText } from './approval-summary.js';
 
@@ -70,4 +72,40 @@ export function storableReason(reason: string): string {
 export function clampForStorage(value: string, max: number): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * Make a connected-app action safe to store: every string swept for secrets
+ * again, then checked against the wire schema.
+ *
+ * The builder already sweeps and caps, but `ApprovalRequestInput` is public API
+ * and this JSON is broadcast and agent-readable exactly like the summary, so
+ * the store does not take a producer's word for it. A value that does not
+ * parse is not stored, and the card falls back to the summary sentence.
+ *
+ * @param action - The described action.
+ * @returns The JSON to store, or null.
+ */
+export function storableServiceAction(action: ApprovalServiceAction): string | null {
+  const swept = {
+    ...action,
+    serviceName: redactSecretsInText(action.serviceName),
+    accountLabel: redactSecretsInText(action.accountLabel),
+    actionName: redactSecretsInText(action.actionName),
+    details: action.details.map((detail) => ({
+      label: redactSecretsInText(detail.label),
+      value: redactSecretsInText(detail.value),
+    })),
+    ...(action.everything
+      ? {
+          everything: action.everything.map((line) => ({
+            ...line,
+            label: redactSecretsInText(line.label),
+            value: redactSecretsInText(line.value),
+          })),
+        }
+      : {}),
+  };
+  const parsed = ApprovalServiceActionSchema.safeParse(swept);
+  return parsed.success ? JSON.stringify(parsed.data) : null;
 }

@@ -413,9 +413,15 @@ describe('document route controls over the mounted app', () => {
       (await request(server).post(`${endpoint()}/routes/notes/revoke`).send({ grantId: 'x' }))
         .status
     ).toBe(400);
-    expect(
-      (await request(server).post(`${endpoint()}/routes/nowhere/revoke`).send({})).status
-    ).toBe(404);
+  });
+
+  it('refuses to turn off an undeclared route and changes nothing', async () => {
+    declare();
+    await allow('notes');
+    const refused = await request(server).post(`${endpoint()}/routes/nowhere/revoke`).send({});
+    expect(refused.status).toBe(404);
+    expect(refused.body.code).toBe('ROUTE_UNDECLARED');
+    expect(await stateOf('notes')).toBe('granted');
   });
 
   it('keeps at most one live grant per route on the agent path too', async () => {
@@ -426,6 +432,110 @@ describe('document route controls over the mounted app', () => {
       http.grants.grant({ documentId, routeId: 'notes', expiresAt: later }, operator())
     ).toThrow('ROUTE_ALREADY_GRANTED');
     expect(grantRows().filter((row) => row.revokedAt === null)).toHaveLength(1);
+  });
+
+  it('refuses a second agent yes before spending it while the route is on', async () => {
+    declare();
+    const ask = (hours: number) => {
+      const asked = http.grants.grant(
+        {
+          documentId,
+          routeId: 'helper',
+          expiresAt: new Date(Date.now() + hours * 3_600_000).toISOString(),
+        },
+        operator()
+      );
+      if (asked.kind !== 'approval_required') throw new Error('Expected a request');
+      approvals.grant(asked.ticket.approvalId);
+      return asked.ticket;
+    };
+    const first = ask(1);
+    const second = ask(1.5);
+    // Expiries are minted fresh, so present each yes with exactly the binding it was given for.
+    const rowOf = (id: string) =>
+      db.select().from(approvalRows).where(eq(approvalRows.id, id)).get()!;
+    const bindingOf = (id: string) => JSON.parse(rowOf(id).detail!) as { expiresAt: string };
+    const exact = (ticket: { approvalId: string; token: string }) =>
+      http.grants.grant(
+        { documentId, routeId: 'helper', expiresAt: bindingOf(ticket.approvalId).expiresAt },
+        operator(),
+        ticket.token
+      );
+    expect(exact(first).kind).toBe('granted');
+    expect(() => exact(second)).toThrow('ROUTE_ALREADY_GRANTED');
+    expect(rowOf(second.approvalId).consumedAt).toBeNull();
+    expect(grantRows().filter((row) => row.revokedAt === null)).toHaveLength(1);
+  });
+
+  it('tells an agent answered by a panel allow that the route is already on', async () => {
+    declare();
+    const asked = http.grants.grant(
+      { documentId, routeId: 'helper', expiresAt: new Date(Date.now() + 5_400_000).toISOString() },
+      operator()
+    );
+    if (asked.kind !== 'approval_required') throw new Error('Expected a request');
+    const expiresAt = (
+      JSON.parse(
+        db.select().from(approvalRows).where(eq(approvalRows.id, asked.ticket.approvalId)).get()!
+          .detail!
+      ) as { expiresAt: string }
+    ).expiresAt;
+    await allow('helper');
+    expect(() =>
+      http.grants.grant(
+        { documentId, routeId: 'helper', expiresAt },
+        operator(),
+        asked.ticket.token
+      )
+    ).toThrow('ROUTE_ALREADY_GRANTED');
+    expect(
+      db.select().from(approvalRows).where(eq(approvalRows.id, asked.ticket.approvalId)).get()
+    ).toMatchObject({ state: 'denied', consumedAt: null });
+  });
+
+  it('never lets an unused agent yes turn the route back on after a person turns it off', async () => {
+    declare();
+    const later = new Date(Date.now() + 5_400_000).toISOString();
+    const asked = http.grants.grant(
+      { documentId, routeId: 'helper', expiresAt: later },
+      operator()
+    );
+    if (asked.kind !== 'approval_required') throw new Error('Expected a request');
+    approvals.grant(asked.ticket.approvalId); // allowed on the card, not yet used
+    const retry = () =>
+      http.grants.grant(
+        { documentId, routeId: 'helper', expiresAt: later },
+        operator(),
+        asked.ticket.token
+      );
+    await allow('helper'); // then allowed in the panel
+    expect(retry).toThrow('ROUTE_ALREADY_GRANTED');
+    const turnedOff = await request(server).post(`${endpoint()}/routes/helper/revoke`).send({});
+    expect(turnedOff.status).toBe(200);
+    expect(retry).toThrow('APPROVAL_CONSUMED');
+    expect(await stateOf('helper')).not.toBe('granted');
+    // The same holds for a yes given while the route was already off.
+    const again = http.grants.grant(
+      { documentId, routeId: 'helper', expiresAt: new Date(Date.now() + 6_000_000).toISOString() },
+      operator()
+    );
+    if (again.kind !== 'approval_required') throw new Error('Expected a request');
+    approvals.grant(again.ticket.approvalId);
+    await request(server).post(`${endpoint()}/routes/helper/revoke`).send({});
+    const expiresAt = (
+      JSON.parse(
+        db.select().from(approvalRows).where(eq(approvalRows.id, again.ticket.approvalId)).get()!
+          .detail!
+      ) as { expiresAt: string }
+    ).expiresAt;
+    expect(() =>
+      http.grants.grant(
+        { documentId, routeId: 'helper', expiresAt },
+        operator(),
+        again.ticket.token
+      )
+    ).toThrow('APPROVAL_CONSUMED');
+    expect(await stateOf('helper')).not.toBe('granted');
   });
 
   it('marks a route suspended when its declaration changes and expired when time runs out', async () => {
@@ -513,30 +623,41 @@ describe('document route controls over the mounted app', () => {
       metadata: { action: 'ui.approve_doc_route', answer: 'once', posture: 'local-trust' },
     });
     expect(lines[1]).toMatchObject({
-      metadata: { action: 'ui.revoke_doc_route', answer: 'deny' },
+      eventType: 'doc_route.turned_off',
+      category: 'permissions',
+      resourceId: documentId,
+      metadata: {
+        documentId,
+        routeId: 'notes',
+        revokedGrants: 1,
+        cancelledApprovals: 0,
+        posture: 'local-trust',
+      },
     });
+    expect(lines[1]!.metadata).not.toHaveProperty('approvalId');
   });
 
-  it('denies its own ticket when the yes is not recorded, and spends it when nothing is granted', async () => {
+  it('records the person’s yes already granted, and spends it when nothing is granted', async () => {
     declare();
     const reviewed = (await review('helper')).body;
     const body = { expiresAt: reviewed.expiresAt, reviewHash: reviewed.reviewHash };
-    vi.spyOn(approvals, 'grant').mockReturnValueOnce('not_pending');
-    const unrecorded = await approve('helper', body);
-    expect(unrecorded.body.code).toBe('APPROVAL_NOT_RECORDED');
     const newest = () =>
       db
         .select()
         .from(approvalRows)
         .all()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!;
-    expect(newest()).toMatchObject({ state: 'denied', inputHash: reviewed.reviewHash });
     vi.spyOn(http.grants, 'grant').mockImplementationOnce(() => {
       throw new DocRouteGrantError('TARGET_UNAVAILABLE');
     });
     const refused = await approve('helper', body);
     expect(refused.body.code).toBe('TARGET_UNAVAILABLE');
-    expect(newest()).toMatchObject({ state: 'granted', consumedAt: expect.any(String) });
+    expect(newest()).toMatchObject({
+      state: 'granted',
+      inputHash: reviewed.reviewHash,
+      decidedAt: expect.any(String),
+      consumedAt: expect.any(String),
+    });
     expect(grantRows()).toHaveLength(0);
   });
 

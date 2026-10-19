@@ -71,7 +71,12 @@ import {
 } from '@dorkos/shared/approval-schemas';
 import { isFloorArea, type PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
-import { storableDetail, storableReason, storableSummary } from './approval-storable.js';
+import {
+  storableDetail,
+  storableReason,
+  storableServiceAction,
+  storableSummary,
+} from './approval-storable.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -240,13 +245,6 @@ export interface ApprovalRequestInput {
   origin?: ApprovalOrigin;
   /** Authenticated connector scope; absent for every ordinary capability. */
   connectorAuthority?: ApprovalConnectorAuthority;
-  /**
-   * Record the request without announcing it: no card, no banner, no
-   * escalation clock. Only for a request a person is answering in the same
-   * call, where a card about their own click would be noise (DOR-2665). The row,
-   * its hash and its one-use token are exactly those of an announced request.
-   */
-  quiet?: boolean;
   /**
    * The session this request came from, so a verdict decided after the
    * in-session hold gave up can still reach it (spec `approval-verdict-delivery`).
@@ -459,42 +457,6 @@ function toDecisionOutcome(outcome: ApprovalOutcome | undefined): ApprovalDecisi
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/**
- * Make a connected-app action safe to store: every string swept for secrets
- * again, then checked against the wire schema.
- *
- * The builder already sweeps and caps, but `ApprovalRequestInput` is public API
- * and this JSON is broadcast and agent-readable exactly like the summary, so
- * the store does not take a producer's word for it. A value that does not
- * parse is not stored, and the card falls back to the summary sentence.
- *
- * @param action - The described action.
- * @returns The JSON to store, or null.
- */
-function storableServiceAction(action: ApprovalServiceAction): string | null {
-  const swept = {
-    ...action,
-    serviceName: redactSecretsInText(action.serviceName),
-    accountLabel: redactSecretsInText(action.accountLabel),
-    actionName: redactSecretsInText(action.actionName),
-    details: action.details.map((detail) => ({
-      label: redactSecretsInText(detail.label),
-      value: redactSecretsInText(detail.value),
-    })),
-    ...(action.everything
-      ? {
-          everything: action.everything.map((line) => ({
-            ...line,
-            label: redactSecretsInText(line.label),
-            value: redactSecretsInText(line.value),
-          })),
-        }
-      : {}),
-  };
-  const parsed = ApprovalServiceActionSchema.safeParse(swept);
-  return parsed.success ? JSON.stringify(parsed.data) : null;
 }
 
 /**
@@ -762,6 +724,67 @@ export class ApprovalService {
    * @returns The approval id and the one-time token for the retry.
    */
   request(input: ApprovalRequestInput): ApprovalTicket {
+    const { row, token } = this.newRow(input);
+    this.db.insert(approvals).values(row).run();
+
+    const pending = this.toCard(row);
+    broadcastApprovalPending(pending);
+    // The escalation clock starts HERE, at the write that creates the condition
+    // — the same place a parked schedule arms one, and for the same reason: an
+    // approval has no observer seam, so the hook belongs at the write. This is
+    // also what announces the arrival to the desktop shell, which has no
+    // cockpit query to derive it from (DOR-1570). Nothing is STORED at this
+    // edge: `approval.pending` is a standing kind, and standing kinds write
+    // nothing while they stand (ADR 260819-234828).
+    //
+    // The raw path rather than the card's label, because the label is display
+    // text and the escalation needs the key the agent registry joins on.
+    raiseCapabilityApproval(pending, input.requestedByPath);
+
+    return { approvalId: row.id, token, expiresAt: row.expiresAt };
+  }
+
+  /**
+   * Record a person's own yes, already granted, in one write (DOR-2665).
+   *
+   * For a person answering their own request in the same call, such as allowing
+   * a document route from its controls: there is nobody else to ask, so no
+   * card, banner or escalation is raised, and the row never sits pending. The
+   * row, its input hash and its one-use token are otherwise exactly those of
+   * {@link ApprovalService.request}, so the yes is consumed the same way.
+   *
+   * @param input - What is being allowed.
+   * @param decidedByUserId - The signed-in account saying yes, when login is on.
+   * @returns The approval id and the one-time token to spend it with.
+   */
+  recordOwnAnswer(input: ApprovalRequestInput, decidedByUserId?: string): ApprovalTicket {
+    const { row, token } = this.newRow(input);
+    const decided = {
+      ...row,
+      state: 'granted' as const,
+      decidedAt: new Date().toISOString(),
+      decidedByUserId: decidedByUserId ?? null,
+    };
+    this.db.insert(approvals).values(decided).run();
+    return { approvalId: decided.id, token, expiresAt: decided.expiresAt };
+  }
+
+  /**
+   * Spend a yes nobody has used, without acting on it, so it can no longer be
+   * presented or reissued (DOR-2665: a person turned the route it allowed off).
+   *
+   * @param approvalId - ULID of a granted, unspent approval.
+   * @returns Whether this call spent it.
+   */
+  withdrawGranted(approvalId: string): boolean {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    if (row?.state !== 'granted' || !this.markConsumed(approvalId)) return false;
+    this.settle(approvalId, 'consumed');
+    return true;
+  }
+
+  /** A new pending row and its one-time token, every caller-supplied field swept and capped. */
+  private newRow(input: ApprovalRequestInput) {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
     const now = Date.now();
     const descriptor = this.options.describeCapability?.(input.capabilityId);
@@ -817,25 +840,7 @@ export class ApprovalService {
       requestingCwd: input.requestingSession?.cwd ?? null,
       notifiedAt: null,
     };
-    this.db.insert(approvals).values(row).run();
-
-    if (!input.quiet) {
-      const pending = this.toCard(row);
-      broadcastApprovalPending(pending);
-      // The escalation clock starts HERE, at the write that creates the condition
-      // — the same place a parked schedule arms one, and for the same reason: an
-      // approval has no observer seam, so the hook belongs at the write. This is
-      // also what announces the arrival to the desktop shell, which has no
-      // cockpit query to derive it from (DOR-1570). Nothing is STORED at this
-      // edge: `approval.pending` is a standing kind, and standing kinds write
-      // nothing while they stand (ADR 260819-234828).
-      //
-      // The raw path rather than the card's label, because the label is display
-      // text and the escalation needs the key the agent registry joins on.
-      raiseCapabilityApproval(pending, input.requestedByPath);
-    }
-
-    return { approvalId: row.id, token, expiresAt: row.expiresAt };
+    return { row, token };
   }
 
   /**

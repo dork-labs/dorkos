@@ -163,3 +163,18 @@ export type CanvasDocRouteRevokeRequest = z.infer<typeof CanvasDocRouteRevokeReq
 export const CanvasDocRouteChangeSchema = z.object({ route: CanvasDocRouteSchema }).strict();
 /** One changed route. */
 export type CanvasDocRouteChange = z.infer<typeof CanvasDocRouteChangeSchema>;
+
+/** The Activity event a person turning a document route off writes, once per turn off. */
+export const DOC_ROUTE_TURNED_OFF_EVENT = 'doc_route.turned_off';
+
+/** The metadata a {@link DOC_ROUTE_TURNED_OFF_EVENT} line carries. */
+export interface DocRouteTurnedOffMetadata {
+  documentId: string;
+  routeId: string;
+  /** How many grants the route held that this revoked. */
+  revokedGrants: number;
+  /** How many agent requests or unused yeses for the route this answered or spent. */
+  cancelledApprovals: number;
+  /** The decision posture the person bars reported: login on or off. */
+  posture: 'signed-in-operator' | 'local-trust';
+}

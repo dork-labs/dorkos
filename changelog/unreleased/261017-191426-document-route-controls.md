@@ -2,6 +2,7 @@
 covers:
   - 'feat(canvas): route controls in the canvas header (DOR-2665)'
   - 'fix(canvas): route controls review fixes (DOR-2665)'
+  - 'fix(canvas): route controls second review round (DOR-2665)'
 ---
 
 ### Added

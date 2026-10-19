@@ -165,7 +165,7 @@ it('real durable canonical rekey keeps original approval and birth while requiri
     )
   ).toEqual(original);
 });
-it('revoked original grant cannot be rescued by a newer consumed approval, and ambiguity refuses', async () => {
+it('refuses a second live grant, treats two stored live grants as ambiguous, and never revives a revoked original', async () => {
   const h = await fixture();
   const original = await h.authority.prepare(h.input, h.actor);
   const nextRequest = {

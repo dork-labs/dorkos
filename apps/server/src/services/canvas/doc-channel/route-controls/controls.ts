@@ -43,7 +43,7 @@ import type { DocChannelGrants, PreparedDocGrant } from '../grants.js';
 import { DocRouteGrantError, type DocGrantActor } from '../grant-policy.js';
 import type { DocChannelRow, DocChannelStore, DocGrantRow } from '../store.js';
 import { requirePersonDecision, type DocRoutePersonDecision } from './person-decision.js';
-import { APPROVE_DOC_ROUTE, findWaitingRequests } from './waiting.js';
+import { APPROVE_DOC_ROUTE, findOpenApprovals } from './waiting.js';
 
 /** What the controls are composed from: the channel's own services, never copies. */
 export interface DocRouteControlsDeps {
@@ -65,6 +65,8 @@ export interface DocRouteAllowed extends CanvasDocRouteChange {
 /** A person's turn off: the route as it now stands, and every grant it revoked. */
 export interface DocRouteTurnedOff extends CanvasDocRouteChange {
   revokedGrantIds: string[];
+  /** Agent requests and unused yeses for the route that this answered or spent. */
+  cancelledApprovalIds: string[];
 }
 
 function requirePerson(actor: DocGrantActor): void {
@@ -165,7 +167,15 @@ export class DocRouteControls {
     const routes = declaration.success ? declaration.data.routes : [];
     if (!routes.length) return { documentId: channel.documentId, routes: [] };
     const current = this.currentGrants(channel.documentId, actor);
-    const waiting = findWaitingRequests(this.deps.db, channel, routes, this.now());
+    const open = findOpenApprovals(this.deps.db, channel, routes, this.now());
+    const waiting = new Map(
+      [...open].map(([id, list]) => [
+        id,
+        list
+          .filter((item) => item.state === 'pending')
+          .map(({ approvalId, expiresAt }) => ({ approvalId, expiresAt })),
+      ])
+    );
     const grants = this.deps.db
       .select()
       .from(canvasDocGrants)
@@ -183,7 +193,7 @@ export class DocRouteControls {
         const newest = grants.find((row) => row.routeId === route.id);
         const shown = currentId ? grants.find((row) => row.grantId === currentId) : newest;
         let state: CanvasDocRouteState = currentId ? 'granted' : 'no_grant';
-        if (!currentId && waiting.has(route.id)) state = 'waiting';
+        if (!currentId && waiting.get(route.id)?.length) state = 'waiting';
         else if (!currentId && newest) state = this.newestState(channel.documentId, newest, actor);
         return {
           id: route.id,
@@ -266,9 +276,9 @@ export class DocRouteControls {
    * one. The person's yes is recorded quietly (they are the one clicking, so no
    * card or banner is raised about it) on a ticket bound to the reviewed hash,
    * and the grant service consumes that ticket only against the same hash again.
-   * A yes that grants nothing is spent, never left for anyone to reissue. Any
-   * agent request still waiting on this route is then answered, so its agent
-   * hears back instead of waiting on a card nobody needs to answer.
+   * A yes that grants nothing is spent, never left for anyone to reissue. Every
+   * other request or unused yes for this route is then answered or spent, so its
+   * agent hears back and no older yes can turn the route on again later.
    *
    * @param documentId - The document, by id.
    * @param routeId - The declared route.
@@ -291,17 +301,15 @@ export class DocRouteControls {
     if (this.currentGrants(documentId, actor).has(prepared.route.id))
       throw new DocRouteGrantError('ROUTE_ALREADY_ON', 409);
     const binding = { capabilityId: APPROVE_DOC_ROUTE, inputHash: reviewHash };
-    const ticket = this.deps.approvals.request({
-      ...binding,
-      summary: `Allow document events on route ${prepared.route.id}.`,
-      detail: JSON.stringify(prepared.bindingInput),
-      area: null,
-      quiet: true,
-    });
-    if (this.deps.approvals.grant(ticket.approvalId, decision.decidedByUserId)) {
-      this.deps.approvals.deny(ticket.approvalId, 'The approval could not be recorded.');
-      throw new DocRouteGrantError('APPROVAL_NOT_RECORDED', 409);
-    }
+    const ticket = this.deps.approvals.recordOwnAnswer(
+      {
+        ...binding,
+        summary: `Allow document events on route ${prepared.route.id}.`,
+        detail: JSON.stringify(prepared.bindingInput),
+        area: null,
+      },
+      decision.decidedByUserId
+    );
     try {
       const result = this.deps.grants.grant(
         { documentId, routeId: prepared.route.id, expiresAt },
@@ -314,26 +322,39 @@ export class DocRouteControls {
       this.deps.approvals.consume(ticket.token, binding);
       throw error;
     }
-    this.answerWaiting(documentId, prepared.route.id);
+    this.cancelOpenApprovals(documentId, prepared.route.id, 'Allowed from the document.');
     return {
       ...(await this.changed(documentId, prepared.route.id, actor)),
       approvalId: ticket.approvalId,
     };
   }
 
-  /** Answer every agent request still waiting on a route a person just allowed. */
-  private answerWaiting(documentId: string, routeId: string): void {
+  /**
+   * Answer every request still waiting on a route and spend every yes given for
+   * it but not yet used, so neither can turn the route on after a person's
+   * allow or turn off.
+   *
+   * @returns The approvals this answered or spent.
+   */
+  private cancelOpenApprovals(documentId: string, routeId: string, reason: string): string[] {
     const channel = this.deps.channels.getChannel(documentId);
     const declaration = CanvasChannelDeclarationSchema.safeParse(channel?.declaration);
-    if (!channel || !declaration.success) return;
-    const waiting = findWaitingRequests(this.deps.db, channel, declaration.data.routes, this.now());
-    for (const request of waiting.get(routeId) ?? [])
-      this.deps.approvals.deny(request.approvalId, 'Allowed from the document.');
+    if (!channel || !declaration.success) return [];
+    const open = findOpenApprovals(this.deps.db, channel, declaration.data.routes, this.now());
+    return (open.get(routeId) ?? [])
+      .filter((item) =>
+        item.state === 'pending'
+          ? !this.deps.approvals.deny(item.approvalId, reason)
+          : this.deps.approvals.withdrawGranted(item.approvalId)
+      )
+      .map((item) => item.approvalId);
   }
 
   /**
    * Turn a route off: every grant it holds is revoked together, so no older grant
-   * keeps admitting events. Work already started keeps its recorded source.
+   * keeps admitting events, and every request or unused yes for it is answered
+   * or spent, so none can turn it back on. Work already started keeps its
+   * recorded source.
    *
    * @param documentId - The document, by id.
    * @param routeId - The declared route.
@@ -352,8 +373,23 @@ export class DocRouteControls {
     requirePersonDecision(decision);
     CanvasDocRouteRevokeRequestSchema.parse(body);
     await this.deps.authorization.require(documentId, actor, true);
+    // Declared first, so an unknown route id changes nothing.
+    const declaration = CanvasChannelDeclarationSchema.safeParse(
+      this.deps.channels.getChannel(documentId)?.declaration
+    );
+    if (!declaration.success || !declaration.data.routes.some((route) => route.id === routeId))
+      throw new DocRouteGrantError('ROUTE_UNDECLARED', 404);
     const revokedGrantIds = this.deps.grants.revokeRoute(documentId, routeId, actor);
-    return { ...(await this.changed(documentId, routeId, actor)), revokedGrantIds };
+    const cancelledApprovalIds = this.cancelOpenApprovals(
+      documentId,
+      routeId,
+      'Turned off from the document.'
+    );
+    return {
+      ...(await this.changed(documentId, routeId, actor)),
+      revokedGrantIds,
+      cancelledApprovalIds,
+    };
   }
 
   private async changed(

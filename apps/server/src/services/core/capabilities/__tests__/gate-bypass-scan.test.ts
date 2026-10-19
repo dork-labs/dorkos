@@ -448,8 +448,6 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/approvals.ts':
         'the cockpit route a person answers on — runs the agent bar, the requester bar, and under login the cookie bar, so an API key cannot answer for a person (DOR-474)',
-      'services/canvas/doc-channel/route-controls/controls.ts':
-        'a person allowing a document route from the canvas header (DOR-2665): the service refuses to run without a decision only route-controls/person-decision.ts mints, after the same agent, requester and cookie bars; it grants only the quiet ticket it raised a moment before, bound to the hash the person reviewed',
     },
   },
   {
@@ -458,7 +456,15 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/approvals.ts': 'the same route, guarded the same way — see the grant entry above',
       'services/canvas/doc-channel/route-controls/controls.ts':
-        'the same person-only path as its grant entry above: it denies its own ticket when the yes could not be recorded, and answers agent requests still waiting on a route the person just allowed, so those agents hear back',
+        'a person allowing or turning off a document route from its controls (DOR-2665): the service will not run without a decision only route-controls/person-decision.ts mints, after the same agent, requester and cookie bars; it answers agent requests still waiting on that route, so those agents hear back',
+    },
+  },
+  {
+    what: "records a person's own YES already granted, with no card in between, which is a whole approval in one call",
+    call: 'approvals.recordOwnAnswer(',
+    allowed: {
+      'services/canvas/doc-channel/route-controls/controls.ts':
+        'a person allowing a document route from its controls (DOR-2665): the service will not run without a decision only route-controls/person-decision.ts mints, after the same agent, requester and cookie bars, and the yes is bound to the exact hash the person reviewed',
     },
   },
   {

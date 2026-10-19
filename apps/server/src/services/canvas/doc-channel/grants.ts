@@ -250,8 +250,10 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
         const prepared = this.prepare(request, actor, tx);
         const existing = this.existing(prepared, tx);
         if (existing) return { kind: 'granted', grant: existing };
+        // Before any verdict is raised or consumed, so a caller retrying into a
+        // route that is already on hears that, and its yes stays unspent.
+        this.refuseSecondLiveGrant(prepared, actor, tx);
         if (!prepared.self && !approvalToken) {
-          this.refuseSecondLiveGrant(prepared, actor, tx);
           const detail = JSON.stringify(prepared.bindingInput);
           if (detail.length > APPROVAL_DETAIL_MAX_LENGTH)
             throw new DocRouteGrantError('APPROVAL_SUBJECT_TOO_LARGE', 422);
@@ -310,8 +312,8 @@ export class DocChannelGrants extends DocChannelGrantRevalidation {
         const finalPrepared = this.prepare(request, actor, tx);
         if (finalPrepared.inputHash !== prepared.inputHash)
           throw new DocRouteGrantError('GRANT_BINDING_CHANGED');
-        // Inside the transaction that consumed the verdict, so a refusal here
-        // rolls the consumption back rather than spending a yes on nothing.
+        // Again inside the transaction that consumed the verdict, for a grant that
+        // landed meanwhile: the refusal rolls the consumption back.
         this.refuseSecondLiveGrant(prepared, actor, tx);
         const grantId = ulid();
         this.deps.store.insertGrant(

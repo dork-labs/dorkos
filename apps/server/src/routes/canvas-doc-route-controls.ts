@@ -14,8 +14,9 @@
  * them an agent could allow its own route to another agent from here, which is
  * the one thing `approve_doc_route` exists to stop.
  *
- * Allowing and turning off each write one `permission.answered` Activity line,
- * as an answer on `/api/approvals` does, so a change made here is on the record.
+ * Allowing writes one `permission.answered` Activity line, as an answer on
+ * `/api/approvals` does; turning off writes one `doc_route.turned_off` line of
+ * its own, since it answers no request card.
  *
  * @module routes/canvas-doc-route-controls
  */
@@ -26,7 +27,11 @@ import {
   PERMISSION_ANSWERED_EVENT,
   type PermissionAnsweredMetadata,
 } from '@dorkos/shared/permissions';
-import type { CanvasDocRoute } from '@dorkos/shared/canvas-doc-routes';
+import {
+  DOC_ROUTE_TURNED_OFF_EVENT,
+  type CanvasDocRoute,
+  type DocRouteTurnedOffMetadata,
+} from '@dorkos/shared/canvas-doc-routes';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
@@ -137,22 +142,27 @@ export function createCanvasDocRouteControlRoutes(
     return c.json({ error, code }, status as ContentfulStatusCode);
   }
 
-  /** One `permission.answered` line for a person's allow or turn off. */
-  function audit(
+  /** Who the Activity line names, by the permission honesty rule. */
+  function writerFor(decision: DocRoutePersonDecision) {
+    const writer = writerForPosture(decision.posture, decision.user);
+    const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
+    return { writer, who };
+  }
+
+  /** One `permission.answered` line for a person's allow, as `/api/approvals` writes. */
+  function auditAllow(
     decision: DocRoutePersonDecision,
     documentId: string,
     route: CanvasDocRoute,
-    answer: 'once' | 'deny',
     approvalId: string
   ): void {
     const feed = activity();
     if (!feed) return;
-    const writer = writerForPosture(decision.posture, decision.user);
-    const who = writer.attribution === 'signed-in' ? 'You' : writer.actorLabel;
+    const { writer, who } = writerFor(decision);
     const metadata: PermissionAnsweredMetadata = {
-      action: answer === 'once' ? 'ui.approve_doc_route' : 'ui.revoke_doc_route',
+      action: 'ui.approve_doc_route',
       area: null,
-      answer,
+      answer: 'once',
       approvalId,
       blockedRequest: false,
       posture: decision.posture,
@@ -166,10 +176,38 @@ export function createCanvasDocRouteControlRoutes(
       resourceType: 'canvas_document',
       resourceId: documentId,
       resourceLabel: route.id,
-      summary:
-        answer === 'once'
-          ? `${who} allowed document events on route ${route.id}: ${destinationWords(route)}`
-          : `${who} turned off document events on route ${route.id}`,
+      summary: `${who} allowed document events on route ${route.id}: ${destinationWords(route)}`,
+      linkPath: null,
+      metadata: metadata as unknown as Record<string, unknown>,
+    });
+  }
+
+  /** One line per turn off: it answers no request card, so it has its own shape. */
+  function auditTurnOff(
+    decision: DocRoutePersonDecision,
+    documentId: string,
+    route: CanvasDocRoute,
+    counts: { revokedGrants: number; cancelledApprovals: number }
+  ): void {
+    const feed = activity();
+    if (!feed) return;
+    const { writer, who } = writerFor(decision);
+    const metadata: DocRouteTurnedOffMetadata = {
+      documentId,
+      routeId: route.id,
+      ...counts,
+      posture: decision.posture,
+    };
+    void feed.emit({
+      actorType: writer.actorType,
+      actorLabel: writer.actorLabel,
+      ...(writer.actorId ? { actorId: writer.actorId } : {}),
+      category: 'permissions',
+      eventType: DOC_ROUTE_TURNED_OFF_EVENT,
+      resourceType: 'canvas_document',
+      resourceId: documentId,
+      resourceLabel: route.id,
+      summary: `${who} turned off document events on route ${route.id}`,
       linkPath: null,
       metadata: metadata as unknown as Record<string, unknown>,
     });
@@ -216,7 +254,7 @@ export function createCanvasDocRouteControlRoutes(
         actor(honoRequestFacts(c)),
         person
       );
-      audit(person, id, route, 'once', approvalId);
+      auditAllow(person, id, route, approvalId);
       return c.json({ route });
     } catch (error) {
       return failure(c, error);
@@ -230,14 +268,17 @@ export function createCanvasDocRouteControlRoutes(
     try {
       const { id, routeId } = params(c);
       const { controls: service, actor } = controls();
-      const { route, revokedGrantIds } = await service.revoke(
+      const { route, revokedGrantIds, cancelledApprovalIds } = await service.revoke(
         id,
         routeId,
         readJsonBody(c, { emptyAs: {} }),
         actor(honoRequestFacts(c)),
         person
       );
-      for (const grantId of revokedGrantIds) audit(person, id, route, 'deny', grantId);
+      auditTurnOff(person, id, route, {
+        revokedGrants: revokedGrantIds.length,
+        cancelledApprovals: cancelledApprovalIds.length,
+      });
       return c.json({ route });
     } catch (error) {
       return failure(c, error);
