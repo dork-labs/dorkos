@@ -201,6 +201,12 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Settings: front-door settings in the body are refused by the route itself': [
     'PATCH /api/config',
   ],
+  'Document routes: reviewing and turning off only narrow; allowing one is a standing route, so the route itself refuses Wi-Fi':
+    [
+      'POST /api/canvas/docs/:id/routes/:routeId/review',
+      'POST /api/canvas/docs/:id/routes/:routeId/approve',
+      'POST /api/canvas/docs/:id/routes/:routeId/revoke',
+    ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/desktop/sign-in',
     'POST /api/onboarding/first-run',
