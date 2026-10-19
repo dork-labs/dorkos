@@ -800,13 +800,14 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 **Native dependencies:** `better-sqlite3` (via `@dorkos/db`) and `node-pty` (via the CLI) are required at runtime but cannot be inlined by esbuild. They are direct dependencies in `packages/cli/package.json` so `npm install -g` builds them. `node-pty` ships no Linux prebuilds and compiles via node-gyp; `better-sqlite3` has official Linux prebuilds for Node 24 and vendors its own SQLite. Install environments need build tools (`python3`, `build-essential` on Linux — no `libsqlite3-dev`; Xcode CLI tools on macOS).
 
-**Docker image:** One multi-stage `Dockerfile` at the repo root produces four build targets:
+**Docker image:** One multi-stage `Dockerfile` at the repo root produces these build targets, plus `hub` and `hub-smoke`:
 
 | Target                | Purpose                                                                 | Command                                |
 | --------------------- | ----------------------------------------------------------------------- | -------------------------------------- |
 | `smoke`               | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
 | `integration`         | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
 | `runtime`             | Published product image — starts a DorkOS server on `DORKOS_PORT`       | `pnpm docker:build && pnpm docker:run` |
+| `space`               | The space server's image (`ghcr.io/dork-labs/dorkos-community`)         | `docker build --target space .`        |
 | `builder` / `install` | Internal stages — toolchain + global npm install, not run directly      | —                                      |
 
 `runtime` is the last stage, so a bare `docker build .` produces it. Install mode is selected by the `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to run the integration target against the published npm package. The `integration` and `runtime` targets set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.

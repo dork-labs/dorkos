@@ -11,8 +11,11 @@ const workflow = readFileSync(join(root, '.github/workflows/publish-community.ym
 const { spaceDir } = readSpaceServer(root);
 /** The repository's Dockerfile, whose `space` target is the space image (step 7f). */
 const rootDockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
+const spaceStart = rootDockerfile.indexOf('FROM node:24-bookworm-slim AS space\n');
+/** The `space` stage alone: from its `FROM` to the next stage's. */
 const dockerfile = rootDockerfile.slice(
-  rootDockerfile.indexOf('FROM node:24-bookworm-slim AS space\n')
+  spaceStart,
+  rootDockerfile.indexOf('\nFROM ', spaceStart + 1) + 1 || undefined
 );
 const dockerignore = readFileSync(join(root, '.dockerignore'), 'utf8');
 const generator = readFileSync(
@@ -175,6 +178,8 @@ exit 2
     expect(rules[0]).toBe('**');
     expect(dockerignore).not.toContain('!.env');
     expect(dockerignore).not.toContain('!**/.env');
+    // A stray .env in an allow-listed folder never enters the build context.
+    expect(rules).toContain('**/.env*');
   });
 
   it('derives migration metadata from the tagged corpus instead of a frozen migration name', () => {

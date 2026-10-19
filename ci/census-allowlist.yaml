@@ -248,6 +248,11 @@ entries:
     reason: The packaged community proof itself, gated on the job's own scope step (DOR-2220). It always runs on merge_group and the canary; on a PR it runs when scripts/community-packaged-scope.sh matches the diff, and the scope step fails open to running it. The fan-in fails the build when it fails.
   - workflow: test.yml
     job: community-packaged
+    step: Build the release space image
+    kind: step-if
+    reason: Builds the release space image (the root Dockerfile's space target, server-merge step 7f) under the same scope as the packaged proof above, so it always runs on merge_group and the canary and on a PR when scripts/community-packaged-scope.sh matches the diff (which covers the Dockerfile, .dockerignore and scripts/space-image). The fan-in fails the build when it fails.
+  - workflow: test.yml
+    job: community-packaged
     step: Preserve packaged community reports
     kind: step-if
     reason: Uploads evidence from the packaged proof whenever the proof ran; asserts nothing.

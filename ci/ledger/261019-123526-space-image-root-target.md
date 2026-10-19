@@ -27,7 +27,11 @@ fails the build if the machine store, a runtime SDK, the terminal, ngrok or
 the DorkOS server is installed. The packaged-scope rule now also covers the
 root `Dockerfile`, `.dockerignore` and `scripts/space-image/`, so a change to
 the DorkOS image's stages also runs the packaged proof: over-inclusive on
-purpose.
+purpose. When that rule says the proof runs, the `community-packaged` job also
+builds the `space` target itself (amd64, never pushed) and checks its layout,
+so the release image is proven before a tag first builds it; that adds a few
+minutes to those runs.
 
-Hygiene, not an experiment: no gate timing or catch rate should move. Revert
+Hygiene, not an experiment: no catch rate should move; `community-packaged` runs
+that do the proof take a few minutes longer. Revert
 only together with moving the image back to its own Dockerfile.
