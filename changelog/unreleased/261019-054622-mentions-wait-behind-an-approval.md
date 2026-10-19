@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): room mentions wait behind an unanswered approval instead of failing (DOR-3113)'
   - "fix(server): the waiting notice keeps its link to the agent's chat (DOR-3113)"
+  - 'fix(server): review fixes for mentions waiting behind an approval (DOR-3113)'
 ---
 
 ### Fixed

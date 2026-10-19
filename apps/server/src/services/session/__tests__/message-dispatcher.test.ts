@@ -1039,6 +1039,76 @@ describe('dispatchMessage — a room trigger behind an unanswered approval', () 
     );
     expect(settled).not.toContain('failed');
   });
+
+  /** A turn that stops on an approval, then ends when `release` opens. */
+  function approvalTurn(release: Promise<void>) {
+    return async function* (): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Bash',
+          input: '{}',
+          timeoutMs: 60_000,
+          remainingMs: 60_000,
+        },
+      } as unknown as StreamEvent;
+      await release;
+      yield { type: 'done', data: {} } as StreamEvent;
+    };
+  }
+
+  // Review finding 2: the person answers, and the same turn runs on for longer
+  // than a budget. The mention must not be dropped in that window.
+  it('keeps waiting while the answered turn runs on, then runs', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
+    await send('run something dangerous');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    runtime.acquireLock.mockReturnValue(false);
+    await send('re-mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    projector.resolveInteraction('call-1', 'approved');
+    // The answered turn keeps working for several budgets.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled).toEqual([]);
+
+    runtime.acquireLock.mockReturnValue(true);
+    first.open();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
+    });
+    expect(settled).not.toContain('failed');
+  });
+
+  // Review finding 3: a card left over from a turn that already ended has
+  // nobody to resume it, so a mention must not wait hours behind it.
+  it('does not wait behind a card no live turn holds', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
+    await send('run something dangerous');
+    await settle();
+    runtime.acquireLock.mockReturnValue(false);
+    await send('mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    // The turn ends with the card still unanswered: nobody will resume it.
+    first.open();
+    await settle();
+    expect(getOrCreateProjector(session).hasPendingInteractions()).toBe(true);
+
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
+  });
 });
 
 describe('dispatchMessage — the degradation ladder (task 4.4)', () => {

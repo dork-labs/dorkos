@@ -37,12 +37,9 @@ export function armLateReplyCeiling(
   let timer: ReturnType<typeof setTimeout>;
   const arm = (ms: number): void => {
     timer = setTimeout(() => {
-      const waited = now() - startedAt;
-      if (
-        session.hasPendingInteractions() &&
-        waited < ceilingMs + SESSIONS.INTERACTION_PARK_CEILING_MS
-      ) {
-        arm(ceilingMs);
+      const left = ceilingMs + SESSIONS.INTERACTION_PARK_CEILING_MS - (now() - startedAt);
+      if (session.hasPendingInteractions() && left > 0) {
+        arm(Math.min(ceilingMs, left));
         return;
       }
       abort.abort();
