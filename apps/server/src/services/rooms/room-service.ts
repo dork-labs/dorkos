@@ -50,6 +50,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
+import { NO_MARKS, type TurnMarks } from '../core/turn-power/turn-marks.js';
 import { nameForAgents } from './room-context.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
@@ -468,25 +469,28 @@ export class RoomService {
    * @param input - The post itself.
    * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP routes).
    * @param authorBound - `'runtime-default'` holds the turns it starts to the
-   *   runtime's default: a post from Wi-Fi (DOR-3037).
+   *   runtime's default: a post from Wi-Fi (DOR-3037). `{ marks }` keeps marks
+   *   with a person's post on its row, in the insert's own transaction: a mini
+   *   app's reply carries the outsider mark (DOR-3017).
    */
   post(
     roomId: string,
     input: RoomPostInput,
     unverifiedAgent = false,
-    authorBound?: 'runtime-default'
+    authorBound?: 'runtime-default' | { marks: TurnMarks }
   ): PostedEntry {
     // An agent posting over HTTP names itself with a header nothing verifies:
     // its post is kept as an outsider's (DOR-3107, trust first covers only a
     // verified own agent's unknown marks). From Wi-Fi it is held to the
     // default as well, so neither reading can loosen the other.
-    return this.parts.posting.post(
-      roomId,
-      input,
-      unverifiedAgent
-        ? { marks: { outsider: true }, ...(authorBound ? { heldToDefault: true as const } : {}) }
-        : authorBound
-    );
+    if (unverifiedAgent) {
+      const marks = typeof authorBound === 'object' ? authorBound.marks : NO_MARKS;
+      return this.parts.posting.post(roomId, input, {
+        marks: { ...marks, outsider: true },
+        ...(authorBound === 'runtime-default' ? { heldToDefault: true as const } : {}),
+      });
+    }
+    return this.parts.posting.post(roomId, input, authorBound);
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(

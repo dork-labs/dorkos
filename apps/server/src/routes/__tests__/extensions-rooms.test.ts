@@ -63,6 +63,8 @@ import {
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import type { RoomTurnRequest } from '../../services/rooms/room-turn-port.js';
 
 const target = swappableServer();
 const server = target.server;
@@ -81,6 +83,9 @@ let otherRoomId: string;
 let rootId: string;
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 let statusOf: Record<string, string>;
+let fromWifi = false;
+/** Every turn a post started, with the ceiling it ran under. */
+const turns: RoomTurnRequest[] = [];
 
 /** Register an agent so the room can resolve it by directory. */
 function registerAgent(name: string, projectPath: string): void {
@@ -116,10 +121,18 @@ beforeEach(async () => {
   state.authEnabled = false;
   state.extensions = { roomAccess: {} };
   signedInUser = undefined;
+  fromWifi = false;
+  turns.length = 0;
   statusOf = { social: 'compiled', off: 'disabled', plain: 'compiled' };
   db = createTestDb();
   registerAgent('ana', ANA_PATH);
-  const subsystem = createRoomSubsystem({ db, turns: scriptedRunner(() => null) });
+  const subsystem = createRoomSubsystem({
+    db,
+    turns: scriptedRunner((request) => {
+      turns.push(request);
+      return null;
+    }),
+  });
   service = subsystem.service;
   setRoomService(service);
   setReadCursorService(new ReadCursorService(new ReadCursorStore(db)));
@@ -172,6 +185,7 @@ beforeEach(async () => {
       {
         before: async (c, next) => {
           if (signedInUser) c.set('user', signedInUser as never);
+          if (fromWifi) markIngress(c.env.incoming, 'wifi');
           await next();
         },
       }
@@ -298,6 +312,24 @@ describe('replying as the person', () => {
         targetId: 'social',
       })
     );
+  });
+
+  it('holds an agent the reply wakes to the runtime default, unlike a post typed in the room', async () => {
+    service.post(roomId, { authorId: personId, text: '@ana typed in the room' });
+    await service.triggersIdle();
+    const typed = turns.find((t) => t.prompt.includes('typed in the room'));
+    expect(typed).toBeDefined();
+    expect(typed!.permissionCeiling).toBeUndefined();
+
+    const res = await request(server)
+      .post(`${base()}/replies`)
+      .set(APP)
+      .send({ text: '@ana sent from the mini app' });
+    expect(res.status).toBe(201);
+    await service.triggersIdle();
+    const woken = turns.find((t) => t.prompt.includes('sent from the mini app'));
+    expect(woken).toBeDefined();
+    expect(woken!.permissionCeiling).toBe('runtime-default');
   });
 
   it('never lets the body name an author', async () => {
@@ -520,6 +552,35 @@ describe('choosing rooms', () => {
       .send({ roomIds: [roomId] });
     expect(res.status).toBe(400);
     expect((state.extensions.roomAccess as Record<string, string[]>).plain).toBeUndefined();
+  });
+
+  it('refuses picking rooms over Wi-Fi', async () => {
+    fromWifi = true;
+    const res = await request(server)
+      .put('/api/extensions/social/room-access')
+      .send({ roomIds: [roomId] });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('NOT_FROM_WIFI');
+    expect((state.extensions.roomAccess as Record<string, string[]>).social).toBeUndefined();
+  });
+
+  it('lists and counts only the rooms picked for it, never all of the person’s', async () => {
+    const second = service.createRoom(
+      { kind: 'channel', title: 'General', slug: 'general', members: [], agentPaths: [ANA_PATH] },
+      personId
+    ).id;
+    const secondRoot = service.post(second, { authorId: anaId, text: 'general root' }).id;
+    service.post(second, { authorId: anaId, text: 'general reply', replyTo: secondRoot });
+    allow(roomId);
+
+    const list = await request(server).get('/api/extensions/social/rooms');
+    expect(list.body.rooms.map((r: { id: string }) => r.id)).toEqual([roomId]);
+
+    const counts = await request(server).get(
+      `/api/extensions/social/rooms/${second}/unread?threads=${secondRoot}`
+    );
+    expect(counts.status).toBe(403);
+    expect(JSON.stringify(counts.body)).not.toContain(secondRoot);
   });
 
   it('refuses a room the person is not in', async () => {

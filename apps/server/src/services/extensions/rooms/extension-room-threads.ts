@@ -25,10 +25,20 @@ import type {
   RoomThreadEntry,
 } from '@dorkos/extension-api';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import type { AuthorRecord, RoomService } from '../../rooms/index.js';
 import { RoomError } from '../../rooms/index.js';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { allowedRoomIds, isRoomAllowed } from './extension-room-access.js';
+
+/**
+ * The marks a mini app's reply is kept with (DOR-3017), on its row in the
+ * insert's own transaction: the outsider mark. Any agent the reply wakes runs
+ * at the runtime's default (`ceilingForEntry`), and a later turn with the reply
+ * in view is marked (`outsiderInViewOf`), since the mini app's page can post
+ * without a click and may be showing text it read from outside.
+ */
+export const MINI_APP_REPLY_MARKS: TurnMarks = { outsider: true };
 
 /** Most replies a thread read returns: the newest ones. */
 export const THREAD_REPLIES_MAX = 200;
@@ -155,11 +165,14 @@ export class ExtensionRoomThreads {
     }
     let posted: RoomEntry;
     try {
-      posted = this.deps.rooms().post(roomId, {
-        authorId: viewer.id,
-        text,
-        replyTo: rootEntryId,
-      });
+      posted = this.deps
+        .rooms()
+        .post(
+          roomId,
+          { authorId: viewer.id, text, replyTo: rootEntryId },
+          false,
+          { marks: MINI_APP_REPLY_MARKS }
+        );
     } catch (err) {
       fromRoomError(err);
     }

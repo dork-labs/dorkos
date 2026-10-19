@@ -63,7 +63,8 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * hand out the receiving conversation's level on the strength of a missing
  * record. A post held to the default (a person's from Wi-Fi, DOR-3037) is held
  * to the runtime's default whoever wrote it. A person on this machine and the
- * room's own voice are not bounded.
+ * room's own voice are not bounded, except a person's post a mini app sent,
+ * which is held to the runtime's default.
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
@@ -94,6 +95,17 @@ export function ceilingForEntry(
     return { permissionCeiling: 'runtime-default' };
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
+  // A person's post that a mini app sent for them (DOR-3017) carries the
+  // outsider mark: the mini app's page can post without a click, and may be
+  // showing text it read from outside, so an agent it wakes runs at the
+  // runtime's default rather than at the person's own level. Read through the
+  // post's row too, so the cap survives a restart.
+  if (
+    kind === 'human' &&
+    entryMarksOf(entry.id, entry.roomId ?? (roomId || undefined))?.outsider === true
+  ) {
+    return { permissionCeiling: 'runtime-default' };
+  }
   if (kind !== 'agent') return {};
   // In the owner's own circle only a MARKED post caps (DOR-3107; trust first,
   // Dorian 2026-10-19): one known unmarked, or one whose marks nobody kept (a
