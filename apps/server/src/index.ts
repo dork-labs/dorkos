@@ -57,6 +57,7 @@ import { aggregateSessionList } from './services/session/catalog/aggregate-sessi
 import { env } from './env.js';
 import { claimDataDirectory } from './startup/steps/data-directory.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
+import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { wireCoreStores } from './startup/steps/core-stores.js';
 import { wireSessionServices } from './startup/steps/session-services.js';
 import { startTelemetryExtensionsAndRuntimes } from './startup/steps/telemetry-extensions-runtimes.js';
@@ -258,6 +259,14 @@ async function start() {
   await mountLateRoutes(refs, upToCoreRoutes);
   await composeCapabilities(refs, upToCoreRoutes);
   await upToCoreRoutes.seedPersonSet();
+  // Existing chats rise to their agent's level, once, after the floor it reads (DOR-3107).
+  await raiseExistingChatsOnBoot({
+    db,
+    dorkHome,
+    personSet: upToCoreRoutes.personSetPermissions,
+    activity: upToCoreRoutes.activityService,
+    mesh: () => refs.meshCore,
+  });
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
     upToCoreRoutes;
 
