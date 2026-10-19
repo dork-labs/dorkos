@@ -8,13 +8,13 @@
  *
  * This census fails on:
  *
- * - a file that starts a turn (a dispatch, a trigger, a direct `sendMessage`) that nobody has
- *   classified below;
- * - a continuation that does not read `ceilingForContinuation`;
+ * - a file that starts a turn (a dispatch, a trigger, a command intent such as a compaction, a
+ *   direct `sendMessage`) that nobody has classified below;
+ * - a continuation that does not read `continuationCeiling`;
  * - a classified file that no longer starts a turn (the entry is stale; remove it).
  *
  * If this fails on a new file, decide what it is. A turn nobody newly asked for is a
- * continuation and spreads `...ceilingForContinuation(sessionId)` into its dispatch; anything
+ * continuation and spreads `...continuationCeiling(sessionId)` into its dispatch; anything
  * else names why its turn already carries the right marks. Do not loosen the census.
  *
  * @vitest-environment node
@@ -27,9 +27,9 @@ import { describe, expect, it } from 'vitest';
 
 const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
-/** A call that starts a turn: a dispatch, a trigger, or a runtime's `sendMessage`. */
+/** A call that starts a turn: a dispatch, a trigger, a command intent, or a runtime's send. */
 const TURN_START =
-  /(?:^|[^\w])(?:dispatchMessage|dispatchSessionMessage|triggerTurn)\(|\.sendMessage\(/;
+  /(?:^|[^\w])(?:dispatchMessage|dispatchSessionMessage|triggerTurn|dispatchCommandIntent|executeCommandIntent)\(|\.sendMessage\(/;
 
 /** How a file that starts a turn relates to the marks of the chat it continues. */
 type Kind =
@@ -44,6 +44,9 @@ const CLASSIFIED: Record<string, Kind> = {
   'services/session/fleet/carry-over.ts': CONTINUATION,
   'services/session/fleet/resume-service.ts': CONTINUATION,
   'services/session/runtime-turns/wake-cut-short-work.ts': CONTINUATION,
+  // A compaction, a person's `/compact` or an agent's, is never new words.
+  'routes/session-command-intent-handler.ts': CONTINUATION,
+  'services/session/agent-compaction/agent-compaction-service.ts': CONTINUATION,
 
   'routes/sessions.ts': { kind: 'new-words', why: 'a person’s own message' },
   'routes/session-ui-action-handler.ts': { kind: 'new-words', why: 'a person’s own widget action' },
@@ -90,6 +93,14 @@ const CLASSIFIED: Record<string, Kind> = {
     why: 'the dispatcher’s launch step',
   },
   'services/session/trigger-turn.ts': { kind: 'plumbing', why: 'the one turn trigger' },
+  'services/session/trigger-command-intent.ts': {
+    kind: 'plumbing',
+    why: 'the one command-intent trigger',
+  },
+  'services/runtimes/codex/codex-runtime.ts': { kind: 'plumbing', why: 'a runtime itself' },
+  'services/runtimes/doe/doe-runtime.ts': { kind: 'plumbing', why: 'a runtime itself' },
+  'services/runtimes/opencode/opencode-runtime.ts': { kind: 'plumbing', why: 'a runtime itself' },
+  'services/runtimes/test-mode/test-mode-runtime.ts': { kind: 'plumbing', why: 'a runtime itself' },
   'services/audit/record-tool-use.ts': { kind: 'plumbing', why: 'a runtime decorator' },
   'services/core/keep-awake/hold-during-turn.ts': { kind: 'plumbing', why: 'a runtime decorator' },
   'services/mesh/pause/hold-paused-turns.ts': { kind: 'plumbing', why: 'a runtime decorator' },
@@ -118,7 +129,7 @@ function turnStarters(): string[] {
         'grep',
         '--untracked',
         '-lE',
-        '(dispatchMessage|dispatchSessionMessage|triggerTurn)\\(|\\.sendMessage\\(',
+        '(dispatchMessage|dispatchSessionMessage|triggerTurn|dispatchCommandIntent|executeCommandIntent)\\(|\\.sendMessage\\(',
         '--',
         '.',
         ':!**/__tests__/**',
@@ -157,7 +168,7 @@ describe('every turn that picks a chat up on its own carries its stored marks', 
       .map(([file]) => file)
       .filter(
         (file) =>
-          !/\.\.\.ceilingForContinuation\(/.test(readFileSync(path.join(SERVER_SRC, file), 'utf8'))
+          !/\.\.\.continuationCeiling\(/.test(readFileSync(path.join(SERVER_SRC, file), 'utf8'))
       );
     expect(missing).toEqual([]);
   });

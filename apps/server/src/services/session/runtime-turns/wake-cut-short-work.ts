@@ -53,7 +53,7 @@ import { logError, logger } from '../../../lib/logger.js';
 import { dispatchMessage } from '../message-dispatcher.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
-import { ceilingForContinuation } from '../../core/turn-power/chat-marks.js';
+import { continuationCeiling } from '../../core/turn-power/chat-marks.js';
 
 /**
  * What the woken agent is told. Agent-facing, and shown in the chat as the
@@ -118,7 +118,7 @@ export async function wakeCutShortChat(
       runtime,
       whenBusy: 'refuse',
       // Nobody asked for it, so it carries what the chat's latest turn carried (DOR-3061).
-      ...ceilingForContinuation(sessionId),
+      ...continuationCeiling(sessionId),
       onError: (err) => {
         logger.warn('[background-work-wake] detached turn error', {
           sessionId,

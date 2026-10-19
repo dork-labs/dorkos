@@ -69,6 +69,7 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { isPersonMessage } from '../../../core/turn-power/chat-marks.js';
 
 const SESSION = '11111111-1111-4111-8111-111111111111';
 
@@ -345,6 +346,31 @@ describe('dispatchSessionMessage', () => {
         origin: { kind: 'interactive' },
       });
       expect(isSessionLaunchRefusal(result)).toBe(false);
+    });
+  });
+
+  // DOR-3061: only a person's own message may clear the marks a chat keeps for its
+  // continuations, so only the `interactive` origin says the turn is a person's.
+  describe('a person’s own turn', () => {
+    it.each([
+      ['interactive', true],
+      ['agent-launch', false],
+      ['chat-message', false],
+      ['session-relay', false],
+      ['heartbeat', false],
+      ['account-resume', false],
+    ] as const)('%s is a person’s own message: %s', async (kind, expected) => {
+      await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind } as never,
+      });
+      expect(isPersonMessage(vi.mocked(dispatchMessage).mock.calls[0]![0].messageId)).toBe(
+        expected
+      );
     });
   });
 

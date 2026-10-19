@@ -2155,6 +2155,30 @@ describe('dispatchCommandIntent — a compact contends like a turn', () => {
     expect(runtime.executeCommandIntent).toHaveBeenCalledTimes(1);
   });
 
+  it('runs a compaction under the ceiling its caller sends (DOR-3061)', async () => {
+    runtime.withScenarios([quickTurn()]);
+    const ceiling = [
+      'runtime-default',
+      { asks: 'never', reach: 'everything', wifi: true },
+    ] as const;
+
+    await dispatchCommandIntent({
+      sessionId: session,
+      clientId: TAB,
+      intent: 'compact',
+      projector: getOrCreateProjector(session),
+      runtime,
+      permissionCeiling: ceiling as never,
+    });
+    await settle();
+
+    expect(runtime.executeCommandIntent).toHaveBeenCalledWith(
+      expect.anything(),
+      'compact',
+      expect.objectContaining({ permissionCeiling: ceiling })
+    );
+  });
+
   it('hands the session back when the compact finishes, so the next message runs', async () => {
     // The failure this pins: a compact holds the session's single writer, and a
     // dispatcher that never learns the run ENDED goes on believing the session

@@ -36,6 +36,7 @@ import {
   persistenceModeFor,
   peekProjector,
 } from '../services/session/index.js';
+import { continuationCeiling } from '../services/core/turn-power/chat-marks.js';
 
 /**
  * Optional trigger body: trailing instructions the user typed after the intent
@@ -146,6 +147,8 @@ export async function sessionCommandIntentHandler(c: Context<ApiEnv>): Promise<R
     instructions,
     projector,
     runtime,
+    // A compaction is not new words: it carries what the chat's latest turn carried (DOR-3061).
+    ...continuationCeiling(sessionId),
     onError: (err) => {
       logger.warn('[POST /command-intents] detached run error', {
         sessionId,

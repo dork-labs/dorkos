@@ -52,6 +52,7 @@ import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
+import { forgetChatMarksOf, mergeStoredChatMarks } from './turn-power/chat-marks.js';
 
 /** Columns read from `session_metadata` for the settings projection. */
 type SettingsRow = {
@@ -223,6 +224,22 @@ export class RuntimeNotRegisteredError extends Error {
       `Session '${sessionId}' is owned by runtime '${runtime}', which is not registered on this server.`
     );
     this.name = 'RuntimeNotRegisteredError';
+  }
+}
+
+/**
+ * Move one piece of a session's state onto its new id, where a failure costs that piece alone
+ * and is logged, never the settings row the rest of a rekey carries.
+ */
+function moveQuietly(what: string, fromId: string, toId: string, move: () => void): void {
+  try {
+    move();
+  } catch (err) {
+    logger.warn(`[RuntimeRegistry] could not move ${what}`, {
+      fromId,
+      toId,
+      err: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -1073,39 +1090,21 @@ export class RuntimeRegistry {
     // setting is chosen).
     // A failure here costs the reading, never the settings row below, which
     // carries the session's runtime binding.
-    try {
-      moveSessionContext(db, fromId, toId);
-    } catch (err) {
-      logger.warn('[RuntimeRegistry] could not move a session context reading', {
-        fromId,
-        toId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    moveQuietly('a session context reading', fromId, toId, () =>
+      moveSessionContext(db, fromId, toId)
+    );
     // Who started the chat moves with it too (spec `flow-multiproject` §7.7):
     // its first line and its place in an extension's start limits both hang
     // off the row. Same isolation as the reading above.
-    try {
-      getSessionStartedByStore()?.move(fromId, toId);
-    } catch (err) {
-      logger.warn('[RuntimeRegistry] could not move who started a session', {
-        fromId,
-        toId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    moveQuietly('who started a session', fromId, toId, () =>
+      getSessionStartedByStore()?.move(fromId, toId)
+    );
     // When you opened or wrote in it moves too (spec `your-activity-first`
     // D1): the chat page can mark a chat opened under the id it was asked
     // with, before the runtime settles on its own.
-    try {
-      getSessionTouchStore()?.move(fromId, toId);
-    } catch (err) {
-      logger.warn('[RuntimeRegistry] could not move when you touched a session', {
-        fromId,
-        toId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    moveQuietly('when you touched a session', fromId, toId, () =>
+      getSessionTouchStore()?.move(fromId, toId)
+    );
     const source = db
       .select()
       .from(sessionMetadata)
@@ -1150,10 +1149,13 @@ export class RuntimeRegistry {
           agentPath: destination.agentPath ?? source.agentPath,
           launchOrigin: destination.launchOrigin ?? source.launchOrigin,
           lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
+          // Marks only add up: the moved chat carries what either id carried (DOR-3061).
+          lastTurnMarks: mergeStoredChatMarks(destination.lastTurnMarks, source.lastTurnMarks),
         })
         .where(eq(sessionMetadata.sessionId, toId))
         .run();
     });
+    forgetChatMarksOf(fromId, toId);
     logger.debug(
       `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`
     );

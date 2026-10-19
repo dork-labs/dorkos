@@ -56,7 +56,13 @@ import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
 import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
-import { offeringOnlyOnce, WIFI_LEVEL, wifiTurnOpts, withoutAlwaysAllow } from './wifi-mark.js';
+import {
+  isOnceOnlyCard,
+  offeringOnlyOnce,
+  WIFI_LEVEL,
+  wifiTurnOpts,
+  withoutAlwaysAllow,
+} from './wifi-mark.js';
 
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
@@ -347,11 +353,15 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
  * @param marksOfSession - The marks of a session's latest recorded turn, for a turn the runtime
  *   starts on its own (a Codex wake after background work), which runs under it.
  * @param recordRefused - Records the level of a turn refused before it reached the runtime.
+ * @param onceOnly - Whether a card is answered once at most: it was raised by a Wi-Fi-marked
+ *   turn, or the chat carries the Wi-Fi mark. Defaults to the card and the session's latest turn.
  */
 export function applyTurnMarks(
   runtime: AgentRuntime,
   marksOfSession: (sessionId: string) => TurnMarks,
-  recordRefused?: (sessionId: string, opts: MessageOpts) => void
+  recordRefused?: (sessionId: string, opts: MessageOpts) => void,
+  onceOnly: (sessionId: string, toolCallId: string) => boolean = (sessionId, toolCallId) =>
+    isOnceOnlyCard(toolCallId) || marksOfSession(sessionId).wifi === true
 ): AgentRuntime {
   // Where each marked turn stood, so a turn its agent starts later counts against the same one.
   // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
@@ -437,7 +447,7 @@ export function applyTurnMarks(
             sessionId,
             toolCallId,
             approved,
-            marksOfSession(sessionId).wifi === true ? withoutAlwaysAllow(options) : options
+            onceOnly(sessionId, toolCallId) ? withoutAlwaysAllow(options) : options
           );
       }
       const value = Reflect.get(target, prop, target);

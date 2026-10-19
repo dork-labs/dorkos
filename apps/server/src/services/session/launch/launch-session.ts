@@ -60,6 +60,7 @@ import type { TurnOrigin } from '../origin/turn-origin.js';
 import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
+import { notePersonMessage } from '../../core/turn-power/chat-marks.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -397,6 +398,9 @@ async function launchSessionMessage(
   followTurnStarts();
   // Minted here when the caller did not, so who sent it can wait for its turn.
   const messageId = opts.messageId ?? randomUUID();
+  // A person's own message from a control panel: the one kind of turn whose lack of marks may
+  // clear what the chat keeps for its continuations (DOR-3061, `chat-marks.ts`).
+  if (origin.kind === 'interactive') notePersonMessage(messageId);
   const {
     content,
     cwd,

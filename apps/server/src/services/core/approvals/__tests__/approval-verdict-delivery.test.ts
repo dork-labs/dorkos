@@ -82,8 +82,8 @@ async function loadWithMocks(
 
   // The chat's latest turn's marks. Stubbed because the real store loads the whole session
   // layer; what it answers is pinned in `turn-power/__tests__/chat-marks.test.ts`.
-  const ceilingForContinuation = vi.fn(() => options.continuation ?? {});
-  vi.doMock('../../turn-power/chat-marks.js', () => ({ ceilingForContinuation }));
+  const continuationCeiling = vi.fn(() => options.continuation ?? {});
+  vi.doMock('../../turn-power/chat-marks.js', () => ({ continuationCeiling }));
 
   const { ApprovalService } = await import('../approval-service.js');
   const { deliverApprovalVerdict, startApprovalVerdictDelivery } =

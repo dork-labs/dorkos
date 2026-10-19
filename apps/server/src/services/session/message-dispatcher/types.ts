@@ -489,6 +489,11 @@ export interface DispatchCommandIntentOpts {
   cwd?: string;
   /** Trailing instructions after the intent token. */
   instructions?: string;
+  /**
+   * The loosest level the intent's run may take, as for a turn: a command intent is never new
+   * words, so callers send the chat's stored marks (`continuationCeiling`, DOR-3061).
+   */
+  permissionCeiling?: TurnPermissionCeiling;
   projector: SessionStateProjector;
   runtime: AgentRuntime;
   stallTimeoutMs?: number;

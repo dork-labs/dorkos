@@ -4,7 +4,7 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentRuntime,
   MessageOpts,
@@ -19,6 +19,12 @@ import {
   type DeclaredModes,
 } from '@dorkos/shared/permission-semantics';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { inArray, sessionMetadata } from '@dorkos/db';
+import { RuntimeRegistry } from '../../runtime-registry.js';
+import {
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import { ceilingCarrying, marksForTurn, marksOfCeiling, parseStoredMarks } from '../turn-marks.js';
@@ -26,6 +32,7 @@ import {
   entryMarksOf,
   lastTurnLevelOf,
   noteEntryLevel,
+  offersOnlyOnce,
   recordTurnLevels,
   setEntryMarksStore,
 } from '../turn-levels.js';
@@ -35,8 +42,9 @@ import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import {
   chatMarksOf,
-  ceilingForContinuation,
+  continuationCeiling,
   noteChatMarks,
+  notePersonMessage,
   setChatMarksDb,
 } from '../chat-marks.js';
 import {
@@ -105,6 +113,7 @@ async function drain(events: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
+  resetSessionKeys();
   setChatMarksDb(undefined);
 });
 afterEach(() => setChatMarksDb(undefined));
@@ -169,6 +178,20 @@ describe('at the seam', () => {
     expect(card).toBe(CARD);
   });
 
+  it('answers once a card answered under the chat’s other id, or raised by a Wi-Fi turn', async () => {
+    const { runtime, decisions } = recorded();
+    const requested = `${fresh()}-asked`;
+    await drain(runtime.sendMessage(requested, 'hi', wifiTurnCeiling(true)));
+    linkSessionId(requested, `${requested}-canonical`);
+
+    runtime.approveTool(`${requested}-canonical`, 'some-other-card', true, { alwaysAllow: true });
+    runtime.approveTool('a-chat-nobody-recorded', 't1', true, { alwaysAllow: true });
+
+    expect(decisions).toEqual([{}, {}]);
+    expect(offersOnlyOnce('a-chat-nobody-recorded', 't1')).toBe(true);
+    expect(offersOnlyOnce('a-chat-nobody-recorded', 'never-raised')).toBe(false);
+  });
+
   it('answers a Wi-Fi-marked turn’s card once, even when a standing yes is sent', async () => {
     const { runtime, decisions } = recorded();
     const wifi = fresh();
@@ -177,7 +200,7 @@ describe('at the seam', () => {
     await drain(runtime.sendMessage(plain, 'hi'));
 
     runtime.approveTool(wifi, 't1', true, { alwaysAllow: true, answeredBy: 'p' } as never);
-    runtime.approveTool(plain, 't1', true, { alwaysAllow: true });
+    runtime.approveTool(plain, 'plain-card', true, { alwaysAllow: true });
 
     expect(decisions[0]).toEqual({ answeredBy: 'p' });
     expect(decisions[1]).toEqual({ alwaysAllow: true });
@@ -203,32 +226,122 @@ describe('each chat’s latest marks, for the turns that pick it up on their own
 
     setChatMarksDb(db); // a restart: nothing in memory, only the row
     expect(chatMarksOf(id)).toEqual({ outsider: true, wifi: true });
-    expect(ceilingForContinuation(id)).toEqual({ permissionCeiling: WIFI_CEILING });
+    expect(continuationCeiling(id)).toEqual({ permissionCeiling: WIFI_CEILING });
   });
 
-  it('carries nothing after an unmarked turn, and replaces the marks of an earlier one', async () => {
+  it('is cleared only by a person’s own unmarked turn', async () => {
     const db = createTestDb();
     setChatMarksDb(db);
     const { runtime } = recorded();
     const id = fresh();
     await drain(runtime.sendMessage(id, 'hi', wifiTurnCeiling(true)));
+    // An agent's message, a schedule, a beat, a compaction: unmarked, but nobody's own words.
     await drain(runtime.sendMessage(id, 'hi'));
+    expect(continuationCeiling(id)).toEqual({ permissionCeiling: WIFI_CEILING });
+    // A person's own turn that still carries a mark adds it rather than clearing.
+    notePersonMessage('person-marked');
+    await drain(
+      runtime.sendMessage(id, 'hi', {
+        messageId: 'person-marked',
+        permissionCeiling: 'runtime-default',
+      })
+    );
+    expect(chatMarksOf(id)).toEqual({ outsider: true, wifi: true });
+
+    notePersonMessage('person-plain');
+    await drain(runtime.sendMessage(id, 'hi', { messageId: 'person-plain' }));
+    setChatMarksDb(db);
+    expect(continuationCeiling(id)).toEqual({});
+  });
+
+  it('starts a brand-new chat with nothing carried, and adds what its first turn carries', async () => {
+    setChatMarksDb(createTestDb());
+    const { runtime } = recorded();
+    const plain = fresh();
+    await drain(runtime.sendMessage(plain, 'hi'));
+    expect(continuationCeiling(plain)).toEqual({});
+  });
+
+  it('follows a chat renamed mid-first-turn, across a restart, with no row left behind', async () => {
+    const db = createTestDb();
+    setChatMarksDb(db);
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    const { runtime } = recorded();
+    const requested = `${fresh()}-requested`;
+    const canonical = `${fresh()}-canonical`;
+    await drain(runtime.sendMessage(requested, 'hi', wifiTurnCeiling(true)));
+    // The runtime renames it: the row moves, and the in-memory alias follows.
+    await registry.rekeySessionSettings(requested, canonical);
+    linkSessionId(requested, canonical);
+    // A later turn sent under the first id still lands on the chat's one row.
+    await drain(runtime.sendMessage(requested, 'hi'));
+
+    setChatMarksDb(db); // a restart
+    resetSessionKeys();
+    expect(chatMarksOf(canonical)).toEqual({ outsider: true, wifi: true });
+    const rows = db
+      .select({ id: sessionMetadata.sessionId })
+      .from(sessionMetadata)
+      .where(inArray(sessionMetadata.sessionId, [requested, canonical]))
+      .all();
+    expect(rows.map((row) => row.id)).toEqual([canonical]);
+  });
+
+  it('merges both ids’ marks when a rename lands on a chat that already has a row', async () => {
+    const db = createTestDb();
+    setChatMarksDb(db);
+    const registry = new RuntimeRegistry();
+    registry.setDb(db);
+    noteChatMarks('merge-from', { outsider: true, wifi: true }, false);
+    noteChatMarks('merge-to', {}, true);
+    await registry.rekeySessionSettings('merge-from', 'merge-to');
 
     setChatMarksDb(db);
-    expect(ceilingForContinuation(id)).toEqual({});
+    expect(chatMarksOf('merge-to')).toEqual({ outsider: true, wifi: true });
+  });
+
+  it('folds in and clears marks left under an id the chat answered to before its rename', async () => {
+    const db = createTestDb();
+    setChatMarksDb(db);
+    noteChatMarks('orphan-old', { outsider: true, wifi: true }, false);
+    linkSessionId('orphan-old', 'orphan-new');
+    expect(chatMarksOf('orphan-new')).toEqual({ outsider: true, wifi: true });
+    noteChatMarks('orphan-new', {}, false);
+
+    setChatMarksDb(db);
+    expect(chatMarksOf('orphan-new')).toEqual({ outsider: true, wifi: true });
+    const rows = db
+      .select({ id: sessionMetadata.sessionId })
+      .from(sessionMetadata)
+      .where(inArray(sessionMetadata.sessionId, ['orphan-old', 'orphan-new']))
+      .all();
+    expect(rows.map((row) => row.id)).toEqual(['orphan-new']);
+  });
+
+  it('answers with the new, stronger marks when the write fails', () => {
+    const db = createTestDb();
+    setChatMarksDb(db);
+    noteChatMarks('failing-write', {}, true);
+    vi.spyOn(db, 'transaction').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    noteChatMarks('failing-write', { outsider: true, wifi: true }, false);
+    expect(chatMarksOf('failing-write')).toEqual({ outsider: true, wifi: true });
+    vi.restoreAllMocks();
   });
 
   it('reads a chat with no record as unknown, which carries the outsider mark', () => {
     setChatMarksDb(createTestDb());
-    expect(ceilingForContinuation(fresh())).toEqual({ permissionCeiling: 'runtime-default' });
+    expect(continuationCeiling(fresh())).toEqual({ permissionCeiling: 'runtime-default' });
     setChatMarksDb(undefined);
-    expect(ceilingForContinuation(fresh())).toEqual({ permissionCeiling: 'runtime-default' });
+    expect(continuationCeiling(fresh())).toEqual({ permissionCeiling: 'runtime-default' });
   });
 
   it('carries a teammate’s mark on too: the tier’s read-only bound (a named tightening)', () => {
     const origin = { roomId: 'space-room', authorId: 'priya' };
-    noteChatMarks('teammate-chat', { outsider: true, teammate: [origin] });
-    expect(ceilingForContinuation('teammate-chat')).toEqual({
+    noteChatMarks('teammate-chat', { outsider: true, teammate: [origin] }, false);
+    expect(continuationCeiling('teammate-chat')).toEqual({
       permissionCeiling: [
         'runtime-default',
         expect.objectContaining({ reach: 'read', teammate: [origin] }),

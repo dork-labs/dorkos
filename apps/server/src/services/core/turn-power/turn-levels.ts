@@ -48,8 +48,9 @@ import {
   withMarks,
   type TurnMarks,
 } from './turn-marks.js';
-import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { noteChatMarks } from './chat-marks.js';
+import { primaryOf, queueKeyOf } from '../../session/resolution/session-key-registry.js';
+import { chatMarksOf, isPersonMessage, noteChatMarks } from './chat-marks.js';
+import { isOnceOnlyCard } from './wifi-mark.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -308,6 +309,24 @@ function powerForTurn(
 }
 
 /**
+ * Whether a tool card is answered once at most (DOR-3061): a Wi-Fi-marked turn raised it, or the
+ * chat it is in carries the Wi-Fi mark, read under every id the chat answers to and from its
+ * stored marks. Read by the seam's `approveTool` and the approve route, so a standing yes cannot
+ * slip through by naming the chat by its other id.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ * @param toolCallId - The card.
+ */
+export function offersOnlyOnce(sessionId: string, toolCallId: string): boolean {
+  if (isOnceOnlyCard(toolCallId)) return true;
+  const ids = new Set([sessionId, primaryOf(sessionId), queueKeyOf(sessionId)]);
+  for (const id of ids) {
+    if (turnLevels.get(id)?.wifi === true) return true;
+  }
+  return chatMarksOf(sessionId).wifi === true;
+}
+
+/**
  * Wrap a runtime so every turn sent through it records the level it runs at.
  * Applied once, at the registry's registration seam, which every turn passes
  * through (the composer, a room reply, a scheduled run, a relay delivery).
@@ -341,8 +360,9 @@ export function recordTurnLevels(
       }
       const level = levelForTurn(runtime, stored, opts);
       remember(turnLevels, sessionId, level);
-      noteChatMarks(sessionId, marksOfLevel(level));
-    }
+      noteChatMarks(sessionId, marksOfLevel(level), isPersonMessage(opts.messageId));
+    },
+    offersOnlyOnce
   );
 }
 
@@ -379,7 +399,7 @@ function recordLevels(
           const level = levelForTurn(target, stored, opts);
           remember(turnLevels, sessionId, level);
           // Kept on the chat's row, for the turns that later pick it up on their own (DOR-3061).
-          noteChatMarks(sessionId, marksOfLevel(level));
+          noteChatMarks(sessionId, marksOfLevel(level), isPersonMessage(opts?.messageId));
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

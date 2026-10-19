@@ -792,6 +792,9 @@ export async function dispatchCommandIntent(
       intent,
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
       ...(opts.instructions !== undefined ? { instructions: opts.instructions } : {}),
+      ...(opts.permissionCeiling !== undefined
+        ? { permissionCeiling: opts.permissionCeiling }
+        : {}),
       ...(opts.stallTimeoutMs !== undefined ? { stallTimeoutMs: opts.stallTimeoutMs } : {}),
       projector,
       deps: {

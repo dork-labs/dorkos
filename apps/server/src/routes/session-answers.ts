@@ -30,7 +30,7 @@ import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { marksOf } from '../services/core/turn-power/turn-levels.js';
+import { offersOnlyOnce } from '../services/core/turn-power/turn-levels.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
 
 /**
@@ -206,7 +206,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     if (standing) return c.json(standing, 403);
     // A card a Wi-Fi-marked turn raised offers Allow once only (DOR-3061), so a standing yes is
     // refused rather than quietly answered once. The seam drops one anyway (`applyTurnMarks`).
-    if (alwaysAllow && marksOf(sessionId, undefined).wifi === true) {
+    if (alwaysAllow && offersOnlyOnce(sessionId, toolCallId)) {
       return c.json(ALWAYS_NOT_OFFERED, 409);
     }
     const runtime = await runtimeRegistry.resolveForSession(sessionId);

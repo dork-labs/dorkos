@@ -52,6 +52,7 @@ import { getOrCreateProjector, peekProjector } from '../session-state-projector.
 import { primaryOf } from '../resolution/session-key-registry.js';
 import { CompactionRequestBudget } from './compaction-budget.js';
 import { isCompactionBlocked } from './compaction-permission.js';
+import { continuationCeiling } from '../../core/turn-power/chat-marks.js';
 
 /**
  * The lock identity an agent-requested compaction runs under. Its own, so it
@@ -204,6 +205,8 @@ export class AgentCompactionService {
           ...(instructions !== undefined ? { instructions } : {}),
           projector,
           runtime,
+          // A compaction is not new words: it carries what the chat's latest turn carried (DOR-3061).
+          ...continuationCeiling(sessionId),
           boundaryTag: {
             requestedBy: 'agent',
             requestedAt,

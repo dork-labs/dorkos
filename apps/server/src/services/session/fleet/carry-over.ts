@@ -48,7 +48,7 @@ import {
 import type { StoredSessionLimit } from './session-limit-store.js';
 import { crossRuntimePermissionMode } from './carry-over-power.js';
 import { episodeKey } from './continue-in-flight.js';
-import { ceilingForContinuation } from '../../core/turn-power/chat-marks.js';
+import { continuationCeiling } from '../../core/turn-power/chat-marks.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
 export const CARRY_OVER_PROMPT =
@@ -457,7 +457,7 @@ async function launchCarriedSession(
       ? {
           countsTowardLaunchCap: true,
           unattended: true,
-          ...ceilingForContinuation(source.sessionId),
+          ...continuationCeiling(source.sessionId),
         }
       : {}),
     ...(reservation ? { onSettled: () => reservation.settle() } : {}),

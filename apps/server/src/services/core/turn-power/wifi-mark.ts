@@ -114,14 +114,47 @@ export function withoutAlwaysAllow(
   return rest;
 }
 
+/** The cards Wi-Fi-marked turns raised, by tool call id, newest last. */
+const onceOnlyCards = new Set<string>();
+
+/** How many such cards are remembered; a card is answered or gone long before this many. */
+const ONCE_ONLY_MEMORY = 10_000;
+
+/**
+ * Whether a Wi-Fi-marked turn raised this card, so it is answered once at most. Kept on the card
+ * itself, so the answer is right whichever id of the chat it arrives under.
+ *
+ * @param toolCallId - The card's tool call id.
+ */
+export function isOnceOnlyCard(toolCallId: string): boolean {
+  return onceOnlyCards.has(toolCallId);
+}
+
+/** Remember that a Wi-Fi-marked turn raised this card. */
+function noteOnceOnlyCard(event: StreamEvent): void {
+  if (event.type !== 'approval_required') return;
+  const data = event.data as { toolCallId?: unknown; id?: unknown } | undefined;
+  const id = typeof data?.toolCallId === 'string' ? data.toolCallId : data?.id;
+  if (typeof id !== 'string') return;
+  onceOnlyCards.delete(id);
+  onceOnlyCards.add(id);
+  if (onceOnlyCards.size > ONCE_ONLY_MEMORY) {
+    onceOnlyCards.delete(onceOnlyCards.values().next().value as string);
+  }
+}
+
 /**
  * A Wi-Fi-marked turn's events, each with any offer of a standing yes taken off
- * ({@link withoutStandingYes}). Stopping the stream stops the turn's own.
+ * ({@link withoutStandingYes}), and each card it raises remembered as Allow once only
+ * ({@link isOnceOnlyCard}). Stopping the stream stops the turn's own.
  *
  * @param events - The turn's events.
  */
 export async function* offeringOnlyOnce(
   events: AsyncIterable<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
-  for await (const event of events) yield withoutStandingYes(event);
+  for await (const event of events) {
+    noteOnceOnlyCard(event);
+    yield withoutStandingYes(event);
+  }
 }

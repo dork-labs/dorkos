@@ -134,6 +134,8 @@ export interface TriggerCommandIntentOpts {
    * instruction ignore them.
    */
   instructions?: string;
+  /** The loosest level the run may take; see `MessageOpts.permissionCeiling`. */
+  permissionCeiling?: CommandIntentOpts['permissionCeiling'];
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   deps: TriggerCommandIntentDeps;
@@ -296,7 +298,13 @@ export async function triggerCommandIntent(
       deps,
       Math.min(SESSIONS.STRANDED_TURN_SETTLE_MS, waitBudgetMs - (Date.now() - waitingSince))
     );
-    const intentStream = deps.executeCommandIntent(sessionId, intent, { cwd, instructions });
+    const intentStream = deps.executeCommandIntent(sessionId, intent, {
+      cwd,
+      instructions,
+      ...(opts.permissionCeiling !== undefined
+        ? { permissionCeiling: opts.permissionCeiling }
+        : {}),
+    });
     source = tapEachEvent(
       opts.boundaryTag ? tagBoundaries(intentStream, opts.boundaryTag) : intentStream,
       () => lifecycle.touch()
