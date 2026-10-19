@@ -642,6 +642,10 @@ export const CONFIG_WRITE_POLICY = {
   // person can answer.
   'extensions.trustedSources[].source': 'operator-only',
   'extensions.trustedSources[].trustedAt': 'operator-only',
+  // The rooms each mini app may read and reply in as the person (DOR-3017). A
+  // caller that could add a room here would let a mini app post in the
+  // person's name somewhere they never chose.
+  'extensions.roomAccess': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -1104,6 +1108,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.dismissedApprovals',
       'extensions.trustedSources[].source',
       'extensions.trustedSources[].trustedAt',
+      'extensions.roomAccess',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',

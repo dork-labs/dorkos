@@ -20,7 +20,7 @@ export function activate(api: ExtensionAPI): () => void {
 }
 ```
 
-`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`, full pages at `/x/<your-id>/…` with `registerPage`, and chat status-bar items with `registerStatusBarItem`), UI control (`executeCommand`, `openCanvas`, `navigate`, a dot on your own right-panel tab with `setTabMarker`, and a status or count on your own page's tab with `setPageBadge`, which older DorkOS versions lack, so check `typeof api.setPageBadge === 'function'` first), read-only host state (`getState`, `subscribe`, including `currentProject` and `requireLogin`, the project the selected folder belongs to), scoped storage (`loadData`/`saveData`), notifications (`notify`), your extension's inbox questions and per-project settings (`listDecisions`, `answerDecision`, `projectSettings`), starting work in a new chat from a button (`startWork`), reading and replying in a room thread as you (`api.rooms`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`. An extension with a server half can also ask you things in the Activity inbox (`ctx.inbox`), keep a route to people only (`ctx.requirePerson`), read settings only you can change (`ctx.projectSettings`), start work in a new chat by its own rules (`ctx.sessions`), and send one of your agents a message (`ctx.agent`). A chat started either way says so as its first line, "Started by the My Extension extension: …"; see `contributing/extension-authoring.md`.
 
 ## Your extension's own API
 
@@ -56,6 +56,18 @@ What to know about a fetch handler:
 - **If it throws,** the caller gets an error and DorkOS keeps running.
 
 Nothing in your API runs until you approve the extension, and turning it off stops the API at once.
+
+## Discussing an item in a room thread
+
+A mini app can show a room thread on its own page and let you reply there, so you can talk about a post or a task without leaving it. It needs `"capabilities": { "rooms": true }` in its manifest.
+
+- **You choose the rooms.** In Settings → Extensions, the mini app's card lists **Rooms it can use**. A well-behaved mini app reads and replies only there, and only where you can read yourself. Replacing a mini app with another copy clears its rooms.
+- **Replies are yours.** A reply sent from the mini app shows under your name, the same as one you typed in the room, and mentions wake agents as usual. The audit trail records each one with the mini app named.
+- **Agents can't reply as you through it.** An agent that names itself, another website and anything relayed are refused.
+- **It's not a sandbox.** A mini app's page runs in your window with your access, so it can reply without a click and change its own room list. Its server half, if it runs inside DorkOS, can do anything DorkOS can. With no password on this computer, a program on it can act as you too. Only turn on mini apps you trust, and turn on "Ask for a password on this computer too" to close the last gap.
+- **It keeps track of what you've read,** per thread, and shows new replies as they arrive.
+
+Authors: see `api.rooms` in `contributing/extension-authoring.md`.
 
 ## Messaging an agent from the server half
 

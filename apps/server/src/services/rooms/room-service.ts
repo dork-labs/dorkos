@@ -510,6 +510,14 @@ export class RoomService {
   ): RoomEntry[] {
     return this.parts.reads.readHistory(roomId, viewerAuthorId, opts);
   }
+  /** Whether a room mirrors a Community's. See {@link RoomStore.isRemoteTimelineRoom}. */
+  isMirroredRoom(roomId: string): boolean {
+    return this.parts.core.store.isRemoteTimelineRoom(roomId);
+  }
+  /** One entry by id, for a member. See {@link RoomReads.readEntry}. */
+  readEntry(roomId: string, viewerAuthorId: string, entryId: string): RoomEntry | null {
+    return this.parts.reads.readEntry(roomId, viewerAuthorId, entryId);
+  }
   /** The messages in one room that match some words. See {@link RoomSearch.searchHistory}. */
   searchHistory(
     roomId: string,
