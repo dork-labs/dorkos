@@ -413,124 +413,6 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  apps/community:
-    dependencies:
-      '@aws-sdk/client-s3':
-        specifier: 3.1141.0
-        version: 3.1141.0
-      '@dork-labs/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      '@dorkos/decisions':
-        specifier: workspace:*
-        version: link:../../packages/decisions
-      '@dorkos/icons':
-        specifier: workspace:*
-        version: link:../../packages/icons
-      '@dorkos/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
-      '@hono/node-server':
-        specifier: ^1.19.15
-        version: 1.19.17(hono@4.13.12)
-      better-auth:
-        specifier: 1.7.6
-        version: 1.7.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.15)(vitest@4.1.11)(vue@3.5.39(typescript@5.9.3))
-      drizzle-orm:
-        specifier: 0.45.3
-        version: 0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0)
-      fflate:
-        specifier: 0.8.3
-        version: 0.8.3
-      hono:
-        specifier: ^4.13.9
-        version: 4.13.12
-      lucide-react:
-        specifier: 1.48.0
-        version: 1.48.0(react@19.3.0)
-      nodemailer:
-        specifier: 10.0.10
-        version: 10.0.10
-      pg:
-        specifier: 8.23.0
-        version: 8.23.0
-      react:
-        specifier: 19.3.0
-        version: 19.3.0
-      react-dom:
-        specifier: 19.3.0
-        version: 19.3.0(react@19.3.0)
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      zod:
-        specifier: ^4.1.13
-        version: 4.6.5
-    devDependencies:
-      '@dorkos/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@dorkos/eslint-config':
-        specifier: workspace:*
-        version: link:../../packages/eslint-config
-      '@dorkos/test-utils':
-        specifier: workspace:*
-        version: link:../../packages/test-utils
-      '@playwright/test':
-        specifier: ^1.63.0
-        version: 1.63.0
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
-      '@types/node':
-        specifier: ^24
-        version: 24.13.5
-      '@types/pg':
-        specifier: ^8.23.1
-        version: 8.23.1
-      '@types/react':
-        specifier: ^19
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19
-        version: 19.3.0(@types/react@19.3.0)
-      '@types/smtp-server':
-        specifier: 3.5.13
-        version: 3.5.13
-      '@types/yauzl':
-        specifier: 3.4.0
-        version: 3.4.0
-      '@vitejs/plugin-react':
-        specifier: 5.2.0
-        version: 5.2.0(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
-      axe-core:
-        specifier: ^4.13.0
-        version: 4.13.0
-      esbuild:
-        specifier: ^0.28.2
-        version: 0.28.2
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
-      smtp-server:
-        specifier: 3.19.16
-        version: 3.19.16
-      tsx:
-        specifier: 4.23.15
-        version: 4.23.15
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: ^6.4.1
-        version: 6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
-      yauzl:
-        specifier: 3.4.0
-        version: 3.4.0
-
   apps/design-system:
     dependencies:
       '@dork-labs/ui':
@@ -1276,6 +1158,124 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@7.3.6(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  apps/space:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1141.0
+        version: 3.1141.0
+      '@dork-labs/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@dorkos/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
+      '@dorkos/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@hono/node-server':
+        specifier: ^1.19.15
+        version: 1.19.17(hono@4.13.12)
+      better-auth:
+        specifier: 1.7.6
+        version: 1.7.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.3.8(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.15)(vitest@4.1.11)(vue@3.5.39(typescript@5.9.3))
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0)
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
+      hono:
+        specifier: ^4.13.9
+        version: 4.13.12
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
+      nodemailer:
+        specifier: 10.0.10
+        version: 10.0.10
+      pg:
+        specifier: 8.23.0
+        version: 8.23.0
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      zod:
+        specifier: ^4.1.13
+        version: 4.6.5
+    devDependencies:
+      '@dorkos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@dorkos/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@types/node':
+        specifier: ^24
+        version: 24.13.5
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      '@types/smtp-server':
+        specifier: 3.5.13
+        version: 3.5.13
+      '@types/yauzl':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@vitejs/plugin-react':
+        specifier: 5.2.0
+        version: 5.2.0(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      axe-core:
+        specifier: ^4.13.0
+        version: 4.13.0
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      smtp-server:
+        specifier: 3.19.16
+        version: 3.19.16
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.4.1
+        version: 6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1)
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.5)(@vitest/coverage-v8@4.1.11)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@6.4.3(@types/node@24.13.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
+      yauzl:
+        specifier: 3.4.0
+        version: 3.4.0
 
   packages/a2a-gateway:
     dependencies:

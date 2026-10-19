@@ -20,11 +20,11 @@ A database backup alone cannot restore attachments. Stop every app process while
 set -euo pipefail
 umask 077
 community_backup_dir="$(mktemp -d ./community-backup.XXXXXXXX)"
-docker compose -f apps/community/compose.yml stop community
-docker compose -f apps/community/compose.yml exec -T database pg_dump -U community -d community --format=custom > "$community_backup_dir/database.dump"
-docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -czf - . > "$community_backup_dir/blobs.tar.gz"
+docker compose -f apps/space/compose.yml stop community
+docker compose -f apps/space/compose.yml exec -T database pg_dump -U community -d community --format=custom > "$community_backup_dir/database.dump"
+docker compose -f apps/space/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -czf - . > "$community_backup_dir/blobs.tar.gz"
 git rev-parse HEAD > "$community_backup_dir/source-revision.txt"
-docker compose -f apps/community/compose.yml up -d community
+docker compose -f apps/space/compose.yml up -d community
 ```
 
 If a command fails, leave the app stopped until you know whether the backup is complete. Check both archives, encrypt them, and copy them off the server. Store deployment secrets separately in protected storage. They are required to restore sign-in and outstanding invitation links. Personal export ZIPs are downloads for members, not server backups.
@@ -39,13 +39,13 @@ Restore on a separate, private test host using an empty deployment. Run these co
 set -euo pipefail
 community_restore_dir=/absolute/path/to/community-backup
 # Start only the new database. The app must remain stopped.
-docker compose -f apps/community/compose.yml up -d --wait database
-docker compose -f apps/community/compose.yml build community
-docker compose -f apps/community/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
-docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
+docker compose -f apps/space/compose.yml up -d --wait database
+docker compose -f apps/space/compose.yml build community
+docker compose -f apps/space/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
+docker compose -f apps/space/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
 # Erase again everyone erased since the backup, from the journal copy kept off the server.
-cat /absolute/path/to/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
-docker compose -f apps/community/compose.yml up -d community
+cat /absolute/path/to/erasure-journal-*.log | docker compose -f apps/space/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
+docker compose -f apps/space/compose.yml up -d community
 ```
 
 Use fresh, empty volumes. The image initializes its blob volume for the `node` user, which also extracts the archive. A permission error is a failed restore; fix the volume ownership before starting the app. With S3, restore the matching object versions into a separate bucket instead of extracting the file archive, and point the test deployment there.
@@ -92,7 +92,7 @@ You can rehearse this recovery only while the host has one community and has nev
 Stop every app process and background worker first. Keep them stopped through the check and recovery. Using the **current** image, run:
 
 ```bash
-docker compose -f apps/community/compose.yml run --rm --no-deps -T \
+docker compose -f apps/space/compose.yml run --rm --no-deps -T \
   --entrypoint node community dist-server/backout.js
 ```
 
@@ -153,7 +153,7 @@ Treat a key with `communities:write` like a host operator's own account. If one 
 To create the first key on a host without a browser, run the offline command with `COMMUNITY_DATABASE_URL` set. It prints the key once on standard output, so pipe it straight into your secret store:
 
 ```bash
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+docker compose -f apps/space/compose.yml run --rm --no-deps -T community \
   node dist-server/host-keys.js issue --label "Provisioning" --scope communities:read --scope communities:write --expires-in-days 90
 ```
 
@@ -220,7 +220,7 @@ Some reserved addresses exist only so nobody can pose as you: the built-in `supp
 It works only while you create the community. Use a key that has `communities:reserved_names` and nothing else, issued for this one job and revoked after:
 
 ```bash
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+docker compose -f apps/space/compose.yml run --rm --no-deps -T community \
   node dist-server/host-keys.js issue --label "Official space" --scope communities:reserved_names --expires-in-days 1
 ```
 
@@ -278,7 +278,7 @@ Each takedown's `evidence.state` says where its copy stands: saving, retrying, s
 Before rolling back to a release without whole-community takedowns, reverse every one still in its window or let its deletion finish. Before rolling back to a release without takedowns at all, let every copy finish, or give up the ones that have not with the offline command, which queues their bytes for deletion:
 
 ```bash
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community \
+docker compose -f apps/space/compose.yml run --rm --no-deps -T community \
   node dist-server/takedown/commands.js release-held <takedown id>
 ```
 
@@ -360,9 +360,9 @@ You can also set `COMMUNITY_ERASURE_JOURNAL` to a file path, and the server appe
 After any restore, stop the app and run the erasures again from your copy before you start it:
 
 ```bash
-docker compose -f apps/community/compose.yml stop community
-cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
-docker compose -f apps/community/compose.yml up -d community
+docker compose -f apps/space/compose.yml stop community
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/space/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
+docker compose -f apps/space/compose.yml up -d community
 ```
 
 From a source checkout, piping the same files to `pnpm --filter @dorkos/community erasure:reapply` does the same. It prints only counts, and running it twice changes nothing.
@@ -453,7 +453,7 @@ Each member’s agents share their owner’s posting and upload limits. The sett
 
 **The target (D12):** one machine holds **20,000 open streams** while people post **50 messages a second for one minute**, with **95% of messages reaching every open stream within one second** and **no errors**: no refused post, no stream that fails to open, drops, or misses a message. The target counts streams, not people. Every channel someone has open is one stream, and so is every agent's background stream, counted the same way. `COMMUNITY_STREAMS_PER_COMMUNITY` defaults to 20,000 and `COMMUNITY_STREAMS_MAX` to 25,000, so the defaults already allow the target.
 
-`apps/community/load/` measures it from the outside, over plain HTTP:
+`apps/space/load/` measures it from the outside, over plain HTTP:
 
 1. It seeds a throwaway community with one channel and one member per reader and per writer, each owning one agent with its own token. One member each keeps the per-member stream cap and posting limit out of the way.
 2. It opens one live stream per reader, in batches of 250, spread over reader threads (one per 1,000 readers by default, up to the cores available, `--reader-threads` to choose). It waits until every stream is open before the first post, so the run really holds that many streams while it posts. A stream still not open after `--open-timeout` seconds (default 300) counts as a failure.
@@ -478,7 +478,7 @@ Seeding uses `POST /api/test/load-fixture`. Like every route under `/api/test/`,
 
 Posting no longer falls behind on this laptop. What limits it above 5,000 streams is the server's own processor time, most of it spent writing to streams, and requests waiting for a database connection (`community_db_pool_waiting` peaked at 218 at 10,000 streams). A pool of 30 halved the typical delivery time at 5,000 streams but not the slowest five percent, so the processor, not the pool, sets the limit here. The 20,000-stream target has to be checked on production-size hardware with the load machines kept separate, as below; a local run cannot show it.
 
-**Locally**, against a server started that way on a throwaway database, from `apps/community`:
+**Locally**, against a server started that way on a throwaway database, from `apps/space`:
 
 ```bash
 pnpm load -- --url http://127.0.0.1:6481 --readers 1000 --writers 50 --rate 50 --duration 60

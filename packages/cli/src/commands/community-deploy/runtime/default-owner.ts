@@ -31,7 +31,7 @@ import type { LaunchJournal } from '../journal.js';
 import type { LaunchPlan } from '../plan.js';
 
 /** Where the owner handoff steps are written up, for errors that send the person there. */
-const FLY_GUIDE_URL = repoUrl('/blob/main/apps/community/FLY.md');
+const FLY_GUIDE_URL = repoUrl('/blob/main/apps/space/FLY.md');
 
 async function ask(question: string, signal?: AbortSignal): Promise<string> {
   if (!stdin.isTTY || !stdout.isTTY) throw new Error('An interactive terminal is required');

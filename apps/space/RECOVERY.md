@@ -9,11 +9,11 @@ This procedure requires access to the deployment and its database. It resets an 
 Run these commands in Bash from the repository root, with the same deployment settings used to start the community. Stop every community process or replica first. Keep PostgreSQL running.
 
 ```bash
-docker compose -f apps/community/compose.yml stop community
+docker compose -f apps/space/compose.yml stop community
 read -r -p 'Account email: ' community_recovery_email
 read -r -s -p 'New password (12–128 characters): ' community_recovery_password
 printf '\n'
-printf '%s' "$community_recovery_password" | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/recover-password.js "$community_recovery_email"
+printf '%s' "$community_recovery_password" | docker compose -f apps/space/compose.yml run --rm --no-deps -T community node dist-server/recover-password.js "$community_recovery_email"
 unset community_recovery_password community_recovery_email
 ```
 
@@ -24,7 +24,7 @@ If the command fails, it exits with an error and leaves the account unchanged. C
 Restart the service after checking the command's result:
 
 ```bash
-docker compose -f apps/community/compose.yml up -d community
+docker compose -f apps/space/compose.yml up -d community
 ```
 
 Give the member their new password through a private channel. They can sign in with the new password. They must reconnect their local DorkOS installations and renew their agents' credentials. If you removed their links, they can link Google, GitHub or single sign-on again from Settings, Account. Recovery does not revoke access at those services; if one of those accounts was compromised, secure it there too.
@@ -50,9 +50,9 @@ To recover this server after lost data or a bad upgrade, restore your own databa
 A backup brings back everyone who erased themselves after it was taken. Before you start the restored app, run those erasures again from the erasure journal copy you keep off the server (pulled through `GET /api/v1/host/erasure-journal` with a `communities:erasure_journal` key):
 
 ```bash
-docker compose -f apps/community/compose.yml stop community
-cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
-docker compose -f apps/community/compose.yml up -d community
+docker compose -f apps/space/compose.yml stop community
+cat /var/lib/community-erasure-journal/erasure-journal-*.log | docker compose -f apps/space/compose.yml run --rm --no-deps -T community node dist-server/erasure/reapply.js
+docker compose -f apps/space/compose.yml up -d community
 ```
 
 It prints only counts, and running it twice changes nothing. How to keep the copy, and why the server's own journal is not enough, is in [Erasure requests](OPERATIONS.md#erasure-requests).

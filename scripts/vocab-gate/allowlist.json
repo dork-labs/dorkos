@@ -4,7 +4,7 @@
     {
       "path": "apps/client/src/space/components/Pairing.tsx",
       "terms": ["connection"],
-      "reason": "The space's approval page for a DorkOS install asking to connect to it (DOR-2653 brought apps/community under the gate). The connection is the thing being approved, declined or limited to reading: an entity a person acts on, not a network-health reading."
+      "reason": "The space's approval page for a DorkOS install asking to connect to it (DOR-2653 brought apps/space under the gate). The connection is the thing being approved, declined or limited to reading: an entity a person acts on, not a network-health reading."
     },
     {
       "path": "apps/client/src/space/components/host/HostHoldControls.tsx",
@@ -418,7 +418,7 @@
     {
       "path": "docs/contributing/architecture.mdx",
       "terms": ["community", "communities"],
-      "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/community), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
+      "reason": "The contributor architecture reference names code components by their code names — the Community server (apps/space), CommunityAdapter, /api/v1/communities routes — which DOR-2631 deliberately leaves as \"community\" until DOR-2639 renames identifiers, routes and the contract. A reader here is reading source structure, not product copy."
     },
     {
       "path": "docs/guides/dorkos-community.mdx",

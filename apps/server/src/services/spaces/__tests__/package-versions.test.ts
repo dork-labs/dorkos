@@ -41,7 +41,7 @@ function versionIn(require: NodeJS.Require, name: string): string | null {
 
 describe("the space server's packages", () => {
   it('resolve to the same versions for the tests and for the image', () => {
-    // Purpose: fails if a bump in one package.json (a Dependabot PR to apps/community alone,
+    // Purpose: fails if a bump in one package.json (a Dependabot PR to apps/space alone,
     // say) leaves the image running a version the server's tests never ran.
     const shared = imagePackages.filter((name) => versionIn(fromServer, name) !== null);
     expect(shared.length).toBeGreaterThan(8);

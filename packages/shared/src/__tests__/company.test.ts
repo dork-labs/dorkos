@@ -82,7 +82,7 @@ const PERSONAL_COPYRIGHT = new Map([
  * rendered About panel against an independent literal.
  */
 const LITERAL_NAME_ALLOWED = [
-  'apps/community/LICENSE',
+  'apps/space/LICENSE',
   'apps/desktop/electron-builder.yml',
   'apps/desktop/package.json',
   'apps/desktop/src/main/__tests__/about.test.ts',
@@ -155,7 +155,7 @@ const LITERAL_URL_ALLOWED: Record<string, string> = {
     'the one definition of the Community image repository, which the CLI imports',
   'apps/client/eslint-rules/fsd.js':
     'an ESLint rule loaded as plain JS before any workspace package is built',
-  'apps/community/acceptance/run.mjs':
+  'apps/space/acceptance/run.mjs':
     'a standalone acceptance script that runs without a workspace build',
   'apps/e2e/reporters/refresh-shard-timings.ts': '@dorkos/e2e does not depend on @dorkos/shared',
   'packages/cli/scripts/test-community-deploy-package.ts':

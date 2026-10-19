@@ -88,28 +88,28 @@ for path in \
   expect true "in scope: $path" "$path"
 done
 
-# Literal paths of the layout while apps/community is a build shell (server-merge
-# step 7, between the move and the image from the server package): the code in
-# apps/server/src/services/spaces, the rest still in apps/community. The fixtures
-# above follow the file, so a wrong value (SPACE_DIR=apps, say) could pass them
-# while widening or emptying the scope; these pin the real one. Retire the block
-# when apps/community goes (7g).
-if [ -d "$repo_root/apps/community" ]; then
-  if [ "$SPACE_DIR" = apps/community ] && [ "$SPACE_SRC_DIR" = apps/server/src/services/spaces ] &&
+# Literal paths of the space server's layout after server-merge step 7: its
+# code in apps/server/src/services/spaces, its web pages in apps/client/src/space,
+# its image the root Dockerfile's `space` target, and its package, migrations
+# and test tiers in apps/space. The fixtures above follow the file, so a wrong
+# value (SPACE_DIR=apps, say) could pass them while widening or emptying the
+# scope; these pin the real one.
+if [ -d "$repo_root/apps/space" ]; then
+  if [ "$SPACE_DIR" = apps/space ] && [ "$SPACE_SRC_DIR" = apps/server/src/services/spaces ] &&
     [ "$SPACE_WEB_DIR" = apps/client/src/space ]; then
     pass=$((pass + 1))
   else
     fail=$((fail + 1))
-    echo "FAIL: apps/community exists, but ci/space-server.env names $SPACE_DIR, $SPACE_SRC_DIR, $SPACE_WEB_DIR" >&2
+    echo "FAIL: apps/space exists, but ci/space-server.env names $SPACE_DIR, $SPACE_SRC_DIR, $SPACE_WEB_DIR" >&2
   fi
-  for path in apps/server/src/services/spaces/app.ts apps/community/migrations/0001_foundation.sql \
+  for path in apps/server/src/services/spaces/app.ts apps/space/migrations/0001_foundation.sql \
     apps/client/src/space/CommunityApp.tsx apps/client/vite.space.config.ts Dockerfile .dockerignore \
     scripts/space-image/runtime-packages.mjs; do
-    expect true "in scope (build-shell layout): $path" "$path"
+    expect true "in scope (literal layout): $path" "$path"
   done
-  for path in apps/communityx/src/app.ts apps/server/src/index.ts apps/server/src/services/spacesx/a.ts \
+  for path in apps/spacex/src/app.ts apps/community/README.md apps/server/src/index.ts apps/server/src/services/spacesx/a.ts \
     apps/server/src/services/relay/relay-service.ts apps/client/src/main.tsx; do
-    expect false "out of scope (build-shell layout): $path" "$path"
+    expect false "out of scope (literal layout): $path" "$path"
   done
 fi
 
@@ -213,7 +213,7 @@ for path in \
   apps/server/src/services/space/app.ts \
   apps/client/src/layers/features/chat/ui/ChatPanel.tsx \
   apps/client/src/layers/features/spaces-other/ui/X.tsx \
-  apps/community/src/app.ts; do
+  apps/space/src/app.ts; do
   expect_future false "out of scope: $path" "$path"
 done
 expect_future false 'a server-only pull request' \
@@ -231,7 +231,7 @@ fi
 # No file, or a folder left empty: no verdict and a non-zero exit, which the
 # job's step turns into running the proof. Never a `false`.
 empty_env=$fixture_dir/empty.env
-printf '%s\n' SPACE_DIR=apps/community SPACE_SRC_DIR= SPACE_WEB_DIR=apps/community/src/browser >"$empty_env"
+printf '%s\n' SPACE_DIR=apps/space SPACE_SRC_DIR= SPACE_WEB_DIR=apps/space/src/browser >"$empty_env"
 for env_file in "$fixture_dir/missing.env" "$empty_env"; do
   if out=$(printf '%s\n' docs/a.mdx | SPACE_SERVER_ENV=$env_file bash "$scope" 2>/dev/null); then
     fail=$((fail + 1))

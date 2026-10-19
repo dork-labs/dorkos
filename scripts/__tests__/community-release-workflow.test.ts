@@ -169,7 +169,7 @@ exit 2
       .split('\n')
       .filter((line) => !line.trim().startsWith('#'))
       .join('\n');
-    expect(code).not.toContain('apps/community');
+    expect(code).not.toContain('apps/space');
   });
 
   it('keeps the runtime non-root and the Docker build context allow-listed', () => {

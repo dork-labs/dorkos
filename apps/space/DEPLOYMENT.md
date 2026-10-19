@@ -160,7 +160,7 @@ The Community does not check email addresses when someone signs up with a passwo
 Without trust, the real owner of an email someone else used first would be asked for a password they never set. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
 
 ```bash
-docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
+docker compose -f apps/space/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
 ```
 
 It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), it is not in the middle of joining one, and it has never operated this host. If it is joining right now, wait 10 minutes and run it again. If the account has already joined a community, this command keeps it: the person can erase their own membership or account, or the community's owner can remove them, and then the account can be released. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.

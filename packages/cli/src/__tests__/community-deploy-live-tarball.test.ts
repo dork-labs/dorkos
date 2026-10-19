@@ -274,8 +274,8 @@ describe('live gate pack recipe migration guard', () => {
       'apps/community/migrations/0002_more.sql': 'create table b();',
     });
     expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
-      'apps/community/migrations/0001_init.sql',
-      'apps/community/migrations/0002_more.sql',
+      'migrations/0001_init.sql',
+      'migrations/0002_more.sql',
     ]);
     let message = '';
     try {
@@ -286,7 +286,7 @@ describe('live gate pack recipe migration guard', () => {
     expect(message).toContain(
       'The files the launcher checks a release against changed since v0.92.0:'
     );
-    expect(message).toContain('  apps/community/migrations/0002_more.sql');
+    expect(message).toContain('  migrations/0002_more.sql');
     expect(message).toContain('COMMUNITY_RELEASE_INVALID');
     expect(message).toContain('Pack from v0.92.0 plus only the launcher commits under test');
     expect(message).toContain('not on main');
@@ -296,9 +296,7 @@ describe('live gate pack recipe migration guard', () => {
     const { run } = await repo();
     run(['rm', '-q', 'apps/community/migrations/0001_init.sql']);
     run(['commit', '-qm', 'drop']);
-    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
-      'apps/community/migrations/0001_init.sql',
-    ]);
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual(['migrations/0001_init.sql']);
   });
 
   it('tells the operator to fetch tags when the release tag is missing', async () => {
@@ -338,8 +336,26 @@ describe('live gate pack recipe migration guard', () => {
     ]);
     run(['commit', '-qm', 'rename']);
     expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([
-      'apps/community/migrations/0001_init.sql',
-      'apps/community/migrations/0001_start.sql',
+      'migrations/0001_init.sql',
+      'migrations/0001_start.sql',
     ]);
+  });
+  // Server-merge step 7g moved the folder to apps/space. A tag from before the move has the files
+  // at the old path; what the build fingerprints is names and contents, so a move alone is no change.
+  it('passes a checkout that only moved the migrations folder', async () => {
+    const { run } = await repo();
+    await mkdir(join(root, 'repo/apps/space'), { recursive: true });
+    run(['mv', 'apps/community/migrations', 'apps/space/migrations']);
+    run(['commit', '-qm', 'move']);
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual([]);
+    expect(() => assertReleasedCommunityMigrations(run, '0.92.0')).not.toThrow();
+  });
+
+  it('still names a migration edited in the moved folder', async () => {
+    const { run, commit } = await repo();
+    await mkdir(join(root, 'repo/apps/space'), { recursive: true });
+    run(['mv', 'apps/community/migrations', 'apps/space/migrations']);
+    await commit({ 'apps/space/migrations/0002_more.sql': 'create table b();' });
+    expect(changedCommunityMigrations(run, 'v0.92.0')).toEqual(['migrations/0002_more.sql']);
   });
 });

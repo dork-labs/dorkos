@@ -13,8 +13,8 @@
 !apps/client/**
 !apps/server
 !apps/server/**
-!apps/community
-!apps/community/**
+!apps/space
+!apps/space/**
 !packages
 !packages/**
 !scripts

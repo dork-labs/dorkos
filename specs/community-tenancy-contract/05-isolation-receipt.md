@@ -14,10 +14,10 @@ This receipt maps every row of the specification's **Adversarial verification ma
 The receipt is checked in two steps, and only the second one decides whether a proof counts.
 
 1. **Structure, on every unit run.** `apps/server/src/services/spaces/__tests__/tenancy-receipt.test.ts` reads the matrix straight out of `02-specification.md` and the 4.2 criteria straight out of `03-tasks.json`. It fails when a row or criterion has no entry here, an entry quotes text that is no longer in the spec, an entry has no proof, a proof names a file that does not exist or that no receipt runner executes (for example `*.s3.test.ts` or `acceptance/`), or the cited title is not declared in that file. This step reads source text only, so it is a fast pre-filter, not proof.
-2. **Execution, after the suites run.** `apps/community/scripts/tenancy-receipt.ts` checks each proof against the report its runner wrote, and fails unless the cited file and title appear there as passed. A test in a skipped block, behind a false condition, or commented out never appears as passed, so it fails this step. A title with `${…}` must match at least one reported test, and every test it matches must have passed.
+2. **Execution, after the suites run.** `apps/space/scripts/tenancy-receipt.ts` checks each proof against the report its runner wrote, and fails unless the cited file and title appear there as passed. A test in a skipped block, behind a false condition, or commented out never appears as passed, so it fails this step. A title with `${…}` must match at least one reported test, and every test it matches must have passed.
    - Real PostgreSQL proofs (`apps/server/src/services/spaces/**/*.integration.test.ts`): `test:pg` checks `vitest-pg-report.json` last.
-   - Browser proofs (`apps/community/browser-tests/*.spec.ts`): `test:browser` checks `browser-report.json` last.
-   - Unit proofs (`apps/community/src` and `apps/server/src`): `test:pg` also runs just those files with a JSON reporter and checks that report.
+   - Browser proofs (`apps/space/browser-tests/*.spec.ts`): `test:browser` checks `browser-report.json` last.
+   - Unit proofs (`apps/space/src` and `apps/server/src`): `test:pg` also runs just those files with a JSON reporter and checks that report.
 
 ## Adversarial verification matrix (task 4.1)
 
@@ -116,7 +116,7 @@ Scope: only pairing approval has a held-lock test that removes the member betwee
 
 > community switching closes A SSE before B data enters cache; reconnect cursors cannot cross tenants.
 
-- `apps/community/browser-tests/switching.spec.ts` — switching from A to B ends the A event stream before any B request
+- `apps/space/browser-tests/switching.spec.ts` — switching from A to B ends the A event stream before any B request
 - `apps/server/src/services/spaces/__tests__/remote-adapter-conformance.integration.test.ts` — rejects a cursor from a different real community with the same channel, epoch, and signing secret
 - `apps/server/src/services/spaces/__tests__/tenancy-concurrency.integration.test.ts` — keeps concurrent posts, invites, and cursors of two communities on one host apart, each channel gap-free
 

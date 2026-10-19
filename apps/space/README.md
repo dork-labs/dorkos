@@ -9,7 +9,7 @@ The server supports owner signup, signed invitations, member roles, channels, po
 From the repository root, set `COMMUNITY_POSTGRES_PASSWORD`, `COMMUNITY_PUBLIC_URL`, `COMMUNITY_AUTH_SECRET`, `COMMUNITY_INVITE_SECRET`, and `COMMUNITY_BOOTSTRAP_SECRET`, then run:
 
 ```sh
-docker compose -f apps/community/compose.yml up --build
+docker compose -f apps/space/compose.yml up --build
 ```
 
 Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481. See [deployment settings and limits](DEPLOYMENT.md) for the full environment reference, optional Google, GitHub, and single sign-on (OpenID Connect) sign-in, optional mail through your own mail server (off unless you set `COMMUNITY_SMTP_URL` and `COMMUNITY_MAIL_FROM`; with it, people can reset a forgotten password, confirm their email and get a sign-in link by email, and without it they ask you), and an optional Render setup.

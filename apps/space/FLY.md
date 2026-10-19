@@ -68,12 +68,12 @@ The manual recipe below remains available for recovery and audit.
 
 Install [flyctl](https://fly.io/docs/flyctl/install/), sign in with `fly auth login`, and choose the Fly organization that will own the app and bucket. You also need access to the PostgreSQL account you choose below. Each service bills its owning account.
 
-Use a checkout of the DorkOS release you intend to deploy. Run every command below from the repository root. The Docker build needs the whole monorepo, not just `apps/community`. See Fly's [monorepo deployment guide](https://fly.io/docs/launch/monorepo/).
+Use a checkout of the DorkOS release you intend to deploy. Run every command below from the repository root. The Docker build needs the whole monorepo, not just `apps/space`. See Fly's [monorepo deployment guide](https://fly.io/docs/launch/monorepo/).
 
 ```sh
 fly apps create your-community-app --org your-org
 mkdir -p .temp
-cp apps/community/fly.toml.example .temp/community-fly.toml
+cp apps/space/fly.toml.example .temp/community-fly.toml
 ```
 
 Keep the copied file in `.temp`; its Dockerfile path is relative to that directory. Edit it there, then replace the app name, public origin, bucket name, and region. Keep the origin exactly `https://<your-app-name>.fly.dev` for initial setup. Choose a region close to your members and database.
@@ -167,7 +167,7 @@ To add a custom domain, follow [Fly's custom-domain guide](https://fly.io/docs/n
 Record the source revision, image, region, configuration, and results without secrets. The repository's isolated check is useful before deploying:
 
 ```sh
-bash apps/community/acceptance/run.sh
+bash apps/space/acceptance/run.sh
 ```
 
 That test exercises the packaged apps without access to DorkOS hosts. It does not test Fly's proxy, your hosted PostgreSQL service, or Tigris. The public-host checks above remain necessary.

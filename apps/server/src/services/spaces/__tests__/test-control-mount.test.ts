@@ -28,7 +28,7 @@ function appFor(extra: Record<string, string>) {
 // seeder that writes members and credentials straight into the database) are mounted on a server
 // that did not turn the test runtime on, or if turning it on (with its acknowledgement) stops
 // mounting them, which the acceptance run, the two-desktop browser test (DOR-2655) and
-// apps/community/load (DOR-2771) depend on.
+// apps/space/load (DOR-2771) depend on.
 describe('test-control routes', () => {
   it('are not there when the test runtime is off', async () => {
     const app = appFor({});

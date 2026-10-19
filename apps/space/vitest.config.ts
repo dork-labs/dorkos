@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    name: 'community',
+    name: 'space',
     environment: 'node',
     exclude: [
       '**/*.integration.test.ts',
