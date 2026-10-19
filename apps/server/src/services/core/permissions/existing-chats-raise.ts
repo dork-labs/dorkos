@@ -220,7 +220,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  */
 function storedBoundMarks(bound: unknown): TurnMarks {
   if (!isObject(bound)) return NO_MARKS;
-  const fields = bound;
+  const fields = 'marks' in bound ? bound.marks : bound;
   return isObject(fields) ? parseStoredMarks(JSON.stringify(fields)) : NO_MARKS;
 }
 

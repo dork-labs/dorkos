@@ -430,9 +430,7 @@ describe('openingMessageMarked', () => {
 
   it('reads an unknown sender stored with an outsider mark as marked', () => {
     expect(
-      openingMessageMarked(
-        JSON.stringify({ bound: 'runtime-default', marks: { outsider: true } })
-      )
+      openingMessageMarked(JSON.stringify({ bound: 'runtime-default', marks: { outsider: true } }))
     ).toBe(true);
   });
 
