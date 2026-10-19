@@ -82,7 +82,7 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
-import { getChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
+import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
 import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
 import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {

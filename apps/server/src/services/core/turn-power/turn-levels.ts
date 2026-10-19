@@ -50,7 +50,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -93,6 +93,22 @@ export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefi
 }
 
 /**
+ * The level a conversation hands on to what its turn causes: a room post, a
+ * chat message, a spin-off. Its latest turn's level, carrying the outsider mark
+ * whenever a stranger's words may be in the chat (`chatHeardOutsider`): one
+ * started this turn, an earlier one, or the chat itself (DOR-3107). The one
+ * read every hand-off makes, so no path passes on a stranger's words unmarked.
+ * `undefined` when this process ran no turn on it.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
+  const level = turnLevels.get(sessionId);
+  if (level === undefined) return undefined;
+  return chatHeardOutsider(sessionId) ? { ...level, outsider: true } : level;
+}
+
+/**
  * Which turn a conversation is on: a number that changes each time a turn is
  * sent on it, or `undefined` when this process sent none. Lets a count kept per
  * turn tell one turn from the next without a hook of its own.
@@ -115,9 +131,10 @@ export function turnSerialOf(sessionId: string): number | undefined {
  * post must not borrow a looser turn's level. Never a session id a request
  * body supplied; that would let anybody name a Full autonomy conversation.
  *
- * A turn an outsider STARTED (a connector event, a bridged chat, a stranger's
- * DM) is marked even when no ceiling said so (DOR-3107): its post carries the
- * outsider mark, so the turn it wakes is capped, never trusted as unmarked.
+ * A chat a stranger reached (a connector event, a bridged chat, a stranger's
+ * DM, now or in an earlier turn) is marked even when no ceiling said so
+ * (DOR-3107, {@link passedOnLevelOf}): its post carries the outsider mark, so
+ * the turn it wakes is capped, never trusted as unmarked.
  *
  * @param sessionIds - The sessions that vouch for the post.
  */
@@ -126,10 +143,9 @@ export function postLevelFor(
 ): TurnPermissionLevel | undefined {
   const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
   if (named.length === 0) return undefined;
-  const levels = named.map((id) => turnLevels.get(id));
+  const levels = named.map(passedOnLevelOf);
   if (levels.some((level) => level === undefined)) return undefined;
-  const level = (levels as TurnPermissionLevel[]).reduce(stricterLevel);
-  return named.some(turnStartedByOutsider) ? { ...level, outsider: true } : level;
+  return (levels as TurnPermissionLevel[]).reduce(stricterLevel);
 }
 
 /**
@@ -161,7 +177,8 @@ export function marksOf(
  * Its own level when this process recorded the caller's turn, which bounds no
  * tighter than the turn already ran; otherwise, while one of its agent's
  * marked turns runs, a ceiling carrying those marks (`ceilingCarrying`): the
- * runtime default, and a read-only level holding every teammate origin.
+ * runtime default, and a read-only level holding every teammate origin. A
+ * chat a stranger reached is marked here too ({@link passedOnLevelOf}).
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -170,9 +187,12 @@ export function markedBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
 ): TurnPermissionCeiling | undefined {
-  const marks = marksOf(sessionId, agentPath);
+  const heard = sessionId ? chatHeardOutsider(sessionId) : false;
+  const marks = heard
+    ? { ...marksOf(sessionId, agentPath), outsider: true as const }
+    : marksOf(sessionId, agentPath);
   if (!hasMarks(marks)) return undefined;
-  return (sessionId ? turnLevels.get(sessionId) : undefined) ?? ceilingCarrying(marks);
+  return (sessionId ? passedOnLevelOf(sessionId) : undefined) ?? ceilingCarrying(marks);
 }
 
 /**

@@ -22,7 +22,7 @@
  *    receipt says why. `interrupt` puts the message at the head of the queue
  *    and stops the running turn, so it runs next.
  * 4. **The power it carries.** The turn runs no looser than the sending
- *    chat's latest turn ({@link senderCeiling}), applied by the dispatcher when
+ *    chat's latest turn (`senderBound`), applied by the dispatcher when
  *    the queue row launches.
  *
  * ## No loop guard
@@ -33,15 +33,17 @@
  *
  * @module services/session/chat-messages/chat-message-service
  */
-import { chatMessageOrigin, parseCeiling } from './chat-message-ceiling.js';
+import {
+  boundsOf,
+  chatMessageOrigin,
+  parseCeiling,
+  senderBound,
+  type OwnLevelReader,
+} from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ChatMessageRow } from '@dorkos/db';
-import type {
-  TurnPermissionBound,
-  TurnPermissionCeiling,
-  TurnPermissionLevel,
-} from '@dorkos/shared/agent-runtime';
+import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { mayJoinRunningTurn } from '../../core/turn-power/turn-marks.js';
 import type {
   ChatDelivery,
@@ -161,8 +163,10 @@ export interface ChatMessageServiceDeps {
   canonicalId: (sessionId: string) => Promise<string>;
   /** Stop a chat's running turn. True when one was running and was asked to stop. */
   interruptTurn: (sessionId: string) => Promise<boolean>;
-  /** The level a chat's latest turn ran at, or undefined when not known. */
+  /** The level a chat hands on (its latest turn's, marked if a stranger reached it), or undefined when not known. */
   turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
+  /** The level a person set an agent and its chat to (DOR-3107); absent, unmarked senders keep their level. */
+  ownLevelOf?: OwnLevelReader;
   /** Tell a chat's windows its messaging changed. */
   emitActivity: (sessionId: string) => void;
   /** Subscribe to the dispatcher's lifecycle. */
@@ -212,7 +216,7 @@ export class ChatMessageService {
   ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling {
     const rows = this.deps.store.listByQueueMessage(queueMessageId);
     if (rows.length === 0) return 'runtime-default';
-    const bounds = rows.map((row) => parseCeiling(row.ceilingJson));
+    const bounds = rows.flatMap((row) => boundsOf(parseCeiling(row.ceilingJson)));
     return bounds.length === 1 ? bounds[0]! : bounds;
   }
 
@@ -267,7 +271,8 @@ export class ChatMessageService {
       text(input),
       this.deps.nonce?.()
     );
-    const ceiling = senderCeiling(this.deps.turnLevelOf(caller.sessionId));
+    const level = this.deps.turnLevelOf(caller.sessionId);
+    const ceiling = await senderBound(level, caller, this.deps.ownLevelOf);
     // A new DM chat's id is minted here, before the row, so a window already
     // watching it can match the message to its sender from the first event.
     if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
@@ -613,7 +618,9 @@ export class ChatMessageService {
       delivery: 'queue',
       status: 'queued',
       queueMessageId,
-      ceilingJson: JSON.stringify(senderCeiling(this.deps.turnLevelOf(caller.sessionId))),
+      ceilingJson: JSON.stringify(
+        await senderBound(this.deps.turnLevelOf(caller.sessionId), caller, this.deps.ownLevelOf)
+      ),
       replyToId: null,
     });
     return { id: row.id, content: rendered.text };
@@ -844,31 +851,4 @@ export class ChatMessageService {
 /** The words a message carries, trimmed of the whitespace around them. */
 function text(input: ChatSendInput): string {
   return input.message.trim();
-}
-
-/**
- * The ceiling a message from a chat carries: the level its latest turn ran
- * at, or the receiving runtime's default when that is not known (a restart, a
- * chat this process never ran a turn on). Never looser than the sender.
- *
- * @param level - The sending chat's latest turn level, when known.
- */
-export function senderCeiling(level: TurnPermissionLevel | undefined): TurnPermissionBound {
-  return level ?? 'runtime-default';
-}
-
-let current: ChatMessageService | undefined;
-
-/**
- * Wire the service at boot (or clear it in a test).
- *
- * @param service - The service, or undefined.
- */
-export function setChatMessageService(service: ChatMessageService | undefined): void {
-  current = service;
-}
-
-/** The wired service, or undefined before boot. */
-export function getChatMessageService(): ChatMessageService | undefined {
-  return current;
 }

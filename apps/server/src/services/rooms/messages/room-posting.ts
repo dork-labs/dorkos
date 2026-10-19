@@ -22,6 +22,7 @@ import type { RoomCore } from '../service/room-core.js';
 import type { RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
+import { noteCallerSession } from '../limits/caller-sessions.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
@@ -311,6 +312,11 @@ export class RoomPosting {
     } catch (err) {
       releaseOutsiderOutput('post', countedSession);
       throw err;
+    }
+    // The chat the post was written from, when it is not this room's turn: a
+    // person may have set that chat to ask first (DOR-3107, `posterCapsFor`).
+    if (input.callerSessionId !== undefined && input.callerSessionId !== turn?.sessionId) {
+      noteCallerSession(entry.id, input.callerSessionId);
     }
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;

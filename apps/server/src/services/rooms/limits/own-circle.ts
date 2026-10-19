@@ -28,6 +28,7 @@ import {
   resolveUnattendedPermissionMode,
 } from '../../session/resolution/resolve-session-defaults.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import { callerSessionOf } from './caller-sessions.js';
 import { outsiderInViewOf } from './turn-ceiling.js';
 
 /** What decides an own-circle turn, read where the turn is built. */
@@ -77,7 +78,8 @@ function stricterBound(a: TurnPermissionBound, b: TurnPermissionBound): TurnPerm
  * default, the strict side.
  *
  * @param agentPath - The poster's folder.
- * @param sessionIds - The conversations its answered posts came from.
+ * @param sessionIds - The conversations its answered posts came from: its turn
+ *   in the room, and the chat it posted from when that was another.
  */
 export async function posterLevel(
   agentPath: string,
@@ -120,7 +122,7 @@ export async function posterLevel(
  */
 export async function posterCapsFor(
   authors: AuthorRegistry,
-  entries: readonly (Pick<RoomEntry, 'authorId'> & { sessionId?: string | null })[],
+  entries: readonly (Pick<RoomEntry, 'authorId'> & { id?: string; sessionId?: string | null })[],
   read:
     | ((agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>)
     | undefined = posterLevel
@@ -131,11 +133,15 @@ export async function posterCapsFor(
   for (const id of ids) {
     const record = records.get(id);
     if (record?.kind !== 'agent') continue;
+    // Its turn in the room, and the chat it wrote from when that was another.
     const sessions = [
       ...new Set(
         entries
-          .filter((entry) => entry.authorId === id && entry.sessionId)
-          .map((entry) => entry.sessionId!)
+          .filter((entry) => entry.authorId === id)
+          .flatMap((entry) => [entry.sessionId, entry.id ? callerSessionOf(entry.id) : undefined])
+          .filter(
+            (sessionId): sessionId is string => typeof sessionId === 'string' && sessionId !== ''
+          )
       ),
     ];
     caps.set(id, await (read ?? posterLevel)(record.naturalKey, sessions));

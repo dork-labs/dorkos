@@ -47,6 +47,20 @@ const OUTSIDER_ORIGIN_KINDS: ReadonlySet<string> = new Set([
 /** Filing id → whether the chat's latest turn is a stranger's. */
 const latest = new Map<string, boolean>();
 
+/**
+ * Filing ids of chats where a stranger has started a turn since this process
+ * started. A stranger's words stay in a chat's context after a person's later
+ * turn, so what the chat passes on stays marked ({@link chatHeardOutsider}).
+ */
+const heard = new Set<string>();
+
+/** Record what the chat's latest turn is, and remember a stranger's for good. */
+function noteLatest(sessionId: string, outsider: boolean): void {
+  const key = primaryOf(sessionId);
+  latest.set(key, outsider);
+  if (outsider) heard.add(key);
+}
+
 /** Messages bound but not yet running: message id → whether a stranger sent it. */
 const pending = new Map<string, boolean>();
 
@@ -78,7 +92,7 @@ export function isOutsiderOrigin(origin: TurnOrigin): boolean {
 export function noteTurnOrigin(sessionId: string, origin: TurnOrigin): void {
   const messageId = holdingFor.getStore();
   if (messageId === undefined) {
-    latest.set(primaryOf(sessionId), isOutsiderOrigin(origin));
+    noteLatest(sessionId, isOutsiderOrigin(origin));
     return;
   }
   pending.set(messageId, isOutsiderOrigin(origin));
@@ -105,7 +119,7 @@ export function messageTurnStarted(sessionId: string, messageId: string): void {
   const outsider = pending.get(messageId);
   if (outsider === undefined) return;
   pending.delete(messageId);
-  latest.set(primaryOf(sessionId), outsider);
+  noteLatest(sessionId, outsider);
 }
 
 /**
@@ -126,7 +140,7 @@ export function messageDispatched(
   if (outsider === undefined) return;
   if (result.accepted && result.applied === 'queue') return;
   pending.delete(messageId);
-  if (result.accepted && outsider) latest.set(primaryOf(sessionId), true);
+  if (result.accepted && outsider) noteLatest(sessionId, true);
 }
 
 /**
@@ -155,6 +169,11 @@ export function setLaunchOriginReader(reader: (sessionId: string) => string | nu
 export function turnStartedByOutsider(sessionId: string): boolean {
   const noted = latest.get(primaryOf(sessionId));
   if (noted !== undefined) return noted;
+  return launchedByOutsider(sessionId);
+}
+
+/** Whether a stranger started the chat itself, by its stored launch origin. */
+function launchedByOutsider(sessionId: string): boolean {
   let stored: string | null = null;
   try {
     stored = launchOriginOf?.(sessionId) ?? null;
@@ -165,12 +184,30 @@ export function turnStartedByOutsider(sessionId: string): boolean {
 }
 
 /**
+ * Whether a stranger's words may be in this chat's context: a stranger
+ * started its running turn, an earlier turn, or the chat itself (DOR-3107).
+ * A person's later turn does not clear it, because the words are still there.
+ * Read where a turn hands its level on (a room post, a chat message, a
+ * spin-off), never for the per-turn caps, which follow only the running turn.
+ *
+ * @param sessionId - The chat, by either id it is known by.
+ */
+export function chatHeardOutsider(sessionId: string): boolean {
+  return (
+    heard.has(primaryOf(sessionId)) ||
+    turnStartedByOutsider(sessionId) ||
+    launchedByOutsider(sessionId)
+  );
+}
+
+/**
  * Forget every noted turn and the reader.
  *
  * @internal Exported for testing only.
  */
 export function resetOutsiderTurns(): void {
   latest.clear();
+  heard.clear();
   pending.clear();
   launchOriginOf = undefined;
 }
