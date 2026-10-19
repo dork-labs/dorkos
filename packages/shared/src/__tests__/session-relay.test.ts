@@ -2,6 +2,7 @@ import { generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
 import {
   STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH,
   StepUpChallengeIdSchema,
+  StepUpStatementError,
   StepUpStatementV1Schema,
   encodeStepUpBase64url,
   encodeStepUpStatement,
@@ -12,6 +13,7 @@ import { stableStringify } from '../capabilities.js';
 import {
   RelayApprovalProofSchema,
   RelayComputerFrameSchema,
+  assertChallengeResultMatches,
   RelayDeviceSchema,
   RelayDisplayNameSchema,
   RelayRequestIdSchema,
@@ -350,18 +352,45 @@ describe('result bodies', () => {
   });
 });
 
+/** A valid approval statement, nested input included. */
+const APPROVAL_STATEMENT = {
+  t: 'dorkos.relay.approval.v1',
+  challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
+  computerId: 'computer-1',
+  computerName: 'Studio',
+  hubOrigin: HUB_ORIGIN,
+  sessionId: SESSION,
+  toolCallId: 'toolu_01',
+  decision: 'approve',
+  toolName: 'Bash',
+  input: {
+    zeta: [3, { y: 'é😀', x: null }, ['b', 'a']],
+    alpha: { nested: { b: false, a: 1.5, A: -0 } },
+    'key with "quotes"': 'line\nbreak\ttab',
+  },
+  inputSha256: 'a'.repeat(64),
+  nonce: NONCE,
+  issuedAt: '2026-10-19T10:00:00.000Z',
+  expiresAt: '2026-10-19T10:02:00.000Z',
+  rpId: 'approve.dorkos.ai',
+  origin: 'https://approve.dorkos.ai',
+  credentialIds: ['AQID'],
+} as StepUpStatementV1;
+
 describe('the approval challenge result', () => {
-  const statement = encodeStepUpBase64url(new TextEncoder().encode('{"t":"x"}'));
+  const bytes = encodeStepUpStatement(APPROVAL_STATEMENT);
   const body = {
-    challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
-    challenge: 'ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0',
-    statement,
-    expiresAt: '2026-10-19T10:02:00.000Z',
+    challengeId: APPROVAL_STATEMENT.challengeId,
+    statement: encodeStepUpBase64url(bytes),
+    expiresAt: APPROVAL_STATEMENT.expiresAt,
   };
+  const request = { sessionId: SESSION, toolCallId: 'toolu_01', decision: 'approve' } as const;
   const schema = RelayResultBodySchemas['interaction.challenge'];
 
-  it('carries the statement the challenge is the hash of', () => {
+  it('carries the statement and no separate challenge', () => {
     expect(schema.safeParse(body).success).toBe(true);
+    const withChallenge = { ...body, challenge: 'ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0' };
+    expect(schema.safeParse(withChallenge).success).toBe(false);
   });
 
   it('requires the statement', () => {
@@ -390,6 +419,59 @@ describe('the approval challenge result', () => {
       SESSION_RELAY_MAX_INNER_FRAME_BYTES
     );
   });
+
+  it('hands back the statement and its exact bytes when everything matches', () => {
+    const read = assertChallengeResultMatches(body, request);
+    // Compared as canonical text: the fixture's `-0` reads back as `0`.
+    expect(stableStringify(read.statement)).toBe(stableStringify(APPROVAL_STATEMENT));
+    expect(read.bytes).toEqual(bytes);
+  });
+
+  it('catches a challenge id or expiry that differs from the statement', () => {
+    for (const mismatched of [
+      { ...body, challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9K' },
+      { ...body, expiresAt: '2026-10-19T11:00:00.000Z' },
+    ]) {
+      expect(() => assertChallengeResultMatches(mismatched)).toThrow(StepUpStatementError);
+    }
+  });
+
+  it('catches a statement for another chat, tool call or decision', () => {
+    for (const other of [
+      { ...request, sessionId: '00000000-0000-4000-8000-000000000000' },
+      { ...request, toolCallId: 'toolu_02' },
+      { ...request, decision: 'deny' as const },
+    ]) {
+      expect(() => assertChallengeResultMatches(body, other)).toThrow(StepUpStatementError);
+    }
+  });
+
+  it('refuses a statement that is not a canonical approval statement', () => {
+    const notCanonical = encodeStepUpBase64url(
+      new TextEncoder().encode(JSON.stringify(APPROVAL_STATEMENT, null, 1))
+    );
+    expect(() => assertChallengeResultMatches({ ...body, statement: notCanonical })).toThrow(
+      StepUpStatementError
+    );
+    const enrol = encodeStepUpStatement({
+      t: 'dorkos.relay.passkey-enrol.v1',
+      challengeId: body.challengeId,
+      computerId: 'computer-1',
+      computerName: 'Studio',
+      accountId: 'acct_1',
+      userHandle: 'dXNlcg',
+      nonce: NONCE,
+      issuedAt: APPROVAL_STATEMENT.issuedAt,
+      expiresAt: body.expiresAt,
+      rpId: 'approve.dorkos.ai',
+      origin: 'https://approve.dorkos.ai',
+      returnTo: 'http://127.0.0.1:4242/relay-passkey',
+      excludeCredentialIds: [],
+    });
+    expect(() =>
+      assertChallengeResultMatches({ ...body, statement: encodeStepUpBase64url(enrol) })
+    ).toThrow(StepUpStatementError);
+  });
 });
 
 describe('the approval proof is the step-up assertion', () => {
@@ -411,29 +493,7 @@ describe('the approval proof is the step-up assertion', () => {
 });
 
 describe('the step-up statement agrees with this package', () => {
-  const statement = {
-    t: 'dorkos.relay.approval.v1',
-    challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
-    computerId: 'computer-1',
-    computerName: 'Studio',
-    hubOrigin: HUB_ORIGIN,
-    sessionId: SESSION,
-    toolCallId: 'toolu_01',
-    decision: 'approve',
-    toolName: 'Bash',
-    input: {
-      zeta: [3, { y: 'é😀', x: null }, ['b', 'a']],
-      alpha: { nested: { b: false, a: 1.5, A: -0 } },
-      'key with "quotes"': 'line\nbreak\ttab',
-    },
-    inputSha256: 'a'.repeat(64),
-    nonce: NONCE,
-    issuedAt: '2026-10-19T10:00:00.000Z',
-    expiresAt: '2026-10-19T10:02:00.000Z',
-    rpId: 'approve.dorkos.ai',
-    origin: 'https://approve.dorkos.ai',
-    credentialIds: ['AQID'],
-  } as StepUpStatementV1;
+  const statement = APPROVAL_STATEMENT;
 
   it('writes the same canonical bytes stableStringify writes', () => {
     // The computer hashes tool input with stableStringify; the statement's own

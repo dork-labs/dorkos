@@ -76,19 +76,21 @@ export const StepUpChallengeIdSchema = z
 /** A computer, by the id its hub knows it by. */
 const ComputerIdSchema = StepUpChallengeIdSchema;
 
-/** No control characters, so a value can never split a line it is written into. */
+/** No C0 control characters or DEL, so a value can never split a line it is written into. */
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
 
-/** Invisible format characters (direction marks among them) and Unicode line separators. */
+/** Unicode format characters (`\p{Cf}`, direction marks among them) and line separators. */
 const INVISIBLE = /[\p{Cf}\u2028\u2029]/u;
 
 /**
- * Text the approve page shows a person, by the same rule as a relay display
+ * A short name the approve page shows, by the same rule as a relay display
  * name (`RelayDisplayNameSchema` in `@dorkos/shared/session-relay`): no C0
- * control or invisible characters, never trimmed (signed text is signed
- * exactly), at most `max` characters. The approve page still escapes anything
- * else it cannot show plainly.
+ * controls or DEL, no format characters, no leading or trailing whitespace
+ * (signed text is signed exactly, never trimmed), at most `max` characters.
+ * C1 controls and everything else pass. This is not display safety: showing
+ * any statement text safely, escaping control and bidi characters, is the
+ * approve page's job.
  */
 const displayText = (max: number) =>
   z
@@ -120,8 +122,8 @@ const NonceSchema = z
   .length(43)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-/** An instant in UTC (`Z`), as `Date.prototype.toISOString` writes it. */
-const InstantSchema = z.iso.datetime().max(40);
+/** An instant in UTC with milliseconds, as `Date.prototype.toISOString` writes it. */
+const InstantSchema = z.iso.datetime({ precision: 3 });
 
 /** A WebAuthn credential id, base64url. */
 const CredentialIdSchema = base64url(1_400);
@@ -368,9 +370,7 @@ function canonicalJson(value: unknown, depth: number): string {
       throw new StepUpStatementError(`A statement cannot hold a ${typeof value}`);
   }
   if (depth >= STEP_UP_STATEMENT_MAX_DEPTH) {
-    throw new StepUpStatementError(
-      `A statement cannot nest deeper than ${STEP_UP_STATEMENT_MAX_DEPTH}`
-    );
+    throw tooDeep();
   }
   if (Array.isArray(value)) {
     return `[${value.map((item) => canonicalJson(item, depth + 1)).join(',')}]`;
@@ -390,6 +390,68 @@ function canonicalJson(value: unknown, depth: number): string {
     members.push(`${canonicalString(key)}:${canonicalJson(member, depth + 1)}`);
   }
   return `{${members.join(',')}}`;
+}
+
+/** The refusal for a statement nested past {@link STEP_UP_STATEMENT_MAX_DEPTH}. */
+function tooDeep(): StepUpStatementError {
+  return new StepUpStatementError(
+    `A statement cannot nest deeper than ${STEP_UP_STATEMENT_MAX_DEPTH}`
+  );
+}
+
+/**
+ * Refuse JSON text that nests past the cap, counting `[` and `{` outside
+ * strings. Iterative, so it cannot overflow the stack it protects: the schema
+ * and the canonical writer both recurse, and must never see a deeper value.
+ */
+function assertTextDepth(text: string): void {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text.charCodeAt(i);
+    if (inString) {
+      if (char === 0x5c) i += 1;
+      else if (char === 0x22) inString = false;
+      continue;
+    }
+    if (char === 0x22) inString = true;
+    else if (char === 0x5b || char === 0x7b) {
+      depth += 1;
+      if (depth > STEP_UP_STATEMENT_MAX_DEPTH) throw tooDeep();
+    } else if (char === 0x5d || char === 0x7d) depth -= 1;
+  }
+}
+
+/**
+ * Refuse a value that nests past the cap, the statement itself counting as one
+ * level. Iterative for the same reason as {@link assertTextDepth}, and it stops
+ * at the cap, so a value that refers to itself ends here too.
+ */
+function assertValueDepth(value: unknown): void {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  while (stack.length > 0) {
+    const [node, level] = stack.pop()!;
+    if (node === null || typeof node !== 'object') continue;
+    if (level > STEP_UP_STATEMENT_MAX_DEPTH) throw tooDeep();
+    const children = Array.isArray(node) ? node : Object.values(node as object);
+    for (const child of children) stack.push([child, level + 1]);
+  }
+}
+
+/** Check a value against the statement schemas, every failure a {@link StepUpStatementError}. */
+function parseStatement(value: unknown): StepUpAnyStatement {
+  let parsed: ReturnType<typeof StepUpAnyStatementSchema.safeParse>;
+  try {
+    parsed = StepUpAnyStatementSchema.safeParse(value);
+  } catch (error) {
+    throw new StepUpStatementError(
+      `Not a valid statement: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  if (!parsed.success) {
+    throw new StepUpStatementError(`Not a valid statement: ${parsed.error.message}`);
+  }
+  return parsed.data;
 }
 
 /** Canonical UTF-8 bytes of a value, refused over the byte cap. */
@@ -425,10 +487,8 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
  *   {@link STEP_UP_STATEMENT_MAX_BYTES}.
  */
 export function encodeStepUpStatement(statement: StepUpAnyStatement): Uint8Array<ArrayBuffer> {
-  const parsed = StepUpAnyStatementSchema.safeParse(statement);
-  if (!parsed.success) {
-    throw new StepUpStatementError(`Not a valid statement: ${parsed.error.message}`);
-  }
+  assertValueDepth(statement);
+  parseStatement(statement);
   // The original, not the parsed copy: parsing quietly drops a `__proto__` key
   // inside `input`, and the canonical writer must see it to refuse it.
   return canonicalBytes(statement);
@@ -452,20 +512,24 @@ export function decodeStepUpStatement(bytes: Uint8Array): StepUpAnyStatement {
       `A statement cannot be larger than ${STEP_UP_STATEMENT_MAX_BYTES} bytes`
     );
   }
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new StepUpStatementError('A statement must be valid UTF-8');
+  }
+  assertTextDepth(text);
   let value: unknown;
   try {
-    value = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+    value = JSON.parse(text);
   } catch {
-    throw new StepUpStatementError('A statement must be valid UTF-8 JSON');
+    throw new StepUpStatementError('A statement must be valid JSON');
   }
-  const parsed = StepUpAnyStatementSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new StepUpStatementError(`Not a valid statement: ${parsed.error.message}`);
-  }
-  if (!sameBytes(canonicalBytes(parsed.data), bytes)) {
+  const statement = parseStatement(value);
+  if (!sameBytes(canonicalBytes(statement), bytes)) {
     throw new StepUpStatementError('A statement must be in its one canonical form');
   }
-  return parsed.data;
+  return statement;
 }
 
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';

@@ -558,19 +558,32 @@ describe('catalog blindness: the emitted declarations', () => {
       [/\b\d{1,2}-day\b/gi, 'a length of a calendar month'],
       [/base64(url)?/gi, 'the name of an encoding, as in base64url'],
       [/sha-?256/gi, 'the name of a hash, as in SHA-256'],
-      [/\b[A-Za-z]+V\d+[A-Za-z]*\b/g, 'a versioned schema name, as in StepUpStatementV1Schema'],
+      [
+        /\b[A-Za-z]+StatementV1[A-Za-z]*\b/g,
+        'a step-up statement schema name, as in StepUpStatementV1Schema',
+      ],
     ];
+    const stripAllowed = (line: string): string => {
+      let rest = line;
+      for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
+      return rest;
+    };
 
     const offenders: string[] = [];
     for (const [file, text] of emitted) {
       for (const [index, line] of text.split('\n').entries()) {
         if (!/^\s*(\/\*\*|\*)/.test(line)) continue;
-        let rest = line;
-        for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
-        if (/\d/.test(rest)) offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
+        if (/\d/.test(stripAllowed(line))) {
+          offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
+        }
       }
     }
     expect(offenders).toEqual([]);
+    // Negative control: a versioned-looking name that is not a statement schema
+    // still carries a number the guard must see.
+    for (const line of [' * Upgrade to ProV20 today.', ' * Billed as TierV100PerMonth.']) {
+      expect(/\d/.test(stripAllowed(line)), line).toBe(true);
+    }
     // The allowlist is the precision, so it has to stay a list somebody reads.
     for (const [pattern, reason] of allowed) {
       expect(reason.length, `${pattern} needs a real reason, not a placeholder`).toBeGreaterThan(

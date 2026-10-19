@@ -181,6 +181,55 @@ describe('encoding and decoding a statement', () => {
     expect(() => encodeStepUpStatement(approval({ input: deep }))).toThrow(/nest deeper/);
   });
 
+  it.each([5_000, 100_000])(
+    'refuses %i levels of nesting on read without overflowing the stack',
+    (depth) => {
+      const canonical = text(encodeStepUpStatement(approval({ input: 0 })));
+      const deep = canonical.replace(
+        '"input":0',
+        `"input":${'['.repeat(depth)}${']'.repeat(depth)}`
+      );
+      const bytes = utf8(deep);
+      expect(bytes.byteLength).toBeLessThanOrEqual(STEP_UP_STATEMENT_MAX_BYTES);
+      expect(() => decodeStepUpStatement(bytes)).toThrow(StepUpStatementError);
+      expect(() => decodeStepUpStatement(bytes)).toThrow(/nest deeper/);
+    }
+  );
+
+  it('counts nesting only outside strings', () => {
+    const brackets = '[{'.repeat(STEP_UP_STATEMENT_MAX_DEPTH) + '\\"[';
+    const bytes = encodeStepUpStatement(approval({ input: brackets }));
+    expect(decodeStepUpStatement(bytes)).toMatchObject({ input: brackets });
+  });
+
+  it('refuses a 5,000-deep value on write without overflowing the stack', () => {
+    let deep: unknown = 1;
+    for (let i = 0; i < 5_000; i += 1) deep = { a: deep };
+    expect(() => encodeStepUpStatement(approval({ input: deep }))).toThrow(StepUpStatementError);
+    expect(() => encodeStepUpStatement(approval({ input: deep }))).toThrow(/nest deeper/);
+  });
+
+  it('accepts nesting right up to the cap', () => {
+    // The statement is one level and `input` itself one more.
+    let deep: unknown = 1;
+    for (let i = 0; i < STEP_UP_STATEMENT_MAX_DEPTH - 1; i += 1) deep = [deep];
+    const bytes = encodeStepUpStatement(approval({ input: deep }));
+    expect(decodeStepUpStatement(bytes)).toMatchObject({ input: deep });
+  });
+
+  it('takes times only as toISOString writes them, with milliseconds', () => {
+    for (const time of [
+      '2026-10-19T10:00:00Z',
+      '2026-10-19T10:00:00.0000Z',
+      '2026-10-19T11:00:00.000+01:00',
+    ]) {
+      expect(StepUpStatementV1Schema.safeParse(approval({ issuedAt: time })).success, time).toBe(
+        false
+      );
+    }
+    expect(new Date('2026-10-19T10:00:00Z').toISOString()).toBe('2026-10-19T10:00:00.000Z');
+  });
+
   it('refuses an expiry that is not after the issue time', () => {
     expect(
       StepUpStatementV1Schema.safeParse(approval({ expiresAt: '2026-10-19T10:00:00.000Z' })).success

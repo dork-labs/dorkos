@@ -85,8 +85,13 @@
  * @module shared/session-relay
  */
 import {
+  STEP_UP_APPROVAL_STATEMENT_TYPE,
   STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH,
   StepUpAssertionSchema,
+  StepUpStatementError,
+  decodeStepUpBase64url,
+  decodeStepUpStatement,
+  type StepUpStatementV1,
 } from '@dork-labs/cloud-api';
 import { z } from 'zod';
 import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
@@ -421,17 +426,19 @@ export const RelayResultBodySchemas = {
     receipt: InterruptReceiptSchema,
     cancelledQueued: z.array(QueuedMessageSchema),
   }),
+  /**
+   * The statement to sign. There is no separate challenge: the passkey signs
+   * `stepUpChallenge(bytes)` (`@dork-labs/cloud-api`) over the decoded
+   * statement bytes, never a value the hub hands over. `challengeId` and
+   * `expiresAt` repeat the statement's own, so a hub must check they match
+   * before using them ({@link assertChallengeResultMatches}). Changed without a
+   * version bump: no build has ever answered `interaction.challenge` (the
+   * computer refuses it, `refuseApproval`), so no peer has ever parsed this
+   * result.
+   */
   'interaction.challenge': z.strictObject({
     challengeId: RelayRequestIdSchema,
-    /** The bytes to sign, base64url. Opaque to the web side. */
-    challenge: base64url(256),
-    /**
-     * The statement the challenge is the hash of (`dorkos.relay.approval.v1`,
-     * see `step-up.ts` in `@dork-labs/cloud-api`), base64url, for the approve
-     * page to show and hash. Required, and added without a version bump: no
-     * build has ever answered `interaction.challenge` (the computer refuses it,
-     * `refuseApproval`), so no peer has ever parsed this result.
-     */
+    /** The `dorkos.relay.approval.v1` statement bytes, base64url. */
     statement: base64url(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH),
     /** When the computer stops accepting a proof over it. */
     expiresAt: z.string().datetime(),
@@ -461,6 +468,42 @@ export function parseRelayResult<Op extends RelayResultOp>(
 ): RelayResultBody<Op> | null {
   const result = RelayResultBodySchemas[op].safeParse(body);
   return result.success ? (result.data as RelayResultBody<Op>) : null;
+}
+
+/**
+ * Read an `interaction.challenge` result and check it agrees with itself and
+ * with the request it answers: the statement is a canonical approval
+ * statement, its `challengeId` and `expiresAt` are the ones the result names,
+ * and, given the request, it is for the same chat, tool call and decision.
+ *
+ * @param result - The parsed `interaction.challenge` result body.
+ * @param request - The challenge request it answers, when the caller has it.
+ * @returns The statement and its exact bytes, for `stepUpChallenge`.
+ * @throws StepUpStatementError on any statement that does not decode or match.
+ */
+export function assertChallengeResultMatches(
+  result: RelayResultBody<'interaction.challenge'>,
+  request?: Pick<
+    Extract<RelayRequest, { op: 'interaction.challenge' }>,
+    'sessionId' | 'toolCallId' | 'decision'
+  >
+): { statement: StepUpStatementV1; bytes: Uint8Array } {
+  const bytes = decodeStepUpBase64url(result.statement);
+  const statement = decodeStepUpStatement(bytes);
+  if (statement.t !== STEP_UP_APPROVAL_STATEMENT_TYPE) {
+    throw new StepUpStatementError('A challenge must carry an approval statement');
+  }
+  const mismatch =
+    statement.challengeId !== result.challengeId ||
+    statement.expiresAt !== result.expiresAt ||
+    (request !== undefined &&
+      (statement.sessionId !== request.sessionId ||
+        statement.toolCallId !== request.toolCallId ||
+        statement.decision !== request.decision));
+  if (mismatch) {
+    throw new StepUpStatementError('The challenge does not match the statement it carries');
+  }
+  return { statement, bytes };
 }
 
 /**

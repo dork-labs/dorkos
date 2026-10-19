@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(cloud-api): the passkey approval statement protocol (B4a)'
+  - 'fix(cloud-api): step-up review fixes: depth guard, exact times, no loose challenge (B4a)'
 ---
 
 ### Added
