@@ -56,6 +56,12 @@ vi.mock('../../services/runtimes/connect/delegated-login.js', async (orig) => {
   return { ...actual, delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: true }) };
 });
 
+// The test session is the install owner's, as a signed-in browser here is
+// (DOR-2969: a runtime's sign-in is the owner's to change).
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_owner',
+}));
+
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));

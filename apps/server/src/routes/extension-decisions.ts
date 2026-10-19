@@ -37,6 +37,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
+import { refuseStandingYesFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 /** Core's id for a decision: a ULID. */
@@ -152,6 +153,9 @@ export function createExtensionDecisionsRoutes(
       if (refused) return refused;
       const body = DecisionOfferRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) return c.json({ error: 'Send { accept: true | false }.' }, 400);
+      // "Next time, on its own" is a standing yes: never from Wi-Fi (DOR-2969).
+      const standing = refuseStandingYesFromWifi(honoRequestFacts(c), body.data.accept);
+      if (standing) return c.json(standing, 403);
       const inbox = getExtensionInbox();
       if (!inbox) return c.json(INBOX_NOT_READY, 503);
       const outcome = await inbox.answerOffer(id, body.data.accept);

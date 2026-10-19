@@ -42,12 +42,7 @@ export {
   type RelayCallResult,
   type RelayStreamFrame,
 } from './computer-connection.js';
-export {
-  browserDevice,
-  browserDeviceSetCookie,
-  describeUserAgent,
-  mintBrowserDeviceId,
-} from './browser-device.js';
+export { browserDevice, browserDeviceSetCookie, mintBrowserDeviceId } from './browser-device.js';
 export { closeAllComputerConnections, computerConnection } from './hub-relay-registry.js';
 export {
   hubLinkSigner,

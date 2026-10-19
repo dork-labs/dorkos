@@ -5,10 +5,10 @@
  * Turning it ON is a person's decision about who can reach this computer, so it
  * clears the same bars as opening the person's own tunnel
  * (`POST /api/tunnel/start`), in the same order: the operator cookie under
- * login, a person rather than an agent, then a real login. There is no "at this
- * computer" bar, as the tunnel has none: `server.lanAccess` is operator-only,
- * and `PATCH /api/config` (which a signed-in owner reaches from anywhere) can
- * already write it, so a bar here would only look like one.
+ * login, a person rather than an agent, the front-door bar (the owner at this
+ * computer, `refuseFrontDoorChange`, DOR-2969), then a real login.
+ * `PATCH /api/config` runs the same front-door bar on `server.lanAccess`, so
+ * neither route is a way around the other.
  * The login refusal carries `AUTH_REQUIRED_FOR_EXPOSURE`, which walks the
  * client into owner-account setup. Turning it OFF runs no bars, as stopping a
  * tunnel does not: it only ever narrows who can reach in.
@@ -21,7 +21,11 @@ import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  refuseFrontDoorChange,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import {
   AUTH_REQUIRED_FOR_EXPOSURE,
@@ -73,6 +77,8 @@ function refuseOpening(c: Context<ApiEnv>, deps: LanAccessRouteDeps): Response |
     logger.warn('[LanAccess] Refused to open Wi-Fi access for an agent');
     return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
   }
+  const frontDoor = refuseFrontDoorChange(caller, 'Wi-Fi access');
+  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
   if (!deps.lanAccess.status().supported) {
     return c.json({ error: LAN_ACCESS_UNSUPPORTED_MESSAGE, code: LAN_ACCESS_UNSUPPORTED }, 409);
   }

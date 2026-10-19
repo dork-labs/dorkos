@@ -19,7 +19,7 @@ import {
   CapabilityToolError,
   type CapabilityDomain,
 } from '../../services/core/capabilities/index.js';
-import { ApprovalService } from '../../services/core/approvals/index.js';
+import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
@@ -29,11 +29,23 @@ import capabilitiesMatrixRoutes from '../capabilities.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { MiddlewareHandler } from 'hono';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import {
+  NOT_FROM_WIFI,
+  WIFI_STANDING_YES_REFUSAL,
+} from '../../services/core/auth/sessions/wifi-level.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+}));
+
+// The session gate admits every request here; the Wi-Fi block below presents
+// the person the gate would have proved. Local requests were admitted anyway.
+vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
+  decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
 const fixtureTarget = swappableServer();
@@ -367,5 +379,108 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
       expect(selfGrant.body.code).toBe('AGENT_CANNOT_DECIDE');
       expect(destroyed).toEqual([]);
     });
+  });
+});
+
+describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
+  let ran: string[];
+  let approvals: ApprovalService;
+
+  /** One capability per tier, each recording that it ran. */
+  function tierDomain(): CapabilityDomain {
+    return {
+      name: 'tiers',
+      capabilities: (['observe', 'act', 'destructive'] as const).map((tier) =>
+        defineCapability({
+          id: `tiers.${tier}`,
+          title: tier,
+          description: `A ${tier} capability.`,
+          tier,
+          area: null,
+          input: z.object({}),
+          output: z.object({ ok: z.boolean() }),
+          surfaces: { mcp: { toolName: `tiers_${tier}`, servers: ['external'] } },
+          invoke: async () => {
+            ran.push(tier);
+            return { ok: true };
+          },
+        })
+      ),
+    };
+  }
+
+  /** The invoke and approvals routes, reached over Wi-Fi by a signed-in person. */
+  function wifiApp() {
+    const registry = composeRegistry([tierDomain()], { logger: noopLogger });
+    return honoGroupListener(
+      [
+        { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+        {
+          path: '/api/approvals',
+          routes: createApprovalsRoutes(approvals, { isLoginEnabled: () => false }),
+        },
+      ],
+      {
+        before: async (c, next) => {
+          markIngress(c.env.incoming, 'wifi');
+          c.set('user', { userId: 'owner', credential: 'cookie', route: 'wifi' });
+          await next();
+        },
+      }
+    );
+  }
+
+  beforeEach(() => {
+    ran = [];
+    approvals = new ApprovalService(createTestDb(), {
+      describeCapability: (id) => ({
+        title: id,
+        tier: id === 'tiers.act' ? 'act' : 'destructive',
+      }),
+    });
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    initCapabilityTierGate({ approvals });
+  });
+
+  afterEach(() => {
+    resetCapabilityTierGate();
+    vi.restoreAllMocks();
+  });
+
+  it('reads through an observe capability', async () => {
+    const res = await request(fixtureTarget.mount(wifiApp())).post(
+      '/api/capabilities/tiers.observe/invoke'
+    );
+    expect(res.status).toBe(200);
+    expect(ran).toEqual(['observe']);
+  });
+
+  it.each(['act', 'destructive'])('refuses a %s capability before it runs', async (tier) => {
+    const res = await request(fixtureTarget.mount(wifiApp())).post(
+      `/api/capabilities/tiers.${tier}/invoke`
+    );
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe(NOT_FROM_WIFI);
+    expect(ran).toEqual([]);
+  });
+
+  it('refuses to allow a destructive request, and allows an act one', async () => {
+    const ask = (capabilityId: string) =>
+      approvals.request({ capabilityId, inputHash: hashApprovalInput({}), summary: 'x' });
+    const destructive = ask('tiers.destructive');
+    const act = ask('tiers.act');
+    const server = fixtureTarget.mount(wifiApp());
+    const refused = await request(server).post(`/api/approvals/${destructive.approvalId}/grant`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe(NOT_FROM_WIFI);
+    const always = await request(server)
+      .post(`/api/approvals/${act.approvalId}/grant`)
+      .send({ answer: 'always' });
+    expect(always.status).toBe(403);
+    expect(always.body).toEqual({ error: WIFI_STANDING_YES_REFUSAL, code: NOT_FROM_WIFI });
+    const allowed = await request(server).post(`/api/approvals/${act.approvalId}/grant`);
+    expect(allowed.status).toBe(200);
+    const denied = await request(server).post(`/api/approvals/${destructive.approvalId}/deny`);
+    expect(denied.status).toBe(200);
   });
 });

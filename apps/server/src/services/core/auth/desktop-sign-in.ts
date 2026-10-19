@@ -155,6 +155,17 @@ export function desktopSignInPlugin() {
 }
 
 /**
+ * Whether `token` is the sign-in the desktop window's own sign-in made last,
+ * so the devices list can call it the DorkOS app rather than trusting what
+ * its user agent says. Held in memory: the window signs in again at launch.
+ *
+ * @param token - A session token.
+ */
+export function isDesktopSignIn(token: string): boolean {
+  return lastDesktopSession !== null && lastDesktopSession === token;
+}
+
+/**
  * Forget any code waiting. Tests only.
  *
  * @internal

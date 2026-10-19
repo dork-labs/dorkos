@@ -30,7 +30,10 @@ import type {
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { RequestFacts } from '../http/request-facts.js';
-import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
+import {
+  NEEDS_PERSON_AT_THIS_COMPUTER,
+  requirePersonAtThisComputer,
+} from '../lib/caller-authority.js';
 import { errorBody } from '../lib/route-utils.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
@@ -45,9 +48,6 @@ import {
   signOutOtherSessions,
   signOutSession,
 } from '../services/core/auth/sessions/signed-in-devices.js';
-
-/** Refusal code for signing out another device from anywhere but this computer. */
-export const NEEDS_PERSON_AT_THIS_COMPUTER = 'NEEDS_PERSON_AT_THIS_COMPUTER';
 
 /** Refusal code for an agent, an API key or the relay. */
 export const DEVICES_PEOPLE_ONLY = 'DEVICES_PEOPLE_ONLY';

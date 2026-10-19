@@ -179,6 +179,58 @@ export function applyDirectoryGrants(
 }
 
 /**
+ * The folders under the data directory that only a person may change, never an
+ * agent's file tools:
+ *
+ * - `permissions/` holds the permission levels a person set for agents (the
+ *   floor `person-set-agent-permissions.json`, DOR-3107). An agent that could
+ *   rewrite it could raise its own level.
+ * - `session-relay/` holds the pins that say which hub and which keys this
+ *   computer trusts (and, with B4, `approval-keys.json`).
+ *
+ * Bash is not covered, as the module note says: a turn with a shell it was not
+ * asked about is outside what file rules can hold.
+ */
+export const PERSON_ONLY_DATA_FOLDERS = ['permissions', 'session-relay'] as const;
+
+/**
+ * Deny every turn's file tools the {@link PERSON_ONLY_DATA_FOLDERS}, merged into
+ * the launch's settings beside any grant rules. Whatever the permission mode:
+ * a deny rule holds under `bypassPermissions` too (see the module note).
+ *
+ * @param sdkOptions - The launch options, mutated in place.
+ * @param dorkHome - The data directory.
+ * @throws DirectoryGrantError when the data directory's path can't be named
+ *   exactly in a rule — failing closed, as a `read` grant does.
+ */
+export function applyPersonOnlyDataDeny(sdkOptions: Options, dorkHome: string): void {
+  const folders = PERSON_ONLY_DATA_FOLDERS.map(
+    (name) => `${dorkHome.replace(/[\\/]+$/, '')}/${name}`
+  );
+  if (!folders.every(ruleCanName)) {
+    throw new DirectoryGrantError(
+      `Claude Code can't keep DorkOS's own settings folder "${dorkHome}" safe from agents, because ` +
+        `its name has a character its safety rules can't match: a question mark, a backslash, a ` +
+        `hidden control character, or a space at the very end. So this turn was not started. ` +
+        `Move your DorkOS data folder to a path without those characters, then try again.`
+    );
+  }
+  const base =
+    typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null
+      ? sdkOptions.settings
+      : {};
+  const permissions = ((base as { permissions?: PermissionSettings }).permissions ??
+    {}) as PermissionSettings;
+  sdkOptions.settings = {
+    ...base,
+    permissions: {
+      ...permissions,
+      deny: [...(permissions.deny ?? []), ...folders.flatMap(readOnlyRules)],
+    },
+  } as Options['settings'];
+}
+
+/**
  * The grants a launch's settings carry, read back from the rules
  * {@link applyDirectoryGrants} wrote — the launch fingerprint's input, and what
  * the conformance suite reads off a launched process. A folder is `read` when

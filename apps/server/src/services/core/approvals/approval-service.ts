@@ -86,6 +86,8 @@ import {
   resolveCapabilityApproval,
 } from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
+import { toDecisionOutcome, type ApprovalDecisionOutcome } from './approval-decision-outcome.js';
+export type { ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 import { logger } from '../../../lib/logger.js';
 import {
   ApprovalConsumptionPublisher,
@@ -420,42 +422,12 @@ export type ApprovalConsumeResult =
   | { outcome: 'unknown' }
   | { outcome: 'mismatched'; approvalId: string };
 
-/**
- * How a hold on {@link ApprovalService.awaitDecision} ended.
- *
- * `granted`/`denied` are an operator decision the caller can resume on; `expired`
- * and `timeout` are the no-decision paths that must degrade a held call back to
- * today's `approval_required` poll payload (`expired`: the token's own window
- * closed; `timeout`: the hold's own cap elapsed or its abort signal fired first).
- */
-export type ApprovalDecisionOutcome = 'granted' | 'denied' | 'expired' | 'timeout';
-
 /** Options for {@link ApprovalService.awaitDecision}. */
 export interface AwaitDecisionOptions {
   /** Longest the hold waits before it resolves `timeout`. Required — a hold with no cap could outlive the tool call it blocks. */
   timeoutMs: number;
   /** Abort the wait (the SDK aborted the held tool call); resolves `timeout`. */
   signal?: AbortSignal;
-}
-
-/**
- * Translate a broadcast {@link ApprovalOutcome} into the caller-facing hold
- * outcome. `consumed` — the token was spent elsewhere while the hold waited —
- * degrades to `expired`: there is nothing left for the caller to resume on, so it
- * falls back to the poll payload exactly as a real expiry would.
- */
-function toDecisionOutcome(outcome: ApprovalOutcome | undefined): ApprovalDecisionOutcome {
-  switch (outcome) {
-    case 'granted':
-      return 'granted';
-    case 'denied':
-      return 'denied';
-    case 'expired':
-    case 'consumed':
-      return 'expired';
-    default:
-      return 'timeout';
-  }
 }
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
@@ -580,6 +552,8 @@ export interface ApprovalAnswerScope {
   state: 'pending' | 'granted' | 'denied';
   /** Whether it is spent, written off, or past its window. */
   closed: boolean;
+  /** The recorded permission tier of the action. */
+  tier: CapabilityTier;
 }
 
 /**
@@ -1334,6 +1308,7 @@ export class ApprovalService {
       blockedRequest: row.blockedRequest,
       state: row.state,
       closed: row.consumedAt !== null || this.isExpired(row),
+      tier: row.tier,
     };
   }
 

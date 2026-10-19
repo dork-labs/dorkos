@@ -32292,7 +32292,7 @@
                           "current": {
                             "type": "boolean"
                           },
-                          "userAgentLabel": {
+                          "name": {
                             "type": "string"
                           }
                         },
@@ -32301,7 +32301,8 @@
                           "route",
                           "createdAt",
                           "lastSeenAt",
-                          "current"
+                          "current",
+                          "name"
                         ]
                       }
                     },

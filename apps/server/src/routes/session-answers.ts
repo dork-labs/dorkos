@@ -24,6 +24,7 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
+import { refuseStandingYesFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
@@ -196,6 +197,8 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, alwaysAllow } = parsed.data;
+    const standing = refuseStandingYesFromWifi(facts, alwaysAllow === true);
+    if (standing) return c.json(standing, 403);
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const approved = runtime.approveTool(sessionId, toolCallId, true, {
       alwaysAllow,

@@ -35,6 +35,12 @@ vi.mock('../../lib/boundary.js', () => ({
   BoundaryError: class BoundaryError extends Error {},
 }));
 
+// The cockpit's user owns this install, so it may change front-door settings
+// such as `mcp.apiKey` at this computer (DOR-2969).
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'user_cockpit',
+}));
+
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
 }));
