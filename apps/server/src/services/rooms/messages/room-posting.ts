@@ -231,6 +231,12 @@ export class RoomPosting {
        * and nothing at all when the caller is unknown.
        */
       callerSessionId?: string;
+      /**
+       * The caller presented a verified agent identity but no session (Codex
+       * and OpenCode over the external server). Its post is read like an own
+       * agent's with an unknown level (DOR-3107), not as a stranger's.
+       */
+      callerAgentVerified?: boolean;
     }
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
@@ -290,7 +296,7 @@ export class RoomPosting {
     // Unknown is trusted only when nothing says a stranger reached these chats.
     const authorLevel: TurnPermissionLevel | { marks: TurnMarks } =
       known ??
-      (input.callerSessionId === undefined
+      (input.callerSessionId === undefined && !input.callerAgentVerified
         ? { marks: { outsider: true } }
         : {
             marks: unknownLevelMarks(
@@ -298,7 +304,7 @@ export class RoomPosting {
               this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
             ),
           });
-    const { callerSessionId: _caller, ...postInput } = input;
+    const { callerSessionId: _caller, callerAgentVerified: _verified, ...postInput } = input;
     let entry: PostedEntry;
     try {
       entry = this.post(

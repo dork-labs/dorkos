@@ -473,6 +473,7 @@ export class RoomService {
       replyTo?: string;
       attachmentIds?: readonly string[];
       callerSessionId?: string;
+      callerAgentVerified?: boolean;
     }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);

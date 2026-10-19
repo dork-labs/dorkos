@@ -94,6 +94,36 @@ describe('own-circle room turns', () => {
     });
   });
 
+  it('writes those marks with the post itself, so they survive a restart', () => {
+    // No separate marks store: only the insert's own transaction can write them.
+    setEntryMarksStore(null);
+    const entry = harness.service.post(channel.id, { authorId: bo, text: 'from curl' }, true);
+    // A fresh reader, as after a restart: only the row is left.
+    expect(createEntryMarksStore(harness.db).read(channel.id, entry.id)).toEqual({
+      outsider: true,
+    });
+  });
+
+  // Security's Should (DOR-3107): Codex and OpenCode call over the external
+  // server with a verified agent token but no session. Their posts read like
+  // an own agent's with an unknown level; only a caller with no identity is a
+  // stranger's.
+  it('trusts a verified agent with no session, and caps a caller with no identity', () => {
+    const verified = harness.service.postFromTool(channel.id, {
+      authorId: bo,
+      text: 'from codex',
+      callerAgentVerified: true,
+    });
+    expect(ceilingForEntry(harness.authors, verified, false, channel.id, OWN)).toEqual({});
+    const unverified = harness.service.postFromTool(channel.id, {
+      authorId: bo,
+      text: 'from nobody',
+    });
+    expect(ceilingForEntry(harness.authors, unverified, false, channel.id, OWN)).toEqual({
+      permissionCeiling: 'runtime-default',
+    });
+  });
+
   it('keeps a marked post capped, in the circle too', () => {
     const entry = postByBo({ outsider: true });
     expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({

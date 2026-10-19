@@ -558,6 +558,9 @@ export const roomsDomain: CapabilityDomain = {
               // The session the in-session server verified, never an argument:
               // it vouches for the level this post's turns are held to.
               ...(context.sessionId !== undefined ? { callerSessionId: context.sessionId } : {}),
+              // A verified agent token with no session (Codex, OpenCode): its
+              // agent is known even though its turn is not (DOR-3107).
+              ...(context.identity !== undefined ? { callerAgentVerified: true } : {}),
             })
           );
         } catch (err) {
