@@ -204,6 +204,15 @@ afterEach(() => {
 });
 
 describe('send — to an idle chat', () => {
+  // DOR-3107: a sender whose turn read nobody's words but ours passes on
+  // nothing to strip; the chat it opens follows its agent's own level.
+  it('opens a chat that follows its agent’s level when the sending turn was not marked', async () => {
+    chat('chat-b');
+    levels.set('chat-a', { asks: 'never', reach: 'everything' });
+    await service.send(ANA, { to: 'chat-b', message: 'Please review PR 12.' });
+    expect(dispatched[0]!.origin).toEqual({ kind: 'chat-message' });
+  });
+
   it('dispatches as a chat message under the sender’s lock identity and the row’s queue id', async () => {
     chat('chat-b');
     const receipt = await service.send(ANA, { to: 'chat-b', message: '  Please review PR 12.  ' });
@@ -211,7 +220,9 @@ describe('send — to an idle chat', () => {
     expect(dispatched).toHaveLength(1);
     const [opts] = dispatched;
     const [row] = sentByAna();
-    expect(opts!.origin).toEqual({ kind: 'chat-message' });
+    // The sender's level is not known here, which is bounded like a marked
+    // turn: the chat it opens inherits nothing (DOR-3107).
+    expect(opts!.origin).toEqual({ kind: 'chat-message', marked: true });
     expect(opts!.sessionId).toBe('chat-b');
     expect(opts!.clientId).toBe('chat:chat-a');
     expect(opts!.messageId).toBe(row!.queueMessageId);

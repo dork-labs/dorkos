@@ -31,6 +31,7 @@ import {
 } from '../../services/connectors/every-agent-activity.js';
 import {
   ArrivalRecord,
+  PersonSetPermissions,
   PermissionObserver,
   readAgentPermissionsFromManifest,
   permissionActions,
@@ -150,6 +151,12 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     file: path.join(dorkHome, 'permissions', 'pending-arrivals.json'),
     logger,
   });
+  // What a person set for each agent, kept where no agent can write: the floor
+  // its own settings file can tighten but never loosen (DOR-3107).
+  const personSetPermissions = new PersonSetPermissions({
+    file: path.join(dorkHome, 'permissions', 'person-set-agent-permissions.json'),
+    logger,
+  });
   const permissionObserver = new PermissionObserver({
     snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
     agentAt: (agentPath) => {
@@ -186,6 +193,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
     readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
       arrivals: arrivalRecord,
+      personSet: personSetPermissions,
       agentAt: (agentPath) =>
         refs.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
       context: () => narrowingContext(configManager, refs.capabilityRegistry),
@@ -290,6 +298,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     chatMessaging,
     commitments,
     arrivalRecord,
+    personSetPermissions,
     permissionObserver,
     notificationService,
     pushSubscriptions,

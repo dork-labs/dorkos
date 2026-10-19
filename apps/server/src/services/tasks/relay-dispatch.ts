@@ -160,7 +160,6 @@ export async function dispatchRunViaRelay(
       task.permissionMode ??
       resolveScheduledRunPermissionMode({
         capabilities: execution.capabilities,
-        agent: execution.agent,
       }),
     taskName: task.name,
     cron: task.cron,

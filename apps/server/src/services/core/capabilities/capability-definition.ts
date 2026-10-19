@@ -138,6 +138,13 @@ export interface CapabilityDefinition<
    */
   areasForInput?: (input: unknown) => readonly PermissionAreaId[];
   /**
+   * Whether one particular call always asks a person, decided from its input
+   * (DOR-3107): an Allowed area does not let it run on its own. Can only make a
+   * call stricter. `permissions.change` is the one user: an agent's change that
+   * could loosen any agent's settings needs a person's yes.
+   */
+  alwaysAsksForInput?: (input: unknown) => boolean;
+  /**
    * What a destructive action's consent is about, when it is more than the
    * action itself. `'third-party-code'` marks an action that puts code someone
    * else wrote where DorkOS will run it (`mcp.add`, `mcp.update`): an area-level

@@ -33,6 +33,7 @@
  *
  * @module services/session/chat-messages/chat-message-service
  */
+import { chatMessageOrigin, parseCeiling } from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ChatMessageRow } from '@dorkos/db';
@@ -368,7 +369,7 @@ export class ChatMessageService {
     const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
     const result = await this.dispatch({
-      origin: { kind: 'chat-message' },
+      origin: chatMessageOrigin(row.ceilingJson),
       sessionId,
       messageId: row.queueMessageId ?? undefined,
       request: {
@@ -859,25 +860,6 @@ function text(input: ChatSendInput): string {
  */
 export function senderCeiling(level: TurnPermissionLevel | undefined): TurnPermissionBound {
   return level ?? 'runtime-default';
-}
-
-/** Read a stored ceiling; anything unreadable is the runtime's default. */
-function parseCeiling(json: string): TurnPermissionBound {
-  try {
-    const value = JSON.parse(json) as unknown;
-    if (value === 'runtime-default') return value;
-    if (
-      value !== null &&
-      typeof value === 'object' &&
-      typeof (value as { asks?: unknown }).asks === 'string' &&
-      typeof (value as { reach?: unknown }).reach === 'string'
-    ) {
-      return value as TurnPermissionLevel;
-    }
-  } catch {
-    // fall through
-  }
-  return 'runtime-default';
 }
 
 let current: ChatMessageService | undefined;
