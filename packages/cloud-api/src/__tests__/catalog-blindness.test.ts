@@ -542,7 +542,7 @@ describe('catalog blindness: the emitted declarations', () => {
     // lines and no same-line pattern can see them — while `cap` inside
     // "capability" and `rate` inside "enumerate" made ordinary prose a
     // liability. A threshold is a NUMBER, wrapped or not, spelled however the
-    // author likes. The whole emitted surface carries six digits today, and
+    // author likes. The whole emitted surface carries only these digits today, and
     // every one of them is in the list below with its reason, which is the same
     // bargain MECHANISM_ENUMS strikes: the exception is cheap, and a person
     // writes it down.
@@ -556,6 +556,9 @@ describe('catalog blindness: the emitted declarations', () => {
       [/\b[1-5]\d{2}\b/g, 'an HTTP status code'],
       [/\b\d{1,2}(st|nd|rd|th)\b/gi, 'a day of the month'],
       [/\b\d{1,2}-day\b/gi, 'a length of a calendar month'],
+      [/base64(url)?/gi, 'the name of an encoding, as in base64url'],
+      [/sha-?256/gi, 'the name of a hash, as in SHA-256'],
+      [/\b[A-Za-z]+V\d+[A-Za-z]*\b/g, 'a versioned schema name, as in StepUpStatementV1Schema'],
     ];
 
     const offenders: string[] = [];

@@ -1,14 +1,27 @@
 import { generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
 import {
+  STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH,
+  StepUpChallengeIdSchema,
+  StepUpStatementV1Schema,
+  encodeStepUpBase64url,
+  encodeStepUpStatement,
+  type StepUpStatementV1,
+} from '@dork-labs/cloud-api';
+import { describe, expect, it } from 'vitest';
+import { stableStringify } from '../capabilities.js';
+import {
+  RelayApprovalProofSchema,
   RelayComputerFrameSchema,
   RelayDeviceSchema,
+  RelayDisplayNameSchema,
+  RelayRequestIdSchema,
   SESSION_RELAY_DEVICE_FEATURE,
   RelayRequestSchema,
   RelayResultBodySchemas,
   RelayWebFrameSchema,
   SESSION_RELAY_FEATURES,
   SESSION_RELAY_MAX_FRAME_LENGTH,
+  SESSION_RELAY_MAX_INNER_FRAME_BYTES,
   SESSION_RELAY_VERSIONS,
   decodeRelayFrame,
   encodeRelayFrame,
@@ -334,6 +347,117 @@ describe('result bodies', () => {
       cancelledQueued: [],
     };
     expect(RelayResultBodySchemas['session.interrupt'].safeParse(body).success).toBe(true);
+  });
+});
+
+describe('the approval challenge result', () => {
+  const statement = encodeStepUpBase64url(new TextEncoder().encode('{"t":"x"}'));
+  const body = {
+    challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
+    challenge: 'ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0',
+    statement,
+    expiresAt: '2026-10-19T10:02:00.000Z',
+  };
+  const schema = RelayResultBodySchemas['interaction.challenge'];
+
+  it('carries the statement the challenge is the hash of', () => {
+    expect(schema.safeParse(body).success).toBe(true);
+  });
+
+  it('requires the statement', () => {
+    const { statement: _statement, ...without } = body;
+    expect(schema.safeParse(without).success).toBe(false);
+  });
+
+  it('caps the statement at the base64url length of the byte cap', () => {
+    expect(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH).toBe(349_526);
+    const at = 'A'.repeat(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH);
+    expect(schema.safeParse({ ...body, statement: at }).success).toBe(true);
+    expect(schema.safeParse({ ...body, statement: `${at}A` }).success).toBe(false);
+    expect(schema.safeParse({ ...body, statement: 'not base64url!' }).success).toBe(false);
+  });
+
+  it('fits in one inner frame at the cap', () => {
+    const frame = {
+      type: 'result' as const,
+      id: 'r1',
+      ok: true as const,
+      body: { ...body, statement: 'A'.repeat(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH) },
+    };
+    expect(RelayComputerFrameSchema.safeParse(frame).success).toBe(true);
+    expect(encodeRelayFrame(frame)).not.toBeNull();
+    expect(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH).toBeLessThan(
+      SESSION_RELAY_MAX_INNER_FRAME_BYTES
+    );
+  });
+});
+
+describe('the approval proof is the step-up assertion', () => {
+  it('is one definition, shared with the approve page', () => {
+    expect(RelayApprovalProofSchema.safeParse(PROOF).success).toBe(true);
+    expect(RelayApprovalProofSchema.safeParse({ ...PROOF, alwaysAllow: true }).success).toBe(false);
+  });
+
+  it('takes the same challenge ids as a relay request id', () => {
+    for (const id of ['c1', '01KJXYKJYW4N8QGQ5W4GB6YM9J', 'a.b:c-d_e', 'x'.repeat(64)]) {
+      expect(StepUpChallengeIdSchema.safeParse(id).success, id).toBe(true);
+      expect(RelayRequestIdSchema.safeParse(id).success, id).toBe(true);
+    }
+    for (const id of ['', 'a/b', '../x', 'a b', 'a?b', 'x'.repeat(65)]) {
+      expect(StepUpChallengeIdSchema.safeParse(id).success, id).toBe(false);
+      expect(RelayRequestIdSchema.safeParse(id).success, id).toBe(false);
+    }
+  });
+});
+
+describe('the step-up statement agrees with this package', () => {
+  const statement = {
+    t: 'dorkos.relay.approval.v1',
+    challengeId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
+    computerId: 'computer-1',
+    computerName: 'Studio',
+    hubOrigin: HUB_ORIGIN,
+    sessionId: SESSION,
+    toolCallId: 'toolu_01',
+    decision: 'approve',
+    toolName: 'Bash',
+    input: {
+      zeta: [3, { y: 'é😀', x: null }, ['b', 'a']],
+      alpha: { nested: { b: false, a: 1.5, A: -0 } },
+      'key with "quotes"': 'line\nbreak\ttab',
+    },
+    inputSha256: 'a'.repeat(64),
+    nonce: NONCE,
+    issuedAt: '2026-10-19T10:00:00.000Z',
+    expiresAt: '2026-10-19T10:02:00.000Z',
+    rpId: 'approve.dorkos.ai',
+    origin: 'https://approve.dorkos.ai',
+    credentialIds: ['AQID'],
+  } as StepUpStatementV1;
+
+  it('writes the same canonical bytes stableStringify writes', () => {
+    // The computer hashes tool input with stableStringify; the statement's own
+    // canonical writer lives in @dork-labs/cloud-api, which depends on nothing
+    // here. They must agree on plain JSON, nested objects and arrays included.
+    const bytes = encodeStepUpStatement(statement);
+    expect(new TextDecoder().decode(bytes)).toBe(stableStringify(statement));
+  });
+
+  it('takes a computer name the relay takes, and refuses one it refuses', () => {
+    for (const name of ['Studio', 'Dorian’s MacBook', 'x'.repeat(64)]) {
+      expect(RelayDisplayNameSchema.safeParse(name).success, name).toBe(true);
+      expect(
+        StepUpStatementV1Schema.safeParse({ ...statement, computerName: name }).success,
+        name
+      ).toBe(true);
+    }
+    for (const name of ['', ' Studio', 'Stu\u0000dio', 'Stu\u202edio', 'x'.repeat(65)]) {
+      expect(RelayDisplayNameSchema.safeParse(name).success, name).toBe(false);
+      expect(
+        StepUpStatementV1Schema.safeParse({ ...statement, computerName: name }).success,
+        name
+      ).toBe(false);
+    }
   });
 });
 

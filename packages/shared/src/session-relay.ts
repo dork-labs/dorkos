@@ -84,6 +84,10 @@
  *
  * @module shared/session-relay
  */
+import {
+  STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH,
+  StepUpAssertionSchema,
+} from '@dork-labs/cloud-api';
 import { z } from 'zod';
 import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
 import {
@@ -334,16 +338,13 @@ const InteractionChallengeRequestSchema = z.strictObject({
   decision: ApprovalDecisionSchema,
 });
 
-/** A WebAuthn assertion over a challenge the computer issued, base64url fields. */
-export const RelayApprovalProofSchema = z.strictObject({
-  /** The `challengeId` the computer answered `interaction.challenge` with. */
-  challengeId: RelayRequestIdSchema,
-  credentialId: base64url(1_400),
-  clientDataJSON: base64url(4_096),
-  authenticatorData: base64url(1_024),
-  signature: base64url(512),
-  userHandle: base64url(128).optional(),
-});
+/**
+ * A WebAuthn assertion over a challenge the computer issued, base64url fields.
+ * Its `challengeId` is the one the computer answered `interaction.challenge`
+ * with. One definition, shared with the approve page: `StepUpAssertionSchema`
+ * in `@dork-labs/cloud-api`.
+ */
+export const RelayApprovalProofSchema = StepUpAssertionSchema;
 
 /** See {@link RelayApprovalProofSchema}. */
 export type RelayApprovalProof = z.infer<typeof RelayApprovalProofSchema>;
@@ -424,6 +425,14 @@ export const RelayResultBodySchemas = {
     challengeId: RelayRequestIdSchema,
     /** The bytes to sign, base64url. Opaque to the web side. */
     challenge: base64url(256),
+    /**
+     * The statement the challenge is the hash of (`dorkos.relay.approval.v1`,
+     * see `step-up.ts` in `@dork-labs/cloud-api`), base64url, for the approve
+     * page to show and hash. Required, and added without a version bump: no
+     * build has ever answered `interaction.challenge` (the computer refuses it,
+     * `refuseApproval`), so no peer has ever parsed this result.
+     */
+    statement: base64url(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH),
     /** When the computer stops accepting a proof over it. */
     expiresAt: z.string().datetime(),
   }),
