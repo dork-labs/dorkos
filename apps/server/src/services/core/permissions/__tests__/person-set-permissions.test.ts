@@ -150,10 +150,12 @@ describe('PersonSetPermissions', () => {
 });
 
 describe('seeding from history', () => {
-  it('replays changes made through DorkOS and ignores edits made outside it', () => {
+  it('replays changes made through DorkOS and ignores outside edits and boot folds', () => {
     const last = personSetFromHistory([
       filesEvent('a', 'act', 'signed-in'),
       filesEvent('a', 'autonomy', 'outside'),
+      // A boot fold reads fields an agent can write into its own file.
+      filesEvent('a', 'autonomy', 'upgrade'),
       filesEvent('b', 'autonomy', 'local-trust'),
     ]);
     expect(last.get('a')).toEqual({ filesAndCommands: 'act' });

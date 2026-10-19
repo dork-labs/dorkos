@@ -26,7 +26,6 @@ import { z } from 'zod';
 import { CreateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
-import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';

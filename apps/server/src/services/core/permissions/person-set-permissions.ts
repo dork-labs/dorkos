@@ -87,6 +87,8 @@ export class PersonSetPermissions {
       const body: RecordFile = { version: 1, agents: Object.fromEntries(this.agents) };
       fs.writeFileSync(tmp, JSON.stringify(body), 'utf-8');
       fs.renameSync(tmp, this.deps.file);
+      // One failed save must not hold every agent at the defaults for good.
+      this.broken = false;
     } catch (err) {
       this.fail(err);
     }

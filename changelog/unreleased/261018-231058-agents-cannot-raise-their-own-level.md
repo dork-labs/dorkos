@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): an agent can no longer raise its own permission level by editing its settings file (DOR-3107)'
   - 'fix(server): review fixes for the person-set permission floor (DOR-3107)'
+  - 'fix(server): a boot fold of old settings never moves the person-set floor (DOR-3107)'
 ---
 
 ### Fixed
