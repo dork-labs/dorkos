@@ -85,6 +85,7 @@ export interface StartSearchRelayAndMeshInput {
   roomAuthors: WireRoomsResult['roomAuthors'];
   roomService: WireRoomsResult['roomService'];
   permissionObserver: WireSessionServicesResult['permissionObserver'];
+  personSetPermissions: WireSessionServicesResult['personSetPermissions'];
   activityService: WireCoreStoresResult['activityService'];
   logInstallSweep: ReturnType<typeof installSweepLogger>;
 }
@@ -107,6 +108,7 @@ export async function startSearchRelayAndMesh(
     roomAuthors,
     roomService,
     permissionObserver,
+    personSetPermissions,
     activityService,
     logInstallSweep,
   } = built;
@@ -359,6 +361,11 @@ export async function startSearchRelayAndMesh(
           // The sweep's own write is not an outside change.
           if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
           else await write();
+          // DorkOS's own fold, so it moves the person-set floor too (DOR-3107);
+          // otherwise the floor would quietly undo it.
+          if (fields.permissions !== undefined) {
+            personSetPermissions.set(agentId, fields.permissions);
+          }
         },
         retireAgentContext: () => configManager.retireAgentContext(),
         activity: activityService,

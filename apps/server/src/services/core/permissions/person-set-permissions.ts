@@ -40,6 +40,8 @@ interface RecordFile {
 /** The person-set floor under every agent's own settings file. */
 export class PersonSetPermissions {
   private agents = new Map<string, AgentPermissions>();
+  /** Writes made before the first seed lands, applied on top of it. */
+  private pending = new Map<string, AgentPermissions | undefined>();
   private seeded = false;
   private broken = false;
 
@@ -114,7 +116,12 @@ export class PersonSetPermissions {
    * @param next - Its settings as written, or `undefined` for the defaults.
    */
   set(agentId: string, next: AgentPermissions | undefined): void {
-    if (!this.seeded) return;
+    // Before the first seed, kept and applied after it: the seed may have read
+    // the history before this write was recorded.
+    if (!this.seeded) {
+      this.pending.set(agentId, next);
+      return;
+    }
     if (next) this.agents.set(agentId, next);
     else this.agents.delete(agentId);
     this.save();
@@ -129,6 +136,11 @@ export class PersonSetPermissions {
   seed(floors: ReadonlyMap<string, AgentPermissions>): void {
     if (this.seeded) return;
     this.agents = new Map(floors);
+    for (const [agentId, next] of this.pending) {
+      if (next) this.agents.set(agentId, next);
+      else this.agents.delete(agentId);
+    }
+    this.pending.clear();
     this.seeded = true;
     this.broken = false;
     this.save();

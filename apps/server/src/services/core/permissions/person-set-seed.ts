@@ -9,9 +9,10 @@
  * default. An agent that raised itself before the upgrade comes out at the
  * person's value.
  *
- * Writes the history never trusts: `outside` (the file changed without
- * DorkOS) and `agent` (an agent changed itself with no card). Everything else
- * was a person, or DorkOS acting on a person's settings.
+ * The one write the history never trusts is `outside`: the file changed
+ * without DorkOS. Everything else went through DorkOS on a person's settings,
+ * including an agent's own change its Permissions area let it make (`agent`),
+ * which raises its floor the same way when it happens live.
  *
  * @module services/core/permissions/person-set-seed
  */
@@ -24,7 +25,7 @@ import { stricterPermissions, type NarrowingContext } from './arrival-narrowing.
 import type { PersonSetPermissions } from './person-set-permissions.js';
 
 /** The history writers whose changes do not count as a person's. */
-const UNTRUSTED: ReadonlySet<PermissionAttribution> = new Set(['outside', 'agent']);
+const UNTRUSTED: ReadonlySet<PermissionAttribution> = new Set(['outside']);
 
 /** One recorded permission change, as the seed reads it. */
 interface HistoryItem {

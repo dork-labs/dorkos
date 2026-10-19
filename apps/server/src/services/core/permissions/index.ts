@@ -181,6 +181,9 @@ export function narrowingContext(
     config: config.get('permissions'),
     actions: new Map(permissionActions(registry).map((a) => [a.id, a])),
     globalStop: readTrustStops(config).global,
+    runtimeStops: Object.values(readTrustStops(config).perRuntime).filter(
+      (stop): stop is PermissionStop => stop !== null
+    ),
   };
 }
 
@@ -309,8 +312,9 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
         };
         if (agentPath) await wiring.observer.writing(agentPath, next, write);
         else await write();
-        // Every write DorkOS makes is one a person (or their standing grant)
-        // made, so it is the agent's new floor (DOR-3107).
+        // Every write DorkOS makes is a person's, or an agent's own change its
+        // Permissions area let it make: either way it is the new floor
+        // (DOR-3107). An agent's edit to its own file never comes through here.
         wiring.personSet.set(agentId, next);
       },
       readStoredPermissions: readAgentPermissionsFromManifest,
@@ -334,9 +338,13 @@ export async function seedPersonSetOnBoot(deps: {
   config: Pick<ConfigManager, 'get' | 'getDot'>;
   registry: () => CapabilityRegistry | undefined;
 }): Promise<void> {
+  // No registry, no seed: seeding an empty list would hold every agent at the
+  // defaults for good. Unseeded is the same fail-closed answer, retried next boot.
+  const mesh = deps.mesh();
+  if (!mesh) return;
   await seedPersonSetPermissions({
     personSet: deps.personSet,
-    agents: () => deps.mesh()?.listWithPaths() ?? [],
+    agents: () => mesh.listWithPaths(),
     readFile: readAgentPermissionsFromManifest,
     history: () =>
       deps.activity.listByEventTypes([PERMISSION_CHANGED_EVENT], '1970-01-01T00:00:00.000Z'),

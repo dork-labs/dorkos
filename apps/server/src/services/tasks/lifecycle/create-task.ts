@@ -229,20 +229,17 @@ function resolveTaskHome(
 async function resolveCreateRuntime(
   data: z.infer<typeof CreateTaskRequestSchema>,
   deps: TaskLifecycleDeps
-): Promise<{ runtime?: string; agent: { filesAndCommands?: PermissionStop } }> {
+): Promise<{ runtime?: string }> {
   const projectPath =
     data.target === 'global' || !deps.meshCore
       ? undefined
       : deps.meshCore.getProjectPath(data.target);
   const agentDefaults = await readAgentExecutionDefaults(projectPath ?? undefined);
-  // The target agent's own Files & commands stop rides along: it beats the
-  // server's when this schedule's power is resolved (spec `agent-permissions`
-  // D16).
-  const agent = agentDefaults.filesAndCommands
-    ? { filesAndCommands: agentDefaults.filesAndCommands }
-    : {};
+  // The agent's runtime only. Its own Files & commands stop never sets a
+  // schedule's power (DOR-3107): raising an agent to Full autonomy must not
+  // raise its schedules, so each one runs at its own saved mode.
   const runtime = data.runtime ?? agentDefaults.runtime;
-  return { ...(runtime ? { runtime } : {}), agent };
+  return runtime ? { runtime } : {};
 }
 
 /**
@@ -299,7 +296,6 @@ export async function createScheduledTask(
     data.permissionMode ??
     resolveScheduledRunPermissionMode({
       capabilities: capabilitiesForTaskRuntime(target?.runtime),
-      agent: target?.agent ?? {},
     });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is

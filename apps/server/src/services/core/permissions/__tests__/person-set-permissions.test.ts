@@ -88,6 +88,24 @@ describe('stricterPermissions', () => {
     });
   });
 
+  // Review finding 1: an agent's own stop beats every server stop, so it must
+  // be no looser than the strictest of them, per-runtime ones included.
+  it('drops Full autonomy an agent wrote when a person set its runtime to Ask', () => {
+    expect(
+      stricterPermissions({ filesAndCommands: 'autonomy' }, undefined, {
+        ...context,
+        globalStop: 'autonomy',
+        runtimeStops: ['ask'],
+      })
+    ).toBeUndefined();
+  });
+
+  it('keeps what a person set when the agent deletes it, whatever the defaults', () => {
+    expect(
+      stricterPermissions(undefined, { filesAndCommands: 'act' }, { ...context, globalStop: null })
+    ).toEqual({ filesAndCommands: 'act' });
+  });
+
   it('drops an area the agent opened that no person opened', () => {
     expect(
       stricterPermissions({ areas: { permissions: 'allowed' } }, undefined, {
@@ -104,6 +122,13 @@ describe('PersonSetPermissions', () => {
     record.set('a', { filesAndCommands: 'autonomy' });
     expect(record.isSeeded()).toBe(false);
     expect(record.get('a')).toBeUndefined();
+  });
+
+  it('keeps a person’s change made while the seed was running', () => {
+    const record = new PersonSetPermissions({ file: recordFile(), logger: quiet });
+    record.set('a', { filesAndCommands: 'autonomy' });
+    record.seed(new Map([['a', { filesAndCommands: 'act' } as AgentPermissions]]));
+    expect(record.get('a')).toEqual({ filesAndCommands: 'autonomy' });
   });
 
   it('keeps what DorkOS wrote across a restart', () => {
@@ -125,11 +150,10 @@ describe('PersonSetPermissions', () => {
 });
 
 describe('seeding from history', () => {
-  it('replays a person’s changes and ignores outside edits and an agent’s own', () => {
+  it('replays changes made through DorkOS and ignores edits made outside it', () => {
     const last = personSetFromHistory([
       filesEvent('a', 'act', 'signed-in'),
       filesEvent('a', 'autonomy', 'outside'),
-      filesEvent('a', 'autonomy', 'agent'),
       filesEvent('b', 'autonomy', 'local-trust'),
     ]);
     expect(last.get('a')).toEqual({ filesAndCommands: 'act' });

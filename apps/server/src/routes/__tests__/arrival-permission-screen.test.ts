@@ -108,6 +108,7 @@ let emitted: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
 let arrivals: ArrivalRecord;
 /** What the gate reads for an agent: the same narrowing reader index.ts hands it. */
 let gateRead: (agentPath: string) => Promise<unknown>;
+let service: ReturnType<typeof createPermissionService>;
 
 beforeEach(async () => {
   relay = new RelayCore({ dataDir: await tempDir('arrival-relay-') });
@@ -148,7 +149,7 @@ beforeEach(async () => {
     logger: { warn: () => {} },
   });
   personSet.seed(new Map());
-  const service = createPermissionService({
+  service = createPermissionService({
     config: fakeConfig,
     mesh: () => mesh,
     registry: () => composeCapabilityRegistryForDocs(),
@@ -301,5 +302,30 @@ describe('a folder cannot widen the agent it registers', () => {
     const again = await request(target.server).post('/api/mesh/agents').send({ path: second });
     expect(again.status).toBe(201);
     await expectScreened(second);
+  });
+});
+
+// DOR-3107: through the real service and the one gate reader, an agent that
+// edits its own settings file cannot raise itself, and a person's change can.
+describe('an agent editing its own settings file', () => {
+  it('cannot raise itself, while a person can raise it', async () => {
+    const id = '01JKOWNEDIT000000000000000';
+    const dir = await wideFolder(path.join(base, 'proj'), 'own-edit', id);
+    const res = await request(target.server).post('/api/mesh/agents').send({ path: dir });
+    expect(res.status).toBe(201);
+    await expectScreened(dir);
+
+    // The agent writes Full autonomy into its own file.
+    const manifest = (await readManifest(dir))!;
+    await writeManifest(dir, { ...manifest, permissions: { filesAndCommands: 'autonomy' } });
+    expect(await gateRead(dir)).not.toMatchObject({ filesAndCommands: 'autonomy' });
+
+    // A person sets it through DorkOS.
+    await service.setAgent(
+      id,
+      { filesAndCommands: 'autonomy', surface: 'settings' },
+      { attribution: 'local-trust', actorType: 'user', actorLabel: 'You' }
+    );
+    expect(await gateRead(dir)).toMatchObject({ filesAndCommands: 'autonomy' });
   });
 });

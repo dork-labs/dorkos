@@ -599,18 +599,21 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   });
   // The person-set floor is seeded once, on the first boot that has it, from
   // what each agent's file holds and what the history says a person set
-  // (DOR-3107). Until it lands every agent's floor is the defaults.
-  void seedPersonSetOnBoot({
-    personSet: personSetPermissions,
-    mesh: () => refs.meshCore,
-    activity: activityService,
-    config: configManager,
-    registry: () => refs.capabilityRegistry,
-  }).catch((err: unknown) =>
-    logger.warn('[Permissions] could not seed what a person set for each agent', {
-      err: err instanceof Error ? err.message : String(err),
-    })
-  );
+  // (DOR-3107). Run by the caller once the capability registry is composed, so
+  // the seed compares against the same action catalog the live reader does.
+  // Until it lands every agent's floor is the defaults.
+  const seedPersonSet = (): Promise<void> =>
+    seedPersonSetOnBoot({
+      personSet: personSetPermissions,
+      mesh: () => refs.meshCore,
+      activity: activityService,
+      config: configManager,
+      registry: () => refs.capabilityRegistry,
+    }).catch((err: unknown) =>
+      logger.warn('[Permissions] could not seed what a person set for each agent', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    );
   arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
   // A screen interrupted by a restart, or one whose write failed, is retried
   // now; its agent stays narrowed until one lands.
@@ -656,7 +659,13 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     confirmationProvider: () => refs.templateConfirmationProvider,
     marketplace: () => refs.agentPackageInstaller,
   };
-  return { connectorOwnerBoundary, connectorRoutes, shapeScheduleService, permissionService };
+  return {
+    connectorOwnerBoundary,
+    connectorRoutes,
+    shapeScheduleService,
+    permissionService,
+    seedPersonSet,
+  };
 }
 
 /** What {@link mountCoreRoutes} hands the steps after it. */

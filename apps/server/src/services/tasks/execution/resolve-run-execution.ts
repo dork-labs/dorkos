@@ -58,7 +58,7 @@
  * @module services/tasks/execution/resolve-run-execution
  */
 import fs from 'node:fs/promises';
-import type { PermissionStop, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings, Task } from '@dorkos/shared/types';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -123,12 +123,6 @@ export interface RunExecution {
    * else.
    */
   settings: RunExecutionSettings;
-  /**
-   * The task's agent's own Files & commands stop, which beats the server's when
-   * the run's power is resolved (spec `agent-permissions` D16). Empty when the
-   * agent has none, or the task has no agent.
-   */
-  agent: { filesAndCommands?: PermissionStop };
 }
 
 /**
@@ -331,6 +325,5 @@ export async function resolveRunExecution(
     runtimeType: type,
     capabilities,
     settings,
-    agent: agent.filesAndCommands ? { filesAndCommands: agent.filesAndCommands } : {},
   };
 }

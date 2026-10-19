@@ -34,6 +34,12 @@ export interface NarrowingContext {
   actions: ReadonlyMap<string, NarrowingAction>;
   /** The Files & commands stop everyone has, or `null` when none is set. */
   globalStop: PermissionStop | null;
+  /**
+   * Every per-runtime Files & commands stop that is set (DOR-3107). An agent's
+   * own stop beats all of them, so an agent's file may only keep a stop no
+   * looser than the strictest of these and the global one.
+   */
+  runtimeStops?: readonly PermissionStop[];
 }
 
 /** One dropped setting, before it is given a target. */
@@ -182,17 +188,27 @@ export function stricterPermissions(
   const b = floor?.filesAndCommands;
   let files: PermissionStop | undefined;
   if (a && b) files = STOP_RANK[a] >= STOP_RANK[b] ? a : b;
-  else if (a || b) {
-    const only = (a ?? b)!;
-    const base = context.globalStop;
-    // With no stop set for everyone the runtime decides, so only Ask first is
-    // certainly no looser than whatever that is.
-    files = base
-      ? STOP_RANK[only] >= STOP_RANK[base]
-        ? only
+  // What a person set always stands: an agent deleting it never loosens it.
+  else if (b) files = b;
+  // The agent's own value, with no person's beside it, beats every server
+  // stop, so it stands only when it is no looser than the strictest of them.
+  // With none set at all the runtime decides, and only Ask first is surely no
+  // looser than whatever that is.
+  else if (a) {
+    const stops = [
+      ...(context.globalStop ? [context.globalStop] : []),
+      ...(context.runtimeStops ?? []),
+    ];
+    const strictest = stops.reduce<PermissionStop | null>(
+      (acc, stop) => (acc === null || STOP_RANK[stop] > STOP_RANK[acc] ? stop : acc),
+      null
+    );
+    files = strictest
+      ? STOP_RANK[a] >= STOP_RANK[strictest]
+        ? a
         : undefined
-      : only === 'ask'
-        ? only
+      : a === 'ask'
+        ? a
         : undefined;
   }
   if (files) out.filesAndCommands = files;

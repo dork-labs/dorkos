@@ -417,28 +417,18 @@ describe('resolveRunExecution — which model and effort', () => {
   });
 });
 
+// DOR-3107 (PM): a schedule runs at its own saved mode. Raising an agent to
+// Full autonomy must not raise its schedules, so a run carries no agent stop.
 describe("resolveRunExecution — the agent's own Files & commands stop", () => {
   afterEach(() => resetPermissionGate());
 
-  it('reads it through the permission gate, so an unscreened folder cannot set it', async () => {
-    // The file says Full autonomy; the gate's reader (which narrows an arriving
-    // agent's folder settings) says the agent keeps no stop of its own.
+  it('is never part of what a run resolves to, even at Full autonomy', async () => {
     const agentPath = await agentDir({ permissions: { filesAndCommands: 'autonomy' } });
-    initPermissionGate({ readAgentPermissions: async () => undefined });
+    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'autonomy' }) });
     const resolved = await resolveRunExecution(task(), {
       runtimes: registry(['claude-code']),
       agentPath,
     });
-    expect(resolved.agent).toEqual({});
-  });
-
-  it('carries what the gate reader answers', async () => {
-    const agentPath = await agentDir();
-    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'ask' }) });
-    const resolved = await resolveRunExecution(task(), {
-      runtimes: registry(['claude-code']),
-      agentPath,
-    });
-    expect(resolved.agent).toEqual({ filesAndCommands: 'ask' });
+    expect(resolved).not.toHaveProperty('agent');
   });
 });
