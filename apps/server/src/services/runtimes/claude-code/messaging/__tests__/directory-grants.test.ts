@@ -4,6 +4,9 @@
  * glob character has to be escaped or the rule matches some other folder and
  * the real one fails open — run live in the DOR-2408 review, see the module.
  */
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
@@ -121,6 +124,40 @@ describe('the folders only a person may change', () => {
     applyPersonOnlyDataDeny(options, '/Users/ana/Dork [main]');
     expect(deny(options)).toContain('Write(//Users/ana/Dork \\[main\\]/permissions/**)');
     expect(() => applyPersonOnlyDataDeny({}, '/Users/ana/dork?')).toThrow(DirectoryGrantError);
+  });
+
+  it('names a relative data folder by its absolute path', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, 'rel/.dork');
+    expect(deny(options)).toContain(`Edit(/${path.resolve('rel/.dork')}/permissions/**)`);
+  });
+
+  it('also names the real place a symlinked data folder or permissions folder points to', () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'person-only-')));
+    try {
+      const real = path.join(root, 'real-dork');
+      const elsewhere = path.join(root, 'elsewhere-permissions');
+      mkdirSync(real);
+      mkdirSync(elsewhere);
+      symlinkSync(elsewhere, path.join(real, 'permissions'));
+      const link = path.join(root, 'link-dork');
+      symlinkSync(real, link);
+
+      const options: Options = {};
+      applyPersonOnlyDataDeny(options, link);
+      const rules = deny(options);
+      for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
+        // As written, through the data folder's real place, and the folder's own.
+        expect(rules).toContain(`${tool}(/${link}/permissions/**)`);
+        expect(rules).toContain(`${tool}(/${real}/permissions/**)`);
+        expect(rules).toContain(`${tool}(/${elsewhere}/**)`);
+        expect(rules).toContain(`${tool}(/${real}/session-relay/**)`);
+      }
+      // One rule per spelling, never repeated.
+      expect(new Set(rules).size).toBe(rules.length);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('writes a Windows data folder in the rule form', () => {
