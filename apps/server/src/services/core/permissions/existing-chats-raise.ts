@@ -13,25 +13,16 @@
  *
  * - **Nothing outside started it, and its launching turn was not marked.** A
  *   chat's own turn marks are not kept past a restart, so the launch is read
- *   from what is kept:
- *   - started by a person in the app, an agent's launch, a beat, an account
- *     carry-over, or with no recorded origin: raised (unknown means raise);
- *   - opened by another chat's message: raised unless the opening message's
- *     stored sender level carries a mark (outsider or teammate);
- *   - a room turn: raised only in a room of this computer that is not bridged
- *     to a chat app and not a space's copy, and holds no marked post;
- *   - anything that came from outside or is not the chat's own power to
- *     decide is left alone: a relay or Telegram binding, the web relay, an
- *     outside sender, a connected app's event, another agent's DM, an
- *     extension, a schedule (its mode lives on the schedule), the test
- *     harness, and any origin this build does not know. So is a chat on
- *     another computer (`computer-local`), which this one cannot vouch for.
- *
- *   Known gap: an agent launch made through the external `/mcp` server is
- *   stored as an agent launch, like one made in a chat, so it cannot be told
- *   apart and is raised. Every TURN in a raised chat is still held to its own
- *   ceiling (a marked turn never runs above the runtime default), so the raise
- *   lends no stranger power; it only stops the routine prompts.
+ *   from what is kept ({@link ExistingChatsRaiseDeps.launchMarked}, which is
+ *   `chat-launch-marks.ts` in production): only our own origins
+ *   ({@link RAISED_LAUNCH_ORIGINS}, or none recorded) qualify, and of those a
+ *   chat another chat's message or `session_start` opened is left alone when
+ *   the opening row carries a mark or came from an outside chat, an agent launch
+ *   with no starting chat (the external `/mcp` server, unverified) is left
+ *   alone, and a room chat is raised only in a room of this computer with no
+ *   bridge, no space copy and no marked or outside post. Everything else that
+ *   is unknown is raised. Schedules are never raised (their mode lives on the
+ *   schedule), nor is a chat on another computer (`computer-local`).
  * - **It belongs to a registered agent**, other than the agents kept as they are
  *   ({@link KEPT_AS_THEY_ARE}).
  * - **Its agent's level is looser than the chat's mode.** The level is what a
@@ -110,6 +101,16 @@ export const RAISED_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
  * folder name or by name.
  */
 export const KEPT_AS_THEY_ARE: ReadonlySet<string> = new Set(['dorkos-cloud', 'dorkos-marketing']);
+
+/**
+ * Whether a launch origin is one of our own (or unknown), whose chat may follow
+ * its agent's level: {@link RAISED_LAUNCH_ORIGINS}, or none recorded.
+ *
+ * @param origin - `session_metadata.launch_origin`, or null.
+ */
+export function isOwnLaunchOrigin(origin: string | null): boolean {
+  return origin === null || RAISED_LAUNCH_ORIGINS.has(origin);
+}
 
 /** A chat mode a person chose on purpose and the raise never moves. */
 const PLAN_MODE_ID = 'plan';
@@ -305,7 +306,7 @@ async function raisedModeFor(
   agents: ReadonlyMap<string, PermissionAgentRef>
 ): Promise<{ agent: PermissionAgentRef; mode: string; before: string } | null> {
   if (!row.runtime || !row.agentPath) return null;
-  if (row.launchOrigin !== null && !RAISED_LAUNCH_ORIGINS.has(row.launchOrigin)) return null;
+  if (!isOwnLaunchOrigin(row.launchOrigin)) return null;
   if (deps.launchMarked(row)) return null;
   if (row.runtime === COMPUTER_LOCAL_RUNTIME) return null;
   const agent = agents.get(row.agentPath);

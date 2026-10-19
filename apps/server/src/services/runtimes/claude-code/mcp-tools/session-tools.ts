@@ -89,7 +89,6 @@ import {
   chatlessCallerStop,
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
-  startingChatFor,
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
@@ -497,12 +496,13 @@ export function createSessionStartHandler(
     // the call, from server-bound state; nothing in `args` can raise it.
     // With no chat (the external `/mcp` server) it is the agent's own stop.
     // A marked starting turn opens a chat born capped (DOR-3107).
-    const marked = markedBoundOf(caller.chat?.sessionId, caller.agentPath) !== undefined;
+    const markedCeiling = outsiderStartCeiling(caller);
     const level = await resolveStartPermission(
       args.permissionMode,
-      startingChatFor(caller.chat, runtimeType, marked),
+      caller.chat,
       runtimeType,
-      await chatlessCallerStop(caller.chat, runtime, agentPath)
+      await chatlessCallerStop(caller.chat, runtime, agentPath),
+      'permissionCeiling' in markedCeiling
     );
     if (!level.ok) return refuse(level.error, level.code);
     const permission = level.permission;
@@ -610,7 +610,7 @@ export function createSessionStartHandler(
         // A starter whose turn read an outsider's words passes that on: the new
         // session's turn is recorded as one that read them too (spec
         // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
-        ...outsiderStartCeiling(caller),
+        ...markedCeiling,
         meshCore: deps.meshCore,
         // A session minted here is in no room.
         roomSessionPlace: undefined,

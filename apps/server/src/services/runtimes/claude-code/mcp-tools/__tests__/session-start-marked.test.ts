@@ -1,7 +1,8 @@
 /**
  * The level a chat `session_start` opens starts at (DOR-3107, Dorian 2026-10-19 15:07,
- * Security 15:10): from an unmarked or unknown turn of our own agent, the caller's own
- * level (the agent's, for a chat running at it); from a marked turn, the runtime default.
+ * Security 15:10): from an unmarked or unknown turn of our own agent, the caller's own level
+ * (the agent's, for a chat running at it); from a marked turn, the stricter of the caller's
+ * level and the runtime default, never looser than the caller.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
@@ -15,44 +16,55 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
   },
 }));
 
-const { resolveStartPermission, startingChatFor } = await import('../session-start-permission.js');
+const { resolveStartPermission } = await import('../session-start-permission.js');
 
 const FULL = 'bypassPermissions';
 const DEFAULT = CLAUDE_CODE_CAPABILITIES.permissionModes.default!;
-const AGENT_CHAT = { sessionId: 'caller', permissionMode: FULL, runtime: 'claude-code' };
 
-/** Start a chat from the agent's chat at Full autonomy, naming Full as the tool requires. */
-const startFrom = (marked: boolean, requested: string | null = FULL) =>
+/** A start from a Claude Code chat at `mode`. */
+const startFrom = (mode: string, marked: boolean, requested?: string) =>
   resolveStartPermission(
-    requested ?? undefined,
-    startingChatFor(AGENT_CHAT, 'claude-code', marked),
-    'claude-code'
+    requested,
+    { sessionId: 'caller', permissionMode: mode, runtime: 'claude-code' },
+    'claude-code',
+    null,
+    marked
   );
 
 describe('a chat session_start opens', () => {
-  it('starts at the agent’s level from an unmarked turn', async () => {
-    expect(await startFrom(false)).toMatchObject({ ok: true, permission: { mode: FULL } });
-  });
-
-  it('starts at the agent’s level from a turn whose marks are unknown (no recorded level)', async () => {
-    // Unknown is not marked: `markedBoundOf` answers undefined, so the caller is read as it is.
-    expect(startingChatFor(AGENT_CHAT, 'claude-code', false)).toBe(AGENT_CHAT);
-    expect(await startFrom(false)).toMatchObject({ ok: true, permission: { mode: FULL } });
+  it('starts at the agent’s level from an unmarked or unknown turn', async () => {
+    // Unknown is not marked: `markedBoundOf` answers undefined for it, so `marked` is false.
+    expect(await startFrom(FULL, false, FULL)).toMatchObject({
+      ok: true,
+      permission: { mode: FULL },
+    });
   });
 
   it('starts capped at the runtime default from a marked turn, and Full is refused', async () => {
-    expect(await startFrom(true, null)).toMatchObject({
-      ok: true,
-      permission: { mode: DEFAULT },
+    expect(await startFrom(FULL, true)).toMatchObject({ ok: true, permission: { mode: DEFAULT } });
+    expect(await startFrom(FULL, true, FULL)).toMatchObject({
+      ok: false,
+      code: 'ABOVE_YOUR_LEVEL',
     });
-    expect(await startFrom(true)).toMatchObject({ ok: false, code: 'ABOVE_YOUR_LEVEL' });
   });
 
-  it('caps a marked caller with no chat too', () => {
-    expect(startingChatFor(null, 'claude-code', true)).toEqual({
-      sessionId: null,
-      permissionMode: DEFAULT,
-      runtime: 'claude-code',
+  it('never lifts a marked caller below the default up to it', async () => {
+    expect(await startFrom('plan', true, DEFAULT)).toMatchObject({
+      ok: false,
+      code: 'ABOVE_YOUR_LEVEL',
     });
+    expect(await startFrom('plan', true)).toMatchObject({ ok: true, permission: { mode: 'plan' } });
+  });
+
+  it('keeps a marked caller with no chat at its own stop when that is stricter', async () => {
+    const result = await resolveStartPermission('acceptEdits', null, 'claude-code', 'ask', true);
+    expect(result).toMatchObject({ ok: false, code: 'ABOVE_YOUR_LEVEL' });
+  });
+
+  it('a marked chat set to never ask still starts only chats that cannot ask', async () => {
+    const result = await startFrom('dontAsk', true);
+    if (result.ok) expect(result.permission.mode).toBe('dontAsk');
+    else expect(result.code).toMatch(/NO_MODE_FITS|ABOVE_YOUR_LEVEL/);
+    expect(await startFrom('dontAsk', true, DEFAULT)).toMatchObject({ ok: false });
   });
 });

@@ -7,16 +7,8 @@
  */
 import path from 'node:path';
 
-import {
-  chatMessages,
-  communityRoomMirrors,
-  roomBridges,
-  roomEntries,
-  roomSessions,
-  sessionMetadata,
-  type Db,
-} from '@dorkos/db';
-import { and, asc, eq } from 'drizzle-orm';
+import { sessionMetadata, type Db } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { isNoLooserThan, levelOfMode } from '@dorkos/shared/permission-semantics';
 import { PERMISSION_CHANGED_EVENT } from '@dorkos/shared/permissions';
@@ -26,13 +18,11 @@ import type { ActivityService } from '../../services/activity/activity-service.j
 import { permissionGateSources } from '../../services/core/capabilities/permission-enforcement.js';
 import {
   EXISTING_CHATS_NOTE,
-  openingMessageMarked,
   raiseExistingChats,
   setChatModePort,
   type ChatModePort,
-  type ExistingChatRow,
 } from '../../services/core/permissions/existing-chats-raise.js';
-import { hasMarks, parseStoredMarks } from '../../services/core/turn-power/turn-marks.js';
+import { chatLaunchMarks } from '../../services/core/permissions/chat-launch-marks.js';
 import type { PersonSetPermissions } from '../../services/core/permissions/person-set-permissions.js';
 import type { PermissionAgentRef } from '../../services/core/permissions/permission-service.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -84,55 +74,6 @@ async function historyHoldsRaise(activity: Pick<ActivityService, 'list'>): Promi
     if (page.nextCursor === null || page.items.length === 0) return false;
   }
   return false;
-}
-
-/**
- * Whether what launched a chat was marked or came from outside (see
- * `ExistingChatsRaiseDeps.launchMarked`). A chat another chat's message opened
- * reads that message's stored sender level. A room chat is marked unless its
- * room is found, is not bridged to a chat app, is not a space's copy, and holds
- * no post whose kept marks carry one (a superset of the post that started it).
- * NULL post marks are unknown and do not count.
- *
- * @param db - The database.
- * @param row - The chat.
- */
-export function launchMarkedIn(db: Db, row: ExistingChatRow): boolean {
-  if (row.launchOrigin === 'chat-message') {
-    const opener = db
-      .select({ ceilingJson: chatMessages.ceilingJson })
-      .from(chatMessages)
-      .where(eq(chatMessages.toSessionId, row.sessionId))
-      .orderBy(asc(chatMessages.createdAt))
-      .limit(1)
-      .get();
-    return openingMessageMarked(opener?.ceilingJson);
-  }
-  if (row.launchOrigin !== 'room') return false;
-  const seat = db
-    .select({ roomId: roomSessions.roomId })
-    .from(roomSessions)
-    .where(eq(roomSessions.sessionId, row.sessionId))
-    .get();
-  if (!seat) return true;
-  const roomId = seat.roomId;
-  const bridged = db
-    .select({ roomId: roomBridges.roomId })
-    .from(roomBridges)
-    .where(eq(roomBridges.roomId, roomId))
-    .get();
-  const mirrored = db
-    .select({ roomId: communityRoomMirrors.localRoomId })
-    .from(communityRoomMirrors)
-    .where(eq(communityRoomMirrors.localRoomId, roomId))
-    .get();
-  if (bridged || mirrored) return true;
-  const marks = db
-    .select({ turnMarks: roomEntries.turnMarks })
-    .from(roomEntries)
-    .where(and(eq(roomEntries.roomId, roomId)))
-    .all();
-  return marks.some((m) => m.turnMarks !== null && hasMarks(parseStoredMarks(m.turnMarks)));
 }
 
 /**
@@ -190,6 +131,7 @@ export function sessionSettingsChatModePort(db: Db): ChatModePort {
 export async function raiseExistingChatsOnBoot(input: RaiseExistingChatsInput): Promise<void> {
   const port = sessionSettingsChatModePort(input.db);
   setChatModePort(port);
+  const launchMarked = chatLaunchMarks(input.db, true);
   try {
     await raiseExistingChats({
       doneFile: path.join(input.dorkHome, 'permissions', 'existing-chats-raised.json'),
@@ -205,7 +147,7 @@ export async function raiseExistingChatsOnBoot(input: RaiseExistingChatsInput): 
           .from(sessionMetadata)
           .all(),
       agents: () => agentsOf(input.mesh()),
-      launchMarked: (row) => launchMarkedIn(input.db, row),
+      launchMarked: (row) => launchMarked(row.sessionId, row.launchOrigin),
       personSet: input.personSet,
       defaultStop: (runtime) =>
         resolveUnattendedDefaultStop({
