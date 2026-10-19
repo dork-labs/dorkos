@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { describeInstallAccess, describeReauthenticationError } from './account-controls.js';
 import { RequestError } from './api.js';

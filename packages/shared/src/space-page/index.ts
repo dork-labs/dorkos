@@ -1,7 +1,8 @@
 /**
  * What the space's web page and the space server both need, in one place neither has to reach
  * into the other for (server-merge step 7): reading a short web address, the sentences a removed
- * message shows, and the owner-replacement wording. Free of server and browser imports.
+ * message shows and who may remove one, the owner-replacement wording, the page's one inline
+ * script, and the owner-claim route. Free of server and browser imports.
  *
  * @module shared/space-page
  */
@@ -137,3 +138,61 @@ export function addPasswordSentence(lifecycle: string): string {
     ? 'To hand it to someone or delete it, add a password to your account first.'
     : 'To delete it, add a password to your account first.';
 }
+
+/** The acting principal, as the rank rule sees it. */
+export interface RemovalActor {
+  kind: 'human' | 'agent';
+  /** The member id, or the agent id for an agent credential. */
+  id: string;
+  /** The member's current role; for an agent, its owner's (unused by the rule). */
+  role: 'owner' | 'admin' | 'member';
+}
+
+/** The content being removed, ranked by its human. */
+export interface RemovalTarget {
+  /** The authoring or uploading agent, when an agent made it. */
+  agentId: string | null;
+  /** The member the content counts as: its author, or its author agent's owner. */
+  humanId: string;
+  /** That member's role now. */
+  humanRole: 'owner' | 'admin' | 'member';
+  /** Whether that member is still an active member. */
+  humanActive: boolean;
+}
+
+/**
+ * Decide whether an actor may remove a message or file, and as whom.
+ *
+ * Content is ranked by its human: an agent's content counts as its owner's. An agent credential
+ * may remove only what it made; a member what they or their agents made; an admin also anything
+ * whose human is neither the owner nor an active admin; the owner anything.
+ *
+ * @returns `author` when the actor removes their own (or their agent's) content, `moderator`
+ *   when an owner or admin removes someone else's, or `null` when refused.
+ */
+export function removalAuthority(actor: RemovalActor, target: RemovalTarget): RemovedBy | null {
+  if (actor.kind === 'agent') return target.agentId === actor.id ? 'author' : null;
+  if (target.humanId === actor.id) return 'author';
+  if (actor.role === 'owner') return 'moderator';
+  const protectedHuman =
+    target.humanRole === 'owner' || (target.humanRole === 'admin' && target.humanActive);
+  if (actor.role === 'admin' && !protectedHuman) return 'moderator';
+  return null;
+}
+
+/**
+ * The page's one inline script (DOR-2957): it takes a link's secret out of the address bar while
+ * the page is still parsing, before the bundle has even started to load. A mailed link, an
+ * invitation and an owner's claim carry their secret after `#`; this keeps the fragment in page
+ * memory only (`window.__dorkosLinkFragment`, read once by `apps/client/src/space/page-start/read-link-secret.ts`)
+ * and replaces the address with the same one without it.
+ *
+ * the page's `index.html` carries exactly this text, which `page-start.test.ts` checks, and the page
+ * policy allows exactly this script by its hash (`PAGE_CSP`). Changing a character here changes
+ * the hash with it; a copy in `index.html` that drifts is refused by the browser.
+ */
+export const LINK_SECRET_SCRIPT =
+  "(function(){var h=location.hash;if(h.length<2)return;Object.defineProperty(window,'__dorkosLinkFragment',{value:h.slice(1),configurable:true});history.replaceState(null,'',location.pathname+location.search)})()";
+
+/** The host-level browser route where an intended owner redeems an owner claim. */
+export const OWNER_CLAIM_PATH = '/claim';

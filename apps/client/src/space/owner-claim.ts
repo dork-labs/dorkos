@@ -1,3 +1,5 @@
+import { OWNER_CLAIM_PATH } from '@dorkos/shared/space-page';
+
 declare global {
   interface Window {
     __readDorkosOwnerClaimFragment?: () => string | null;
@@ -5,8 +7,7 @@ declare global {
   }
 }
 
-/** The host-level browser route where an intended owner redeems an owner claim. */
-export const OWNER_CLAIM_PATH = '/claim';
+export { OWNER_CLAIM_PATH };
 
 const PENDING_KEY = 'communityOwnerClaimPending';
 /** Preflight's HTTP-only claim cookie lasts thirty minutes on the server. */

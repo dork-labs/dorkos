@@ -16,6 +16,12 @@ import routes from './eslint-rules/routes.js';
 const importXTypeScriptSettings = { ...importX.flatConfigs.typescript.settings };
 delete importXTypeScriptSettings['import-x/resolver'];
 
+/** The client never imports the server, from the app or the space's website alike. */
+const SERVER_IMPORT_BAN = {
+  group: ['@dorkos/server', '@dorkos/server/*', '**/apps/server/**', '**/server/src/**'],
+  message: 'The client never imports the server. Reach a backend through the Transport port.',
+};
+
 export default defineConfig([
   // `.yalc/**` holds local co-dev overlays of published packages (e.g. an
   // in-flight blintz build); it is gitignored and must not be linted.
@@ -65,22 +71,42 @@ export default defineConfig([
 
   // Keep backend access behind the Transport port, including in tests.
   // This TypeScript rule supplements the per-layer FSD import restrictions.
+  //
+  // `src/space/` is a second site, not part of the app: the space's own web pages, which
+  // `vite.space.config.ts` builds separately and the space server serves (server-merge step 7e).
+  // The two never import each other, so neither build can pull the other in; options replace
+  // rather than merge, so each block restates the server ban.
   {
     files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/space/**'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
           patterns: [
+            SERVER_IMPORT_BAN,
             {
-              group: [
-                '@dorkos/server',
-                '@dorkos/server/*',
-                '**/apps/server/**',
-                '**/server/src/**',
-              ],
+              group: ['**/space', '**/space/**'],
               message:
-                'The client never imports the server. Reach a backend through the Transport port.',
+                "The app never imports the space's own website (src/space); share code through @dorkos/shared.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/space/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            SERVER_IMPORT_BAN,
+            {
+              group: ['@/*', '**/layers/**'],
+              message:
+                "The space's website never imports the app's code; share it through @dorkos/shared or @dork-labs/ui.",
             },
           ],
         },
@@ -300,6 +326,8 @@ export default defineConfig([
     ignores: [
       'src/**/__tests__/**',
       'src/**/*.test.{ts,tsx}',
+      // The space's own website has no app routes; its links are its own server's pages.
+      'src/space/**',
       'src/routes/**',
       'src/layers/shared/lib/route-factory.ts',
       'src/layers/shared/lib/session-link.ts',

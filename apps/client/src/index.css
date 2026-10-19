@@ -16,6 +16,8 @@
 @custom-variant desktop (&:is(.desktop *));
 @custom-variant desktop-darwin (&:is(.desktop-darwin *));
 @source '../node_modules/streamdown/dist/*.js';
+/* The space's own website (src/space) is a separate site with its own styles and build. */
+@source not './space';
 
 /* ============================================
    Mobile Responsive Scale System

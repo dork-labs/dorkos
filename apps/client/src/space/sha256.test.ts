@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { Sha256, sha256OfFile } from './sha256.js';

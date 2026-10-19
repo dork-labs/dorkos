@@ -41,7 +41,9 @@ const config: KnipConfig = {
   workspaces: {
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).
-      entry: ['src/layers/shared/ui/**/*.{ts,tsx}'],
+      // The space's own website (server-merge step 7e) is a second entry, built by
+      // vite.space.config.ts.
+      entry: ['src/layers/shared/ui/**/*.{ts,tsx}', 'src/space/main.tsx', 'vite.space.config.ts'],
       ignore: [
         // Per-app Zod env convention (AGENTS.md): present even before any VITE_* var exists.
         'src/env.ts',

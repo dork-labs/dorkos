@@ -162,7 +162,7 @@ const LITERAL_URL_ALLOWED: Record<string, string> = {
     'a test harness whose fake registry and attestation answers are sample data',
   'apps/server/src/services/mesh/refresh-untouched-templates.ts':
     'old template text that has to match what earlier versions wrote, byte for byte',
-  'apps/community/src/browser/components/host/HostAdministration.tsx':
+  'apps/client/src/space/components/host/HostAdministration.tsx':
     'at the max-lines ratchet: the import line would grow a file that may only shrink',
   'apps/server/src/services/core/auth/cloud-link-client.ts':
     'at the max-lines ratchet: the import line would grow a file that may only shrink',

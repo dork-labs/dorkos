@@ -110,7 +110,7 @@
         "$TURBO_ROOT$/apps/community/browser-tests/**",
         "$TURBO_ROOT$/apps/community/load/**",
         "$TURBO_ROOT$/apps/community/scripts/**",
-        "$TURBO_ROOT$/apps/community/src/browser/**"
+        "$TURBO_ROOT$/apps/client/src/space/**"
       ]
     },
     "@dorkos/server#typecheck": {
@@ -123,7 +123,7 @@
         "$TURBO_ROOT$/apps/community/browser-tests/**",
         "$TURBO_ROOT$/apps/community/load/**",
         "$TURBO_ROOT$/apps/community/scripts/**",
-        "$TURBO_ROOT$/apps/community/src/browser/**"
+        "$TURBO_ROOT$/apps/client/src/space/**"
       ]
     },
     "@dorkos/community#build": {

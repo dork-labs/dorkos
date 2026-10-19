@@ -33,6 +33,7 @@
 #                                        inside apps/server and apps/client, so
 #                                        the rest of apps/server stays out
 #   ci/space-server.env                  where those folders are
+#   apps/client/vite.space.config.ts     the build of the space's web pages
 #   apps/{client,server}/src/…communit…  the local app's half of the journey:
 #                                        any file or directory named for
 #                                        communities, in ANY case, so the
@@ -126,6 +127,7 @@ SCOPE_PATTERNS=(
   "$(folder "$SPACE_SRC_DIR")"
   "$(folder "$SPACE_WEB_DIR")"
   '^ci/space-server\.env$'
+  '^apps/client/vite\.space\.config\.ts$'
   "^apps/(client|server)/src/.*${communit}"
   "^packages/shared/src/.*${communit}"
   '^packages/shared/src/space-page/'

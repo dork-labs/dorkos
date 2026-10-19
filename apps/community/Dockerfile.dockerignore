@@ -12,6 +12,11 @@
 !apps/server/src/services
 !apps/server/src/services/spaces
 !apps/server/src/services/spaces/**
+!apps/client
+!apps/client/vite.space.config.ts
+!apps/client/src
+!apps/client/src/space
+!apps/client/src/space/**
 !packages
 !packages/shared
 !packages/shared/**

@@ -30,6 +30,11 @@ COPY apps/community apps/community
 # server's, so nothing of the server's reaches this image.
 COPY apps/server/src/services/spaces apps/server/src/services/spaces
 RUN ln -s ../community/node_modules apps/server/node_modules
+# Its web pages are in apps/client (step 7e), built by their own Vite config into
+# apps/community/dist/; the same link gives them the space package's own packages.
+COPY apps/client/vite.space.config.ts apps/client/vite.space.config.ts
+COPY apps/client/src/space apps/client/src/space
+RUN ln -s ../community/node_modules apps/client/node_modules
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build
 # This image copies only the community's slice of the workspace, so a root patch for a
 # package it never installs (when-exit, which the server reaches through conf) is

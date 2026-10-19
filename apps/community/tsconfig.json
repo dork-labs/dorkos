@@ -12,9 +12,7 @@
     "noEmit": true
   },
   "include": [
-    "src",
     "load/**/*.ts",
-    "vite.config.ts",
     "scripts/**/*.ts",
     "browser-tests/**/*.ts",
     "acceptance/**/*.ts",
