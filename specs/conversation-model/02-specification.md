@@ -156,7 +156,7 @@ The plan of record (navigation fix, 2026-10-18, PM-approved). A person talks in 
 - **Who answers.** An agent set to mention-only still answers every message in its own DM, with no @ needed.
 - **One agent, two seats.** The agent in #design and the agent in your DM are two seats with two sessions, one per (room, agent). A quoted reference ("From #design") is how one learns about the other. It's explicit, so it's never a leak.
 - **A session behind a channel seat is not the channel.** A person who types in that session runs a plain session turn (no `roomTurn`), so the reply stays in the session. It reaches the channel only if the agent posts there. The session view says so in one line; a reply never goes missing silently.
-- **Agent-to-agent DMs** (step 2) are filtered out by membership: they never appear in the owner's DM list or unread counts. DOR-3048 carries this as an acceptance test.
+- **Agent-to-agent DMs** (step 2) are filtered out by membership: they never appear in the owner's DM list or unread counts. Step 2's ticket, DOR-3086, carries this as an acceptance test.
 
 ## 4. Outside senders
 
@@ -239,7 +239,7 @@ The five promises are requirements the build must keep. The design for each foll
   - **Behind a channel seat:** the reply stays in the session (§3.1). The view says so above the composer: **"Replies here stay in this session. They don't post to #design."**
     - Each finished reply gets **Post to #design**.
     - The posted entry is the agent's words with a quiet origin line, "Posted by Dorian from a session ↗" (§8.5 style, linking to the turn).
-    - The person is recorded in the audit trail (C4).
+    - Its author is the agent; the person who posted it is on record in the audit trail (C4).
 - **The session view always names what it's behind:** "behind your DM with designer ↩" or "behind designer in #design ↩".
 - **No flash, ever.** Phase 1 changes how Direct chats look and where clicks land, with no migration. Acceptance: all 16 Direct chats migrated on 2026-10-18 open in the DM view with full history, original times and streaming. At step 4 the record moves underneath with no visible change: history loads unanimated, with the same scroll position and no re-render of the past.
 
