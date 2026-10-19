@@ -309,7 +309,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/documents');
     // 78 -> 79: each agent's Direct chat (rule S12, DOR-2997).
     expect(mounts).toContain('/api/direct-chats');
-    expect(mounts).toHaveLength(79);
+    // 79 -> 80: a person's own signed-in devices (DOR-2969).
+    expect(mounts).toContain('/api/devices');
+    expect(mounts).toHaveLength(80);
     const byHand = [
       '/',
       '/x/fixture',

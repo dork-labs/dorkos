@@ -123,6 +123,8 @@ interface TerminalInstance {
   truncated: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
   disposed: boolean;
+  /** Runs once when the terminal is torn down, whatever tore it down. */
+  onDestroyed?: () => void;
 }
 
 /** Resolve the interactive shell for the host platform. */
@@ -184,10 +186,14 @@ export class TerminalManager {
    * is used to attach the WebSocket and to tear the terminal down.
    *
    * @param req - Target working directory and optional initial viewport.
+   * @param hooks - `onDestroyed` runs once when the terminal is torn down.
    * @throws BoundaryError when `cwd` escapes the directory boundary.
    * @throws TerminalLimitError when the concurrent-PTY cap is reached.
    */
-  async create(req: { cwd: string; size?: TerminalSize }): Promise<string> {
+  async create(
+    req: { cwd: string; size?: TerminalSize },
+    hooks: { onDestroyed?: () => void } = {}
+  ): Promise<string> {
     // DoS guard — refuse before doing any work once the live-PTY cap is hit.
     if (this.terminals.size >= this.maxTerminals) {
       throw new TerminalLimitError(this.maxTerminals);
@@ -222,6 +228,7 @@ export class TerminalManager {
       truncated: false,
       idleTimer: null,
       disposed: false,
+      onDestroyed: hooks.onDestroyed,
     };
     this.terminals.set(id, instance);
 
@@ -325,6 +332,11 @@ export class TerminalManager {
       logger.warn('[terminal] error killing PTY', { id, err });
     }
     inst.sink?.close();
+    try {
+      inst.onDestroyed?.();
+    } catch (err) {
+      logger.warn('[terminal] teardown hook failed', { id, err });
+    }
     logger.info('[terminal] destroyed PTY', { id });
   }
 

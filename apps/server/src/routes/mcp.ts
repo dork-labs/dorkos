@@ -23,6 +23,7 @@ import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { ApiEnv } from '../http/api-chain.js';
+import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -159,6 +160,8 @@ export function createMcpEndpoint(serverFactory: McpServerFactory): Hono<ApiEnv>
         server.close().catch(() => {});
       });
       await server.connect(transport);
+      // A streamed answer ends when the sign-in that asked for it does (DOR-2969).
+      closeResponseWithSignIn(c);
       // The body the chain parsed, which the credential check classified. A
       // body it did not parse (no JSON content type) is left on the request
       // for the transport to read and refuse itself.

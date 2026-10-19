@@ -30472,6 +30472,285 @@
         }
       }
     },
+    "/api/devices/sessions": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Your signed-in devices",
+        "description": "The signed-in person's own live sign-ins: how each came in, when it was made and last used, and which one is asking. Each is named by an opaque id, never its token. A person at this computer whose gate asks for no password sees the owner's.",
+        "responses": {
+          "200": {
+            "description": "The sign-ins, the asking one first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "route": {
+                            "type": "string",
+                            "enum": [
+                              "local",
+                              "wifi",
+                              "tunnel",
+                              "managed",
+                              "network",
+                              "hub"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          },
+                          "current": {
+                            "type": "boolean"
+                          },
+                          "userAgentLabel": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "route",
+                          "createdAt",
+                          "lastSeenAt",
+                          "current"
+                        ]
+                      }
+                    },
+                    "canSignOutOthers": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "sessions",
+                    "canSignOutOthers"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Sign out one device",
+        "description": "Ends one sign-in and closes every stream, socket and terminal it had open. Your own current sign-in from anywhere; any other only from a person at the computer DorkOS runs on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No live sign-in of yours has that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sign-out-all": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Sign out everywhere else",
+        "description": "Ends every sign-in but the asking one (all of them when the asker has none) and closes what each had open. Only from a person at the computer DorkOS runs on.",
+        "responses": {
+          "200": {
+            "description": "How many sign-ins ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "signedOut": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "signedOut"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not a person at the computer DorkOS runs on (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [

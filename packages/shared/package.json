@@ -401,6 +401,10 @@
       "types": "./src/transport-hub.ts",
       "default": "./dist/transport-hub.js"
     },
+    "./signed-in-devices": {
+      "types": "./src/signed-in-devices.ts",
+      "default": "./dist/signed-in-devices.js"
+    },
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"

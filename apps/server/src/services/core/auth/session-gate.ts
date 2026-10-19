@@ -50,6 +50,7 @@ import {
   sessionWorksOn,
   type SessionRoute,
 } from './sessions/session-route.js';
+import { inRestartWindow, sessionRecentlyEnded } from './sessions/live-connections.js';
 
 /** The identity resolved from a request's credentials, set on the request as `c.var.user`. */
 export interface RequestUser {
@@ -219,16 +220,27 @@ export async function verifyRequestAuth(
   try {
     const result = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
+      // Just after a restart, nothing remembers which sign-ins ended before it,
+      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
       ...(options.sessionFreshness === 'server-store'
         ? { query: { disableCookieCache: true, disableRefresh: true } }
-        : {}),
+        : inRestartWindow()
+          ? { query: { disableCookieCache: true } }
+          : {}),
     });
     // A public-computer sign-in never outlives its day, whatever its expiry
     // says (`public-computer.ts`).
     if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
-      // Only on the route it was made on; anywhere else it is no session.
+      // Only on the route it was made on; anywhere else it is no session. A
+      // session that just ended is no session either, though its cached
+      // snapshot still vouches for it (`./sessions/live-connections.ts`).
       const route = requestSessionRoute(req);
-      if (route !== null && result.session && sessionWorksOn(result.session, route)) {
+      if (
+        route !== null &&
+        result.session &&
+        sessionWorksOn(result.session, route) &&
+        !sessionRecentlyEnded(result.session.id)
+      ) {
         return {
           userId: result.user.id,
           credential: 'cookie',
