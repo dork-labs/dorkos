@@ -28,7 +28,6 @@ import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
 } from '../../sessions/launch-fingerprint.js';
-import { assignTurnBounds } from '../../turn-bounds.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),

@@ -1,11 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-<<<<<<<< HEAD:packages/db/drizzle/meta/20261018123612_snapshot.json
   "id": "1d5cf3c3-cf29-479e-a93a-c91fd5099a82",
-========
-  "id": "ce5e6858-d7a7-4c8d-9877-98a6b265e9d0",
->>>>>>>> b89c6cac40 (chore(server): teammate marks reach heartbeats, survive a restart, and carry on every remaining path (DOR-3036)):packages/db/drizzle/meta/20261018194534_snapshot.json
   "prevId": "93c4c62a-b07b-4ff0-a354-66acf5ba28ff",
   "tables": {
     "a2a_tasks": {
@@ -9228,13 +9224,6 @@
         },
         "dispatch_id": {
           "name": "dispatch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "turn_marks": {
-          "name": "turn_marks",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
