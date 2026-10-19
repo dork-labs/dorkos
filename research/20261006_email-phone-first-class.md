@@ -8,6 +8,8 @@ tags: [email, phone, google-workspace, twilio, 10dlc, provider-adapter, vision-2
 
 # Email addresses and phone numbers as first-class account features
 
+> **Mail provider under review (2026-10-19).** Using one provider for both inbound and outbound is proposed, pending a spike due Oct 23. Don't build against its email recommendations until a decision is logged.
+
 Research date: 2026-10-06. Web research only; nothing here is decided. Prices are US list prices as found on the date above and change often. Items marked **UNVERIFIED** come from secondary sources only or are my inference.
 
 Framing from the vision notes: people and agents are near-identical accounts; local-only is the default with no required monthly fee; paid cloud is opt-in. Paid cloud details are out of scope here.
