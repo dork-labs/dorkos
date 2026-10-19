@@ -260,12 +260,11 @@ async function start() {
   await composeCapabilities(refs, upToCoreRoutes);
   await upToCoreRoutes.seedPersonSet();
   // Existing chats rise to their agent's level, once, after the floor it reads (DOR-3107).
-  await raiseExistingChatsOnBoot({
+  await raiseExistingChatsOnBoot(refs, {
     db,
     dorkHome,
     personSet: upToCoreRoutes.personSetPermissions,
     activity: upToCoreRoutes.activityService,
-    mesh: () => refs.meshCore,
   });
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
     upToCoreRoutes;

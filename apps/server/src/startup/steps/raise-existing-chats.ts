@@ -35,7 +35,6 @@ export interface RaiseExistingChatsInput {
   dorkHome: string;
   personSet: PersonSetPermissions;
   activity: Pick<ActivityService, 'emit' | 'list'>;
-  mesh: () => ServerRefs['meshCore'];
 }
 
 /** The registered agents, as the permission history names them. */
@@ -126,9 +125,13 @@ export function sessionSettingsChatModePort(db: Db): ChatModePort {
  * Wire the port and run the raise. Never throws: a failure is logged and the
  * server starts as it would have.
  *
- * @param input - The database, data directory, person-set record, Activity writer and Mesh.
+ * @param refs - The server's live references, for Mesh.
+ * @param input - The database, data directory, person-set record and Activity writer.
  */
-export async function raiseExistingChatsOnBoot(input: RaiseExistingChatsInput): Promise<void> {
+export async function raiseExistingChatsOnBoot(
+  refs: ServerRefs,
+  input: RaiseExistingChatsInput
+): Promise<void> {
   const port = sessionSettingsChatModePort(input.db);
   setChatModePort(port);
   const launchMarked = chatLaunchMarks(input.db, true);
@@ -146,7 +149,7 @@ export async function raiseExistingChatsOnBoot(input: RaiseExistingChatsInput): 
           })
           .from(sessionMetadata)
           .all(),
-      agents: () => agentsOf(input.mesh()),
+      agents: () => agentsOf(refs.meshCore),
       launchMarked: (row) => launchMarked(row.sessionId, row.launchOrigin),
       personSet: input.personSet,
       defaultStop: (runtime) =>
