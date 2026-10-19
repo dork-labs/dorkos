@@ -982,6 +982,65 @@ describe('dispatchMessage — never into an open permission ask', () => {
   });
 });
 
+// DOR-3113: a room mention for an agent parked on a person's answer waits behind
+// the answer instead of failing after its five-minute wait.
+describe('dispatchMessage — a room trigger behind an unanswered approval', () => {
+  it('keeps waiting past its budget while the agent waits on a person, then runs', async () => {
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield {
+          type: 'approval_required',
+          data: {
+            toolCallId: 'call-1',
+            toolName: 'Bash',
+            input: '{}',
+            timeoutMs: 60_000,
+            remainingMs: 60_000,
+          },
+        } as unknown as StreamEvent;
+        await first.wait;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      quickTurn(),
+    ]);
+
+    await send('run something dangerous');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    expect(projector.hasPendingInteractions()).toBe(true);
+
+    // The parked turn holds the session, as it does in production.
+    runtime.acquireLock.mockReturnValue(false);
+    const held = await send('re-mentioned while it waits', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    expect(held.accepted).toBe(true);
+
+    // Many budgets pass. It used to fail here, once per mention.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(settled).toEqual([]);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // The person answers; the parked turn ends; the mention runs.
+    projector.resolveInteraction('call-1', 'approved');
+    runtime.acquireLock.mockReturnValue(true);
+    first.open();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2), {
+      timeout: 2_000,
+    });
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      're-mentioned while it waits',
+      expect.anything()
+    );
+    expect(settled).not.toContain('failed');
+  });
+});
+
 describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
   /** Re-declare the runtime's capabilities for one case. */
   function withCapabilities(overrides: Partial<RuntimeCapabilities>): void {

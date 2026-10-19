@@ -9,6 +9,7 @@ import {
   type StandingCondition,
 } from '../escalation-service.js';
 import { raiseStanding } from '../standing-events.js';
+import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { WebPushChannel, PushFanOutResult } from '../channels/web-push.js';
 import type { RelayChannelDeps } from '../channels/relay.js';
@@ -320,6 +321,41 @@ describe('firing', () => {
     expect(publish).not.toHaveBeenCalled();
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(ledgerFor('ask:int-1')).toEqual([{ channel: 'web_push', escalated: true }]);
+  });
+
+  // DOR-3114: the push reaching a device used to hide a chat connection that
+  // could never carry a ping. It is warned about now, once, not per card.
+  it('warns once when a chat connection cannot carry the ping, even though the push landed', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const service = buildService({
+      relay: () =>
+        relayDeps({
+          bindingStore: {
+            getAll: () => [
+              {
+                id: 'binding-1',
+                agentId: 'agent-1',
+                adapterId: 'telegram-main',
+                enabled: true,
+                canInitiate: false,
+                chatId: 'chat-1',
+                updatedAt: '2026-08-19T00:00:00.000Z',
+              },
+            ],
+          } as unknown as RelayChannelDeps['bindingStore'],
+        }),
+    });
+    service.arm('ask.pending', ask('int-1'));
+    service.arm('ask.pending', ask('int-2'));
+
+    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
+
+    const misses = warn.mock.calls.filter(
+      ([message]) => message === '[Escalation] A chat connection could not carry a ping'
+    );
+    expect(misses).toHaveLength(1);
+    expect(misses[0]![1]).toMatchObject({ relay: { reason: 'INITIATE_NOT_ALLOWED' } });
+    warn.mockRestore();
   });
 
   it('still reaches chat when no device is subscribed', async () => {

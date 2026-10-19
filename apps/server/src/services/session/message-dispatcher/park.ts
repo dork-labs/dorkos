@@ -19,7 +19,33 @@ import {
 import { emitLifecycle, pending, sweptWhileLaunching } from './state.js';
 import { launchDispatch } from './launch.js';
 import { schedulePump } from './pump.js';
+import { projectorFor } from '../resolution/session-key-registry.js';
+import { SESSIONS } from '../../../config/constants.js';
 import type { DispatchPlan, PendingDispatch } from './types.js';
+
+/**
+ * Whether the session is parked on a person's answer (an approval, a question,
+ * a sign-in the runtime reports as an interaction).
+ *
+ * @param sessionKey - The session.
+ */
+function stillWaitingOnPerson(sessionKey: string): boolean {
+  return projectorFor(sessionKey)?.hasPendingInteractions() === true;
+}
+
+/**
+ * Whether a waiting trigger should keep waiting on the person rather than give
+ * up: the session is parked on an answer, and the trigger has not yet waited
+ * longer than an answer itself may (DOR-3113).
+ *
+ * @param plan - The waiting message.
+ */
+function waitsOnPerson(plan: DispatchPlan): boolean {
+  return (
+    stillWaitingOnPerson(plan.sessionKey) &&
+    Date.now() - plan.startedWaitingAt < SESSIONS.INTERACTION_PARK_CEILING_MS
+  );
+}
 
 /**
  * Give up on a message whose launch started no turn, or put it back in line.
@@ -72,6 +98,13 @@ export function returnToQueue(plan: DispatchPlan): void {
     // giving up on one is simply declining to re-park it.
     if (!plan.answered) return;
     const remainingMs = plan.budgetMs - (Date.now() - plan.startedWaitingAt);
+    // Waiting on a person is not a turn gone dark (DOR-3113): the trigger
+    // waits behind the approval, as long as the approval itself may wait,
+    // instead of being dropped as a failure after five minutes.
+    if (remainingMs <= 0 && waitsOnPerson(plan)) {
+      parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true, budgetMs: plan.budgetMs });
+      return;
+    }
     if (remainingMs <= 0) {
       logger.warn('[MessageDispatcher] a refusing trigger spent its whole wait and was dropped', {
         sessionId: plan.sessionKey,
@@ -81,8 +114,12 @@ export function returnToQueue(plan: DispatchPlan): void {
       });
       // Reported here or nowhere: this plan's caller was answered
       // `accepted: true` at acceptance and has been waiting on the turn ever
-      // since, and no turn will now start for it.
-      plan.turn.onSettled?.('failed');
+      // since, and no turn will now start for it. Named when the session is
+      // still waiting on a person, so the room says that and not "a problem".
+      plan.turn.onSettled?.(
+        'failed',
+        stillWaitingOnPerson(plan.sessionKey) ? 'pending-interaction' : undefined
+      );
       return;
     }
     parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true, budgetMs: remainingMs });
@@ -328,6 +365,13 @@ export function parkDispatch(
           if (pending.get(plan.messageId) !== entry) return;
           entry.held = undefined;
           schedulePump(entry.sessionKey);
+          return;
+        }
+        // Still waiting on a person: wait the budget again rather than force a
+        // launch the parked turn's lock would refuse (DOR-3113).
+        if (waitsOnPerson(plan)) {
+          if (pending.get(plan.messageId) !== entry) return;
+          parkDispatch(plan, settle, { ...opts, budgetMs: plan.budgetMs });
           return;
         }
         if (plan.transient) {
