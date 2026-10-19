@@ -7,7 +7,8 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "../apps/community/Dockerfile"
+  dockerfile = "../Dockerfile"
+  build-target = "space"
 
 [deploy]
   strategy = "rolling"

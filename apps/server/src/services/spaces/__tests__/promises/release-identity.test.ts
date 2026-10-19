@@ -50,6 +50,9 @@ describe('the release identity', () => {
     expect(COMMUNITY_IMAGE_REPOSITORY).toBe('ghcr.io/dork-labs/dorkos-community');
     expect(workflow).toMatch(/^ {2}REGISTRY: ghcr\.io$/mu);
     expect(workflow).toMatch(/^ {2}IMAGE_NAME: dork-labs\/dorkos-community$/mu);
+    // Built from the repository Dockerfile's `space` target (server-merge step 7f).
+    expect(workflow).toMatch(/^ {10}file: \.\/Dockerfile$/mu);
+    expect(workflow).toMatch(/^ {10}target: space$/mu);
   });
 
   it('computes the migration compatibility id from the migrations the server runs', () => {

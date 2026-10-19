@@ -9,8 +9,12 @@ const root = join(import.meta.dirname, '../..');
 const workflow = readFileSync(join(root, '.github/workflows/publish-community.yml'), 'utf8');
 /** Where the space server lives (ci/space-server.env, DOR-3007). */
 const { spaceDir } = readSpaceServer(root);
-const dockerfile = readFileSync(join(root, spaceDir, 'Dockerfile'), 'utf8');
-const dockerignore = readFileSync(join(root, spaceDir, 'Dockerfile.dockerignore'), 'utf8');
+/** The repository's Dockerfile, whose `space` target is the space image (step 7f). */
+const rootDockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
+const dockerfile = rootDockerfile.slice(
+  rootDockerfile.indexOf('FROM node:24-bookworm-slim AS space\n')
+);
+const dockerignore = readFileSync(join(root, '.dockerignore'), 'utf8');
 const generator = readFileSync(
   join(root, 'scripts/generate-community-release-manifest.ts'),
   'utf8'
@@ -155,7 +159,8 @@ exit 2
     expect(steps).toContain(
       `run: grep -E '^SPACE_[A-Z_]*=.' ci/space-server.env >> "$GITHUB_ENV" && grep -qE '^SPACE_DIR=.' ci/space-server.env\n`
     );
-    expect(workflow).toContain('file: ./${{ env.SPACE_DIR }}/Dockerfile');
+    expect(workflow).toContain('file: ./Dockerfile');
+    expect(workflow).toContain('target: space');
     expect(workflow).toContain('--migrations "$SPACE_DIR/migrations"');
     const code = workflow
       .split('\n')
@@ -166,7 +171,8 @@ exit 2
 
   it('keeps the runtime non-root and the Docker build context allow-listed', () => {
     expect(dockerfile).toMatch(/\nUSER node\n/);
-    expect(dockerignore.startsWith('**\n')).toBe(true);
+    const rules = dockerignore.split('\n').filter((line) => line && !line.startsWith('#'));
+    expect(rules[0]).toBe('**');
     expect(dockerignore).not.toContain('!.env');
     expect(dockerignore).not.toContain('!**/.env');
   });

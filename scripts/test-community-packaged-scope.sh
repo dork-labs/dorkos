@@ -103,7 +103,8 @@ if [ -d "$repo_root/apps/community" ]; then
     echo "FAIL: apps/community exists, but ci/space-server.env names $SPACE_DIR, $SPACE_SRC_DIR, $SPACE_WEB_DIR" >&2
   fi
   for path in apps/server/src/services/spaces/app.ts apps/community/migrations/0001_foundation.sql \
-    apps/client/src/space/CommunityApp.tsx apps/client/vite.space.config.ts apps/community/Dockerfile; do
+    apps/client/src/space/CommunityApp.tsx apps/client/vite.space.config.ts Dockerfile .dockerignore \
+    scripts/space-image/runtime-packages.mjs; do
     expect true "in scope (build-shell layout): $path" "$path"
   done
   for path in apps/communityx/src/app.ts apps/server/src/index.ts apps/server/src/services/spacesx/a.ts \

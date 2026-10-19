@@ -15,6 +15,8 @@ RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm rebuild -r esbuild b
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dork-labs/connector-providers build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/decisions build && pnpm --filter @dork-labs/ui build && pnpm --filter @dorkos/community build && pnpm --filter dorkos build
 RUN mkdir /packed && pnpm --dir packages/cli pack --pack-destination /packed && npm install --prefix /packaged-cli /packed/dorkos-*.tgz
 RUN pnpm --filter @dorkos/community deploy --prod --legacy --ignore-scripts /packaged-community && cp -R "$SPACE_DIR/dist" "$SPACE_DIR/dist-server" "$SPACE_DIR/migrations" /packaged-community/
+# The same pruning and check the release image runs (the root Dockerfile's space stage).
+RUN node scripts/space-image/runtime-packages.mjs /packaged-community --prune
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN pnpm --filter @dorkos/community exec playwright install --with-deps chromium
 ENV NODE_ENV=production SPACE_DIR=$SPACE_DIR
