@@ -27,6 +27,11 @@ const file = (toolName: string, target: string, field = 'file_path'): PendingApp
   input: JSON.stringify({ [field]: target, content: 'x' }),
 });
 
+const update = (...changes: unknown[]): PendingApprovalCard => ({
+  toolName: 'ApplyPatch',
+  input: JSON.stringify({ changes }),
+});
+
 const approvable = (card: PendingApprovalCard, caseInsensitive?: boolean) =>
   relayApprovableCard(card, {
     cwd,
@@ -36,7 +41,7 @@ const approvable = (card: PendingApprovalCard, caseInsensitive?: boolean) =>
 
 const patch = (...paths: unknown[]): PendingApprovalCard => ({
   toolName: 'ApplyPatch',
-  input: JSON.stringify({ changes: paths.map((p) => ({ path: p, kind: 'add' })) }),
+  input: JSON.stringify({ changes: paths.map((p) => ({ path: p, kind: { type: 'add' } })) }),
 });
 
 describe('relayApprovableCard', () => {
@@ -69,6 +74,16 @@ describe('relayApprovableCard', () => {
     expect(approvable(patch(path.join(cwd, 'src/a.ts'), 'src/b.ts'))).toBe(true);
   });
 
+  it('allows a Codex update that moves nothing, and one that moves to an allowed file', () => {
+    expect(
+      approvable(update({ path: 'src/a.ts', kind: { type: 'update', move_path: null } }))
+    ).toBe(true);
+    expect(
+      approvable(update({ path: 'src/a.ts', kind: { type: 'update', move_path: 'src/b.ts' } }))
+    ).toBe(true);
+    expect(approvable(update({ path: 'src/a.ts', kind: { type: 'delete' } }))).toBe(true);
+  });
+
   it.each<[string, () => PendingApprovalCard]>([
     ['Codex Permissions', () => ({ toolName: 'Permissions', input: '{}' })],
     [
@@ -79,9 +94,28 @@ describe('relayApprovableCard', () => {
       'Codex ApplyPatch into a .codex folder',
       () => ({
         toolName: 'ApplyPatch',
-        input: '{"changes":[{"path":"/proj/.codex/config.toml","kind":"add"}]}',
+        input: '{"changes":[{"path":"/proj/.codex/config.toml","kind":{"type":"add"}}]}',
       }),
     ],
+    [
+      'Codex ApplyPatch renaming into .claude by absolute path',
+      () =>
+        update({
+          path: 'src/a.ts',
+          kind: { type: 'update', move_path: '/proj/.claude/settings.json' },
+        }),
+    ],
+    [
+      'Codex ApplyPatch renaming into .claude by relative path',
+      () =>
+        update({ path: 'src/a.ts', kind: { type: 'update', move_path: '.claude/settings.json' } }),
+    ],
+    [
+      'Codex ApplyPatch with an unknown kind',
+      () => update({ path: 'src/a.ts', kind: { type: 'chmod' } }),
+    ],
+    ['Codex ApplyPatch with a kind that is text', () => update({ path: 'src/a.ts', kind: 'add' })],
+    ['Codex ApplyPatch with no kind', () => update({ path: 'src/a.ts' })],
     ['Codex ApplyPatch with one bad change of two', () => patch('src/a.ts', '.mcp.json')],
     ['Codex ApplyPatch with no changes field', () => ({ toolName: 'ApplyPatch', input: '{}' })],
     [
@@ -109,6 +143,8 @@ describe('relayApprovableCard', () => {
     ['MultiEdit in .opencode', () => file('MultiEdit', '.opencode/opencode.json')],
     ['Write to the DorkOS config', () => file('Write', path.join(dorkHome, 'config.json'))],
     ['Write that climbs into the data folder', () => file('Write', '../dork-home/x.json')],
+    ['Write to a ~ path', () => file('Write', '~/.config/opencode/agent/evil.md')],
+    ['Write to another user’s ~ path', () => file('Write', '~root/notes.md')],
     ['Write with a .. part', () => file('Write', '/proj/docs/../settings.json')],
     ['Write with a Windows .. part', () => file('Write', 'docs\\..\\settings.json')],
     ['Write to a project opencode.json', () => file('Write', 'opencode.json')],

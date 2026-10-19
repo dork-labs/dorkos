@@ -21,7 +21,9 @@
  * OpenCode's data and config folders, `~/.agents`), or in a file named
  * `opencode.json`, `opencode.jsonc` or `.mcp.json`: writing there changes what
  * agents may do next. A path with a `..` part is refused outright, so text
- * folding can never step around a symlink. Paths are judged after following
+ * folding can never step around a symlink, and so is one starting with `~`.
+ * A Codex patch is checked change by change, including where an `update`
+ * moves a file to. Paths are judged after following
  * every symlink that exists, in the case the disk stores them, and compared
  * without regard to case on macOS and Windows. A Codex card whose input is the
  * placeholder Codex shows when it does not know the real input is refused,
@@ -107,7 +109,10 @@ function isWithin(child: string, parent: string): boolean {
 function targetAllowed(raw: unknown, context: RelayApprovableContext): boolean {
   if (typeof raw !== 'string' || raw === '') return false;
   // Refused before resolving: `path.resolve` folds `..` as text, past any symlink.
-  if (raw.split(/[\\/]/).includes('..')) return false;
+  const segments = raw.split(/[\\/]/);
+  if (segments.includes('..')) return false;
+  // A `~` path means the home folder to a shell but a literal folder here: refused either way.
+  if (segments[0]?.startsWith('~')) return false;
   if (!path.isAbsolute(raw) && context.cwd === null) return false;
   const fold =
     (context.caseInsensitive ?? (process.platform === 'darwin' || process.platform === 'win32'))
@@ -135,18 +140,32 @@ function inputObject(card: PendingApprovalCard): Record<string, unknown> | null 
   }
 }
 
+/**
+ * The change kinds Codex's app-server sends (`PatchChangeKind` in the Codex
+ * runtime's `protocol/schema-snapshot.json`): `add`, `delete`, and `update`,
+ * which may also move the file to `move_path`.
+ */
+const PATCH_CHANGE_KINDS = new Set(['add', 'delete', 'update']);
+
+/** Whether one patch change, and the file it may move to, is somewhere the web may write. */
+function changeAllowed(change: unknown, context: RelayApprovableContext): boolean {
+  if (change === null || typeof change !== 'object') return false;
+  const { path: target, kind } = change as Record<string, unknown>;
+  if (kind === null || typeof kind !== 'object' || Array.isArray(kind)) return false;
+  const { type, move_path: movePath } = kind as Record<string, unknown>;
+  if (typeof type !== 'string' || !PATCH_CHANGE_KINDS.has(type)) return false;
+  if (!targetAllowed(target, context)) return false;
+  // A rename writes its destination too.
+  return movePath === undefined || movePath === null || targetAllowed(movePath, context);
+}
+
 /** Whether a Codex patch names at least one change, and only changes to allowed files. */
 function patchAllowed(card: PendingApprovalCard, context: RelayApprovableContext): boolean {
   // A patch that also asks for a write root would widen where Codex may write.
   if (card.blockedPath !== undefined) return false;
   const changes = inputObject(card)?.changes;
   if (!Array.isArray(changes) || changes.length === 0) return false;
-  return changes.every(
-    (change: unknown) =>
-      change !== null &&
-      typeof change === 'object' &&
-      targetAllowed((change as Record<string, unknown>).path, context)
-  );
+  return changes.every((change: unknown) => changeAllowed(change, context));
 }
 
 /**

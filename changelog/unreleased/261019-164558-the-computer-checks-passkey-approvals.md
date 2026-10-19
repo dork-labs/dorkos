@@ -3,6 +3,7 @@ covers:
   - 'feat(server): the computer issues and checks passkey-signed approvals (B4b)'
   - 'fix(server): web approvals allow only one-shot tools, take no deny reason, and record the counter once (B4b review)'
   - 'fix(server): web approvals check every patched file, ignore case, and keep out of every harness folder (B4b re-review)'
+  - 'fix(server): web approvals check where a Codex patch moves a file, and refuse ~ paths (B4b re-review)'
 ---
 
 ### Added
