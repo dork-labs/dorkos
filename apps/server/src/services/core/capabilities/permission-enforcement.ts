@@ -207,6 +207,8 @@ export type PermissionGatedAction = Pick<
   GatedAction,
   'id' | 'tier' | 'areasForInput' | 'consent'
 > & {
+  /** Whether one call always asks a person, from its input (DOR-3107). */
+  alwaysAsksForInput?: (input: unknown) => boolean;
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
   /**
@@ -362,7 +364,10 @@ export async function resolveCallPermission(request: {
       // person may change (`areasForInput`, used by `config_patch`), so it always
       // asks, whatever the preset: Trusted allows Permissions for our agents'
       // own changes, never for a person's settings.
-      ...((index === 0 && (action.describeApprovalChange || isAlwaysAskingExtensionTool(action))) ||
+      ...((index === 0 &&
+        (action.describeApprovalChange ||
+          isAlwaysAskingExtensionTool(action) ||
+          action.alwaysAsksForInput?.(request.input) === true)) ||
       index > 0
         ? { alwaysAsks: true }
         : {}),
