@@ -7,6 +7,7 @@
  *
  * @module server/services/rooms/room-trigger/run-turn
  */
+import { isOwnCircle, posterCapsFor, type OwnCircle } from '../limits/own-circle.js';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
@@ -86,6 +87,19 @@ export async function runOneInDispatch(
     });
     // A space's local copy, where every message nobody vouched for is a teammate's (DOR-2955).
     const inSpaceRoom = self.deps.isSpaceRoom?.(room.id) === true;
+    // Marks, not levels, between the owner's own agents (DOR-3107): decided on
+    // every turn, and each poster's own cap read ahead of the ceiling.
+    const answered = target.answers ?? [entry];
+    const ownCircle = isOwnCircle(turnContext.context, room.id, {
+      inSpaceRoom,
+      bridged: self.deps.bridgedFraming(room.id) !== null,
+    });
+    const circle: OwnCircle = ownCircle
+      ? {
+          ownCircle,
+          posterCap: await posterCapsFor(self.deps.authors, answered, self.deps.posterLevel),
+        }
+      : { ownCircle };
     const result = await self.deps.runner.run({
       room,
       authorId: target.authorId,
@@ -117,7 +131,7 @@ export async function runOneInDispatch(
       ),
       // And the turn itself is held to the strictest of its senders' levels,
       // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
-      ...ceilingForEntries(self.deps.authors, target.answers ?? [entry], inSpaceRoom, room.id),
+      ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id, circle),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).

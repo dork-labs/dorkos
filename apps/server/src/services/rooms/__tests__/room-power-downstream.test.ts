@@ -31,8 +31,11 @@ const agents = agentLookupFor({
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
 });
 
-/** Record that a turn ran on `sessionId` at `mode`, as the registry's wrapper does. */
-async function ranAt(sessionId: string, mode: string): Promise<void> {
+/**
+ * Record that a turn ran on `sessionId` at `mode`, as the registry's wrapper
+ * does; `marked` records it as a turn that read words from outside.
+ */
+async function ranAt(sessionId: string, mode: string, marked = false): Promise<void> {
   const runtime = recordTurnLevels(
     {
       type: 'claude-code',
@@ -43,10 +46,14 @@ async function ranAt(sessionId: string, mode: string): Promise<void> {
     } as unknown as AgentRuntime,
     () => mode
   );
-  for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
+  const opts = marked ? { permissionCeiling: 'runtime-default' as const } : undefined;
+  for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
     // drain
   }
 }
+
+/** The level the person set Ana to, below Full autonomy. */
+const ANA_SET_TO = { asks: 'when-risky', reach: 'workspace' } as const;
 
 /** Ana's turn in ANOTHER room, which makes the call in the "from elsewhere" case. */
 const ELSEWHERE = 'ana-turn-in-another-room';
@@ -78,7 +85,13 @@ describe('a turn another agent’s post starts', () => {
       }
       return { text: null };
     });
-    ({ service, human, authors } = createRoomHarness({ agents, runner }));
+    ({ service, human, authors } = createRoomHarness({
+      agents,
+      runner,
+      // What the person set each agent to (DOR-3107): Ana below Full.
+      posterLevel: async (agentPath) =>
+        agentPath === '/agents/ana' ? ANA_SET_TO : { asks: 'never', reach: 'everything' },
+    }));
     channel = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
       human
@@ -91,8 +104,10 @@ describe('a turn another agent’s post starts', () => {
     expect(turnsOf('/agents/ana')[0]!.permissionCeiling).toBeUndefined();
   });
 
-  it('is held to the level the posting agent’s turn ran at', async () => {
-    // Ana's first turn binds her conversation; then her turns run at Accept edits.
+  // DOR-3107: marks, not levels. Between the owner's own agents, an unmarked
+  // post hands on no level its turn ran at, only the cap a person set on the
+  // poster. Ana's turn ran at Accept edits; the person set her to ANA_SET_TO.
+  it('is held to the level a person set the poster to, not its turn’s', async () => {
     service.post(channel.id, { authorId: human, text: '@ana hello' });
     await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
     const anaSession = turnsOf('/agents/ana')[0]!.sessionId!;
@@ -102,23 +117,24 @@ describe('a turn another agent’s post starts', () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
 
     expect(turnsOf('/agents/ana')[1]!.sessionId).toBe(anaSession);
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual({
-      asks: 'when-risky',
-      reach: 'edit',
-    });
+    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual(ANA_SET_TO);
   });
 
-  it('is held to the calling session when it is stricter than the author’s turn here', async () => {
-    // Ana's turn in this room runs at Full autonomy; the call comes from her
-    // turn in another room, which a stranger's message held to the default.
+  // Security's test: LifeOS read an email (a marked turn) and posted. The agent
+  // its post wakes still asks: a mark caps, whatever the poster is set to.
+  it('still holds a turn to the default when the post came from a marked turn', async () => {
     service.post(channel.id, { authorId: human, text: '@ana hello' });
     await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
     await ranAt(turnsOf('/agents/ana')[0]!.sessionId!, 'bypassPermissions');
-    await ranAt(ELSEWHERE, 'default');
+    await ranAt(ELSEWHERE, 'default', true);
 
     service.post(channel.id, { authorId: human, text: '@ana ask bo, from elsewhere' });
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual({ asks: 'always', reach: 'edit' });
+    // Capped, and carrying the mark on: it asks before acting.
+    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toMatchObject({
+      asks: 'always',
+      outsider: true,
+    });
   });
 
   it('is held to the runtime default when nobody verified the calling session', async () => {

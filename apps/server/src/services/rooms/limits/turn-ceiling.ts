@@ -9,9 +9,10 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { entryLevelOf, entryMarksOf } from '../../core/turn-power/turn-levels.js';
-import { ceilingCarrying } from '../../core/turn-power/turn-marks.js';
+import { ceilingCarrying, hasMarks } from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
 import { isTeammateEntry, isUnknownSpaceAgentPost } from './space-teammates.js';
+import type { OwnCircle } from './own-circle.js';
 
 /**
  * Whether the author of a triggering entry is somebody OUTSIDE this machine.
@@ -54,14 +55,21 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
+ * In the owner's own circle (DOR-3107, `own-circle.ts`), an agent's post KNOWN
+ * to carry no mark hands on no ceiling but the cap a person set on its poster:
+ * marks, not levels. Without the circle, or for a post nobody kept marks for,
+ * the rules above hold.
+ *
  * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  * @param roomId - The local room the turn answers in, which a teammate's mark names.
+ * @param circle - Whether this turn is in the owner's own circle, and posters' caps.
  */
 export function ceilingForEntry(
   authors: AuthorRegistry,
   entry: Pick<RoomEntry, 'id' | 'authorId'>,
   inSpaceRoom = false,
-  roomId = ''
+  roomId = '',
+  circle?: OwnCircle
 ): { permissionCeiling?: TurnPermissionCeiling } {
   if (isTeammateEntry(authors, entry, inSpaceRoom)) {
     const origin = { roomId, authorId: entry.authorId };
@@ -72,6 +80,13 @@ export function ceilingForEntry(
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
   if (kind !== 'agent') return {};
+  if (circle?.ownCircle) {
+    const marks = entryMarksOf(entry.id, roomId || undefined);
+    if (marks !== null && marks !== undefined && !hasMarks(marks)) {
+      const cap = circle.posterCap?.(entry.authorId);
+      return cap !== undefined ? { permissionCeiling: cap } : {};
+    }
+  }
   const level = entryLevelOf(entry.id);
   if (level !== undefined) return { permissionCeiling: level };
   // The level is gone (a restart) or was never kept: the post's row still says what it carried.
@@ -92,15 +107,17 @@ export function ceilingForEntry(
  * @param entries - Every message the turn answers.
  * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
  * @param roomId - The local room the turn answers in, which a teammate's mark names.
+ * @param circle - Whether this turn is in the owner's own circle, and posters' caps.
  */
 export function ceilingForEntries(
   authors: AuthorRegistry,
   entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
   inSpaceRoom = false,
-  roomId = ''
+  roomId = '',
+  circle?: OwnCircle
 ): { permissionCeiling?: TurnPermissionCeiling } {
   const bounds = entries.flatMap((entry): TurnPermissionBound[] => {
-    const one = ceilingForEntry(authors, entry, inSpaceRoom, roomId).permissionCeiling;
+    const one = ceilingForEntry(authors, entry, inSpaceRoom, roomId, circle).permissionCeiling;
     if (one === undefined) return [];
     return Array.isArray(one) ? [...one] : [one as TurnPermissionBound];
   });
