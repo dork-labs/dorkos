@@ -23,9 +23,8 @@ import {
 import { WEB_DEVICE_ENTRIES, type WebDevicePayloads } from './web-device-notifications.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
-export interface DeclaredPayloads extends ConnectorHoldPayloads,
-    WebDevicePayloads,
-    CommunityNotificationPayloads {}
+export interface DeclaredPayloads
+  extends ConnectorHoldPayloads, WebDevicePayloads, CommunityNotificationPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
