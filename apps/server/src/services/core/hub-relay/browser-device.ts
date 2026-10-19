@@ -10,8 +10,8 @@
  *   about the session: signing out and in again is the same browser, and
  *   another browser is never the same one. `HttpOnly`, `SameSite=Lax`, and on
  *   a `Secure` build `__Host-` bound, so no sibling name can plant one.
- * - **The label** is read from the `User-Agent`, e.g. `Safari on iPhone`. A
- *   hint for the owner, never a check: a browser can say anything there.
+ * - **The label** is read from the `User-Agent` by `lib/http/user-agent.ts`, e.g.
+ *   `Safari on iPhone`. A hint for the owner, never a check.
  *
  * A request without the cookie names no device; the answer to it sets one.
  *
@@ -20,6 +20,7 @@
 import { randomBytes } from 'node:crypto';
 import type { RelayDevice } from '@dorkos/shared/session-relay';
 import { RelayDeviceSchema } from '@dorkos/shared/session-relay';
+import { describeUserAgent } from '../../../lib/http/user-agent.js';
 
 /** How long the browser keeps the cookie: 400 days, the most browsers allow. */
 const MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
@@ -73,42 +74,6 @@ export function browserDeviceId(cookieHeader: string | undefined, secure: boolea
     return RelayDeviceSchema.shape.id.safeParse(id).success ? id : null;
   }
   return null;
-}
-
-/** Platforms, most specific first: an iPad says "Macintosh" on its own. */
-const PLATFORMS: ReadonlyArray<[RegExp, string]> = [
-  [/iPhone/, 'iPhone'],
-  [/iPad/, 'iPad'],
-  [/Android/, 'Android'],
-  [/CrOS/, 'Chromebook'],
-  [/Windows/, 'Windows'],
-  [/Macintosh|Mac OS X/, 'Mac'],
-  [/Linux/, 'Linux'],
-];
-
-/** Browsers, most specific first: Edge and Opera also say "Chrome", Chrome says "Safari". */
-const BROWSERS: ReadonlyArray<[RegExp, string]> = [
-  [/Edg(?:e|A|iOS)?\//, 'Edge'],
-  [/OPR\/|Opera/, 'Opera'],
-  [/Firefox\/|FxiOS\//, 'Firefox'],
-  [/Chrome\/|CriOS\//, 'Chrome'],
-  [/Safari\//, 'Safari'],
-];
-
-/**
- * A short name for the browser a `User-Agent` describes, e.g. `Safari on
- * iPhone`, or `A web browser` when it says nothing recognisable.
- *
- * @param userAgent - The request's `User-Agent` header.
- */
-export function describeUserAgent(userAgent: string | undefined): string {
-  const ua = userAgent ?? '';
-  const browser = BROWSERS.find(([pattern]) => pattern.test(ua))?.[1];
-  const platform = PLATFORMS.find(([pattern]) => pattern.test(ua))?.[1];
-  if (browser && platform) return `${browser} on ${platform}`;
-  if (browser) return browser;
-  if (platform) return `A browser on ${platform}`;
-  return 'A web browser';
 }
 
 /**

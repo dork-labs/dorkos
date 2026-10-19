@@ -18,7 +18,7 @@ import { WebSocket } from 'ws';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
-import { createDb, runMigrations, session, type Db } from '@dorkos/db';
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
 
 // Every audit row, kept here: one device sign-out must write exactly one.
 const audited = vi.hoisted(() => [] as { action: string }[]);
@@ -111,11 +111,22 @@ function headersVia(ingress: RequestIngress, cookie: string): Record<string, str
   };
 }
 
-/** Sign in through one route; returns the cookie pairs it set. */
-async function signInVia(ingress: RequestIngress): Promise<string> {
+/** The browser each route signs in from, as a person's would. */
+const USER_AGENT: Partial<Record<RequestIngress, string>> = {
+  direct:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  wifi: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+};
+
+/**
+ * Sign in through one route, from that route's browser unless `browser` is
+ * `false`; returns the cookie pairs it set.
+ */
+async function signInVia(ingress: RequestIngress, browser = true): Promise<string> {
+  const userAgent = browser ? USER_AGENT[ingress] : undefined;
   const res = await request(target.server)
     .post('/api/auth/sign-in/email')
-    .set(headersVia(ingress, ''))
+    .set({ ...headersVia(ingress, ''), ...(userAgent ? { 'user-agent': userAgent } : {}) })
     .send({ email: EMAIL, password: PASSWORD });
   expect(res.status).toBe(200);
   return ((res.headers['set-cookie'] as unknown as string[] | undefined) ?? [])
@@ -302,6 +313,26 @@ describe('signing out ends what that sign-in had open', () => {
     const fromPhone = await devices('get', '/sessions', 'wifi', phone);
     expect(fromPhone.status).toBe(200);
     expect(fromPhone.body.canSignOutOthers).toBe(false);
+  });
+
+  it('names each sign-in by its browser, and leaves out only the sign-up one', async () => {
+    // As on an install set up a minute ago: the account and its sign-up sign-in.
+    const setUp = new Date(Date.now() - 60_000);
+    db.update(user).set({ createdAt: setUp }).where(eq(user.id, ownerId)).run();
+    db.update(session).set({ createdAt: setUp }).where(eq(session.userAgent, '')).run();
+    const here = await signInVia('direct');
+    await signInVia('wifi');
+    // A sign-in made later with no browser (a script with the password) is listed.
+    await signInVia('direct', false);
+    const rows = db.select().from(session).where(eq(session.userId, ownerId)).all();
+    const res = await devices('get', '/sessions', 'direct', here);
+    const names: string[] = res.body.sessions.map((s: { name: string }) => s.name);
+    expect(names[0]).toBe('Chrome on Mac');
+    expect(names).toContain('Safari on iPhone');
+    expect(names.filter((name) => name === 'A web browser')).toHaveLength(1);
+    // The one the sign-up in `beforeAll` made, with no browser, is the one left out.
+    expect(rows.filter((row) => !row.userAgent)).toHaveLength(2);
+    expect(names).toHaveLength(rows.length - 1);
   });
 
   it('signs out another device only from this computer, and your own from anywhere', async () => {

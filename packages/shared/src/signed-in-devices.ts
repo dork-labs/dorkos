@@ -41,8 +41,11 @@ export const SignedInDeviceSchema = z.object({
   lastSeenAt: z.string(),
   /** Whether it is the sign-in asking. */
   current: z.boolean(),
-  /** The browser and system it came from, in a few words, when known. */
-  userAgentLabel: z.string().optional(),
+  /**
+   * What the device is called: its browser and platform ("Chrome on Mac"), or
+   * "A web browser" when it said nothing known. A label, never a check.
+   */
+  name: z.string(),
 });
 
 /** See {@link SignedInDeviceSchema}. */

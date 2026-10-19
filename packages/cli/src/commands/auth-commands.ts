@@ -25,7 +25,7 @@ export interface OwnerAuth {
   api: {
     signUpEmail(input: {
       body: { name: string; email: string; password: string };
-    }): Promise<unknown>;
+    }): Promise<{ token?: string | null }>;
   };
   $context: Promise<{
     password: {
@@ -35,6 +35,7 @@ export interface OwnerAuth {
     internalAdapter: {
       findAccounts(userId: string): Promise<Array<{ providerId: string }>>;
       updatePassword(userId: string, hashedPassword: string): Promise<void>;
+      deleteSession(token: string): Promise<void>;
       createAccount(account: {
         userId: string;
         providerId: string;
@@ -214,15 +215,23 @@ export async function runAuthEnable(deps: AuthEnableDeps): Promise<number> {
     return 1;
   }
 
+  let signUpToken: string | null | undefined;
   try {
     // Better Auth requires `name` but accepts an empty one. It stays empty so
     // the app asks what to call the owner; an email sent here showed up as
     // their name everywhere (DOR-2964).
-    await auth.api.signUpEmail({ body: { name: '', email, password } });
+    ({ token: signUpToken } = await auth.api.signUpEmail({
+      body: { name: '', email, password },
+    }));
   } catch (err) {
     io.error(`Could not create the owner account: ${errorMessage(err)}`);
     return 1;
   }
+
+  // Sign-up also signs in, and nothing here ever uses that sign-in: kept, it
+  // shows in Signed-in devices as a device nobody holds (DOR-3097). Only that
+  // one ends, through Better Auth, so its own delete hooks run.
+  if (signUpToken) await (await auth.$context).internalAdapter.deleteSession(signUpToken);
 
   // Only flip the flag after the account exists — a failed sign-up must leave
   // config untouched.
