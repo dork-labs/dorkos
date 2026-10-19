@@ -9,7 +9,8 @@
 import { z } from 'zod';
 import { HEARTBEAT_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
-import { outsiderBoundOf } from '../turn-power/turn-levels.js';
+import { marksOf } from '../turn-power/turn-levels.js';
+import { hasMarks } from '../turn-power/turn-marks.js';
 
 /** `update_agent`'s convention-file fields, spread into its input schema. */
 export const AGENT_FILE_INPUTS = {
@@ -100,7 +101,7 @@ export function refuseOutsiderAgentFiles(
 ): undefined {
   const fields = namedInstructionFields(input);
   if (fields.length === 0) return undefined;
-  if (outsiderBoundOf(context.sessionId, context.identity?.agentPath) === undefined) {
+  if (!hasMarks(marksOf(context.sessionId, context.identity?.agentPath))) {
     return undefined;
   }
   throw new CapabilityToolError({

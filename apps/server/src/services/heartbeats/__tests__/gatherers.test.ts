@@ -12,7 +12,6 @@ import {
   roomEntries,
   roomMembers,
   rooms,
-  eq,
   type Db,
 } from '@dorkos/db';
 import {

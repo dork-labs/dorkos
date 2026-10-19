@@ -9,6 +9,7 @@ covers:
   - 'fix(client): at phone width the permission chip says just its level beside the Wi-Fi icon (DOR-3037)'
   - 'fix(client): at phone width the permission chip always shows, and the Wi-Fi pill is easy to tap (DOR-3037)'
   - 'fix(client): Plan and the phone-width runtime icon hug their content on the status line (DOR-3037)'
+  - "fix(server): the Wi-Fi refusals read the turn's marks after DOR-3036 part 1 (DOR-3037)"
 ---
 
 ### Security

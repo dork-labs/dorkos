@@ -39,7 +39,8 @@
  * @module services/commitments/commitment-capabilities
  */
 import { z } from 'zod';
-import { outsiderBoundOf } from '../core/turn-power/turn-levels.js';
+import { marksOf } from '../core/turn-power/turn-levels.js';
+import { hasMarks } from '../core/turn-power/turn-marks.js';
 import {
   COMMITMENT_LIST_MAX,
   COMMITMENT_NOTE_MAX,
@@ -59,7 +60,6 @@ import {
   type CommitmentActor,
   type CommitmentService,
 } from './commitment-service.js';
-import { marksOf } from '../core/turn-power/turn-levels.js';
 
 /** The MCP tool names, exported so prose that names them reads them from here. */
 export const COMMITMENT_ADD_TOOL = 'commitment_add';
@@ -254,7 +254,7 @@ export const commitmentsDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
-        if (outsiderBoundOf(context.sessionId, context.identity?.agentPath) !== undefined) {
+        if (hasMarks(marksOf(context.sessionId, context.identity?.agentPath))) {
           return OUTSIDER_PROMISE;
         }
         const commitmentDeps = requireCommitmentDeps(deps);

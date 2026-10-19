@@ -25,7 +25,7 @@ import {
   lastTurnLevelOf,
   noteEntryHeldToDefault,
   noteEntryLevel,
-  outsiderBoundOf,
+  markedBoundOf,
   postLevelFor,
   recordTurnLevels,
 } from '../turn-levels.js';
@@ -136,7 +136,7 @@ describe('a turn started from Wi-Fi', () => {
     const child = fresh('child');
     const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [child]: 'bypassPermissions' });
     await run(runtime, ana, WIFI);
-    const bound = outsiderBoundOf(ana, '/agents/ana');
+    const bound = markedBoundOf(ana, '/agents/ana');
     expect(bound).toMatchObject({ outsider: true });
     await run(runtime, child, { permissionCeiling: bound! });
     expect(runsAt(sent.get(child))).toBe('default');

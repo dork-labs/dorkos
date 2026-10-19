@@ -56,7 +56,6 @@ import {
 } from '../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
-import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../tasks/task-file-update.js';
@@ -189,12 +188,12 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
 
 /**
  * Whether the calling turn read words DorkOS cannot vouch for, from the turn's
- * own record (`outsiderBoundOf`): its schedule writes then park for a person.
+ * own marks (`marksOf`, DOR-3036): its schedule writes then park for a person.
  *
  * @param provenance - The calling session and agent, as the server resolved them.
  */
 function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
-  return outsiderBoundOf(provenance.sessionId, provenance.agentPath) !== undefined;
+  return hasMarks(marksOf(provenance.sessionId, provenance.agentPath));
 }
 
 /**
