@@ -6,6 +6,7 @@ covers:
   - "fix(server): trust first: an own agent's post or message with unknown marks runs at its level; only marked or unverified ones cap (DOR-3107)"
   - "fix(server): review fixes for trust first: unverified HTTP posts stay marked, a marked turn's chat stays marked, any mark counts (DOR-3107)"
   - "fix(server): Security's Shoulds on trust first: a verified agent with no session is an own agent, and kept marks land with the post (DOR-3107)"
+  - "fix(server): an unknown-but-marked sender's row shows its mark (DOR-3107, Security 19:03)"
 ---
 
 ### Fixed

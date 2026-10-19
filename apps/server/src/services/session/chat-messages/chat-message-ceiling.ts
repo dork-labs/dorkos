@@ -50,6 +50,37 @@ export async function senderBound(
   return ownLevelOf(caller.agentPath, [caller.sessionId]);
 }
 
+/**
+ * What a chat message row stores as its sender's bound (`ceilingJson`).
+ *
+ * The same as {@link senderBound}, except for one case: a sender whose level
+ * is unknown but which carries the outsider mark (a chat a stranger reached).
+ * Its bound is a bare runtime default, which on its own is also what an
+ * unknown, unmarked sender stored before this build. So the row keeps the mark
+ * visibly, as `{"bound":"runtime-default","marks":{...}}` (DOR-3107, Security
+ * 19:03). `parseCeiling` reads that shape as `runtime-default`, so the turn
+ * runs exactly as it would with the bare value, and a later reader (the
+ * existing-chats raise) can tell marked from unknown.
+ *
+ * @param deps - Reads the sending chat's level (`passedOnLevelOf`) and the person-set level.
+ * @param caller - The sending chat and its agent.
+ */
+export async function senderCeilingJson(
+  deps: {
+    turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
+    ownLevelOf?: OwnLevelReader;
+  },
+  caller: { sessionId: string; agentPath: string }
+): Promise<string> {
+  const level = deps.turnLevelOf(caller.sessionId);
+  const bound = await senderBound(level, caller, deps.ownLevelOf);
+  if (level === undefined && bound === 'runtime-default') {
+    const marks = unknownLevelMarks([caller.sessionId], caller.agentPath);
+    if (hasMarks(marks)) return JSON.stringify({ bound: 'runtime-default', marks });
+  }
+  return JSON.stringify(bound);
+}
+
 /** A ceiling as the list of bounds that all hold. */
 export function boundsOf(ceiling: TurnPermissionCeiling): readonly TurnPermissionBound[] {
   return Array.isArray(ceiling)

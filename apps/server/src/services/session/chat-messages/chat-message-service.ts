@@ -37,7 +37,7 @@ import {
   boundsOf,
   chatMessageOrigin,
   parseCeiling,
-  senderBound,
+  senderCeilingJson,
   type OwnLevelReader,
 } from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
@@ -271,8 +271,7 @@ export class ChatMessageService {
       text(input),
       this.deps.nonce?.()
     );
-    const level = this.deps.turnLevelOf(caller.sessionId);
-    const ceiling = await senderBound(level, caller, this.deps.ownLevelOf);
+    const ceilingJson = await senderCeilingJson(this.deps, caller);
     // A new DM chat's id is minted here, before the row, so a window already
     // watching it can match the message to its sender from the first event.
     if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
@@ -291,7 +290,7 @@ export class ChatMessageService {
       delivery,
       status: 'queued',
       queueMessageId: crypto.randomUUID(),
-      ceilingJson: JSON.stringify(ceiling),
+      ceilingJson,
       replyToId,
     });
 
@@ -618,9 +617,7 @@ export class ChatMessageService {
       delivery: 'queue',
       status: 'queued',
       queueMessageId,
-      ceilingJson: JSON.stringify(
-        await senderBound(this.deps.turnLevelOf(caller.sessionId), caller, this.deps.ownLevelOf)
-      ),
+      ceilingJson: await senderCeilingJson(this.deps, caller),
       replyToId: null,
     });
     return { id: row.id, content: rendered.text };

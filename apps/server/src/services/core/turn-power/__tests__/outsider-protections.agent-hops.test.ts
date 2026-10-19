@@ -53,7 +53,10 @@ import { ceilingForEntry, outsiderInViewOf } from '../../../rooms/limits/turn-ce
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 import {
   chatMessageOrigin,
+  isMarkedBound,
+  parseCeiling,
   senderBound,
+  senderCeilingJson,
 } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
@@ -477,6 +480,28 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(runsAt(sent.get(bo))).toBe('default');
     // Bo posts into a room: the agent it wakes is capped too.
     expect(postLevelFor([bo])?.outsider).toBe(true);
+  });
+
+  // Security 19:03: the row must show the mark, so the existing-chats raise
+  // can tell a marked sender from an unknown one. The turn runs exactly as a
+  // bare runtime default would.
+  it('stores an unknown-but-marked sender visibly, and reads it as the runtime default', async () => {
+    const lifeos = fresh('lifeos');
+    noteTurnOrigin(lifeos, { kind: 'relay-binding' });
+    const json = await senderCeilingJson(
+      { turnLevelOf: () => undefined, ownLevelOf: ownLevelFull },
+      caller(lifeos)
+    );
+    expect(JSON.parse(json)).toEqual({ bound: 'runtime-default', marks: { outsider: true } });
+    expect(parseCeiling(json)).toBe('runtime-default');
+    expect(isMarkedBound(parseCeiling(json))).toBe(true);
+    expect(chatMessageOrigin(json)).toMatchObject({ marked: true });
+    // An unknown sender nobody outside reached stores its own level, not the default.
+    const own = await senderCeilingJson(
+      { turnLevelOf: () => undefined, ownLevelOf: ownLevelFull },
+      caller(fresh('ana'))
+    );
+    expect(JSON.parse(own)).toEqual(FULL);
   });
 
   it('a chat that ran one marked turn stays marked for what it hands on later', async () => {
