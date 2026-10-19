@@ -19,7 +19,11 @@ vi.mock('streamdown/styles.css', () => ({}));
 // the document channel keys on transport identity, so the page channel is
 // inert here. Its real composition is covered in CanvasBrowserContentFrame.
 vi.mock('../model/use-doc-frame-channel', () => ({
-  useDocFrameChannel: () => ({ requiresReload: false, noteFrameLoaded: () => {} }),
+  useDocFrameChannel: (params: { resolvedSource: string | null }) => ({
+    frameSource: params.resolvedSource,
+    requiresReload: false,
+    noteFrameLoaded: () => {},
+  }),
 }));
 
 // Mock the heavy Blintz wrapper (markdown canvas) so jsdom never loads the real editor.

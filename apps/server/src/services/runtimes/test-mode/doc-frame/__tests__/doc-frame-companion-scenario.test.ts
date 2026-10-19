@@ -35,11 +35,13 @@ async function drain(generator: AsyncGenerator<unknown>) {
 it('a turn started by a page event echoes the doc_events it was handed and calls no tools', async () => {
   const probe = vi.fn();
   configureDocFrameSdkProbe(probe);
-  const f = await setup('<doc_events>companion.click 1234</doc_events>');
+  const f = await setup('<doc_events>companion.review.send 1234</doc_events>');
   const events = await drain(docFrameCompanionScenario('', f.ctx, { cwd: f.root }));
   expect(events[0]).toMatchObject({
     type: 'text_delta',
-    data: { text: `${COMPANION_DOC_TURN_PREFIX}\n\n<doc_events>companion.click 1234</doc_events>` },
+    data: {
+      text: `${COMPANION_DOC_TURN_PREFIX}\n\n<doc_events>companion.review.send 1234</doc_events>`,
+    },
   });
   expect(events.at(-1)).toMatchObject({ type: 'done' });
   expect(probe).not.toHaveBeenCalled();
@@ -55,7 +57,7 @@ it('the setup turn refuses without a dev server URL before writing anything', as
   expect(await fs.readdir(f.root)).toEqual([]);
 });
 
-it('opens both pages with the companion route, says so, and approves only after the browser step', async () => {
+it('opens both pages, then declares and approves the companion route only after the browser step', async () => {
   const f = await setup();
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   let stepped = false;
@@ -68,6 +70,10 @@ it('opens both pages with the companion route, says so, and approves only after 
         if (name === 'approve_doc_route') {
           expect(stepped).toBe(true);
           return { kind: 'granted', grantId: `grant-${args.documentId as string}` };
+        }
+        if (name === 'configure_doc_channel') {
+          expect(stepped).toBe(true);
+          return { configured: true };
         }
         return { success: true, documentId: `doc-${++next}` };
       },
@@ -98,9 +104,18 @@ it('opens both pages with the companion route, says so, and approves only after 
     'http://localhost:5173/',
   ]);
   for (const call of navigations)
-    expect(call.args).toMatchObject({
-      action: 'browser_navigate',
-      channel: { routes: [COMPANION_ROUTE] },
-    });
-  expect(calls.filter((call) => call.name === 'approve_doc_route')).toHaveLength(2);
+    expect(call.args).toEqual({ action: 'browser_navigate', url: call.args.url });
+  // The designer agent's own sequence: declare the route, then approve it as the opener.
+  expect(calls.filter((call) => call.name !== 'control_ui')).toEqual(
+    ['doc-1', 'doc-2'].flatMap((documentId) => [
+      {
+        name: 'configure_doc_channel',
+        args: { documentId, channel: { routes: [COMPANION_ROUTE] } },
+      },
+      {
+        name: 'approve_doc_route',
+        args: expect.objectContaining({ documentId, routeId: COMPANION_ROUTE.id }),
+      },
+    ])
+  );
 });

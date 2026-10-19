@@ -75,15 +75,16 @@ function acknowledge() {
     window.dispatchEvent(new MessageEvent('message', { data: 'ack' }));
   });
 }
+/** The served source with a boot nonce on its fragment, as the frame is given it. */
+const BOOTED = /^\/api\/workbench\/serve\/unit-token\/preview\.html#dorkos-boot=[0-9a-f-]{36}$/;
 async function servedFrame() {
   render(
     <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
   );
-  const frame = (await screen.findByTitle('Embedded browser')) as HTMLIFrameElement;
   await waitFor(() =>
-    expect(frame.getAttribute('src')).toBe('/api/workbench/serve/unit-token/preview.html')
+    expect(screen.getByTitle('Embedded browser').getAttribute('src')).toMatch(BOOTED)
   );
-  return frame;
+  return screen.getByTitle('Embedded browser') as HTMLIFrameElement;
 }
 
 it('a served page loads straight away and is offered a port only once it has loaded', async () => {
@@ -154,21 +155,27 @@ it('a page with no approved route yet shows no offline notice', async () => {
   expect(screen.queryByText(OFFLINE)).toBeNull();
 });
 
-it('a connected page that stops answering says so, and Reload brings back a fresh frame', async () => {
+it('a connected page that leaves its document is not challenged again; Reload brings back a fresh frame', async () => {
   const frame = await servedFrame();
+  const first = frame.getAttribute('src');
   fireEvent.load(frame);
   await waitFor(() => expect(started()).toHaveLength(1));
   acknowledge();
-  // The page navigates itself somewhere that never answers the new challenge.
+  // The page reloads or navigates itself: that document was not DorkOS's
+  // navigation, so it gets no challenge, and the person is told Reload helps.
   fireEvent.load(frame);
-  await waitFor(() => expect(started()).toHaveLength(2));
-  act(() => started()[1].close());
+  await act(async () => {});
+  expect(started()).toHaveLength(1);
   expect(screen.getByText(OFFLINE)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
   await waitFor(() => expect(screen.getByTitle('Embedded browser')).not.toBe(frame));
   expect(screen.queryByText(OFFLINE)).toBeNull();
-  fireEvent.load(screen.getByTitle('Embedded browser'));
-  await waitFor(() => expect(started()).toHaveLength(3));
+  // A new navigation carries a new nonce.
+  const fresh = screen.getByTitle('Embedded browser');
+  await waitFor(() => expect(fresh.getAttribute('src')).toMatch(BOOTED));
+  expect(fresh.getAttribute('src')).not.toBe(first);
+  fireEvent.load(fresh);
+  await waitFor(() => expect(started()).toHaveLength(2));
 });
 
 it('a slow-load notice is cleared by the page actually loading', async () => {

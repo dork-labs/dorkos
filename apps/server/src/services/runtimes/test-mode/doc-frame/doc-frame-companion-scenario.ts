@@ -9,18 +9,24 @@ import type { ScenarioFn } from '../scenario-store.js';
 import type { DocFrameSdkWorkflow } from './doc-frame-sdk-probe.js';
 import { installedDocFrameSdkProbe, writeFixturePage } from './doc-frame-sdk-scenario.js';
 
-/** The route the companion asks for: every `companion.*` event wakes its owner at once. */
+/**
+ * The route the visual companion declares: its page emits `companion.*` events
+ * (`companion.review.send` and the like), and a burst of them wakes the agent
+ * that opened the page once. `companion.*` matches every type under the prefix.
+ * It routes to the opener itself and asks for no write, so the opener approves
+ * it alone (`verified_opener`); no person is asked.
+ */
 export const COMPANION_ROUTE = {
-  id: 'sends',
+  id: 'companion',
   on: 'companion.*',
   to: 'agent:owner',
-  turn: { mode: 'immediate', maxBatch: 1 },
+  turn: { mode: 'coalesce', windowMs: 1000, maxBatch: 20 },
 } as const;
 
 /** What the routed turn says, so a browser test can read the context it was handed. */
 export const COMPANION_DOC_TURN_PREFIX = 'Companion doc turn:';
 
-/** The page both copies serve: the same `viaChannel` call `helper.js` makes. */
+/** The page both copies serve: the same `companion.review.send` the companion emits. */
 export const COMPANION_PAGE_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Companion fixture</title></head>
 <body><button id="send" type="button">Send choice</button>
@@ -34,17 +40,22 @@ if (channel) channel.on('status', show);
 show();
 document.getElementById('send').addEventListener('click', async () => {
   if (!channel || channel.status !== 'ready') { receipt.textContent = 'not ready'; return; }
-  const ev = { type: 'click', choice: 'b', screen: 'layout', where: location.protocol };
+  const ev = { message: 'Pick b', notes: [{ n: 1, text: 'b' }], screen: 'layout', where: location.protocol };
   try {
-    receipt.textContent = JSON.stringify(await channel.emit('companion.' + ev.type, ev));
+    receipt.textContent = JSON.stringify(await channel.emit('companion.review.send', ev));
   } catch (error) { receipt.textContent = 'refused ' + error.outcome; }
 });
 </script></body></html>`;
 
 const openedSchema = z.object({ success: z.literal(true), documentId: z.string().min(1) });
 const grantedSchema = z.object({ kind: z.literal('granted'), grantId: z.string().min(1) });
+const configuredSchema = z.object({ configured: z.literal(true) });
 
-/** The two pages and their routes, approved only after the browser has looked at them. */
+/**
+ * The two pages, then their routes, exactly as the designer agent does it: open
+ * each page, declare its route, and approve that route as its opener — after
+ * the browser has looked at the pages with no route at all.
+ */
 function companionWorkflow(
   servedPath: string,
   previewUrl: string,
@@ -55,12 +66,15 @@ function companionWorkflow(
     const opened = [];
     for (const url of [servedPath, previewUrl])
       opened.push(
-        openedSchema.parse(await call('control_ui', { action: 'browser_navigate', url, channel }))
+        openedSchema.parse(await call('control_ui', { action: 'browser_navigate', url }))
       );
     say(`Companion pages open: ${opened.map((page) => page.documentId).join(' ')}.`);
     // The browser checks the pages before any route exists, then steps this turn on.
     await waitForBrowser();
     for (const page of opened) {
+      configuredSchema.parse(
+        await call('configure_doc_channel', { documentId: page.documentId, channel })
+      );
       const granted = grantedSchema.parse(
         await call('approve_doc_route', {
           documentId: page.documentId,

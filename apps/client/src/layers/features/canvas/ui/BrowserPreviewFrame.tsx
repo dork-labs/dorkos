@@ -3,12 +3,24 @@ import { useEffect, useState } from 'react';
 import type { ResolveError, ResolvedFrame } from '../model/use-resolved-frame';
 import type { classifyBrowserTarget } from '../lib/browser-url';
 
+/**
+ * How long a frame may sit without firing `load` before the browser says so.
+ *
+ * Ten seconds is past every healthy first paint (a cold Vite start is a second
+ * or two) and short of the patience of someone staring at a white rectangle. The
+ * frame stays mounted underneath: this is a message, not a giving-up.
+ */
 const FRAME_LOAD_TIMEOUT_MS = 10_000;
 
 interface BrowserBodyProps {
   target: ReturnType<typeof classifyBrowserTarget>;
   /** What the resolve cascade settled on, or `null` while it is still deciding. */
   resolved: ResolvedFrame | null;
+  /**
+   * The `src` the frame is actually given: the resolved source, carrying the
+   * page channel's boot nonce for a served document.
+   */
+  frameSource: string | null;
   resolveError: ResolveError | null;
   reloadNonce: number;
   /** Resources the current document failed to load, as the DevTools bridge counted them. */
@@ -66,6 +78,7 @@ function explainResolveError(
 export function BrowserBody({
   target,
   resolved,
+  frameSource,
   resolveError,
   reloadNonce,
   resourceErrorCount,
@@ -90,7 +103,7 @@ export function BrowserBody({
       </BrowserMessage>
     );
   }
-  if (resolved === null) {
+  if (resolved === null || frameSource === null) {
     return <BrowserMessage>Loading…</BrowserMessage>;
   }
 
@@ -101,9 +114,11 @@ export function BrowserBody({
       // One mount per document the frame loads: reload re-mints the src, and a
       // reload of the SAME src still bumps the nonce. Remounting is also what
       // resets "has it loaded yet" and "is it past its deadline" — a page's
-      // loading state belongs to that page and nothing else.
-      key={`${resolved.src}:${reloadNonce}`}
-      src={resolved.src}
+      // loading state belongs to that page and nothing else. Keyed on the
+      // source the frame really gets: a new boot nonce changes only the
+      // fragment, which would otherwise navigate within the old document.
+      key={`${frameSource}:${reloadNonce}`}
+      src={frameSource}
       sandbox={resolved.sandbox}
       title={title}
       iframeRef={iframeRef}

@@ -33,7 +33,7 @@ document.getElementById('send').addEventListener('click', async () => {
   if (!channel || channel.status !== 'ready') { receipt.textContent = 'not ready'; return; }
   const ev = { type: 'click', choice: 'b', screen: 'layout', where: location.protocol };
   try {
-    receipt.textContent = JSON.stringify(await channel.emit('companion.' + ev.type, ev));
+    receipt.textContent = JSON.stringify(await channel.emit('companion.review.send', ev));
   } catch (error) { receipt.textContent = 'refused ' + error.outcome; }
 });
 </script></body></html>`;
@@ -114,10 +114,12 @@ export function registerDocFrameCompanionBrowserTests() {
           const first = await send(served);
           expect(first.receipt.status).toBe('recorded');
           expect(first.deliveries).toHaveLength(1);
-          expect(first.deliveries[0]).toMatchObject({ routeId: 'sends' });
+          expect(first.deliveries[0]).toMatchObject({ routeId: 'companion' });
           await expect(assistant.filter({ hasText: DOC_TURN })).toHaveCount(1, { timeout: 20_000 });
           await expect(assistant.filter({ hasText: DOC_TURN })).toContainText(first.receipt.id);
-          await expect(assistant.filter({ hasText: DOC_TURN })).toContainText('companion.click');
+          await expect(assistant.filter({ hasText: DOC_TURN })).toContainText(
+            'companion.review.send'
+          );
           await chat.waitForTurnToEnd();
 
           const preview = await showPage(page, /^localhost$/);

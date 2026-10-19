@@ -44,6 +44,7 @@ import { DocChannelIngest } from './ingest.js';
 import { DocRouteGrantError, type DocGrantAuthority } from './grant-policy.js';
 import {
   docInstallationOwner,
+  isInstallationAuthority,
   sameDocOwnerAuthority,
   readDocSourceDescriptor,
 } from './doc-source-policy.js';
@@ -77,7 +78,14 @@ export function createDocChannelHttpComposition(deps: {
   const tokens = new WeakMap<ServerPrincipalProof, string>();
   const currentOwner = () => docInstallationOwner(deps.installationId);
   const sameOwnerAuthority = (recorded: unknown) => sameDocOwnerAuthority(recorded, currentOwner());
-  const sameOwner = (claims: ServerPrincipalClaims) => sameOwnerAuthority(claims.owner);
+  // An agent's turn proof is minted by the connector runtime, which names this
+  // installation as its owner whether or not an owner account exists, so it can
+  // never name the account. Every other proof must match the current owner
+  // exactly: authority from before an account existed does not carry over.
+  const sameOwner = (claims: Pick<ServerPrincipalClaims, 'kind' | 'owner'> | undefined) =>
+    !!claims &&
+    (sameOwnerAuthority(claims.owner) ||
+      (claims.kind === 'runtime' && isInstallationAuthority(claims.owner, deps.installationId)));
   const principalCurrent = (proof: ServerPrincipalProof): boolean => {
     if (!isServerPrincipal(proof) || !sameOwner(proof.claims)) return false;
     const claims = proof.claims;
@@ -257,9 +265,12 @@ export function createDocChannelHttpComposition(deps: {
     requireGrantedCurrent: (grant, tx) => {
       // Persisted grant evidence is verified by DocChannelGrants. Recheck the owning physical scope here,
       // without minting an operator principal or borrowing an expired opener-turn proof.
-      const origin = (grant.approvalEvidence as { binding?: { origin?: { owner?: unknown } } })
-        .binding?.origin;
-      if (!sameOwnerAuthority(origin?.owner)) throw new DocChannelNotFoundError();
+      const origin = (
+        grant.approvalEvidence as {
+          binding?: { origin?: Pick<ServerPrincipalClaims, 'kind' | 'owner'> };
+        }
+      ).binding?.origin;
+      if (!sameOwner(origin)) throw new DocChannelNotFoundError();
       const identity = deps.documents.lookupIdentity(grant.documentId);
       const channel = channels.getChannel(grant.documentId, tx);
       if (!identity || !channel || channel.closedAt !== null || grant.revokedAt)

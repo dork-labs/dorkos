@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   PageEventSchema,
   CanvasChannelEventReceiptSchema,
-  CanvasChannelFrameSchema,
+  CanvasChannelEventSchema,
   CanvasChannelSequenceSchema,
   CanvasChannelStateSchema,
   inspectCanvasChannelJson,
@@ -25,12 +25,36 @@ const correlation = {
   loadToken: CanvasChannelSequenceSchema,
   generation: CanvasDocIncarnationSchema.shape.generation,
 };
+/**
+ * The fragment parameter a host puts on a served document's frame `src`.
+ *
+ * Its value is a one-navigation boot nonce. The injected shim reads and removes
+ * it before any page script runs, then answers each challenge with it, so only
+ * the document DorkOS itself navigated the frame to can prove it is that
+ * document — a page reached by a link, a form, a redirect or `location` cannot.
+ */
+export const CANVAS_DOC_BOOT_PARAM = 'dorkos-boot';
 /** Strict window handshake; ports belong only to the connect transfer, never its payload. */
 export const CanvasDocHandshakeSchema = z.discriminatedUnion('kind', [
   z.object({ ...correlation, kind: z.literal('challenge') }).strict(),
-  z.object({ ...correlation, kind: z.literal('ack') }).strict(),
+  // `boot` is the served document's boot nonce; a preview, pinned by its own
+  // origin, has none.
+  z.object({ ...correlation, kind: z.literal('ack'), boot: token.optional() }).strict(),
   z.object({ ...correlation, kind: z.literal('connect') }).strict(),
 ]);
+/**
+ * One document event as the page sees it: its sequence and the event, never the
+ * session or room it streamed through, nor the document's incarnation.
+ */
+export const CanvasDocPageFrameSchema = z
+  .object({
+    type: z.literal('canvas_event'),
+    docSeq: CanvasChannelSequenceSchema,
+    event: CanvasChannelEventSchema,
+  })
+  .strict();
+/** A page-facing event frame. */
+export type CanvasDocPageFrame = z.infer<typeof CanvasDocPageFrameSchema>;
 /** Correlated handshake without routing, permission, credential or document-path fields. */
 export type CanvasDocHandshake = z.infer<typeof CanvasDocHandshakeSchema>;
 /** Public page command on its dedicated Doc port. */
@@ -70,7 +94,7 @@ export const CanvasDocResultSchema = z.discriminatedUnion('kind', [
       reset: z.boolean(),
     })
     .strict(),
-  z.object({ ...correlation, kind: z.literal('event'), frame: CanvasChannelFrameSchema }).strict(),
+  z.object({ ...correlation, kind: z.literal('event'), frame: CanvasDocPageFrameSchema }).strict(),
   z
     .object({
       ...correlation,

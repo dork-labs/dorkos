@@ -272,7 +272,7 @@ export function registerDocFrameSdkBrowserTests() {
       });
     });
 
-    test('a page that reloads or navigates itself reconnects on its own and its old document keeps no port', async ({
+    test('a page that reloads itself loses its port and says so, and Reload brings back a connected page', async ({
       page,
       request,
     }) => {
@@ -280,19 +280,32 @@ export function registerDocFrameSdkBrowserTests() {
         const f = await open(page, request);
         const first = await clickRecord(f.frame);
         noTurn(first.receipt);
-        const element = await page.locator('iframe[title="SDK receipt fixture"]').elementHandle();
+        const oldElement = await page
+          .locator('iframe[title="SDK receipt fixture"]')
+          .elementHandle();
         await f.frame.evaluate(() => location.reload());
-        await ready(f.frame);
-        // Same frame element, new document: no remount and no notice.
-        expect(
-          await element!.evaluate(
-            (node) => node === document.querySelector('iframe[title="SDK receipt fixture"]')
+        // The reloaded document was not a navigation DorkOS made, so it has no
+        // boot nonce and is never connected: the person is told Reload helps.
+        await expect(
+          page.getByText('Page is offline. Reload to reconnect.', { exact: true })
+        ).toBeVisible();
+        await expect
+          .poll(
+            () =>
+              f.frame
+                .evaluate(() => (window as SdkWindow).dorkos?.channel?.status ?? 'absent')
+                .catch(() => 'navigating'),
+            { timeout: 15_000 }
           )
-        ).toBe(true);
+          .toBe('offline');
+        await page.getByRole('button', { name: 'Reload', exact: true }).click();
+        await expect.poll(() => oldElement!.evaluate((node) => node.isConnected)).toBe(false);
+        const fresh = await actualFrame(page);
+        await ready(fresh);
         await expect(
           page.getByText('Page is offline. Reload to reconnect.', { exact: true })
         ).toHaveCount(0);
-        const second = await clickRecord(f.frame);
+        const second = await clickRecord(fresh);
         noTurn(await f.receipt(second.id));
         expect(
           (await f.channel()).events

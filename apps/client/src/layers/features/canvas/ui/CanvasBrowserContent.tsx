@@ -18,13 +18,6 @@ import {
   normalizeAddressInput,
 } from '../lib/browser-url';
 
-/**
- * How long a frame may sit without firing `load` before the browser says so.
- *
- * Ten seconds is past every healthy first paint (a cold Vite start is a second
- * or two) and short of the patience of someone staring at a white rectangle. The
- * frame stays mounted underneath: this is a message, not a giving-up.
- */
 interface CanvasBrowserContentProps {
   /**
    * The owning canvas document's id. Keys this browser's navigation history in
@@ -292,6 +285,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       <BrowserBody
         target={target}
         resolved={resolved}
+        frameSource={docFrame.frameSource}
         resolveError={resolveError}
         reloadNonce={reloadNonce}
         resourceErrorCount={resourceErrorCount}

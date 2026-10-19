@@ -1,7 +1,18 @@
 /** Fixed Doc SDK source only. F2 owns real injection; CSP and parser execution order stay unchanged. */
+import { CANVAS_DOC_BOOT_PARAM } from '@dorkos/shared/canvas-doc-frame-wire';
+
+/**
+ * The shim runs before any page script (it is the first thing in `<head>`), so
+ * it is the only code that ever sees the host's boot nonce: it takes the
+ * parameter out of the fragment with `replaceState` (no new history entry, no
+ * `hashchange`) and keeps it in this closure. A reload or any later document in
+ * the frame therefore boots without one, and cannot connect.
+ */
 export const DOC_FRAME_SHIM_SCRIPT = String.raw`(()=>{
 'use strict';
 if(window.parent===window)return;
+let boot=null;
+try{const prefix=${JSON.stringify(`${CANVAS_DOC_BOOT_PARAM}=`)},hash=location.hash.slice(1);if(hash){const parts=hash.split('&'),kept=parts.filter(part=>!part.startsWith(prefix));const found=parts.find(part=>part.startsWith(prefix));if(found){const value=found.slice(prefix.length);if(value&&value.length<=128)boot=value;history.replaceState(history.state,'',location.href.split('#')[0]+(kept.length?'#'+kept.join('&'):''));}}}catch{}
 const parent=window.parent, observers=new Map(), pending=new Map();
 let hostOrigin=null,helloTimer=null,pageRetired=false,handshakeToken={};
 let port=null, binding=null, status='connecting', state=null, stateRev=-1, highest=-1, tries=0, queuedBytes=0;
@@ -37,9 +48,9 @@ function matches(value){return binding&&value.protocol==='dorkos-doc'&&value.v==
 window.addEventListener('message',event=>{
 if(pageRetired||event.source!==parent||!safe(event.data))return;const value=event.data;
 if(valid(value,'challenge')&&event.ports.length===0&&Object.keys(value).length===7){
-if(binding&&matches(value)){parent.postMessage({...binding,kind:'ack'},event.origin==='null'?'*':event.origin);return;}
+if(binding&&matches(value)){parent.postMessage({...binding,kind:'ack',...(boot===null?{}:{boot})},event.origin==='null'?'*':event.origin);return;}
 const token=handshakeToken={};retire();if(pageRetired||token!==handshakeToken)return;binding={protocol:'dorkos-doc',v:1,nonce:value.nonce,requestToken:value.requestToken,loadToken:value.loadToken,generation:value.generation};hostOrigin=event.origin;status='connecting';
-parent.postMessage({protocol:'dorkos-doc',v:1,kind:'ack',nonce:binding.nonce,requestToken:binding.requestToken,loadToken:binding.loadToken,generation:binding.generation},event.origin==='null'?'*':event.origin);return;
+parent.postMessage({protocol:'dorkos-doc',v:1,kind:'ack',nonce:binding.nonce,requestToken:binding.requestToken,loadToken:binding.loadToken,generation:binding.generation,...(boot===null?{}:{boot})},event.origin==='null'?'*':event.origin);return;
 }
 if(!valid(value,'connect')||!matches(value)||event.origin!==hostOrigin||event.ports.length!==1||Object.keys(value).length!==7||port)return;
 port=event.ports[0];if(helloTimer!==null)clearTimeout(helloTimer);helloTimer=null;status='ready';

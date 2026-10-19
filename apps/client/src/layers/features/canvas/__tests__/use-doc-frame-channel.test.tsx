@@ -12,6 +12,7 @@ import type {
 import { TransportProvider } from '@/layers/shared/model';
 import { DocFrameHandshake, FrameLifetimeController } from '@/layers/shared/lib/canvas-doc-frame';
 import { ownDocChannelConnection } from '@/layers/shared/lib/transport/doc-channel-ownership';
+import { DocChannelFrameResources } from '../model/doc-channel-frame-resources';
 import { useDocFrameChannel, type DocFrameChannelParams } from '../model/use-doc-frame-channel';
 
 const birth = {
@@ -38,9 +39,10 @@ const frameEvent = (docSeq: number): CanvasChannelFrame => ({
 const replay = (
   routing = true,
   events: CanvasChannelFrame[] = [],
-  documentId = 'frame-doc'
+  documentId = 'frame-doc',
+  generation = birth.generation
 ): CanvasChannelReplayResponse => ({
-  incarnation: { ...birth, documentId },
+  incarnation: { ...birth, documentId, generation },
   events,
   state: { step: 1 },
   stateRev: 1,
@@ -56,15 +58,23 @@ const replay = (
     approvedEventTypes: routing ? ['save'] : [],
   },
 });
+/** A dev-server preview: its own exact origin, so it may reconnect on every load. */
+const PREVIEW = {
+  bridgeEligibility: 'preview-listener',
+  previewOrigin: 'http://localhost:61000',
+} as const;
 
 function Host({
   documentId = 'frame-doc',
   nonce = 0,
+  frameKey = 0,
   bridgeEligibility = 'served-document',
   previewOrigin = null,
 }: {
   documentId?: string;
   nonce?: number;
+  /** Replaces the iframe element without a new navigation. */
+  frameKey?: number;
   bridgeEligibility?: DocFrameChannelParams['bridgeEligibility'];
   previewOrigin?: string | null;
 }) {
@@ -80,9 +90,9 @@ function Host({
   });
   return (
     <iframe
-      key={nonce}
+      key={`${nonce}:${frameKey}`}
       ref={iframeRef}
-      src="/served/frame.html"
+      src={channel.frameSource ?? undefined}
       title={documentId === 'frame-doc' ? 'page' : documentId}
       data-requires-reload={channel.requiresReload ? 'yes' : 'no'}
       onLoad={(event) => channel.noteFrameLoaded(event.currentTarget)}
@@ -95,6 +105,9 @@ const tree = (node: React.ReactNode) => (
   <TransportProvider transport={transport}>{node}</TransportProvider>
 );
 const frame = () => screen.getByTitle('page') as HTMLIFrameElement;
+/** The boot nonce the host put on this frame's `src`. */
+const bootOf = (element: HTMLIFrameElement) =>
+  /#dorkos-boot=([0-9a-f-]{36})$/.exec(element.getAttribute('src') ?? '')?.[1];
 const started = () =>
   vi.mocked(DocFrameHandshake.prototype.start).mock.contexts as DocFrameHandshake[];
 /** The page answers the newest challenge, as the injected SDK would. */
@@ -116,6 +129,21 @@ const published = (kind: string) =>
   vi
     .mocked(DocFrameHandshake.prototype.publish)
     .mock.calls.filter(([payload]) => payload.kind === kind);
+/** Publish a snapshot of the document to the hook, as the server's stream would. */
+async function snapshot(
+  connection: ReturnType<typeof ownDocChannelConnection>,
+  value: CanvasChannelReplayResponse
+) {
+  const { events: _events, ...rest } = value;
+  await act(async () => {
+    connection.publish({
+      type: 'canvas_channel_snapshot',
+      documentId: value.incarnation?.documentId ?? 'frame-doc',
+      scope: 'session-a',
+      snapshot: rest,
+    });
+  });
+}
 
 beforeEach(() => {
   transport = createMockTransport();
@@ -136,6 +164,8 @@ it('offers a port only after the frame itself reports a load, bound to the opaqu
   await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalled());
   await act(async () => {});
   expect(observe).not.toHaveBeenCalled();
+  // The navigation itself carries the nonce the page must answer with.
+  expect(frame().getAttribute('src')).toMatch(/^\/served\/frame\.html#dorkos-boot=[0-9a-f-]{36}$/);
   fireEvent.load(frame());
   await waitFor(() => expect(started()).toHaveLength(1));
   const captured = observe.mock.calls[0][0];
@@ -149,11 +179,10 @@ it('offers a port only after the frame itself reports a load, bound to the opaqu
   });
 });
 
-it('binds a preview page to the exact origin DorkOS minted for it', async () => {
+it('binds a preview page to the exact origin DorkOS minted for it, with no nonce on its source', async () => {
   const observe = vi.spyOn(FrameLifetimeController.prototype, 'observeHostContext');
-  render(
-    tree(<Host bridgeEligibility="preview-listener" previewOrigin="http://localhost:61000" />)
-  );
+  render(tree(<Host {...PREVIEW} />));
+  expect(frame().getAttribute('src')).toBe('/served/frame.html');
   fireEvent.load(frame());
   await waitFor(() => expect(started()).toHaveLength(1));
   expect(observe.mock.calls[0][0]).toMatchObject({
@@ -165,6 +194,7 @@ it('binds a preview page to the exact origin DorkOS minted for it', async () => 
 it('a page DorkOS does not serve never gets a capture or a port', async () => {
   const observe = vi.spyOn(FrameLifetimeController.prototype, 'observeHostContext');
   render(tree(<Host bridgeEligibility={null} />));
+  expect(frame().getAttribute('src')).toBe('/served/frame.html');
   fireEvent.load(frame());
   await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalled());
   await act(async () => {});
@@ -184,15 +214,7 @@ it('a page that loads before any route is approved connects by itself once one i
     expect(started()).toHaveLength(0);
     // No route yet is not something a reload fixes, so nothing tells the person to.
     expect(element.dataset.requiresReload).toBe('no');
-    const { events: _events, ...snapshot } = replay(true);
-    await act(async () => {
-      connection.publish({
-        type: 'canvas_channel_snapshot',
-        documentId: 'frame-doc',
-        scope: 'session-a',
-        snapshot,
-      });
-    });
+    await snapshot(connection, replay(true));
     await waitFor(() => expect(started()).toHaveLength(1));
     expect(frame()).toBe(element);
   } finally {
@@ -200,7 +222,7 @@ it('a page that loads before any route is approved connects by itself once one i
   }
 });
 
-it('sends each event and state once per page, however often the host renders', async () => {
+it('sends each event and state once per page, never the session, room or incarnation', async () => {
   vi.mocked(transport.getCanvasChannel).mockResolvedValue(
     replay(true, [frameEvent(1), frameEvent(2)])
   );
@@ -208,10 +230,11 @@ it('sends each event and state once per page, however often the host renders', a
   fireEvent.load(frame());
   await waitFor(() => expect(started()).toHaveLength(1));
   acknowledge();
-  expect(published('event').map(([payload]) => payload)).toEqual([
-    { kind: 'event', frame: frameEvent(1) },
-    { kind: 'event', frame: frameEvent(2) },
-  ]);
+  const page = (docSeq: number) => ({
+    kind: 'event',
+    frame: { type: 'canvas_event', docSeq, event: frameEvent(docSeq).event },
+  });
+  expect(published('event').map(([payload]) => payload)).toEqual([page(1), page(2)]);
   expect(published('state')).toHaveLength(1);
   host.rerender(tree(<Host />));
   host.rerender(tree(<Host />));
@@ -222,9 +245,36 @@ it('sends each event and state once per page, however often the host renders', a
   expect(published('status')).toHaveLength(0);
 });
 
-it('a page that reloads itself loses its old port first, then reconnects with a fresh one', async () => {
-  vi.mocked(transport.getCanvasChannel).mockResolvedValue(replay(true, [frameEvent(1)]));
+it('a served page that leaves its document loses its port and is never challenged again; Reload brings it back', async () => {
+  render(tree(<Host />)).rerender(tree(<Host />));
+  const element = frame();
+  fireEvent.load(element);
+  await waitFor(() => expect(started()).toHaveLength(1));
+  acknowledge();
+  const first = started()[0];
+  // A reload, a link, a redirect or `location`: the frame's next document is
+  // not one DorkOS navigated to, and it never holds the nonce.
+  fireEvent.load(element);
+  await act(async () => {});
+  expect(closed(first)).toBe(true);
+  expect(started()).toHaveLength(1);
+  expect(element.dataset.requiresReload).toBe('yes');
+});
+
+it('a served page that was never connected leaving its document is just a plain page', async () => {
   render(tree(<Host />));
+  const element = frame();
+  fireEvent.load(element);
+  await waitFor(() => expect(started()).toHaveLength(1));
+  fireEvent.load(element);
+  await act(async () => {});
+  expect(started()).toHaveLength(1);
+  expect(element.dataset.requiresReload).toBe('no');
+});
+
+it('a preview that reloads itself loses its old port first, then reconnects with a fresh one', async () => {
+  vi.mocked(transport.getCanvasChannel).mockResolvedValue(replay(true, [frameEvent(1)]));
+  render(tree(<Host {...PREVIEW} />));
   const element = frame();
   fireEvent.load(element);
   await waitFor(() => expect(started()).toHaveLength(1));
@@ -240,8 +290,8 @@ it('a page that reloads itself loses its old port first, then reconnects with a 
   expect(frame().dataset.requiresReload).toBe('no');
 });
 
-it('says Reload only when a page that was connected stops answering', async () => {
-  render(tree(<Host />));
+it('says Reload only when a preview that was connected stops answering', async () => {
+  render(tree(<Host {...PREVIEW} />));
   const element = frame();
   fireEvent.load(element);
   await waitFor(() => expect(started()).toHaveLength(1));
@@ -259,8 +309,8 @@ it('says Reload only when a page that was connected stops answering', async () =
   await waitFor(() => expect(element.dataset.requiresReload).toBe('no'));
 });
 
-it('a live page closing its own port on unload is not offered a new one until it loads again', async () => {
-  render(tree(<Host />));
+it('a live preview closing its own port on unload is not offered a new one until it loads again', async () => {
+  render(tree(<Host {...PREVIEW} />));
   const element = frame();
   fireEvent.load(element);
   await waitFor(() => expect(started()).toHaveLength(1));
@@ -273,9 +323,10 @@ it('a live page closing its own port on unload is not offered a new one until it
   await waitFor(() => expect(started()).toHaveLength(2));
 });
 
-it('an explicit reload replaces the frame and closes the old port', async () => {
+it('an explicit reload replaces the frame, closes the old port and mints a new nonce', async () => {
   const host = render(tree(<Host />));
   const old = frame();
+  const oldBoot = bootOf(old);
   fireEvent.load(old);
   await waitFor(() => expect(started()).toHaveLength(1));
   acknowledge();
@@ -283,6 +334,8 @@ it('an explicit reload replaces the frame and closes the old port', async () => 
   expect(closed(started()[0])).toBe(true);
   const fresh = frame();
   expect(fresh).not.toBe(old);
+  expect(bootOf(fresh)).toBeDefined();
+  expect(bootOf(fresh)).not.toBe(oldBoot);
   // A late load from the removed element is not this navigation's page.
   fireEvent.load(old);
   await act(async () => {});
@@ -320,6 +373,25 @@ it('a hidden view keeps no port, and the same page reconnects when it is shown a
   expect(element.dataset.requiresReload).toBe('no');
 });
 
+it('a replaced frame element is not challenged with the old one’s load', async () => {
+  vi.mocked(transport.getCanvasChannel).mockResolvedValue(replay(false));
+  const connection = ownDocChannelConnection(transport, new AbortController().signal);
+  try {
+    const host = render(tree(<Host />));
+    fireEvent.load(frame());
+    await waitFor(() => expect(transport.getCanvasChannel).toHaveBeenCalled());
+    await act(async () => {});
+    // The same navigation, a new element whose own document has not loaded yet.
+    host.rerender(tree(<Host frameKey={1} />));
+    await snapshot(connection, replay(true));
+    expect(started()).toHaveLength(0);
+    fireEvent.load(frame());
+    await waitFor(() => expect(started()).toHaveLength(1));
+  } finally {
+    connection.retire();
+  }
+});
+
 it('unmounting closes the port and stops listening for the page', async () => {
   const remove = vi.spyOn(window, 'removeEventListener');
   const host = render(tree(<Host />));
@@ -328,6 +400,20 @@ it('unmounting closes the port and stops listening for the page', async () => {
   host.unmount();
   expect(closed(started()[0])).toBe(true);
   expect(remove.mock.calls.some(([type]) => type === 'message')).toBe(true);
+});
+
+it('an invalidation with nothing else changed still gets the page a fresh handshake', async () => {
+  const subscribe = vi.spyOn(DocChannelFrameResources.prototype, 'subscribe');
+  render(tree(<Host />));
+  fireEvent.load(frame());
+  await waitFor(() => expect(started()).toHaveLength(1));
+  acknowledge();
+  const first = started()[0];
+  act(() => {
+    for (const [callback] of subscribe.mock.calls) callback();
+  });
+  await waitFor(() => expect(started()).toHaveLength(2));
+  expect(closed(first)).toBe(true);
 });
 
 // The rest use the real handshake: what the page posts back is what decides.
@@ -341,6 +427,9 @@ const challenges = (posts: ReturnType<typeof postsTo>) =>
   posts.mock.calls.map(([data]) => data).filter((data) => data.kind === 'challenge');
 const connected = (posts: ReturnType<typeof postsTo>) =>
   posts.mock.calls.filter(([data]) => data.kind === 'connect').length;
+/** The page side of every port the host handed over, oldest first. */
+const pagePorts = (posts: ReturnType<typeof postsTo>) =>
+  posts.mock.calls.flatMap(([data, , ports]) => (data.kind === 'connect' ? (ports ?? []) : []));
 /** Post an acknowledgement as `source` would, optionally from another origin or with other fields. */
 function answer(
   challenge: Record<string, unknown>,
@@ -358,10 +447,49 @@ function answer(
     );
   });
 }
+/** The served page's own answer: the challenge, with the nonce from its frame's `src`. */
+const answerServed = (challenge: Record<string, unknown>, element: HTMLIFrameElement) =>
+  answer(challenge, element.contentWindow!, 'null', { boot: bootOf(element) });
 
-it('an answer to a replaced page’s challenge cannot connect the page that replaced it', async () => {
+it('only the nonce on the frame’s own source connects a served document', async () => {
   vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
   render(tree(<Host />));
+  const element = frame();
+  const posts = postsTo(element.contentWindow!);
+  fireEvent.load(element);
+  await waitFor(() => expect(challenges(posts)).toHaveLength(1));
+  const challenge = challenges(posts)[0]!;
+  // What a page a redirect put there could send: right window, right origin,
+  // the challenge it was given, and no nonce or a guessed one.
+  answer(challenge, element.contentWindow!);
+  answer(challenge, element.contentWindow!, 'null', { boot: crypto.randomUUID() });
+  expect(connected(posts)).toBe(0);
+  answerServed(challenge, element);
+  expect(connected(posts)).toBe(1);
+});
+
+it('a document the served frame reached by itself is never challenged, even holding the old nonce', async () => {
+  vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
+  render(tree(<Host />));
+  const element = frame();
+  const posts = postsTo(element.contentWindow!);
+  fireEvent.load(element);
+  await waitFor(() => expect(challenges(posts)).toHaveLength(1));
+  const challenge = challenges(posts)[0]!;
+  answerServed(challenge, element);
+  expect(connected(posts)).toBe(1);
+  // A link click: same window, same `null` origin, a new document.
+  fireEvent.load(element);
+  await act(async () => {});
+  expect(challenges(posts)).toHaveLength(1);
+  // Even with the first page's challenge and nonce leaked to it, nothing connects.
+  answerServed(challenge, element);
+  expect(connected(posts)).toBe(1);
+});
+
+it('an answer to a replaced preview’s challenge cannot connect the page that replaced it', async () => {
+  vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
+  render(tree(<Host {...PREVIEW} />));
   const element = frame();
   const page = element.contentWindow!;
   const posts = postsTo(page);
@@ -372,9 +500,9 @@ it('an answer to a replaced page’s challenge cannot connect the page that repl
   await waitFor(() => expect(challenges(posts)).toHaveLength(2));
   const current = challenges(posts)[1]!;
   expect(current.nonce).not.toBe(stale.nonce);
-  answer(stale, page);
+  answer(stale, page, PREVIEW.previewOrigin);
   expect(connected(posts)).toBe(0);
-  answer(current, page);
+  answer(current, page, PREVIEW.previewOrigin);
   expect(connected(posts)).toBe(1);
 });
 
@@ -399,10 +527,10 @@ it('one frame’s answer never connects another frame', async () => {
   fireEvent.load(b);
   await waitFor(() => expect(challenges(toA)).toHaveLength(1));
   await waitFor(() => expect(challenges(toB)).toHaveLength(1));
-  // A's correct answer, but sent from B's window: refused by both hosts.
-  answer(challenges(toA)[0]!, b.contentWindow!);
+  // A's correct answer and nonce, but sent from B's window: refused by both hosts.
+  answer(challenges(toA)[0]!, b.contentWindow!, 'null', { boot: bootOf(a) });
   expect(connected(toA) + connected(toB)).toBe(0);
-  answer(challenges(toA)[0]!, a.contentWindow!);
+  answerServed(challenges(toA)[0]!, a);
   expect(connected(toA)).toBe(1);
   expect(connected(toB)).toBe(0);
 });
@@ -432,11 +560,11 @@ it('an outside page never gets a challenge, and replaying a served page’s chal
   const challenge = challenges(toServed)[0]!;
   // A perfectly shaped answer, from the outside page's window, under every origin it could claim.
   for (const origin of ['https://example.com', 'null', 'http://localhost:61000'])
-    answer(challenge, outside.contentWindow!, origin);
+    answer(challenge, outside.contentWindow!, origin, { boot: bootOf(served) });
   expect(toOutside.mock.calls).toHaveLength(0);
   expect(connected(toServed)).toBe(0);
   // The served page itself still connects, so the refusal above was not a dead host.
-  answer(challenge, served.contentWindow!);
+  answerServed(challenge, served);
   expect(connected(toServed)).toBe(1);
   expect(toOutside.mock.calls).toHaveLength(0);
 });
@@ -451,9 +579,7 @@ it.each<[string, string, Record<string, unknown>]>([
   ['another generation', 'http://localhost:61000', { generation: 'b'.repeat(64) }],
 ])('a preview answer from %s is ignored', async (_case, origin, fields) => {
   vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
-  render(
-    tree(<Host bridgeEligibility="preview-listener" previewOrigin="http://localhost:61000" />)
-  );
+  render(tree(<Host {...PREVIEW} />));
   const element = frame();
   const page = element.contentWindow!;
   const posts = postsTo(page);
@@ -466,4 +592,64 @@ it.each<[string, string, Record<string, unknown>]>([
   expect(connected(posts)).toBe(0);
   answer(challenge, page, 'http://localhost:61000');
   expect(connected(posts)).toBe(1);
+});
+
+it('a new generation of the document closes the old port and connects the same page to the new one', async () => {
+  vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
+  const connection = ownDocChannelConnection(transport, new AbortController().signal);
+  try {
+    render(tree(<Host />));
+    const element = frame();
+    const posts = postsTo(element.contentWindow!);
+    fireEvent.load(element);
+    await waitFor(() => expect(challenges(posts)).toHaveLength(1));
+    answerServed(challenges(posts)[0]!, element);
+    expect(connected(posts)).toBe(1);
+    const next = replay(true, [], 'frame-doc', 'b'.repeat(64));
+    vi.mocked(transport.getCanvasChannel).mockResolvedValue(next);
+    await snapshot(connection, next);
+    await waitFor(() =>
+      expect(challenges(posts).some((c) => c.generation === 'b'.repeat(64))).toBe(true)
+    );
+    expect(closed(started()[0])).toBe(true);
+    // The same document, the same nonce: it was DorkOS's navigation all along.
+    answerServed(
+      challenges(posts).find((c) => c.generation === 'b'.repeat(64))!,
+      element
+    );
+    expect(connected(posts)).toBe(2);
+    expect(element.dataset.requiresReload).toBe('no');
+  } finally {
+    connection.retire();
+  }
+});
+
+it('a revoked route tells the page so and closes its port; approving it again reconnects the page', async () => {
+  vi.mocked(DocFrameHandshake.prototype.receive).mockRestore();
+  const connection = ownDocChannelConnection(transport, new AbortController().signal);
+  try {
+    render(tree(<Host />));
+    const element = frame();
+    const posts = postsTo(element.contentWindow!);
+    fireEvent.load(element);
+    await waitFor(() => expect(challenges(posts)).toHaveLength(1));
+    answerServed(challenges(posts)[0]!, element);
+    const port = pagePorts(posts)[0]!;
+    const told: Record<string, unknown>[] = [];
+    port.onmessage = (event) => told.push(event.data);
+    await snapshot(connection, replay(false));
+    await waitFor(() => expect(told.some((m) => m.status === 'revoked')).toBe(true));
+    expect(told.find((m) => m.kind === 'status')).toMatchObject({ status: 'revoked' });
+    expect(closed(started()[0])).toBe(true);
+    // Not a fault a reload fixes.
+    expect(element.dataset.requiresReload).toBe('no');
+    expect(challenges(posts)).toHaveLength(1);
+    await snapshot(connection, replay(true));
+    await waitFor(() => expect(challenges(posts)).toHaveLength(2));
+    answerServed(challenges(posts)[1]!, element);
+    expect(connected(posts)).toBe(2);
+    port.close();
+  } finally {
+    connection.retire();
+  }
 });

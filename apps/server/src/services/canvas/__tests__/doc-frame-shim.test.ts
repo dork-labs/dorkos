@@ -92,6 +92,58 @@ function setup(prelude = '') {
     },
   };
 }
+/** A frame document at `href`, recording every history rewrite the shim makes. */
+function located(href: string) {
+  const f = setup(
+    `var location = { href: ${JSON.stringify(href)}, get hash() { const i = this.href.indexOf('#'); return i < 0 || i === this.href.length - 1 ? '' : this.href.slice(i); } };
+     var history = { state: null, replaceState(state, title, url) { location.href = url; rewrites.push(url); } };
+     var rewrites = [];`
+  );
+  return {
+    ...f,
+    rewrites: () => runInContext('rewrites', f.context) as string[],
+    href: () => runInContext('location.href', f.context) as string,
+  };
+}
+describe('the host boot nonce', () => {
+  const acks = (f: ReturnType<typeof setup>) =>
+    f.parent.postMessage.mock.calls
+      .map(([data]) => data as Record<string, unknown>)
+      .filter((data) => data.kind === 'ack');
+  it('is read and removed from the fragment before page code, keeping the rest, and answers every challenge', () => {
+    const f = located('https://host.example/doc.html#section&dorkos-boot=boot-1');
+    expect(f.rewrites()).toEqual(['https://host.example/doc.html#section']);
+    expect(f.href()).not.toContain('boot-1');
+    f.dispatch({ ...corr, kind: 'challenge' });
+    f.dispatch({ ...corr, kind: 'challenge' });
+    expect(acks(f)).toEqual([
+      { ...corr, kind: 'ack', boot: 'boot-1' },
+      { ...corr, kind: 'ack', boot: 'boot-1' },
+    ]);
+  });
+  it('drops the whole fragment when the nonce was all of it', () => {
+    const f = located('https://host.example/doc.html#dorkos-boot=boot-1');
+    expect(f.href()).toBe('https://host.example/doc.html');
+  });
+  it('a document with no nonce answers with none, so a host that needs one refuses it', () => {
+    const f = located('https://host.example/doc.html#section');
+    expect(f.rewrites()).toEqual([]);
+    f.dispatch({ ...corr, kind: 'challenge' });
+    expect(acks(f)).toEqual([{ ...corr, kind: 'ack' }]);
+  });
+  it('removes an unusable nonce without claiming it', () => {
+    const f = located(`https://host.example/doc.html#dorkos-boot=${'x'.repeat(129)}`);
+    expect(f.href()).toBe('https://host.example/doc.html');
+    f.dispatch({ ...corr, kind: 'challenge' });
+    expect(acks(f)).toEqual([{ ...corr, kind: 'ack' }]);
+  });
+  it('never puts the nonce on the port: commands stay exactly correlated', () => {
+    const f = located('https://host.example/doc.html#dorkos-boot=boot-1');
+    f.connect();
+    void f.sdk!.emit('save', f.copy({ text: 'value' }), f.copy({ id: id() })).catch(() => {});
+    expect(f.channel.postMessage.mock.calls[0][0]).not.toHaveProperty('boot');
+  });
+});
 describe('fixed unactivated Doc shim', () => {
   it('earlyhello is bounded but listener survives exhaustion and host-loaded challenge', () => {
     const f = setup();
