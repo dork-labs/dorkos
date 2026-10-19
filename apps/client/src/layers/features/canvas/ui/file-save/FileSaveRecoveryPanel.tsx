@@ -50,24 +50,25 @@ function NoticeBody({
   loadCurrent: () => void;
 }) {
   if (recovery.phase === 'unavailable' || recovery.phase === 'refused') {
+    // Placed by FileSaveTopBar's grid: the sentence takes the text column, and
+    // "Check again" joins the action group when there's room, or drops under the
+    // sentence when there isn't. It's the view's one action, never mid-sentence.
     return (
-      // Inline, not flex: a flex row would sit beside the floated buttons instead
-      // of wrapping under them.
-      <div>
-        <p role="alert" className="mr-3 inline">
+      <>
+        <p role="alert" className="col-start-1 row-start-1 py-1.5">
           {FAILED_CHECK[recovery.phase]}
         </p>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="my-0.5 align-middle"
+          className="col-span-2 col-start-1 row-start-2 mb-1.5 justify-self-start @md:col-span-1 @md:col-start-2 @md:row-start-1 @md:mb-0"
           disabled={recovery.busy || editing}
           onClick={() => void recovery.refresh()}
         >
           Check again
         </Button>
-      </div>
+      </>
     );
   }
   if (recovery.phase === 'local_uncertain')
@@ -202,10 +203,12 @@ export function FileSaveMoreMenu({
  * The editor's top row: the file's own buttons on the right and, when the file
  * needs the person, what needs them on the left, in one tinted block.
  *
- * A healthy file shows only the buttons. With a notice the buttons float right
- * and the sentence wraps under them, so a narrow panel never gives the text a
- * row of its own. The buttons are the row's first child either way, so a notice
- * arriving or leaving never remounts them or drops their focus.
+ * A healthy file shows only the buttons. A failed check puts its sentence on
+ * the left and "Check again" with the buttons on the right, dropping the action
+ * under the sentence in a narrow panel. Longer notices float the buttons right
+ * so their text wraps under them. The buttons keep the same place in the tree
+ * either way, so a notice arriving or leaving never remounts them or drops their
+ * focus.
  */
 export function FileSaveTopBar({
   recovery,
@@ -219,6 +222,10 @@ export function FileSaveTopBar({
   toolbar: ReactNode;
 }) {
   const notice = needsAttention(recovery);
+  // A failed check is one sentence and one action, laid out on a grid so the
+  // action sits with the buttons; longer notices keep the float so their text
+  // wraps under the buttons.
+  const failed = recovery.phase === 'unavailable' || recovery.phase === 'refused';
   return (
     <>
       {recovery.supported && recovery.phase === 'pending' && (
@@ -231,16 +238,36 @@ export function FileSaveTopBar({
         className={cn(
           'shrink-0',
           notice
-            ? 'bg-muted text-foreground mx-2 mt-2 flow-root rounded-md py-1 pr-1 pl-3 text-sm'
-            : 'flex justify-end px-2 pt-1'
+            ? 'bg-muted text-foreground mx-2 mt-2 rounded-md py-1 pr-1 pl-3 text-sm'
+            : 'flex justify-end px-2 pt-1',
+          notice && (failed ? '@container' : 'flow-root')
         )}
       >
-        <div className={cn('flex items-center gap-1', notice && 'float-right ml-2')}>{toolbar}</div>
-        {notice && (
-          <div className="py-1.5">
-            <NoticeBody recovery={recovery} editing={editing} loadCurrent={loadCurrent} />
+        <div
+          className={cn(
+            notice &&
+              failed &&
+              'grid grid-cols-[1fr_auto] items-center gap-x-2 @md:grid-cols-[1fr_auto_auto]'
+          )}
+        >
+          <div
+            className={cn(
+              'flex items-center gap-1',
+              notice && !failed && 'float-right ml-2',
+              notice && failed && 'col-start-2 row-start-1 @md:col-start-3'
+            )}
+          >
+            {toolbar}
           </div>
-        )}
+          {notice &&
+            (failed ? (
+              <NoticeBody recovery={recovery} editing={editing} loadCurrent={loadCurrent} />
+            ) : (
+              <div className="py-1.5">
+                <NoticeBody recovery={recovery} editing={editing} loadCurrent={loadCurrent} />
+              </div>
+            ))}
+        </div>
       </div>
     </>
   );
