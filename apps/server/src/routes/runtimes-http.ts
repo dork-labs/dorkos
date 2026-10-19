@@ -11,6 +11,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
+import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 
 /**
@@ -30,6 +31,22 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 export function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
   if (isAtThisComputer(honoRequestFacts(c))) return undefined;
   return c.json({ error: 'Runtime connect actions are only available locally' }, 403);
+}
+
+/**
+ * Refuse a change to a runtime's credential or sign-in from anyone but the
+ * install's owner at this computer: the locality refusal above, then the
+ * front-door bar (`refuseFrontDoorChange`, DOR-2969), which also turns away
+ * an agent, an API key, and a signed-in person who is not the owner.
+ *
+ * @param c - The request's context.
+ * @returns The 403, or `undefined` for the owner at this computer.
+ */
+export function refuseCredentialChange(c: Context<ApiEnv>): Response | undefined {
+  const notLocal = refuseNonLoopback(c);
+  if (notLocal) return notLocal;
+  const refusal = refuseFrontDoorChange(honoRequestFacts(c), "a runtime's sign-in");
+  return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
 }
 
 /**

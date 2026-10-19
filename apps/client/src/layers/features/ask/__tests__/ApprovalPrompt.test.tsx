@@ -4,6 +4,9 @@ import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-libra
 import { createRef } from 'react';
 import { ApprovalPrompt, type ApprovalPromptHandle } from '../ui/ApprovalPrompt';
 
+const wifi = vi.hoisted(() => ({ on: false }));
+vi.mock('@/layers/entities/config', () => ({ useOnWifi: () => wifi.on }));
+
 const mockApproveTool = vi.fn().mockResolvedValue(undefined);
 const mockDenyTool = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/layers/shared/model/TransportContext', () => ({
@@ -24,6 +27,7 @@ vi.mock('@/layers/shared/lib/tool-arguments-formatter', () => ({
 
 afterEach(() => {
   cleanup();
+  wifi.on = false;
   mockApproveTool.mockClear();
   mockDenyTool.mockClear();
 });
@@ -691,5 +695,35 @@ describe('what "Always Allow" says it grants (DOR-1462)', () => {
     render(<ApprovalPrompt {...baseProps} approvalAlwaysAllowScope="user" />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
     expect(screen.queryByText(/all your Claude chats/)).toBeNull();
+  });
+});
+
+describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
+  it('shows Allow once and Deny, never Always allow, and says why once', () => {
+    wifi.on = true;
+    render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
+    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
+    const once = screen.getByRole('button', { name: /^Allow once/ });
+    expect(once.getAttribute('data-variant')).toBe('outline');
+    expect(screen.getByRole('button', { name: /^Deny/ })).toBeDefined();
+    expect(screen.getByText('Always allow is only available at this computer.')).toBeDefined();
+  });
+
+  it('answers Enter with Allow once and Esc with Deny; the always shortcut does nothing', async () => {
+    wifi.on = true;
+    const ref = createRef<ApprovalPromptHandle>();
+    render(<ApprovalPrompt {...baseProps} approvalHasSuggestions ref={ref} />);
+    act(() => ref.current!.alwaysAllow());
+    expect(mockApproveTool).not.toHaveBeenCalled();
+    act(() => ref.current!.approve());
+    await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1'));
+  });
+
+  it('denies from Wi-Fi', async () => {
+    wifi.on = true;
+    const ref = createRef<ApprovalPromptHandle>();
+    render(<ApprovalPrompt {...baseProps} ref={ref} />);
+    act(() => ref.current!.deny());
+    await waitFor(() => expect(mockDenyTool).toHaveBeenCalled());
   });
 });

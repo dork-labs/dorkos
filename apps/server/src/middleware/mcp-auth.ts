@@ -6,6 +6,7 @@ import { configManager } from '../services/core/config-manager.js';
 import { gateAccessFor } from '../services/core/auth/gate-policy.js';
 import { ingressOf, type RequestIngress } from '../services/core/remote/ingress-mark.js';
 import { verifyRequestAuth } from '../services/core/auth/index.js';
+import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 import { getMcpLocalToken, getMcpLocalTokenPath } from '../services/core/auth/mcp-local-token.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../services/core/external-mcp/tool-security.js';
@@ -135,8 +136,12 @@ export async function decideMcpAuth(
   // unchanged. The legacy `config.mcp.apiKey` gets no such hint on purpose:
   // `seedLegacyMcpApiKey` stores that exact value AS a Better Auth key, so
   // there it is a real per-user credential acceptor 2 must still resolve.
+  //
+  // On the Wi-Fi route only a bearer key counts (DOR-2969): a Wi-Fi sign-in's
+  // cookie never stands for an agent tool here, whatever bearer rides with it.
   const identity = await verifyRequestAuth(request, {
     ...(bearerIsLocalToken ? { bearerIsNotAnApiKey: true } : {}),
+    ...(requestSessionRoute(request) === 'wifi' ? { ignoreSessionCookie: true } : {}),
   });
   // Recorded, not just accepted. A capability that acts on somebody's own
   // data has to know WHICH person is asking, and this is the only place on

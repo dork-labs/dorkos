@@ -4603,6 +4603,14 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS from the machine it runs on. The one field here that describes the caller rather than the server: it is answered per request by the same predicate that guards the loopback-only connect endpoints (`lib/caller-authority.ts`), so a client can be told in advance what those endpoints would do instead of discovering it from a 403. False for a phone or any browser arriving over the tunnel, over the LAN, or through a reverse proxy. True whenever `DORKOS_ALLOW_INSECURE_BIND` is set, because under that flag those endpoints accept',
     }),
+    callerRoute: z
+      .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
+      }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),

@@ -68,6 +68,7 @@ import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import { credentialGated, isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
+import { currentServerRole } from './server-role.js';
 
 /**
  * The facts a bar needs to know whether the gate asked this request for a
@@ -352,4 +353,50 @@ export function requirePersonAtThisComputer(
   }
   if (credentialGated(facts)) return 'not-a-person';
   return facts.headers.authorization === undefined ? undefined : 'not-a-person';
+}
+
+/** Refusal code when only the owner, at this computer, may make a change. */
+export const NEEDS_PERSON_AT_THIS_COMPUTER = 'NEEDS_PERSON_AT_THIS_COMPUTER';
+
+/**
+ * The bar for changing an Owner-only front-door setting (how DorkOS is
+ * reached, who may sign in, the credentials it holds, where code may come
+ * from): {@link requirePersonAtThisComputer}, as the refusal a route answers
+ * with. One function, so every front-door route refuses the same callers in
+ * the same words: Wi-Fi, a tunnel, managed remote, the relay, an agent, an API
+ * key, and any signed-in person who is not this install's owner.
+ *
+ * A hub has no "this computer" (every request is remote), so there the bar is
+ * the owner's own browser session, with no agent identity or approval token.
+ *
+ * @param facts - The request's facts.
+ * @param subject - What the caller tried to change, as the refusal names it.
+ * @returns `undefined` when the caller may act, otherwise the refusal.
+ */
+export function refuseFrontDoorChange(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts,
+  subject: string
+): OperatorCookieRefusal | undefined {
+  const refusal =
+    currentServerRole() === 'hub' ? refuseOnHub(facts) : requirePersonAtThisComputer(facts);
+  if (!refusal) return undefined;
+  return {
+    status: 403,
+    code: NEEDS_PERSON_AT_THIS_COMPUTER,
+    error:
+      refusal === 'not-at-this-computer'
+        ? `Change ${subject} on the computer DorkOS runs on.`
+        : `Only the owner can change ${subject}, in the app.`,
+  };
+}
+
+/** The hub's form of the front-door bar: the owner's own browser session. */
+function refuseOnHub(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'>
+): PersonAtThisComputerRefusal | undefined {
+  if (presentsAgentIdentity(facts)) return 'not-a-person';
+  if (facts.headers[APPROVAL_TOKEN_HEADER] !== undefined) return 'not-a-person';
+  return facts.user?.credential === 'cookie' && isInstallOwner(facts.user)
+    ? undefined
+    : 'not-a-person';
 }

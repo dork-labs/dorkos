@@ -108,6 +108,9 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 /** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
 let agentHeader: string | undefined;
 
+/** The listener a request arrived through, when not the main one (DOR-2969). */
+let arrivedVia: 'wifi' | 'own-tunnel' | undefined;
+
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
  * (DOR-483). Each test still gets a FRESH app — its own config directory, its
@@ -168,12 +171,17 @@ async function configApp(configRouter: Hono<ApiEnv>) {
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
+  arrivedVia = undefined;
   return honoGroupListener(
     { path: '/api/config', routes: configRouter },
     {
       before: async (c, next) => {
         if (signedInUser) c.set('user', signedInUser);
         if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+        if (arrivedVia) {
+          const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
+          markIngress(c.env.incoming, arrivedVia);
+        }
         await next();
       },
     }
@@ -2202,5 +2210,62 @@ describe('PUT /api/config/agents/defaultAgent', () => {
       .expect(200);
 
     expect(res.body.defaultAgent).toBe('my-agent');
+  });
+});
+
+describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('lets the owner at this computer change one', async () => {
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ tunnel: { domain: 'me.ngrok.app' } })
+      .expect(200);
+    expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
+  });
+
+  it.each([
+    ['Wi-Fi', 'wifi'],
+    ['the own tunnel', 'own-tunnel'],
+  ] as const)("refuses the owner's own sign-in over %s", async (_l, via) => {
+    arrivedVia = via;
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(res.body.paths).toEqual(['auth.enabled']);
+  });
+
+  it('refuses a signed-in person at this computer who is not the owner', async () => {
+    signedInUser = { userId: 'user_member', credential: 'cookie' };
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ server: { lanAccess: true } })
+      .expect(403);
+    expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+  });
+
+  it('still lets a Wi-Fi sign-in change an ordinary setting', async () => {
+    arrivedVia = 'wifi';
+    const res = await request(server)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+    expect(res.body.config.ui.theme).toBe('dark');
   });
 });

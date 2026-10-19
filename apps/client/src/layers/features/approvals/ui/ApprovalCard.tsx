@@ -1,10 +1,17 @@
 import { motion, useReducedMotion } from 'motion/react';
+import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/ask';
+import {
+  AskCard,
+  askExitTransition,
+  formatTimeLeft,
+  WIFI_ALWAYS_ALLOW_LINE,
+} from '@/layers/features/ask';
+import { useOnWifi } from '@/layers/entities/config';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
 import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
@@ -195,8 +202,12 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
   const floor = approval.area !== null && isFloorArea(approval.area);
+  // From Wi-Fi an answer is Allow once or Deny (DOR-2969): Always allow is
+  // neither offered nor suggested, and one line says where it lives.
+  const onWifi = useOnWifi();
+  const offersAlways = approval.alwaysOffered && !onWifi;
   const suggest =
-    approval.alwaysOffered && approval.suggestAlways === true && !suggestionDismissed && !decision;
+    offersAlways && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
   return (
     // The container is declared HERE, on the wrapper, and queried on the card
@@ -389,6 +400,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
                 <Button
                   size="sm"
+                  variant={onWifi ? 'outline' : 'default'}
                   data-slot="approval-allow"
                   className={ANSWER_BUTTON}
                   disabled={deciding}
@@ -398,9 +410,9 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     )
                   }
                 >
-                  Allow
+                  {onWifi ? 'Allow once' : 'Allow'}
                 </Button>
-                {approval.alwaysOffered && (
+                {offersAlways && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -435,14 +447,22 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     )
                   }
                 >
-                  Don’t allow
+                  {onWifi ? 'Deny' : 'Don’t allow'}
                 </Button>
               </AskCard.Actions>
             </>
           )}
           {/* Why Always allow is missing, said once, and only where a setting
               could never change it. */}
-          {floor && !decision && (
+          {onWifi && !decision && (
+            <p
+              data-slot="approval-wifi-line"
+              className="text-muted-foreground text-2xs flex items-center gap-1"
+            >
+              <Lock className="size-3" aria-hidden /> {WIFI_ALWAYS_ALLOW_LINE}
+            </p>
+          )}
+          {floor && !decision && !onWifi && (
             <p
               data-slot="approval-floor-line"
               className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right"

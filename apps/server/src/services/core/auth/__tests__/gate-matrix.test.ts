@@ -79,6 +79,7 @@ import { requestSessionRoute, SESSION_ROUTES } from '../sessions/session-route.j
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { authorizeStreamUpgrade } from '../../streams/stream-upgrade-auth.js';
 import { markIngress, type IngressKind } from '../../remote/ingress-mark.js';
+import { NOT_FROM_WIFI, refuseUpgradeFromWifi, wifiLevelRefusal } from '../sessions/wifi-level.js';
 import type { RequestFacts } from '../../../../http/request-facts.js';
 
 type Facts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>;
@@ -396,5 +397,65 @@ describe('the container exception, as the sign-up hook asks it', () => {
     posture.insecureBind = false;
     const port = CALLERS.find((caller) => caller.name === 'insecure bind (container)')!;
     expect(isContainerPortClass(classifyRequest(port.facts, 'computer'))).toBe(false);
+  });
+});
+
+/**
+ * The Wi-Fi rows (F4 part 3, DOR-2969): one request per refused surface, for
+ * every caller kind. Only the Wi-Fi caller is refused, and only by the Wi-Fi
+ * level; every other caller's answer is the gate's, unchanged above.
+ */
+const WIFI_REFUSED_SURFACES: readonly [string, string, string][] = [
+  ['terminal (HTTP)', 'POST', '/api/terminal'],
+  ['file write', 'PUT', '/api/files/content'],
+  ['API key', 'POST', '/api/auth/api-key/create'],
+  ['/mcp by cookie', 'POST', '/mcp'],
+  ['A2A by cookie', 'POST', '/a2a'],
+  ['front-door setting', 'POST', '/api/lan-access'],
+  ['admin reset', 'POST', '/api/admin/reset'],
+  ['sign-out-all', 'POST', '/api/devices/sign-out-all'],
+];
+
+describe('the Wi-Fi level: every refused surface × every caller kind', () => {
+  beforeEach(() => {
+    posture.ask = false;
+    posture.owner = true;
+    posture.insecureBind = false;
+  });
+
+  const rows = CALLERS.flatMap((caller) =>
+    WIFI_REFUSED_SURFACES.map(
+      ([surface, method, path]) => [`${caller.name}, ${surface}`, caller, method, path] as const
+    )
+  );
+
+  it.each(rows)('%s', (_label, caller, method, path) => {
+    posture.insecureBind = caller.insecureBind === true;
+    const refusal = wifiLevelRefusal({ method, paths: [path], facts: caller.facts });
+    if (caller.name === 'Wi-Fi')
+      expect(refusal).toMatchObject({ status: 403, code: NOT_FROM_WIFI });
+    else expect(refusal).toBe(undefined);
+  });
+
+  it.each(CALLERS.map((caller) => [caller.name, caller]))(
+    "the terminal's socket, %s",
+    (_label, caller) => {
+      posture.insecureBind = caller.insecureBind === true;
+      const req = upgradeRequest(caller.facts) as IncomingMessage & { url: string };
+      req.url = '/api/terminal/t1/socket';
+      const refusal = refuseUpgradeFromWifi(req, '/api/terminal/t1/socket');
+      expect(refusal !== undefined).toBe(caller.name === 'Wi-Fi');
+    }
+  );
+
+  it('keeps chat and its streams for a Wi-Fi sign-in', () => {
+    const wifi = CALLERS.find((caller) => caller.name === 'Wi-Fi')!.facts;
+    for (const [method, path] of [
+      ['POST', '/api/sessions/s1/messages'],
+      ['GET', '/api/sessions/s1/events'],
+      ['POST', '/api/approvals/a1/decide'],
+    ] as const) {
+      expect(wifiLevelRefusal({ method, paths: [path], facts: wifi })).toBe(undefined);
+    }
   });
 });

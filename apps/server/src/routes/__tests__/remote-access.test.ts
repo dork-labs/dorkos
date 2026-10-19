@@ -25,6 +25,11 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
+// The install's owner is `u1`.
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'u1',
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
@@ -34,6 +39,7 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { createRemoteAccessRoutes, REMOTE_SETUP_NEEDS_THIS_COMPUTER } from '../remote-access.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
 
 const REPORT: RemoteAccessReport = {
   mode: 'off',
@@ -152,6 +158,21 @@ describe.each([
       .send(body);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    expect(effect()).not.toHaveBeenCalled();
+  });
+
+  it('refuses a person at this computer who is not the owner, and a bearer with the gate open', async () => {
+    const guest = await request(app({ user: { userId: 'guest', credential: 'cookie' } }))
+      .post(path)
+      .send(body);
+    expect(guest.status).toBe(403);
+    expect(guest.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    const bearer = await request(app())
+      .post(path)
+      .set('Authorization', 'Bearer some-key')
+      .send(body);
+    expect(bearer.status).toBe(403);
+    expect(bearer.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
     expect(effect()).not.toHaveBeenCalled();
   });
 

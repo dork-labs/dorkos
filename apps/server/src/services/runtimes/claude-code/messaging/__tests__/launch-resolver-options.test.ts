@@ -20,6 +20,7 @@ import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-ru
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
+import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
@@ -575,6 +576,12 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
           'Edit(//rooms/r1/repo/**)',
           'Write(//rooms/r1/repo/**)',
           'NotebookEdit(//rooms/r1/repo/**)',
+          // Then the folders only a person may change, on every turn.
+          ...['permissions', 'session-relay'].flatMap((folder) =>
+            ['Edit', 'Write', 'NotebookEdit'].map(
+              (tool) => `${tool}(/${resolveDorkHome()}/${folder}/**)`
+            )
+          ),
         ],
       },
     });

@@ -44,9 +44,14 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { describeOperatorOnlyRefusal } from '../services/core/operator/operator-only-refusal.js';
+import {
+  frontDoorPathsOf,
+  frontDoorSubjectOf,
+} from '../services/core/operator/front-door-settings.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
+  refuseFrontDoorChange,
   refuseUnlessAccountOwner,
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
@@ -64,6 +69,7 @@ import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { gateAccessFor, isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { requestSessionRoute } from '../services/core/auth/sessions/session-route.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -127,6 +133,7 @@ router.get('/', async (c) => {
     // reader those endpoints refuse with, so the app is told exactly what they
     // would do rather than a guess of its own.
     isLocalCaller: isAtThisComputer(honoRequestFacts(c)),
+    callerRoute: requestSessionRoute(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
@@ -527,6 +534,22 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
           message: 'Only the owner of this DorkOS can change its DorkOS account settings.',
           paths: cloudPaths,
         };
+      }
+
+      // ## THE FRONT-DOOR BAR — how DorkOS is reached is changed at this computer
+      //
+      // The Owner-only front-door settings (`front-door-settings.ts`, DOR-2969)
+      // take the bar every front-door route runs: the owner, using the app, at
+      // this computer. Never Wi-Fi, a tunnel, the relay, an agent or a key, so
+      // a device reached from outside cannot widen its own reach.
+      const frontDoorPaths = frontDoorPathsOf(paths);
+      const frontDoor =
+        frontDoorPaths.length > 0
+          ? refuseFrontDoorChange(caller, frontDoorSubjectOf(frontDoorPaths[0]!))
+          : undefined;
+      if (frontDoor) {
+        const { status, code, error } = frontDoor;
+        return { status, code, error, message: error, paths: frontDoorPaths };
       }
 
       return undefined;

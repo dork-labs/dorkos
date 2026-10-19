@@ -167,6 +167,12 @@ export interface VerifyRequestAuthOptions {
   bearerIsNotAnApiKey?: boolean;
   /** Bypass this deployment's cookie cache for a fresh database observation. */
   sessionFreshness?: 'server-store';
+  /**
+   * Skip the session-cookie leg, so only a valid bearer key can prove an
+   * identity. `/mcp` and A2A set it on the Wi-Fi route (DOR-2969): a Wi-Fi
+   * sign-in is never an agent tool's credential there.
+   */
+  ignoreSessionCookie?: boolean;
 }
 
 /**
@@ -217,42 +223,9 @@ export async function verifyRequestAuth(
   if (!auth) return null;
 
   // 1. Session cookie — verified against the cookie cache / DB.
-  try {
-    const result = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-      // Just after a restart, nothing remembers which sign-ins ended before it,
-      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
-      ...(options.sessionFreshness === 'server-store'
-        ? { query: { disableCookieCache: true, disableRefresh: true } }
-        : inRestartWindow()
-          ? { query: { disableCookieCache: true } }
-          : {}),
-    });
-    // A public-computer sign-in never outlives its day, whatever its expiry
-    // says (`public-computer.ts`).
-    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
-      // Only on the route it was made on; anywhere else it is no session. A
-      // session that just ended is no session either, though its cached
-      // snapshot still vouches for it (`./sessions/live-connections.ts`).
-      const route = requestSessionRoute(req);
-      if (
-        route !== null &&
-        result.session &&
-        sessionWorksOn(result.session, route) &&
-        !sessionRecentlyEnded(result.session.id)
-      ) {
-        return {
-          userId: result.user.id,
-          credential: 'cookie',
-          sessionId: result.session.id,
-          route,
-        };
-      }
-    }
-  } catch (error) {
-    logger.debug('[Auth] Session cookie verification failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+  if (!options.ignoreSessionCookie) {
+    const user = await verifySessionCookie(auth, req, options);
+    if (user) return user;
   }
 
   // 2. Bearer API key — verified via the apiKey plugin, unless the caller has
@@ -349,4 +322,54 @@ export async function decideSessionGate(
     readOnly ? {} : { sessionFreshness: 'server-store' }
   );
   return user ? { allowed: true, user } : { allowed: false };
+}
+
+/**
+ * The session-cookie leg of {@link verifyRequestAuth}: the signed-in person,
+ * or `null` when no session works for this request on its route.
+ */
+async function verifySessionCookie(
+  auth: NonNullable<ReturnType<typeof getAuth>>,
+  req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>,
+  options: VerifyRequestAuthOptions
+): Promise<RequestUser | null> {
+  try {
+    const result = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+      // Just after a restart, nothing remembers which sign-ins ended before it,
+      // so the cached copy is not trusted (`./sessions/live-connections.ts`).
+      ...(options.sessionFreshness === 'server-store'
+        ? { query: { disableCookieCache: true, disableRefresh: true } }
+        : inRestartWindow()
+          ? { query: { disableCookieCache: true } }
+          : {}),
+    });
+    // A public-computer sign-in never outlives its day, whatever its expiry
+    // says (`public-computer.ts`).
+    if (result?.user?.id && !(result.session && publicComputerSessionExpired(result.session))) {
+      // Only on the route it was made on; anywhere else it is no session. A
+      // session that just ended is no session either, though its cached
+      // snapshot still vouches for it (`./sessions/live-connections.ts`).
+      const route = requestSessionRoute(req);
+      if (
+        route !== null &&
+        result.session &&
+        sessionWorksOn(result.session, route) &&
+        !sessionRecentlyEnded(result.session.id)
+      ) {
+        return {
+          userId: result.user.id,
+          credential: 'cookie',
+          sessionId: result.session.id,
+          route,
+        };
+      }
+    }
+  } catch (error) {
+    logger.debug('[Auth] Session cookie verification failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return null;
 }

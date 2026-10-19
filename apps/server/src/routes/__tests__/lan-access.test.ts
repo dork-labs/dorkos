@@ -23,6 +23,11 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
+// The install's owner is `owner`.
+vi.mock('../../services/core/auth/install-owner.js', () => ({
+  isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createLanAccessStatus } from '@dorkos/test-utils';
@@ -30,6 +35,7 @@ import type { LanAccessStatus } from '@dorkos/shared/types';
 import { configManager } from '../../services/core/config-manager.js';
 import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
 import {
   createLanAccessRoutes,
   LAN_ACCESS_SET_BY_ENVIRONMENT,
@@ -119,7 +125,7 @@ describe('POST /api/lan-access { enabled: true }', () => {
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
-  it('lets the signed-in owner turn it on from another device, as the tunnel does', async () => {
+  it('refuses the signed-in owner on another device: Wi-Fi is turned on at this computer', async () => {
     vi.mocked(decideSessionGate).mockResolvedValueOnce({
       allowed: true,
       user: { userId: 'owner', credential: 'cookie' },
@@ -128,8 +134,31 @@ describe('POST /api/lan-access { enabled: true }', () => {
       .post('/api/lan-access')
       .set('Host', 'box.ngrok.app')
       .send({ enabled: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(current.writeSetting).not.toHaveBeenCalled();
+  });
+
+  it('lets the owner turn it on at this computer with a browser session', async () => {
+    vi.mocked(decideSessionGate).mockResolvedValueOnce({
+      allowed: true,
+      user: { userId: 'owner', credential: 'cookie' },
+    });
+    const res = await request(app()).post('/api/lan-access').send({ enabled: true });
     expect(res.status).toBe(200);
     expect(current.writeSetting).toHaveBeenCalledWith(true);
+  });
+
+  it('refuses a person at this computer who is not the owner, and an API key', async () => {
+    for (const user of [
+      { userId: 'guest', credential: 'cookie' as const },
+      { userId: 'owner', credential: 'api-key' as const },
+    ]) {
+      vi.mocked(decideSessionGate).mockResolvedValueOnce({ allowed: true, user });
+      const res = await request(app()).post('/api/lan-access').send({ enabled: true });
+      expect(res.status).toBe(403);
+    }
+    expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
   it('refuses another device with no browser session, even with "Require login" off', async () => {
