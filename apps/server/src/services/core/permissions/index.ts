@@ -15,7 +15,14 @@ import type { ActivityService } from '../../activity/activity-service.js';
 import type { PermissionObserver } from './permission-observer.js';
 import type { ArrivalRecord } from './arrival-record.js';
 import { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
-import { narrowArrivedPermissions, type NarrowingContext } from './arrival-narrowing.js';
+import {
+  narrowArrivedPermissions,
+  stricterPermissions,
+  type NarrowingContext,
+} from './arrival-narrowing.js';
+import type { PersonSetPermissions } from './person-set-permissions.js';
+import { seedPersonSetPermissions } from './person-set-seed.js';
+import { PERMISSION_CHANGED_EVENT } from '@dorkos/shared/permissions';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 
 import {
@@ -46,6 +53,7 @@ export {
 export { PermissionObserver } from './permission-observer.js';
 export { createAlwaysSuggestion } from './always-suggestion.js';
 export { ArrivalRecord } from './arrival-record.js';
+export { PersonSetPermissions } from './person-set-permissions.js';
 export { narrowArrivedPermissions, type NarrowingContext } from './arrival-narrowing.js';
 export { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
 export {
@@ -104,6 +112,8 @@ export interface PermissionServiceWiring {
   observer: PermissionObserver;
   /** The agents whose folder's settings have not been screened yet. */
   arrivals: ArrivalRecord;
+  /** What a person set for each agent, the floor under its own file. */
+  personSet: PersonSetPermissions;
 }
 
 /**
@@ -182,13 +192,19 @@ export function narrowingContext(
  * and the permission pages use goes through this, so none of them can honour
  * a folder's settings as written.
  *
+ * A screened agent's file is then held to what a person set (DOR-3107): key by
+ * key, the stricter of the file and the person-set record wins, so an agent
+ * that edits its own file can tighten itself and never loosen itself.
+ *
  * @param read - The underlying reader.
- * @param deps - The arrival record, the path-to-agent lookup and the defaults.
+ * @param deps - The arrival record, the person-set record, the path-to-agent
+ *   lookup and the defaults.
  */
 export function narrowingReader(
   read: (agentPath: string) => Promise<AgentPermissions | undefined>,
   deps: {
     arrivals: ArrivalRecord;
+    personSet: Pick<PersonSetPermissions, 'get'>;
     agentAt: (agentPath: string) => string | undefined;
     context: () => NarrowingContext;
   }
@@ -199,8 +215,10 @@ export function narrowingReader(
     // file was never screened, so it follows the defaults.
     if (!agentId) return undefined;
     const stored = await read(agentPath);
-    if (!deps.arrivals.isPending(agentId)) return stored;
-    return narrowArrivedPermissions(stored, deps.context()).kept;
+    if (deps.arrivals.isPending(agentId)) {
+      return narrowArrivedPermissions(stored, deps.context()).kept;
+    }
+    return stricterPermissions(stored, deps.personSet.get(agentId), deps.context());
   };
 }
 
@@ -273,6 +291,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
       },
       readPermissions: narrowingReader(observedPermissionReader(wiring.observer), {
         arrivals: wiring.arrivals,
+        personSet: wiring.personSet,
         agentAt: (agentPath) =>
           wiring
             .mesh()
@@ -290,11 +309,37 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
         };
         if (agentPath) await wiring.observer.writing(agentPath, next, write);
         else await write();
+        // Every write DorkOS makes is one a person (or their standing grant)
+        // made, so it is the agent's new floor (DOR-3107).
+        wiring.personSet.set(agentId, next);
       },
       readStoredPermissions: readAgentPermissionsFromManifest,
     },
     actions: () => permissionActions(wiring.registry()),
     arrivalsHealthy: () => wiring.arrivals.isHealthy(),
     activity: wiring.activity,
+  });
+}
+
+/**
+ * Seed the person-set record on the first boot that has it (DOR-3107), from
+ * each agent's raw settings file and the whole permission history.
+ *
+ * @param deps - The record, the agent registry, the history and the defaults.
+ */
+export async function seedPersonSetOnBoot(deps: {
+  personSet: PersonSetPermissions;
+  mesh: () => Pick<MeshCore, 'listWithPaths'> | undefined;
+  activity: Pick<ActivityService, 'listByEventTypes'>;
+  config: Pick<ConfigManager, 'get' | 'getDot'>;
+  registry: () => CapabilityRegistry | undefined;
+}): Promise<void> {
+  await seedPersonSetPermissions({
+    personSet: deps.personSet,
+    agents: () => deps.mesh()?.listWithPaths() ?? [],
+    readFile: readAgentPermissionsFromManifest,
+    history: () =>
+      deps.activity.listByEventTypes([PERMISSION_CHANGED_EVENT], '1970-01-01T00:00:00.000Z'),
+    context: () => narrowingContext(deps.config, deps.registry()),
   });
 }

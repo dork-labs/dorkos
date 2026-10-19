@@ -36,6 +36,7 @@ import { createEveryAgentArrivalReaction } from '../../services/connectors/every
 import {
   createArrivalStep,
   createPermissionService,
+  seedPersonSetOnBoot,
 } from '../../services/core/permissions/index.js';
 import {
   setOnAgentCreated,
@@ -100,6 +101,7 @@ export interface MountCoreRoutesInput {
   roomWorktrees: WireRoomsResult['roomWorktrees'];
   docChannelMetrics: WireConnectorEventsAndApprovalsResult['docChannelMetrics'];
   arrivalRecord: WireSessionServicesResult['arrivalRecord'];
+  personSetPermissions: WireSessionServicesResult['personSetPermissions'];
   teamRoomDeps: WireTeamRoomAndRelayAdaptersResult['teamRoomDeps'];
   momentDetectors: WireTeamRoomAndRelayAdaptersResult['momentDetectors'];
   permissionObserver: WireSessionServicesResult['permissionObserver'];
@@ -146,6 +148,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomWorktrees,
     docChannelMetrics,
     arrivalRecord,
+    personSetPermissions,
     teamRoomDeps,
     momentDetectors,
     permissionObserver,
@@ -592,7 +595,22 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     activity: activityService,
     observer: permissionObserver,
     arrivals: arrivalRecord,
+    personSet: personSetPermissions,
   });
+  // The person-set floor is seeded once, on the first boot that has it, from
+  // what each agent's file holds and what the history says a person set
+  // (DOR-3107). Until it lands every agent's floor is the defaults.
+  void seedPersonSetOnBoot({
+    personSet: personSetPermissions,
+    mesh: () => refs.meshCore,
+    activity: activityService,
+    config: configManager,
+    registry: () => refs.capabilityRegistry,
+  }).catch((err: unknown) =>
+    logger.warn('[Permissions] could not seed what a person set for each agent', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  );
   arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
   // A screen interrupted by a restart, or one whose write failed, is retried
   // now; its agent stays narrowed until one lands.

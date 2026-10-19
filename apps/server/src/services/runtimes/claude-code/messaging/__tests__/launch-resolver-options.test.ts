@@ -16,11 +16,14 @@ import { projectSlug } from '../../sessions/project-slug.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
+import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { assignTurnBounds } from '../../turn-bounds.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -475,6 +478,53 @@ describe('the launch options every Claude Code turn is given', () => {
         'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
         'length limit the CLI simply stops starting'
     ).toBe('initialize');
+  });
+});
+
+// DOR-3107 (Security): an agent at Full autonomy never calls the tool gate, so
+// a marked turn must LAUNCH at the capped mode. Each cap is taken from where
+// that mark is set, so a source that loosens its cap fails here.
+describe('a marked turn on an agent at Full autonomy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One turn as the runtime starts it: its bounds first, then the launch. */
+  async function launchAs(opts: MessageOpts | undefined, session: AgentSession): Promise<Options> {
+    assignTurnBounds(session, opts);
+    return captureSdkOptions(opts, session);
+  }
+
+  /** A session whose own saved mode is Full autonomy. */
+  function bypassSession(): AgentSession {
+    return { ...makeSession(), permissionMode: 'bypassPermissions' };
+  }
+
+  it.each([
+    ['a Telegram or Slack message (the relay adapter)', 'runtime-default' as const],
+    ['a turn relayed from the web', RELAY_TURN_CEILING],
+    ['a room post from an outsider', 'runtime-default' as const],
+    ['a space teammate’s post', ['runtime-default', READ_ONLY_LEVEL] as const],
+  ])('launches at the runtime’s Default for %s', async (_name, ceiling) => {
+    const options = await launchAs(
+      { permissionCeiling: ceiling as TurnPermissionCeiling },
+      bypassSession()
+    );
+    expect(options.permissionMode).not.toBe('bypassPermissions');
+    expect(['default', 'plan']).toContain(options.permissionMode);
+  });
+
+  it('launches at Full autonomy for the owner’s own turn', async () => {
+    const options = await launchAs(undefined, bypassSession());
+    expect(options.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('launches at Full autonomy for another of the owner’s agents at Full autonomy', async () => {
+    const options = await launchAs(
+      { permissionCeiling: { asks: 'never', reach: 'everything' } },
+      bypassSession()
+    );
+    expect(options.permissionMode).toBe('bypassPermissions');
   });
 });
 

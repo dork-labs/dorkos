@@ -57,6 +57,7 @@ import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/m
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import {
   ArrivalRecord,
+  PersonSetPermissions,
   PermissionObserver,
   createArrivalStep,
   createPermissionService,
@@ -141,6 +142,12 @@ beforeEach(async () => {
     file: path.join(await tempDir('arrival-record-'), 'pending.json'),
     logger: { warn: () => {} },
   });
+  // Seeded empty: nobody has set anything for these agents yet (DOR-3107).
+  const personSet = new PersonSetPermissions({
+    file: path.join(await tempDir('person-set-'), 'person-set.json'),
+    logger: { warn: () => {} },
+  });
+  personSet.seed(new Map());
   const service = createPermissionService({
     config: fakeConfig,
     mesh: () => mesh,
@@ -148,9 +155,11 @@ beforeEach(async () => {
     activity,
     observer,
     arrivals,
+    personSet,
   });
   gateRead = narrowingReader(readAgentPermissionsFromManifest, {
     arrivals,
+    personSet,
     agentAt: (agentPath) => mesh.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
     context: () => narrowingContext(fakeConfig, composeCapabilityRegistryForDocs()),
   });
