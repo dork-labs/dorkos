@@ -68,12 +68,14 @@ const AUTO_FALLBACK_MODE_ID = 'default';
 
 const turnLevels = new Map<string, TurnPermissionLevel>();
 const entryLevels = new Map<string, TurnPermissionLevel>();
+/** Marks kept for posts whose level is unknown (`noteEntryMarks`). */
+const entryMarks = new Map<string, TurnMarks>();
 /** How many turns this process has sent on each conversation, so a per-turn count knows when a turn is new. */
 const turnSerials = new Map<string, number>();
 let nextTurnSerial = 0;
 
 /** Set a key as the newest, dropping the oldest past the bound. */
-function remember(map: Map<string, TurnPermissionLevel>, key: string, level: TurnPermissionLevel) {
+function remember<T>(map: Map<string, T>, key: string, level: T) {
   map.delete(key);
   map.set(key, level);
   if (map.size > TURN_LEVEL_MEMORY) {
@@ -106,6 +108,28 @@ export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefi
   const level = turnLevels.get(sessionId);
   if (level === undefined) return undefined;
   return chatHeardOutsider(sessionId) ? { ...level, outsider: true } : level;
+}
+
+/**
+ * The marks a sender carries when its level is NOT known (a restart, a turn
+ * this process never recorded): the outsider mark if a stranger reached any of
+ * these chats (`chatHeardOutsider`, which also reads a chat's stored launch
+ * origin), plus the marks of the agent's marked turns running now. Under trust
+ * first (DOR-3107, Dorian 2026-10-19) an unknown sender of the owner's own is
+ * trusted, so this is what still tells a stranger's chat apart.
+ *
+ * @param sessionIds - The sending chats.
+ * @param agentPath - The sending agent, when known.
+ */
+export function unknownLevelMarks(
+  sessionIds: readonly (string | null | undefined)[],
+  agentPath?: string
+): TurnMarks {
+  const heard = sessionIds.some(
+    (id) => typeof id === 'string' && id !== '' && chatHeardOutsider(id)
+  );
+  const running = agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  return heard ? { ...running, outsider: true } : running;
 }
 
 /**
@@ -245,6 +269,25 @@ export function noteEntryLevel(
 }
 
 /**
+ * Keep marks on a post whose author's level is not known but whose source is
+ * (DOR-3107): a post from a caller DorkOS could not verify (an external `/mcp`
+ * client naming no session) is kept as an outsider's, so it stays capped even
+ * though an unknown post from the owner's own agent no longer is.
+ *
+ * @param entryId - The post's id.
+ * @param marks - The marks to keep.
+ * @param roomId - The post's room.
+ */
+export function noteEntryMarks(entryId: string, marks: TurnMarks, roomId: string): void {
+  remember(entryMarks, entryId, marks);
+  try {
+    entryMarksStore?.write(roomId, entryId, marks);
+  } catch {
+    // Kept in memory; a failed write leaves the row unknown after a restart.
+  }
+}
+
+/**
  * The marks a room post was written under: from its kept level, else from its row. `null` when
  * nobody knows (no level was kept and the row records none), `undefined` when the post is not
  * stored here at all.
@@ -255,6 +298,8 @@ export function noteEntryLevel(
 export function entryMarksOf(entryId: string, roomId?: string): TurnMarks | null | undefined {
   const level = entryLevels.get(entryId);
   if (level !== undefined) return marksOfLevel(level);
+  const marks = entryMarks.get(entryId);
+  if (marks !== undefined) return marks;
   try {
     return entryMarksStore && roomId ? entryMarksStore.read(roomId, entryId) : null;
   } catch {

@@ -80,9 +80,13 @@ export function ceilingForEntry(
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
   if (kind !== 'agent') return {};
+  // In the owner's own circle only a MARKED post caps (DOR-3107; trust first,
+  // Dorian 2026-10-19): one known unmarked, or one whose marks nobody kept (a
+  // restart, an old row), hands on just the cap a person set on its poster. A
+  // post from a caller DorkOS could not verify is kept marked at write time.
   if (circle?.ownCircle) {
     const marks = entryMarksOf(entry.id, roomId || undefined);
-    if (marks !== null && marks !== undefined && !hasMarks(marks)) {
+    if (!marks || !hasMarks(marks)) {
       const cap = circle.posterCap?.(entry.authorId);
       return cap !== undefined ? { permissionCeiling: cap } : {};
     }

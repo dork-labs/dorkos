@@ -68,9 +68,16 @@ describe('own-circle room turns', () => {
     });
   });
 
-  it('keeps a post nobody kept marks for at the default, in the circle too', () => {
+  // Trust first (Dorian 2026-10-19): an own agent's post whose marks nobody
+  // kept (a restart, an old row) is trusted; only a marked one caps.
+  it('trusts a post nobody kept marks for, in the circle', () => {
     const entry = postByBo();
-    expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({
+    expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({});
+  });
+
+  it('keeps a post nobody kept marks for at the default outside the circle', () => {
+    const entry = postByBo();
+    expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({
       permissionCeiling: 'runtime-default',
     });
   });
@@ -110,11 +117,11 @@ describe('own-circle room turns', () => {
       expect(isOwnCircle(context, channel.id, plain)).toBe(false);
     });
 
-    it('fails with an agent post in view that nobody kept marks for', () => {
+    it('holds with an own agent post in view that nobody kept marks for', () => {
       const vouched = postByBo({});
       const unknown = postByBo();
       const context = shown([{ id: vouched.id }, { id: unknown.id }]);
-      expect(isOwnCircle(context, channel.id, plain)).toBe(false);
+      expect(isOwnCircle(context, channel.id, plain)).toBe(true);
     });
 
     it('ignores the owner’s own lines', () => {

@@ -9,7 +9,8 @@
  * @module server/services/rooms/messages/room-posting
  */
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { postLevelFor } from '../../core/turn-power/turn-levels.js';
+import { postLevelFor, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import {
   OUTSIDER_TURN_LIMIT,
   releaseOutsiderOutput,
@@ -115,7 +116,11 @@ export class RoomPosting {
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(roomId: string, input: RoomPostInput, authorLevel?: TurnPermissionLevel): PostedEntry {
+  post(
+    roomId: string,
+    input: RoomPostInput,
+    authorLevel?: TurnPermissionLevel | { marks: TurnMarks }
+  ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -275,11 +280,16 @@ export class RoomPosting {
     // The level the turns this post starts are held to. Both sessions vouch:
     // the one that made the call, and the author's turn in this room, which
     // differ when an agent posts from one room's turn into another. A caller
-    // nobody verified keeps nothing, and its post is held to the default.
-    const authorLevel =
-      input.callerSessionId !== undefined
-        ? postLevelFor([input.callerSessionId, turn?.sessionId])
-        : undefined;
+    // nobody verified is kept as an outsider's (DOR-3107): an unknown post
+    // from the owner's own agent is trusted, an unverified one never is.
+    const vouching = [input.callerSessionId, turn?.sessionId];
+    const known = input.callerSessionId !== undefined ? postLevelFor(vouching) : undefined;
+    // Unknown is trusted only when nothing says a stranger reached these chats.
+    const authorLevel: TurnPermissionLevel | { marks: TurnMarks } =
+      known ??
+      (input.callerSessionId === undefined
+        ? { marks: { outsider: true } }
+        : { marks: unknownLevelMarks(vouching) });
     const { callerSessionId: _caller, ...postInput } = input;
     let entry: PostedEntry;
     try {

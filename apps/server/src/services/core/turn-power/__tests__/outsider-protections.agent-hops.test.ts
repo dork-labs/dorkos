@@ -438,10 +438,17 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(runsAt(sent.get(bo))).toBe('default');
   });
 
-  it('a sender whose level is unknown stays capped', async () => {
-    expect(await senderBound(undefined, caller(fresh('ana')), ownLevelFull)).toBe(
-      'runtime-default'
-    );
+  // Trust first (Dorian 2026-10-19): unknown is not marked.
+  it('a sender of your own whose level is unknown (a restart) starts no card', async () => {
+    expect(await senderBound(undefined, caller(fresh('ana')), ownLevelFull)).toEqual(FULL);
+  });
+
+  it('a sender whose level is unknown but whom a stranger reached stays capped', async () => {
+    const lifeos = fresh('lifeos');
+    noteTurnOrigin(lifeos, { kind: 'relay-binding' });
+    const stored = await senderBound(undefined, caller(lifeos), ownLevelFull);
+    expect(stored).toBe('runtime-default');
+    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
   });
 
   it('an email read by a connector event, then one chat_send, then a room post: still capped', async () => {

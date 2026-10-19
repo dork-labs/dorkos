@@ -162,10 +162,12 @@ describe('a turn another agent’s post starts', () => {
     expect(ceilingForEntry(authors, entry)).toEqual({ permissionCeiling: 'runtime-default' });
   });
 
-  it('is held to the runtime default when the posting turn’s level was not kept', async () => {
+  // Trust first (Dorian 2026-10-19): a verified own agent whose turn's level
+  // was not kept is trusted; only the cap the person set holds.
+  it('is held only to the poster’s set level when the posting turn’s level was not kept', async () => {
     service.post(channel.id, { authorId: human, text: '@ana ask bo about the build' });
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toBe('runtime-default');
+    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual(ANA_SET_TO);
   });
 });
 

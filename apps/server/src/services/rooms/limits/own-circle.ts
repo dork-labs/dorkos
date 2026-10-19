@@ -8,12 +8,13 @@
  * is not the poster's level but whether its turn read words from outside the
  * owner's circle, and that is what a post's stored marks say.
  *
- * So in a room that is the owner's own circle (decided on every turn), a post
- * KNOWN to carry no mark hands on no ceiling, and the woken agent runs at its
- * own level, unless the person set the poster itself below Full autonomy, in
- * which case its posts are held to the poster's own level. Everything else is
- * as before: a post nobody can vouch for (no stored marks), a marked post, a
- * bridged or space room, or an outsider's words in view.
+ * So in a room that is the owner's own circle (decided on every turn), an
+ * agent post carrying no mark, or one whose marks nobody kept (trust first,
+ * Dorian 2026-10-19), hands on no ceiling, and the woken agent runs at its own
+ * level, unless the person set the poster itself below Full autonomy, in which
+ * case its posts are held to the poster's own level. Everything else is as
+ * before: a marked post (an unverified caller's is kept marked), a bridged or
+ * space room, or an outsider's words in view.
  *
  * @module services/rooms/limits/own-circle
  */
@@ -21,7 +22,6 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { levelOfMode, stricterLevel } from '@dorkos/shared/permission-semantics';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { entryMarksOf } from '../../core/turn-power/turn-levels.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
   readAgentExecutionDefaults,
@@ -33,7 +33,7 @@ import { outsiderInViewOf } from './turn-ceiling.js';
 
 /** What decides an own-circle turn, read where the turn is built. */
 export interface OwnCircle {
-  /** The room holds only the owner and their own agents, and nothing unvouched is in view. */
+  /** The room holds only the owner and their own agents, and no outsider's words are in view. */
   ownCircle: boolean;
   /** The cap the person set on a poster below Full autonomy, by author id. */
   posterCap?: (authorId: string) => TurnPermissionBound | undefined;
@@ -41,8 +41,9 @@ export interface OwnCircle {
 
 /**
  * Whether a room turn is in the owner's own circle: not a space room, no
- * bridge, no outsider's words in view, and no agent post in view whose marks
- * nobody kept. Checked on every turn.
+ * bridge, and no outsider's words in view. A post of the owner's own agent
+ * whose marks nobody kept is trusted (trust first, Dorian 2026-10-19); only a
+ * marked one caps, post by post (`ceilingForEntry`). Checked on every turn.
  *
  * @param context - What the turn is about to be shown.
  * @param roomId - The room.
@@ -54,13 +55,7 @@ export function isOwnCircle(
   room: { inSpaceRoom: boolean; bridged: boolean }
 ): boolean {
   if (room.inSpaceRoom || room.bridged) return false;
-  if (outsiderInViewOf(context, roomId).outsiderInView) return false;
-  const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
-  // An agent's post with no stored marks could carry anything: the strict side.
-  return !shown.some(
-    (entry) =>
-      !entry.authorIsPerson && entry.kind === 'post' && entryMarksOf(entry.id, roomId) === null
-  );
+  return !outsiderInViewOf(context, roomId).outsiderInView;
 }
 
 /** The stricter of two bounds; the runtime's default is the strictest name. */

@@ -9,7 +9,8 @@ import type {
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
-import { ceilingCarrying, marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import { ceilingCarrying, hasMarks, marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import { unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 
 /** Reads the level a person set an agent to (`posterLevel`, rooms' own-circle rule). */
@@ -23,9 +24,11 @@ export type OwnLevelReader = (
  * sending turn KNOWN to carry no mark passes on only the level a person set its
  * agent and its chat to, which is no cap at all for an agent at Full autonomy:
  * its level was never the risk, only what its turn read. A marked turn, or one
- * whose level is unknown, is held to the receiving runtime's default, beside
- * its own level so the marks ride on (`ceilingCarrying`): a turn at Full that
- * a stranger's words reached hands on the cap, not its Full level.
+ * is held to the receiving runtime's default, beside its own level so the
+ * marks ride on (`ceilingCarrying`): a turn at Full that a stranger's words
+ * reached hands on the cap, not its Full level. A sender whose level is
+ * unknown (a restart) is trusted like an unmarked one (trust first, Dorian
+ * 2026-10-19) unless a stranger reached its chat (`unknownLevelMarks`).
  *
  * @param level - The sending chat's level as it hands it on (`passedOnLevelOf`).
  * @param caller - The sending chat and its agent.
@@ -36,7 +39,11 @@ export async function senderBound(
   caller: { sessionId: string; agentPath: string },
   ownLevelOf: OwnLevelReader | undefined
 ): Promise<TurnPermissionCeiling> {
-  if (level === undefined) return 'runtime-default';
+  if (level === undefined) {
+    const marks = unknownLevelMarks([caller.sessionId], caller.agentPath);
+    if (hasMarks(marks) || !ownLevelOf) return ceilingCarrying(marks) ?? 'runtime-default';
+    return ownLevelOf(caller.agentPath, [caller.sessionId]);
+  }
   const carried = ceilingCarrying(marksOfLevel(level));
   if (carried !== undefined) return [level, ...boundsOf(carried)];
   if (!ownLevelOf) return level;

@@ -10,7 +10,8 @@
  * @module server/services/rooms/messages/room-entry-writer
  */
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
+import { noteEntryLevel, noteEntryMarks } from '../../core/turn-power/turn-levels.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import type { DbTransaction } from '@dorkos/db';
 import type { Room, RoomAttachment, RoomEntry, RoomMoment } from '@dorkos/shared/room-schemas';
@@ -241,7 +242,7 @@ export class RoomEntryWriter {
        * session made carries one; never derived from `input.sessionId`, which a
        * request body can name.
        */
-      authorLevel?: TurnPermissionLevel;
+      authorLevel?: TurnPermissionLevel | { marks: TurnMarks };
     }
   ): PostedEntry {
     const roomId = room.id;
@@ -360,7 +361,10 @@ export class RoomEntryWriter {
     // The level the author's turn runs at, kept with the post BEFORE anything
     // it triggers is dispatched: a turn this post starts runs no looser than
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
-    noteEntryLevel(entry.id, opts?.authorLevel, roomId);
+    // A level, or only marks when the level is unknown (DOR-3107).
+    const kept = opts?.authorLevel;
+    if (kept && 'marks' in kept) noteEntryMarks(entry.id, kept.marks, roomId);
+    else noteEntryLevel(entry.id, kept, roomId);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must
