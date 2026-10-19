@@ -51,7 +51,10 @@ import {
   READ_ONLY_LEVEL,
 } from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
-import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
+import {
+  noteChatHeardOutsider,
+  turnStartedByOutsider,
+} from '../../session/origin/outsider-turns.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
 import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
 
@@ -355,6 +358,7 @@ export function applyTurnMarks(
   ): AsyncGenerator<StreamEvent> {
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
+    if (marks.outsider === true) noteChatHeardOutsider(sessionId);
     let sent = opts;
     if (marks.teammate !== undefined) {
       sent = teammateTurnOpts(opts);

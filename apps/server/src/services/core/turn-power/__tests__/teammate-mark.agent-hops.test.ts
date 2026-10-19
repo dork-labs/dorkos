@@ -44,7 +44,7 @@ import { TEAMMATE_TIER_DENIAL, teammateTierRefusal } from '../teammate-tier.js';
 import { ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import { teammateOf } from '../../../rooms/limits/space-teammates.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
-import { senderCeiling } from '../../../session/chat-messages/chat-message-service.js';
+import { senderBound } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import { originLabelerFrom, setOriginLabeler } from '../../../tasks/approvals/marked-schedules.js';
 import {
@@ -194,7 +194,15 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
     const bo = await teammateThenMention(runtime);
     sink.mockClear();
     // What `chat_send` stores as the queue row's ceiling; the dispatcher launches under it.
-    const stored = JSON.parse(JSON.stringify(senderCeiling(lastTurnLevelOf(bo))));
+    const stored = JSON.parse(
+      JSON.stringify(
+        await senderBound(
+          lastTurnLevelOf(bo),
+          { sessionId: bo, agentPath: '/agents/bo' },
+          undefined
+        )
+      )
+    );
     const cy = fresh('cy');
     await run(runtime, cy, { permissionCeiling: stored });
 

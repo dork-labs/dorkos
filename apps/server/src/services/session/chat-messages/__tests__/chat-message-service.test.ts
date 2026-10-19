@@ -622,10 +622,11 @@ describe('send — steer', () => {
 
     expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.status).toBe('queued');
-    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual({
-      ...TIGHT,
-      outsider: true,
-    });
+    // Its level, which keeps the mark, and the cap the mark carries (DOR-3107).
+    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual([
+      { ...TIGHT, outsider: true },
+      'runtime-default',
+    ]);
   });
 
   it('steers into a turn that has read an outsider’s words already', async () => {

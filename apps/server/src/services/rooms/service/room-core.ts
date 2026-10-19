@@ -246,6 +246,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
       return isSpaceRoom(roomId) ? SPACE_ROOM_FRAMING : null;
     },
     isSpaceRoom,
+    ...(deps.posterLevel ? { posterLevel: deps.posterLevel } : {}),
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
     // What is on this room's table, as LABELS — never a document's contents.

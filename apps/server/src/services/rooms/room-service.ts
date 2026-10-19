@@ -447,9 +447,22 @@ export class RoomService {
     this.triggers.dispatch(room, entry);
   }
 
-  /** Write a post. See {@link RoomPosting.post}. */
-  post(roomId: string, input: RoomPostInput): PostedEntry {
-    return this.parts.posting.post(roomId, input);
+  /**
+   * Write a post. See {@link RoomPosting.post}.
+   *
+   * @param roomId - The room.
+   * @param input - The post.
+   * @param unverifiedAgent - An agent named by a header nothing verifies (the HTTP routes).
+   */
+  post(roomId: string, input: RoomPostInput, unverifiedAgent = false): PostedEntry {
+    // An agent posting over HTTP names itself with a header nothing verifies:
+    // its post is kept as an outsider's (DOR-3107, trust first covers only a
+    // verified own agent's unknown marks).
+    return this.parts.posting.post(
+      roomId,
+      input,
+      unverifiedAgent ? { marks: { outsider: true } } : undefined
+    );
   }
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
@@ -460,6 +473,7 @@ export class RoomService {
       replyTo?: string;
       attachmentIds?: readonly string[];
       callerSessionId?: string;
+      callerAgentVerified?: boolean;
     }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
