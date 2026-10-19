@@ -129,13 +129,19 @@ describe('own-circle room turns', () => {
     const read: string[] = [];
     const capOf = await posterCapsFor(
       harness.authors,
-      [entry, entry, { authorId: harness.human }],
-      async (agentPath) => {
-        read.push(agentPath);
+      [
+        { ...entry, sessionId: 'bo-room-chat' },
+        { ...entry, sessionId: 'bo-room-chat' },
+        { authorId: harness.human },
+      ],
+      async (agentPath, sessionIds) => {
+        read.push(`${agentPath} ${sessionIds.join(',')}`);
         return ACT;
       }
     );
-    expect(read).toEqual(['/agents/bo']);
+    // Once per poster, with the conversation it wrote from, whose mode a person
+    // may have set below the poster's own (review finding 2).
+    expect(read).toEqual(['/agents/bo bo-room-chat']);
     expect(capOf(bo)).toEqual(ACT);
     expect(capOf(harness.human)).toBeUndefined();
   });

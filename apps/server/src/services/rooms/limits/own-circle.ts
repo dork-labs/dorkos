@@ -19,7 +19,7 @@
  */
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
-import { levelOfMode } from '@dorkos/shared/permission-semantics';
+import { levelOfMode, stricterLevel } from '@dorkos/shared/permission-semantics';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { entryMarksOf } from '../../core/turn-power/turn-levels.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
@@ -62,15 +62,27 @@ export function isOwnCircle(
   );
 }
 
+/** The stricter of two bounds; the runtime's default is the strictest name. */
+function stricterBound(a: TurnPermissionBound, b: TurnPermissionBound): TurnPermissionBound {
+  if (a === 'runtime-default' || b === 'runtime-default') return 'runtime-default';
+  return stricterLevel(a, b);
+}
+
 /**
- * The level a person set a poster to, when it is below Full autonomy: its own
- * Files & commands stop, else its runtime's, else everyone's, read as the
- * runtime's mode. An answer that cannot be worked out is the runtime's
+ * The level a person set a poster to: the stricter of its own Files &
+ * commands stop (else its runtime's, else everyone's) and the mode a person
+ * set on each conversation it posted from, each read as its runtime's mode.
+ * With no stop set anywhere it is the runtime's own default mode, a level
+ * that carries no mark. An answer that cannot be worked out is the runtime's
  * default, the strict side.
  *
  * @param agentPath - The poster's folder.
+ * @param sessionIds - The conversations its answered posts came from.
  */
-export async function posterLevel(agentPath: string): Promise<TurnPermissionBound> {
+export async function posterLevel(
+  agentPath: string,
+  sessionIds: readonly string[] = []
+): Promise<TurnPermissionBound> {
   try {
     const defaults = await readAgentExecutionDefaults(agentPath);
     const type =
@@ -78,14 +90,22 @@ export async function posterLevel(agentPath: string): Promise<TurnPermissionBoun
         ? defaults.runtime
         : runtimeRegistry.getDefaultType();
     const capabilities = runtimeRegistry.getAllCapabilities()[type];
-    const mode = resolveUnattendedPermissionMode({
-      capabilities,
-      ...(defaults.filesAndCommands
-        ? { agent: { filesAndCommands: defaults.filesAndCommands } }
-        : {}),
-    });
-    const level = capabilities ? levelOfMode(capabilities.permissionModes, mode) : undefined;
-    return level ?? 'runtime-default';
+    if (!capabilities) return 'runtime-default';
+    const declared = capabilities.permissionModes;
+    const mode =
+      resolveUnattendedPermissionMode({
+        capabilities,
+        ...(defaults.filesAndCommands
+          ? { agent: { filesAndCommands: defaults.filesAndCommands } }
+          : {}),
+      }) ?? declared.default;
+    let bound: TurnPermissionBound = levelOfMode(declared, mode) ?? 'runtime-default';
+    for (const sessionId of sessionIds) {
+      const stored = runtimeRegistry.storedPermissionModeOf(sessionId);
+      if (stored === null) continue;
+      bound = stricterBound(bound, levelOfMode(declared, stored) ?? 'runtime-default');
+    }
+    return bound;
   } catch {
     return 'runtime-default';
   }
@@ -100,8 +120,10 @@ export async function posterLevel(agentPath: string): Promise<TurnPermissionBoun
  */
 export async function posterCapsFor(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'authorId'>[],
-  read: ((agentPath: string) => Promise<TurnPermissionBound>) | undefined = posterLevel
+  entries: readonly (Pick<RoomEntry, 'authorId'> & { sessionId?: string | null })[],
+  read:
+    | ((agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>)
+    | undefined = posterLevel
 ): Promise<(authorId: string) => TurnPermissionBound | undefined> {
   const ids = [...new Set(entries.map((entry) => entry.authorId))];
   const records = authors.getMany(ids);
@@ -109,7 +131,14 @@ export async function posterCapsFor(
   for (const id of ids) {
     const record = records.get(id);
     if (record?.kind !== 'agent') continue;
-    caps.set(id, await (read ?? posterLevel)(record.naturalKey));
+    const sessions = [
+      ...new Set(
+        entries
+          .filter((entry) => entry.authorId === id && entry.sessionId)
+          .map((entry) => entry.sessionId!)
+      ),
+    ];
+    caps.set(id, await (read ?? posterLevel)(record.naturalKey, sessions));
   }
   return (authorId) => caps.get(authorId);
 }

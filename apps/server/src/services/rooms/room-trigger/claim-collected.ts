@@ -180,6 +180,9 @@ export function claimCollected(
     answers: collection.entries.slice(0, chosen.index + 1).map((held) => ({
       id: held.entry.id,
       authorId: held.entry.authorId,
+      // The conversation each was written from, whose mode a person may have
+      // set below the poster's own (DOR-3107).
+      sessionId: held.entry.sessionId,
     })),
   };
 

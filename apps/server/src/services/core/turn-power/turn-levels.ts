@@ -50,6 +50,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
+import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -114,6 +115,10 @@ export function turnSerialOf(sessionId: string): number | undefined {
  * post must not borrow a looser turn's level. Never a session id a request
  * body supplied; that would let anybody name a Full autonomy conversation.
  *
+ * A turn an outsider STARTED (a connector event, a bridged chat, a stranger's
+ * DM) is marked even when no ceiling said so (DOR-3107): its post carries the
+ * outsider mark, so the turn it wakes is capped, never trusted as unmarked.
+ *
  * @param sessionIds - The sessions that vouch for the post.
  */
 export function postLevelFor(
@@ -123,7 +128,8 @@ export function postLevelFor(
   if (named.length === 0) return undefined;
   const levels = named.map((id) => turnLevels.get(id));
   if (levels.some((level) => level === undefined)) return undefined;
-  return (levels as TurnPermissionLevel[]).reduce(stricterLevel);
+  const level = (levels as TurnPermissionLevel[]).reduce(stricterLevel);
+  return named.some(turnStartedByOutsider) ? { ...level, outsider: true } : level;
 }
 
 /**

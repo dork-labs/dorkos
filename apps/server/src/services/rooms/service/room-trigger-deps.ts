@@ -140,7 +140,7 @@ export interface RoomTriggerDeps {
    */
   isSpaceRoom?(roomId: string): boolean;
   /** The level a person set a poster agent to (DOR-3107); see `RoomServiceDeps.posterLevel`. */
-  posterLevel?(agentPath: string): Promise<TurnPermissionBound>;
+  posterLevel?(agentPath: string, sessionIds: readonly string[]): Promise<TurnPermissionBound>;
   /**
    * The stored forum-topic name for a batch of entries. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.

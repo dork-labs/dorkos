@@ -132,7 +132,7 @@ export interface RoomServiceDeps {
    * reads the agent's own settings and runtime (`own-circle.ts`); a test
    * passes its own.
    */
-  posterLevel?: (agentPath: string) => Promise<TurnPermissionBound>;
+  posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
   /** Atomically enqueue local agent output in remote mirrors and suppress recursive dispatch. */
   mirrorWrites?: RoomMirrorWritePolicy;
   /** Reactions on this room's entries — durable state, never a turn. */

@@ -766,7 +766,7 @@ export function createRoomHarness(opts: {
   operatorName?: () => string | null;
   budgetNow?: () => number;
   /** The level a person set each poster agent to (DOR-3107). */
-  posterLevel?: (agentPath: string) => Promise<TurnPermissionBound>;
+  posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
   /**
    * Which rooms the operator has muted, as a live predicate (spec
    * `notification-system` task T11) — defaults to "nothing is muted", the same

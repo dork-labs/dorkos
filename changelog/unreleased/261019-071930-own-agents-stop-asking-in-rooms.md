@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): your own agents stop holding each other to Default in rooms (DOR-3107)'
+  - 'fix(server): review fixes for marks between your own agents (DOR-3107)'
 ---
 
 ### Fixed
