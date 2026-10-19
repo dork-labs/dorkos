@@ -19,10 +19,12 @@
  *   chat another chat's message or `session_start` opened is left alone when
  *   the opening row carries a mark or came from an outside chat, an agent launch
  *   with no starting chat (the external `/mcp` server, unverified) is left
- *   alone, and a room chat is raised only in a room of this computer with no
- *   bridge, no space copy and no marked or outside post. Everything else that
- *   is unknown is raised. Schedules are never raised (their mode lives on the
- *   schedule), nor is a chat on another computer (`computer-local`).
+ *   alone, a room chat is raised only in a room of this computer with no
+ *   bridge, no space copy and no marked, outside or Wi-Fi-held post, and a chat
+ *   a person opened is left alone when a Wi-Fi sign-in was live as it was
+ *   made. Everything else that is unknown is raised. Schedules are never
+ *   raised (their mode lives on the schedule), nor is a chat on another
+ *   computer (`computer-local`).
  * - **It belongs to a registered agent**, other than the agents kept as they are
  *   ({@link KEPT_AS_THEY_ARE}).
  * - **Its agent's level is looser than the chat's mode.** The level is what a
@@ -205,8 +207,12 @@ export async function setChatsBack(changes: readonly PermissionChange[]): Promis
 
 /**
  * Whether a chat message's stored sender level carries a mark: an outsider's
- * words or a teammate's chain. The runtime default, a level with no marks, an
- * unreadable value or no message at all is unknown or unmarked, and raises.
+ * words or a teammate's chain. A sender whose turn was held to the runtime's
+ * default (a Wi-Fi sign-in's, DOR-3037) stores its level with the outsider
+ * mark, so it reads as marked here. The bare runtime default (what rows from
+ * before the unknown-sender value stored for any unknown sender), a level with
+ * no marks, an unreadable value or no message at all is unknown or unmarked,
+ * and raises.
  *
  * @param ceilingJson - The opening message's `ceiling_json`, or `undefined` for none.
  */

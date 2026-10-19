@@ -15,12 +15,34 @@ const LEVEL = { asks: 'never', reach: 'everything' };
 let db: Db;
 beforeEach(() => {
   db = createTestDb();
+  signIns = 0;
 });
 
 /** One chat row. */
-function chat(id: string, origin: string | null) {
+function chat(id: string, origin: string | null, createdAt = NOW) {
   db.run(sql`INSERT INTO session_metadata (session_id, runtime, launch_origin, created_at)
-    VALUES (${id}, 'claude-code', ${origin}, ${NOW})`);
+    VALUES (${id}, 'claude-code', ${origin}, ${createdAt})`);
+}
+
+let signIns = 0;
+/** A sign-in on a route, live from `from` to `to` (ISO times). */
+function signIn(route: string | null, from: string, to: string) {
+  signIns += 1;
+  if (signIns === 1) {
+    db.run(sql`INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
+      VALUES ('u', 'u', 'u@example.com', 1, 0, 0)`);
+  }
+  db.run(sql`INSERT INTO session (id, expires_at, token, created_at, updated_at, route, user_id)
+    VALUES (${`s-${signIns}`}, ${Date.parse(to)}, ${`t-${signIns}`}, ${Date.parse(from)},
+      ${Date.parse(from)}, ${route}, 'u')`);
+}
+
+/** The Wi-Fi hold column a later migration adds (DOR-3037), for a database that lacks it. */
+function addHeldColumn() {
+  const columns = db.all<{ name: string }>(sql`PRAGMA table_info(room_entries)`);
+  if (!columns.some((c) => c.name === 'held_to_default')) {
+    db.run(sql`ALTER TABLE room_entries ADD COLUMN held_to_default integer DEFAULT false NOT NULL`);
+  }
 }
 
 /** The first message to a chat, from another. */
@@ -59,6 +81,7 @@ function post(roomId: string, authorId: string, turnMarks: string | null) {
     created_at, turn_marks)
     VALUES (${roomId}, ${seq}, ${`e-${seq}`}, ${authorId}, 'post', 'b', ${`e-${seq}`}, ${NOW},
       ${turnMarks})`);
+  return `e-${seq}`;
 }
 
 describe('chatLaunchMarks', () => {
@@ -141,5 +164,81 @@ describe('chatLaunchMarks', () => {
     expect(marked('space-chat', 'room')).toBe(true);
     // No seat: the room cannot be checked, so it is not raised.
     expect(marked('seatless', 'room')).toBe(true);
+  });
+
+  it('a room chat in a room holding a post held to the default (a Wi-Fi sign-in’s) stays', () => {
+    addHeldColumn();
+    author('me', 'user:local');
+    room('wifi', 'wifi-chat');
+    post('wifi', 'me', null);
+    const held = post('wifi', 'me', null);
+    db.run(sql`UPDATE room_entries SET held_to_default = 1 WHERE id = ${held}`);
+    room('local', 'local-chat');
+    post('local', 'me', null);
+    const marked = chatLaunchMarks(db, true);
+
+    expect(marked('wifi-chat', 'room')).toBe(true);
+    expect(marked('local-chat', 'room')).toBe(false);
+  });
+
+  it('a room chat still raises on a database without the hold column', () => {
+    const columns = db.all<{ name: string }>(sql`PRAGMA table_info(room_entries)`);
+    if (columns.some((c) => c.name === 'held_to_default')) {
+      db.run(sql`ALTER TABLE room_entries DROP COLUMN held_to_default`);
+    }
+    author('me', 'user:local');
+    room('clean', 'clean-chat');
+    post('clean', 'me', null);
+
+    expect(chatLaunchMarks(db)('clean-chat', 'room')).toBe(false);
+  });
+
+  it('a chat a Wi-Fi-held turn opened stays: the sender level carries the outsider mark', () => {
+    chat('wifi-sender', 'interactive');
+    // What a turn held to 'runtime-default' records (`marksOfCeiling`), and a message stores.
+    opener('by-message', 'wifi-sender', { asks: 'always', reach: 'everything', outsider: true });
+    startedBy('by-start', 'wifi-sender');
+    opener(
+      'by-start',
+      'wifi-sender',
+      { asks: 'always', reach: 'everything', outsider: true },
+      'start'
+    );
+    const marked = chatLaunchMarks(db);
+
+    expect(marked('by-message', 'chat-message')).toBe(true);
+    expect(marked('by-start', 'agent-launch')).toBe(true);
+  });
+
+  it('a chat a person opened during a live Wi-Fi sign-in stays, and so do the chats it opens', () => {
+    signIn('wifi', '2026-10-19T11:00:00.000Z', '2026-10-19T13:00:00.000Z');
+    chat('during', 'interactive');
+    chat('during-legacy', null);
+    opener('child', 'during', 'runtime-default');
+    const marked = chatLaunchMarks(db);
+
+    expect(marked('during', 'interactive')).toBe(true);
+    expect(marked('during-legacy', null)).toBe(true);
+    expect(marked('child', 'chat-message')).toBe(true);
+  });
+
+  it('a chat a person opened outside any Wi-Fi sign-in’s life still rises', () => {
+    signIn('wifi', '2026-10-19T08:00:00.000Z', '2026-10-19T09:00:00.000Z');
+    signIn('wifi', '2026-10-19T14:00:00.000Z', '2026-10-19T15:00:00.000Z');
+    chat('between', 'interactive');
+    const marked = chatLaunchMarks(db);
+
+    expect(marked('between', 'interactive')).toBe(false);
+  });
+
+  it('a chat made with only local, tunnel, network or older sign-ins live still rises', () => {
+    for (const route of ['local', 'tunnel', 'network', null]) {
+      signIn(route, '2026-10-19T11:00:00.000Z', '2026-10-19T13:00:00.000Z');
+    }
+    chat('not-wifi', 'interactive');
+    const marked = chatLaunchMarks(db);
+
+    expect(marked('not-wifi', 'interactive')).toBe(false);
+    expect(marked('no-row', 'interactive')).toBe(false);
   });
 });

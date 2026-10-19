@@ -28,6 +28,8 @@ import {
   type ExistingChatsRaiseDeps,
 } from '../existing-chats-raise.js';
 import { personWriter } from '../permission-history.js';
+import { marksForTurn, withMarks } from '../../turn-power/turn-marks.js';
+import { storedSenderBound } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes as DeclaredModes;
@@ -400,6 +402,16 @@ describe('openingMessageMarked', () => {
     expect(
       openingMessageMarked(JSON.stringify({ ...level, teammate: [{ roomId: 'r', authorId: 'a' }] }))
     ).toBe(true);
+  });
+
+  it('reads what a sender held to the runtime default (a Wi-Fi turn) stores as marked', () => {
+    // A Wi-Fi turn is sent with the 'runtime-default' ceiling (DOR-3037); its recorded level
+    // takes that ceiling's marks, and a message it sends stores that level.
+    const held = withMarks(
+      { asks: 'always', reach: 'everything' },
+      marksForTurn({ permissionCeiling: 'runtime-default' })
+    );
+    expect(openingMessageMarked(JSON.stringify(storedSenderBound(held, true)))).toBe(true);
   });
 
   it('reads the runtime default, an unmarked level, no message or junk as not marked', () => {

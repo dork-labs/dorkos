@@ -10,24 +10,32 @@
  * - **Any origin that is not our own** (`isOwnLaunchOrigin`): outside.
  * - **A chat another chat's message opened**: marked when the opening message's
  *   stored sender level carries a mark, or its sending chat was itself launched
- *   from outside.
+ *   from outside or, as below, opened by a person during a Wi-Fi sign-in.
  * - **A chat an agent launched** (`session_start`): it must have been started
  *   from a chat (`session_started_by` kind `chat`); a launch with no starting
  *   chat came through the external `/mcp` server or HTTP, unverified, and counts
  *   as outside. Then the same reading of its opening row and starting chat.
  * - **A room turn's chat**: outside unless its room is found, is not bridged to
  *   a chat app, is not a space's copy, holds no post from an author outside this
- *   computer (or with no author record), and holds no post whose kept marks
- *   carry one. A superset of the post that started it: entries do not record
- *   which one did.
+ *   computer (or with no author record), holds no post whose kept marks carry
+ *   one, and holds no post held to the runtime's default (a Wi-Fi sign-in's,
+ *   `room_entries.held_to_default`, read only where that column exists). A
+ *   superset of the post that started it: entries do not record which one did.
+ * - **A chat a person opened** (`interactive`, or no origin recorded): marked
+ *   when any Wi-Fi sign-in was live as the chat was made (signed in no later
+ *   than the chat was made, and expiring no earlier). A chat is not linked to
+ *   the sign-in that opened it, so this errs toward keeping it capped.
  *
- * Wi-Fi and tunnel arrival is never stored, so a chat opened over them reads
- * as unknown, which raises.
+ * A Wi-Fi-held turn records its level with the outsider mark, so a chat its
+ * message or `session_start` opened reads as marked through the opening row.
+ * Tunnel arrival is not stored: a chat opened over the tunnel reads as unknown,
+ * which raises.
  *
  * @module services/core/permissions/chat-launch-marks
  */
 import {
   authors,
+  session as authSession,
   chatMessages,
   communityRoomMirrors,
   roomBridges,
@@ -37,13 +45,25 @@ import {
   sessionStartedBy,
   type Db,
 } from '@dorkos/db';
-import { and, asc, eq, isNotNull, isNull, like, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm';
 
 import { hasMarks, parseStoredMarks } from '../turn-power/turn-marks.js';
 import { isOwnLaunchOrigin, openingMessageMarked } from './existing-chats-raise.js';
 
 /** The natural-key prefix of an author outside this computer (`author-registry.ts`). */
 const EXTERNAL_AUTHOR_PREFIX = 'platform:';
+
+/** The route a Wi-Fi sign-in's session records (`session.route`, DOR-2969). */
+const WIFI_ROUTE = 'wifi';
+
+/**
+ * Whether `room_entries` has the `held_to_default` column (DOR-3037), which a
+ * database migrated before it lacks. Schema metadata, read once per reader.
+ */
+function hasHeldToDefaultColumn(db: Db): boolean {
+  const columns = db.all<{ name: string }>(sql`PRAGMA table_info(room_entries)`);
+  return columns.some((column) => column.name === 'held_to_default');
+}
 
 /** Whether a chat's launch was marked or came from outside, by session id and launch origin. */
 export type ChatLaunchMarked = (sessionId: string, launchOrigin: string | null) => boolean;
@@ -58,6 +78,19 @@ export type ChatLaunchMarked = (sessionId: string, launchOrigin: string | null) 
  */
 export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
   const rooms = new Map<string, boolean>();
+  let heldColumn: boolean | undefined;
+
+  /** Whether a room holds a post held to the runtime's default, where that is kept. */
+  const roomHoldsHeldPost = (roomId: string): boolean => {
+    heldColumn ??= hasHeldToDefaultColumn(db);
+    if (!heldColumn) return false;
+    return (
+      db.get(
+        sql`SELECT 1 AS held FROM room_entries
+          WHERE room_id = ${roomId} AND held_to_default = 1 LIMIT 1`
+      ) !== undefined
+    );
+  };
 
   /** Whether a room is outside or holds a marked or outside post. */
   const roomMarked = (roomId: string): boolean => {
@@ -97,7 +130,8 @@ export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
           )
         )
         .all()
-        .some((row) => hasMarks(parseStoredMarks(row.turnMarks)));
+        .some((row) => hasMarks(parseStoredMarks(row.turnMarks))) ||
+      roomHoldsHeldPost(roomId);
     if (cacheRooms) rooms.set(roomId, answer);
     return answer;
   };
@@ -112,7 +146,33 @@ export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
     return seat === undefined || roomMarked(seat.roomId);
   };
 
-  /** Whether a chat that sent or started another was itself launched from outside. */
+  /** Whether a Wi-Fi sign-in was live when a chat was made; unknown when it was made is not. */
+  const madeDuringWifiSignIn = (sessionId: string): boolean => {
+    const row = db
+      .select({ createdAt: sessionMetadata.createdAt })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    const made = row ? Date.parse(row.createdAt) : NaN;
+    if (Number.isNaN(made)) return false;
+    const at = new Date(made);
+    return (
+      db
+        .select({ id: authSession.id })
+        .from(authSession)
+        .where(
+          and(
+            eq(authSession.route, WIFI_ROUTE),
+            lte(authSession.createdAt, at),
+            gte(authSession.expiresAt, at)
+          )
+        )
+        .limit(1)
+        .get() !== undefined
+    );
+  };
+
+  /** Whether a chat that sent or started another was itself launched from outside, or over Wi-Fi. */
   const starterOutside = (sessionId: string): boolean => {
     const row = db
       .select({ origin: sessionMetadata.launchOrigin })
@@ -121,7 +181,8 @@ export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
       .get();
     const origin = row?.origin ?? null;
     if (!isOwnLaunchOrigin(origin)) return true;
-    return origin === 'room' && roomChatMarked(sessionId);
+    if (origin === 'room') return roomChatMarked(sessionId);
+    return (origin === 'interactive' || origin === null) && madeDuringWifiSignIn(sessionId);
   };
 
   /** Whether the first message to a chat was marked, or came from an outside chat. */
@@ -153,6 +214,9 @@ export function chatLaunchMarks(db: Db, cacheRooms = false): ChatLaunchMarked {
       }
       case 'room':
         return roomChatMarked(sessionId);
+      case 'interactive':
+      case null:
+        return madeDuringWifiSignIn(sessionId);
       default:
         return false;
     }
