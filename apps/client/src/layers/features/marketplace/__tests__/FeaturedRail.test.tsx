@@ -41,6 +41,10 @@ const mockParams = vi.hoisted(() => ({
   closeDetail: vi.fn(),
 }));
 
+// Whether this is a hub: only a hub says what won't run on a cloud agent.
+const hub = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+
 vi.mock('../model/use-marketplace-params', () => ({
   useMarketplaceParams: () => mockParams,
 }));

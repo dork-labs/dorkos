@@ -19,7 +19,9 @@ import {
   Label,
   RadioGroup,
   RadioGroupItem,
+  Notice,
 } from '@/layers/shared/ui';
+import { CLOUD_AGENT_UNSUPPORTED_SENTENCE } from '@dorkos/marketplace';
 import { packageDisplayLabel } from '@/layers/shared/lib';
 import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import {
@@ -27,7 +29,7 @@ import {
   usePermissionPreview,
   useInstalledPackages,
 } from '@/layers/entities/marketplace';
-import { useConfig } from '@/layers/entities/config';
+import { useConfig, useIsHub } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
 
@@ -156,6 +158,10 @@ export function InstallConfirmationDialog() {
   const preview = needsAgent ? null : (detail?.preview ?? null);
 
   const { data: config } = useConfig();
+  // Cloud agents apply only on a hub (no agent says where it works yet), so
+  // only a hub says when a package won't run on one. The server judged it.
+  const isHub = useIsHub();
+  const notOnCloudAgents = isHub && !needsAgent && detail?.cloudAgents?.supported === false;
   const installBase = selectedProjectPath ? `${selectedProjectPath}/.dork` : config?.dorkHome;
 
   // Block install if any conflict carries error severity.
@@ -293,6 +299,11 @@ export function InstallConfirmationDialog() {
               )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
               {previewRefused && <PreviewRefusedNotice error={previewError} />}
+              {notOnCloudAgents && (
+                <Notice className="mb-4" data-testid="install-cloud-agents">
+                  {CLOUD_AGENT_UNSUPPORTED_SENTENCE}
+                </Notice>
+              )}
               {preview && <PermissionPreviewSection preview={preview} installBase={installBase} />}
             </ResponsiveDialogBody>
 

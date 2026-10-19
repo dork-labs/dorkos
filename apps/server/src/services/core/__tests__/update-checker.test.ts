@@ -6,7 +6,7 @@ vi.mock('../../../lib/version.js', () => ({
   SERVER_VERSION: '1.0.0',
 }));
 
-const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
+const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' | 'agent-computer' }));
 vi.mock('../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 
 import { getLatestVersion, resetCache } from '../update-checker.js';
@@ -32,6 +32,12 @@ describe('update-checker', () => {
 
   it('never asks the registry on a hub, which DorkOS Cloud upgrades instead', async () => {
     role.value = 'hub';
+    expect(await getLatestVersion()).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('never asks the registry on an agent computer, whose hub picks its image', async () => {
+    role.value = 'agent-computer';
     expect(await getLatestVersion()).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
   });

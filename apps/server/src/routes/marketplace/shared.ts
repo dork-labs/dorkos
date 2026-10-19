@@ -8,6 +8,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { readdir } from 'node:fs/promises';
 import { z } from 'zod';
 import {
+  CloudAgentUnsupportedError,
   ConflictError,
   DisclosureChangedError,
   InvalidPackageError,
@@ -176,6 +177,10 @@ export function mapErrorToStatus(err: unknown): { status: number; body: Record<s
   // shown. Nothing was written; the next move is to look again.
   if (err instanceof DisclosureChangedError) {
     return { status: 409, body: { error: err.message, code: DISCLOSURE_CHANGED_CODE } };
+  }
+  // An agent computer refusing a package that does not work on a cloud agent.
+  if (err instanceof CloudAgentUnsupportedError) {
+    return { status: 422, body: { error: err.message, code: err.code } };
   }
   if (err instanceof PackageNotInstalledError) {
     return { status: 404, body: { error: err.message } };

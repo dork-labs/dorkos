@@ -130,6 +130,7 @@ import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
 import workspaceRoutes from '../routes/workspaces.js';
+import { isAgentComputer } from '../services/core/server-role/role-checks.js';
 
 /**
  * The groups that are only mounted when the server hands over what they read.
@@ -303,8 +304,9 @@ export interface HonoApiOptions {
  * Build the Hono `/api` app with every moved group mounted.
  *
  * Better Auth is mounted whenever `initAuth` has run, even with login off, so
- * the enable-login flow can create the owner account before the flag flips. A
- * unit test that builds the server without auth gets no auth routes.
+ * the enable-login flow can create the owner account before the flag flips,
+ * except on an agent computer, where nobody signs in. A unit test that builds
+ * the server without auth gets no auth routes.
  *
  * @param options - See {@link HonoApiOptions}.
  * @returns The app, ready for `createFrontDoor({ api })`.
@@ -322,6 +324,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
+      // A sealed agent computer mounts nothing ahead of its gate (DOR-2940): no
+      // sign-in, and no webhook for a connection, since none starts there.
+      if (isAgentComputer()) return;
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (auth) mountDesktopSignIn(early, auth);
       if (deps.connectorEventIngress) {
