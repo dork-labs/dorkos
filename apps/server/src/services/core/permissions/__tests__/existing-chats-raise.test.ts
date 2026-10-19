@@ -20,6 +20,7 @@ import type { AgentPermissions, PermissionChangedMetadata } from '@dorkos/shared
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   EXISTING_CHATS_NOTE,
+  openingMessageMarked,
   raiseExistingChats,
   setChatModePort,
   type ChatModePort,
@@ -62,6 +63,8 @@ function setup(
     agentStops?: Record<string, PermissionStop>;
     /** Chats whose write throws. */
     failing?: string[];
+    /** Chats whose launch was marked or came from outside. */
+    marked?: string[];
   } = {}
 ) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chats-raise-'));
@@ -87,6 +90,7 @@ function setup(
     // Rows as the database would hand them over at each boot.
     chats: () => rows.map((r) => ({ ...r, permissionMode: modes.get(r.sessionId) ?? null })),
     agents: () => AGENTS,
+    launchMarked: (row) => opts.marked?.includes(row.sessionId) ?? false,
     personSet: {
       isSeeded: () => opts.seeded ?? true,
       get: (id) => opts.floors?.[id],
@@ -115,30 +119,49 @@ afterEach(() => {
 });
 
 describe('raiseExistingChats', () => {
-  it('raises an unmarked chat to the default, and leaves every chat that could be marked capped', async () => {
-    const t = setup([
+  it('raises unmarked and unknown chats of our own agents; leaves outside and marked ones capped', async () => {
+    const raised = [
       chat('mine'),
-      chat('from-chat', { launchOrigin: 'chat-message' }),
       chat('launched', { launchOrigin: 'agent-launch' }),
-      chat('room', { launchOrigin: 'room' }),
       chat('beat', { launchOrigin: 'heartbeat' }),
+      chat('from-chat', { launchOrigin: 'chat-message' }),
+      chat('local-room', { launchOrigin: 'room' }),
+      chat('handoff', { launchOrigin: 'account-handoff' }),
+      chat('unknown', { launchOrigin: null }),
+    ];
+    const kept = [
+      chat('marked-chat', { launchOrigin: 'chat-message' }),
+      chat('bridged-room', { launchOrigin: 'room' }),
       chat('telegram', { launchOrigin: 'relay-binding' }),
       chat('relay', { launchOrigin: 'session-relay' }),
       chat('outsider', { launchOrigin: 'outside-sender' }),
       chat('connector', { launchOrigin: 'connector-event' }),
+      chat('dm', { launchOrigin: 'agent-dm' }),
       chat('extension', { launchOrigin: 'extension-start' }),
+      chat('extension-msg', { launchOrigin: 'extension-message' }),
       chat('schedule', { launchOrigin: 'schedule' }),
-      chat('unknown', { launchOrigin: null }),
-    ]);
+      chat('harness', { launchOrigin: 'test-harness' }),
+      chat('new-kind', { launchOrigin: 'something-new' }),
+    ];
+    const t = setup([...raised, ...kept], { marked: ['marked-chat', 'bridged-room'] });
     cleanup.push(t.dir);
 
-    expect(await raiseExistingChats(t.deps)).toEqual({ raised: 1 });
+    expect(await raiseExistingChats(t.deps)).toEqual({ raised: raised.length });
 
-    expect(t.modes.get('mine')).toBe(FULL);
-    for (const id of [...t.modes.keys()].filter((k) => k !== 'mine')) {
-      expect(t.modes.get(id), id).toBe('default');
-    }
-    expect(t.writes).toEqual([['mine', FULL]]);
+    for (const { sessionId } of raised) expect(t.modes.get(sessionId), sessionId).toBe(FULL);
+    for (const { sessionId } of kept) expect(t.modes.get(sessionId), sessionId).toBe('default');
+  });
+
+  it('an unknown chat rises to the floor and no higher, like an unmarked one', async () => {
+    const t = setup([chat('unknown', { launchOrigin: null }), chat('unmarked')], {
+      floors: { 'a-build': { filesAndCommands: 'act' } },
+    });
+    cleanup.push(t.dir);
+
+    await raiseExistingChats(t.deps);
+
+    expect(t.modes.get('unknown')).toBe(ACT);
+    expect(t.modes.get('unmarked')).toBe(ACT);
   });
 
   it('raises to the person-set floor, never to what the agent’s own file claims', async () => {
@@ -208,7 +231,7 @@ describe('raiseExistingChats', () => {
   });
 
   it('marks itself done even when nothing qualified', async () => {
-    const t = setup([chat('room', { launchOrigin: 'room' })]);
+    const t = setup([chat('telegram', { launchOrigin: 'relay-binding' })]);
     cleanup.push(t.dir);
     await raiseExistingChats(t.deps);
     expect(fs.existsSync(t.deps.doneFile)).toBe(true);
@@ -367,5 +390,22 @@ describe('Undo of the raise', () => {
     expect(t.modes.get('broken')).toBe(FULL);
     expect(result.skipped).toEqual([expect.objectContaining({ reason: 'gone' })]);
     expect(t.world.events).toHaveLength(2);
+  });
+});
+
+describe('openingMessageMarked', () => {
+  it('reads an outsider or teammate mark on the opening message as marked', () => {
+    const level = { asks: 'never', reach: 'full' };
+    expect(openingMessageMarked(JSON.stringify({ ...level, outsider: true }))).toBe(true);
+    expect(
+      openingMessageMarked(JSON.stringify({ ...level, teammate: [{ roomId: 'r', authorId: 'a' }] }))
+    ).toBe(true);
+  });
+
+  it('reads the runtime default, an unmarked level, no message or junk as not marked', () => {
+    expect(openingMessageMarked(JSON.stringify('runtime-default'))).toBe(false);
+    expect(openingMessageMarked(JSON.stringify({ asks: 'never', reach: 'full' }))).toBe(false);
+    expect(openingMessageMarked(undefined)).toBe(false);
+    expect(openingMessageMarked('not json')).toBe(false);
   });
 });

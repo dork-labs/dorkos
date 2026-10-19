@@ -89,6 +89,7 @@ import {
   chatlessCallerStop,
   NO_CHAT_CEILING_RUNTIME,
   resolveStartPermission,
+  startingChatFor,
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
@@ -495,9 +496,11 @@ export function createSessionStartHandler(
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
     // With no chat (the external `/mcp` server) it is the agent's own stop.
+    // A marked starting turn opens a chat born capped (DOR-3107).
+    const marked = markedBoundOf(caller.chat?.sessionId, caller.agentPath) !== undefined;
     const level = await resolveStartPermission(
       args.permissionMode,
-      caller.chat,
+      startingChatFor(caller.chat, runtimeType, marked),
       runtimeType,
       await chatlessCallerStop(caller.chat, runtime, agentPath)
     );

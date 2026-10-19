@@ -353,6 +353,32 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
 }
 
 /**
+ * The chat a start is judged from (DOR-3107, Dorian 2026-10-19 15:07, Security
+ * 15:10). When the starting turn is marked (it read an outsider's words, or a
+ * teammate's started its chain), the caller is read as a chat at the new chat's
+ * runtime default, so the chat it opens is born capped, as one a marked turn's
+ * chat message opens is: its first turn's ceiling alone would leave every later
+ * turn at the caller's level. Unmarked or unknown: the caller as it is, so the
+ * new chat starts at its level.
+ *
+ * @param chat - The calling chat, or null for a caller with none.
+ * @param runtimeType - The runtime the new chat runs on.
+ * @param marked - Whether the starting turn carries a mark.
+ */
+export function startingChatFor(
+  chat: CallingChat | null,
+  runtimeType: string,
+  marked: boolean
+): CallingChat | null {
+  if (!marked) return chat;
+  return {
+    sessionId: chat?.sessionId ?? null,
+    permissionMode: declaredModes(runtimeType).default ?? null,
+    runtime: runtimeType,
+  };
+}
+
+/**
  * The ceiling a caller with no chat (the external `/mcp` server) is held to:
  * the agent the token names, at its own Files & commands stop (spec
  * `trusted-by-default-flip` §5.2). Only a registered agent reaches here: a plain

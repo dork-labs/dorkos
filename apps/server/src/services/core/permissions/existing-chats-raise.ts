@@ -7,25 +7,31 @@
  * level, never above it, recording every chat's old mode in ONE permission
  * history event whose Undo sets each one back.
  *
- * ## Which chats (Security's rule, strictest reading)
+ * ## Which chats (Security's rule, Dorian 2026-10-19 15:07: unknown means raise)
  *
  * A chat is raised only when every one of these holds:
  *
- * - **A person started it in the app** (`launch_origin = 'interactive'`). A
- *   chat's turn marks are not kept past a restart; only the kind of thing that
- *   started it is. Every other origin either can be marked (another chat's
- *   message, an agent's launch, a beat that read a marked post, a room) or was
- *   started from outside the app (a relay, Telegram, a bridged or space room, a
- *   connector, an extension), so its launching turn counts as unknown and the
- *   chat is left alone. So is a chat with no recorded origin, and a chat on
- *   another computer (`computer-local`), which this one cannot vouch for.
+ * - **Nothing outside started it, and its launching turn was not marked.** A
+ *   chat's own turn marks are not kept past a restart, so the launch is read
+ *   from what is kept:
+ *   - started by a person in the app, an agent's launch, a beat, an account
+ *     carry-over, or with no recorded origin: raised (unknown means raise);
+ *   - opened by another chat's message: raised unless the opening message's
+ *     stored sender level carries a mark (outsider or teammate);
+ *   - a room turn: raised only in a room of this computer that is not bridged
+ *     to a chat app and not a space's copy, and holds no marked post;
+ *   - anything that came from outside or is not the chat's own power to
+ *     decide is left alone: a relay or Telegram binding, the web relay, an
+ *     outside sender, a connected app's event, another agent's DM, an
+ *     extension, a schedule (its mode lives on the schedule), the test
+ *     harness, and any origin this build does not know. So is a chat on
+ *     another computer (`computer-local`), which this one cannot vouch for.
  *
- *   Known gap: `interactive` is also what an HTTP turn records when its caller
- *   leaves out `X-DorkOS-Agent` (`httpTurnOrigin`), and it does not say whether
- *   the request came over Wi-Fi or the tunnel. So a chat an agent opened over
- *   HTTP without naming itself can be raised. Every TURN in it is still held to
- *   its own ceiling (a marked turn never runs above the runtime default), so the
- *   raise lends no stranger power; it only stops the routine prompts.
+ *   Known gap: an agent launch made through the external `/mcp` server is
+ *   stored as an agent launch, like one made in a chat, so it cannot be told
+ *   apart and is raised. Every TURN in a raised chat is still held to its own
+ *   ceiling (a marked turn never runs above the runtime default), so the raise
+ *   lends no stranger power; it only stops the routine prompts.
  * - **It belongs to a registered agent**, other than the agents kept as they are
  *   ({@link KEPT_AS_THEY_ARE}).
  * - **Its agent's level is looser than the chat's mode.** The level is what a
@@ -85,8 +91,19 @@ import type { ActivityService } from '../../activity/activity-service.js';
 import { UPGRADE_WRITER, recordPermissionChange } from './permission-history.js';
 import type { PermissionAgentRef } from './permission-service.js';
 
-/** The only launch origin whose chats are raised; see the module doc. */
-export const RAISED_LAUNCH_ORIGIN = 'interactive';
+/**
+ * The launch origins whose chats may be raised; see the module doc. `chat-message`
+ * and `room` are further read by {@link ExistingChatsRaiseDeps.launchMarked}.
+ */
+export const RAISED_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
+  'interactive',
+  'agent-launch',
+  'heartbeat',
+  'chat-message',
+  'room',
+  'account-handoff',
+  'account-resume',
+]);
 
 /**
  * Agents whose chats stay as they are (the PM's standing rule, 2026-10-19), by
@@ -102,8 +119,8 @@ const COMPUTER_LOCAL_RUNTIME = 'computer-local';
 
 /** The note the history shows beside the raise. */
 export const EXISTING_CHATS_NOTE =
-  'Existing chats with your own agents now run at their agent’s level. Chats ' +
-  'started from outside the app, by another agent or chat, or in a room were left alone.';
+  'Existing chats with your own agents now run at their agent’s level. Chats started ' +
+  'from outside, or from a turn that read outside content, were left alone.';
 
 /** One chat's row, as `session_metadata` holds it. */
 export interface ExistingChatRow {
@@ -185,6 +202,24 @@ export async function setChatsBack(changes: readonly PermissionChange[]): Promis
   return { made, skipped };
 }
 
+/**
+ * Whether a chat message's stored sender level carries a mark: an outsider's
+ * words or a teammate's chain. The runtime default, a level with no marks, an
+ * unreadable value or no message at all is unknown or unmarked, and raises.
+ *
+ * @param ceilingJson - The opening message's `ceiling_json`, or `undefined` for none.
+ */
+export function openingMessageMarked(ceilingJson: string | undefined): boolean {
+  if (ceilingJson === undefined) return false;
+  try {
+    const value = JSON.parse(ceilingJson) as { outsider?: unknown; teammate?: unknown } | null;
+    if (value === null || typeof value !== 'object') return false;
+    return value.outsider === true || Array.isArray(value.teammate);
+  } catch {
+    return false;
+  }
+}
+
 /** Everything the raise reads and writes through. */
 export interface ExistingChatsRaiseDeps {
   /** The done file, inside DorkOS's data directory. */
@@ -197,6 +232,12 @@ export interface ExistingChatsRaiseDeps {
   personSet: { isSeeded: () => boolean; get: (agentId: string) => AgentPermissions | undefined };
   /** The configured default stop for a runtime (per-runtime, then global), or `null`. */
   defaultStop: (runtime: string) => PermissionStop | null;
+  /**
+   * Whether what launched the chat was marked or came from outside, read from
+   * what is kept: the opening chat message's sender level, or the room's
+   * bridge, space copy and post marks. Unknown is not marked.
+   */
+  launchMarked: (row: ExistingChatRow) => boolean;
   /** The agent's own Files & commands stop, as the permission gate reads it. */
   agentStop: (agentPath: string) => Promise<PermissionStop | undefined>;
   /** A runtime's declared modes, or `undefined` for a runtime this server lacks. */
@@ -263,7 +304,9 @@ async function raisedModeFor(
   row: ExistingChatRow,
   agents: ReadonlyMap<string, PermissionAgentRef>
 ): Promise<{ agent: PermissionAgentRef; mode: string; before: string } | null> {
-  if (row.launchOrigin !== RAISED_LAUNCH_ORIGIN || !row.runtime || !row.agentPath) return null;
+  if (!row.runtime || !row.agentPath) return null;
+  if (row.launchOrigin !== null && !RAISED_LAUNCH_ORIGINS.has(row.launchOrigin)) return null;
+  if (deps.launchMarked(row)) return null;
   if (row.runtime === COMPUTER_LOCAL_RUNTIME) return null;
   const agent = agents.get(row.agentPath);
   if (!agent || isKept(agent)) return null;
