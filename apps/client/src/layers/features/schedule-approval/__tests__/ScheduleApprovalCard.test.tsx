@@ -1019,11 +1019,24 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
 
     const marks = await findSlot('schedule-origin-marks');
     expect(marks).toHaveTextContent('Written after reading words DorkOS can’t vouch for.');
-    expect(marks).toHaveTextContent('Started by Priya in #launch, a shared space.');
+    expect(marks).toHaveTextContent('Started by a teammate, “Priya”, in #launch, a shared space.');
     await vi.waitFor(() => expect(getConfig).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(elevated()).toBeNull();
     expect(slot('schedule-approve')).not.toBeNull();
+  });
+
+  it('quotes a teammate’s name and shows any hidden characters in it', async () => {
+    renderCard(
+      proposal({
+        originMarks: {
+          teammate: [{ roomId: 'r1', authorId: 'a1', name: 'you\u202E', room: '#launch' }],
+        },
+      })
+    );
+    expect(await findSlot('schedule-origin-marks')).toHaveTextContent(
+      'Started by a teammate, “you<U+202E>”, in #launch, a shared space.'
+    );
   });
 
   it('says a teammate started it even when DorkOS did not know their name', async () => {

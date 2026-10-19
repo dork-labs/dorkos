@@ -334,10 +334,12 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
  * @param runtime - The runtime to wrap, already recording levels.
  * @param marksOfSession - The marks of a session's latest recorded turn, for a turn the runtime
  *   starts on its own (a Codex wake after background work), which runs under it.
+ * @param recordRefused - Records the level of a turn refused before it reached the runtime.
  */
 export function applyTurnMarks(
   runtime: AgentRuntime,
-  marksOfSession: (sessionId: string) => TurnMarks
+  marksOfSession: (sessionId: string) => TurnMarks,
+  recordRefused?: (sessionId: string, opts: MessageOpts) => void
 ): AgentRuntime {
   // Where each marked turn stood, so a turn its agent starts later counts against the same one.
   // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
@@ -355,9 +357,14 @@ export function applyTurnMarks(
     if (!hasMarks(marks)) return start(opts);
     let sent = opts;
     if (marks.teammate !== undefined) {
-      const refusal = teammateTurnRefusal(target.type, marks.teammate);
-      if (refusal !== null) return refused(refusal);
       sent = teammateTurnOpts(opts);
+      const refusal = teammateTurnRefusal(target.type, marks.teammate);
+      if (refusal !== null) {
+        // Recorded all the same, so what reads the chat afterwards (a failure wake, say) knows it
+        // was a marked turn and does not treat its failure as the agent's own.
+        recordRefused?.(sessionId, sent);
+        return refused(refusal);
+      }
     }
     // A caller that cannot name this session can still name its agent.
     const place = placeOf(target, sessionId, sent);

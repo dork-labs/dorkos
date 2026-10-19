@@ -360,7 +360,7 @@ export class RoomEntryWriter {
     // The level the author's turn runs at, kept with the post BEFORE anything
     // it triggers is dispatched: a turn this post starts runs no looser than
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
-    noteEntryLevel(entry.id, opts?.authorLevel);
+    noteEntryLevel(entry.id, opts?.authorLevel, roomId);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must

@@ -22,7 +22,7 @@
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
-import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
+import { entryMarksOf } from '../../core/turn-power/turn-levels.js';
 
 /** The platform every space mirror's authors are stored under (`entry-import.ts`). */
 const SPACE_PLATFORM = 'community';
@@ -80,16 +80,42 @@ export function isTeammateEntry(
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
  * @param inSpaceRoom - Whether the turn is in a local copy of a space's channel.
+ * @param roomId - The room the turn answers in, to read each post's kept marks.
  */
 export function teammateOf(
   authors: AuthorRegistry,
   entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
-  inSpaceRoom = false
+  inSpaceRoom = false,
+  roomId?: string
 ): { teammate?: true } {
   return entries.some(
     (entry) =>
-      isTeammateEntry(authors, entry, inSpaceRoom) || entryLevelOf(entry.id)?.teammate !== undefined
+      isTeammateEntry(authors, entry, inSpaceRoom) ||
+      entryMarksOf(entry.id, roomId)?.teammate !== undefined ||
+      isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId)
   )
     ? { teammate: true }
     : {};
+}
+
+/**
+ * Whether this is an agent's post in a space's room copy whose marks nobody knows: no level was
+ * kept with it and its row records none (a row from before marks were kept, or an unverified
+ * caller). Read as a teammate's chain, since a space's copy is where teammates write: failing the
+ * strict way costs one fenced turn, the other way hands a teammate's words the owner's power.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entry - The post.
+ * @param inSpaceRoom - Whether the room is a local copy of a space's channel.
+ * @param roomId - The room, to read the post's row.
+ */
+export function isUnknownSpaceAgentPost(
+  authors: AuthorRegistry,
+  entry: Pick<RoomEntry, 'id' | 'authorId'>,
+  inSpaceRoom: boolean,
+  roomId?: string
+): boolean {
+  if (!inSpaceRoom) return false;
+  if (authors.getMany([entry.authorId]).get(entry.authorId)?.kind !== 'agent') return false;
+  return entryMarksOf(entry.id, roomId) == null;
 }

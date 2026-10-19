@@ -249,6 +249,18 @@ describe('a beat that reads a promise made in a marked turn', () => {
     ]);
   });
 
+  it('carries the marks of a gathered post a marked turn wrote', async () => {
+    const teammate = [{ roomId: 'space', authorId: 'priya' }];
+    changes = [{ ...LOCAL_MESSAGE, marks: { outsider: true, teammate } }];
+    runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
+    const done = runner().wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
+    await settle();
+    await done;
+    expect(launchCeilings).toEqual([
+      ['runtime-default', { asks: 'always', reach: 'read', teammate }],
+    ]);
+  });
+
   it('runs without a ceiling when no open promise is marked', async () => {
     changes = [LOCAL_MESSAGE];
     runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);

@@ -87,7 +87,12 @@ import { registerLocalCommunity } from '../../services/communities/index.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
-import { setOriginLabeler } from '../../services/tasks/approvals/marked-schedules.js';
+import {
+  originLabelerFrom,
+  setOriginLabeler,
+} from '../../services/tasks/approvals/marked-schedules.js';
+import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
+import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
 
 /** What {@link wireRooms} reads from the startup steps before it. */
 export interface WireRoomsInput {
@@ -161,11 +166,15 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     },
   });
   setRoomService(roomService);
+  // A post's turn marks survive a restart on its row (DOR-3036).
+  setEntryMarksStore(createEntryMarksStore(db));
   // A parked schedule's card names the teammate and the space room a mark came from (DOR-3036).
-  setOriginLabeler((origin) => ({
-    name: roomAuthors.getById(origin.authorId)?.displayName ?? null,
-    room: roomStore.getRoom(origin.roomId)?.title ?? null,
-  }));
+  setOriginLabeler(
+    originLabelerFrom({
+      authorName: (authorId) => roomAuthors.getById(authorId)?.displayName,
+      roomTitle: (roomId) => roomStore.getRoom(roomId)?.title,
+    })
+  );
   if (!refs.remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(refs.remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(refs.remoteCommunityRuntime.projection);

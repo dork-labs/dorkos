@@ -18,7 +18,7 @@ import type {
 import type { StreamEvent } from '@dorkos/shared/types';
 import { READ_ONLY_LEVEL, stricterLevel } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { marksOf, recordTurnLevels } from '../turn-levels.js';
+import { lastTurnLevelOf, markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { meterTeammateTurns, setTeammateTurnCostSink } from '../teammate-turn-cost.js';
 import {
@@ -148,6 +148,55 @@ describe('a turn carrying a teammate’s mark', () => {
     ).rejects.toThrow(teammateRuntimeRefusal('codex'));
   });
 
+  it('a refused marked turn is still recorded as marked, so its failure is never the agent’s own', async () => {
+    const { runtime } = decorated('codex');
+    const id = fresh();
+    await expect(
+      drain(runtime.sendMessage(id, 'hi', { permissionCeiling: MARKED }))
+    ).rejects.toThrow();
+    expect(lastTurnLevelOf(id)?.teammate).toEqual([PRIYA]);
+  });
+
+  it('a command intent and a turn the runtime starts on its own are counted too', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+    let wake: ((id: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
+    const fake = {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage() {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async *executeCommandIntent() {
+        yield { type: 'text_delta', data: { text: 'compacted' } } as StreamEvent;
+      },
+      onRuntimeTurn: (listener: typeof wake) => {
+        wake = listener;
+        return () => undefined;
+      },
+    } as unknown as AgentRuntime;
+    const runtime = meterTeammateTurns(recordTurnLevels(fake, () => 'bypassPermissions'));
+    const id = fresh();
+    await drain(runtime.executeCommandIntent(id, 'compact', { permissionCeiling: MARKED }));
+    expect(sink).toHaveBeenCalledTimes(1);
+
+    let own: AsyncIterable<StreamEvent> | undefined;
+    runtime.onRuntimeTurn!((_id, events) => {
+      own = events;
+    });
+    wake!(
+      id,
+      (async function* () {
+        yield { type: 'text_delta', data: { text: 'woke' } } as StreamEvent;
+      })()
+    );
+    for await (const _event of own!) {
+      // drain
+    }
+    expect(sink).toHaveBeenCalledTimes(2);
+    expect(sink).toHaveBeenLastCalledWith(expect.objectContaining({ roomId: 'space-a' }));
+  });
+
   it('outside a room, reaches no room: it replies in its own chat only', () => {
     for (const name of ['post_to_room', 'read_room_history', 'get_room']) {
       expect(
@@ -188,6 +237,11 @@ describe('a caller with no session (Codex, OpenCode over the external server)', 
     const turn = runtime.sendMessage(fresh(), 'hi', { permissionCeiling: MARKED, cwd: home });
     await turn.next();
     expect(marksOf(undefined, home)).toEqual({ outsider: true, teammate: [PRIYA] });
+    // A spin-off it starts carries the teammate's mark too, not only the runtime default.
+    expect(markedBoundOf(undefined, home)).toEqual([
+      'runtime-default',
+      { ...READ_ONLY_LEVEL, teammate: [PRIYA] },
+    ]);
     await turn.return(undefined);
     expect(marksOf(undefined, home)).toEqual({});
   });

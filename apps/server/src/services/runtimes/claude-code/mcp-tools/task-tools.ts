@@ -75,7 +75,7 @@ import {
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
-import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -99,6 +99,12 @@ export type TaskProvenanceResolver = () => {
    */
   agentPath?: string;
 };
+
+/**
+ * The marks of the turn making a task call, for a surface that cannot name the calling session
+ * (the external `/mcp` server, DOR-3036). The in-session server reads them from its session.
+ */
+export type CallerMarksResolver = () => TurnMarks;
 
 /**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
@@ -205,7 +211,8 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
  */
 export function createCreateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     name: string;
@@ -295,7 +302,7 @@ export function createCreateScheduleHandler(
         // Only the in-session server knows its caller is one of our agents.
         callerIsOurAgent: resolveProvenance !== undefined,
         // The marks of the turn making the call, from its own record (DOR-3036).
-        originMarks: marksOf(provenance.sessionId, provenance.agentPath),
+        originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
         proposal: {
           sessionId: provenance.sessionId ?? null,
           agentPath: provenance.agentPath ?? null,
@@ -374,7 +381,8 @@ export function createCreateScheduleHandler(
  */
 export function createUpdateScheduleHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
 ) {
   return async (args: {
     id: string;
@@ -601,7 +609,7 @@ export function createUpdateScheduleHandler(
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
     // for its card (DOR-3036).
     const caller = resolveProvenance?.() ?? {};
-    const marks = marksOf(caller.sessionId, caller.agentPath);
+    const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
     if (hasMarks(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
       if (existing.status !== 'pending_approval') settled = 'parked';
     }
@@ -714,7 +722,11 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
  *   proposing. Omitted by the sessionless external `/mcp` registration, where a
  *   proposal genuinely has no session behind it and provenance stays null.
  */
-export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
+export function getTasksTools(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver,
+  callerMarks?: CallerMarksResolver
+) {
   return [
     tool(
       'tasks_list',
@@ -745,7 +757,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createCreateScheduleHandler(deps, resolveProvenance)
+      createCreateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_update',
@@ -785,7 +797,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createUpdateScheduleHandler(deps, resolveProvenance)
+      createUpdateScheduleHandler(deps, resolveProvenance, callerMarks)
     ),
     tool(
       'tasks_delete',

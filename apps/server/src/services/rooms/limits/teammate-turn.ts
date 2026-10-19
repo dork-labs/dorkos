@@ -97,10 +97,12 @@ function turnDirectoriesOf(
  * @param request - The turn about to start.
  */
 export function roomTurnMarksOf(
-  request: Pick<RoomTurnRequest, 'roomContext' | 'teammate' | 'permissionCeiling'>
+  request: Pick<RoomTurnRequest, 'roomContext' | 'teammate' | 'permissionCeiling'> & {
+    room?: { id: string };
+  }
 ): Pick<NonNullable<MessageOpts['roomTurn']>, 'outsiderInView' | 'teammate' | 'untrustedText'> {
   return {
-    ...outsiderInViewOf(request.roomContext),
+    ...outsiderInViewOf(request.roomContext, request.room?.id),
     ...(request.teammate ? { teammate: true as const } : {}),
     ...(request.permissionCeiling !== undefined || request.teammate
       ? { untrustedText: true as const }

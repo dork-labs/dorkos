@@ -108,6 +108,7 @@ import {
   resumeChatQueue,
   type SessionFacts,
 } from './agent-send-defaults.js';
+import { extensionClientId } from './extension-client-id.js';
 
 export type { SessionFacts } from './agent-send-defaults.js';
 
@@ -549,7 +550,7 @@ export class AgentSendService {
               }
             : {}),
         },
-        clientId: `extension:${row.extensionId}`,
+        clientId: extensionClientId(row.extensionId),
         meshCore: this.deps.meshCore() as MeshCore | undefined,
         // The real port, so the launch's own room guard still fires for a chat
         // a room took over after the target was checked (ROOM_SESSION_MOVED).

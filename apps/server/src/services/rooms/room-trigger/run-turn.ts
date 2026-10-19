@@ -121,7 +121,7 @@ export async function runOneInDispatch(
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).
-      ...teammateOf(self.deps.authors, target.answers ?? [entry], inSpaceRoom),
+      ...teammateOf(self.deps.authors, target.answers ?? [entry], inSpaceRoom, room.id),
       // The message, unchanged. A trigger asks the agent exactly what was
       // said; only the welcome-back offer below asks something else.
       prompt: entry.body.text,

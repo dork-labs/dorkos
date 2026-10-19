@@ -46,7 +46,12 @@ import { recordBeat } from './record.js';
 import { standingKey, triageByRules } from './triage-rules.js';
 import { decideBeat, type BeatTriagePort } from './triage/beat-triage.js';
 import type { BeatAgent, BeatOutboxPort, BeatWake, FinishedBeat } from './beat-runner.js';
-import { ceilingCarrying, NO_MARKS, type TurnMarks } from '../core/turn-power/turn-marks.js';
+import {
+  ceilingCarrying,
+  mergeMarks,
+  NO_MARKS,
+  type TurnMarks,
+} from '../core/turn-power/turn-marks.js';
 
 /** The longest a failing gatherer holds `gathered_through` back. */
 export const GATHER_HOLD_MAX_MS = 24 * 60 * 60_000;
@@ -338,7 +343,14 @@ export async function runTurn(
   });
   // The beat reads the agent's open promises, so one made in a marked turn marks the beat too
   // (DOR-3036): a stranger's words, or a teammate's, do not come back as the agent's own.
-  const carried = ceilingCarrying(deps.commitments.openMarks?.(agent.id) ?? NO_MARKS);
+  // So does any gathered change a marked turn wrote (another agent's post a teammate's chain
+  // reached): the beat then runs as a marked turn, tier and limit included.
+  const carried = ceilingCarrying(
+    ctx.changes.reduce(
+      (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
+      deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
+    )
+  );
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
     messageId,

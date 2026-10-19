@@ -138,7 +138,10 @@ One per carrying path, each flipping an existing `it.fails`: room mention (tier 
 - **Extension messages** (`ctx.agent.send`) carry the outsider mark: an app's code is not the owner's words.
 - **Memory:** a teammate mark always rides with the outsider mark (minted on a `runtime-default` bound), so today's stamp and `outsider-held` rule apply; the tier refuses `memory_write` anyway.
 - **Not built, because the surface does not exist yet:** the agent computer's `turn.start` (part 6) and the mini-app room APIs (DOR-3017). Both must carry the full mark set when built; the census fails if a new runtime skips the seam.
-- **Known gap:** an unidentified external `/mcp` caller's schedule parks, as before, but its marks are not recorded: the server cannot place its turn.
+- **Room posts on disk:** a post's marks are kept in `room_entries.turn_marks` (`{}` for a known unmarked turn, NULL when nobody knows), so a restart still reads a teammate-marked post as marked. In a space's room copy, an agent post nobody knows the marks of is read as a teammate's chain (fail closed).
+- **Heartbeats:** a marked post never wakes a beat on a refused room turn, a marked turn's failure never wakes one, and a beat that gathers a marked post (or reads a marked promise) runs with those marks as its ceiling: tier, limit and runtime refusal included.
+- **External `/mcp` callers:** read through their agent's running turns; a caller DorkOS cannot identify carries the outsider mark, so its schedule's card says so.
+- **Spend:** command intents and turns a runtime starts on its own are counted too.
 
 ## Open questions, answered by Security (2026-10-18)
 

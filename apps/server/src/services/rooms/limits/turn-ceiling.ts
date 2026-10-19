@@ -8,10 +8,10 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
-import { entryLevelOf } from '../../core/turn-power/turn-levels.js';
-import { marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import { entryLevelOf, entryMarksOf } from '../../core/turn-power/turn-levels.js';
+import { ceilingCarrying } from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
-import { isTeammateEntry } from './space-teammates.js';
+import { isTeammateEntry, isUnknownSpaceAgentPost } from './space-teammates.js';
 
 /**
  * Whether the author of a triggering entry is somebody OUTSIDE this machine.
@@ -72,7 +72,15 @@ export function ceilingForEntry(
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
   if (kind !== 'agent') return {};
-  return { permissionCeiling: entryLevelOf(entry.id) ?? 'runtime-default' };
+  const level = entryLevelOf(entry.id);
+  if (level !== undefined) return { permissionCeiling: level };
+  // The level is gone (a restart) or was never kept: the post's row still says what it carried.
+  if (isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId || undefined)) {
+    const origin = { roomId, authorId: entry.authorId };
+    return { permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [origin] }] };
+  }
+  const kept = entryMarksOf(entry.id, roomId || undefined);
+  return { permissionCeiling: (kept && ceilingCarrying(kept)) || 'runtime-default' };
 }
 
 /**
@@ -124,15 +132,17 @@ export function ceilingForEntries(
  * person's line from this machine and the room's own notices never count.
  *
  * @param context - The room context the turn is about to be shown.
+ * @param roomId - The room, to read a post's kept marks once its level is gone (DOR-3036).
  */
 export function outsiderInViewOf(
-  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>
+  context: Pick<RoomContextData, 'pending' | 'gathered' | 'channelTail'>,
+  roomId?: string
 ): { outsiderInView?: true } {
   const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
   const outsider = shown.some((entry) => {
     if (entry.authorOrigin === 'external') return true;
     if (entry.authorIsPerson || entry.kind !== 'post') return false;
-    return marksOfLevel(entryLevelOf(entry.id)).outsider === true;
+    return entryMarksOf(entry.id, roomId)?.outsider === true;
   });
   return outsider ? { outsiderInView: true } : {};
 }

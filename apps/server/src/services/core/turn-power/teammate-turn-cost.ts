@@ -21,7 +21,8 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { turnCostReader } from '../../observability/ai-metadata.js';
-import { marksForTurn, teammateOrigins } from './turn-marks.js';
+import { marksForTurn, marksOfLevel, teammateOrigins } from './turn-marks.js';
+import { lastTurnLevelOf } from './turn-levels.js';
 
 /** One finished teammate turn: the local room it answered and what it cost, if reported. */
 export interface TeammateTurnCost {
@@ -51,17 +52,52 @@ export function setTeammateTurnCostSink(next: ((turn: TeammateTurnCost) => void)
 export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
   return new Proxy(runtime, {
     get(target, prop) {
-      if (prop === 'sendMessage') {
-        return (sessionId: string, content: string, opts?: MessageOpts) => {
-          const turn = target.sendMessage(sessionId, content, opts);
+      // A command intent is a turn too, and costs like one (DOR-3036).
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) => {
+          const turn = start(sessionId, input, opts);
           const rooms = teammateRoomsOf(opts);
           return rooms.length === 0 ? turn : metered(target.type, rooms, turn);
         };
+      }
+      // A turn the runtime starts on its own runs under the session's latest turn: counted when
+      // that turn carried a teammate's mark.
+      if (prop === 'onRuntimeTurn' && typeof target.onRuntimeTurn === 'function') {
+        const subscribe = target.onRuntimeTurn.bind(target);
+        return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
+          subscribe((sessionId, events) => {
+            const rooms = sessionTeammateRooms(sessionId);
+            listener(
+              sessionId,
+              rooms.length === 0 ? events : metered(target.type, rooms, toGenerator(events))
+            );
+          });
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
+}
+
+/** The space rooms a session's latest recorded turn carried a teammate's mark from. */
+function sessionTeammateRooms(sessionId: string): string[] {
+  const rooms = teammateOrigins(marksOfLevel(lastTurnLevelOf(sessionId))).map((o) => o.roomId);
+  return [...new Set(rooms)];
+}
+
+/** An iterable as a generator, so the meter can read it. */
+async function* toGenerator(events: AsyncIterable<StreamEvent>): AsyncGenerator<StreamEvent> {
+  yield* events;
 }
 
 /** Every space room a turn's teammates wrote in, once each: its marks, and the room it answers. */

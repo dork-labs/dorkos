@@ -53,7 +53,7 @@ export function teammateRuntimeRefusal(runtimeType: string): string {
 
 /** The refusal a marked turn gets once a space in its chain is at its monthly limit. */
 export const TEAMMATE_LIMIT_REFUSAL =
-  'A space this work began in has reached its monthly limit for teammates, so this turn did not run.';
+  'This space reached its monthly limit for teammates, so this turn didn’t run.';
 
 /** Whether a space room's monthly teammate limit still allows a turn; set at startup. */
 let spaceAllows: ((roomId: string) => boolean) | null = null;

@@ -46,6 +46,7 @@ import { teammateOf } from '../../../rooms/limits/space-teammates.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 import { senderCeiling } from '../../../session/chat-messages/chat-message-service.js';
 import { TaskStore } from '../../../tasks/task-store.js';
+import { originLabelerFrom, setOriginLabeler } from '../../../tasks/approvals/marked-schedules.js';
 import {
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
@@ -158,6 +159,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setTeammateTurnCostSink(null);
+  setOriginLabeler(() => ({ name: null, room: null }));
   resetLiveOutsiderTurns();
 });
 
@@ -218,6 +220,13 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
     const store = new TaskStore(createTestDb());
+    // The labeler the server runs, over this test's one teammate and room.
+    setOriginLabeler(
+      originLabelerFrom({
+        authorName: (id) => (id === 'priya' ? 'Priya' : null),
+        roomTitle: (id) => (id === SPACE_ROOM ? 'launch' : null),
+      })
+    );
     const create = createCreateScheduleHandler(scheduleDeps(store), () => ({
       sessionId: bo,
       agentPath: '/agents/bo',
@@ -239,7 +248,7 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
     expect(parked.status).toBe('pending_approval');
     expect(parked.originMarks).toEqual({
       outsider: true,
-      teammate: [{ roomId: SPACE_ROOM, authorId: 'priya', name: null, room: null }],
+      teammate: [{ roomId: SPACE_ROOM, authorId: 'priya', name: 'Priya', room: '#launch' }],
     });
 
     store.approvals.recordApproval(parked.id);

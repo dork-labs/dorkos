@@ -5,7 +5,7 @@ covers:
 
 ### Fixed
 
-- When a teammate in a shared space starts work, their limits now follow it all the way. If your agent mentions another agent, messages another chat or starts a new one, that work stays limited the same way and counts toward the space's monthly limit. It also stops once that limit is reached.
+- When a teammate in a shared space starts work, their limits now follow it all the way. If your agent mentions another agent, messages another chat, starts a new one, or picks the work up later on its own, that work stays limited the same way and counts toward the space's monthly limit. This holds after a restart too. It also stops once that limit is reached.
 - A schedule an agent creates or changes after reading words from outside your team, or while doing work a teammate started, now waits for you to approve it, even on Trusted. The approval card says why and who started it.
 
 ### Changed

@@ -25,6 +25,27 @@ export interface OriginLabel {
   room: string | null;
 }
 
+/**
+ * The labeler the server runs: the teammate's display name, and the room's title as a channel is
+ * named everywhere else (`#title`). Either is null when unknown.
+ *
+ * @param lookup - Reads an author's display name and a room's title.
+ * @param lookup.authorName - The display name of an author id, or null.
+ * @param lookup.roomTitle - The title of a local room id, or null.
+ */
+export function originLabelerFrom(lookup: {
+  authorName: (authorId: string) => string | null | undefined;
+  roomTitle: (roomId: string) => string | null | undefined;
+}): (origin: TeammateOrigin) => OriginLabel {
+  return (origin) => {
+    const title = lookup.roomTitle(origin.roomId);
+    return {
+      name: lookup.authorName(origin.authorId) || null,
+      room: title ? `#${title.replace(/^#/, '')}` : null,
+    };
+  };
+}
+
 /** Names a teammate origin; set at startup by the rooms layer, which knows authors and rooms. */
 let labelOrigin: (origin: TeammateOrigin) => OriginLabel = () => ({ name: null, room: null });
 

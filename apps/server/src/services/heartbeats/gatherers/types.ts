@@ -5,6 +5,7 @@
  * @module services/heartbeats/gatherers/types
  */
 import type { HeartbeatGatherer } from '@dorkos/shared/heartbeat-schemas';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /** What a change touches that triage must be confident about (canon §5.2 step 3). */
 export type ChangeTouch = 'money' | 'customers' | 'security';
@@ -44,6 +45,11 @@ export interface Change {
     | 'usage-high'
     | 'commits'
     | 'info';
+  /**
+   * The turn marks the fact was written under, when it was (DOR-3036): another agent's post
+   * that a teammate's chain or a stranger's words wrote. A beat that reads it carries them.
+   */
+  marks?: TurnMarks;
 }
 
 /** The agent a beat is for, as gatherers read it. */

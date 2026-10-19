@@ -1,4 +1,5 @@
 import type { Task } from '@dorkos/shared/types';
+import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
 
 /** The marks a schedule was written under, as the server sends them. */
 type OriginMarks = NonNullable<Task['originMarks']>;
@@ -14,8 +15,14 @@ export function ScheduleOriginMarks({ marks }: { marks: OriginMarks }) {
     lines.push({ key: 'outsider', text: 'Written after reading words DorkOS can’t vouch for.' });
   }
   for (const origin of marks.teammate ?? []) {
-    const who = origin.name ?? 'a teammate';
-    const where = origin.room ? `${origin.room}, a shared space` : 'a shared space';
+    // Quoted and with hidden characters shown, so a name like "you" or one that reverses the text
+    // can't pass for DorkOS's own words.
+    const who = origin.name
+      ? `a teammate, “${revealHiddenCharacters(origin.name)}”,`
+      : 'a teammate';
+    const where = origin.room
+      ? `${revealHiddenCharacters(origin.room)}, a shared space`
+      : 'a shared space';
     lines.push({
       key: `${origin.roomId}:${origin.authorId}`,
       text: `Started by ${who} in ${where}.`,
