@@ -86,7 +86,15 @@ export function refuseStandingYesFromWifi(
 
 /** What kind of action a refused route is, for tests and the audit of the list. */
 export type WifiRefusedSurface =
-  'terminal' | 'file-writes' | 'api-keys' | 'mcp' | 'a2a' | 'front-door' | 'host' | 'sign-out-all';
+  | 'terminal'
+  | 'file-writes'
+  | 'api-keys'
+  | 'mcp'
+  | 'a2a'
+  | 'front-door'
+  | 'host'
+  | 'sign-out-all'
+  | 'spending';
 
 /** One refused route pattern, and why. */
 export interface WifiRefusedRoute {
@@ -285,6 +293,15 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     methods: 'writes',
     pattern: /^\/api\/auth\/revoke-(?:other-)?sessions(?:\/|$)/,
     reason: `Sign out everywhere ${ON_THE_COMPUTER}`,
+  },
+  {
+    // What teammates' turns in a space may cost is the owner's money. Raising
+    // it is a spend, so it is set where the password was typed, never from a
+    // phone that only has a session cookie.
+    surface: 'spending',
+    methods: 'writes',
+    pattern: /^\/api\/community-connections\/[^/]+\/teammate-spend$/,
+    reason: `Change spending limits ${ON_THE_COMPUTER}`,
   },
 ];
 

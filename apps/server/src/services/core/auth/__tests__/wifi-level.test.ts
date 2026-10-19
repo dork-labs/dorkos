@@ -104,6 +104,7 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['sign-out-all', 'POST', '/api/devices/sign-out-all'],
   ['sign-out-all', 'POST', '/api/auth/revoke-sessions'],
   ['sign-out-all', 'POST', '/api/auth/revoke-other-sessions'],
+  ['spending', 'PUT', '/api/community-connections/c_123/teammate-spend'],
 ];
 
 /** What a Wi-Fi sign-in keeps: chat, reading, and approvals. */
@@ -122,6 +123,7 @@ const ALLOWED: readonly [string, string][] = [
   ['GET', '/api/remote-access/report'],
   ['GET', '/api/tunnel/status'],
   ['GET', '/api/lan-access'],
+  ['GET', '/api/community-connections/c_123/teammate-spend'],
   ['GET', '/api/session-relay/status'],
   ['GET', '/api/runtimes/opencode/provider'],
   ['GET', '/api/marketplace/sources'],
