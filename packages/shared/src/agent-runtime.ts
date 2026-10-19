@@ -142,6 +142,15 @@ export interface TurnPermissionLevel {
    * limit. Present (even empty) means marked.
    */
   readonly teammate?: readonly TeammateOrigin[];
+  /**
+   * True when words from a Wi-Fi sign-in reached the chain this turn is part
+   * of (DOR-3061, `specs/turn-marks`). A Wi-Fi sign-in reaches DorkOS over
+   * plain `http` on the local network, where anyone on it can watch or relay
+   * the traffic, so its words are held like an outsider's (it always rides with
+   * {@link outsider}) and more: the turn runs at the runtime's default at most,
+   * and every card it raises offers Allow once, never Always allow.
+   */
+  readonly wifi?: true;
 }
 
 /**

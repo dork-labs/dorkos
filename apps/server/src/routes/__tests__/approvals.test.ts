@@ -29,6 +29,7 @@ import { createApprovalsRoutes } from '../approvals.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 import { UPGRADE_WRITER } from '../../services/core/permissions/permission-history.js';
+import type { TurnMarks } from '../../services/core/turn-power/turn-marks.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install. The routes' own
@@ -504,7 +505,11 @@ describe('approvals routes', () => {
 
   describe("POST /:id/grant { answer: 'always' } (spec agent-permissions D7)", () => {
     /** DorkBot asks for `rooms.create`, as the gate records an Ask in the Rooms area. */
-    function requestRoom(area: 'rooms' | 'safety' | null = 'rooms', identified = true) {
+    function requestRoom(
+      area: 'rooms' | 'safety' | null = 'rooms',
+      identified = true,
+      originMarks?: TurnMarks
+    ) {
       return approvals.request({
         capabilityId: 'rooms.create',
         inputHash: hashApprovalInput({ title: 'proj-lunar' }),
@@ -512,6 +517,7 @@ describe('approvals routes', () => {
         requestedBy: 'DorkBot',
         ...(identified ? { requestedByPath: AGENT_IDENTITY.agentPath } : {}),
         area,
+        ...(originMarks ? { originMarks } : {}),
       });
     }
 
@@ -520,12 +526,17 @@ describe('approvals routes', () => {
       requestRoom('safety');
       requestRoom(null);
       requestRoom('rooms', false);
+      // A stranger's words alone still allow it; words from a Wi-Fi sign-in never do (DOR-3061).
+      requestRoom('rooms', true, { outsider: true });
+      requestRoom('rooms', true, { outsider: true, wifi: true });
 
       const res = await request(app).get('/api/approvals/pending');
       expect(res.body.approvals.map((a: { alwaysOffered: boolean }) => a.alwaysOffered)).toEqual([
         true,
         false,
         false,
+        false,
+        true,
         false,
       ]);
       // The raw path never leaves through the card, only the fact of it.
@@ -599,6 +610,10 @@ describe('approvals routes', () => {
       ['a floor area', () => requestRoom('safety')],
       ['an action with no area', () => requestRoom(null)],
       ['a request with no agent path', () => requestRoom('rooms', false)],
+      [
+        'a card a Wi-Fi-marked turn raised (DOR-3061)',
+        () => requestRoom('rooms', true, { outsider: true, wifi: true }),
+      ],
     ])('409s on %s, and grants nothing', async (_name, make) => {
       const ticket = make();
 

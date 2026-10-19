@@ -279,7 +279,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     interactive,
     // Where to tell the answer if nobody is still holding for it. A delivery
     // address, never an authorization fact — see the field's own docblock.
-    ...(requestingSession ? { requestingSession } : {}),
+    ...(requestingSession ? { requestingSession, sessionId: requestingSession.sessionId } : {}),
     ...(run.blockedRequest ? { blockedRequest: run.blockedRequest } : {}),
   });
 

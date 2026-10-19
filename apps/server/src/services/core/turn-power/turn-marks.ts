@@ -8,8 +8,9 @@
  * already does: a room post keeps its author's level, a chat message stores its sender's, a
  * spin-off starts under its starter's bound, and `stricterLevel` keeps every mark of the two
  * levels it merges. {@link TurnMarks} is exactly those fields: `outsider`, the turn read words from
- * outside the owner's circle (spec `trusted-by-default-flip` §4.7), and `teammate`, the teammates
- * in shared spaces whose words started the chain (`teammate-mark.ts`). Tool-read joins them later,
+ * outside the owner's circle (spec `trusted-by-default-flip` §4.7), `teammate`, the teammates
+ * in shared spaces whose words started the chain (`teammate-mark.ts`), and `wifi`, words from a
+ * Wi-Fi sign-in, which always rides with `outsider` (`wifi-mark.ts`). Tool-read joins them later,
  * as one more field of the same set with its own entry in the rules below.
  *
  * Marks only add up: no reader here ever takes one away, and only a person clears the durable
@@ -40,6 +41,7 @@ import type {
   AgentRuntime,
   MessageOpts,
   TeammateOrigin,
+  ToolDecisionOptions,
   TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
@@ -54,11 +56,13 @@ import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
 import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
+import { offeringOnlyOnce, WIFI_LEVEL, wifiTurnOpts, withoutAlwaysAllow } from './wifi-mark.js';
 
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
   'outsider',
   'teammate',
+  'wifi',
 ] as const satisfies readonly (keyof TurnPermissionLevel)[];
 
 /** One kind of mark. */
@@ -79,7 +83,7 @@ const PLACE_MEMORY = 10_000;
  */
 const UNKNOWN_SOURCE: TurnMarks = Object.freeze({ outsider: true });
 
-/** How each kind combines and compares: the outsider mark is a flag, a teammate mark a list. */
+/** How each kind combines and compares: the outsider and Wi-Fi marks are flags, a teammate mark a list. */
 interface KindRules<K extends TurnMarkKind> {
   /** Both values together. */
   merge(a: TurnMarks[K], b: TurnMarks[K]): TurnMarks[K];
@@ -93,6 +97,10 @@ const sameOrigin = (a: TeammateOrigin, b: TeammateOrigin) =>
 /** One entry per kind, so a kind added to {@link TURN_MARK_KINDS} cannot go without rules. */
 const RULES: { [K in TurnMarkKind]: KindRules<K> } = {
   outsider: {
+    merge: (a, b) => (a === true || b === true ? true : undefined),
+    covers: (outer, inner) => inner !== true || outer === true,
+  },
+  wifi: {
     merge: (a, b) => (a === true || b === true ? true : undefined),
     covers: (outer, inner) => inner !== true || outer === true,
   },
@@ -250,7 +258,8 @@ export function agentMarksRunning(agentPath: string): TurnMarks {
 /**
  * A ceiling that carries these marks to a turn that reads words written under them (a beat that
  * reads a promise made in a marked turn): the runtime default for the outsider mark, and a
- * read-only level holding every teammate origin. `undefined` for no marks.
+ * read-only level holding every teammate origin, and the Wi-Fi level for the Wi-Fi mark.
+ * `undefined` for no marks.
  *
  * @param marks - The marks the words were written under.
  */
@@ -258,6 +267,7 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
   if (!hasMarks(marks)) return undefined;
   const bounds: TurnPermissionBound[] = ['runtime-default'];
   if (marks.teammate !== undefined) bounds.push({ ...READ_ONLY_LEVEL, teammate: marks.teammate });
+  if (marks.wifi === true) bounds.push(WIFI_LEVEL);
   return bounds.length === 1 ? bounds[0]! : bounds;
 }
 
@@ -270,7 +280,7 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
 export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
   if (!stored) return NO_MARKS;
   try {
-    const value = JSON.parse(stored) as { outsider?: unknown; teammate?: unknown };
+    const value = JSON.parse(stored) as { outsider?: unknown; teammate?: unknown; wifi?: unknown };
     const teammate = Array.isArray(value.teammate)
       ? value.teammate
           .filter(
@@ -282,6 +292,8 @@ export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
     return marksFrom({
       ...(value.outsider === true ? { outsider: true } : {}),
       ...(teammate !== undefined ? { teammate } : {}),
+      // The Wi-Fi mark never travels without the outsider mark, read back as written or not.
+      ...(value.wifi === true ? { wifi: true, outsider: true } : {}),
     });
   } catch {
     // Unreadable is not unmarked: a row whose marks cannot be read carries the outsider mark.
@@ -346,7 +358,10 @@ export function applyTurnMarks(
   // through the runtime that sent the turn.
   const places = new Map<string, { cwd?: string; forAgent?: string }>();
 
-  /** Start one turn with its marks applied: refused, rewritten for a teammate, and counted. */
+  /**
+   * Start one turn with its marks applied: refused, rewritten for a teammate, held to the
+   * runtime's default and offered no standing yes for Wi-Fi, and counted.
+   */
   function markedTurn(
     target: AgentRuntime,
     sessionId: string,
@@ -356,8 +371,10 @@ export function applyTurnMarks(
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
     let sent = opts;
+    // Default at most, whatever bound carried the mark here (DOR-3061).
+    if (marks.wifi === true) sent = wifiTurnOpts(sent);
     if (marks.teammate !== undefined) {
-      sent = teammateTurnOpts(opts);
+      sent = teammateTurnOpts(sent);
       const refusal = teammateTurnRefusal(target.type, marks.teammate);
       if (refusal !== null) {
         // Recorded all the same, so what reads the chat afterwards (a failure wake, say) knows it
@@ -371,7 +388,8 @@ export function applyTurnMarks(
     places.delete(sessionId);
     places.set(sessionId, place);
     if (places.size > PLACE_MEMORY) places.delete(places.keys().next().value!);
-    return countWhileRunning(place, marks, start(sent));
+    const events = start(sent);
+    return countWhileRunning(place, marks, marks.wifi === true ? offeringOnlyOnce(events) : events);
   }
 
   return new Proxy(runtime, {
@@ -392,17 +410,35 @@ export function applyTurnMarks(
         return (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) =>
           subscribe((sessionId, events) => {
             const marks = marksOfSession(sessionId);
+            const offered = marks.wifi === true ? offeringOnlyOnce(events) : events;
             listener(
               sessionId,
               hasMarks(marks)
                 ? countWhileRunning(
                     places.get(sessionId) ?? placeOf(target, sessionId, undefined),
                     marks,
-                    events
+                    offered
                   )
                 : events
             );
           });
+      }
+      // A card a Wi-Fi-marked turn raised is answered once at most, however the answer arrives:
+      // one card must never become a lasting grant (DOR-3061).
+      if (prop === 'approveTool' && typeof target.approveTool === 'function') {
+        const approve = target.approveTool.bind(target);
+        return (
+          sessionId: string,
+          toolCallId: string,
+          approved: boolean,
+          options?: ToolDecisionOptions
+        ) =>
+          approve(
+            sessionId,
+            toolCallId,
+            approved,
+            marksOfSession(sessionId).wifi === true ? withoutAlwaysAllow(options) : options
+          );
       }
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;

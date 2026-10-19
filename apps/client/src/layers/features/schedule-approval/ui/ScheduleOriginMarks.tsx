@@ -6,11 +6,14 @@ type OriginMarks = NonNullable<Task['originMarks']>;
 
 /**
  * Why a schedule waits for a person whatever the trust preset (DOR-3036): the agent wrote it in a
- * turn that read words from outside the owner's circle, or that a teammate in a shared space
- * started. One line per mark, naming where it came from when DorkOS knew.
+ * turn that read words from outside the owner's circle, that a Wi-Fi sign-in reached (DOR-3061),
+ * or that a teammate in a shared space started. One line per mark, naming where it came from when DorkOS knew.
  */
 export function ScheduleOriginMarks({ marks }: { marks: OriginMarks }) {
   const lines: { key: string; text: string }[] = [];
+  if (marks.wifi) {
+    lines.push({ key: 'wifi', text: 'Asked for from a Wi-Fi sign-in.' });
+  }
   if (marks.outsider) {
     lines.push({ key: 'outsider', text: 'Written after reading words DorkOS can’t vouch for.' });
   }

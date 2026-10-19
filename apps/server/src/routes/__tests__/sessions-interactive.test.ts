@@ -64,6 +64,11 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
+import { recordTurnLevels } from '../../services/core/turn-power/turn-levels.js';
+import { wifiTurnCeiling } from '../../services/core/turn-power/wifi-mark.js';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
@@ -146,6 +151,36 @@ describe('POST /api/sessions/:id/submit-answers', () => {
 });
 
 describe('POST /api/sessions/:id/approve', () => {
+  it('refuses Always allow on a card a Wi-Fi-marked turn raised, and answers once (DOR-3061)', async () => {
+    const WIFI_SESSION = '00000000-0000-4000-8000-000000003061';
+    const recorded = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of recorded.sendMessage(WIFI_SESSION, 'hi', wifiTurnCeiling(true))) {
+      // drain
+    }
+    fakeRuntime.approveTool.mockReturnValue(true);
+
+    const standing = await request(testServer)
+      .post(`/api/sessions/${WIFI_SESSION}/approve`)
+      .send({ toolCallId: 'tc-1', alwaysAllow: true });
+    expect(standing.status).toBe(409);
+    expect(standing.body.code).toBe('ALWAYS_NOT_OFFERED');
+    expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
+
+    const once = await request(testServer)
+      .post(`/api/sessions/${WIFI_SESSION}/approve`)
+      .send({ toolCallId: 'tc-1' });
+    expect(once.status).toBe(200);
+  });
+
   it('returns 200 when pending approval exists', async () => {
     fakeRuntime.approveTool.mockReturnValue(true);
 

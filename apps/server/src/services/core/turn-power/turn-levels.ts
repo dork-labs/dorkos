@@ -33,7 +33,6 @@
 import type {
   AgentRuntime,
   MessageOpts,
-  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
@@ -50,6 +49,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
+import { noteChatMarks } from './chat-marks.js';
 import {
   levelOfMode,
   READ_ONLY_LEVEL,
@@ -339,7 +339,9 @@ export function recordTurnLevels(
       } catch {
         stored = undefined;
       }
-      remember(turnLevels, sessionId, levelForTurn(runtime, stored, opts));
+      const level = levelForTurn(runtime, stored, opts);
+      remember(turnLevels, sessionId, level);
+      noteChatMarks(sessionId, marksOfLevel(level));
     }
   );
 }
@@ -374,7 +376,10 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
-          remember(turnLevels, sessionId, levelForTurn(target, stored, opts));
+          const level = levelForTurn(target, stored, opts);
+          remember(turnLevels, sessionId, level);
+          // Kept on the chat's row, for the turns that later pick it up on their own (DOR-3061).
+          noteChatMarks(sessionId, marksOfLevel(level));
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

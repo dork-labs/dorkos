@@ -65,7 +65,6 @@ import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
-  ApprovalServiceActionSchema,
   type ApprovalOrigin,
   type ApprovalOutcome,
   type ApprovalServiceAction,
@@ -75,8 +74,7 @@ import {
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { isAlwaysOffered } from './always-offered.js';
-
-export { isAlwaysOffered };
+import { storableServiceAction, withServiceAction } from './approval-service-action-store.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -99,6 +97,9 @@ import {
   redactSecretsInText,
   renderRequesterLabel,
 } from './approval-summary.js';
+import type { TurnMarks } from '../turn-power/turn-marks.js';
+
+export { isAlwaysOffered };
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -258,6 +259,11 @@ export interface ApprovalRequestInput {
    * not.
    */
   requestingSession?: ApprovalRequestingSession;
+  /**
+   * The marks of the turn that raised the card (DOR-3061, `specs/turn-marks`). A card a
+   * Wi-Fi-marked turn raised never offers Always allow ({@link isAlwaysOffered}).
+   */
+  originMarks?: TurnMarks;
 }
 
 /** Where a verdict for one approval would be delivered, when there is anywhere. */
@@ -489,65 +495,9 @@ function clampForStorage(value: string, max: number): string {
   return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
-/**
- * Make a connected-app action safe to store: every string swept for secrets
- * again, then checked against the wire schema.
- *
- * The builder already sweeps and caps, but `ApprovalRequestInput` is public API
- * and this JSON is broadcast and agent-readable exactly like the summary, so
- * the store does not take a producer's word for it. A value that does not
- * parse is not stored, and the card falls back to the summary sentence.
- *
- * @param action - The described action.
- * @returns The JSON to store, or null.
- */
-function storableServiceAction(action: ApprovalServiceAction): string | null {
-  const swept = {
-    ...action,
-    serviceName: redactSecretsInText(action.serviceName),
-    accountLabel: redactSecretsInText(action.accountLabel),
-    actionName: redactSecretsInText(action.actionName),
-    details: action.details.map((detail) => ({
-      label: redactSecretsInText(detail.label),
-      value: redactSecretsInText(detail.value),
-    })),
-    ...(action.everything
-      ? {
-          everything: action.everything.map((line) => ({
-            ...line,
-            label: redactSecretsInText(line.label),
-            value: redactSecretsInText(line.value),
-          })),
-        }
-      : {}),
-  };
-  const parsed = ApprovalServiceActionSchema.safeParse(swept);
-  return parsed.success ? JSON.stringify(parsed.data) : null;
-}
-
-/**
- * Read a stored connected-app action back, or nothing when the row has none or
- * it no longer parses — a card without it still has its summary.
- *
- * @param stored - The column's JSON.
- */
-function storedServiceAction(stored: string | null): ApprovalServiceAction | undefined {
-  if (stored === null) return undefined;
-  try {
-    const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(stored));
-    return parsed.success ? parsed.data : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** A stored approval row, as Drizzle infers it. */
 type ApprovalRow = typeof approvals.$inferSelect;
 
-/** The stored connected-app action as a spreadable field, or nothing. */
-function withServiceAction(stored: string | null): { serviceAction?: ApprovalServiceAction } {
-  const serviceAction = storedServiceAction(stored);
-  return serviceAction ? { serviceAction } : {};
 }
 
 /** The recorded area, read defensively: a hand-edited row never breaks a card. */
@@ -795,6 +745,10 @@ export class ApprovalService {
       // the asking surface had a session at all.
       requestingSessionId: input.requestingSession?.sessionId ?? null,
       requestingCwd: input.requestingSession?.cwd ?? null,
+      originMarks:
+        input.originMarks !== undefined && Object.keys(input.originMarks).length > 0
+          ? JSON.stringify(input.originMarks)
+          : null,
       notifiedAt: null,
     };
     this.db.insert(approvals).values(row).run();

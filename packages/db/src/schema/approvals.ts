@@ -240,6 +240,13 @@ export const approvals = sqliteTable(
     requestingCwd: text('requesting_cwd'),
 
     /**
+     * The marks of the turn that raised the card (DOR-3061, `specs/turn-marks`),
+     * as JSON. A card a Wi-Fi-marked turn raised never offers Always allow, and
+     * the grant route refuses one, from this column. NULL = no marked turn known.
+     */
+    originMarks: text('origin_marks'),
+
+    /**
      * The single-delivery CLAIM. ISO 8601 UTC; null while unclaimed.
      *
      * Two paths can deliver one verdict — the in-session hold that resumes the

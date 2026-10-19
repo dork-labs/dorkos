@@ -63,6 +63,7 @@ import {
   writePlan,
 } from './limit-plans.js';
 import { getSessionLimitStore, type StoredSessionLimit } from './session-limit-store.js';
+import { ceilingForContinuation } from '../../core/turn-power/chat-marks.js';
 
 /** The soonest a newly written wait may fire, so an advisor's past time never fires at once. */
 export const RESUME_MIN_DELAY_MS = 60_000;
@@ -462,6 +463,8 @@ async function resume(stored: StoredSessionLimit, watch: Watch): Promise<void> {
       // like a timer-fired schedule, so an approval card never waits on nobody.
       countsTowardLaunchCap: true,
       unattended: true,
+      // Nobody asked for it, so it carries what the chat's latest turn carried (DOR-3061).
+      ...ceilingForContinuation(sessionId),
     });
     if (isSessionLaunchRefusal(result)) {
       if (result.refused === 'LAUNCH_CAP_FULL') {

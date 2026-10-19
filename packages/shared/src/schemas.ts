@@ -5450,6 +5450,8 @@ export const ScheduleOriginMarksSchema = z
   .object({
     /** The turn read words DorkOS can't vouch for: a stranger's message, or another agent's that carried one. */
     outsider: z.literal(true).optional(),
+    /** Words from a Wi-Fi sign-in reached the turn (DOR-3061). */
+    wifi: z.literal(true).optional(),
     /** Each teammate whose message started the chain, and the space room they wrote in. */
     teammate: z
       .array(

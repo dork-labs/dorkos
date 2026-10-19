@@ -47,6 +47,11 @@ import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../mcp-tool-gate
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { recordTurnLevels } from '../../turn-power/turn-levels.js';
+import { wifiTurnCeiling } from '../../turn-power/wifi-mark.js';
 
 const DORKBOT_PATH = '/agents/dorkbot';
 
@@ -385,6 +390,46 @@ describe('the permission decision at the tier gate', () => {
         area: 'rooms',
         alwaysOffered: true,
       });
+    });
+
+    it('offers Allow once only on a card a Wi-Fi-marked turn raised (DOR-3061)', async () => {
+      const runtime = recordTurnLevels(
+        {
+          type: 'claude-code',
+          getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+          async *sendMessage(): AsyncGenerator<StreamEvent> {
+            yield { type: 'done', data: {} } as StreamEvent;
+          },
+        } as unknown as AgentRuntime,
+        () => 'bypassPermissions'
+      );
+      const ask = async (sessionId: string) => {
+        try {
+          await registry.invoke('rooms.create', INPUT, {
+            identity: dorkbot(),
+            sessionId,
+            retryChannel: 'mcp-argument',
+          });
+        } catch (err) {
+          return (err as { decision: { payload: { approvalId: string } } }).decision.payload;
+        }
+        throw new Error('expected a card');
+      };
+      for (const [sessionId, opts] of [
+        ['wifi-gate-turn', wifiTurnCeiling(true)],
+        ['plain-gate-turn', {}],
+      ] as const) {
+        for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
+          // drain
+        }
+      }
+
+      const fromWifi = await ask('wifi-gate-turn');
+      const plain = await ask('plain-gate-turn');
+
+      expect(approvals.answerScope(fromWifi.approvalId)?.alwaysOffered).toBe(false);
+      expect(approvals.getPending(fromWifi.approvalId)?.alwaysOffered).toBe(false);
+      expect(approvals.answerScope(plain.approvalId)?.alwaysOffered).toBe(true);
     });
   });
 

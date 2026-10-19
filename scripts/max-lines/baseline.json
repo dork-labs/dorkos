@@ -60,7 +60,7 @@
     "apps/server/src/services/core/approvals/approval-service.ts": 733,
     "apps/server/src/services/core/auth/cloud-link-client.ts": 827,
     "apps/server/src/services/core/auth/cloud-link.ts": 908,
-    "apps/server/src/services/core/capabilities/tier-enforcement.ts": 512,
+    "apps/server/src/services/core/capabilities/tier-enforcement.ts": 510,
     "apps/server/src/services/core/operator/operator-capabilities.ts": 622,
     "apps/server/src/services/core/permissions/permission-service.ts": 818,
     "apps/server/src/services/core/runtime-registry.ts": 659,

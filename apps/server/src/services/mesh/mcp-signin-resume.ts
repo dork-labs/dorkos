@@ -57,6 +57,7 @@ import {
   peekProjector,
   persistenceModeFor,
 } from '../session/index.js';
+import { ceilingForContinuation } from '../core/turn-power/chat-marks.js';
 
 /**
  * The `mcp_signin_resolved` event as an adapter produces it — the projector
@@ -200,6 +201,8 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
       // deferred, if the stream outlasts the wait bound. So it either lands while
       // the agent is waiting for it, exactly as intended, or it does not land.
       whenBusy: 'refuse',
+      // Nobody typed it, so it carries what the chat's latest turn carried (DOR-3061).
+      ...ceilingForContinuation(sessionId),
       onError: (err) => {
         logger.warn('[mcp-signin-resume] detached turn error', {
           sessionId,

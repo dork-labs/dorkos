@@ -1026,6 +1026,18 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     expect(slot('schedule-approve')).not.toBeNull();
   });
 
+  // DOR-3061: a schedule a Wi-Fi sign-in's words reached says so, and offers no raise either.
+  it('names a Wi-Fi sign-in as one of the marks, with no raise beside it', async () => {
+    const getConfig = configAtStop('autonomy');
+    renderCard(proposal({ originMarks: { outsider: true, wifi: true } }), { getConfig });
+
+    const marks = await findSlot('schedule-origin-marks');
+    expect(marks).toHaveTextContent('Asked for from a Wi-Fi sign-in.');
+    await vi.waitFor(() => expect(getConfig).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(elevated()).toBeNull();
+  });
+
   it('quotes a teammate’s name and shows any hidden characters in it', async () => {
     renderCard(
       proposal({

@@ -147,6 +147,7 @@ import {
   needsApprovalClause,
   retryGuidance,
 } from './approval-wording.js';
+import { marksOf } from '../turn-power/turn-levels.js';
 
 /** Where a retry carries its approval token, per surface. */
 export type ApprovalRetryChannel = 'mcp-argument' | 'http-header';
@@ -234,6 +235,7 @@ export interface GatedAction {
 
 /** Where a retry carries its token (`approval-wording.ts`), re-exported for every surface. */
 export { APPROVAL_TOKEN_ARGUMENT, APPROVAL_TOKEN_HEADER };
+export { splitApprovalToken } from './approval-wording.js';
 
 /**
  * Why a destructive call is not running yet, where the answer is "a BRAND-NEW
@@ -568,6 +570,13 @@ export interface TierEnforcementRequest {
    * with nowhere to deliver to.
    */
   requestingSession?: ApprovalRequestingSession;
+  /**
+   * The calling session, when the surface verified one: the same id the
+   * permission was resolved for. Read only for the asking turn's marks, which
+   * the card keeps (a Wi-Fi-marked turn's card is Allow once only, DOR-3061).
+   * Without it the marks are read through the caller's agent.
+   */
+  sessionId?: string;
 }
 
 /** What {@link initCapabilityTierGate} wires the gate to at boot. */
@@ -1025,6 +1034,8 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         // Where to tell the answer, when the surface had a session at all. Not
         // read by any decision here — see the field's own docblock.
         ...(requestingSession ? { requestingSession } : {}),
+        // The asking turn's marks: a Wi-Fi-marked turn's card is Allow once only (DOR-3061).
+        originMarks: marksOf(request.sessionId, identity?.agentPath),
       });
     } catch (err) {
       auditStoreFailure();
@@ -1227,23 +1238,4 @@ export async function authorizeCapability(
     ...(options.change !== undefined ? { change: options.change } : {}),
     retryChannel: context.retryChannel ?? 'http-header',
   });
-}
-
-/**
- * Split a presented approval token out of a surface's raw arguments.
- *
- * The token travels alongside a capability's input, never inside it: the approval
- * binds to a hash of the input, so a token carried as an input field would change
- * the very hash it is being checked against. Destructive capabilities advertise
- * {@link APPROVAL_TOKEN_ARGUMENT} as an extra MCP argument, and this is where it
- * comes back off.
- *
- * @param args - Raw arguments from an MCP client.
- * @returns The token (when present) and the arguments with it removed.
- */
-export function splitApprovalToken(args: unknown): { approvalToken?: string; input: unknown } {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return { input: args };
-  const { [APPROVAL_TOKEN_ARGUMENT]: token, ...rest } = args as Record<string, unknown>;
-  if (typeof token !== 'string' || token.length === 0) return { input: rest };
-  return { approvalToken: token, input: rest };
 }

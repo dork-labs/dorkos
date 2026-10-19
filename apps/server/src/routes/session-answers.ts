@@ -30,6 +30,7 @@ import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
 
 /**
@@ -176,6 +177,10 @@ function startAnswer(c: Context<ApiEnv>): Answering | Response {
 
 const INVALID_REQUEST = errorBody('Invalid request', 'VALIDATION_ERROR');
 const ALREADY_RESOLVED = errorBody('Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+const ALWAYS_NOT_OFFERED = errorBody(
+  "Always allow isn't offered for this request. Answer it with Allow or Deny.",
+  'ALWAYS_NOT_OFFERED'
+);
 
 /**
  * The six answer routes, each behind {@link requirePersonToAnswer}, and behind
@@ -199,6 +204,11 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const { toolCallId, alwaysAllow } = parsed.data;
     const standing = refuseStandingYesFromWifi(facts, alwaysAllow === true);
     if (standing) return c.json(standing, 403);
+    // A card a Wi-Fi-marked turn raised offers Allow once only (DOR-3061), so a standing yes is
+    // refused rather than quietly answered once. The seam drops one anyway (`applyTurnMarks`).
+    if (alwaysAllow && marksOf(sessionId, undefined).wifi === true) {
+      return c.json(ALWAYS_NOT_OFFERED, 409);
+    }
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const approved = runtime.approveTool(sessionId, toolCallId, true, {
       alwaysAllow,

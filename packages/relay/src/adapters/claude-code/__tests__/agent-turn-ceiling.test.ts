@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { handleAgentMessage } from '../agent-handler.js';
+import { handleAgentMessage, isTurnShapingSender } from '../agent-handler.js';
 import type { AgentRuntimeLike, SessionRuntimeBinder } from '../types.js';
 import type { RelayPublisher } from '../../../types.js';
 
@@ -92,6 +92,24 @@ describe('a relay message to an agent runs no looser than its sender may', () =>
       expect(sent.permissionCeiling).toBe('runtime-default');
     }
   );
+
+  // DOR-3061: what the Wi-Fi limits rely on. `POST /api/relay/messages` takes a client-supplied
+  // `from`, and only a person's, the system's or a bridge's sender may shape a turn. Every other
+  // sender, a lookalike included, runs at the runtime default at most, so a Wi-Fi sign-in cannot
+  // get a turn at the agent's own level by naming an unusual sender.
+  it.each([
+    'relay.signal.x',
+    'relay.humanoid.console',
+    'relay.human',
+    'Relay.Human.console.x',
+    'relay.console.x',
+    'anything-at-all',
+    '',
+  ])('holds a turn from the non-shaping sender %j at the runtime default', async (from) => {
+    expect(isTurnShapingSender(from)).toBe(false);
+    const { sent } = await deliver(from);
+    expect(sent.permissionCeiling).toBe('runtime-default');
+  });
 
   it('does not bound a turn a chat binding shaped (its mode is the binding’s)', async () => {
     const { sent } = await deliver('relay.human.telegram.4242');

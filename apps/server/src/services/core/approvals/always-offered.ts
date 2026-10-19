@@ -7,6 +7,22 @@ import { isExtensionCapabilityId } from '@dorkos/shared/capabilities';
 import { isFloorArea } from '@dorkos/shared/permissions';
 
 /**
+ * Whether a card's stored marks say a Wi-Fi sign-in's words reached the turn that raised it.
+ * Read here rather than through `turn-marks.ts`, whose session imports this store must not load.
+ * Marks that cannot be read count as Wi-Fi: Always allow is the thing not to offer by mistake.
+ *
+ * @param stored - The `origin_marks` column.
+ */
+function raisedFromWifi(stored: string | null | undefined): boolean {
+  if (!stored) return false;
+  try {
+    return (JSON.parse(stored) as { wifi?: unknown } | null)?.wifi === true;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Whether a card may offer "Always allow" (spec `agent-permissions` D7): DorkOS
  * knows which agent asked, the action has an area, that area is not a floor
  * area, and the approval is not bound to a connector's live authority. The
@@ -29,6 +45,9 @@ import { isFloorArea } from '@dorkos/shared/permissions';
  * asks, because the tool's tier is its author's to change and a standing yes
  * keyed by its id would outlive the version it was given for.
  *
+ * Nor does a card a Wi-Fi-marked turn raised (DOR-3061): words from a Wi-Fi
+ * sign-in may get one action done once, never a lasting grant.
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
@@ -40,8 +59,11 @@ export function isAlwaysOffered(row: {
   capabilityId: string;
   /** Required for the same reason. */
   tier: string;
+  /** The marks of the turn that raised it, as stored. */
+  originMarks?: string | null;
 }): boolean {
   return (
+    !raisedFromWifi(row.originMarks) &&
     row.requestedByPath !== null &&
     row.area !== null &&
     !isFloorArea(row.area) &&

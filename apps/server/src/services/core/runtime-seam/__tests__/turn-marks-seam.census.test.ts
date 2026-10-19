@@ -9,7 +9,9 @@
  * - a file that builds a runtime without handing it to `register` (built-ins, the test runtime,
  *   DorkOS's own, and the agent computer bridge);
  * - a registered runtime, of any type and registered at any time, whose marked turns are not
- *   counted while they run, for a turn sent to it and for one it starts on its own.
+ *   counted while they run, for a turn sent to it and for one it starts on its own;
+ * - one whose Wi-Fi-marked turns are not held to its default, or whose cards from such a turn
+ *   still offer, or take, a standing yes (DOR-3061).
  *
  * If this fails, route the runtime through `RuntimeRegistry.register`; do not loosen the census.
  *
@@ -223,6 +225,56 @@ describe('every registered runtime applies turn marks', () => {
       expect(agentMarksRunning(home)).toEqual({});
     }
   );
+
+  // DOR-3061: the Wi-Fi mark carried on a bare level (no runtime default beside it, the way a
+  // chat message stores its sender's level) still reaches every runtime held to its default, and
+  // its cards offer no standing yes, nor take one.
+  it.each([
+    'claude-code',
+    'codex',
+    'opencode',
+    'test-mode',
+    'doe',
+    'computer-local',
+    'late-extension',
+  ])('%s: a Wi-Fi-marked turn is held to the default and offers Allow once only', async (type) => {
+    const sent: (MessageOpts | undefined)[] = [];
+    const decided: unknown[] = [];
+    const runtime = {
+      type,
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      getSessionCwd: () => home,
+      async *sendMessage(_id: string, _content: string, opts?: MessageOpts) {
+        sent.push(opts);
+        yield {
+          type: 'approval_required',
+          data: { toolCallId: 't1', hasSuggestions: true, alwaysAllowScope: 'project' },
+        } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      approveTool: (_id: string, _call: string, _ok: boolean, options?: unknown) => {
+        decided.push(options);
+        return true;
+      },
+    } as unknown as AgentRuntime;
+    const registry = new RuntimeRegistry();
+    registry.register(runtime);
+    const registered = registry.get(type);
+    const carried = { asks: 'never', reach: 'everything', outsider: true, wifi: true } as const;
+
+    const events: StreamEvent[] = [];
+    for await (const event of registered.sendMessage(`${type}-wifi`, 'hi', {
+      permissionCeiling: carried,
+      cwd: home,
+    })) {
+      events.push(event);
+    }
+    registered.approveTool(`${type}-wifi`, 't1', true, { alwaysAllow: true });
+
+    expect(sent[0]?.permissionCeiling).toEqual(['runtime-default', carried]);
+    expect(events[0]?.data).toEqual({ toolCallId: 't1', hasSuggestions: false });
+    expect(decided).toEqual([{}]);
+  });
 
   it('counts a turn a registered runtime starts on its own under a marked turn', async () => {
     const registry = new RuntimeRegistry();

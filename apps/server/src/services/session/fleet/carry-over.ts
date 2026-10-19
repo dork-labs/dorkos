@@ -48,6 +48,7 @@ import {
 import type { StoredSessionLimit } from './session-limit-store.js';
 import { crossRuntimePermissionMode } from './carry-over-power.js';
 import { episodeKey } from './continue-in-flight.js';
+import { ceilingForContinuation } from '../../core/turn-power/chat-marks.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
 export const CARRY_OVER_PROMPT =
@@ -450,7 +451,15 @@ async function launchCarriedSession(
     clientId: CARRY_OVER_CLIENT_ID,
     meshCore: launch.meshCore,
     roomSessionPlace: launch.roomSessionPlace,
-    ...(automatic ? { countsTowardLaunchCap: true, unattended: true } : {}),
+    // An automatic move carries what the source chat's latest turn carried (DOR-3061); a person's
+    // own move runs as they asked.
+    ...(automatic
+      ? {
+          countsTowardLaunchCap: true,
+          unattended: true,
+          ...ceilingForContinuation(source.sessionId),
+        }
+      : {}),
     ...(reservation ? { onSettled: () => reservation.settle() } : {}),
   });
   if (isSessionLaunchRefusal(result)) {

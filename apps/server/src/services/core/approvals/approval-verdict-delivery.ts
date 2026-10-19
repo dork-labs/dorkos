@@ -90,6 +90,7 @@ import {
 } from '../../session/index.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import type { ApprovalService } from './approval-service.js';
+import { ceilingForContinuation } from '../turn-power/chat-marks.js';
 
 /** The approval primitive this module needs — no more of it than that. */
 type VerdictSource = Pick<
@@ -224,6 +225,8 @@ export async function deliverApprovalVerdict(
       // after the current turn is still the answer; one that is dropped is the
       // bug this module exists to fix.
       whenBusy: 'queue',
+      // The answer is not new words: the turn carries what the chat's latest turn did (DOR-3061).
+      ...ceilingForContinuation(sessionId),
       onError: (err) => {
         logger.warn('[approval-verdict] detached turn error', {
           sessionId,

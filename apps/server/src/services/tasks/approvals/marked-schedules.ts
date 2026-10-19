@@ -87,6 +87,7 @@ function mergeStored(
   }
   return {
     ...(before?.outsider || added.outsider ? { outsider: true as const } : {}),
+    ...(before?.wifi || added.wifi ? { wifi: true as const } : {}),
     ...(teammate.length > 0 ? { teammate } : {}),
   };
 }
@@ -106,6 +107,7 @@ export function markScheduleOrigin(db: Db, id: string, marks: TurnMarks): boolea
   if (!row) return false;
   const added: ScheduleOriginMarks = {
     ...(marks.outsider ? { outsider: true as const } : {}),
+    ...(marks.wifi ? { wifi: true as const } : {}),
     ...(marks.teammate !== undefined
       ? { teammate: marks.teammate.map((origin) => ({ ...origin, ...labelOrigin(origin) })) }
       : {}),

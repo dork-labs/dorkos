@@ -893,6 +893,7 @@ export function composeRegistry(
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
           retryChannel: supplied.retryChannel ?? 'http-header',
+          ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
           // Where a verdict decided after the in-session hold gave up should be
           // delivered (spec `approval-verdict-delivery`). The surface facts the
           // adapter already forwards, handed on as a delivery ADDRESS — the gate

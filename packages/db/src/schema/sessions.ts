@@ -37,6 +37,12 @@ export const sessionMetadata = sqliteTable(
     // here, not on the `session_limits` row, because the resumed turn's own
     // `turn_start` deletes that row. NULL = never resumed automatically.
     lastAutoResumeFor: text('last_auto_resume_for'),
+    // The marks this chat's latest turn carried (DOR-3061, `specs/turn-marks`), as
+    // JSON: `{}` for a turn that carried none. Every turn that picks the chat up
+    // on its own (an approval's answer, a resume, a handoff, a wake) carries them,
+    // after a restart too. NULL = no turn recorded since this column existed:
+    // read as the outsider mark.
+    lastTurnMarks: text('last_turn_marks'),
     createdAt: text('created_at').notNull(),
     // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
     // NULL = "no explicit preference; use the runtime's default."

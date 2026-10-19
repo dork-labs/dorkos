@@ -46,6 +46,8 @@ async function loadWithMocks(
     storedSession?: boolean;
     /** What a LIVE projector for this session reports, when one exists. */
     livePeekCwd?: string;
+    /** What picking the chat up carries: its latest turn's marks, as a ceiling (DOR-3061). */
+    continuation?: { permissionCeiling?: unknown };
   } = {}
 ) {
   vi.resetModules();
@@ -78,6 +80,11 @@ async function loadWithMocks(
     persistenceModeFor: () => 'record',
   }));
 
+  // The chat's latest turn's marks. Stubbed because the real store loads the whole session
+  // layer; what it answers is pinned in `turn-power/__tests__/chat-marks.test.ts`.
+  const ceilingForContinuation = vi.fn(() => options.continuation ?? {});
+  vi.doMock('../../turn-power/chat-marks.js', () => ({ ceilingForContinuation }));
+
   const { ApprovalService } = await import('../approval-service.js');
   const { deliverApprovalVerdict, startApprovalVerdictDelivery } =
     await import('../approval-verdict-delivery.js');
@@ -97,6 +104,7 @@ async function loadWithMocks(
 }
 
 afterEach(() => {
+  vi.doUnmock('../../turn-power/chat-marks.js');
   vi.doUnmock('../../runtime-registry.js');
   vi.doUnmock('../../../session/index.js');
   vi.doUnmock('../../../../lib/logger.js');
@@ -146,6 +154,18 @@ describe('deliverApprovalVerdict', () => {
     // transcript strip removes it and it can never read as the person's words.
     expect(call.content).toMatch(/^<approval_verdict>/);
     expect(call.content).toMatch(/<\/approval_verdict>$/);
+  });
+
+  it('carries what the chat’s latest turn carried, since an answer is not new words (DOR-3061)', async () => {
+    const carried = { permissionCeiling: ['runtime-default', { asks: 'never', wifi: true }] };
+    const { approvals, deliverApprovalVerdict, dispatchMessage } = await loadWithMocks({
+      continuation: carried,
+    });
+    const approvalId = askAndAnswer(approvals);
+
+    await deliverApprovalVerdict(approvals, approvalId);
+
+    expect(dispatchMessage.mock.calls[0][0].permissionCeiling).toBe(carried.permissionCeiling);
   });
 
   it('carries a refusal, and the reason with it', async () => {

@@ -34,6 +34,7 @@ import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
+import { setChatMarksDb } from './services/core/turn-power/chat-marks.js';
 import {
   SessionEventStore,
   StagedContextStore,
@@ -99,6 +100,7 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // for them is durable, so the hold behind it is (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
+  setChatMarksDb(db);
 
   // **Agent identity, because a rooms case has to be able to act AS an agent.**
   // `POST /api/test/agent-token` mints through this service, and an eval that

@@ -111,6 +111,7 @@ describe('reading marks', () => {
 const SAMPLE: { [K in TurnMarkKind]-?: NonNullable<TurnMarks[K]> } = {
   outsider: true,
   teammate: [{ roomId: 'space-room', authorId: 'priya' }],
+  wifi: true,
 };
 
 describe.each(TURN_MARK_KINDS)('the %s mark, through every helper', (kind) => {
