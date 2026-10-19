@@ -700,6 +700,13 @@ export const roomEntries = sqliteTable(
      */
     turnMarks: text('turn_marks'),
 
+    /**
+     * Whether the turns this post starts, and the beats that read it, are held
+     * to the runtime's default: a person wrote it from Wi-Fi (DOR-3037). Kept on
+     * the row so the hold outlives a restart. Off the wire, like `dispatchId`.
+     */
+    heldToDefault: integer('held_to_default', { mode: 'boolean' }).notNull().default(false),
+
     /** The entry this one answers, in this same room. Null for a top-level entry. */
     parentEntryId: text('parent_entry_id'),
 

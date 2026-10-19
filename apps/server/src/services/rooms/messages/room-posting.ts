@@ -21,7 +21,7 @@ import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
 import type { AuthorRegistry } from '../author-registry.js';
-import type { RoomEntryWriter } from './room-entry-writer.js';
+import type { PostAuthorBound, RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
 import { noteCallerSession } from '../limits/caller-sessions.js';
@@ -115,15 +115,12 @@ export class RoomPosting {
    * @param input - The post itself; see {@link RoomPostInput}, which documents
    *   each field.
    * @param authorLevel - The level the turns this post starts are held to, for
-   *   a tool post a verified session made; see {@link RoomPosting.postFromTool}.
+   *   a tool post a verified session made (see {@link RoomPosting.postFromTool}),
+   *   or `'runtime-default'` for a person's post from Wi-Fi (DOR-3037).
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(
-    roomId: string,
-    input: RoomPostInput,
-    authorLevel?: TurnPermissionLevel | { marks: TurnMarks }
-  ): PostedEntry {
+  post(roomId: string, input: RoomPostInput, authorLevel?: PostAuthorBound): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still

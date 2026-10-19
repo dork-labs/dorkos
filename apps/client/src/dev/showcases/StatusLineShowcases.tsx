@@ -139,7 +139,10 @@ function BudgetedLine({
     density: budget.density,
     now,
   });
-  const { items, overflow } = applyStatusBudget(selectPromotedItems({ ctx, pins, nodes }), budget);
+  const { items, overflow } = applyStatusBudget(
+    selectPromotedItems({ ctx, pins, nodes, density: budget.density }),
+    budget
+  );
 
   return (
     <div className="space-y-1.5">

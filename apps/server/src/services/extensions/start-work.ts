@@ -36,6 +36,7 @@ import {
   type StartWorkRequest,
 } from '@dorkos/shared/extension-decision-schemas';
 import { sessionPath } from '@dorkos/shared/session-link';
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
@@ -172,6 +173,8 @@ export class StartWorkService {
    * @param extensionId - The extension starting it.
    * @param input - The project, prompt, title and reason.
    * @param via - Where the call came from; see {@link StartWorkVia}.
+   * @param opts.permissionCeiling - The loosest level the chat's first turn may
+   *   run at: the runtime's default when a person asked over Wi-Fi (DOR-3037).
    * @returns The new chat's id.
    * @throws StartWorkError when a rule refuses it (nothing was started).
    * @throws StartWorkInputError when the input breaks a length rule.
@@ -179,7 +182,8 @@ export class StartWorkService {
   async start(
     extensionId: string,
     input: unknown,
-    via: StartWorkVia
+    via: StartWorkVia,
+    opts: { permissionCeiling?: TurnPermissionCeiling } = {}
   ): Promise<{ sessionId: string }> {
     const parsed = StartWorkRequestSchema.safeParse(input);
     if (!parsed.success) throw new StartWorkInputError(describeInputProblem(input));
@@ -236,6 +240,9 @@ export class StartWorkService {
         // looser than the runtime default (DOR-3036, `specs/turn-marks`).
         permissionCeiling: 'runtime-default',
         countsTowardLaunchCap: true,
+        ...(opts.permissionCeiling !== undefined
+          ? { permissionCeiling: opts.permissionCeiling }
+          : {}),
         onSettled: () => {
           settled = true;
           reservation.settle();

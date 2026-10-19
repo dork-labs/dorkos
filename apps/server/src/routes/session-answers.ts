@@ -25,6 +25,11 @@ import {
 } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import { refuseStandingYesFromWifi } from '../services/core/auth/sessions/wifi-level.js';
+import {
+  refuseDenyReason,
+  refuseTypedAnswers,
+  refuseTypedElicitation,
+} from './session-answer-wifi.js';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
@@ -227,6 +232,8 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     // A blank field is not a reason. Normalising here keeps every runtime and the
     // receipt copy from having to re-decide what an empty string means.
     const denyReason = reason?.trim() ? reason.trim() : undefined;
+    const typed = refuseDenyReason(facts, runtime, sessionId, denyReason);
+    if (typed) return c.json(typed, 403);
     const denied = runtime.approveTool(sessionId, toolCallId, false, {
       denyReason,
       ...answeredBy(facts),
@@ -276,6 +283,8 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, answers } = parsed.data;
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const typed = refuseTypedAnswers(facts, runtime, sessionId, toolCallId, answers);
+    if (typed) return c.json(typed, 403);
     const ok = runtime.submitAnswers(sessionId, toolCallId, answers, answeredBy(facts));
     if (!ok) {
       if (runtime.hasSession(sessionId)) return c.json(ALREADY_RESOLVED, 409);
@@ -293,6 +302,8 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { interactionId, action, content } = parsed.data;
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const typed = refuseTypedElicitation(facts, runtime, sessionId, interactionId, action, content);
+    if (typed) return c.json(typed, 403);
     const ok = runtime.submitElicitation(
       sessionId,
       interactionId,

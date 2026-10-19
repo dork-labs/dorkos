@@ -32,7 +32,7 @@ import type { AuthorRegistry } from '../rooms/author-registry.js';
 import type { TriggerReason } from '../rooms/addressing.js';
 import { isEntryAuthorExternal } from '../rooms/limits/turn-ceiling.js';
 import { isBeatRoomPost, wakeAgentAt } from './event-wakes.js';
-import { entryMarksOf } from '../core/turn-power/turn-levels.js';
+import { entryHeldToDefault, entryMarksOf } from '../core/turn-power/turn-levels.js';
 import { hasMarks } from '../core/turn-power/turn-marks.js';
 
 /** Room trigger reasons a refused turn wakes a beat for: somebody is waiting. */
@@ -77,6 +77,9 @@ export function shouldWakeForRefusal(
   if (target?.kind !== 'agent' || !WAKING_REASONS.has(reason as TriggerReason)) return false;
   if (refusal === 'depth' && entry.cascadeRoot === entry.id) return false;
   if (isBeatRoomPost(entry.id)) return false;
+  // A post held to the default (a person's from Wi-Fi, DOR-3037) wakes no beat:
+  // a beat runs at the agent's own level, so it would answer the post uncapped.
+  if (entryHeldToDefault(entry.id, entry.roomId)) return false;
   const author = authors.getMany([entry.authorId]).get(entry.authorId);
   // An agent's post with no chat behind it is nobody's turn to answer for.
   if (author?.kind === 'agent' && !entry.sessionId) return false;

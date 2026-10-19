@@ -31,6 +31,12 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import {
+  isFromWifi,
+  NOT_FROM_WIFI,
+  WIFI_ACTION_REFUSAL,
+} from '../services/core/auth/sessions/wifi-level.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readHomeManifest } from '../services/core/agent-identity/index.js';
 import { createAdapterRoutes } from './relay-adapters.js';
@@ -225,6 +231,15 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
         },
         403
       );
+    }
+
+    // DOR-3037: a person's sender shapes the turn it starts and runs it at the
+    // agent's own level (`isTurnShapingSender` in the relay's agent handler; the
+    // other two shaping senders are reserved above). From Wi-Fi a turn runs at
+    // the runtime's default at most, so it is refused there; any other sender
+    // is already held to that default.
+    if (isFromWifi(honoRequestFacts(c)) && result.data.from.startsWith('relay.human.')) {
+      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
     }
 
     // DOR-2432: nothing on this route is a server publisher — the scheduler,

@@ -47,7 +47,8 @@ export function PlanModeItem({ descriptor, active, onToggle, disabled }: PlanMod
           )}
         >
           <ClipboardList className="size-(--size-icon-xs) shrink-0" aria-hidden />
-          <span className="truncate">{descriptor.label}</span>
+          {/* Whole, never "Pl…": the row keeps this item at its own width. */}
+          <span className="shrink-0">{descriptor.label}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">

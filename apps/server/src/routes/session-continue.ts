@@ -32,6 +32,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -146,6 +147,8 @@ export function continueSessionHandler(
         roomSessionPlace: deps.roomSessionPlace,
         clientId: c.req.header('x-client-id') || crypto.randomUUID(),
         checkModel: rejectUnknownModel,
+        // From Wi-Fi, the continuing turn runs at the runtime's default at most (DOR-3037).
+        ...wifiTurnCeiling(honoRequestFacts(c)),
       });
       return c.json(result, 202);
     } catch (err) {

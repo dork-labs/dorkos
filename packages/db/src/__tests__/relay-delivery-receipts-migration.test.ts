@@ -5,7 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import {
-  approvals,
   createDb,
   relayDeliveryReceipts,
   relayReceiptObserverOwner,
@@ -62,21 +61,27 @@ describe('Relay delivery receipt migration', () => {
     const db = database();
     migrate(db, { migrationsFolder: predecessorMigrations() });
     // The latest incoming migration's decision provenance must survive receipt table creation.
-    db.insert(approvals)
-      .values({
-        id: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
-        tokenHash: 'upgrade-fixture-token-digest',
-        capabilityId: 'test.receipt-upgrade',
-        capabilityTitle: 'Upgrade fixture',
-        inputHash: 'upgrade-fixture-input-digest',
-        summary: 'Existing approval decision',
-        state: 'granted',
-        createdAt: now,
+    // Raw SQL in the predecessor's columns: the Drizzle table is today's, and
+    // later migrations add columns this database does not have yet.
+    db.$client
+      .prepare(
+        `INSERT INTO approvals (id, token_hash, capability_id, capability_title, input_hash,
+          summary, state, created_at, expires_at, decided_at, decided_by_user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+        'upgrade-fixture-token-digest',
+        'test.receipt-upgrade',
+        'Upgrade fixture',
+        'upgrade-fixture-input-digest',
+        'Existing approval decision',
+        'granted',
+        now,
         expiresAt,
-        decidedAt: now,
-        decidedByUserId: 'existing-approval-decider',
-      })
-      .run();
+        now,
+        'existing-approval-decider'
+      );
     const approvalBefore = db.$client.prepare('SELECT * FROM approvals').get();
     expect(approvalBefore).toMatchObject({ decided_by_user_id: 'existing-approval-decider' });
     db.$client
@@ -92,7 +97,10 @@ describe('Relay delivery receipt migration', () => {
     ).toBeUndefined();
     runMigrations(db);
     runMigrations(db);
-    expect(db.$client.prepare('SELECT * FROM approvals').get()).toEqual(approvalBefore);
+    // Every column it had survives; a later migration may add its own beside them.
+    expect(db.$client.prepare('SELECT * FROM approvals').get()).toMatchObject(
+      approvalBefore as object
+    );
     expect(db.$client.prepare('SELECT id, status FROM relay_index').all()).toEqual([
       { id: messageId, status: 'delivered' },
     ]);

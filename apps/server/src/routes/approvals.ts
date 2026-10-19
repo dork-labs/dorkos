@@ -148,6 +148,7 @@ import {
   refuseStandingYesFromWifi,
   WIFI_ACTION_REFUSAL,
 } from '../services/core/auth/sessions/wifi-level.js';
+import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -548,12 +549,13 @@ export function createApprovalsRoutes(
   router.post('/:id/grant', async (c) => {
     const authority = personOrRefuse(c);
     if (authority instanceof Response) return authority;
-    // A Wi-Fi sign-in answers approvals, but never a destructive one (DOR-2969):
-    // that is the computer's owner's call, made at the computer.
-    if (
-      isFromWifi(honoRequestFacts(c)) &&
-      approvals.answerScope(c.req.param('id'))?.tier === 'destructive'
-    ) {
+    // A Wi-Fi sign-in answers approvals, but never a destructive one (DOR-2969)
+    // or one that could raise what agents may do (DOR-3037): those are the
+    // computer's owner's call, made at the computer.
+    const scope = isFromWifi(honoRequestFacts(c))
+      ? approvals.answerScope(c.req.param('id'))
+      : undefined;
+    if (scope && (scope.tier === 'destructive' || scope.raisesPermissions)) {
       return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
     }
 
@@ -644,6 +646,11 @@ export function createApprovalsRoutes(
       return c.json({ error: 'Validation failed', code: 'INVALID_DENY_BODY', details }, 400);
     }
 
+    // From Wi-Fi a Deny carries no reason: the agent reads it, in a turn that
+    // may run at its own level (DOR-3037). A bare Deny still lands.
+    if (parsed.data.reason?.trim() && isFromWifi(honoRequestFacts(c))) {
+      return c.json({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    }
     const id = c.req.param('id');
     const scope = approvals.answerScope(id);
     const failure = approvals.deny(id, parsed.data.reason);

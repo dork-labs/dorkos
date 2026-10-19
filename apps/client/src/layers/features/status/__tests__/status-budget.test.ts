@@ -11,9 +11,10 @@ function item(
   severity: number,
   pinned = false,
   rigid = false,
-  wide = false
+  wide = false,
+  held = false
 ): PromotedStatusItem {
-  return { key, cluster, severity, pinned, rigid, wide, node: `node:${key}` };
+  return { key, cluster, severity, pinned, rigid, wide, held, snug: false, node: `node:${key}` };
 }
 
 /** The degraded session from the design notes: everything promoted at once. */
@@ -315,5 +316,48 @@ describe('applyStatusBudget — ranking', () => {
       { density: 'avatar', rightBudget: 1, dropped: [] }
     );
     expect(items.map((i) => i.key)).toEqual(['runtime']);
+  });
+});
+
+describe('applyStatusBudget — the held permission chip', () => {
+  /** A phone-width line where the chip is the quietest item promoted. */
+  function phoneLine(): PromotedStatusItem[] {
+    return [
+      item('agent', 'left', 1000),
+      item('runtime', 'right', 30),
+      item('context', 'right', 90, false, true),
+      item('permission', 'right', 0, false, false, false, true),
+      item('plan', 'right', 40),
+      item('connection', 'right', 100),
+    ];
+  }
+
+  /** The permission item on the budgeted line, if it made it. */
+  function chipOf(items: readonly PromotedStatusItem[]) {
+    return items.find(({ key }) => key === 'permission');
+  }
+
+  it('keeps the chip on the line below full, however low it ranks', () => {
+    for (const width of [350, 300]) {
+      const { items } = applyStatusBudget(phoneLine(), resolveStatusBudget(width));
+      // Never moved under the `⋯`, and told it is held at this width.
+      expect(chipOf(items)?.held).toBe(true);
+    }
+  });
+
+  it('counts the held chip against the cap on items that will not shrink', () => {
+    const line = [
+      item('agent', 'left', 1000),
+      item('context', 'right', 90, false, true),
+      item('usage', 'right', 80, false, true),
+      item('permission', 'right', 0, false, false, false, true),
+    ];
+    const { items } = applyStatusBudget(line, resolveStatusBudget(350));
+    expect(items.map(({ key }) => key)).toEqual(['agent', 'context', 'permission']);
+  });
+
+  it('does not hold it at full, where every value is drawn whole', () => {
+    const { items } = applyStatusBudget(phoneLine(), resolveStatusBudget(900));
+    expect(chipOf(items)?.held).toBe(false);
   });
 });

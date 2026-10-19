@@ -102,6 +102,7 @@ function setConfig(
     trustNoticeSeenAt?: string | null;
     preset?: string | null;
     telemetryDecided?: boolean;
+    callerRoute?: 'local' | 'wifi';
   } | null
 ) {
   vi.mocked(useConfig).mockReturnValue({
@@ -116,6 +117,7 @@ function setConfig(
             ui: { trustNoticeSeenAt: cfg.trustNoticeSeenAt ?? null },
             permissions: { preset: cfg.preset === undefined ? 'trusted' : cfg.preset },
             telemetry: { userHasDecided: cfg.telemetryDecided ?? true },
+            callerRoute: cfg.callerRoute,
           },
     isLoading: false,
     error: null,
@@ -159,6 +161,17 @@ describe('useTrustNoticeMomentDescriptor', () => {
     const { result } = renderHook(() => useTrustNoticeMomentDescriptor());
 
     expect(result.current).toBeNull();
+  });
+
+  it('holds it on Wi-Fi, where agents still ask, and offers it from this computer', () => {
+    setConfig({ callerRoute: 'wifi' });
+    const { result, rerender } = renderHook(() => useTrustNoticeMomentDescriptor());
+    // Never offered on Wi-Fi, so nothing there can mark it seen.
+    expect(result.current).toBeNull();
+
+    setConfig({ callerRoute: 'local' });
+    rerender();
+    expect(result.current?.id).toBe('trust-notice');
   });
 
   it('never offers it to a Careful install', () => {

@@ -388,6 +388,17 @@ describe('the permission decision at the tier gate', () => {
     });
   });
 
+  describe('a card that could raise permissions (DOR-3037)', () => {
+    it('is marked when the call reaches the Permissions area, and not otherwise', async () => {
+      agent = { areas: { rooms: 'ask', permissions: 'ask' } };
+      preset = 'full';
+      const raising = (await viaRegistry('probe.change_permission')) as { approvalId: string };
+      const plain = (await viaRegistry('rooms.create')) as { approvalId: string };
+      expect(approvals.answerScope(raising.approvalId)?.raisesPermissions).toBe(true);
+      expect(approvals.answerScope(plain.approvalId)?.raisesPermissions).toBe(false);
+    });
+  });
+
   describe('Allowed', () => {
     it('runs', async () => {
       agent = { areas: { rooms: 'allowed' } };

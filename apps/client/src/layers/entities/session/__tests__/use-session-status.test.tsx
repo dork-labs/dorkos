@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { useSessionStatus } from '../model/settings/use-session-status';
 import { useSessionSettingsOverridesStore } from '../model/settings/session-settings-overrides';
 
-vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { warning: vi.fn() }) }));
 
 // Mock app store (selectedCwd). A resolved directory, because a session query
 // correctly refuses to fire without one (DOR-495) — `null` is the app's
@@ -158,6 +158,30 @@ describe('useSessionStatus', () => {
     await waitFor(() => {
       expect(result.current.model).toBe('claude-sonnet-4-5-20250929');
     });
+  });
+
+  it('says a Wi-Fi refusal calmly, and reverts the mode (DOR-3037)', async () => {
+    const refusal = Object.assign(new Error('Raising permissions works only at this computer.'), {
+      status: 403,
+      code: 'NOT_FROM_WIFI',
+    });
+    const transport = createMockTransport({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ id: 's1', model: 'server', permissionMode: 'default' }),
+      updateSession: vi.fn().mockRejectedValue(refusal),
+    });
+    const { result } = renderHook(() => useSessionStatus('s1', null, false), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.permissionMode).toBe('default'));
+
+    await act(async () => {
+      await result.current.updateSession({ permissionMode: 'bypassPermissions' });
+    });
+
+    expect(toast).toHaveBeenCalledWith('Raising permissions works only at this computer.');
+    await waitFor(() => expect(result.current.permissionMode).toBe('default'));
   });
 
   it('swallows a failure rather than rethrowing', async () => {

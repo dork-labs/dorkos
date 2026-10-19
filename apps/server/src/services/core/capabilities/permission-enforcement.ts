@@ -268,6 +268,40 @@ export function areasForCall(action: PermissionGatedAction, input: unknown): Per
   return [...new Set<PermissionAreaId>([own, ...reached])];
 }
 
+/** The areas a call reaching which could raise what agents may do (DOR-3037). */
+const PERMISSION_RAISING_AREAS: ReadonlySet<PermissionAreaId> = new Set([
+  'permissions',
+  'safety',
+  'reach',
+]);
+
+/**
+ * Act-tier actions that hand out new power without reaching those areas: a
+ * package (code that runs), a new agent, an MCP server switched on. The direct
+ * routes for each already refuse Wi-Fi; their cards do too (DOR-3037).
+ */
+export const POWER_GRANTING_ACTION_IDS: ReadonlySet<string> = new Set([
+  'marketplace.install',
+  'create_agent',
+  'mcp.enable',
+]);
+
+/**
+ * Whether granting a call could raise what agents may do: it reaches the
+ * Permissions, Safety limits or Reach & secrets areas, by its own area or by
+ * what its input touches (`change_permission`, a settings patch to a trust
+ * stop or a limit, an agent's boundaries), or it is one of
+ * {@link POWER_GRANTING_ACTION_IDS}. Kept on its approval card, so a Wi-Fi
+ * sign-in cannot grant it, even once.
+ *
+ * @param action - The gated action.
+ * @param input - The call's parsed input.
+ */
+export function callRaisesPermissions(action: PermissionGatedAction, input: unknown): boolean {
+  if (POWER_GRANTING_ACTION_IDS.has(action.id)) return true;
+  return areasForCall(action, input).some((area) => PERMISSION_RAISING_AREAS.has(area));
+}
+
 /**
  * The stricter of two resolved permissions: the higher state, and on a tie the
  * floor area, so the card a person sees is the one that never offers Always

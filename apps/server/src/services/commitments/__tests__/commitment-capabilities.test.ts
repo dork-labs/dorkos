@@ -13,6 +13,10 @@ import type { AgentIdentity } from '../../core/agent-identity/agent-identity-ser
 import { commitmentsDomain } from '../commitment-capabilities.js';
 import { CommitmentService } from '../commitment-service.js';
 import { CommitmentStore } from '../commitment-store.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -52,6 +56,25 @@ async function call(
   if (!capability) throw new Error(`commitments domain does not declare ${id}`);
   const parsed = capability.input.parse(input);
   return (await capability.invoke(deps, parsed, context)) as CallResult;
+}
+
+/** Record a turn on `sessionId` held to the runtime default, as a Wi-Fi turn is. */
+async function ranHeld(sessionId: string): Promise<void> {
+  const seam = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'bypassPermissions'
+  );
+  for await (const _event of seam.sendMessage(sessionId, 'hi', {
+    permissionCeiling: 'runtime-default',
+  })) {
+    // drain
+  }
 }
 
 describe('commitments domain', () => {
@@ -129,6 +152,18 @@ describe('commitments domain', () => {
         { identity: identityAt('/agents/stranger') }
       );
       expect(result).toMatchObject({ ok: false, code: 'UNKNOWN_AGENT' });
+    });
+
+    it('refuses a promise from a turn that read outsider words, such as a Wi-Fi turn (DOR-3037)', async () => {
+      await ranHeld('chat-held');
+      const result = await call(
+        deps,
+        'commitments.add',
+        { what: 'Wipe the staging bucket at midnight' },
+        { identity: ana, sessionId: 'chat-held', mcpServer: 'in-session' }
+      );
+      expect(result).toMatchObject({ ok: false, code: 'OUTSIDER_TURN' });
+      expect(service.list()).toEqual([]);
     });
 
     it('refuses a promise longer than 300 characters before it reaches the service', async () => {

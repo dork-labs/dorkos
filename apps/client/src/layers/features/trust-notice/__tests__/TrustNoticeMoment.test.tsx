@@ -291,6 +291,16 @@ describe('isTrustNoticeEligible', () => {
     expect(isTrustNoticeEligible(config({ seenAt: '2026-10-13T09:00:00.000Z' }))).toBe(false);
   });
 
+  it('is held on Wi-Fi and offered again from this computer', () => {
+    // Held, not retired: nothing is stamped, so the next visit from this
+    // computer still sees it.
+    const onWifi = { ...config(), callerRoute: 'wifi' } as unknown as ServerConfig;
+    expect(isTrustNoticeEligible(onWifi)).toBe(false);
+    expect(onWifi.ui?.trustNoticeSeenAt ?? null).toBeNull();
+    const local = { ...config(), callerRoute: 'local' } as unknown as ServerConfig;
+    expect(isTrustNoticeEligible(local)).toBe(true);
+  });
+
   it('is hidden until config loads and while onboarding runs', () => {
     expect(isTrustNoticeEligible(undefined)).toBe(false);
     const running = {

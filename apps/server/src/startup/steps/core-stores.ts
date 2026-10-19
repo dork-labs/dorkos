@@ -38,6 +38,7 @@ import {
 } from '../../services/extensions/inbox/extension-inbox.js';
 import { getStartWorkService } from '../../services/extensions/start-work.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
 import { installSessionStatusHydration } from '../../services/session/fleet/session-status-hydration.js';
 import { SessionContextStore } from '../../services/session/fleet/session-context-store.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
@@ -182,6 +183,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+  // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
+  setContinuationHoldDb(db);
 
   // Usage and context shown the moment a session opens, before any turn (spec
   // `claude-account-fleet` §6 U): every new projector is stamped from the usage

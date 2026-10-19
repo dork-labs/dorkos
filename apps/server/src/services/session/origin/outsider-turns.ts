@@ -100,6 +100,20 @@ export function noteTurnOrigin(sessionId: string, origin: TurnOrigin): void {
 }
 
 /**
+ * Note that a message's words came from somewhere DorkOS cannot vouch for even
+ * though its origin is a person's own: a message sent from a Wi-Fi sign-in,
+ * whose turn is held to the runtime's default (DOR-3037). Read when the turn
+ * starts, like every other origin note, so {@link turnStartedByOutsider} then
+ * answers yes for that chat.
+ *
+ * @param messageId - The message.
+ */
+export function noteHeldMessage(messageId: string): void {
+  pending.set(messageId, true);
+  if (pending.size > PENDING_MAX) pending.delete(pending.keys().next().value as string);
+}
+
+/**
  * Run a message's binding call with its note held for that message's turn.
  *
  * @param messageId - The message being sent.

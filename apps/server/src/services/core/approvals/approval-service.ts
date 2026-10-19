@@ -222,6 +222,8 @@ export interface ApprovalRequestInput {
    * (spec `agent-permissions` D8): the reason it gave, which the card quotes.
    */
   blockedRequest?: { reason: string };
+  /** Whether granting it could raise what agents may do (DOR-3037); see the column. */
+  raisesPermissions?: boolean;
   /**
    * The thing this would act on, already named by its own registry (DOR-1929).
    *
@@ -548,6 +550,8 @@ export interface ApprovalAnswerScope {
   alwaysOffered: boolean;
   /** Whether the agent asked past a Blocked permission. */
   blockedRequest: boolean;
+  /** Whether granting it could raise what agents may do (DOR-3037). */
+  raisesPermissions: boolean;
   /** Where the request stands right now. */
   state: 'pending' | 'granted' | 'denied';
   /** Whether it is spent, written off, or past its window. */
@@ -741,6 +745,7 @@ export class ApprovalService {
       requestedByPath: input.requestedByPath ?? null,
       area: input.area ?? null,
       blockedRequest: input.blockedRequest !== undefined,
+      raisesPermissions: input.raisesPermissions === true,
       requestReason: input.blockedRequest ? storableReason(input.blockedRequest.reason) : null,
       // Capped HERE as well as in the resolver, for the reason `storableSummary`
       // gives two lines up: `ApprovalRequestInput` is public API, not private to
@@ -1306,6 +1311,7 @@ export class ApprovalService {
       area: recordedArea(row.area),
       alwaysOffered: isAlwaysOffered(row),
       blockedRequest: row.blockedRequest,
+      raisesPermissions: row.raisesPermissions,
       state: row.state,
       closed: row.consumedAt !== null || this.isExpired(row),
       tier: row.tier,

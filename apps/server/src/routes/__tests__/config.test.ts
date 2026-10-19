@@ -2269,3 +2269,62 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     expect(res.body.config.ui.theme).toBe('dark');
   });
 });
+
+describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = createTempDir();
+    process.env.DORK_HOME = tmpDir;
+    const { initConfigManager } = await import('../../services/core/config-manager.js');
+    initConfigManager(tmpDir);
+    const configRouter = (await import('../config.js')).default;
+    target.mount(await configApp(configRouter));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.resetModules();
+  });
+
+  it('takes a tighter stop for everyone and for one runtime', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'act', claudeCode: { defaultTrustStop: 'ask' } } })
+      .expect(200);
+  });
+
+  it('refuses a looser one, for everyone or for one runtime, and changes nothing', async () => {
+    arrivedVia = 'wifi';
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    const everyone = await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(403);
+    expect(everyone.body).toEqual({
+      error: 'Raising permissions works only at this computer.',
+      code: 'NOT_FROM_WIFI',
+    });
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
+      .expect(403);
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.get('runtimes')?.defaultTrustStop).toBe('ask');
+  });
+
+  it('takes a looser one at this computer', async () => {
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'ask' } })
+      .expect(200);
+    await request(server)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(200);
+  });
+});

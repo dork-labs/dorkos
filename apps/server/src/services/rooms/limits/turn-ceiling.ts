@@ -8,7 +8,11 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
-import { entryLevelOf, entryMarksOf } from '../../core/turn-power/turn-levels.js';
+import {
+  entryHeldToDefault,
+  entryLevelOf,
+  entryMarksOf,
+} from '../../core/turn-power/turn-levels.js';
 import {
   ceilingCarrying,
   hasMarks,
@@ -57,7 +61,9 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  * turn ran at when it wrote the post; when that was not kept (a restart, a post
  * with no session), to the runtime's default, because the alternative is to
  * hand out the receiving conversation's level on the strength of a missing
- * record. A person on this machine and the room's own voice are not bounded.
+ * record. A post held to the default (a person's from Wi-Fi, DOR-3037) is held
+ * to the runtime's default whoever wrote it. A person on this machine and the
+ * room's own voice are not bounded.
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
@@ -72,7 +78,7 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
  */
 export function ceilingForEntry(
   authors: AuthorRegistry,
-  entry: Pick<RoomEntry, 'id' | 'authorId'>,
+  entry: Pick<RoomEntry, 'id' | 'authorId'> & { roomId?: string },
   inSpaceRoom = false,
   roomId = '',
   circle?: OwnCircle
@@ -81,7 +87,10 @@ export function ceilingForEntry(
     const origin = { roomId, authorId: entry.authorId };
     return { permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [origin] }] };
   }
-  if (isEntryAuthorExternal(authors, entry.authorId)) {
+  if (
+    entryHeldToDefault(entry.id, entry.roomId ?? (roomId || undefined)) ||
+    isEntryAuthorExternal(authors, entry.authorId)
+  ) {
     return { permissionCeiling: 'runtime-default' };
   }
   const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
@@ -132,7 +141,7 @@ export function ceilingForEntry(
  */
 export function ceilingForEntries(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  entries: readonly (Pick<RoomEntry, 'id' | 'authorId'> & { roomId?: string })[],
   inSpaceRoom = false,
   roomId = '',
   circle?: OwnCircle
@@ -151,7 +160,8 @@ export function ceilingForEntries(
  * does not answer, as the `roomTurn` spread that says so (spec
  * `trusted-by-default-flip` §4.7): a stranger's line in the recent window, the
  * gathered burst or the channel tail, or another agent's post that was itself
- * written in a turn that read one.
+ * written in a turn that read one, or a person's line written from Wi-Fi
+ * (DOR-3037).
  *
  * **Fenced, not ceilinged — that is the decision this makes.** The turn
  * answers somebody else, usually the person who owns the room, and holding it
@@ -178,7 +188,7 @@ export function outsiderInViewOf(
 ): { outsiderInView?: true } {
   const shown = [...context.pending, ...(context.gathered ?? []), ...(context.channelTail ?? [])];
   const outsider = shown.some((entry) => {
-    if (entry.authorOrigin === 'external') return true;
+    if (entry.authorOrigin === 'external' || entryHeldToDefault(entry.id, roomId)) return true;
     if (entry.authorIsPerson || entry.kind !== 'post') return false;
     return entryMarksOf(entry.id, roomId)?.outsider === true;
   });

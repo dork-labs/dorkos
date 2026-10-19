@@ -9,8 +9,12 @@
  *
  * @module server/services/rooms/messages/room-entry-writer
  */
-import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { noteEntryLevel, noteEntryMarks } from '../../core/turn-power/turn-levels.js';
+import type { TurnPermissionBound, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import {
+  noteEntryHeldToDefault,
+  noteEntryLevel,
+  noteEntryMarks,
+} from '../../core/turn-power/turn-levels.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
@@ -97,6 +101,17 @@ export interface RoomExternalPostInput {
    */
   recordRef?: (entryId: string, tx: DbTransaction) => void;
 }
+
+/**
+ * What a post's author hands on to the turns it starts: the level its turn ran
+ * at; `'runtime-default'`, a hold to the runtime's default (a post from Wi-Fi,
+ * DOR-3037); or only marks when the level is unknown (DOR-3107), which may
+ * carry that hold too (an unverified agent's post from Wi-Fi). A hold only
+ * ever lowers: a held post is never read as the owner's own circle.
+ */
+export type PostAuthorBound =
+  | TurnPermissionBound
+  | { marks: TurnMarks; heldToDefault?: true };
 
 /** The shared write half of every post that reaches a room's log. */
 export class RoomEntryWriter {
@@ -241,9 +256,10 @@ export class RoomEntryWriter {
        * The level the author's turn ran at, from `postLevelFor`, kept with the
        * post so the turns it starts are held to it. Only a tool post a verified
        * session made carries one; never derived from `input.sessionId`, which a
-       * request body can name.
+       * request body can name. `'runtime-default'` holds the turns to the
+       * runtime's default: a person's post from Wi-Fi (DOR-3037).
        */
-      authorLevel?: TurnPermissionLevel | { marks: TurnMarks };
+      authorLevel?: PostAuthorBound;
     }
   ): PostedEntry {
     const roomId = room.id;
@@ -318,16 +334,24 @@ export class RoomEntryWriter {
     // Marks kept without a level (an unverified caller's, or an unknown
     // sender's) are written in the insert's own transaction (DOR-3107): a post
     // whose marks could not be written must not land and read as trusted later.
-    const keptMarks =
-      opts?.authorLevel && 'marks' in opts.authorLevel ? opts.authorLevel.marks : undefined;
+    // A post held to the default (a person's or an agent's from Wi-Fi,
+    // DOR-3037) says so on its row the same way, so the hold outlives a restart.
+    const kept = opts?.authorLevel;
+    const keptMarks = typeof kept === 'object' && 'marks' in kept ? kept.marks : undefined;
+    const held =
+      kept === 'runtime-default' ||
+      (typeof kept === 'object' && 'marks' in kept && kept.heldToDefault === true);
     const bindTransactional =
-      bindAfterInsert || mirrorWrite || keptMarks
+      bindAfterInsert || mirrorWrite || keptMarks || held
         ? (tx: DbTransaction) => {
             bindAfterInsert?.(id, tx);
             mirrorWrite?.enqueue(id, tx);
-            if (keptMarks) {
+            if (keptMarks || held) {
               tx.update(roomEntries)
-                .set({ turnMarks: JSON.stringify(keptMarks) })
+                .set({
+                  ...(keptMarks ? { turnMarks: JSON.stringify(keptMarks) } : {}),
+                  ...(held ? { heldToDefault: true } : {}),
+                })
                 .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, id)))
                 .run();
             }
@@ -373,10 +397,11 @@ export class RoomEntryWriter {
     // The level the author's turn runs at, kept with the post BEFORE anything
     // it triggers is dispatched: a turn this post starts runs no looser than
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
-    // A level, or only marks when the level is unknown (DOR-3107).
-    const kept = opts?.authorLevel;
-    if (kept && 'marks' in kept) noteEntryMarks(entry.id, kept.marks, roomId);
-    else noteEntryLevel(entry.id, kept, roomId);
+    // A level, or only marks when the level is unknown (DOR-3107); a hold to
+    // the default (DOR-3037) is kept beside the marks, never instead of them.
+    if (held) noteEntryHeldToDefault(entry.id);
+    if (keptMarks) noteEntryMarks(entry.id, keptMarks, roomId);
+    else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must

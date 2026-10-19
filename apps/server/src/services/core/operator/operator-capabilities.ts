@@ -25,7 +25,7 @@ import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
-import { AGENT_FILE_INPUTS } from './agent-file-inputs.js';
+import { AGENT_FILE_INPUTS, refuseOutsiderAgentFiles } from './agent-file-inputs.js';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
@@ -348,8 +348,7 @@ export const operatorDomain: CapabilityDomain = {
         'in. DorkOS fills in the version, the OS, which runtimes are set up and the on/off ' +
         'settings either way. What you write is scrubbed first: anything shaped like a file ' +
         'path, a token, an email or an IP address is replaced before the link is built, so ' +
-        'describe what happened in words rather than pasting logs, paths or session ' +
-        'transcripts. ' +
+        'describe what happened in words rather than pasting logs, paths or session transcripts. ' +
         // The routes a PERSON has, named because the defect this capability exists
         // to close was an agent inventing a rule instead: DorkBot told the operator
         // it was "not allowed to run the dorkos command" when no such rule exists.
@@ -562,7 +561,8 @@ export const operatorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) =>
+      invoke: async (deps, input, context) =>
+        refuseOutsiderAgentFiles(input, context) ??
         unwrapMcpEnvelope(
           await createUpdateAgentHandler(requireOperatorDeps(deps))(input as UpdateAgentArgs)
         ),

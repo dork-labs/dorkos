@@ -60,6 +60,7 @@ interface ReadEntry {
   authorKind: string;
   naturalKey: string;
   authorName: string;
+  heldToDefault: boolean;
 }
 
 /**
@@ -106,6 +107,7 @@ function recentPosts(db: Db, roomIds: string[], since: string): ReadEntry[] {
       authorKind: authors.kind,
       naturalKey: authors.naturalKey,
       authorName: authors.displayName,
+      heldToDefault: roomEntries.heldToDefault,
     })
     .from(roomEntries)
     .innerJoin(authors, eq(authors.id, roomEntries.authorId))
@@ -138,8 +140,10 @@ function isUnanswered(
   lastOwnSeq: Map<string, number>
 ): boolean {
   if (own.includes(entry.authorId)) return false;
-  // Strangers never shape a beat (§3.3).
-  if (isExternalNaturalKey(entry.naturalKey)) return false;
+  // Strangers never shape a beat (§3.3), and neither does a post written from
+  // Wi-Fi: a beat runs at the agent's own level, and the post's own turn was
+  // held to the default (DOR-3037).
+  if (isExternalNaturalKey(entry.naturalKey) || entry.heldToDefault) return false;
   const addressed = seat.kind === 'dm' || mentionIds(entry.mentions).some((id) => own.includes(id));
   return addressed && (lastOwnSeq.get(entry.roomId) ?? 0) <= entry.seq;
 }

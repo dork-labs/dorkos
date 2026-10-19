@@ -1194,6 +1194,30 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
     await settle();
   });
 
+  it('queues a steer or stage held to the runtime default rather than join a looser turn (DOR-3037)', async () => {
+    withCapabilities({ supportsSteer: true, supportsContextStaging: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn()]);
+    await send('long turn');
+    await settle();
+
+    const held = { permissionCeiling: 'runtime-default' as const };
+    const steer = await send('from the phone', { disposition: 'steer', ...held });
+    const stage = await send('more from the phone', { disposition: 'stage', ...held });
+
+    expect(steer.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-steerable' });
+    expect(stage.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-stageable' });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    // The rows say so, so the hold survives a restart.
+    expect(listQueuedMessages(session).map((row) => store.get(row.id)?.heldToDefault)).toEqual([
+      true,
+      true,
+    ]);
+
+    first.open();
+    await settle();
+  });
+
   it('runs a steer on an idle session immediately, and stays quiet about it (AC3)', async () => {
     withCapabilities({ supportsSteer: true });
     // No turn is open, so the runtime reports there is nothing to join.

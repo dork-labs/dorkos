@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import type { PromotedStatusItem } from '../model/promoted-items';
@@ -33,7 +33,22 @@ interface StatusLineProps {
    * never dropped.
    */
   trailing?: ReactNode;
+  /**
+   * Phone width: the agent's name is the one thing that gives way. The left
+   * cluster (the agent alone at these tiers) gives up its width before the right
+   * cluster gives up any, down to the avatar, so the items a person reads or
+   * taps stay whole. Pass it only where the left cluster is the agent alone,
+   * since the cluster's 40px floor holds one item.
+   */
+  nameFirst?: boolean;
 }
+
+/**
+ * How much harder the left cluster shrinks than the right under
+ * {@link StatusLineProps.nameFirst}. Flexbox shares a deficit by factor times
+ * width, so a large factor hands nearly all of it to the name.
+ */
+const NAME_FIRST_SHRINK = 1000;
 
 /**
  * The composer status line — one row, two clusters, never scrolled and never
@@ -55,9 +70,14 @@ interface StatusLineProps {
  * `shrink-0` and sits outside both clusters, so every dropped item stays one tap
  * away at any width.
  *
+ * **At phone width the name gives way first** (`nameFirst`). The held item, the
+ * permission chip a person acts on, never shrinks (see `StatusBarItemConfig.held`);
+ * every other item keeps its width until the agent is down to its avatar; and
+ * the agent's name truncates into whatever is left.
+ *
  * @param props - The budgeted items and the trailing anchor.
  */
-export function StatusLine({ items, trailing }: StatusLineProps) {
+export function StatusLine({ items, trailing, nameFirst }: StatusLineProps) {
   const left = items.filter((item) => item.cluster === 'left');
   const right = items.filter((item) => item.cluster === 'right');
 
@@ -72,7 +92,11 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
       {/* `flex-auto`, not `flex-1`: both grow into the slack, but a `flex-1`
           basis of 0 collapses the left cluster to zero width the moment the row
           overflows, hiding the agent instead of truncating its name. */}
-      <StatusCluster items={left} className="min-w-0 flex-auto" />
+      <StatusCluster
+        items={left}
+        className={cn('flex-auto', nameFirst && left.length > 0 ? 'min-w-10' : 'min-w-0')}
+        style={nameFirst ? { flexShrink: NAME_FIRST_SHRINK } : undefined}
+      />
       <StatusCluster items={right} className="min-w-0 shrink" />
       {/* The anchor's `shrink-0` lives here, not in whatever is passed in: "the `⋯`
           is never dropped" is the line's invariant to keep, not the caller's. */}
@@ -147,16 +171,18 @@ function shrinkFactorFor(item: PromotedStatusItem, urgencyOrder: readonly string
 function StatusCluster({
   items,
   className,
+  style,
 }: {
   items: readonly PromotedStatusItem[];
   className?: string;
+  style?: CSSProperties;
 }) {
   // Loudest first. Ties keep registry order — the sort is stable, and the line's
   // positions must not shuffle under the finger reaching for them.
   const urgencyOrder = [...items].sort((a, b) => b.severity - a.severity).map((i) => i.key);
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={cn('flex items-center gap-2', className)} style={style}>
       <AnimatePresence initial={false} mode="popLayout">
         {items.map((item, index) => (
           <motion.div
@@ -166,6 +192,8 @@ function StatusCluster({
             // must never be drawn partly, and a partly-drawn number is not an
             // overlap, so the guard cannot infer this from geometry alone.
             data-rigid={item.rigid ? 'true' : undefined}
+            data-held={item.held ? 'true' : undefined}
+            data-snug={item.snug ? 'true' : undefined}
             layout="position"
             initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
             animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
@@ -174,7 +202,11 @@ function StatusCluster({
             // A number, not a class: the factor is computed from this cluster's
             // urgency order, and Tailwind cannot see a class name it did not read
             // in the source.
-            style={item.rigid ? undefined : { flexShrink: shrinkFactorFor(item, urgencyOrder) }}
+            style={
+              item.rigid || item.held || item.snug
+                ? undefined
+                : { flexShrink: shrinkFactorFor(item, urgencyOrder) }
+            }
             className={cn(
               'inline-flex items-center gap-2',
               // A floor, not `min-w-0`: the separator and the glyph inside the
@@ -194,7 +226,7 @@ function StatusCluster({
               // text to that, which for `white-space: nowrap` equals max-content
               // — so the honest options were a per-item declaration or a
               // measured floor with this caveat written down.
-              item.rigid ? 'shrink-0' : 'min-w-10',
+              item.rigid || item.held || item.snug ? 'shrink-0' : 'min-w-10',
               TAP_TARGET
             )}
           >

@@ -3,6 +3,11 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
+import {
+  trustStopPatchRaises,
+  wifiRaiseRefusal,
+} from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -619,12 +624,20 @@ async function awaitAccountReconcile(): Promise<void> {
 router.patch('/', async (c) => {
   try {
     const accountsBefore = claudeAccountFields();
+    const patch = readJsonBody(c);
+    // From Wi-Fi, a Files & commands stop may tighten, never loosen (DOR-3037).
+    if (
+      isFromWifi(honoRequestFacts(c)) &&
+      trustStopPatchRaises(patch, configManager.get('runtimes'))
+    ) {
+      return c.json(wifiRaiseRefusal(), 403);
+    }
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
     // adds is who the caller is and what a refusal looks like over HTTP.
     const result = applyGuardedConfigWrite({
-      patch: readJsonBody(c),
+      patch,
       authority: requestConfigWriteAuthority(honoRequestFacts(c)),
       source: 'PATCH /api/config',
       // This route cannot say WHO is calling it, and does not pretend to. With

@@ -53,6 +53,8 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
+import { honoRequestFacts } from '../http/request-facts.js';
+import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
@@ -348,7 +350,8 @@ router.post('/:id/entries', (c) => {
         sessionId: body.sessionId,
         attachmentIds: body.attachmentIds,
       },
-      caller().kind === 'agent'
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
     );
     return c.json(accepted(entry), 202);
   });
@@ -508,7 +511,8 @@ router.post('/:id/threads', (c) => {
         replyTo: body.rootEntryId,
         attachmentIds: body.attachmentIds,
       },
-      caller().kind === 'agent'
+      caller().kind === 'agent',
+      wifiTurnBound(honoRequestFacts(c))
     );
     return c.json(accepted(entry), 202);
   });

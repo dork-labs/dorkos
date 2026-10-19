@@ -56,6 +56,7 @@ import {
 } from '../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
+import { outsiderBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../tasks/task-file-update.js';
@@ -187,6 +188,16 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
 }
 
 /**
+ * Whether the calling turn read words DorkOS cannot vouch for, from the turn's
+ * own record (`outsiderBoundOf`): its schedule writes then park for a person.
+ *
+ * @param provenance - The calling session and agent, as the server resolved them.
+ */
+function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
+  return outsiderBoundOf(provenance.sessionId, provenance.agentPath) !== undefined;
+}
+
+/**
  * Create a new scheduled job — armed at once for one of our agents on a Trusted
  * install, parked at `pending_approval` otherwise.
  *
@@ -299,8 +310,12 @@ export function createCreateScheduleHandler(
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
         trusted: false,
-        // Only the in-session server knows its caller is one of our agents.
-        callerIsOurAgent: resolveProvenance !== undefined,
+        // Only the in-session server knows its caller is one of our agents. A
+        // turn that read words DorkOS cannot vouch for (a stranger's, or a
+        // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
+        // schedule it makes parks for a person instead of arming at its own
+        // level.
+        callerIsOurAgent: resolveProvenance !== undefined && !readOutsiderWords(provenance),
         // The marks of the turn making the call, from its own record (DOR-3036).
         originMarks: callerMarks?.() ?? marksOf(provenance.sessionId, provenance.agentPath),
         proposal: {
@@ -603,7 +618,9 @@ export function createUpdateScheduleHandler(
       { ...taskWorkOf(existing), status: existing.status },
       {
         trusted: false,
-        armsAgentWork: agentSchedulesArmWithoutAsking(resolveProvenance !== undefined),
+        armsAgentWork: agentSchedulesArmWithoutAsking(
+          resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
+        ),
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
