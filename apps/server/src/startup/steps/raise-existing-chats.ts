@@ -58,7 +58,7 @@ const PRIOR_RAISE_DEPTH = 2_000;
  */
 async function historyHoldsRaise(activity: Pick<ActivityService, 'list'>): Promise<boolean> {
   let cursor: string | undefined;
-  for (let seen = 0; seen < PRIOR_RAISE_DEPTH; ) {
+  for (let seen = 0; seen < PRIOR_RAISE_DEPTH;) {
     const page = await activity.list({
       limit: 100,
       categories: 'permissions',

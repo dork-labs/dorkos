@@ -97,7 +97,9 @@ function setup(
     port,
     activity: world.activity,
     priorRaise: async () =>
-      world.events.some((e) => (e.metadata as { note?: unknown } | null)?.note === EXISTING_CHATS_NOTE),
+      world.events.some(
+        (e) => (e.metadata as { note?: unknown } | null)?.note === EXISTING_CHATS_NOTE
+      ),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
   return { dir, world, modes, writes, deps };
