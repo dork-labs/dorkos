@@ -20,9 +20,9 @@ function pagePackages(): string[] {
   for (const file of readdirSync(SPACE, { recursive: true, encoding: 'utf8' })) {
     if (!/\.(ts|tsx|css)$/u.test(file)) continue;
     const text = readFileSync(join(SPACE, file), 'utf8');
-    for (const [, spec] of text.matchAll(/(?:from|import)\s+['"]([^./'"][^'"]*)['"]/gu)) {
+    for (const [, spec = ''] of text.matchAll(/(?:from|import)\s+['"]([^./'"][^'"]*)['"]/gu)) {
       const parts = spec.split('/');
-      names.add(spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]);
+      names.add(spec.startsWith('@') ? parts.slice(0, 2).join('/') : (parts[0] ?? spec));
     }
   }
   // Workspace packages are the same source on both sides, so they cannot drift.
