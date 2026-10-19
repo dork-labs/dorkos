@@ -34,7 +34,7 @@ describe('buildWaitingNotice', () => {
     const { text } = buildWaitingNotice('Ana', 'author-ana', 'approval');
 
     expect(text).toBe(
-      'Ana is waiting for your approval before it can answer. Answer it in Needs you. New messages for Ana wait with it. It will wait, but not forever.'
+      "Ana is waiting for your approval before it can answer. Open Ana's chat or Needs you to answer. New messages for Ana wait with it. It will wait, but not forever."
     );
   });
 

@@ -113,7 +113,7 @@ describe('a room says when a turn has stopped', () => {
       expect(notices()[0].body.subjectAuthorId).toBe(ana);
       expect(notices()[0].authorId).toBe(authors.system().id);
       expect(notices()[0].body.text).toBe(
-        'Ana is waiting for your approval before it can answer. Answer it in Needs you. New messages for Ana wait with it. It will wait, but not forever.'
+        "Ana is waiting for your approval before it can answer. Open Ana's chat or Needs you to answer. New messages for Ana wait with it. It will wait, but not forever."
       );
       // The tool's name is for the log, never the room: an approval's arguments
       // are file paths and commands, and a shared room is not where they go.

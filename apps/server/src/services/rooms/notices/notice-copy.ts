@@ -268,16 +268,16 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
  *
  * **What changed with DOR-3113.** Later mentions of a parked agent used to fail
  * one by one, each with its own "ran into a problem" line. They now wait behind
- * the prompt, so the one line a park writes says where to answer (Needs you,
- * the app's list of what waits on you) and that new messages wait too.
+ * the prompt, so the one line a park writes says where to answer (the agent's chat,
+ * which the app links, or Needs you) and that new messages wait too.
  */
 const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
   approval: (agentName) =>
-    `${agentName} is waiting for your approval before it can answer. Answer it in Needs you. New messages for ${agentName} wait with it. It will wait, but not forever.`,
+    `${agentName} is waiting for your approval before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
   question: (agentName) =>
-    `${agentName} has a question for you before it can answer. Answer it in Needs you. New messages for ${agentName} wait with it. It will wait, but not forever.`,
+    `${agentName} has a question for you before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
   elicitation: (agentName) =>
-    `${agentName} needs something from you before it can answer. Answer it in Needs you. New messages for ${agentName} wait with it. It will wait, but not forever.`,
+    `${agentName} needs something from you before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,
 };
 
 /**
