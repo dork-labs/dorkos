@@ -44,6 +44,7 @@ import {
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
 import { parseSessionId } from '../../../../lib/route-utils.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
@@ -69,7 +70,7 @@ import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
-import { applyDirectoryGrants } from './directory-grants.js';
+import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -758,6 +759,8 @@ export async function resolveLaunch(args: {
     teammate ? undefined : messageOpts?.additionalDirectories,
     effectiveCwd
   );
+  // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
+  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome());
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
     const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};

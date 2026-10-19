@@ -8,7 +8,12 @@ import { describe, it, expect } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
-import { applyDirectoryGrants, grantsFromSettings } from '../directory-grants.js';
+import {
+  applyDirectoryGrants,
+  applyPersonOnlyDataDeny,
+  grantsFromSettings,
+} from '../directory-grants.js';
+import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
 
 const CWD = '/agents/ana';
 
@@ -88,4 +93,39 @@ describe('read-grant rules and parentheses', () => {
       expect(rules).toContain(`Edit(//rooms/${name}/**)`);
     }
   );
+});
+
+describe('the folders only a person may change', () => {
+  it('denies every file tool the permission floor and the relay pins, on every turn', () => {
+    const options: Options = { settings: { fastMode: true } };
+    applyPersonOnlyDataDeny(options, '/Users/ana/.dork/');
+    const rules = deny(options);
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/permissions/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/session-relay/**)`);
+    }
+    // Merged, never replacing what the launch already carries.
+    expect((options.settings as { fastMode: boolean }).fastMode).toBe(true);
+  });
+
+  it('sits beside a read grant’s rules, and the grants read back unchanged', () => {
+    const options = launch([{ path: '/rooms/R', access: 'read' }]);
+    applyPersonOnlyDataDeny(options, '/home/ana/.dork');
+    expect(deny(options)).toContain('Edit(//rooms/R/**)');
+    expect(deny(options)).toContain('Edit(//home/ana/.dork/permissions/**)');
+    expect(grantsFromSettings(options.settings)).toEqual([{ path: '/rooms/R', access: 'read' }]);
+  });
+
+  it('escapes a data folder with glob characters, and refuses one no rule can name', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, '/Users/ana/Dork [main]');
+    expect(deny(options)).toContain('Write(//Users/ana/Dork \\[main\\]/permissions/**)');
+    expect(() => applyPersonOnlyDataDeny({}, '/Users/ana/dork?')).toThrow(DirectoryGrantError);
+  });
+
+  it('writes a Windows data folder in the rule form', () => {
+    const options: Options = {};
+    applyPersonOnlyDataDeny(options, 'C:\\Users\\ana\\.dork');
+    expect(deny(options)).toContain('Edit(//c/Users/ana/.dork/permissions/**)');
+  });
 });
