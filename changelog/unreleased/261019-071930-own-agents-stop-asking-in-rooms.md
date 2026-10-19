@@ -4,6 +4,7 @@ covers:
   - 'fix(server): review fixes for marks between your own agents (DOR-3107)'
   - 'fix(server): the outsider mark survives every hand-off, and chat messages between your own agents pass no cap (DOR-3107)'
   - "fix(server): trust first: an own agent's post or message with unknown marks runs at its level; only marked or unverified ones cap (DOR-3107)"
+  - "fix(server): review fixes for trust first: unverified HTTP posts stay marked, a marked turn's chat stays marked, any mark counts (DOR-3107)"
 ---
 
 ### Fixed

@@ -20,6 +20,7 @@ import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomCore } from '../service/room-core.js';
+import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
@@ -82,6 +83,7 @@ export class RoomPosting {
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   private readonly maxAttachmentsPerEntry: () => number;
+  private readonly authors: AuthorRegistry;
 
   constructor(
     core: RoomCore,
@@ -92,6 +94,7 @@ export class RoomPosting {
     this.attachments = core.attachments;
     this.triggers = core.triggers;
     this.maxAttachmentsPerEntry = core.maxAttachmentsPerEntry;
+    this.authors = core.authors;
   }
 
   /**
@@ -289,7 +292,12 @@ export class RoomPosting {
       known ??
       (input.callerSessionId === undefined
         ? { marks: { outsider: true } }
-        : { marks: unknownLevelMarks(vouching) });
+        : {
+            marks: unknownLevelMarks(
+              vouching,
+              this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
+            ),
+          });
     const { callerSessionId: _caller, ...postInput } = input;
     let entry: PostedEntry;
     try {

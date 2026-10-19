@@ -70,14 +70,26 @@ describe('own-circle room turns', () => {
 
   // Trust first (Dorian 2026-10-19): an own agent's post whose marks nobody
   // kept (a restart, an old row) is trusted; only a marked one caps.
+  /** A post by Bo from before marks were kept: no row marks, no memory. */
+  const oldPostByBo = () => ({ id: `old-${Math.random()}`, authorId: bo });
+
   it('trusts a post nobody kept marks for, in the circle', () => {
-    const entry = postByBo();
+    const entry = oldPostByBo();
     expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({});
   });
 
   it('keeps a post nobody kept marks for at the default outside the circle', () => {
-    const entry = postByBo();
+    const entry = oldPostByBo();
     expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({
+      permissionCeiling: 'runtime-default',
+    });
+  });
+
+  // Review finding (DOR-3107): an agent's post over the HTTP routes names its
+  // agent with a header nothing verifies, so it is kept as an outsider's.
+  it('caps a post no verified session vouched for (the HTTP routes)', () => {
+    const entry = harness.service.post(channel.id, { authorId: bo, text: 'from curl' }, true);
+    expect(ceilingForEntry(harness.authors, entry, false, channel.id, OWN)).toEqual({
       permissionCeiling: 'runtime-default',
     });
   });
@@ -119,8 +131,7 @@ describe('own-circle room turns', () => {
 
     it('holds with an own agent post in view that nobody kept marks for', () => {
       const vouched = postByBo({});
-      const unknown = postByBo();
-      const context = shown([{ id: vouched.id }, { id: unknown.id }]);
+      const context = shown([{ id: vouched.id }, { id: 'old-row' }]);
       expect(isOwnCircle(context, channel.id, plain)).toBe(true);
     });
 

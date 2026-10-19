@@ -340,12 +340,16 @@ router.post('/:id/entries', (c) => {
   const body = parseOrRefuse(c, PostToRoomRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/entries', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent'
+    );
     return c.json(accepted(entry), 202);
   });
 });
@@ -495,13 +499,17 @@ router.post('/:id/threads', (c) => {
   const body = parseOrRefuse(c, PostThreadReplyRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
   return roomRoute(c, 'POST /:id/threads', (caller) => {
-    const entry = getRoomService().post(c.req.param('id'), {
-      authorId: caller().id,
-      text: body.text,
-      sessionId: body.sessionId,
-      replyTo: body.rootEntryId,
-      attachmentIds: body.attachmentIds,
-    });
+    const entry = getRoomService().post(
+      c.req.param('id'),
+      {
+        authorId: caller().id,
+        text: body.text,
+        sessionId: body.sessionId,
+        replyTo: body.rootEntryId,
+        attachmentIds: body.attachmentIds,
+      },
+      caller().kind === 'agent'
+    );
     return c.json(accepted(entry), 202);
   });
 });

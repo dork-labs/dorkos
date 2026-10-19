@@ -90,13 +90,13 @@ export function parseCeiling(json: string): TurnPermissionCeiling {
 }
 
 /**
- * Whether the sending turn was marked: it read words DorkOS cannot vouch for,
- * or its level is not known (which is bounded the same way).
+ * Whether the sending turn was marked: any mark (an outsider's words, a
+ * teammate's chain), or a stored bound DorkOS cannot read (the runtime default).
  *
  * @param bound - The sender's bound.
  */
 export function isMarkedBound(bound: TurnPermissionCeiling): boolean {
-  return boundsOf(bound).some((one) => one === 'runtime-default' || one.outsider === true);
+  return boundsOf(bound).some((one) => one === 'runtime-default' || hasMarks(marksOfLevel(one)));
 }
 
 /**

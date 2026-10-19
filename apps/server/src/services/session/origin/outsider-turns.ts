@@ -184,6 +184,17 @@ function launchedByOutsider(sessionId: string): boolean {
 }
 
 /**
+ * Remember that a turn in this chat carried the outsider mark (a ceiling, a
+ * marked post, a stranger's line in view), whatever started it (DOR-3107):
+ * the words are in its context now, so what it hands on later stays marked.
+ *
+ * @param sessionId - The chat, by either id it is known by.
+ */
+export function noteChatHeardOutsider(sessionId: string): void {
+  heard.add(primaryOf(sessionId));
+}
+
+/**
  * Whether a stranger's words may be in this chat's context: a stranger
  * started its running turn, an earlier turn, or the chat itself (DOR-3107).
  * A person's later turn does not clear it, because the words are still there.

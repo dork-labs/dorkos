@@ -291,9 +291,11 @@ describe("a stranger's line the turn is shown but does not answer", () => {
     // Kept no level: not counted, so the owner's edits stay open after a restart.
     expect(outsiderInViewOf({ pending: [agentPost(fresh('no-level'))] })).toEqual({});
 
-    await run(runtime, ana);
+    // A chat a stranger never reached (Ana's own chat stays marked: DOR-3107).
+    const anaOwn = fresh('ana-own');
+    await run(runtime, anaOwn);
     const plain = fresh('plain');
-    noteEntryLevel(plain, postLevelFor([ana]));
+    noteEntryLevel(plain, postLevelFor([anaOwn]));
     const person = { id: fresh('p'), authorOrigin: 'local', authorIsPerson: true, kind: 'post' };
     expect(
       outsiderInViewOf({ pending: [agentPost(plain), person as never], channelTail: [] })
@@ -427,6 +429,17 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
   });
 
+  it('a sender a person set below Full caps the receiver at its own level', async () => {
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana);
+    const DEFAULT = levelOfMode(MODES, 'default')!;
+    const stored = await senderBound(passedOnLevelOf(ana), caller(ana), async () => DEFAULT);
+    await run(runtime, bo, { permissionCeiling: stored });
+    expect(runsAt(sent.get(bo))).toBe('default');
+  });
+
   it('a marked chat_send stays capped', async () => {
     const ana = fresh('ana');
     const bo = fresh('bo');
@@ -464,6 +477,17 @@ describe('chat messages between your own agents (DOR-3107)', () => {
     expect(runsAt(sent.get(bo))).toBe('default');
     // Bo posts into a room: the agent it wakes is capped too.
     expect(postLevelFor([bo])?.outsider).toBe(true);
+  });
+
+  it('a chat that ran one marked turn stays marked for what it hands on later', async () => {
+    // A beat chat, say: beat 1 ran under a ceiling carrying a stranger's mark.
+    const beat = fresh('beat');
+    const { runtime } = seam({ [beat]: 'bypassPermissions' });
+    await run(runtime, beat, { permissionCeiling: 'runtime-default' });
+    await run(runtime, beat);
+    expect(postLevelFor([beat])?.outsider).toBe(true);
+    const stored = await senderBound(passedOnLevelOf(beat), caller(beat), ownLevelFull);
+    expect(chatMessageOrigin(JSON.stringify(stored))).toMatchObject({ marked: true });
   });
 
   it('a person typing in a chat a stranger reached earlier does not clear the mark', async () => {
